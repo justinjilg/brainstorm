@@ -5,6 +5,8 @@ import { createProviderRegistry } from '@brainstorm/providers';
 import { BrainstormRouter, CostTracker } from '@brainstorm/router';
 import { createDefaultToolRegistry } from '@brainstorm/tools';
 import { runAgentLoop, buildSystemPrompt, SessionManager } from '@brainstorm/core';
+import { AgentManager, parseAgentNL } from '@brainstorm/agents';
+import { runWorkflow, getPresetWorkflow, autoSelectPreset, PRESET_WORKFLOWS } from '@brainstorm/workflow';
 
 const program = new Command();
 
@@ -88,6 +90,247 @@ program
     }
     console.log();
   });
+
+// ── Agent Commands ─────────────────────────────────────────────────
+
+const agentCmd = program.command('agent').description('Manage named agents');
+
+agentCmd
+  .command('create')
+  .description('Create an agent (structured flags or natural language)')
+  .argument('[description...]', 'Natural language description (e.g., "architect using opus with $30 budget")')
+  .option('--id <id>', 'Agent ID')
+  .option('--model <model>', 'Model ID or alias')
+  .option('--role <role>', 'Agent role (architect|coder|reviewer|debugger|analyst|custom)')
+  .option('--budget <usd>', 'Per-workflow budget in USD', parseFloat)
+  .option('--budget-daily <usd>', 'Daily budget in USD', parseFloat)
+  .option('--description <desc>', 'What this agent does')
+  .option('--confidence <threshold>', 'Confidence threshold 0-1', parseFloat)
+  .action(async (descWords: string[], opts: any) => {
+    const config = loadConfig();
+    const db = getDb();
+    const manager = new AgentManager(db, config);
+
+    // Try natural language first
+    const nlInput = descWords.join(' ');
+    const parsed = nlInput ? parseAgentNL(nlInput) : null;
+
+    const id = opts.id ?? parsed?.id ?? 'agent-' + Date.now().toString(36);
+    const role = opts.role ?? parsed?.role ?? 'custom';
+    const modelId = opts.model ?? parsed?.modelId ?? 'auto';
+    const budget = opts.budget ?? parsed?.budget;
+    const budgetDaily = opts.budgetDaily ?? parsed?.budgetDaily;
+    const description = opts.description ?? parsed?.description ?? '';
+    const confidence = opts.confidence ?? 0.7;
+
+    const agent = manager.create({
+      id,
+      displayName: id.charAt(0).toUpperCase() + id.slice(1),
+      role,
+      description,
+      modelId,
+      allowedTools: role === 'coder' ? 'all' : ['file_read', 'glob', 'grep'],
+      budget: {
+        perWorkflow: budget,
+        daily: budgetDaily,
+        exhaustionAction: 'downgrade',
+      },
+      confidenceThreshold: confidence,
+      maxSteps: 10,
+      fallbackChain: [],
+      guardrails: { pii: parsed?.guardrailsPii },
+      lifecycle: 'active',
+    });
+
+    console.log(`\n  Created agent '${agent.id}'`);
+    console.log(`    Role: ${agent.role}`);
+    console.log(`    Model: ${agent.modelId}`);
+    if (agent.budget.perWorkflow) console.log(`    Budget: $${agent.budget.perWorkflow}/workflow`);
+    if (agent.budget.daily) console.log(`    Daily: $${agent.budget.daily}/day`);
+    if (agent.guardrails.pii) console.log(`    Guardrails: PII enabled`);
+    console.log();
+  });
+
+agentCmd
+  .command('list')
+  .description('List all agents')
+  .action(async () => {
+    const config = loadConfig();
+    const db = getDb();
+    const manager = new AgentManager(db, config);
+    const agents = manager.list();
+
+    console.log('\n  Agents:\n');
+    if (agents.length === 0) {
+      console.log('    No agents defined. Create one with: storm agent create <description>');
+    }
+    for (const a of agents) {
+      const budget = a.budget.perWorkflow ? `$${a.budget.perWorkflow}/wf` : a.budget.daily ? `$${a.budget.daily}/day` : 'unlimited';
+      console.log(`    ${a.id}  (${a.role})  model: ${a.modelId}  budget: ${budget}`);
+    }
+    console.log();
+  });
+
+agentCmd
+  .command('show')
+  .description('Show agent details')
+  .argument('<id>', 'Agent ID')
+  .action(async (id: string) => {
+    const config = loadConfig();
+    const db = getDb();
+    const manager = new AgentManager(db, config);
+    const agent = manager.get(id);
+
+    if (!agent) {
+      console.error(`  Agent '${id}' not found.`);
+      process.exit(1);
+    }
+
+    console.log(`\n  Agent: ${agent.id}`);
+    console.log(`    Display Name: ${agent.displayName}`);
+    console.log(`    Role: ${agent.role}`);
+    console.log(`    Model: ${agent.modelId}`);
+    console.log(`    Description: ${agent.description || '(none)'}`);
+    console.log(`    Allowed Tools: ${JSON.stringify(agent.allowedTools)}`);
+    console.log(`    Budget/Workflow: ${agent.budget.perWorkflow ? `$${agent.budget.perWorkflow}` : 'unlimited'}`);
+    console.log(`    Budget/Daily: ${agent.budget.daily ? `$${agent.budget.daily}` : 'unlimited'}`);
+    console.log(`    Confidence: ${agent.confidenceThreshold}`);
+    console.log(`    Fallback Chain: ${agent.fallbackChain.length > 0 ? agent.fallbackChain.join(' → ') : '(none)'}`);
+    console.log(`    Guardrails: PII=${agent.guardrails.pii ?? false}`);
+    console.log(`    Status: ${agent.lifecycle}`);
+    console.log();
+  });
+
+agentCmd
+  .command('delete')
+  .description('Delete an agent')
+  .argument('<id>', 'Agent ID')
+  .action(async (id: string) => {
+    const config = loadConfig();
+    const db = getDb();
+    const manager = new AgentManager(db, config);
+    try {
+      const deleted = manager.delete(id);
+      if (deleted) console.log(`  Deleted agent '${id}'.`);
+      else console.error(`  Agent '${id}' not found.`);
+    } catch (e: any) {
+      console.error(`  ${e.message}`);
+    }
+  });
+
+// ── Workflow Commands ──────────────────────────────────────────────
+
+const workflowCmd = program.command('workflow').description('Run multi-agent workflows');
+
+workflowCmd
+  .command('list')
+  .description('List available workflows')
+  .action(async () => {
+    console.log('\n  Workflows:\n');
+    for (const w of PRESET_WORKFLOWS) {
+      const steps = w.steps.map((s) => s.agentRole).join(' → ');
+      console.log(`    ${w.id}  — ${w.description}`);
+      console.log(`      Steps: ${steps}  (mode: ${w.communicationMode}, max loops: ${w.maxIterations})`);
+    }
+    console.log();
+  });
+
+workflowCmd
+  .command('run')
+  .description('Run a workflow')
+  .argument('<preset>', 'Workflow preset ID or natural language description')
+  .argument('[description...]', 'What to build/fix/review')
+  .option('--agents <mapping>', 'Agent role overrides (e.g., "architect=my-arch,coder=my-coder")')
+  .option('--mode <mode>', 'Communication mode (handoff|shared)', 'handoff')
+  .option('--dry-run', 'Show cost forecast only')
+  .action(async (preset: string, descWords: string[], opts: any) => {
+    const description = descWords.join(' ') || preset;
+
+    // Resolve workflow
+    let workflow = getPresetWorkflow(preset);
+    if (!workflow) {
+      const autoPreset = autoSelectPreset(preset + ' ' + description);
+      if (autoPreset) workflow = getPresetWorkflow(autoPreset);
+    }
+    if (!workflow) {
+      console.error(`  Unknown workflow: '${preset}'. Run 'storm workflow list' to see available workflows.`);
+      process.exit(1);
+    }
+
+    const config = loadConfig();
+    const db = getDb();
+    const registry = await createProviderRegistry(config);
+    const costTracker = new CostTracker(db, config.budget);
+    const router = new BrainstormRouter(config, registry, costTracker);
+    const agentManager = new AgentManager(db, config);
+    const projectPath = process.cwd();
+
+    // Parse agent overrides
+    const agentOverrides: Record<string, string> = {};
+    if (opts.agents) {
+      for (const pair of opts.agents.split(',')) {
+        const [role, agentId] = pair.split('=');
+        if (role && agentId) agentOverrides[role.trim()] = agentId.trim();
+      }
+    }
+
+    console.log(`\n  Workflow: ${workflow.name}`);
+    console.log(`  Request: "${description}"`);
+    console.log(`  Steps: ${workflow.steps.map((s) => s.agentRole).join(' → ')}\n`);
+
+    for await (const event of runWorkflow(workflow, description, agentOverrides, {
+      config, db, registry, router, costTracker, agentManager, projectPath,
+    })) {
+      switch (event.type) {
+        case 'cost-forecast':
+          console.log(`  Estimated cost: $${event.estimated.toFixed(4)}`);
+          for (const b of event.breakdown) {
+            console.log(`    ${b.step}: $${b.cost.toFixed(4)}`);
+          }
+          if (opts.dryRun) {
+            console.log('\n  (dry run — not executing)\n');
+            return;
+          }
+          console.log();
+          break;
+        case 'step-started':
+          process.stdout.write(`  [${event.agent.role}] ${event.agent.displayName} (${event.agent.modelId})...`);
+          break;
+        case 'step-progress':
+          if (event.event.type === 'text-delta') {
+            // Don't flood output — just show dots for progress
+          }
+          if (event.event.type === 'routing') {
+            process.stdout.write(` → ${event.event.decision.model.name}`);
+          }
+          break;
+        case 'step-completed':
+          console.log(` done ($${event.step.cost.toFixed(4)}, confidence: ${event.artifact.confidence.toFixed(2)})`);
+          break;
+        case 'step-failed':
+          console.log(` FAILED: ${event.error.message}`);
+          break;
+        case 'review-rejected':
+          console.log(`  [review] Rejected — looping back to ${event.loopingBackTo} (iteration ${event.step.iteration + 1})`);
+          break;
+        case 'confidence-escalation':
+          console.log(`  [confidence] ${event.action} (${event.confidence.toFixed(2)})`);
+          break;
+        case 'model-fallback':
+          console.log(`  [fallback] ${event.originalModel} → ${event.fallbackModel}: ${event.reason}`);
+          break;
+        case 'workflow-completed':
+          console.log(`\n  Workflow complete. Total cost: $${event.run.totalCost.toFixed(4)}`);
+          console.log(`  Artifacts: ${event.run.artifacts.map((a) => a.id).join(', ')}\n`);
+          break;
+        case 'workflow-failed':
+          console.log(`\n  Workflow failed: ${event.error.message}\n`);
+          break;
+      }
+    }
+  });
+
+// ── Run Command ────────────────────────────────────────────────────
 
 program
   .command('run')

@@ -1,0 +1,32 @@
+{
+  "name": "@brainstorm/workflow",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@brainstorm/shared": "*",
+    "@brainstorm/config": "*",
+    "@brainstorm/db": "*",
+    "@brainstorm/agents": "*",
+    "@brainstorm/core": "*",
+    "@brainstorm/router": "*",
+    "@brainstorm/tools": "*",
+    "@brainstorm/providers": "*"
+  },
+  "devDependencies": {
+    "tsup": "^8",
+    "typescript": "^5.7"
+  }
+}

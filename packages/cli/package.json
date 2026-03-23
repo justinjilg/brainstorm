@@ -21,6 +21,8 @@
     "@brainstorm/router": "*",
     "@brainstorm/providers": "*",
     "@brainstorm/tools": "*",
+    "@brainstorm/agents": "*",
+    "@brainstorm/workflow": "*",
     "commander": "^13",
     "ink": "^5",
     "ink-text-input": "^6",
