@@ -41,10 +41,8 @@ export async function* runAgentLoop(
 
   yield { type: 'routing', decision };
 
-  // Resolve the model — for local models use the provider instance, for cloud use string ID
-  const modelId = decision.model.isLocal
-    ? options.registry.getProvider(decision.model.id)
-    : decision.model.id;
+  // Always resolve through the provider registry — it handles local, cloud, and SaaS models
+  const modelId = options.registry.getProvider(decision.model.id);
 
   // Only provide tools when the task needs them and they're not disabled
   const shouldUseTools = !options.disableTools && task.requiresToolUse && !NO_TOOL_TASKS.has(task.type);

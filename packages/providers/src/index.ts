@@ -4,3 +4,4 @@ export { createLMStudioProvider, createLlamaCppProvider, discoverOpenAICompatMod
 export { discoverLocalModels, type DiscoveryResult } from './local/discovery.js';
 export { CLOUD_MODELS } from './cloud/models.js';
 export { checkProviderHealth, markDegraded, markUnavailable, markAvailable } from './health.js';
+export { createBrainstormSaaSProvider, getBrainstormApiKey } from './cloud/brainstorm-saas.js';

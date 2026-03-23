@@ -19,7 +19,10 @@
     "@brainstorm/shared": "*",
     "@brainstorm/config": "*",
     "ai": "^6",
-    "@ai-sdk/openai-compatible": "^1"
+    "@ai-sdk/openai-compatible": "^1",
+    "@ai-sdk/anthropic": "^3",
+    "@ai-sdk/openai": "^3",
+    "@ai-sdk/google": "^3"
   },
   "devDependencies": {
     "tsup": "^8",
