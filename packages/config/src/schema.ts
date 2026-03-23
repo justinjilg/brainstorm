@@ -67,6 +67,60 @@ const generalSchema = z.object({
 
 // ── Full Config ──────────────────────────────────────────────────────
 
+// ── Agent Config ─────────────────────────────────────────────────
+
+const agentBudgetSchema = z.object({
+  perWorkflow: z.number().optional(),
+  daily: z.number().optional(),
+  exhaustionAction: z.enum(['downgrade', 'stop']).default('downgrade'),
+  downgradeModel: z.string().optional(),
+});
+
+const agentGuardrailsSchema = z.object({
+  pii: z.boolean().optional(),
+  topicRestriction: z.string().optional(),
+});
+
+const agentConfigSchema = z.object({
+  id: z.string(),
+  displayName: z.string().optional(),
+  role: z.enum(['architect', 'coder', 'reviewer', 'debugger', 'analyst', 'custom']).default('custom'),
+  description: z.string().default(''),
+  model: z.string(),
+  systemPrompt: z.string().optional(),
+  allowedTools: z.union([z.literal('all'), z.array(z.string())]).default('all'),
+  outputFormat: z.string().optional(),
+  confidenceThreshold: z.number().min(0).max(1).default(0.7),
+  maxSteps: z.number().default(10),
+  fallbackChain: z.array(z.string()).default([]),
+  budget: agentBudgetSchema.default({}),
+  guardrails: agentGuardrailsSchema.default({}),
+});
+
+// ── Workflow Config ──────────────────────────────────────────────
+
+const workflowStepConfigSchema = z.object({
+  id: z.string(),
+  agentRole: z.enum(['architect', 'coder', 'reviewer', 'debugger', 'analyst', 'custom']),
+  agentId: z.string().optional(),
+  description: z.string().default(''),
+  inputArtifacts: z.array(z.string()).default([]),
+  outputArtifact: z.string(),
+  outputSchema: z.string().optional(),
+  isReviewStep: z.boolean().default(false),
+  loopBackTo: z.string().optional(),
+  skipCondition: z.string().optional(),
+});
+
+const workflowConfigSchema = z.object({
+  id: z.string(),
+  name: z.string().optional(),
+  description: z.string().default(''),
+  communicationMode: z.enum(['handoff', 'shared']).default('handoff'),
+  maxIterations: z.number().default(3),
+  steps: z.array(workflowStepConfigSchema).default([]),
+});
+
 export const brainstormConfigSchema = z.object({
   general: generalSchema.default({}),
   budget: budgetSchema.default({}),
@@ -75,6 +129,8 @@ export const brainstormConfigSchema = z.object({
     rules: z.array(routingRuleSchema).default([]),
   }).default({}),
   models: z.array(modelOverrideSchema).default([]),
+  agents: z.array(agentConfigSchema).default([]),
+  workflows: z.array(workflowConfigSchema).default([]),
 });
 
 export type BrainstormConfig = z.infer<typeof brainstormConfigSchema>;
@@ -82,3 +138,6 @@ export type BudgetConfig = z.infer<typeof budgetSchema>;
 export type ProviderConfig = z.infer<typeof providersSchema>;
 export type RoutingRule = z.infer<typeof routingRuleSchema>;
 export type GeneralConfig = z.infer<typeof generalSchema>;
+export type AgentConfig = z.infer<typeof agentConfigSchema>;
+export type WorkflowConfig = z.infer<typeof workflowConfigSchema>;
+export type WorkflowStepConfig = z.infer<typeof workflowStepConfigSchema>;

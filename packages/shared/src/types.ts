@@ -164,3 +164,156 @@ export interface ToolDefinition {
   description: string;
   permission: ToolPermission;
 }
+
+// ── Agent Profiles ──────────────────────────────────────────────────
+
+export type AgentRole = 'architect' | 'coder' | 'reviewer' | 'debugger' | 'analyst' | 'custom';
+export type AgentLifecycle = 'active' | 'suspended';
+
+export interface AgentGuardrails {
+  pii?: boolean;
+  topicRestriction?: string;
+}
+
+export interface AgentBudgetConfig {
+  perWorkflow?: number;
+  daily?: number;
+  exhaustionAction: 'downgrade' | 'stop';
+  downgradeModelId?: string;
+}
+
+export interface AgentProfile {
+  id: string;
+  displayName: string;
+  role: AgentRole;
+  description: string;
+  modelId: string;
+  systemPrompt?: string;
+  allowedTools: string[] | 'all';
+  outputFormat?: string;
+  budget: AgentBudgetConfig;
+  confidenceThreshold: number;
+  maxSteps: number;
+  fallbackChain: string[];
+  guardrails: AgentGuardrails;
+  lifecycle: AgentLifecycle;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// ── Workflow Engine ─────────────────────────────────────────────────
+
+export type WorkflowStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
+export type StepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+export type CommunicationMode = 'handoff' | 'shared';
+
+export interface WorkflowDefinition {
+  id: string;
+  name: string;
+  description: string;
+  steps: WorkflowStepDef[];
+  communicationMode: CommunicationMode;
+  maxIterations: number;
+}
+
+export interface WorkflowStepDef {
+  id: string;
+  agentRole: AgentRole;
+  agentId?: string;
+  description: string;
+  inputArtifacts: string[];
+  outputArtifact: string;
+  outputSchema?: string;
+  isReviewStep: boolean;
+  loopBackTo?: string;
+  skipCondition?: string;
+}
+
+export interface Artifact {
+  id: string;
+  stepId: string;
+  agentId: string;
+  content: string;
+  contentType: 'text' | 'code' | 'json' | 'markdown';
+  metadata: Record<string, unknown>;
+  confidence: number;
+  cost: number;
+  timestamp: number;
+  diskPath?: string;
+  iteration: number;
+}
+
+export interface WorkflowRun {
+  id: string;
+  workflowId: string;
+  description: string;
+  status: WorkflowStatus;
+  steps: WorkflowStepRun[];
+  artifacts: Artifact[];
+  totalCost: number;
+  estimatedCost: number;
+  iteration: number;
+  maxIterations: number;
+  communicationMode: CommunicationMode;
+  continueFromRunId?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface WorkflowStepRun {
+  id: string;
+  stepDefId: string;
+  agentId: string;
+  status: StepStatus;
+  artifactId?: string;
+  error?: string;
+  startedAt?: number;
+  completedAt?: number;
+  cost: number;
+  iteration: number;
+}
+
+// ── Workflow Events ─────────────────────────────────────────────────
+
+export type WorkflowEvent =
+  | { type: 'workflow-started'; run: WorkflowRun }
+  | { type: 'step-started'; step: WorkflowStepRun; agent: AgentProfile }
+  | { type: 'step-progress'; stepId: string; event: AgentEvent }
+  | { type: 'step-completed'; step: WorkflowStepRun; artifact: Artifact }
+  | { type: 'step-failed'; step: WorkflowStepRun; error: Error }
+  | { type: 'review-rejected'; step: WorkflowStepRun; reason: string; loopingBackTo: string }
+  | { type: 'confidence-escalation'; step: WorkflowStepRun; confidence: number; action: string }
+  | { type: 'budget-warning'; agent: AgentProfile; remaining: number; action: string }
+  | { type: 'model-fallback'; originalModel: string; fallbackModel: string; reason: string; costImpact: number }
+  | { type: 'provider-degraded'; provider: string; errorCount: number; resumeAt: number }
+  | { type: 'cost-forecast'; estimated: number; breakdown: Array<{ step: string; cost: number }> }
+  | { type: 'workflow-completed'; run: WorkflowRun }
+  | { type: 'workflow-failed'; run: WorkflowRun; error: Error };
+
+// ── Enhanced Intelligence ──────────────────────────────────────────
+
+export interface ComplexityAssessment {
+  score: number;
+  level: 'simple' | 'moderate' | 'complex';
+  signals: Record<string, number>;
+}
+
+export interface RequestShape {
+  hasTools: boolean;
+  hasImages: boolean;
+  hasSystem: boolean;
+  messageCountBucket: number;
+  estimatedTokensBucket: number;
+  contentComplexityScore: number;
+  isWindingDown: boolean;
+  taskType: string;
+}
+
+export interface BanditArm {
+  modelKey: string;
+  rewardMean: number;
+  rewardVar: number;
+  sampleCount: number;
+  validityMean: number;
+  qualityMean: number | null;
+}

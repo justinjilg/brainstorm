@@ -2,9 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Decision Authority
+
+Claude is the primary technical decision-maker for this project. As the AI being orchestrated by BrainstormRouter, Claude has unique insight into what an LLM needs from a routing/orchestration layer — context management, latency sensitivity, cost awareness, quality thresholds, and tool calling patterns. When facing technical trade-offs, decide based on "what would make me most effective as the orchestrated AI?" and explain the reasoning.
+
 ## Project
 
-Brainstorm — an open-source, CLI-first AI coding assistant with intelligent model routing (BrainstormRouter). Routes tasks to the optimal model (cloud or local) based on task complexity, cost, and user-defined rules.
+Brainstorm — an open-source, CLI-first AI coding assistant with intelligent model routing (BrainstormRouter). Routes tasks to the optimal model (cloud or local) based on task complexity, cost, and user-defined rules. Open-core model: free CLI + BrainstormRouter SaaS for intelligent cloud routing.
 
 ## Architecture
 

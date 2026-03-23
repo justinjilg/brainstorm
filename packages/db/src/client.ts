@@ -121,4 +121,108 @@ const MIGRATIONS = [
       CREATE INDEX idx_perf_model ON model_performance(model_id);
     `,
   },
+  {
+    name: '005_agent_profiles',
+    sql: `
+      CREATE TABLE agent_profiles (
+        id TEXT PRIMARY KEY,
+        display_name TEXT NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('architect', 'coder', 'reviewer', 'debugger', 'analyst', 'custom')),
+        description TEXT NOT NULL DEFAULT '',
+        model_id TEXT NOT NULL,
+        system_prompt TEXT,
+        allowed_tools TEXT NOT NULL DEFAULT '"all"',
+        output_format TEXT,
+        budget_per_workflow REAL,
+        budget_daily REAL,
+        exhaustion_action TEXT NOT NULL DEFAULT 'downgrade',
+        downgrade_model_id TEXT,
+        confidence_threshold REAL NOT NULL DEFAULT 0.7,
+        max_steps INTEGER NOT NULL DEFAULT 10,
+        fallback_chain TEXT NOT NULL DEFAULT '[]',
+        guardrails TEXT NOT NULL DEFAULT '{}',
+        lifecycle TEXT NOT NULL DEFAULT 'active' CHECK (lifecycle IN ('active', 'suspended')),
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+    `,
+  },
+  {
+    name: '006_workflow_definitions',
+    sql: `
+      CREATE TABLE workflow_definitions (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        steps_json TEXT NOT NULL,
+        communication_mode TEXT NOT NULL DEFAULT 'handoff' CHECK (communication_mode IN ('handoff', 'shared')),
+        max_iterations INTEGER NOT NULL DEFAULT 3,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+    `,
+  },
+  {
+    name: '007_workflow_runs',
+    sql: `
+      CREATE TABLE workflow_runs (
+        id TEXT PRIMARY KEY,
+        workflow_id TEXT NOT NULL,
+        session_id TEXT REFERENCES sessions(id),
+        description TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'running', 'paused', 'completed', 'failed', 'cancelled')),
+        total_cost REAL NOT NULL DEFAULT 0,
+        estimated_cost REAL NOT NULL DEFAULT 0,
+        iteration INTEGER NOT NULL DEFAULT 0,
+        max_iterations INTEGER NOT NULL DEFAULT 3,
+        communication_mode TEXT NOT NULL DEFAULT 'handoff',
+        continue_from_run_id TEXT,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      CREATE INDEX idx_workflow_runs_status ON workflow_runs(status);
+    `,
+  },
+  {
+    name: '008_workflow_step_runs',
+    sql: `
+      CREATE TABLE workflow_step_runs (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL REFERENCES workflow_runs(id) ON DELETE CASCADE,
+        step_def_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'running', 'completed', 'failed', 'skipped')),
+        artifact_json TEXT,
+        error TEXT,
+        cost REAL NOT NULL DEFAULT 0,
+        iteration INTEGER NOT NULL DEFAULT 0,
+        started_at INTEGER,
+        completed_at INTEGER
+      );
+      CREATE INDEX idx_step_runs_run ON workflow_step_runs(run_id);
+    `,
+  },
+  {
+    name: '009_model_performance_v2',
+    sql: `
+      CREATE TABLE model_performance_v2 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        model_id TEXT NOT NULL,
+        task_type TEXT NOT NULL,
+        shape_key TEXT,
+        success INTEGER NOT NULL DEFAULT 1,
+        latency_ms INTEGER,
+        cost_usd REAL,
+        validity_score REAL,
+        quality_score REAL,
+        input_tokens INTEGER,
+        output_tokens INTEGER,
+        user_accepted INTEGER,
+        timestamp INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      CREATE INDEX idx_perf_v2_model_task ON model_performance_v2(model_id, task_type);
+      CREATE INDEX idx_perf_v2_shape ON model_performance_v2(shape_key);
+      CREATE INDEX idx_perf_v2_timestamp ON model_performance_v2(timestamp);
+    `,
+  },
 ];
