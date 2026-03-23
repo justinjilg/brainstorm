@@ -143,12 +143,8 @@ program
 program
   .command('chat', { isDefault: true })
   .description('Start an interactive chat session')
-  .action(async () => {
-    // For v0.1, use a simple readline loop
-    // Ink TUI will be added as we iterate
-    const readline = await import('node:readline/promises');
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-
+  .option('--simple', 'Use simple readline interface instead of TUI')
+  .action(async (opts: { simple?: boolean }) => {
     const config = loadConfig();
     const db = getDb();
     const registry = await createProviderRegistry(config);
@@ -163,68 +159,68 @@ program
     const localCount = registry.models.filter((m) => m.isLocal).length;
     const cloudCount = registry.models.filter((m) => !m.isLocal).length;
 
-    console.log(`\n🧠 Brainstorm v0.1.0`);
-    console.log(`   Strategy: ${config.general.defaultStrategy} | Models: ${localCount} local, ${cloudCount} cloud`);
-    console.log(`   Type your message. Press Ctrl+C to exit.\n`);
+    if (opts.simple) {
+      // Simple readline fallback
+      const readline = await import('node:readline/promises');
+      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-    while (true) {
-      const input = await rl.question('you > ');
-      if (!input.trim()) continue;
-      if (input.trim() === '/quit' || input.trim() === '/exit') break;
+      console.log(`\n  brainstorm v0.1.0`);
+      console.log(`  Strategy: ${config.general.defaultStrategy} | Models: ${localCount} local, ${cloudCount} cloud`);
+      console.log(`  Type your message. /quit to exit.\n`);
 
-      if (input.trim() === '/models') {
-        for (const m of registry.models) {
-          const tag = m.isLocal ? 'local' : 'cloud';
-          console.log(`  ${m.status === 'available' ? '●' : '○'} ${m.id} [${tag}] quality:${m.capabilities.qualityTier}`);
+      while (true) {
+        const input = await rl.question('you > ');
+        if (!input.trim()) continue;
+        if (input.trim() === '/quit' || input.trim() === '/exit') break;
+
+        sessionManager.addUserMessage(input);
+        let fullResponse = '';
+        process.stdout.write('\nbrainstorm > ');
+
+        for await (const event of runAgentLoop(sessionManager.getHistory(), {
+          config, registry, router, costTracker, tools,
+          sessionId: session.id, projectPath, systemPrompt,
+        })) {
+          if (event.type === 'routing') process.stderr.write(`[${event.decision.strategy} -> ${event.decision.model.name}] `);
+          if (event.type === 'text-delta') { fullResponse += event.delta; process.stdout.write(event.delta); }
+          if (event.type === 'done') process.stdout.write(`\n  [$${event.totalCost.toFixed(4)}]\n\n`);
+          if (event.type === 'error') process.stdout.write(`\n  Error: ${event.error.message}\n\n`);
         }
-        continue;
+        if (fullResponse) sessionManager.addAssistantMessage(fullResponse);
       }
-
-      if (input.trim() === '/cost') {
-        const summary = costTracker.getSummary();
-        console.log(`  Session: $${summary.session.toFixed(4)} | Today: $${summary.today.toFixed(4)}`);
-        continue;
-      }
-
-      sessionManager.addUserMessage(input);
-
-      let fullResponse = '';
-      process.stdout.write('\nbrainstorm > ');
-
-      for await (const event of runAgentLoop(sessionManager.getHistory(), {
-        config, registry, router, costTracker, tools,
-        sessionId: session.id, projectPath, systemPrompt,
-      })) {
-        switch (event.type) {
-          case 'routing':
-            process.stderr.write(`[${event.decision.strategy} → ${event.decision.model.name}] `);
-            break;
-          case 'text-delta':
-            fullResponse += event.delta;
-            process.stdout.write(event.delta);
-            break;
-          case 'tool-call-start':
-            process.stdout.write(`\n  [tool: ${event.toolName}] `);
-            break;
-          case 'tool-call-result':
-            process.stdout.write('done\n');
-            break;
-          case 'done':
-            process.stdout.write(`\n  [$${event.totalCost.toFixed(4)}]\n\n`);
-            break;
-          case 'error':
-            process.stdout.write(`\n  Error: ${event.error.message}\n\n`);
-            break;
-        }
-      }
-
-      if (fullResponse) {
-        sessionManager.addAssistantMessage(fullResponse);
-      }
+      rl.close();
+      return;
     }
 
-    rl.close();
-    console.log('\nGoodbye!');
+    // Ink TUI
+    const { render } = await import('ink');
+    const React = await import('react');
+    const { ChatApp } = await import('../components/ChatApp.js');
+
+    function handleSendMessage(text: string) {
+      sessionManager.addUserMessage(text);
+      const gen = runAgentLoop(sessionManager.getHistory(), {
+        config, registry, router, costTracker, tools,
+        sessionId: session.id, projectPath, systemPrompt,
+      });
+      // Wrap to capture assistant message after completion
+      return (async function* () {
+        let fullResponse = '';
+        for await (const event of gen) {
+          if (event.type === 'text-delta') fullResponse += event.delta;
+          yield event;
+        }
+        if (fullResponse) sessionManager.addAssistantMessage(fullResponse);
+      })();
+    }
+
+    render(
+      React.createElement(ChatApp, {
+        strategy: config.general.defaultStrategy,
+        modelCount: { local: localCount, cloud: cloudCount },
+        onSendMessage: handleSendMessage,
+      }),
+    );
   });
 
 export function run() {
