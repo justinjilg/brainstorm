@@ -1,0 +1,31 @@
+{
+  "name": "@brainstorm/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@brainstorm/shared": "*",
+    "@brainstorm/config": "*",
+    "@brainstorm/db": "*",
+    "@brainstorm/router": "*",
+    "@brainstorm/providers": "*",
+    "@brainstorm/tools": "*",
+    "ai": "^6"
+  },
+  "devDependencies": {
+    "tsup": "^8",
+    "typescript": "^5.7"
+  }
+}

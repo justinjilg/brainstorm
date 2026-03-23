@@ -1,0 +1,38 @@
+{
+  "name": "@brainstorm/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "brainstorm": "./dist/brainstorm.js",
+    "storm": "./dist/brainstorm.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@brainstorm/shared": "*",
+    "@brainstorm/config": "*",
+    "@brainstorm/core": "*",
+    "@brainstorm/db": "*",
+    "@brainstorm/router": "*",
+    "@brainstorm/providers": "*",
+    "@brainstorm/tools": "*",
+    "commander": "^13",
+    "ink": "^5",
+    "ink-text-input": "^6",
+    "ink-spinner": "^5",
+    "react": "^18",
+    "marked": "^15",
+    "marked-terminal": "^7",
+    "chalk": "^5"
+  },
+  "devDependencies": {
+    "@types/react": "^18",
+    "tsup": "^8",
+    "typescript": "^5.7"
+  }
+}

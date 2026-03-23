@@ -1,0 +1,27 @@
+{
+  "name": "@brainstorm/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@brainstorm/shared": "*",
+    "better-sqlite3": "^11"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7",
+    "tsup": "^8",
+    "typescript": "^5.7"
+  }
+}
