@@ -2,6 +2,7 @@ import { loadProbes, loadProbesByCapability } from './loader.js';
 import { runAllProbes } from './runner.js';
 import { saveEvalRun, buildScorecard, loadEvalRuns } from './storage.js';
 import { formatScorecard, formatComparison } from './scorecard.js';
+import { exportCapabilityScores } from './export.js';
 import type { CapabilityDimension } from './types.js';
 
 export interface EvalCliOptions {
@@ -54,8 +55,10 @@ export async function runEvalCli(options: EvalCliOptions): Promise<void> {
     defaultTimeout: options.timeout ?? 30000,
   });
 
-  // Save and display
+  // Save, export capability scores, and display
   const run = saveEvalRun(modelId, results);
+  const exportedScores = exportCapabilityScores(run);
+  console.log(`  Capability scores exported for ${modelId} (routing will use these next session)\n`);
   const scorecard = buildScorecard(run);
   console.log(formatScorecard(scorecard));
 
