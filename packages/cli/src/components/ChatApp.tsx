@@ -6,6 +6,7 @@ import { MessageList, type ChatMessage } from './MessageList.js';
 import { TaskList } from './TaskList.js';
 import { isSlashCommand, executeSlashCommand, type SlashContext } from '../commands/slash.js';
 import { resolveKeyAction } from '../keybindings.js';
+import { InputHistory } from '../input-history.js';
 import type { AgentEvent, AgentTask, RoutingDecision } from '@brainstorm/shared';
 
 interface ChatAppProps {
@@ -25,9 +26,22 @@ export function ChatApp({ strategy, modelCount, onSendMessage, onAbort }: ChatAp
   const [isProcessing, setIsProcessing] = useState(false);
   const [tasks, setTasks] = useState<AgentTask[]>([]);
   const [tokenCount, setTokenCount] = useState<{ input: number; output: number }>({ input: 0, output: 0 });
+  const [history] = useState(() => new InputHistory());
 
-  // Keybinding handler
+  // Keybinding handler + input history navigation
   useInput((inputChar, key) => {
+    // Up/Down arrow for input history
+    if (key.upArrow && !isProcessing) {
+      const prev = history.up(input);
+      if (prev !== null) setInput(prev);
+      return;
+    }
+    if (key.downArrow && !isProcessing) {
+      const next = history.down();
+      if (next !== null) setInput(next);
+      return;
+    }
+
     const action = resolveKeyAction(inputChar, key as any);
     if (!action) return;
 
@@ -63,6 +77,7 @@ export function ChatApp({ strategy, modelCount, onSendMessage, onAbort }: ChatAp
 
   const handleSubmit = useCallback(async (text: string) => {
     if (!text.trim() || isProcessing) return;
+    history.push(text.trim());
 
     // Handle slash commands
     if (isSlashCommand(text)) {
