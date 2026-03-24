@@ -14,6 +14,8 @@ export { gitCommitTool } from './builtin/git-commit.js';
 export { checkGitSafety, formatViolations, hasHardBlock, type GitSafetyViolation } from './builtin/git-safety.js';
 export { ghPrTool } from './builtin/gh-pr.js';
 export { ghIssueTool } from './builtin/gh-issue.js';
+export { gitBranchTool } from './builtin/git-branch.js';
+export { gitStashTool } from './builtin/git-stash.js';
 export { listDirTool } from './builtin/list-dir.js';
 export { multiEditTool } from './builtin/multi-edit.js';
 export { batchEditTool } from './builtin/batch-edit.js';
@@ -35,6 +37,8 @@ import { gitLogTool } from './builtin/git-log.js';
 import { gitCommitTool } from './builtin/git-commit.js';
 import { ghPrTool } from './builtin/gh-pr.js';
 import { ghIssueTool } from './builtin/gh-issue.js';
+import { gitBranchTool } from './builtin/git-branch.js';
+import { gitStashTool } from './builtin/git-stash.js';
 import { listDirTool } from './builtin/list-dir.js';
 import { multiEditTool } from './builtin/multi-edit.js';
 import { batchEditTool } from './builtin/batch-edit.js';
@@ -58,11 +62,13 @@ export function createDefaultToolRegistry(): ToolRegistry {
   registry.register(shellTool);
   registry.register(processSpawnTool);
   registry.register(processKillTool);
-  // Git (4)
+  // Git (6)
   registry.register(gitStatusTool);
   registry.register(gitDiffTool);
   registry.register(gitLogTool);
   registry.register(gitCommitTool);
+  registry.register(gitBranchTool);
+  registry.register(gitStashTool);
   // GitHub (2)
   registry.register(ghPrTool);
   registry.register(ghIssueTool);
