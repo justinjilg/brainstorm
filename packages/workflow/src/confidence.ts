@@ -1,6 +1,14 @@
-import type { Artifact, WorkflowStepDef } from '@brainstorm/shared';
+import type { Artifact, WorkflowStepDef, ModelEntry } from '@brainstorm/shared';
 
 export type EscalationAction = 'continue' | 'retry' | 'pause';
+
+export interface ModelEscalation {
+  action: EscalationAction;
+  /** If action is 'retry', the model to escalate to (higher capability). */
+  escalateToModelId?: string;
+  /** Reason for escalation. */
+  reason: string;
+}
 
 /**
  * Extract confidence from an artifact.
@@ -74,4 +82,50 @@ export function isReviewApproved(artifact: Artifact): boolean {
   if (text.includes('issues found') || text.includes('critical')) return false;
 
   return true; // default to approved if unclear
+}
+
+/**
+ * Determine cross-model escalation when a step's confidence is too low.
+ *
+ * Given the current model and available models, find a more capable model
+ * to retry the step on. Uses quality tier as the primary escalation axis.
+ */
+export function determineModelEscalation(
+  confidence: number,
+  threshold: number,
+  currentModel: ModelEntry,
+  availableModels: ModelEntry[],
+  canRetry: boolean,
+): ModelEscalation {
+  const action = determineEscalation(confidence, threshold, canRetry);
+
+  if (action !== 'retry') {
+    return { action, reason: action === 'continue'
+      ? `Confidence ${(confidence * 100).toFixed(0)}% meets threshold`
+      : `Confidence ${(confidence * 100).toFixed(0)}% too low — pausing for user decision` };
+  }
+
+  // Find a more capable model (higher quality tier)
+  const betterModels = availableModels
+    .filter((m) =>
+      m.status === 'available' &&
+      m.id !== currentModel.id &&
+      m.capabilities.qualityTier < currentModel.capabilities.qualityTier, // lower tier = higher quality
+    )
+    .sort((a, b) => a.capabilities.qualityTier - b.capabilities.qualityTier);
+
+  if (betterModels.length === 0) {
+    // Already on the best available model — retry with same model
+    return {
+      action: 'retry',
+      reason: `Confidence ${(confidence * 100).toFixed(0)}% below threshold — retrying on same model (no higher-quality model available)`,
+    };
+  }
+
+  const escalateTarget = betterModels[0];
+  return {
+    action: 'retry',
+    escalateToModelId: escalateTarget.id,
+    reason: `Confidence ${(confidence * 100).toFixed(0)}% below threshold — escalating from ${currentModel.name} to ${escalateTarget.name}`,
+  };
 }
