@@ -11,6 +11,38 @@ import { renderMarkdownToString } from '../components/MarkdownRenderer.js';
 import { runInit } from '../init/index.js';
 import { runEvalCli, runProbe } from '@brainstorm/eval';
 import { createGatewayClient, formatGatewayFeedback } from '@brainstorm/gateway';
+import { MCPClientManager } from '@brainstorm/mcp';
+
+/**
+ * Auto-connect to BrainstormRouter MCP server when API key is set.
+ * Registers gateway tools (budget, memory, config, etc.) into the tool registry.
+ */
+async function connectGatewayMCP(tools: ReturnType<typeof createDefaultToolRegistry>): Promise<void> {
+  if (!process.env.BRAINSTORM_API_KEY) return;
+
+  const mcp = new MCPClientManager();
+  mcp.addServers([{
+    name: 'brainstormrouter',
+    transport: 'stdio',
+    url: 'brainstormrouter-mcp',
+    command: 'npx',
+    args: ['brainstormrouter-mcp'],
+    env: { BRAINSTORM_API_KEY: process.env.BRAINSTORM_API_KEY },
+    toolFilter: [
+      'br_get_ops_status', 'br_list_models', 'br_get_budget',
+      'br_get_memory', 'br_store_memory', 'br_query_memory',
+      'br_get_config', 'br_set_config', 'br_get_insights',
+    ],
+  }]);
+
+  const { connected, errors } = await mcp.connectAll(tools);
+  if (connected.length > 0) {
+    process.stderr.write(`[mcp] Connected to BrainstormRouter (${connected.length} servers)\n`);
+  }
+  for (const err of errors) {
+    process.stderr.write(`[mcp] ${err.name}: ${err.error}\n`);
+  }
+}
 
 const program = new Command();
 
@@ -68,7 +100,10 @@ routerCmd
         if (discovery.models) {
           console.log(`  Models:  ${discovery.models.available} available, ${discovery.models.runnable} runnable`);
         }
-      } catch { /* discovery not available */ }
+      } catch {
+        console.log('  Budget:  (discovery unavailable)');
+        console.log('  Models:  (discovery unavailable)');
+      }
       console.log();
     } catch (e: any) { console.error(`  Error: ${e.message}`); }
   });
@@ -526,6 +561,7 @@ program
     const registry = await createProviderRegistry(config);
     const costTracker = new CostTracker(db, config.budget);
     const tools = createDefaultToolRegistry();
+    await connectGatewayMCP(tools);
     const sessionManager = new SessionManager(db);
     const projectPath = process.cwd();
     const { prompt: systemPrompt, frontmatter } = buildSystemPrompt(projectPath);
@@ -554,6 +590,11 @@ program
         case 'tool-call-start':
           process.stderr.write(`\n[tool: ${event.toolName}]\n`);
           break;
+        case 'gateway-feedback': {
+          const gwLine = formatGatewayFeedback(event.feedback);
+          if (gwLine) process.stderr.write(`${gwLine}\n`);
+          break;
+        }
         case 'done':
           if (opts.json) {
             // Structured JSON output for CI/CD
@@ -707,6 +748,7 @@ program
     const registry = await createProviderRegistry(config);
     const costTracker = new CostTracker(db, config.budget);
     const tools = createDefaultToolRegistry();
+    await connectGatewayMCP(tools);
     const sessionManager = new SessionManager(db);
     const projectPath = process.cwd();
     const { prompt: systemPrompt, frontmatter } = buildSystemPrompt(projectPath);
@@ -757,6 +799,7 @@ program
         })) {
           if (event.type === 'routing') process.stderr.write(`[${event.decision.strategy} -> ${event.decision.model.name}] `);
           if (event.type === 'text-delta') { fullResponse += event.delta; process.stdout.write(event.delta); }
+          if (event.type === 'gateway-feedback') { const gw = formatGatewayFeedback(event.feedback); if (gw) process.stderr.write(`\n  ${gw}`); }
           if (event.type === 'done') process.stdout.write(`\n  [$${event.totalCost.toFixed(4)}]\n\n`);
           if (event.type === 'error') process.stdout.write(`\n  Error: ${event.error.message}\n\n`);
         }
