@@ -19,7 +19,7 @@ Turborepo monorepo with 12 TypeScript packages:
 - `packages/db` — better-sqlite3 persistence (sessions, messages, cost_records, agent_profiles, workflow_runs), auto-migrations
 - `packages/providers` — AI Gateway + BrainstormRouter SaaS (cloud) + Ollama/LM Studio/llama.cpp (local), auto-discovery with caching
 - `packages/router` — BrainstormRouter: heuristic task classifier, 4 routing strategies, CostTracker, fallback chain
-- `packages/tools` — 16 built-in tools (filesystem 7, shell 3, git 4, web 2) with permission levels + checkpoint system
+- `packages/tools` — 19 built-in tools (filesystem 7, shell 3, git 4, web 2, tasks 3) with permission levels + checkpoint system
 - `packages/core` — Agentic loop, SessionManager, PermissionManager, context compaction, @-mentions, skills, memory, plan mode, multimodal, security (path guard, credential scanner, .brainstormignore)
 - `packages/agents` — Agent profiles, NL parser, role prompts, Zod output schemas, TOML+SQLite merge
 - `packages/workflow` — Workflow engine state machine, context filtering, confidence/escalation, 4 preset workflows

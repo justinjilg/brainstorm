@@ -35,6 +35,7 @@ export function ChatApp({ strategy, modelCount, onSendMessage }: ChatAppProps) {
     setMessages((prev) => [...prev, { role: 'user', content: text.trim() }]);
     setIsProcessing(true);
     setStreamingText('');
+    setTasks([]);
 
     let fullResponse = '';
     let model: string | undefined;
