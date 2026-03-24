@@ -175,7 +175,7 @@ export async function* runAgentLoop(
       // Gateway headers not available (local models) — non-fatal
     }
 
-    yield { type: 'done', totalCost: costTracker.getSessionCost() };
+    yield { type: 'done', totalCost: costTracker.getSessionCost(), totalTokens: costTracker.getSessionTokens() };
   } catch (error: any) {
     // AbortError means the user cancelled — yield interrupted, not error
     if (error.name === 'AbortError' || options.signal?.aborted) {
