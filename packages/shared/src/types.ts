@@ -173,6 +173,16 @@ export interface GatewayFeedbackData {
   requestId?: string;
 }
 
+export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
+
+export interface AgentTask {
+  id: string;
+  description: string;
+  status: TaskStatus;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export type AgentEvent =
   | { type: 'routing'; decision: RoutingDecision }
   | { type: 'text-delta'; delta: string }
@@ -180,6 +190,8 @@ export type AgentEvent =
   | { type: 'tool-call-result'; toolName: string; result: unknown }
   | { type: 'step-complete'; text: string; toolCalls: unknown[] }
   | { type: 'gateway-feedback'; feedback: GatewayFeedbackData }
+  | { type: 'task-created'; task: AgentTask }
+  | { type: 'task-updated'; task: AgentTask }
   | { type: 'error'; error: Error }
   | { type: 'done'; totalCost: number };
 
