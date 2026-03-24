@@ -44,17 +44,18 @@ export const DEFAULT_KEYBINDINGS: KeyBinding[] = [
   {
     action: 'exit',
     description: 'Exit Brainstorm',
-    match: (input, key) => key.ctrl && input === 'd',
+    // Ink sends empty string for Ctrl+D when input is empty (standard EOF)
+    match: (input, key) => key.ctrl && (input === 'd' || input === ''),
   },
   {
     action: 'clear-screen',
     description: 'Clear terminal screen',
-    match: (input, key) => key.ctrl && input === 'l',
+    match: (input, key) => key.ctrl && (input === 'l' || input === '\f'),
   },
   {
     action: 'clear-chat',
     description: 'Clear conversation history',
-    match: (input, key) => key.ctrl && input === 'k',
+    match: (input, key) => key.ctrl && (input === 'k' || input === '\x0b'),
   },
   {
     action: 'cycle-mode',
