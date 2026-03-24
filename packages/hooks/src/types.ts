@@ -9,7 +9,9 @@ export type HookEvent =
   | 'SessionEnd'      // When a session ends
   | 'Stop'            // When the agent finishes responding
   | 'PreCompact'      // Before context compaction
-  | 'PreCommit';      // Before a git commit
+  | 'PreCommit'       // Before a git commit
+  | 'SubagentStart'   // When a subagent is spawned
+  | 'SubagentStop';   // When a subagent completes (or is terminated)
 
 export type HookType = 'command' | 'prompt';
 
