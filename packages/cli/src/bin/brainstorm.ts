@@ -131,12 +131,16 @@ program
   .option('--model <id>', 'Model to evaluate (e.g., anthropic/claude-sonnet-4-6)')
   .option('--capability <dim>', 'Run only probes for this dimension')
   .option('--compare', 'Compare results across all previously evaluated models')
+  .option('--scorecard', 'Show current capability scores without re-running probes')
+  .option('--all-models', 'Run probes against every available model')
   .option('--timeout <ms>', 'Timeout per probe in milliseconds', '30000')
-  .action(async (opts: { model?: string; capability?: string; compare?: boolean; timeout?: string }) => {
+  .action(async (opts: { model?: string; capability?: string; compare?: boolean; scorecard?: boolean; allModels?: boolean; timeout?: string }) => {
     await runEvalCli({
       model: opts.model,
       capability: opts.capability,
       compare: opts.compare,
+      scorecard: opts.scorecard,
+      allModels: opts.allModels,
       timeout: parseInt(opts.timeout ?? '30000'),
     });
   });
@@ -1007,7 +1011,8 @@ program
   .option('--resume <id>', 'Resume a specific session by ID')
   .option('--fork <id>', 'Fork a session (copy history, new session)')
   .option('--lfg', 'Full auto mode — skip all permission confirmations')
-  .action(async (opts: { simple?: boolean; continue?: boolean; resume?: string; fork?: string; lfg?: boolean }) => {
+  .option('--strategy <name>', 'Routing strategy: cost-first, quality-first, combined, capability')
+  .action(async (opts: { simple?: boolean; continue?: boolean; resume?: string; fork?: string; lfg?: boolean; strategy?: string }) => {
     const config = loadConfig();
 
     // --lfg: full auto mode, skip all permission confirmations
@@ -1037,6 +1042,7 @@ program
     let { prompt: systemPrompt, frontmatter } = buildSystemPrompt(projectPath, currentOutputStyle);
     systemPrompt += buildToolAwarenessSection(tools.listTools());
     const router = new BrainstormRouter(config, registry, costTracker, frontmatter);
+    if (opts.strategy) router.setStrategy(opts.strategy as any);
 
     // Register the subagent tool (model can spawn focused subagents)
     const subagentTool = createSubagentTool({

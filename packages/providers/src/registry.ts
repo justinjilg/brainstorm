@@ -172,6 +172,14 @@ export async function createProviderRegistry(
       const { models: refreshedLocal } = await discoverLocalModels(config.providers);
       const cloudAndSaas = allModels.filter((m) => !m.isLocal);
       allModels = [...cloudAndSaas, ...refreshedLocal];
+      // Re-apply eval capability scores (may have been updated by brainstorm eval)
+      const freshScores = loadEvalCapabilityScores();
+      for (const [modelId, entry] of Object.entries(freshScores)) {
+        const model = allModels.find((m) => m.id === modelId);
+        if (model) {
+          model.capabilities.capabilityScores = entry.scores;
+        }
+      }
       registry.models = allModels;
     },
   };

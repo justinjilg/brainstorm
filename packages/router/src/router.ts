@@ -39,6 +39,23 @@ export class BrainstormRouter {
       log.warn('Learned routing strategy not yet available — using combined strategy');
     }
     this.projectHints = stormFrontmatter?.routing;
+
+    // Auto-activate capability strategy when eval data exists
+    this.autoSelectStrategy();
+  }
+
+  /**
+   * If any model in the registry has capability scores from eval,
+   * auto-switch to capability strategy (unless user explicitly set something else).
+   */
+  autoSelectStrategy(): void {
+    const hasEvalData = this.registry.models.some(
+      (m) => m.capabilities.capabilityScores !== undefined,
+    );
+    if (hasEvalData && this.activeStrategy === 'combined') {
+      this.activeStrategy = 'capability';
+      log.info('Auto-activated capability strategy (eval data available)');
+    }
   }
 
   classify(message: string, context?: { fileCount?: number; hasErrors?: boolean }): TaskProfile {

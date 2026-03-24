@@ -7,6 +7,7 @@
     "lint": "turbo run lint",
     "test": "turbo run test",
     "test:dogfood": "npx tsx tests/dogfood/run-dogfood.ts",
+    "test:workflow": "npx tsx tests/workflow-demo/run-demo.ts",
     "typecheck": "turbo run typecheck"
   },
   "devDependencies": {
