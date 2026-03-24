@@ -8,3 +8,5 @@ export { loadSkills, findSkill, type SkillDefinition } from './skills/loader.js'
 export { MemoryManager, type MemoryEntry } from './memory/manager.js';
 export { getPlanModeTools, getPlanModePrompt } from './plan/mode.js';
 export { readMultimodalFile, isImageFile, isPdfFile, requiresVisionModel, type MultimodalContent } from './multimodal/reader.js';
+export { loadIgnorePatterns, isIgnored } from './security/ignore.js';
+export { scanForCredentials, redactCredentials, type ScanResult } from './security/secret-scanner.js';
