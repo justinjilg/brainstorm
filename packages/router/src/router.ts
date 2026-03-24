@@ -52,7 +52,7 @@ export class BrainstormRouter {
     const hasEvalData = this.registry.models.some(
       (m) => m.capabilities.capabilityScores !== undefined,
     );
-    if (hasEvalData && this.activeStrategy === this.config.general.defaultStrategy) {
+    if (hasEvalData && this.activeStrategy === 'combined') {
       this.activeStrategy = 'capability';
       log.info('Auto-activated capability strategy (eval data available)');
     }

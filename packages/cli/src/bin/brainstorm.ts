@@ -131,12 +131,16 @@ program
   .option('--model <id>', 'Model to evaluate (e.g., anthropic/claude-sonnet-4-6)')
   .option('--capability <dim>', 'Run only probes for this dimension')
   .option('--compare', 'Compare results across all previously evaluated models')
+  .option('--scorecard', 'Show current capability scores without re-running probes')
+  .option('--all-models', 'Run probes against every available model')
   .option('--timeout <ms>', 'Timeout per probe in milliseconds', '30000')
-  .action(async (opts: { model?: string; capability?: string; compare?: boolean; timeout?: string }) => {
+  .action(async (opts: { model?: string; capability?: string; compare?: boolean; scorecard?: boolean; allModels?: boolean; timeout?: string }) => {
     await runEvalCli({
       model: opts.model,
       capability: opts.capability,
       compare: opts.compare,
+      scorecard: opts.scorecard,
+      allModels: opts.allModels,
       timeout: parseInt(opts.timeout ?? '30000'),
     });
   });
