@@ -1,5 +1,8 @@
 import type { BrainstormConfig } from '@brainstorm/config';
-import type { ModelEntry } from '@brainstorm/shared';
+import type { ModelEntry, CapabilityScores } from '@brainstorm/shared';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
 import { createOllamaProvider } from './local/ollama.js';
 import { createLMStudioProvider, createLlamaCppProvider } from './local/openai-compat.js';
 import { discoverLocalModels } from './local/discovery.js';
@@ -103,6 +106,15 @@ export async function createProviderRegistry(config: BrainstormConfig): Promise<
     }
   }
 
+  // Overlay eval-derived capability scores (from `brainstorm eval`)
+  const evalScores = loadEvalCapabilityScores();
+  for (const [modelId, entry] of Object.entries(evalScores)) {
+    const model = allModels.find((m) => m.id === modelId);
+    if (model) {
+      model.capabilities.capabilityScores = entry.scores;
+    }
+  }
+
   const registry: ProviderRegistry = {
     models: allModels,
     hasBrainstormSaaS,
@@ -146,4 +158,19 @@ export async function createProviderRegistry(config: BrainstormConfig): Promise<
   };
 
   return registry;
+}
+
+/**
+ * Load eval-derived capability scores from ~/.brainstorm/eval/capability-scores.json.
+ * These are written by `brainstorm eval` via @brainstorm/eval's exportCapabilityScores().
+ * Reading directly avoids a circular dependency (eval → providers → eval).
+ */
+function loadEvalCapabilityScores(): Record<string, { scores: CapabilityScores; evaluatedAt: number }> {
+  const scoresPath = join(homedir(), '.brainstorm', 'eval', 'capability-scores.json');
+  if (!existsSync(scoresPath)) return {};
+  try {
+    return JSON.parse(readFileSync(scoresPath, 'utf-8'));
+  } catch {
+    return {};
+  }
 }
