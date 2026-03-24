@@ -1,4 +1,5 @@
 export { defineTool, type BrainstormToolDef } from './base.js';
+export { CheckpointManager } from './checkpoint.js';
 export { ToolRegistry } from './registry.js';
 export { fileReadTool } from './builtin/file-read.js';
 export { fileWriteTool } from './builtin/file-write.js';
