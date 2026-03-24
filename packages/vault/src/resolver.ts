@@ -6,12 +6,13 @@ export type PasswordPrompt = () => Promise<string>;
 
 /**
  * Key resolver — tries vault → 1Password → env vars in order.
- * Lazy unlock: prompts for vault password on first access, not at startup.
+ * Lazy unlock: prompts for vault password on first access that needs a key.
+ * Re-prompts on next access if the previous attempt failed (wrong password).
  */
 export class KeyResolver {
   private vault: BrainstormVault | null;
   private promptPassword: PasswordPrompt | null;
-  private unlockAttempted = false;
+  private unlockSucceeded = false;
 
   constructor(vault: BrainstormVault | null, promptPassword?: PasswordPrompt) {
     this.vault = vault;
@@ -20,20 +21,21 @@ export class KeyResolver {
 
   /**
    * Get a key by name. Tries each backend in priority order:
-   * 1. Local encrypted vault (lazy unlock on first access)
+   * 1. Local encrypted vault (lazy unlock on first access; re-prompts on failure)
    * 2. 1Password CLI (if op available)
    * 3. Environment variables
    */
   async get(name: string): Promise<string | null> {
-    // 1. Vault — lazy unlock
+    // 1. Vault — lazy unlock (re-prompts if previous attempt failed)
     if (this.vault?.exists()) {
-      if (!this.vault.isOpen() && !this.unlockAttempted && this.promptPassword) {
-        this.unlockAttempted = true;
+      if (!this.vault.isOpen() && !this.unlockSucceeded && this.promptPassword) {
         try {
           const password = await this.promptPassword();
           this.vault.open(password);
+          this.unlockSucceeded = true;
         } catch {
-          // Wrong password or user cancelled — fall through to other backends
+          // Wrong password or user cancelled — fall through to other backends this time
+          // Will re-prompt on the next get() call
         }
       }
       if (this.vault.isOpen()) {
@@ -42,7 +44,7 @@ export class KeyResolver {
       }
     }
 
-    // 2. 1Password CLI
+    // 2. 1Password CLI (cached availability check)
     if (isOpAvailable()) {
       const value = opRead(name);
       if (value) return value;
@@ -56,8 +58,11 @@ export class KeyResolver {
   async getRequired(name: string): Promise<string> {
     const value = await this.get(name);
     if (!value) {
-      const sources = ['vault', isOpAvailable() ? '1Password' : null, 'environment'].filter(Boolean).join(', ');
-      throw new Error(`Key "${name}" not found in ${sources}`);
+      const sources: string[] = [];
+      if (this.vault?.exists()) sources.push('vault');
+      if (isOpAvailable()) sources.push('1Password');
+      sources.push('environment');
+      throw new Error(`Key "${name}" not found in ${sources.join(', ')}`);
     }
     return value;
   }
