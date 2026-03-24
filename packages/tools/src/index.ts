@@ -11,6 +11,7 @@ export { gitStatusTool } from './builtin/git-status.js';
 export { gitDiffTool } from './builtin/git-diff.js';
 export { gitLogTool } from './builtin/git-log.js';
 export { gitCommitTool } from './builtin/git-commit.js';
+export { checkGitSafety, formatViolations, hasHardBlock, type GitSafetyViolation } from './builtin/git-safety.js';
 export { listDirTool } from './builtin/list-dir.js';
 export { multiEditTool } from './builtin/multi-edit.js';
 export { batchEditTool } from './builtin/batch-edit.js';
