@@ -41,6 +41,8 @@ export interface AgentLoopOptions {
   maxSteps?: number;
   /** Context compaction support. If provided, compaction is checked before each LLM call. */
   compaction?: CompactionCallbacks;
+  /** AbortSignal to cancel in-flight LLM calls and tool executions. */
+  signal?: AbortSignal;
 }
 
 // Task types that should NOT get tools (pure text generation)
@@ -109,6 +111,7 @@ export async function* runAgentLoop(
       messages: messages as any,
       ...(shouldUseTools ? { tools: tools.toAISDKTools() } : {}),
       ...(metadataHeader ? { headers: { 'x-br-metadata': metadataHeader } } : {}),
+      ...(options.signal ? { abortSignal: options.signal } : {}),
       stopWhen: stepCountIs(shouldUseTools ? (options.maxSteps ?? config.general.maxSteps) : 1),
       onStepFinish: async ({ usage }: any) => {
         if (usage) {
@@ -142,6 +145,11 @@ export async function* runAgentLoop(
         while (taskEventQueue.length > 0) {
           yield taskEventQueue.shift()!;
         }
+        // Check for abort between tool executions
+        if (options.signal?.aborted) {
+          yield { type: 'interrupted' };
+          return;
+        }
       }
     }
 
@@ -169,8 +177,13 @@ export async function* runAgentLoop(
 
     yield { type: 'done', totalCost: costTracker.getSessionCost() };
   } catch (error: any) {
-    router.recordFailure(decision.model.id, error.message);
-    yield { type: 'error', error };
+    // AbortError means the user cancelled — yield interrupted, not error
+    if (error.name === 'AbortError' || options.signal?.aborted) {
+      yield { type: 'interrupted' };
+    } else {
+      router.recordFailure(decision.model.id, error.message);
+      yield { type: 'error', error };
+    }
   } finally {
     setTaskEventHandler(null);
   }
