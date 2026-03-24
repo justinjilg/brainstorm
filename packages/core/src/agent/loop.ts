@@ -23,6 +23,8 @@ export interface AgentLoopOptions {
   projectPath: string;
   systemPrompt: string;
   disableTools?: boolean;
+  /** Override model selection — bypass the router. Used by cross-model workflows. */
+  preferredModelId?: string;
 }
 
 // Task types that should NOT get tools (pure text generation)
@@ -39,7 +41,9 @@ export async function* runAgentLoop(
   const userText = lastUserMsg?.content ?? '';
 
   const task = router.classify(userText);
-  const decision = router.route(task);
+  const decision = options.preferredModelId
+    ? { ...router.route(task), model: options.registry.getModel(options.preferredModelId) ?? router.route(task).model, reason: `Cross-model workflow override: ${options.preferredModelId}` }
+    : router.route(task);
 
   yield { type: 'routing', decision };
 
