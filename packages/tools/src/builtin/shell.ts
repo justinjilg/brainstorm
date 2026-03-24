@@ -18,6 +18,28 @@ export function configureSandbox(level: SandboxLevel, projectPath?: string): voi
   currentProjectPath = projectPath;
 }
 
+// ── Background Task Management ──────────────────────────────────────
+
+interface BackgroundTask {
+  id: string;
+  command: string;
+  startedAt: number;
+}
+
+const backgroundTasks = new Map<string, BackgroundTask>();
+let nextTaskId = 0;
+let backgroundEventHandler: ((event: { taskId: string; command: string; exitCode: number; stdout: string; stderr: string }) => void) | null = null;
+
+/** Set a callback for background task completion events. */
+export function setBackgroundEventHandler(handler: typeof backgroundEventHandler): void {
+  backgroundEventHandler = handler;
+}
+
+/** Get list of currently running background tasks. */
+export function getBackgroundTasks(): BackgroundTask[] {
+  return Array.from(backgroundTasks.values());
+}
+
 /**
  * Collect output with head+tail truncation.
  * Keeps the first HEAD_BYTES and last TAIL_BYTES of output,
@@ -73,8 +95,9 @@ export const shellTool = defineTool({
     command: z.string().describe('The command to execute (passed to /bin/sh -c)'),
     cwd: z.string().optional().describe('Working directory for the command'),
     timeout: z.number().optional().describe(`Timeout in milliseconds (default ${DEFAULT_TIMEOUT})`),
+    background: z.boolean().optional().describe('Run in background. Returns immediately with a task ID. You will be notified on completion.'),
   }),
-  async execute({ command, cwd, timeout }) {
+  async execute({ command, cwd, timeout, background }) {
     // Sandbox check — block dangerous commands based on configured level
     const sandboxResult = checkSandbox(command, currentSandboxLevel, currentProjectPath);
     if (!sandboxResult.allowed) {
@@ -97,6 +120,42 @@ export const shellTool = defineTool({
           blocked: true,
         };
       }
+    }
+
+    // Background mode: spawn detached and return immediately
+    if (background) {
+      const taskId = `bg-${nextTaskId++}`;
+      const child = spawn('/bin/sh', ['-c', command], {
+        cwd: cwd ?? process.cwd(),
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: true,
+      });
+
+      backgroundTasks.set(taskId, { id: taskId, command, startedAt: Date.now() });
+
+      // Collect output in background
+      const bgStdout = new OutputCollector();
+      const bgStderr = new OutputCollector();
+      child.stdout.setEncoding('utf-8');
+      child.stderr.setEncoding('utf-8');
+      child.stdout.on('data', (chunk: string) => bgStdout.append(chunk));
+      child.stderr.on('data', (chunk: string) => bgStderr.append(chunk));
+
+      child.on('close', (code) => {
+        backgroundTasks.delete(taskId);
+        if (backgroundEventHandler) {
+          backgroundEventHandler({
+            taskId,
+            command,
+            exitCode: code ?? 1,
+            stdout: bgStdout.toString(),
+            stderr: bgStderr.toString(),
+          });
+        }
+      });
+
+      child.unref(); // Allow parent process to exit independently
+      return { taskId, status: 'running', message: `Running in background (${taskId}). You will be notified on completion.` };
     }
 
     const timeoutMs = timeout ?? DEFAULT_TIMEOUT;
