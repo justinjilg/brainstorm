@@ -22,6 +22,7 @@
     "@brainstorm/router": "*",
     "@brainstorm/providers": "*",
     "@brainstorm/tools": "*",
+    "@brainstorm/gateway": "*",
     "ai": "^6"
   },
   "devDependencies": {
