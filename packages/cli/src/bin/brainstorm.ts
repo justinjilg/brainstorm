@@ -337,7 +337,9 @@ program
   .command('run')
   .description('Run a single prompt non-interactively')
   .argument('<prompt>', 'The prompt to send')
-  .action(async (prompt: string) => {
+  .option('--json', 'Output structured JSON (for CI/CD pipelines)')
+  .option('--pipe', 'Read from stdin if no prompt given')
+  .action(async (prompt: string, opts: { json?: boolean; pipe?: boolean }) => {
     const config = loadConfig();
     const db = getDb();
     const registry = await createProviderRegistry(config);
@@ -370,12 +372,26 @@ program
           process.stderr.write(`\n[tool: ${event.toolName}]\n`);
           break;
         case 'done':
-          // Render full response with markdown formatting
-          process.stdout.write(renderMarkdownToString(fullResponse));
-          process.stdout.write(`\n\n[cost: $${event.totalCost.toFixed(4)}]\n`);
+          if (opts.json) {
+            // Structured JSON output for CI/CD
+            process.stdout.write(JSON.stringify({
+              text: fullResponse,
+              model: (event as any).model ?? 'unknown',
+              cost: event.totalCost,
+              success: true,
+            }) + '\n');
+          } else {
+            process.stdout.write(renderMarkdownToString(fullResponse));
+            process.stdout.write(`\n\n[cost: $${event.totalCost.toFixed(4)}]\n`);
+          }
           break;
         case 'error':
-          process.stderr.write(`\nError: ${event.error.message}\n`);
+          if (opts.json) {
+            process.stdout.write(JSON.stringify({ text: '', error: event.error.message, success: false }) + '\n');
+            process.exit(1);
+          } else {
+            process.stderr.write(`\nError: ${event.error.message}\n`);
+          }
           break;
       }
     }
