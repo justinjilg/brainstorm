@@ -31,6 +31,10 @@ export interface SlashContext {
   compact?: () => Promise<void>;
   /** Exit the application */
   exit?: () => void;
+  /** Set output style */
+  setOutputStyle?: (style: string) => void;
+  /** Get current output style */
+  getOutputStyle?: () => string;
 }
 
 interface SlashCommand {
@@ -141,6 +145,23 @@ const commands: SlashCommand[] = [
       if (!ctx.compact) return 'Compaction not available.';
       await ctx.compact();
       return 'Context compacted.';
+    },
+  },
+  {
+    name: 'style',
+    aliases: [],
+    description: 'Switch output style',
+    usage: '/style [concise|detailed|learning]',
+    execute: (args, ctx) => {
+      const valid = ['concise', 'detailed', 'learning'];
+      if (!args) {
+        return `Current style: ${ctx.getOutputStyle?.() ?? 'concise'}. Options: ${valid.join(', ')}`;
+      }
+      if (!valid.includes(args)) {
+        return `Invalid style: ${args}. Options: ${valid.join(', ')}`;
+      }
+      ctx.setOutputStyle?.(args);
+      return `Output style: ${args}`;
     },
   },
   {

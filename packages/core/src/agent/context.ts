@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { INSIGHT_PROMPT_SECTION } from './insights.js';
+import { getOutputStylePrompt, type OutputStyle } from './output-styles.js';
 
 const DEFAULT_SYSTEM_PROMPT = `You are Brainstorm, an AI coding assistant with intelligent model routing. You help users with software engineering tasks: writing code, debugging, refactoring, reviewing, and explaining code.
 
@@ -68,8 +69,13 @@ export interface SystemPromptResult {
   frontmatter: StormFrontmatter | null;
 }
 
-export function buildSystemPrompt(projectPath: string): SystemPromptResult {
+export function buildSystemPrompt(projectPath: string, outputStyle?: OutputStyle): SystemPromptResult {
   const parts = [DEFAULT_SYSTEM_PROMPT];
+
+  // Inject output style instructions
+  if (outputStyle) {
+    parts.push('\n' + getOutputStylePrompt(outputStyle));
+  }
   let frontmatter: StormFrontmatter | null = null;
 
   // Project context from STORM.md (or BRAINSTORM.md)
