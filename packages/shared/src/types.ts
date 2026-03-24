@@ -191,6 +191,7 @@ export type AgentEvent =
   | { type: 'step-complete'; text: string; toolCalls: unknown[] }
   | { type: 'gateway-feedback'; feedback: GatewayFeedbackData }
   | { type: 'compaction'; removed: number; tokensBefore: number; tokensAfter: number }
+  | { type: 'tool-output-partial'; toolName: string; chunk: string }
   | { type: 'task-created'; task: AgentTask }
   | { type: 'task-updated'; task: AgentTask }
   | { type: 'error'; error: Error }

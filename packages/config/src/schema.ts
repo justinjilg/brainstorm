@@ -30,6 +30,13 @@ const compactionSchema = z.object({
   summarizeModel: z.string().optional(),
 });
 
+// ── Shell Config ─────────────────────────────────────────────────────
+
+const shellSchema = z.object({
+  defaultTimeout: z.number().default(120_000),
+  maxOutputBytes: z.number().default(50_000),
+});
+
 // ── Budget Config ────────────────────────────────────────────────────
 
 const budgetSchema = z.object({
@@ -153,6 +160,7 @@ const mcpSchema = z.object({
 export const brainstormConfigSchema = z.object({
   general: generalSchema.default({}),
   compaction: compactionSchema.default({}),
+  shell: shellSchema.default({}),
   budget: budgetSchema.default({}),
   providers: providersSchema.default({}),
   routing: z.object({
@@ -174,3 +182,4 @@ export type WorkflowConfig = z.infer<typeof workflowConfigSchema>;
 export type WorkflowStepConfig = z.infer<typeof workflowStepConfigSchema>;
 export type MCPServerConfigSchema = z.infer<typeof mcpServerSchema>;
 export type CompactionConfig = z.infer<typeof compactionSchema>;
+export type ShellConfig = z.infer<typeof shellSchema>;
