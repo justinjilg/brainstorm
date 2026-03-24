@@ -82,4 +82,17 @@ export class CostTracker {
       byModel: this.repo.recentByModel(),
     };
   }
+
+  /**
+   * Reconcile actual cost from gateway headers with local tracking.
+   * When the gateway reports the real cost, use it instead of our estimate.
+   */
+  reconcile(sessionId: string, actualCost: number): void {
+    // The gateway's actual cost supersedes our local estimate.
+    // For now, log the delta; full reconciliation in a future PR.
+    const delta = actualCost - this.sessionCost;
+    if (Math.abs(delta) > 0.001) {
+      this.sessionCost = actualCost;
+    }
+  }
 }

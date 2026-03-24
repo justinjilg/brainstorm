@@ -131,14 +131,17 @@ export interface GatewayAgentProfile {
 // ── Response Headers ─────────────────────────────────────────────────
 
 export interface GatewayFeedback {
-  budgetRemaining?: number;
-  guardianStatus?: string;
-  routingDecision?: string;
-  actualCost?: number;
-  cacheHit?: boolean;
-  complexityScore?: number;
-  selectedModel?: string;
-  requestId?: string;
+  guardianStatus?: string;        // X-BR-Guardian-Status
+  estimatedCost?: number;         // X-BR-Estimated-Cost
+  actualCost?: number;            // X-BR-Actual-Cost
+  efficiency?: number;            // X-BR-Efficiency
+  overheadMs?: number;            // X-BR-Guardian-Overhead-Ms
+  cacheHit?: string;              // X-BR-Cache
+  budgetRemaining?: number;       // X-BR-Budget-Remaining
+  selectedModel?: string;         // X-BR-Routed-Model
+  selectionMethod?: string;       // X-BR-Selection-Method
+  complexityScore?: number;       // X-BR-Complexity-Score
+  requestId?: string;             // X-Request-Id
 }
 
 // ── Discovery ────────────────────────────────────────────────────────
