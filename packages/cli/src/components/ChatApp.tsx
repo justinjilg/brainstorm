@@ -18,6 +18,7 @@ interface ChatAppProps {
   slashCallbacks?: {
     setModel?: (model: string) => void;
     setStrategy?: (strategy: string) => void;
+    getStrategy?: () => string;
     setMode?: (mode: string) => void;
     getMode?: () => string;
     setOutputStyle?: (style: string) => void;
@@ -87,6 +88,7 @@ export function ChatApp({ strategy, modelCount, onSendMessage, onAbort, slashCal
     },
     setModel: slashCallbacks?.setModel,
     setStrategy: slashCallbacks?.setStrategy,
+    getStrategy: slashCallbacks?.getStrategy,
     setMode: slashCallbacks?.setMode,
     getMode: slashCallbacks?.getMode,
     setOutputStyle: slashCallbacks?.setOutputStyle,

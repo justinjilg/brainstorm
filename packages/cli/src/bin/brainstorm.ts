@@ -1011,6 +1011,7 @@ program
     // Register the subagent tool (model can spawn focused subagents)
     const subagentTool = createSubagentTool({
       config, registry, router, costTracker, tools, projectPath,
+      permissionCheck: (name, perm) => permissionManager.check(name, perm),
     });
     tools.register(subagentTool);
 
@@ -1139,6 +1140,7 @@ program
         slashCallbacks: {
           setModel: (model: string) => { preferredModelId = model; },
           setStrategy: (s: string) => { router.setStrategy(s as any); },
+          getStrategy: () => router.getActiveStrategy(),
           setMode: (mode: string) => { permissionManager.setMode(mode as any); },
           getMode: () => permissionManager.getMode(),
           setOutputStyle: (style: string) => {
@@ -1153,8 +1155,14 @@ program
             return { remaining: Math.max(0, state.sessionLimit - state.sessionUsed), limit: state.sessionLimit };
           },
           compact: async () => {
+            // Use the current model's context window, or fall back to 128k
+            const models = router.getModels();
+            const activeModel = preferredModelId
+              ? models.find((m) => m.id === preferredModelId)
+              : models[0];
+            const contextWindow = activeModel?.limits?.contextWindow || 128_000;
             const cb = buildCompactionCallbacks(sessionManager);
-            await cb.compact({ contextWindow: 128_000 });
+            await cb.compact({ contextWindow });
           },
         },
       }),
