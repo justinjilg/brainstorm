@@ -4,7 +4,7 @@ import type { BrainstormConfig } from '@brainstorm/config';
 import type { ProviderRegistry } from '@brainstorm/providers';
 import { BrainstormRouter, CostTracker } from '@brainstorm/router';
 import type { ToolRegistry } from '@brainstorm/tools';
-import { setTaskEventHandler, clearTasks } from '@brainstorm/tools';
+import { setTaskEventHandler, clearTasks, setBackgroundEventHandler } from '@brainstorm/tools';
 import type { AgentEvent, GatewayFeedbackData } from '@brainstorm/shared';
 import { serializeRoutingMetadata } from '@brainstorm/shared';
 import { createStreamFilter } from './response-filter.js';
@@ -54,11 +54,23 @@ export async function* runAgentLoop(
 ): AsyncGenerator<AgentEvent> {
   const { router, costTracker, tools, config, sessionId, systemPrompt } = options;
 
-  // Reset task state and wire event handler for this invocation
+  // Reset task state and wire event handlers for this invocation
   clearTasks();
   const taskEventQueue: AgentEvent[] = [];
   setTaskEventHandler((type, task) => {
     taskEventQueue.push({ type, task } as AgentEvent);
+  });
+
+  // Wire background task completion events into the same queue
+  setBackgroundEventHandler((event) => {
+    taskEventQueue.push({
+      type: 'background-complete',
+      taskId: event.taskId,
+      command: event.command,
+      exitCode: event.exitCode,
+      stdout: event.stdout,
+      stderr: event.stderr,
+    } as AgentEvent);
   });
 
   // Classify from the last user message
@@ -200,5 +212,6 @@ export async function* runAgentLoop(
     }
   } finally {
     setTaskEventHandler(null);
+    // Keep background handler alive — background tasks outlive individual agent loop runs
   }
 }
