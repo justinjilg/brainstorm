@@ -36,11 +36,28 @@ export function buildAgentSystemPrompt(agent: AgentProfile, stepDescription?: st
     parts.push(`\nCurrent task: ${stepDescription}`);
   }
 
-  // Output format instructions
+  // Output format instructions — inject actual schema shape so the model knows the structure
   if (agent.outputFormat) {
     const schema = OUTPUT_SCHEMAS[agent.outputFormat];
     if (schema) {
-      parts.push(`\nYou MUST respond with valid JSON matching this structure. Include a "confidence" field (0.0 to 1.0) rating how confident you are in your output.`);
+      let schemaDesc: string;
+      try {
+        // Extract field names and types from Zod schema for human-readable description
+        const shape = (schema as any)._def?.shape?.() ?? (schema as any).shape;
+        if (shape) {
+          const fields = Object.keys(shape).map((k) => {
+            const field = shape[k];
+            const desc = field?._def?.description ?? field?.description ?? '';
+            return `  - ${k}: ${desc}`;
+          });
+          schemaDesc = `Required JSON fields:\n${fields.join('\n')}`;
+        } else {
+          schemaDesc = `Schema: ${agent.outputFormat}`;
+        }
+      } catch {
+        schemaDesc = `Schema: ${agent.outputFormat}`;
+      }
+      parts.push(`\nYou MUST respond with valid JSON matching this structure. Include a "confidence" field (0.0 to 1.0) rating how confident you are in your output.\n\n${schemaDesc}`);
     }
   }
 

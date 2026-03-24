@@ -1,6 +1,17 @@
 import { z } from 'zod';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { resolve, relative } from 'node:path';
 import { defineTool } from '../base.js';
+
+function ensureSafePath(filePath: string): string {
+  const cwd = process.cwd();
+  const resolved = resolve(cwd, filePath);
+  const rel = relative(cwd, resolved);
+  if (rel.startsWith('..') || rel.startsWith('/')) {
+    throw new Error(`Path traversal blocked: "${filePath}" escapes workspace`);
+  }
+  return resolved;
+}
 
 export const fileEditTool = defineTool({
   name: 'file_edit',
@@ -12,10 +23,13 @@ export const fileEditTool = defineTool({
     new_string: z.string().describe('The replacement string'),
   }),
   async execute({ path, old_string, new_string }) {
-    if (!existsSync(path)) {
+    let safePath: string;
+    try { safePath = ensureSafePath(path); } catch (e: any) { return { error: e.message }; }
+
+    if (!existsSync(safePath)) {
       return { error: `File not found: ${path}` };
     }
-    const content = readFileSync(path, 'utf-8');
+    const content = readFileSync(safePath, 'utf-8');
     const occurrences = content.split(old_string).length - 1;
 
     if (occurrences === 0) {
@@ -26,7 +40,7 @@ export const fileEditTool = defineTool({
     }
 
     const updated = content.replace(old_string, new_string);
-    writeFileSync(path, updated, 'utf-8');
+    writeFileSync(safePath, updated, 'utf-8');
     return { success: true, path };
   },
 });
