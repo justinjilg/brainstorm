@@ -1,4 +1,4 @@
-import { loadProjectContext } from '@brainstorm/config';
+import { loadStormFile, type StormFrontmatter } from '@brainstorm/config';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -13,13 +13,20 @@ When given a task:
 
 Be concise and direct. Write clean, idiomatic code. Follow existing patterns in the codebase.`;
 
-export function buildSystemPrompt(projectPath: string): string {
-  const parts = [DEFAULT_SYSTEM_PROMPT];
+export interface SystemPromptResult {
+  prompt: string;
+  frontmatter: StormFrontmatter | null;
+}
 
-  // Project context from BRAINSTORM.md
-  const projectContext = loadProjectContext(projectPath);
-  if (projectContext) {
-    parts.push(`\n## Project Context (from BRAINSTORM.md)\n\n${projectContext}`);
+export function buildSystemPrompt(projectPath: string): SystemPromptResult {
+  const parts = [DEFAULT_SYSTEM_PROMPT];
+  let frontmatter: StormFrontmatter | null = null;
+
+  // Project context from STORM.md (or BRAINSTORM.md)
+  const storm = loadStormFile(projectPath);
+  if (storm) {
+    frontmatter = storm.frontmatter;
+    parts.push(`\n## Project Context (from ${storm.source})\n\n${storm.body}`);
   }
 
   // Git context (if in a git repo)
@@ -28,7 +35,7 @@ export function buildSystemPrompt(projectPath: string): string {
     parts.push(`\n## Git Context\n\n${gitContext}`);
   }
 
-  return parts.join('\n');
+  return { prompt: parts.join('\n'), frontmatter };
 }
 
 function getGitContext(projectPath: string): string | null {

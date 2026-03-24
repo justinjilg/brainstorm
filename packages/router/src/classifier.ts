@@ -1,4 +1,8 @@
 import type { TaskProfile, TaskType, Complexity } from '@brainstorm/shared';
+import type { StormFrontmatter } from '@brainstorm/config';
+
+/** Routing hints from STORM.md frontmatter. */
+export type ProjectHints = StormFrontmatter['routing'];
 
 // Heuristic task classifier — no LLM call, instant, free
 
@@ -22,10 +26,14 @@ const COMPLEXITY_SIGNALS: Record<Complexity, { keywords: string[]; minLength: nu
   expert: { keywords: ['architecture', 'design system', 'migration', 'security audit', 'performance'], minLength: 500 },
 };
 
-export function classifyTask(message: string, context?: { fileCount?: number; hasErrors?: boolean; conversationLength?: number }): TaskProfile {
+export function classifyTask(
+  message: string,
+  context?: { fileCount?: number; hasErrors?: boolean; conversationLength?: number },
+  projectHints?: ProjectHints,
+): TaskProfile {
   const lower = message.toLowerCase();
-  const type = detectTaskType(lower);
-  const complexity = detectComplexity(lower, message.length, context);
+  const type = detectTaskType(lower, projectHints);
+  const complexity = detectComplexity(lower, message.length, context, projectHints);
 
   return {
     type,
@@ -38,7 +46,7 @@ export function classifyTask(message: string, context?: { fileCount?: number; ha
   };
 }
 
-function detectTaskType(lower: string): TaskType {
+function detectTaskType(lower: string, hints?: ProjectHints): TaskType {
   let bestType: TaskType = 'conversation';
   let bestScore = 0;
 
@@ -46,6 +54,10 @@ function detectTaskType(lower: string): TaskType {
     let score = 0;
     for (const signal of signals) {
       if (lower.includes(signal)) score++;
+    }
+    // Project hints boost: if STORM.md declares primary_tasks, give those a small edge
+    if (hints?.primary_tasks?.includes(type)) {
+      score += 0.5;
     }
     if (score > bestScore) {
       bestScore = score;
@@ -56,7 +68,12 @@ function detectTaskType(lower: string): TaskType {
   return bestType;
 }
 
-function detectComplexity(lower: string, length: number, context?: { fileCount?: number; hasErrors?: boolean; conversationLength?: number }): Complexity {
+function detectComplexity(
+  lower: string,
+  length: number,
+  context?: { fileCount?: number; hasErrors?: boolean; conversationLength?: number },
+  hints?: ProjectHints,
+): Complexity {
   // Check keyword signals first
   for (const [level, config] of Object.entries(COMPLEXITY_SIGNALS).reverse()) {
     for (const keyword of config.keywords) {
@@ -69,6 +86,10 @@ function detectComplexity(lower: string, length: number, context?: { fileCount?:
   if (fileCount > 5 || length > 500) return 'complex';
   if (fileCount > 2 || length > 200) return 'moderate';
   if (length > 50) return 'simple';
+
+  // When signals are ambiguous, use project's typical complexity as prior
+  if (hints?.typical_complexity) return hints.typical_complexity;
+
   return 'trivial';
 }
 

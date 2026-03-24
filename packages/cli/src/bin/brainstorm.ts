@@ -8,6 +8,7 @@ import { runAgentLoop, buildSystemPrompt, SessionManager } from '@brainstorm/cor
 import { AgentManager, parseAgentNL } from '@brainstorm/agents';
 import { runWorkflow, getPresetWorkflow, autoSelectPreset, PRESET_WORKFLOWS } from '@brainstorm/workflow';
 import { renderMarkdownToString } from '../components/MarkdownRenderer.js';
+import { runInit } from '../init/index.js';
 
 const program = new Command();
 
@@ -15,6 +16,15 @@ program
   .name('brainstorm')
   .description('AI coding assistant with intelligent model routing')
   .version('0.1.0');
+
+program
+  .command('init')
+  .description('Initialize project for AI-assisted development')
+  .option('--yes', 'Use defaults, skip prompts')
+  .option('--force', 'Overwrite existing files')
+  .action(async (opts: { yes?: boolean; force?: boolean }) => {
+    await runInit(process.cwd(), opts);
+  });
 
 program
   .command('models')
@@ -349,7 +359,7 @@ program
     const sessionManager = new SessionManager(db);
     const projectPath = process.cwd();
     const session = sessionManager.start(projectPath);
-    const systemPrompt = buildSystemPrompt(projectPath);
+    const { prompt: systemPrompt } = buildSystemPrompt(projectPath);
 
     sessionManager.addUserMessage(prompt);
 
@@ -461,7 +471,7 @@ program
       session = sessionManager.start(projectPath);
     }
 
-    const systemPrompt = buildSystemPrompt(projectPath);
+    const { prompt: systemPrompt } = buildSystemPrompt(projectPath);
 
     const localCount = registry.models.filter((m) => m.isLocal).length;
     const cloudCount = registry.models.filter((m) => !m.isLocal).length;
