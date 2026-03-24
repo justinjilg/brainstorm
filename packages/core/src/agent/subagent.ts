@@ -95,6 +95,8 @@ export interface SubagentOptions {
   budgetLimit?: number;
   /** Optional hook callback for SubagentStart/SubagentStop events. */
   onHook?: SubagentHookFn;
+  /** Permission check — when provided, subagent tools are gated by this function. */
+  permissionCheck?: (toolName: string, toolPermission: any) => 'allow' | 'confirm' | 'deny';
 }
 
 export interface SubagentResult {
@@ -135,10 +137,13 @@ export async function spawnSubagent(
   const systemPrompt = options.systemPrompt ?? typeConfig.systemPrompt;
   const maxSteps = options.maxSteps ?? typeConfig.defaultMaxSteps;
 
-  // Filter tools based on subagent type
-  const filteredTools = typeConfig.allowedTools === 'all'
-    ? tools.toAISDKTools()
+  // Filter tools based on subagent type, with permission gating if available
+  const baseTools = typeConfig.allowedTools === 'all'
+    ? (options.permissionCheck
+      ? tools.toAISDKToolsWithPermissions(options.permissionCheck)
+      : tools.toAISDKTools())
     : tools.toAISDKToolsFiltered(typeConfig.allowedTools);
+  const filteredTools = baseTools;
 
   const subagentSessionId = `subagent-${type}-${Date.now()}`;
   const budgetLimit = options.budgetLimit ?? costTracker.getSubagentBudget();
