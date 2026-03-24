@@ -5,6 +5,7 @@ import { StatusBar } from './StatusBar.js';
 import { MessageList, type ChatMessage } from './MessageList.js';
 import { TaskList } from './TaskList.js';
 import { isSlashCommand, executeSlashCommand, type SlashContext } from '../commands/slash.js';
+import { resolveKeyAction } from '../keybindings.js';
 import type { AgentEvent, AgentTask, RoutingDecision } from '@brainstorm/shared';
 
 interface ChatAppProps {
@@ -25,10 +26,28 @@ export function ChatApp({ strategy, modelCount, onSendMessage, onAbort }: ChatAp
   const [tasks, setTasks] = useState<AgentTask[]>([]);
   const [tokenCount, setTokenCount] = useState<{ input: number; output: number }>({ input: 0, output: 0 });
 
-  // Escape key aborts current operation
-  useInput((_input, key) => {
-    if (key.escape && isProcessing && onAbort) {
-      onAbort();
+  // Keybinding handler
+  useInput((inputChar, key) => {
+    const action = resolveKeyAction(inputChar, key as any);
+    if (!action) return;
+
+    switch (action) {
+      case 'abort':
+        if (isProcessing && onAbort) onAbort();
+        break;
+      case 'exit':
+        exit();
+        break;
+      case 'clear-screen':
+        process.stdout.write('\x1B[2J\x1B[0f');
+        break;
+      case 'clear-chat':
+        setMessages([]);
+        setStreamingText(undefined);
+        break;
+      case 'cycle-mode':
+        // Mode cycling would be wired when mode state is lifted to this level
+        break;
     }
   });
 
