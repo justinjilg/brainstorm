@@ -7,6 +7,7 @@ import { costFirstStrategy } from './strategies/cost-first.js';
 import { qualityFirstStrategy } from './strategies/quality-first.js';
 import { createRuleBasedStrategy } from './strategies/rule-based.js';
 import { createCombinedStrategy } from './strategies/combined.js';
+import { capabilityStrategy } from './strategies/capability.js';
 import type { RoutingStrategy } from './strategies/types.js';
 import type { CostTracker } from './cost-tracker.js';
 
@@ -31,6 +32,7 @@ export class BrainstormRouter {
       'quality-first': qualityFirstStrategy,
       'rule-based': createRuleBasedStrategy(config.routing.rules),
       'combined': combined,
+      'capability': capabilityStrategy,
       'learned': combined, // Falls back to combined until ONNX model is available
     };
     if (this.activeStrategy === 'learned') {
