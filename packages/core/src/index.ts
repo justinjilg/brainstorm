@@ -11,3 +11,4 @@ export { readMultimodalFile, isImageFile, isPdfFile, requiresVisionModel, type M
 export { loadIgnorePatterns, isIgnored } from './security/ignore.js';
 export { scanForCredentials, redactCredentials, type ScanResult } from './security/secret-scanner.js';
 export { resolveSafe, isWithinWorkspace, PathTraversalError } from './security/path-guard.js';
+export { filterResponse, createStreamFilter } from './agent/response-filter.js';
