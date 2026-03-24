@@ -1,4 +1,4 @@
-import { loadStormFile, type StormFrontmatter } from '@brainstorm/config';
+import { loadStormFile, loadHierarchicalStormFiles, type StormFrontmatter } from '@brainstorm/config';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -78,11 +78,11 @@ export function buildSystemPrompt(projectPath: string, outputStyle?: OutputStyle
   }
   let frontmatter: StormFrontmatter | null = null;
 
-  // Project context from STORM.md (or BRAINSTORM.md)
-  const storm = loadStormFile(projectPath);
-  if (storm) {
+  // Project context from STORM.md / BRAINSTORM.md (hierarchical: global → root → ... → cwd)
+  const storm = loadHierarchicalStormFiles(projectPath);
+  if (storm.sources.length > 0) {
     frontmatter = storm.frontmatter;
-    parts.push(`\n## Project Context (from ${storm.source})\n\n${storm.body}`);
+    parts.push(`\n## Project Context (from ${storm.sources.join(', ')})\n\n${storm.body}`);
 
     // Extract actionable sections for stronger emphasis
     const verifyCommands = extractVerificationCommands(storm.frontmatter, storm.body);
