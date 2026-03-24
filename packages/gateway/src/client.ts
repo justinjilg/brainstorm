@@ -41,17 +41,17 @@ export class BrainstormGateway {
 
   async listModels(): Promise<GatewayModel[]> {
     const data = await this.get('/v1/models');
-    return data.data ?? data.models ?? data;
+    return unwrapArray(data, 'data', 'models');
   }
 
   async getRunnableModels(): Promise<GatewayModel[]> {
     const data = await this.get('/v1/catalog/runnable');
-    return data.data ?? data.models ?? data;
+    return unwrapArray(data, 'data', 'models');
   }
 
   async getLeaderboard(): Promise<ModelLeaderboardEntry[]> {
     const data = await this.get('/v1/models/leaderboard');
-    return data.data ?? data.rankings ?? data;
+    return unwrapArray(data, 'data', 'rankings');
   }
 
   async setAlias(alias: string, modelId: string): Promise<void> {
@@ -62,7 +62,7 @@ export class BrainstormGateway {
 
   async listKeys(): Promise<ApiKey[]> {
     const data = await this.get('/v1/api-keys', true);
-    return Array.isArray(data) ? data : data.keys ?? data.data ?? [];
+    return unwrapArray(data, 'keys', 'data');
   }
 
   async createKey(opts: CreateKeyOptions): Promise<ApiKey & { key: string }> {
@@ -97,7 +97,7 @@ export class BrainstormGateway {
 
   async getDailyInsights(): Promise<DailyInsights[]> {
     const data = await this.get('/v1/insights/daily');
-    return data.data ?? data.insights ?? data;
+    return unwrapArray(data, 'data', 'insights');
   }
 
   async getWasteInsights(): Promise<WasteInsights> {
@@ -112,7 +112,7 @@ export class BrainstormGateway {
 
   async listAgentProfiles(): Promise<GatewayAgentProfile[]> {
     const data = await this.get('/v1/agent/profiles');
-    return data.data ?? data.profiles ?? data;
+    return unwrapArray(data, 'data', 'profiles');
   }
 
   // ── Memory ──────────────────────────────────────────────────────────
@@ -123,12 +123,12 @@ export class BrainstormGateway {
 
   async queryMemory(query: string): Promise<MemoryEntry[]> {
     const data = await this.post('/v1/memory/query', { query });
-    return data.results ?? data.entries ?? data;
+    return unwrapArray(data, 'results', 'entries');
   }
 
   async listMemory(): Promise<MemoryEntry[]> {
     const data = await this.get('/v1/memory/entries');
-    return data.data ?? data.entries ?? data;
+    return unwrapArray(data, 'data', 'entries');
   }
 
   // ── Governance ──────────────────────────────────────────────────────
@@ -140,7 +140,7 @@ export class BrainstormGateway {
   async getCompletionAudit(since?: string): Promise<AuditEntry[]> {
     const params = since ? `?since=${since}` : '';
     const data = await this.get(`/v1/governance/completion-audit${params}`);
-    return data.data ?? data.entries ?? data;
+    return unwrapArray(data, 'data', 'entries');
   }
 
   // ── Capability Sync ─────────────────────────────────────────────────
@@ -206,9 +206,20 @@ export class BrainstormGateway {
           ...(body ? { 'Content-Type': 'application/json' } : {}),
         },
         ...(body ? { body: JSON.stringify(body) } : {}),
+        signal: AbortSignal.timeout(15_000),
       });
 
-      const data = await response.json() as any;
+      // Parse body safely — handle non-JSON error responses (502, 504, HTML pages)
+      const text = await response.text();
+      let data: any;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        const preview = text.slice(0, 200).replace(/\n/g, ' ');
+        const msg = `HTTP ${response.status}: non-JSON response (${preview})`;
+        log.warn({ method, path, status: response.status }, msg);
+        throw new Error(`Gateway ${method} ${path}: ${msg}`);
+      }
 
       if (!response.ok) {
         const msg = data?.error?.message ?? `HTTP ${response.status}`;
@@ -219,10 +230,25 @@ export class BrainstormGateway {
       return data;
     } catch (error: any) {
       if (error.message?.startsWith('Gateway ')) throw error;
-      log.warn({ method, path, err: error }, 'Gateway request error');
+      if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+        throw new Error(`Gateway ${method} ${path}: request timed out after 15s`);
+      }
+      log.warn({ method, path, errorMessage: error.message }, 'Gateway request error');
       throw new Error(`Gateway ${method} ${path}: ${error.message}`);
     }
   }
+}
+
+/**
+ * Safely unwrap an API response array from various envelope shapes.
+ * Throws if the result is not an array (catches API errors masquerading as data).
+ */
+function unwrapArray(data: any, ...keys: string[]): any[] {
+  for (const key of keys) {
+    if (Array.isArray(data?.[key])) return data[key];
+  }
+  if (Array.isArray(data)) return data;
+  return [];
 }
 
 /**
