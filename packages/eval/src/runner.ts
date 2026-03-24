@@ -20,6 +20,8 @@ export interface RunnerOptions {
   projectDir?: string;
   /** Timeout per probe in ms (default: 30000) */
   defaultTimeout?: number;
+  /** Override max agentic steps per probe */
+  maxSteps?: number;
 }
 
 /**
@@ -65,6 +67,8 @@ export async function runProbe(probe: Probe, options: RunnerOptions = {}): Promi
       for await (const event of runAgentLoop(sessionManager.getHistory(), {
         config, registry, router, costTracker, tools,
         sessionId: session.id, projectPath: projectDir, systemPrompt,
+        ...(options.modelId && options.modelId !== 'default' ? { preferredModelId: options.modelId } : {}),
+        ...(options.maxSteps ? { maxSteps: options.maxSteps } : {}),
       })) {
         switch (event.type) {
           case 'text-delta':

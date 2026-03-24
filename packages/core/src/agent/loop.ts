@@ -25,6 +25,8 @@ export interface AgentLoopOptions {
   disableTools?: boolean;
   /** Override model selection — bypass the router. Used by cross-model workflows. */
   preferredModelId?: string;
+  /** Override max agentic steps (default: config.general.maxSteps). */
+  maxSteps?: number;
 }
 
 // Task types that should NOT get tools (pure text generation)
@@ -63,7 +65,7 @@ export async function* runAgentLoop(
       messages: messages as any,
       ...(shouldUseTools ? { tools: tools.toAISDKTools() } : {}),
       ...(metadataHeader ? { headers: { 'x-br-metadata': metadataHeader } } : {}),
-      stopWhen: stepCountIs(shouldUseTools ? config.general.maxSteps : 1),
+      stopWhen: stepCountIs(shouldUseTools ? (options.maxSteps ?? config.general.maxSteps) : 1),
       onStepFinish: async ({ usage }: any) => {
         if (usage) {
           costTracker.record({
