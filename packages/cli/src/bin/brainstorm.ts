@@ -7,6 +7,7 @@ import { createDefaultToolRegistry } from '@brainstorm/tools';
 import { runAgentLoop, buildSystemPrompt, SessionManager } from '@brainstorm/core';
 import { AgentManager, parseAgentNL } from '@brainstorm/agents';
 import { runWorkflow, getPresetWorkflow, autoSelectPreset, PRESET_WORKFLOWS } from '@brainstorm/workflow';
+import { renderMarkdownToString } from '../components/MarkdownRenderer.js';
 
 const program = new Command();
 
@@ -364,12 +365,13 @@ program
           break;
         case 'text-delta':
           fullResponse += event.delta;
-          process.stdout.write(event.delta);
           break;
         case 'tool-call-start':
           process.stderr.write(`\n[tool: ${event.toolName}]\n`);
           break;
         case 'done':
+          // Render full response with markdown formatting
+          process.stdout.write(renderMarkdownToString(fullResponse));
           process.stdout.write(`\n\n[cost: $${event.totalCost.toFixed(4)}]\n`);
           break;
         case 'error':
