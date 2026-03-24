@@ -80,6 +80,7 @@ const generalSchema = z.object({
   defaultPermissionMode: z.enum(['auto', 'confirm', 'plan']).default('confirm'),
   theme: z.enum(['dark', 'light']).default('dark'),
   maxSteps: z.number().default(10),
+  outputStyle: z.enum(['concise', 'detailed', 'learning']).default('concise'),
 });
 
 // ── Full Config ──────────────────────────────────────────────────────
