@@ -1,6 +1,6 @@
 import type { TaskProfile, ModelEntry, RoutingDecision, RoutingContext, StrategyName } from '@brainstorm/shared';
 import { createLogger } from '@brainstorm/shared';
-import type { BrainstormConfig } from '@brainstorm/config';
+import type { BrainstormConfig, StormFrontmatter } from '@brainstorm/config';
 import type { ProviderRegistry } from '@brainstorm/providers';
 import { classifyTask } from './classifier.js';
 import { costFirstStrategy } from './strategies/cost-first.js';
@@ -16,11 +16,13 @@ export class BrainstormRouter {
   private strategies: Record<StrategyName, RoutingStrategy>;
   private activeStrategy: StrategyName;
   private recentFailures: Array<{ modelId: string; timestamp: number; error: string }> = [];
+  private projectHints?: StormFrontmatter['routing'];
 
   constructor(
     private config: BrainstormConfig,
     private registry: ProviderRegistry,
     private costTracker: CostTracker,
+    stormFrontmatter?: StormFrontmatter | null,
   ) {
     this.activeStrategy = config.general.defaultStrategy;
     const combined = createCombinedStrategy(config.routing.rules);
@@ -34,10 +36,11 @@ export class BrainstormRouter {
     if (this.activeStrategy === 'learned') {
       log.warn('Learned routing strategy not yet available — using combined strategy');
     }
+    this.projectHints = stormFrontmatter?.routing;
   }
 
   classify(message: string, context?: { fileCount?: number; hasErrors?: boolean }): TaskProfile {
-    return classifyTask(message, context);
+    return classifyTask(message, context, this.projectHints);
   }
 
   route(task: TaskProfile): RoutingDecision {

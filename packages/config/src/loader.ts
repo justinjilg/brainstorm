@@ -3,12 +3,11 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import TOML from '@iarna/toml';
 import { brainstormConfigSchema, type BrainstormConfig } from './schema.js';
+import { loadStormFile } from './storm-loader.js';
 
 const GLOBAL_CONFIG_DIR = join(homedir(), '.brainstorm');
 const GLOBAL_CONFIG_FILE = join(GLOBAL_CONFIG_DIR, 'config.toml');
 const PROJECT_CONFIG_FILE = 'brainstorm.toml';
-const PROJECT_CONTEXT_FILE = 'BRAINSTORM.md';
-
 function readToml(path: string): Record<string, unknown> {
   if (!existsSync(path)) return {};
   const content = readFileSync(path, 'utf-8');
@@ -59,10 +58,10 @@ export function loadConfig(projectDir: string = process.cwd()): BrainstormConfig
   return brainstormConfigSchema.parse(merged);
 }
 
+/** @deprecated Use loadStormFile() from './storm-loader.js' instead. */
 export function loadProjectContext(projectDir: string = process.cwd()): string | null {
-  const contextPath = join(projectDir, PROJECT_CONTEXT_FILE);
-  if (!existsSync(contextPath)) return null;
-  return readFileSync(contextPath, 'utf-8');
+  const storm = loadStormFile(projectDir);
+  return storm ? storm.body : null;
 }
 
 export { GLOBAL_CONFIG_DIR, GLOBAL_CONFIG_FILE };
