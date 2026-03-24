@@ -120,6 +120,7 @@ async function runStep(prompt: string, strategy: string): Promise<Omit<StepResul
     const { stdout, stderr } = await execFileAsync('node', [
       BRAINSTORM_CLI, 'run', prompt,
       '--tools', '--max-steps', '10', '--json',
+      '--strategy', strategy,
     ], {
       cwd: OUTPUT_DIR,
       timeout: 180_000,
