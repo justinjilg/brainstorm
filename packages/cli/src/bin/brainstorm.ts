@@ -289,9 +289,10 @@ workflowCmd
     const db = getDb();
     const registry = await createProviderRegistry(config);
     const costTracker = new CostTracker(db, config.budget);
-    const router = new BrainstormRouter(config, registry, costTracker);
-    const agentManager = new AgentManager(db, config);
     const projectPath = process.cwd();
+    const { frontmatter } = buildSystemPrompt(projectPath);
+    const router = new BrainstormRouter(config, registry, costTracker, frontmatter);
+    const agentManager = new AgentManager(db, config);
 
     // Parse agent overrides
     const agentOverrides: Record<string, string> = {};
@@ -371,12 +372,12 @@ program
     const db = getDb();
     const registry = await createProviderRegistry(config);
     const costTracker = new CostTracker(db, config.budget);
-    const router = new BrainstormRouter(config, registry, costTracker);
     const tools = createDefaultToolRegistry();
     const sessionManager = new SessionManager(db);
     const projectPath = process.cwd();
+    const { prompt: systemPrompt, frontmatter } = buildSystemPrompt(projectPath);
+    const router = new BrainstormRouter(config, registry, costTracker, frontmatter);
     const session = sessionManager.start(projectPath);
-    const { prompt: systemPrompt } = buildSystemPrompt(projectPath);
 
     sessionManager.addUserMessage(prompt);
 
@@ -465,10 +466,11 @@ program
     const db = getDb();
     const registry = await createProviderRegistry(config);
     const costTracker = new CostTracker(db, config.budget);
-    const router = new BrainstormRouter(config, registry, costTracker);
     const tools = createDefaultToolRegistry();
     const sessionManager = new SessionManager(db);
     const projectPath = process.cwd();
+    const { prompt: systemPrompt, frontmatter } = buildSystemPrompt(projectPath);
+    const router = new BrainstormRouter(config, registry, costTracker, frontmatter);
 
     // Session management: resume, fork, or start new
     let session: any;
@@ -487,8 +489,6 @@ program
     } else {
       session = sessionManager.start(projectPath);
     }
-
-    const { prompt: systemPrompt } = buildSystemPrompt(projectPath);
 
     const localCount = registry.models.filter((m) => m.isLocal).length;
     const cloudCount = registry.models.filter((m) => !m.isLocal).length;

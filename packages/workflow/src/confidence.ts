@@ -81,7 +81,7 @@ export function isReviewApproved(artifact: Artifact): boolean {
   if (text.includes('rejected') || text.includes('needs changes') || text.includes('not approved')) return false;
   if (text.includes('issues found') || text.includes('critical')) return false;
 
-  return true; // default to approved if unclear
+  return false; // default to NOT approved — reviews must explicitly approve
 }
 
 /**
