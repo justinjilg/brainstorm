@@ -14,9 +14,20 @@ interface ChatAppProps {
   modelCount: { local: number; cloud: number };
   onSendMessage: (text: string) => AsyncGenerator<AgentEvent>;
   onAbort?: () => void;
+  /** Mutable context for slash commands — callbacks that affect session state */
+  slashCallbacks?: {
+    setModel?: (model: string) => void;
+    setStrategy?: (strategy: string) => void;
+    setMode?: (mode: string) => void;
+    getMode?: () => string;
+    setOutputStyle?: (style: string) => void;
+    getOutputStyle?: () => string;
+    getBudget?: () => { remaining: number; limit: number } | null;
+    compact?: () => Promise<void>;
+  };
 }
 
-export function ChatApp({ strategy, modelCount, onSendMessage, onAbort }: ChatAppProps) {
+export function ChatApp({ strategy, modelCount, onSendMessage, onAbort, slashCallbacks }: ChatAppProps) {
   const { exit } = useApp();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -68,12 +79,21 @@ export function ChatApp({ strategy, modelCount, onSendMessage, onAbort }: ChatAp
   const slashCtx: SlashContext = useMemo(() => ({
     getModel: () => currentModel,
     getSessionCost: () => sessionCost,
+    getTokenCount: () => tokenCount,
     exit: () => exit(),
     clearHistory: () => {
       setMessages([]);
       setStreamingText(undefined);
     },
-  }), [currentModel, sessionCost, exit]);
+    setModel: slashCallbacks?.setModel,
+    setStrategy: slashCallbacks?.setStrategy,
+    setMode: slashCallbacks?.setMode,
+    getMode: slashCallbacks?.getMode,
+    setOutputStyle: slashCallbacks?.setOutputStyle,
+    getOutputStyle: slashCallbacks?.getOutputStyle,
+    getBudget: slashCallbacks?.getBudget,
+    compact: slashCallbacks?.compact,
+  }), [currentModel, sessionCost, tokenCount, exit, slashCallbacks]);
 
   const handleSubmit = useCallback(async (text: string) => {
     if (!text.trim() || isProcessing) return;
