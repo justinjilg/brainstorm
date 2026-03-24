@@ -45,16 +45,18 @@ export async function runProbe(probe: Probe, options: RunnerOptions = {}): Promi
       }
     }
 
-    const projectDir = options.projectDir ?? process.cwd();
-    const config = loadConfig(projectDir);
+    // Use sandboxDir as the agent's working directory so model-generated files
+    // end up in the sandbox (where the scorer checks for them)
+    const configDir = options.projectDir ?? process.cwd();
+    const config = loadConfig(configDir);
     const db = getDb();
     const registry = await createProviderRegistry(config);
     const costTracker = new CostTracker(db, config.budget);
     const router = new BrainstormRouter(config, registry, costTracker);
     const tools = createDefaultToolRegistry();
     const sessionManager = new SessionManager(db);
-    const session = sessionManager.start(projectDir);
-    const { prompt: systemPrompt } = buildSystemPrompt(projectDir);
+    const session = sessionManager.start(sandboxDir);
+    const { prompt: systemPrompt } = buildSystemPrompt(sandboxDir);
 
     sessionManager.addUserMessage(probe.prompt);
 
@@ -66,7 +68,7 @@ export async function runProbe(probe: Probe, options: RunnerOptions = {}): Promi
     const runPromise = (async () => {
       for await (const event of runAgentLoop(sessionManager.getHistory(), {
         config, registry, router, costTracker, tools,
-        sessionId: session.id, projectPath: projectDir, systemPrompt,
+        sessionId: session.id, projectPath: sandboxDir, systemPrompt,
         ...(options.modelId && options.modelId !== 'default' ? { preferredModelId: options.modelId } : {}),
         ...(options.maxSteps ? { maxSteps: options.maxSteps } : {}),
       })) {

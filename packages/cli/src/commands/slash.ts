@@ -44,7 +44,7 @@ interface SlashCommand {
   aliases: string[];
   description: string;
   usage: string;
-  execute: (args: string, ctx: SlashContext) => string | Promise<string>;
+  execute: (args: string, ctx: SlashContext, invokedAs?: string) => string | Promise<string>;
 }
 
 const commands: SlashCommand[] = [
@@ -81,17 +81,17 @@ const commands: SlashCommand[] = [
     aliases: ['fast'],
     description: 'Switch routing strategy',
     usage: '/strategy [cost-first|quality-first|combined|capability|rule-based]',
-    execute: (args, ctx) => {
+    execute: (args, ctx, invokedAs) => {
       const valid = ['cost-first', 'quality-first', 'combined', 'capability', 'rule-based'];
-      if (!args) {
-        return `Current strategy: ${ctx.getStrategy?.() ?? 'combined'}. Options: ${valid.join(', ')}`;
-      }
-      // /fast backward compat
-      if (args === 'fast' || args === 'toggle') {
+      // /fast with no args → toggle (backward compat)
+      if (!args && invokedAs === 'fast') {
         const current = ctx.getStrategy?.() ?? 'combined';
         const next = current === 'cost-first' ? 'quality-first' : 'cost-first';
         ctx.setStrategy?.(next);
         return `Routing strategy: ${next}`;
+      }
+      if (!args) {
+        return `Current strategy: ${ctx.getStrategy?.() ?? 'combined'}. Options: ${valid.join(', ')}`;
       }
       if (!valid.includes(args)) {
         return `Unknown strategy: ${args}. Options: ${valid.join(', ')}`;
@@ -234,7 +234,8 @@ export async function executeSlashCommand(input: string, ctx: SlashContext): Pro
     return `Unknown command: /${name}. Type /help for available commands.`;
   }
 
-  return cmd.execute(args, ctx);
+  // Pass the invoked name so commands can detect alias invocation (e.g., /fast vs /strategy)
+  return cmd.execute(args, ctx, name);
 }
 
 /**
