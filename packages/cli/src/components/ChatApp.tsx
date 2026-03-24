@@ -23,6 +23,7 @@ export function ChatApp({ strategy, modelCount, onSendMessage, onAbort }: ChatAp
   const [sessionCost, setSessionCost] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [tasks, setTasks] = useState<AgentTask[]>([]);
+  const [tokenCount, setTokenCount] = useState<{ input: number; output: number }>({ input: 0, output: 0 });
 
   // Escape key aborts current operation
   useInput((_input, key) => {
@@ -106,6 +107,7 @@ export function ChatApp({ strategy, modelCount, onSendMessage, onAbort }: ChatAp
           case 'done':
             cost = event.totalCost;
             setSessionCost(event.totalCost);
+            if (event.totalTokens) setTokenCount(event.totalTokens);
             break;
           case 'error':
             setMessages((prev) => [
@@ -133,6 +135,7 @@ export function ChatApp({ strategy, modelCount, onSendMessage, onAbort }: ChatAp
         currentModel={currentModel}
         sessionCost={sessionCost}
         modelCount={modelCount}
+        tokenCount={tokenCount}
       />
       <MessageList messages={messages} streamingText={streamingText} />
       {tasks.length > 0 && <TaskList tasks={tasks} />}

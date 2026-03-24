@@ -7,6 +7,8 @@ export class CostTracker {
   private repo: CostRepository;
   private budgetConfig: BudgetConfig;
   private sessionCost = 0;
+  private sessionInputTokens = 0;
+  private sessionOutputTokens = 0;
 
   constructor(db: any, budgetConfig: BudgetConfig) {
     this.repo = new CostRepository(db);
@@ -29,6 +31,8 @@ export class CostTracker {
       (params.outputTokens / 1_000_000) * params.pricing.outputPer1MTokens;
 
     this.sessionCost += cost;
+    this.sessionInputTokens += params.inputTokens;
+    this.sessionOutputTokens += params.outputTokens;
 
     return this.repo.record({
       timestamp: Math.floor(Date.now() / 1000),
@@ -72,6 +76,10 @@ export class CostTracker {
 
   getSessionCost(): number {
     return this.sessionCost;
+  }
+
+  getSessionTokens(): { input: number; output: number } {
+    return { input: this.sessionInputTokens, output: this.sessionOutputTokens };
   }
 
   getSummary() {
