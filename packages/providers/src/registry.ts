@@ -21,7 +21,22 @@ export interface ProviderRegistry {
   refresh(): Promise<void>;
 }
 
-export async function createProviderRegistry(config: BrainstormConfig): Promise<ProviderRegistry> {
+/**
+ * Optional pre-resolved API keys from the vault/1Password/env chain.
+ * When provided, these take priority over process.env for provider setup.
+ */
+export interface ResolvedKeys {
+  get(name: string): string | null;
+}
+
+export async function createProviderRegistry(
+  config: BrainstormConfig,
+  resolvedKeys?: ResolvedKeys,
+): Promise<ProviderRegistry> {
+  /** Resolve a key: check resolvedKeys first, then fall back to process.env. */
+  const getKey = (name: string): string | null =>
+    resolvedKeys?.get(name) ?? process.env[name] ?? null;
+
   const providers: Record<string, any> = {};
 
   // Local providers
@@ -36,35 +51,39 @@ export async function createProviderRegistry(config: BrainstormConfig): Promise<
   }
 
   // BrainstormRouter SaaS (primary cloud provider when configured)
-  const brApiKey = getBrainstormApiKey();
+  const brApiKey = getKey('BRAINSTORM_API_KEY') ?? getBrainstormApiKey();
   const hasBrainstormSaaS = !!brApiKey;
   if (brApiKey) {
     providers.brainstormrouter = createBrainstormSaaSProvider(brApiKey);
   }
 
   // Direct provider SDKs (fallback when no BR SaaS, or for direct API key usage)
-  if (process.env.ANTHROPIC_API_KEY) {
-    providers.anthropic = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const anthropicKey = getKey('ANTHROPIC_API_KEY');
+  if (anthropicKey) {
+    providers.anthropic = createAnthropic({ apiKey: anthropicKey });
   }
-  if (process.env.OPENAI_API_KEY) {
-    providers.openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const openaiKey = getKey('OPENAI_API_KEY');
+  if (openaiKey) {
+    providers.openai = createOpenAI({ apiKey: openaiKey });
   }
-  if (process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
-    providers.google = createGoogleGenerativeAI({ apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY });
+  const googleKey = getKey('GOOGLE_GENERATIVE_AI_API_KEY');
+  if (googleKey) {
+    providers.google = createGoogleGenerativeAI({ apiKey: googleKey });
   }
 
   // Only include cloud models for providers we have credentials for
   const availableCloudProviders = new Set<string>();
   if (brApiKey) availableCloudProviders.add('brainstormrouter'); // SaaS can route to any model
-  if (process.env.ANTHROPIC_API_KEY) availableCloudProviders.add('anthropic');
-  if (process.env.OPENAI_API_KEY) availableCloudProviders.add('openai');
-  if (process.env.GOOGLE_GENERATIVE_AI_API_KEY) availableCloudProviders.add('google');
-  if (process.env.DEEPSEEK_API_KEY) {
+  if (anthropicKey) availableCloudProviders.add('anthropic');
+  if (openaiKey) availableCloudProviders.add('openai');
+  if (googleKey) availableCloudProviders.add('google');
+  const deepseekKey = getKey('DEEPSEEK_API_KEY');
+  if (deepseekKey) {
     availableCloudProviders.add('deepseek');
     providers.deepseek = createOpenAICompatible({
       name: 'deepseek',
       baseURL: 'https://api.deepseek.com/v1',
-      headers: { Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}` },
+      headers: { Authorization: `Bearer ${deepseekKey}` },
     });
   }
 
