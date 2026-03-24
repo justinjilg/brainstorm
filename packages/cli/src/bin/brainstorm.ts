@@ -385,11 +385,39 @@ program
     }
   });
 
+// ── Sessions Command ───────────────────────────────────────────────
+
+program
+  .command('sessions')
+  .description('List recent chat sessions')
+  .option('-n, --limit <count>', 'Number of sessions to show', '10')
+  .action(async (opts: { limit: string }) => {
+    const db = getDb();
+    const sessionManager = new SessionManager(db);
+    const sessions = sessionManager.listRecent(parseInt(opts.limit));
+
+    console.log('\n  Recent Sessions:\n');
+    if (sessions.length === 0) {
+      console.log('    No sessions found.');
+    }
+    for (const s of sessions) {
+      const age = Math.floor((Date.now() / 1000 - s.updatedAt) / 60);
+      const ageStr = age < 60 ? `${age}m ago` : age < 1440 ? `${Math.floor(age / 60)}h ago` : `${Math.floor(age / 1440)}d ago`;
+      console.log(`    ${s.id.slice(0, 8)}  ${s.messageCount} msgs  $${s.totalCost.toFixed(4)}  ${ageStr}  ${s.projectPath}`);
+    }
+    console.log();
+  });
+
+// ── Chat Command ──────────────────────────────────────────────────
+
 program
   .command('chat', { isDefault: true })
   .description('Start an interactive chat session')
   .option('--simple', 'Use simple readline interface instead of TUI')
-  .action(async (opts: { simple?: boolean }) => {
+  .option('--continue', 'Resume the most recent session')
+  .option('--resume <id>', 'Resume a specific session by ID')
+  .option('--fork <id>', 'Fork a session (copy history, new session)')
+  .action(async (opts: { simple?: boolean; continue?: boolean; resume?: string; fork?: string }) => {
     const config = loadConfig();
     const db = getDb();
     const registry = await createProviderRegistry(config);
@@ -398,7 +426,25 @@ program
     const tools = createDefaultToolRegistry();
     const sessionManager = new SessionManager(db);
     const projectPath = process.cwd();
-    const session = sessionManager.start(projectPath);
+
+    // Session management: resume, fork, or start new
+    let session: any;
+    if (opts.fork) {
+      session = sessionManager.fork(opts.fork);
+      if (!session) { console.error(`  Session '${opts.fork}' not found.`); process.exit(1); }
+      console.log(`  Forked session ${opts.fork.slice(0, 8)} -> ${session.id.slice(0, 8)}`);
+    } else if (opts.resume) {
+      session = sessionManager.resume(opts.resume);
+      if (!session) { console.error(`  Session '${opts.resume}' not found.`); process.exit(1); }
+      console.log(`  Resumed session ${session.id.slice(0, 8)} (${session.messageCount} messages)`);
+    } else if (opts.continue) {
+      session = sessionManager.resumeLatest(projectPath);
+      if (!session) { session = sessionManager.start(projectPath); }
+      else { console.log(`  Continued session ${session.id.slice(0, 8)} (${session.messageCount} messages)`); }
+    } else {
+      session = sessionManager.start(projectPath);
+    }
+
     const systemPrompt = buildSystemPrompt(projectPath);
 
     const localCount = registry.models.filter((m) => m.isLocal).length;

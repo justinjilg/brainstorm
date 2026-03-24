@@ -1,8 +1,6 @@
 import { SessionRepository, MessageRepository } from '@brainstorm/db';
 import type { Session } from '@brainstorm/shared';
 
-// We store conversation as simple {role, content} objects
-// and convert to ModelMessage format when needed by the AI SDK
 export interface ConversationMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
@@ -14,7 +12,7 @@ export class SessionManager {
   private currentSession: Session | null = null;
   private conversationHistory: ConversationMessage[] = [];
 
-  constructor(db: any) {
+  constructor(private db: any) {
     this.sessions = new SessionRepository(db);
     this.messages = new MessageRepository(db);
   }
@@ -39,6 +37,42 @@ export class SessionManager {
       }));
 
     return session;
+  }
+
+  /** Resume the most recent session for the given project path. */
+  resumeLatest(projectPath?: string): Session | null {
+    const recent = this.sessions.listRecent(1);
+    if (recent.length === 0) return null;
+    const target = projectPath
+      ? recent.find((s) => s.projectPath === projectPath)
+      : recent[0];
+    if (!target) return null;
+    return this.resume(target.id);
+  }
+
+  /** Fork a session: create a new session with a copy of the conversation history. */
+  fork(sessionId: string): Session | null {
+    const original = this.sessions.get(sessionId);
+    if (!original) return null;
+
+    const forked = this.sessions.create(original.projectPath);
+    const msgs = this.messages.listBySession(sessionId);
+
+    // Copy all messages to the new session
+    for (const m of msgs) {
+      this.messages.create(forked.id, m.role, m.content, m.modelId, m.tokenCount);
+    }
+
+    // Set as current session
+    this.currentSession = forked;
+    this.conversationHistory = msgs
+      .filter((m) => m.role !== 'tool')
+      .map((m) => ({
+        role: m.role as 'user' | 'assistant' | 'system',
+        content: m.content,
+      }));
+
+    return forked;
   }
 
   addUserMessage(content: string): void {
