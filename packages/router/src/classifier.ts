@@ -14,7 +14,7 @@ const TASK_SIGNALS: Record<TaskType, string[]> = {
   'explanation': ['explain', 'what does', 'how does', 'why', 'describe', 'tell me about', 'understand', 'walk me through'],
   'conversation': ['hello', 'hi', 'thanks', 'help', 'can you', 'should i', 'what should', 'opinion', 'think about'],
   'analysis': ['review', 'analyze', 'evaluate', 'audit', 'check', 'assess', 'compare', 'pros and cons'],
-  'search': ['find', 'search', 'where is', 'locate', 'look for', 'grep', 'which file'],
+  'search': ['find', 'search', 'where is', 'locate', 'look for', 'grep', 'which file', 'read the file', 'read file', 'show me the file', 'cat ', 'open the file'],
   'multi-file-edit': ['across', 'all files', 'everywhere', 'project-wide', 'codebase', 'multiple files'],
 };
 
@@ -26,6 +26,9 @@ const COMPLEXITY_SIGNALS: Record<Complexity, { keywords: string[]; minLength: nu
   expert: { keywords: ['architecture', 'design system', 'migration', 'security audit', 'performance'], minLength: 500 },
 };
 
+/** Keywords that indicate tool use regardless of task type classification. */
+const TOOL_USE_SIGNALS = ['read the file', 'read file', 'open the file', 'show me the code', 'look at', 'check the file', 'list the files', 'run the', 'execute', 'write to file', 'create a file', 'edit the file', 'modify the file'];
+
 export function classifyTask(
   message: string,
   context?: { fileCount?: number; hasErrors?: boolean; conversationLength?: number },
@@ -35,11 +38,15 @@ export function classifyTask(
   const type = detectTaskType(lower, projectHints);
   const complexity = detectComplexity(lower, message.length, context, projectHints);
 
+  // Tool use: either the task type implies it, or explicit tool-use keywords are present
+  const toolUseFromType = requiresTools(type);
+  const toolUseFromKeywords = TOOL_USE_SIGNALS.some((signal) => lower.includes(signal));
+
   return {
     type,
     complexity,
     estimatedTokens: estimateTokens(type, complexity, message.length),
-    requiresToolUse: requiresTools(type),
+    requiresToolUse: toolUseFromType || toolUseFromKeywords,
     requiresReasoning: requiresReasoning(type, complexity),
     language: detectLanguage(lower),
     domain: detectDomain(lower),

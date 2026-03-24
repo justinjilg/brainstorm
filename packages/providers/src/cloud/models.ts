@@ -6,7 +6,7 @@ import type { ModelEntry } from '@brainstorm/shared';
 export const CLOUD_MODELS: ModelEntry[] = [
   // ── Anthropic ──────────────────────────────────────────────────────
   {
-    id: 'anthropic/claude-sonnet-4-5-20250620',
+    id: 'anthropic/claude-sonnet-4-5-20250929',
     provider: 'anthropic',
     name: 'Claude Sonnet 4.5',
     capabilities: {
