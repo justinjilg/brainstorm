@@ -18,20 +18,35 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { ResolvedKeys } from '@brainstorm/providers';
 
-/** Create a KeyResolver backed by the vault, with lazy password prompt. */
-function createKeyResolverForCli(): { resolver: KeyResolver; asResolvedKeys: ResolvedKeys } {
-  const vaultPath = join(homedir(), '.brainstorm', 'vault.enc');
-  const vault = new BrainstormVault(vaultPath);
+/** Known API key names that providers need at startup. */
+const PROVIDER_KEY_NAMES = [
+  'BRAINSTORM_API_KEY',
+  'ANTHROPIC_API_KEY',
+  'OPENAI_API_KEY',
+  'GOOGLE_GENERATIVE_AI_API_KEY',
+  'DEEPSEEK_API_KEY',
+  'BRAINSTORM_ADMIN_KEY',
+];
+
+/**
+ * Eagerly resolve all provider keys through the vault/1Password/env chain.
+ * Triggers the lazy vault password prompt if a vault exists and keys are needed.
+ * Returns a sync ResolvedKeys map for createProviderRegistry.
+ */
+async function resolveProviderKeys(): Promise<ResolvedKeys> {
+  const vault = new BrainstormVault(VAULT_PATH);
   const resolver = new KeyResolver(
     vault.exists() ? vault : null,
     () => promptPassword('  Vault password: '),
   );
-  // Adapter: KeyResolver.get is async, but ResolvedKeys.get is sync.
-  // Pre-resolve keys before passing to createProviderRegistry.
-  return {
-    resolver,
-    asResolvedKeys: { get: (name: string) => vault.isOpen() ? vault.get(name) : null },
-  };
+
+  const resolved = new Map<string, string>();
+  for (const name of PROVIDER_KEY_NAMES) {
+    const value = await resolver.get(name);
+    if (value) resolved.set(name, value);
+  }
+
+  return { get: (name: string) => resolved.get(name) ?? null };
 }
 
 /**
@@ -254,7 +269,7 @@ program
   .description('List available models and their status')
   .action(async () => {
     const config = loadConfig();
-    const registry = await createProviderRegistry(config);
+    const registry = await createProviderRegistry(config, await resolveProviderKeys());
 
     console.log('\n🧠 Brainstorm — Available Models\n');
 
@@ -493,7 +508,7 @@ workflowCmd
 
     const config = loadConfig();
     const db = getDb();
-    const registry = await createProviderRegistry(config);
+    const registry = await createProviderRegistry(config, await resolveProviderKeys());
     const costTracker = new CostTracker(db, config.budget);
     const projectPath = process.cwd();
     const { frontmatter } = buildSystemPrompt(projectPath);
@@ -579,7 +594,7 @@ program
   .action(async (prompt: string, opts: { json?: boolean; pipe?: boolean; model?: string; tools?: boolean; maxSteps?: string }) => {
     const config = loadConfig();
     const db = getDb();
-    const registry = await createProviderRegistry(config);
+    const registry = await createProviderRegistry(config, await resolveProviderKeys());
     const costTracker = new CostTracker(db, config.budget);
     const tools = createDefaultToolRegistry();
     await connectGatewayMCP(tools);
@@ -935,8 +950,8 @@ program
   .action(async (opts: { simple?: boolean; continue?: boolean; resume?: string; fork?: string }) => {
     const config = loadConfig();
     const db = getDb();
-    const { asResolvedKeys } = createKeyResolverForCli();
-    const registry = await createProviderRegistry(config, asResolvedKeys);
+    const resolvedKeys = await resolveProviderKeys();
+    const registry = await createProviderRegistry(config, resolvedKeys);
     const costTracker = new CostTracker(db, config.budget);
     const tools = createDefaultToolRegistry();
     await connectGatewayMCP(tools);
