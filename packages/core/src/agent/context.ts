@@ -2,6 +2,7 @@ import { loadStormFile, type StormFrontmatter } from '@brainstorm/config';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { INSIGHT_PROMPT_SECTION } from './insights.js';
 
 const DEFAULT_SYSTEM_PROMPT = `You are Brainstorm, an AI coding assistant with intelligent model routing. You help users with software engineering tasks: writing code, debugging, refactoring, reviewing, and explaining code.
 
@@ -60,9 +61,7 @@ Only report failure to the user after 2 unsuccessful alternative approaches.
 - Ask before destructive operations: deleting files, dropping tables, force-pushing.
 - When uncertain about the impact of a change, explain the risk and ask.
 
-# Teaching
-
-After completing a significant action (fixing a bug, making an architecture decision), briefly share ONE non-obvious insight about your choice. Keep it to 2-3 sentences. Skip this for trivial actions.`;
+${INSIGHT_PROMPT_SECTION}`;
 
 export interface SystemPromptResult {
   prompt: string;
