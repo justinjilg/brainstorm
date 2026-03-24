@@ -614,13 +614,33 @@ workflowCmd
 program
   .command('run')
   .description('Run a single prompt non-interactively')
-  .argument('<prompt>', 'The prompt to send')
+  .argument('[prompt]', 'The prompt to send')
   .option('--json', 'Output structured JSON (for CI/CD pipelines)')
   .option('--pipe', 'Read from stdin if no prompt given')
   .option('--model <id>', 'Target a specific model (bypass routing)')
   .option('--tools', 'Enable tool use (default: disabled)')
   .option('--max-steps <n>', 'Maximum agentic steps (default: 1)', '1')
-  .action(async (prompt: string, opts: { json?: boolean; pipe?: boolean; model?: string; tools?: boolean; maxSteps?: string }) => {
+  .action(async (prompt: string | undefined, opts: { json?: boolean; pipe?: boolean; model?: string; tools?: boolean; maxSteps?: string }) => {
+    // Handle --pipe: read prompt from stdin
+    let finalPrompt = prompt;
+    if (opts.pipe) {
+      const chunks: Buffer[] = [];
+      for await (const chunk of process.stdin) {
+        chunks.push(chunk);
+      }
+      const stdinText = Buffer.concat(chunks).toString('utf-8').trim();
+      if (finalPrompt) {
+        // Append stdin to prompt argument
+        finalPrompt = `${finalPrompt}\n\n${stdinText}`;
+      } else {
+        finalPrompt = stdinText;
+      }
+    }
+    if (!finalPrompt) {
+      process.stderr.write('Error: No prompt provided. Pass a prompt argument or use --pipe to read from stdin.\n');
+      process.exit(1);
+    }
+
     const config = loadConfig();
     const db = getDb();
     const registry = await createProviderRegistry(config, await resolveProviderKeys());
@@ -634,10 +654,15 @@ program
     const router = new BrainstormRouter(config, registry, costTracker, frontmatter);
     const session = sessionManager.start(projectPath);
 
-    sessionManager.addUserMessage(prompt);
+    sessionManager.addUserMessage(finalPrompt);
 
     let fullResponse = '';
-    process.stdout.write('\n');
+    let modelName = 'unknown';
+    let toolCallCount = 0;
+
+    if (!opts.json) {
+      process.stdout.write('\n');
+    }
 
     for await (const event of runAgentLoop(sessionManager.getHistory(), {
       config, registry, router, costTracker, tools,
@@ -649,12 +674,14 @@ program
     })) {
       switch (event.type) {
         case 'routing':
-          process.stderr.write(`[${event.decision.strategy}] → ${event.decision.model.name}\n`);
+          modelName = event.decision.model.name;
+          process.stderr.write(`[${event.decision.strategy}] → ${modelName}\n`);
           break;
         case 'text-delta':
           fullResponse += event.delta;
           break;
         case 'tool-call-start':
+          toolCallCount++;
           process.stderr.write(`\n[tool: ${event.toolName}]\n`);
           break;
         case 'gateway-feedback': {
@@ -664,11 +691,12 @@ program
         }
         case 'done':
           if (opts.json) {
-            // Structured JSON output for CI/CD
+            // Structured JSON output for CI/CD — only valid JSON on stdout
             process.stdout.write(JSON.stringify({
               text: fullResponse,
-              model: (event as any).model ?? 'unknown',
+              model: modelName,
               cost: event.totalCost,
+              toolCalls: toolCallCount,
               success: true,
             }) + '\n');
           } else {
@@ -678,7 +706,7 @@ program
           break;
         case 'error':
           if (opts.json) {
-            process.stdout.write(JSON.stringify({ text: '', error: event.error.message, success: false }) + '\n');
+            process.stdout.write(JSON.stringify({ text: '', model: modelName, cost: 0, toolCalls: toolCallCount, error: event.error.message, success: false }) + '\n');
             process.exit(1);
           } else {
             process.stderr.write(`\nError: ${event.error.message}\n`);
