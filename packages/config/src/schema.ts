@@ -122,6 +122,25 @@ const workflowConfigSchema = z.object({
   steps: z.array(workflowStepConfigSchema).default([]),
 });
 
+// ── MCP Config ──────────────────────────────────────────────────────
+
+const mcpServerSchema = z.object({
+  name: z.string(),
+  transport: z.enum(['sse', 'http', 'stdio']),
+  url: z.string().optional(),
+  command: z.string().optional(),
+  args: z.array(z.string()).optional(),
+  env: z.record(z.string()).optional(),
+  enabled: z.boolean().default(true),
+  toolFilter: z.array(z.string()).optional(),
+});
+
+const mcpSchema = z.object({
+  servers: z.array(mcpServerSchema).default([]),
+});
+
+// ── Full Config ─────────────────────────────────────────────────────
+
 export const brainstormConfigSchema = z.object({
   general: generalSchema.default({}),
   budget: budgetSchema.default({}),
@@ -132,6 +151,7 @@ export const brainstormConfigSchema = z.object({
   models: z.array(modelOverrideSchema).default([]),
   agents: z.array(agentConfigSchema).default([]),
   workflows: z.array(workflowConfigSchema).default([]),
+  mcp: mcpSchema.default({}),
 });
 
 export type BrainstormConfig = z.infer<typeof brainstormConfigSchema>;
@@ -142,3 +162,4 @@ export type GeneralConfig = z.infer<typeof generalSchema>;
 export type AgentConfig = z.infer<typeof agentConfigSchema>;
 export type WorkflowConfig = z.infer<typeof workflowConfigSchema>;
 export type WorkflowStepConfig = z.infer<typeof workflowStepConfigSchema>;
+export type MCPServerConfigSchema = z.infer<typeof mcpServerSchema>;
