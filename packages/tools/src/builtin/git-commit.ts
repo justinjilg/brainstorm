@@ -5,17 +5,44 @@ import { defineTool } from '../base.js';
 
 const execFileAsync = promisify(execFile);
 
+/**
+ * Smart git commit tool with two modes:
+ *
+ * 1. **Analyze mode** (message omitted): Stages files, scans for credentials,
+ *    then returns rich context (status, diff summary, recent commits) so the
+ *    model can generate a contextual commit message.
+ *
+ * 2. **Commit mode** (message provided): Stages files, scans for credentials,
+ *    and commits with the given message.
+ *
+ * Both modes enforce: explicit file paths only, credential scanning, and
+ * optional Co-Authored-By attribution.
+ */
 export const gitCommitTool = defineTool({
   name: 'git_commit',
-  description: 'Stage specific files and create a git commit. You MUST provide explicit file paths — never stages all files. Scans staged content for credentials before committing.',
+  description:
+    'Stage specific files and create a git commit. Two modes: (1) Omit `message` to get context for writing a good commit message (status, diff summary, recent commits). (2) Provide `message` to commit directly. Always scans for credentials before committing. Never stages all files — explicit paths required.',
   permission: 'confirm',
   inputSchema: z.object({
-    message: z.string().describe('Commit message (what + why)'),
-    files: z.array(z.string()).min(1).describe('Files to stage — explicit paths required (no wildcards, no "all")'),
+    message: z
+      .string()
+      .optional()
+      .describe(
+        'Commit message (what + why). Omit to get context for generating a message. When provided, should summarize the change and explain motivation.',
+      ),
+    files: z
+      .array(z.string())
+      .min(1)
+      .describe('Files to stage — explicit paths required (no wildcards, no "all")'),
     cwd: z.string().optional().describe('Working directory'),
+    coAuthors: z
+      .array(z.string())
+      .optional()
+      .describe('Co-author lines to append (format: "Name <email>")'),
   }),
-  async execute({ message, files, cwd }) {
+  async execute({ message, files, cwd, coAuthors }) {
     const opts = { cwd: cwd ?? process.cwd() };
+
     try {
       // Stage specific files only (never git add -A)
       await execFileAsync('git', ['add', ...files], opts);
@@ -31,14 +58,72 @@ export const gitCommitTool = defineTool({
         };
       }
 
+      // Analyze mode: gather context for the model to generate a commit message
+      if (!message) {
+        const context = await gatherCommitContext(opts);
+        return {
+          needsMessage: true,
+          context,
+          stagedFiles: files,
+          hint: 'Use this context to write a commit message (what + why), then call git_commit again with the message.',
+        };
+      }
+
+      // Build full commit message with optional co-authors
+      const fullMessage = buildCommitMessage(message, coAuthors);
+
       // Commit
-      const { stdout } = await execFileAsync('git', ['commit', '-m', message], opts);
+      const { stdout } = await execFileAsync('git', ['commit', '-m', fullMessage], opts);
       return { success: true, output: stdout.trim() };
     } catch (err: any) {
       return { error: err.stderr || err.message };
     }
   },
 });
+
+/**
+ * Gather context to help generate a good commit message:
+ * - git status (staged vs unstaged overview)
+ * - git diff --cached --stat (what changed, file-level summary)
+ * - git diff --cached (actual changes, truncated for large diffs)
+ * - git log --oneline -5 (recent commit style reference)
+ */
+async function gatherCommitContext(
+  opts: { cwd: string },
+): Promise<{ status: string; diffStat: string; diffPreview: string; recentCommits: string }> {
+  const MAX_DIFF_CHARS = 8000;
+
+  const [statusResult, diffStatResult, diffResult, logResult] = await Promise.all([
+    execFileAsync('git', ['status', '--short'], opts).catch(() => ({ stdout: '' })),
+    execFileAsync('git', ['diff', '--cached', '--stat'], opts).catch(() => ({ stdout: '' })),
+    execFileAsync('git', ['diff', '--cached'], opts).catch(() => ({ stdout: '' })),
+    execFileAsync('git', ['log', '--oneline', '-5'], opts).catch(() => ({ stdout: '' })),
+  ]);
+
+  let diffPreview = diffResult.stdout;
+  if (diffPreview.length > MAX_DIFF_CHARS) {
+    diffPreview = diffPreview.slice(0, MAX_DIFF_CHARS) + `\n\n... truncated (${diffPreview.length} total chars)`;
+  }
+
+  return {
+    status: statusResult.stdout.trim(),
+    diffStat: diffStatResult.stdout.trim(),
+    diffPreview: diffPreview.trim(),
+    recentCommits: logResult.stdout.trim(),
+  };
+}
+
+/**
+ * Build the final commit message with optional Co-Authored-By trailers.
+ */
+function buildCommitMessage(message: string, coAuthors?: string[]): string {
+  if (!coAuthors || coAuthors.length === 0) return message;
+
+  const trailers = coAuthors.map((author) => `Co-Authored-By: ${author}`).join('\n');
+  return `${message}\n\n${trailers}`;
+}
+
+// --- Credential scanning (unchanged from PR #1) ---
 
 interface CredentialHit {
   file: string;
