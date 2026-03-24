@@ -144,18 +144,12 @@ export async function compactContext(
 
 // ── Message Classification ────────────────────────────────────────
 
-/** Tool names that produce write/mutation results — always keep their output. */
-const WRITE_TOOLS = new Set(['file_write', 'file_edit', 'multi_edit', 'batch_edit', 'git_commit', 'shell']);
-
-/** Tool names whose results are often superseded by later calls. */
-const SEARCH_TOOLS = new Set(['grep', 'glob', 'file_read', 'list_dir']);
-
 /**
  * Classify a message for compaction: keep, summarize, or drop.
  *
- * - keep: file edits, error messages, user decisions, write tool results
- * - summarize: long assistant explanations, verbose tool outputs
- * - drop: duplicate reads, superseded searches, intermediate results
+ * - keep: file edits, error messages, user decisions, write-related content
+ * - summarize: long assistant explanations
+ * - drop: short system/routing messages, context that's been superseded
  */
 function classifyMessage(
   msg: ConversationMessage,
@@ -165,7 +159,6 @@ function classifyMessage(
   // Always keep user messages (they contain decisions and intent)
   if (msg.role === 'user') return 'keep';
 
-  // Check for tool result patterns in content
   const content = msg.content;
 
   // Keep error messages
@@ -173,22 +166,14 @@ function classifyMessage(
     return 'keep';
   }
 
-  // Keep write tool results (edits, commits)
-  for (const toolName of WRITE_TOOLS) {
-    if (content.includes(`tool: ${toolName}`) || content.includes(`[${toolName}]`)) {
-      return 'keep';
-    }
+  // Keep messages that mention file modifications (content-based heuristic)
+  if (WRITE_INDICATORS.some((p) => content.includes(p))) {
+    return 'keep';
   }
 
-  // Drop search results that were superseded by later searches of the same type
-  for (const toolName of SEARCH_TOOLS) {
-    if (content.includes(`tool: ${toolName}`) || content.includes(`[${toolName}]`)) {
-      // Check if a later message has the same tool pattern
-      const hasLaterSameSearch = allMessages.slice(index + 1).some(
-        (later) => later.content.includes(`tool: ${toolName}`) || later.content.includes(`[${toolName}]`),
-      );
-      if (hasLaterSameSearch) return 'drop';
-    }
+  // Drop compaction summary messages from prior compactions
+  if (content.startsWith('[Context compacted') || content.startsWith('[Preserved context') || content.startsWith('[Summarized context')) {
+    return 'drop';
   }
 
   // Long assistant messages get summarized
@@ -196,12 +181,19 @@ function classifyMessage(
     return 'summarize';
   }
 
-  // Short assistant messages that aren't tool calls — keep
+  // Short assistant messages — keep
   if (msg.role === 'assistant') return 'keep';
 
   // Default: summarize
   return 'summarize';
 }
+
+/** Content patterns indicating file write/mutation activity. */
+const WRITE_INDICATORS = [
+  'wrote to', 'edited', 'modified', 'created file', 'committed',
+  'file_write', 'file_edit', 'git_commit', 'git commit',
+  'Successfully', 'saved', 'Updated',
+];
 
 /**
  * Fallback summary when no model is available.
