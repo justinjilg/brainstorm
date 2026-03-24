@@ -1,5 +1,3 @@
-import type { ProjectDetection } from './detect.js';
-
 export interface InitChoices {
   name: string;
   type: 'monorepo' | 'app' | 'cli' | 'library' | 'api';
@@ -18,10 +16,6 @@ export interface InitChoices {
 // ── STORM.md ────────────────────────────────────────────────────────
 
 export function generateStormMd(choices: InitChoices): string {
-  const strategy = choices.budgetTier === 'low' ? 'cost-first'
-    : choices.budgetTier === 'premium' ? 'quality-first'
-    : 'combined';
-
   const lines = [
     '---',
     'version: 1',
