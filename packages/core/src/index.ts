@@ -6,3 +6,4 @@ export { compactContext, estimateTokenCount, needsCompaction } from './session/c
 export { spawnSubagent, type SubagentOptions, type SubagentResult } from './agent/subagent.js';
 export { loadSkills, findSkill, type SkillDefinition } from './skills/loader.js';
 export { MemoryManager, type MemoryEntry } from './memory/manager.js';
+export { getPlanModeTools, getPlanModePrompt } from './plan/mode.js';
