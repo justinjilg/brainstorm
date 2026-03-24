@@ -12,3 +12,4 @@ export { loadIgnorePatterns, isIgnored } from './security/ignore.js';
 export { scanForCredentials, redactCredentials, type ScanResult } from './security/secret-scanner.js';
 export { resolveSafe, isWithinWorkspace, PathTraversalError } from './security/path-guard.js';
 export { filterResponse, createStreamFilter, type StreamFilter } from './agent/response-filter.js';
+export { normalizeInsightMarkers, INSIGHT_PROMPT_SECTION } from './agent/insights.js';
