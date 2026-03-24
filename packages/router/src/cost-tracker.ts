@@ -92,6 +92,21 @@ export class CostTracker {
   }
 
   /**
+   * Calculate a budget limit for a subagent.
+   * Default: remaining session budget / 4, or a fixed amount if no session limit.
+   */
+  getSubagentBudget(overrideBudget?: number): number {
+    if (overrideBudget !== undefined) return overrideBudget;
+    const sessionLimit = this.budgetConfig.perSession;
+    if (sessionLimit) {
+      const remaining = Math.max(0, sessionLimit - this.sessionCost);
+      return remaining / 4;
+    }
+    // No session limit — default to $0.50 per subagent
+    return 0.5;
+  }
+
+  /**
    * Reconcile actual cost from gateway headers with local tracking.
    * When the gateway reports the real cost, use it instead of our estimate.
    */

@@ -85,6 +85,8 @@ export interface SubagentOptions {
   systemPrompt?: string;
   /** Max steps override (overrides type's default). */
   maxSteps?: number;
+  /** Budget limit in dollars. If exceeded, subagent is terminated (parent continues). */
+  budgetLimit?: number;
 }
 
 export interface SubagentResult {
@@ -130,9 +132,14 @@ export async function spawnSubagent(
     ? tools.toAISDKTools()
     : tools.toAISDKToolsFiltered(typeConfig.allowedTools);
 
+  const budgetLimit = options.budgetLimit ?? costTracker.getSubagentBudget();
   const costBefore = costTracker.getSessionCost();
   const toolCallNames: string[] = [];
   let fullText = '';
+  let budgetExceeded = false;
+
+  // AbortController for budget enforcement — terminates the subagent stream
+  const budgetAbort = new AbortController();
 
   const metadataHeader = serializeRoutingMetadata(taskProfile, decision);
 
@@ -142,6 +149,7 @@ export async function spawnSubagent(
     messages: [{ role: 'user' as const, content: task }],
     tools: filteredTools,
     ...(metadataHeader ? { headers: { 'x-br-metadata': metadataHeader } } : {}),
+    abortSignal: budgetAbort.signal,
     stopWhen: stepCountIs(maxSteps),
     onStepFinish: async ({ usage }: any) => {
       if (usage) {
@@ -156,20 +164,36 @@ export async function spawnSubagent(
           pricing: decision.model.pricing,
         });
       }
+      // Check subagent budget after each step
+      const subagentCost = costTracker.getSessionCost() - costBefore;
+      if (subagentCost >= budgetLimit) {
+        budgetExceeded = true;
+        budgetAbort.abort();
+      }
     },
   });
 
-  for await (const part of result.fullStream) {
-    if (part.type === 'text-delta') {
-      fullText += (part as any).delta ?? (part as any).text ?? '';
-    } else if (part.type === 'tool-call') {
-      toolCallNames.push(part.toolName);
+  try {
+    for await (const part of result.fullStream) {
+      if (part.type === 'text-delta') {
+        fullText += (part as any).delta ?? (part as any).text ?? '';
+      } else if (part.type === 'tool-call') {
+        toolCallNames.push(part.toolName);
+      }
     }
+  } catch (err: any) {
+    // AbortError from budget enforcement is expected — not an error
+    if (err.name !== 'AbortError') throw err;
+  }
+
+  const subagentCost = costTracker.getSessionCost() - costBefore;
+  if (budgetExceeded) {
+    fullText += `\n\n[Subagent terminated: budget limit of $${budgetLimit.toFixed(4)} exceeded ($${subagentCost.toFixed(4)} used)]`;
   }
 
   return {
     text: fullText,
-    cost: costTracker.getSessionCost() - costBefore,
+    cost: subagentCost,
     modelUsed: decision.model.name,
     toolCalls: toolCallNames,
     type,
