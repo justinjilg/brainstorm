@@ -133,7 +133,10 @@ export async function* runAgentLoop(
     const streamFilter = createStreamFilter();
 
     for await (const part of result.fullStream) {
-      if (part.type === 'text-delta') {
+      if (part.type === 'reasoning-delta') {
+        const content = (part as any).text ?? (part as any).delta ?? '';
+        if (content) yield { type: 'reasoning', content };
+      } else if (part.type === 'text-delta') {
         const raw = (part as any).text ?? (part as any).delta ?? '';
         const filtered = streamFilter.filter(raw);
         if (filtered) yield { type: 'text-delta', delta: normalizeInsightMarkers(filtered) };
