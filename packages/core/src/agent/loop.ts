@@ -4,8 +4,8 @@ import type { BrainstormConfig } from '@brainstorm/config';
 import type { ProviderRegistry } from '@brainstorm/providers';
 import { BrainstormRouter, CostTracker } from '@brainstorm/router';
 import type { ToolRegistry } from '@brainstorm/tools';
-import { setTaskEventHandler } from '@brainstorm/tools';
-import type { AgentEvent, AgentTask, GatewayFeedbackData } from '@brainstorm/shared';
+import { setTaskEventHandler, clearTasks } from '@brainstorm/tools';
+import type { AgentEvent, GatewayFeedbackData } from '@brainstorm/shared';
 import { serializeRoutingMetadata } from '@brainstorm/shared';
 import { createStreamFilter } from './response-filter.js';
 import { normalizeInsightMarkers } from './insights.js';
@@ -41,7 +41,8 @@ export async function* runAgentLoop(
 ): AsyncGenerator<AgentEvent> {
   const { router, costTracker, tools, config, sessionId, systemPrompt } = options;
 
-  // Wire task event handler so task_create/task_update yield events to the TUI
+  // Reset task state and wire event handler for this invocation
+  clearTasks();
   const taskEventQueue: AgentEvent[] = [];
   setTaskEventHandler((type, task) => {
     taskEventQueue.push({ type, task } as AgentEvent);
@@ -112,7 +113,7 @@ export async function* runAgentLoop(
 
     // Flush any remaining buffered content (critical for short responses < 80 chars)
     const remaining = streamFilter.flush();
-    if (remaining) yield { type: 'text-delta', delta: remaining };
+    if (remaining) yield { type: 'text-delta', delta: normalizeInsightMarkers(remaining) };
 
     // Extract gateway response headers (X-BR-*) for cost reconciliation and telemetry
     try {
@@ -136,5 +137,7 @@ export async function* runAgentLoop(
   } catch (error: any) {
     router.recordFailure(decision.model.id, error.message);
     yield { type: 'error', error };
+  } finally {
+    setTaskEventHandler(null);
   }
 }
