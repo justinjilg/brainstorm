@@ -5,7 +5,7 @@
  * Up/Down arrow navigation cycles through previous inputs.
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -134,7 +134,10 @@ export class InputHistory {
       }
 
       const trimmed = merged.slice(-MAX_PERSIST);
-      writeFileSync(HISTORY_FILE, JSON.stringify(trimmed), 'utf-8');
+      // Atomic write: temp file + rename prevents corruption on crash
+      const tmpFile = HISTORY_FILE + '.tmp';
+      writeFileSync(tmpFile, JSON.stringify(trimmed), 'utf-8');
+      renameSync(tmpFile, HISTORY_FILE);
     } catch {
       // Non-fatal — history is a convenience feature
     }
