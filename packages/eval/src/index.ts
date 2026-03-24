@@ -7,3 +7,4 @@ export { verifyTypeScriptCompiles } from './verifiers/typescript.js';
 export { runTestFile } from './verifiers/test-runner.js';
 export { formatScorecard, formatComparison } from './scorecard.js';
 export { runEvalCli, type EvalCliOptions } from './cli.js';
+export { exportCapabilityScores, loadAllCapabilityScores, getCapabilityScores } from './export.js';
