@@ -11,14 +11,16 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdirSync, existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { generateReport } from './report.js';
 
 const execFileAsync = promisify(execFile);
 
-const BRAINSTORM_CLI = join(import.meta.dirname, '../../packages/cli/dist/brainstorm.js');
-const PROJECT_DIR = join(import.meta.dirname, 'output');
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const BRAINSTORM_CLI = join(__dirname, '../../packages/cli/dist/brainstorm.js');
+const PROJECT_DIR = join(__dirname, 'output');
 
 interface DogfoodStep {
   name: string;
@@ -208,8 +210,7 @@ async function main() {
   console.log('\n' + report);
 
   // Write report to file
-  const { writeFileSync } = await import('node:fs');
-  writeFileSync(join(import.meta.dirname, 'REPORT.md'), report);
+  writeFileSync(join(__dirname, 'REPORT.md'), report);
   console.log(`\nReport saved to tests/dogfood/REPORT.md`);
 
   // Exit with appropriate code
