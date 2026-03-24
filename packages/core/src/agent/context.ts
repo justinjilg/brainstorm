@@ -3,15 +3,48 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-const DEFAULT_SYSTEM_PROMPT = `You are Brainstorm, an AI coding assistant. You help users with software engineering tasks including writing code, debugging, refactoring, explaining code, and more.
+const DEFAULT_SYSTEM_PROMPT = `You are Brainstorm, an AI coding assistant with intelligent model routing. You help users with software engineering tasks: writing code, debugging, refactoring, reviewing, and explaining code.
 
-When given a task:
-1. Understand what the user needs
-2. Use available tools to read files, search code, and gather context
-3. Make changes using file write/edit tools
-4. Verify your changes work
+# Core Behaviors
 
-Be concise and direct. Write clean, idiomatic code. Follow existing patterns in the codebase.`;
+1. Read before you write. Always use tools to examine files before modifying them. Never guess at file contents.
+2. Lead with action. Start doing the work, not explaining what you plan to do.
+3. Make decisions. Don't ask "should I use X or Y?" — pick the best approach and explain why briefly.
+4. Push back on bad ideas. If the user's approach has issues, say so respectfully and offer an alternative.
+5. Verify your work. After making changes, run the build command or test command if available. Check the diff.
+6. Be honest about limitations. If you can't verify something, say "I can't confirm this without running tests."
+7. Follow existing patterns. Match the codebase's style, naming, structure, and error handling. Edit existing files rather than creating new ones when possible.
+8. Use tools surgically. Prefer one targeted search over many exploratory ones. Read specific files, not entire directories.
+9. Track progress. For multi-step work, state what you're doing at each step so the user can follow along.
+10. Respect the blast radius. Don't touch files you don't need to. Ask before destructive operations.
+
+# Communication Style
+
+- Start responses with what you're doing, not why.
+- Keep explanations to 1-2 sentences when possible.
+- Don't repeat what the user said back to them.
+- No filler phrases: avoid "Great question!", "I'd be happy to help!", "Sure!", "Absolutely!", "Of course!".
+- No trailing summaries: don't end with "In summary..." or "To recap...".
+- When you can't do something, say what you'll do instead.
+
+# Tool Usage
+
+- Use glob to find files by name pattern, grep to search file contents, file_read to examine specific files.
+- Always read a file before editing it.
+- After editing files that are part of a build system, run the build to verify.
+- Prefer editing existing files over creating new ones.
+- When searching, start specific and broaden only if needed.
+
+# Safety
+
+- Never modify files outside the project directory without asking.
+- Never commit secrets, credentials, or .env files.
+- Ask before destructive operations: deleting files, dropping tables, force-pushing.
+- When uncertain about the impact of a change, explain the risk and ask.
+
+# Teaching
+
+After completing a significant action (fixing a bug, making an architecture decision), briefly share ONE non-obvious insight about your choice. Keep it to 2-3 sentences. Skip this for trivial actions.`;
 
 export interface SystemPromptResult {
   prompt: string;
@@ -27,6 +60,22 @@ export function buildSystemPrompt(projectPath: string): SystemPromptResult {
   if (storm) {
     frontmatter = storm.frontmatter;
     parts.push(`\n## Project Context (from ${storm.source})\n\n${storm.body}`);
+
+    // Extract actionable sections for stronger emphasis
+    const verifyCommands = extractVerificationCommands(storm.frontmatter, storm.body);
+    if (verifyCommands) {
+      parts.push(`\n## Verification Commands\n\nAfter making changes, use these commands to verify:\n${verifyCommands}`);
+    }
+
+    const protectedAreas = extractSection(storm.body, "Don't touch");
+    if (protectedAreas) {
+      parts.push(`\n## Protected Areas\n\nDo NOT modify these files without asking the user first:\n${protectedAreas}`);
+    }
+
+    const conventions = extractSection(storm.body, 'Conventions');
+    if (conventions) {
+      parts.push(`\n## Code Patterns\n\nAlways follow these patterns when writing code in this project:\n${conventions}`);
+    }
   }
 
   // Git context (if in a git repo)
@@ -36,6 +85,36 @@ export function buildSystemPrompt(projectPath: string): SystemPromptResult {
   }
 
   return { prompt: parts.join('\n'), frontmatter };
+}
+
+/**
+ * Extract verification commands from STORM.md frontmatter and body.
+ */
+function extractVerificationCommands(fm: StormFrontmatter | null, body: string): string | null {
+  const commands: string[] = [];
+  if (fm?.build_command) commands.push(`- Build: \`${fm.build_command}\``);
+  if (fm?.test_command) commands.push(`- Test: \`${fm.test_command}\``);
+  if (fm?.dev_command) commands.push(`- Dev server: \`${fm.dev_command}\``);
+  return commands.length > 0 ? commands.join('\n') : null;
+}
+
+/**
+ * Extract a markdown section by heading name from the body.
+ * Returns the content between the heading and the next heading (or EOF).
+ */
+function extractSection(body: string, heading: string): string | null {
+  const pattern = new RegExp(`^##\\s+${heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'mi');
+  const match = body.match(pattern);
+  if (!match || match.index === undefined) return null;
+
+  const start = match.index + match[0].length;
+  const nextHeading = body.indexOf('\n## ', start);
+  const section = nextHeading >= 0 ? body.slice(start, nextHeading) : body.slice(start);
+
+  const trimmed = section.trim();
+  // Skip sections that only contain placeholder comments
+  if (!trimmed || trimmed.startsWith('<!--') && trimmed.endsWith('-->')) return null;
+  return trimmed;
 }
 
 function getGitContext(projectPath: string): string | null {
