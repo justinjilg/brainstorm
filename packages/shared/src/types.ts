@@ -158,6 +158,7 @@ export type AgentEvent =
 // ── Tool System ──────────────────────────────────────────────────────
 
 export type ToolPermission = 'auto' | 'confirm' | 'deny';
+export type PermissionMode = 'auto' | 'confirm' | 'plan';
 
 export interface ToolDefinition {
   name: string;
