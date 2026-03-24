@@ -9,14 +9,12 @@
  * Requires: BRAINSTORM_API_KEY env var (routes through BrainstormRouter)
  */
 
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { mkdirSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { mkdirSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdtempSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { generateReport } from './report.js';
-
-const execFileAsync = promisify(execFile);
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const BRAINSTORM_CLI = join(__dirname, '../../packages/cli/dist/brainstorm.js');
@@ -73,6 +71,131 @@ const STEPS: DogfoodStep[] = [
   },
 ];
 
+/**
+ * Extract a JSON object from mixed output that may contain non-JSON text.
+ * Looks for the last complete JSON object in the output.
+ */
+function extractJSON(raw: string): any | null {
+  // Try parsing the whole string first (fast path)
+  try {
+    return JSON.parse(raw.trim());
+  } catch {
+    // ignore
+  }
+
+  // Find the last JSON object by scanning for matching braces
+  let depth = 0;
+  let end = -1;
+  let start = -1;
+
+  // Search backwards for the last closing brace
+  for (let i = raw.length - 1; i >= 0; i--) {
+    if (raw[i] === '}') {
+      if (end === -1) end = i;
+      depth++;
+    } else if (raw[i] === '{') {
+      depth--;
+      if (depth === 0) {
+        start = i;
+        break;
+      }
+    }
+  }
+
+  if (start !== -1 && end !== -1) {
+    try {
+      return JSON.parse(raw.slice(start, end + 1));
+    } catch {
+      // ignore
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Extract model and cost from non-JSON output using regex patterns.
+ */
+function extractFromText(text: string): { model?: string; cost?: number } {
+  const result: { model?: string; cost?: number } = {};
+
+  // Match model names like "claude-3-opus-20240229", "gpt-4o", "llama-3.1-70b", etc.
+  const modelMatch = text.match(/→\s*([a-zA-Z][a-zA-Z0-9._-]+(?:\/[a-zA-Z0-9._-]+)?)/);
+  if (modelMatch) {
+    result.model = modelMatch[1];
+  }
+
+  // Match cost patterns like "$0.0123" or "[cost: $0.0042]"
+  const costMatch = text.match(/\$(\d+\.?\d*)/);
+  if (costMatch) {
+    result.cost = parseFloat(costMatch[1]);
+  }
+
+  return result;
+}
+
+/**
+ * Run a brainstorm CLI step by spawning a child process and piping the prompt
+ * via stdin to avoid shell argument length/encoding issues with multi-line prompts.
+ */
+function runBrainstormCLI(
+  prompt: string,
+  opts: { maxSteps: number; cwd: string; timeoutMs: number },
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  return new Promise((resolve, reject) => {
+    const args = [
+      BRAINSTORM_CLI, 'run', '--pipe',
+      '--tools',
+      '--max-steps', String(opts.maxSteps),
+      '--json',
+    ];
+
+    const child = spawn('node', args, {
+      cwd: opts.cwd,
+      env: { ...process.env, BRAINSTORM_LOG_LEVEL: 'warn' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let killed = false;
+
+    const timer = setTimeout(() => {
+      killed = true;
+      child.kill('SIGTERM');
+      // Give it a moment to clean up, then force kill
+      setTimeout(() => child.kill('SIGKILL'), 5_000);
+    }, opts.timeoutMs);
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (killed) {
+        reject(new Error(`Timed out after ${opts.timeoutMs}ms`));
+      } else {
+        resolve({ stdout, stderr, exitCode: code ?? 1 });
+      }
+    });
+
+    // Bug 1 fix: pipe the prompt via stdin instead of passing as CLI argument.
+    // This avoids shell argument length limits and multi-line encoding issues.
+    child.stdin.write(prompt);
+    child.stdin.end();
+  });
+}
+
 async function runStep(step: DogfoodStep, index: number): Promise<StepResult> {
   console.log(`\n[${'='.repeat(60)}]`);
   console.log(`Step ${index + 1}/${STEPS.length}: ${step.name}`);
@@ -81,44 +204,57 @@ async function runStep(step: DogfoodStep, index: number): Promise<StepResult> {
   const start = Date.now();
 
   try {
-    const { stdout } = await execFileAsync('node', [
-      BRAINSTORM_CLI, 'run', step.prompt,
-      '--tools',
-      '--max-steps', String(step.maxSteps),
-      '--json',
-    ], {
+    const { stdout, stderr, exitCode } = await runBrainstormCLI(step.prompt, {
+      maxSteps: step.maxSteps,
       cwd: PROJECT_DIR,
-      timeout: 300_000, // 5 min per step
-      env: { ...process.env, BRAINSTORM_LOG_LEVEL: 'warn' },
+      timeoutMs: 300_000, // 5 min per step
     });
 
     const durationMs = Date.now() - start;
+    const combined = stdout + '\n' + stderr;
 
-    let parsed: any;
-    try {
-      parsed = JSON.parse(stdout);
-    } catch {
-      // If JSON parsing fails, treat the raw output as text
-      parsed = { text: stdout, model: 'unknown', cost: 0, success: true };
+    // Bug 2 fix: robust JSON extraction from mixed output
+    let parsed = extractJSON(stdout);
+
+    // If JSON extraction from stdout failed, try extracting from combined output
+    if (!parsed) {
+      parsed = extractJSON(combined);
     }
+
+    // Bug 3 fix: fallback extraction from non-JSON text output
+    const textFallback = extractFromText(combined);
+
+    const model = parsed?.model ?? textFallback.model ?? 'unknown';
+    const cost = parsed?.cost ?? textFallback.cost ?? 0;
+    const toolCalls = parsed?.toolCalls ?? 0;
+    const success = parsed ? parsed.success !== false : exitCode === 0;
+    const text = parsed?.text ?? stdout;
 
     const result: StepResult = {
       name: step.name,
-      model: parsed.model ?? 'unknown',
-      cost: parsed.cost ?? 0,
+      model,
+      cost,
       durationMs,
-      toolCalls: parsed.toolCalls ?? 0,
-      success: parsed.success !== false,
-      output: (parsed.text ?? stdout).slice(0, 500),
+      toolCalls,
+      success,
+      output: text.slice(0, 500),
     };
 
-    // Check expected files
+    // Bug 4 fix: check expected files AFTER determining success from output.
+    // The file check is independent of JSON parsing — files may exist even if
+    // JSON parsing failed. Only mark as failed if files are actually missing.
     if (step.expectedFiles) {
       const missing = step.expectedFiles.filter((f) => !existsSync(join(PROJECT_DIR, f)));
       if (missing.length > 0) {
         result.success = false;
         result.error = `Missing expected files: ${missing.join(', ')}`;
       }
+    }
+
+    // If the process exited non-zero and we had no parsed output, capture the error
+    if (exitCode !== 0 && !parsed) {
+      result.success = false;
+      result.error = result.error ?? `Process exited with code ${exitCode}: ${stderr.slice(0, 300)}`;
     }
 
     console.log(`  Model: ${result.model}`);
@@ -139,7 +275,7 @@ async function runStep(step: DogfoodStep, index: number): Promise<StepResult> {
       toolCalls: 0,
       success: false,
       error: err.message?.slice(0, 500),
-      output: err.stderr?.slice(0, 500) ?? '',
+      output: '',
     };
   }
 }
