@@ -3,3 +3,4 @@ export { buildSystemPrompt, parseAtMentions } from './agent/context.js';
 export { SessionManager } from './session/manager.js';
 export { PermissionManager } from './permissions/manager.js';
 export { compactContext, estimateTokenCount, needsCompaction } from './session/compaction.js';
+export { spawnSubagent, type SubagentOptions, type SubagentResult } from './agent/subagent.js';
