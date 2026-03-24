@@ -72,6 +72,12 @@ export const SUBAGENT_TYPE_NAMES: SubagentType[] = ['explore', 'plan', 'code', '
 
 // ── Subagent Execution ──────────────────────────────────────────────
 
+/** Callback for subagent lifecycle hooks (injected to avoid circular deps with @brainstorm/hooks). */
+export type SubagentHookFn = (
+  event: 'SubagentStart' | 'SubagentStop',
+  context: { subagentType: string; prompt?: string; budget?: number; result?: string; cost?: number; toolCalls?: number; model?: string },
+) => Promise<void>;
+
 export interface SubagentOptions {
   config: BrainstormConfig;
   registry: ProviderRegistry;
@@ -87,6 +93,8 @@ export interface SubagentOptions {
   maxSteps?: number;
   /** Budget limit in dollars. If exceeded, subagent is terminated (parent continues). */
   budgetLimit?: number;
+  /** Optional hook callback for SubagentStart/SubagentStop events. */
+  onHook?: SubagentHookFn;
 }
 
 export interface SubagentResult {
@@ -134,6 +142,11 @@ export async function spawnSubagent(
 
   const budgetLimit = options.budgetLimit ?? costTracker.getSubagentBudget();
   const costBefore = costTracker.getSessionCost();
+
+  // Fire SubagentStart hook
+  if (options.onHook) {
+    await options.onHook('SubagentStart', { subagentType: type, prompt: task, budget: budgetLimit });
+  }
   const toolCallNames: string[] = [];
   let fullText = '';
   let budgetExceeded = false;
@@ -189,6 +202,17 @@ export async function spawnSubagent(
   const subagentCost = costTracker.getSessionCost() - costBefore;
   if (budgetExceeded) {
     fullText += `\n\n[Subagent terminated: budget limit of $${budgetLimit.toFixed(4)} exceeded ($${subagentCost.toFixed(4)} used)]`;
+  }
+
+  // Fire SubagentStop hook
+  if (options.onHook) {
+    await options.onHook('SubagentStop', {
+      subagentType: type,
+      result: fullText.slice(0, 500),
+      cost: subagentCost,
+      toolCalls: toolCallNames.length,
+      model: decision.model.name,
+    });
   }
 
   return {

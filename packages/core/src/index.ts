@@ -3,7 +3,7 @@ export { buildSystemPrompt, parseAtMentions } from './agent/context.js';
 export { SessionManager } from './session/manager.js';
 export { PermissionManager } from './permissions/manager.js';
 export { compactContext, estimateTokenCount, needsCompaction } from './session/compaction.js';
-export { spawnSubagent, spawnParallel, getSubagentTypeConfig, SUBAGENT_TYPE_NAMES, type SubagentOptions, type SubagentResult, type SubagentType } from './agent/subagent.js';
+export { spawnSubagent, spawnParallel, getSubagentTypeConfig, SUBAGENT_TYPE_NAMES, type SubagentOptions, type SubagentResult, type SubagentType, type SubagentHookFn } from './agent/subagent.js';
 export { loadSkills, findSkill, type SkillDefinition } from './skills/loader.js';
 export { MemoryManager, type MemoryEntry } from './memory/manager.js';
 export { getPlanModeTools, getPlanModePrompt } from './plan/mode.js';
