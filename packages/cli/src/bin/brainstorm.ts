@@ -4,7 +4,8 @@ import { getDb } from '@brainstorm/db';
 import { createProviderRegistry } from '@brainstorm/providers';
 import { BrainstormRouter, CostTracker } from '@brainstorm/router';
 import { createDefaultToolRegistry, configureSandbox } from '@brainstorm/tools';
-import { runAgentLoop, buildSystemPrompt, SessionManager, type CompactionCallbacks } from '@brainstorm/core';
+import { runAgentLoop, buildSystemPrompt, SessionManager, PermissionManager, createSubagentTool, type CompactionCallbacks } from '@brainstorm/core';
+import type { OutputStyle } from '@brainstorm/core';
 import { AgentManager, parseAgentNL } from '@brainstorm/agents';
 import { runWorkflow, getPresetWorkflow, autoSelectPreset, PRESET_WORKFLOWS } from '@brainstorm/workflow';
 import { renderMarkdownToString } from '../components/MarkdownRenderer.js';
@@ -993,9 +994,28 @@ program
     await connectMCPServers(tools, config);
     const projectPath = process.cwd();
     configureSandbox(config.shell.sandbox as any, projectPath);
+
+    // Permission manager — gates tool execution
+    const permissionManager = new PermissionManager(
+      config.general.defaultPermissionMode as any,
+      config.permissions,
+    );
+
+    // Output style — mutable so /style can change it mid-session
+    let currentOutputStyle: OutputStyle = (config.general.outputStyle as OutputStyle) ?? 'concise';
+
     const sessionManager = new SessionManager(db);
-    const { prompt: systemPrompt, frontmatter } = buildSystemPrompt(projectPath);
+    let { prompt: systemPrompt, frontmatter } = buildSystemPrompt(projectPath, currentOutputStyle);
     const router = new BrainstormRouter(config, registry, costTracker, frontmatter);
+
+    // Register the subagent tool (model can spawn focused subagents)
+    const subagentTool = createSubagentTool({
+      config, registry, router, costTracker, tools, projectPath,
+    });
+    tools.register(subagentTool);
+
+    // Preferred model override — mutable so /model can change it
+    let preferredModelId: string | undefined;
 
     // Session management: resume, fork, or start new
     let session: any;
@@ -1056,6 +1076,8 @@ program
           sessionId: session.id, projectPath, systemPrompt,
           compaction: buildCompactionCallbacks(sessionManager),
           signal: simpleAbortController.signal,
+          permissionCheck: (name, perm) => permissionManager.check(name, perm),
+          preferredModelId,
         })) {
           if (event.type === 'routing') process.stderr.write(`[${event.decision.strategy} -> ${event.decision.model.name}] `);
           if (event.type === 'text-delta') { fullResponse += event.delta; process.stdout.write(event.delta); }
@@ -1086,6 +1108,8 @@ program
         sessionId: session.id, projectPath, systemPrompt,
         compaction: buildCompactionCallbacks(sessionManager),
         signal: currentAbortController.signal,
+        permissionCheck: (name, perm) => permissionManager.check(name, perm),
+        preferredModelId,
       });
       // Wrap to capture assistant message after completion
       return (async function* () {
@@ -1112,6 +1136,27 @@ program
         modelCount: { local: localCount, cloud: cloudCount },
         onSendMessage: handleSendMessage,
         onAbort: handleAbort,
+        slashCallbacks: {
+          setModel: (model: string) => { preferredModelId = model; },
+          setStrategy: (s: string) => { router.setStrategy(s as any); },
+          setMode: (mode: string) => { permissionManager.setMode(mode as any); },
+          getMode: () => permissionManager.getMode(),
+          setOutputStyle: (style: string) => {
+            currentOutputStyle = style as OutputStyle;
+            const rebuilt = buildSystemPrompt(projectPath, currentOutputStyle);
+            systemPrompt = rebuilt.prompt;
+          },
+          getOutputStyle: () => currentOutputStyle,
+          getBudget: () => {
+            const state = costTracker.getBudgetState();
+            if (!state.sessionLimit) return null;
+            return { remaining: Math.max(0, state.sessionLimit - state.sessionUsed), limit: state.sessionLimit };
+          },
+          compact: async () => {
+            const cb = buildCompactionCallbacks(sessionManager);
+            await cb.compact({ contextWindow: 128_000 });
+          },
+        },
       }),
     );
   });
