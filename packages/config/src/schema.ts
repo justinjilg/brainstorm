@@ -156,6 +156,13 @@ const mcpSchema = z.object({
   servers: z.array(mcpServerSchema).default([]),
 });
 
+// ── Permissions Config ──────────────────────────────────────────────
+
+const permissionsSchema = z.object({
+  allowlist: z.array(z.string()).default([]),
+  denylist: z.array(z.string()).default([]),
+});
+
 // ── Full Config ─────────────────────────────────────────────────────
 
 export const brainstormConfigSchema = z.object({
@@ -164,6 +171,7 @@ export const brainstormConfigSchema = z.object({
   shell: shellSchema.default({}),
   budget: budgetSchema.default({}),
   providers: providersSchema.default({}),
+  permissions: permissionsSchema.default({}),
   routing: z.object({
     rules: z.array(routingRuleSchema).default([]),
   }).default({}),
@@ -184,3 +192,4 @@ export type WorkflowStepConfig = z.infer<typeof workflowStepConfigSchema>;
 export type MCPServerConfigSchema = z.infer<typeof mcpServerSchema>;
 export type CompactionConfig = z.infer<typeof compactionSchema>;
 export type ShellConfig = z.infer<typeof shellSchema>;
+export type PermissionsConfig = z.infer<typeof permissionsSchema>;
