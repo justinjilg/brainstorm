@@ -12,16 +12,20 @@ Brainstorm — an open-source, CLI-first AI coding assistant with intelligent mo
 
 ## Architecture
 
-Turborepo monorepo with 8 TypeScript packages:
+Turborepo monorepo with 12 TypeScript packages:
 
-- `packages/shared` — Types (TaskProfile, ModelEntry, RoutingDecision, etc.), errors, pino logger
+- `packages/shared` — Types (TaskProfile, ModelEntry, AgentProfile, WorkflowEvent, etc.), errors, pino logger
 - `packages/config` — Zod schemas, TOML config loader, layered config (defaults → global → project → env), BRAINSTORM.md parser
-- `packages/db` — better-sqlite3 persistence (sessions, messages, cost_records, model_performance), auto-migrations
-- `packages/providers` — AI Gateway (cloud) + Ollama/LM Studio/llama.cpp (local) via @ai-sdk/openai-compatible, auto-discovery
-- `packages/router` — BrainstormRouter: heuristic task classifier, 4 routing strategies (cost-first, quality-first, rule-based, combined), CostTracker, fallback chain
-- `packages/tools` — Built-in tools (file_read, file_write, file_edit, shell, glob, grep) with AI SDK v6 tool() + permission levels
-- `packages/core` — Agentic loop using AI SDK v6 streamText + stepCountIs, SessionManager, context builder
-- `packages/cli` — Commander subcommands (chat, run, models, config, budget), readline-based interactive chat
+- `packages/db` — better-sqlite3 persistence (sessions, messages, cost_records, agent_profiles, workflow_runs), auto-migrations
+- `packages/providers` — AI Gateway + BrainstormRouter SaaS (cloud) + Ollama/LM Studio/llama.cpp (local), auto-discovery with caching
+- `packages/router` — BrainstormRouter: heuristic task classifier, 4 routing strategies, CostTracker, fallback chain
+- `packages/tools` — 16 built-in tools (filesystem 7, shell 3, git 4, web 2) with permission levels + checkpoint system
+- `packages/core` — Agentic loop, SessionManager, PermissionManager, context compaction, @-mentions, skills, memory, plan mode, multimodal, security (path guard, credential scanner, .brainstormignore)
+- `packages/agents` — Agent profiles, NL parser, role prompts, Zod output schemas, TOML+SQLite merge
+- `packages/workflow` — Workflow engine state machine, context filtering, confidence/escalation, 4 preset workflows
+- `packages/hooks` — HookManager for lifecycle automation (PreToolUse, PostToolUse, SessionStart, etc.)
+- `packages/mcp` — MCP client for external tool integration (SSE/HTTP transports)
+- `packages/cli` — Commander subcommands (chat, run, models, config, budget, agent, workflow, sessions), Ink TUI
 
 ## Build & Run
 
