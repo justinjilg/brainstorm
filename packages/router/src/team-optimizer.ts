@@ -89,7 +89,7 @@ export function optimizeTeamComposition(
   // Compute baseline: run everything on the baseline model (or most expensive)
   const baseline = baselineModelId
     ? available.find((m) => m.id === baselineModelId)
-    : available.sort((a, b) => b.pricing.outputPer1MTokens - a.pricing.outputPer1MTokens)[0];
+    : [...available].sort((a, b) => b.pricing.outputPer1MTokens - a.pricing.outputPer1MTokens)[0];
 
   const baselineCost = baseline
     ? subtasks.reduce((sum, st) => sum + estimateSubtaskCost(baseline, st), 0)

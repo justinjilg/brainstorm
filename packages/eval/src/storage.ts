@@ -98,10 +98,20 @@ export function loadEvalRuns(): EvalRun[] {
   const runPath = join(EVAL_DIR, 'runs.jsonl');
   if (!existsSync(runPath)) return [];
 
-  return readFileSync(runPath, 'utf-8')
-    .split('\n')
-    .filter((line) => line.trim())
-    .map((line) => JSON.parse(line) as EvalRun);
+  const runs: EvalRun[] = [];
+  const lines = readFileSync(runPath, 'utf-8').split('\n');
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    try {
+      runs.push(JSON.parse(line) as EvalRun);
+    } catch {
+      // Skip corrupted lines — don't let one bad line block all eval history
+    }
+  }
+
+  return runs;
 }
 
 /**
