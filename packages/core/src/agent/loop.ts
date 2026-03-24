@@ -4,9 +4,10 @@ import type { BrainstormConfig } from '@brainstorm/config';
 import type { ProviderRegistry } from '@brainstorm/providers';
 import { BrainstormRouter, CostTracker } from '@brainstorm/router';
 import type { ToolRegistry } from '@brainstorm/tools';
-import type { AgentEvent } from '@brainstorm/shared';
+import type { AgentEvent, GatewayFeedbackData } from '@brainstorm/shared';
 import { serializeRoutingMetadata } from '@brainstorm/shared';
 import { createStreamFilter } from './response-filter.js';
+import { parseGatewayHeaders } from '@brainstorm/gateway';
 
 // Suppress AI SDK warnings in non-debug mode
 if (!process.env.BRAINSTORM_LOG_LEVEL) {
@@ -100,6 +101,24 @@ export async function* runAgentLoop(
     // Flush any remaining buffered content (critical for short responses < 80 chars)
     const remaining = streamFilter.flush();
     if (remaining) yield { type: 'text-delta', delta: remaining };
+
+    // Extract gateway response headers (X-BR-*) for cost reconciliation and telemetry
+    try {
+      const response = await result.response;
+      if (response.headers) {
+        const feedback = parseGatewayHeaders(response.headers);
+        if (Object.keys(feedback).length > 0) {
+          yield { type: 'gateway-feedback', feedback: feedback as GatewayFeedbackData };
+
+          // Reconcile actual cost from gateway if available (PR #5)
+          if (feedback.actualCost !== undefined) {
+            costTracker.reconcile(sessionId, feedback.actualCost);
+          }
+        }
+      }
+    } catch {
+      // Gateway headers not available (local models) — non-fatal
+    }
 
     yield { type: 'done', totalCost: costTracker.getSessionCost() };
   } catch (error: any) {

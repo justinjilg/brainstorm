@@ -159,12 +159,27 @@ export interface Message {
 
 // ── Events ───────────────────────────────────────────────────────────
 
+export interface GatewayFeedbackData {
+  guardianStatus?: string;
+  estimatedCost?: number;
+  actualCost?: number;
+  efficiency?: number;
+  overheadMs?: number;
+  cacheHit?: string;
+  budgetRemaining?: number;
+  selectedModel?: string;
+  selectionMethod?: string;
+  complexityScore?: number;
+  requestId?: string;
+}
+
 export type AgentEvent =
   | { type: 'routing'; decision: RoutingDecision }
   | { type: 'text-delta'; delta: string }
   | { type: 'tool-call-start'; toolName: string; args: unknown }
   | { type: 'tool-call-result'; toolName: string; result: unknown }
   | { type: 'step-complete'; text: string; toolCalls: unknown[] }
+  | { type: 'gateway-feedback'; feedback: GatewayFeedbackData }
   | { type: 'error'; error: Error }
   | { type: 'done'; totalCost: number };
 

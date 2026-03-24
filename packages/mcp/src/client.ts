@@ -5,10 +5,17 @@ import type { ToolRegistry } from '@brainstorm/tools';
  */
 export interface MCPServerConfig {
   name: string;
-  transport: 'sse' | 'http';
+  transport: 'sse' | 'http' | 'stdio';
   url: string;
+  /** For stdio transport: command to spawn. */
+  command?: string;
+  /** For stdio transport: arguments to pass. */
+  args?: string[];
+  /** Environment variables passed to the server process. */
   env?: Record<string, string>;
   enabled?: boolean;
+  /** Optional tool name filter — only register tools matching these names. */
+  toolFilter?: string[];
 }
 
 /**
@@ -36,18 +43,20 @@ export class MCPClientManager {
     for (const server of this.servers) {
       try {
         const { createMCPClient } = await import('@ai-sdk/mcp');
-        const client = await createMCPClient({
-          transport: {
-            type: server.transport,
-            url: server.url,
-          },
-        });
+
+        const transport = server.transport === 'stdio'
+          ? await this.createStdioTransport(server)
+          : { type: server.transport as 'sse' | 'http', url: server.url };
+
+        const client = await createMCPClient({ transport });
 
         this.connections.set(server.name, client);
 
         const tools = await client.tools();
         if (tools) {
+          const filterSet = server.toolFilter ? new Set(server.toolFilter) : null;
           for (const [toolName, toolDef] of Object.entries(tools)) {
+            if (filterSet && !filterSet.has(toolName)) continue;
             (registry as any).tools.set(`mcp:${server.name}:${toolName}`, {
               name: `mcp:${server.name}:${toolName}`,
               description: (toolDef as any).description ?? toolName,
@@ -64,6 +73,15 @@ export class MCPClientManager {
     }
 
     return { connected, errors };
+  }
+
+  private async createStdioTransport(server: MCPServerConfig): Promise<any> {
+    const { Experimental_StdioMCPTransport } = await import('@ai-sdk/mcp/mcp-stdio');
+    return new Experimental_StdioMCPTransport({
+      command: server.command ?? 'npx',
+      args: server.args ?? [server.url],
+      env: { ...process.env, ...server.env } as Record<string, string>,
+    });
   }
 
   async disconnectAll(): Promise<void> {
