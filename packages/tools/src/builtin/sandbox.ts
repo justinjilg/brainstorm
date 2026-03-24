@@ -16,20 +16,40 @@ export interface SandboxResult {
 
 /** Patterns that are always blocked in restricted mode. */
 const BLOCKED_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
+  // Destructive filesystem operations
   { pattern: /\brm\s+(-\w*r\w*\s+.*)?\/\s*$/, reason: 'Recursive deletion of root filesystem' },
   { pattern: /\brm\s+-\w*rf\w*\s+\//, reason: 'Recursive force deletion from root' },
-  { pattern: /\bsudo\b/, reason: 'Elevated privileges not allowed in sandbox' },
-  { pattern: /\bchmod\s+777\b/, reason: 'World-writable permissions are insecure' },
   { pattern: /\bmkfs\b/, reason: 'Filesystem creation is destructive' },
   { pattern: /\bdd\s+if=/, reason: 'Raw disk operations blocked' },
-  { pattern: /:\(\)\s*\{\s*:\|:&\s*\}\s*;/, reason: 'Fork bomb detected' },
   { pattern: />\s*\/dev\/sd[a-z]/, reason: 'Direct device writes blocked' },
-  { pattern: /\bcurl\b.*\|\s*(ba)?sh/, reason: 'Piping remote content to shell is risky' },
-  { pattern: /\bwget\b.*\|\s*(ba)?sh/, reason: 'Piping remote content to shell is risky' },
-  { pattern: /\beval\s+"?\$\(.*curl/, reason: 'Eval of remote content blocked' },
+  { pattern: /\bchmod\s+777\b/, reason: 'World-writable permissions are insecure' },
+  // Privilege escalation
+  { pattern: /\bsudo\b/, reason: 'Elevated privileges not allowed in sandbox' },
+  { pattern: /\bsu\s+-c\b/, reason: 'Privilege escalation via su blocked' },
+  { pattern: /\bpkexec\b/, reason: 'Privilege escalation via pkexec blocked' },
+  { pattern: /\bdoas\b/, reason: 'Privilege escalation via doas blocked' },
+  // Fork bombs and system control
+  { pattern: /:\(\)\s*\{\s*:\|:&\s*\}\s*;/, reason: 'Fork bomb detected' },
   { pattern: /\bshutdown\b/, reason: 'System shutdown blocked' },
   { pattern: /\breboot\b/, reason: 'System reboot blocked' },
   { pattern: /\binit\s+[06]\b/, reason: 'System halt/reboot blocked' },
+  // Remote code execution
+  { pattern: /\bcurl\b.*\|\s*(ba)?sh/, reason: 'Piping remote content to shell is risky' },
+  { pattern: /\bwget\b.*\|\s*(ba)?sh/, reason: 'Piping remote content to shell is risky' },
+  { pattern: /\beval\s+"?\$\(.*curl/, reason: 'Eval of remote content blocked' },
+  // Encoding bypass detection — catch attempts to obfuscate dangerous commands
+  { pattern: /\bbase64\s+(-d|--decode)\b.*\|\s*(ba)?sh/, reason: 'Encoded command piped to shell blocked' },
+  { pattern: /\bbase64\b.*\|\s*(ba)?sh/, reason: 'Encoded command piped to shell blocked' },
+  { pattern: /\bpython[23]?\s+-c\b/, reason: 'Inline Python execution blocked in sandbox — use a .py file' },
+  { pattern: /\bnode\s+-e\b/, reason: 'Inline Node.js execution blocked in sandbox — use a .js file' },
+  { pattern: /\bperl\s+-e\b/, reason: 'Inline Perl execution blocked in sandbox — use a .pl file' },
+  { pattern: /\bruby\s+-e\b/, reason: 'Inline Ruby execution blocked in sandbox — use a .rb file' },
+  { pattern: /\$'\\x[0-9a-fA-F]/, reason: 'ANSI-C quoted escape sequence blocked' },
+  // Git history rewriting
+  { pattern: /\bgit\s+filter-branch\b/, reason: 'History rewriting via filter-branch blocked' },
+  { pattern: /\bgit\s+filter-repo\b/, reason: 'History rewriting via filter-repo blocked' },
+  { pattern: /\bgit\s+gc\s+.*--prune=now/, reason: 'Aggressive garbage collection blocked' },
+  { pattern: /\bgit\s+reflog\s+expire\s+.*--expire=now/, reason: 'Reflog expiry blocked' },
 ];
 
 /**
@@ -58,12 +78,12 @@ function checkRestricted(command: string, projectPath?: string): SandboxResult {
 
   // Check for writes outside project directory (heuristic)
   if (projectPath) {
-    // Detect absolute path writes that aren't within the project
-    const absWritePattern = /(?:>|tee|cp|mv|install)\s+\/?(?:usr|etc|var|opt|tmp|home|root)\//;
-    if (absWritePattern.test(command)) {
+    const systemPaths = /(?:>|tee|cp|mv|install)\s+\/?(?:usr|etc|var|opt|tmp|home|root|Library|System|private|proc|sys|dev)\//;
+    if (systemPaths.test(command)) {
       return { allowed: false, reason: 'Sandbox blocked: writing outside project directory' };
     }
   }
 
+  // Warn if container mode was expected but fell back to restricted
   return { allowed: true };
 }

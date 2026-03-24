@@ -61,6 +61,8 @@ const HOOK_SKIP_PATTERNS: Array<{ pattern: RegExp; flag: string }> = [
   { pattern: /--no-verify\b/, flag: '--no-verify' },
   { pattern: /--no-gpg-sign\b/, flag: '--no-gpg-sign' },
   { pattern: /-c\s+commit\.gpgsign=false\b/, flag: 'commit.gpgsign=false' },
+  { pattern: /-c\s+core\.hooksPath=/, flag: 'core.hooksPath override' },
+  { pattern: /\bHUSKY=0\b/, flag: 'HUSKY=0' },
 ];
 
 const BROAD_STAGING_PATTERNS = [
@@ -167,6 +169,7 @@ export function formatViolations(violations: GitSafetyViolation[]): string {
 export function hasHardBlock(violations: GitSafetyViolation[]): boolean {
   const HARD_RULES = new Set([
     'no-force-push-protected',
+    'no-force-push-main',
     'no-skip-hooks',
     'no-hard-reset',
     'no-clean-force',
