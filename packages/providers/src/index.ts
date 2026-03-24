@@ -1,4 +1,4 @@
-export { createProviderRegistry, type ProviderRegistry } from './registry.js';
+export { createProviderRegistry, type ProviderRegistry, type ResolvedKeys } from './registry.js';
 export { createOllamaProvider, discoverOllamaModels } from './local/ollama.js';
 export { createLMStudioProvider, createLlamaCppProvider, discoverOpenAICompatModels } from './local/openai-compat.js';
 export { discoverLocalModels, type DiscoveryResult } from './local/discovery.js';
