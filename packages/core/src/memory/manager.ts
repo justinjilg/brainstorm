@@ -103,6 +103,22 @@ export class MemoryManager {
     return lines.slice(0, 200).join('\n');
   }
 
+  /** Get the memory directory path (for subagent access). */
+  getMemoryDir(): string {
+    return this.memoryDir;
+  }
+
+  /** Get raw file contents for all memory files (for dream consolidation). */
+  getRawFiles(): Array<{ filename: string; content: string }> {
+    if (!existsSync(this.memoryDir)) return [];
+    return readdirSync(this.memoryDir)
+      .filter((f) => f.endsWith('.md'))
+      .map((f) => ({
+        filename: f,
+        content: readFileSync(join(this.memoryDir, f), 'utf-8'),
+      }));
+  }
+
   /** Search memories by keyword. */
   search(query: string): MemoryEntry[] {
     const lower = query.toLowerCase();
