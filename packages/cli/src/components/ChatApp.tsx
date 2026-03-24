@@ -25,6 +25,7 @@ interface ChatAppProps {
     getOutputStyle?: () => string;
     getBudget?: () => { remaining: number; limit: number } | null;
     compact?: () => Promise<void>;
+    dream?: () => Promise<string>;
   };
 }
 
@@ -95,6 +96,7 @@ export function ChatApp({ strategy, modelCount, onSendMessage, onAbort, slashCal
     getOutputStyle: slashCallbacks?.getOutputStyle,
     getBudget: slashCallbacks?.getBudget,
     compact: slashCallbacks?.compact,
+    dream: slashCallbacks?.dream,
   }), [currentModel, sessionCost, tokenCount, exit, slashCallbacks]);
 
   const handleSubmit = useCallback(async (text: string) => {
