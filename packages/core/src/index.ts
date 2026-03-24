@@ -1,4 +1,4 @@
-export { runAgentLoop, type AgentLoopOptions } from './agent/loop.js';
+export { runAgentLoop, type AgentLoopOptions, type CompactionCallbacks } from './agent/loop.js';
 export { buildSystemPrompt, parseAtMentions } from './agent/context.js';
 export { SessionManager } from './session/manager.js';
 export { PermissionManager } from './permissions/manager.js';

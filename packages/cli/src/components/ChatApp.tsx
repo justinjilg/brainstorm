@@ -62,6 +62,12 @@ export function ChatApp({ strategy, modelCount, onSendMessage }: ChatAppProps) {
               { role: 'routing', content: `tool: ${event.toolName}` },
             ]);
             break;
+          case 'compaction':
+            setMessages((prev) => [
+              ...prev,
+              { role: 'routing', content: `context compacted — ${event.removed} messages summarized (${event.tokensBefore.toLocaleString()} → ${event.tokensAfter.toLocaleString()} tokens)` },
+            ]);
+            break;
           case 'task-created':
             setTasks((prev) => [...prev, event.task]);
             break;
