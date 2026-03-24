@@ -124,6 +124,12 @@ export function ChatApp({ strategy, modelCount, onSendMessage, onAbort }: ChatAp
               { role: 'routing', content: `context compacted — ${event.removed} messages summarized (${event.tokensBefore.toLocaleString()} → ${event.tokensAfter.toLocaleString()} tokens)` },
             ]);
             break;
+          case 'subagent-result':
+            setMessages((prev) => [
+              ...prev,
+              { role: 'routing', content: `subagent [${event.subagentType}] → ${event.model} ($${event.cost.toFixed(4)}, ${event.toolCalls.length} tool calls)` },
+            ]);
+            break;
           case 'task-created':
             setTasks((prev) => [...prev, event.task]);
             break;

@@ -14,3 +14,4 @@ export { resolveSafe, isWithinWorkspace, PathTraversalError } from './security/p
 export { filterResponse, createStreamFilter, type StreamFilter } from './agent/response-filter.js';
 export { normalizeInsightMarkers } from './agent/insights.js';
 export { getOutputStylePrompt, OUTPUT_STYLES, type OutputStyle } from './agent/output-styles.js';
+export { createSubagentTool } from './agent/subagent-tool.js';
