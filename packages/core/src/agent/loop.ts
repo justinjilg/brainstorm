@@ -8,6 +8,7 @@ import { setTaskEventHandler } from '@brainstorm/tools';
 import type { AgentEvent, AgentTask, GatewayFeedbackData } from '@brainstorm/shared';
 import { serializeRoutingMetadata } from '@brainstorm/shared';
 import { createStreamFilter } from './response-filter.js';
+import { normalizeInsightMarkers } from './insights.js';
 import { parseGatewayHeaders } from '@brainstorm/gateway';
 
 // Suppress AI SDK warnings in non-debug mode
@@ -97,7 +98,7 @@ export async function* runAgentLoop(
       if (part.type === 'text-delta') {
         const raw = (part as any).text ?? (part as any).delta ?? '';
         const filtered = streamFilter.filter(raw);
-        if (filtered) yield { type: 'text-delta', delta: filtered };
+        if (filtered) yield { type: 'text-delta', delta: normalizeInsightMarkers(filtered) };
       } else if (part.type === 'tool-call') {
         yield { type: 'tool-call-start', toolName: part.toolName, args: (part as any).input ?? (part as any).args };
       } else if (part.type === 'tool-result') {
