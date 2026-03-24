@@ -20,6 +20,8 @@ export interface WorkflowEngineOptions {
   costTracker: CostTracker;
   agentManager: AgentManager;
   projectPath: string;
+  /** Per-step model overrides: stepId → modelId. Used for cross-model workflows. */
+  stepModelOverrides?: Record<string, string>;
 }
 
 export async function* runWorkflow(
@@ -118,6 +120,9 @@ export async function* runWorkflow(
       const sessionId = run.id;
       const systemPrompt = ctx.systemPrompt;
 
+      // Per-step model override for cross-model workflows
+      const stepModelId = options.stepModelOverrides?.[stepDef.id];
+
       for await (const event of runAgentLoop(ctx.messages, {
         config,
         registry,
@@ -128,6 +133,7 @@ export async function* runWorkflow(
         projectPath,
         systemPrompt,
         disableTools: !shouldUseTools(stepDef, agent),
+        ...(stepModelId ? { preferredModelId: stepModelId } : {}),
       })) {
         // Forward agent events as step progress
         yield { type: 'step-progress', stepId: stepDef.id, event };
