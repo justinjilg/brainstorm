@@ -91,11 +91,7 @@ export function buildSystemPrompt(projectPath: string): SystemPromptResult {
 
     const conventions = extractSection(storm.body, 'Conventions');
     if (conventions) {
-      const codeExamples = extractCodeBlocks(conventions);
-      parts.push(`\n## Code Patterns (MANDATORY)\n\nAlways follow these patterns when writing code in this project:\n${conventions}`);
-      if (codeExamples.length > 0) {
-        parts.push(`\nReference examples — match this style exactly:\n${codeExamples.join('\n')}`);
-      }
+      parts.push(`\n## Code Patterns (MANDATORY)\n\nAlways follow these patterns when writing code in this project. Any code blocks below are reference examples — match this style exactly:\n${conventions}`);
     }
 
     // Additional decision-relevant sections
@@ -152,23 +148,6 @@ function extractSection(body: string, heading: string): string | null {
   // Skip sections that only contain placeholder comments
   if (!trimmed || trimmed.startsWith('<!--') && trimmed.endsWith('-->')) return null;
   return trimmed;
-}
-
-/**
- * Extract fenced code blocks from a markdown section.
- * These become explicit "match this style" examples in the system prompt.
- */
-function extractCodeBlocks(section: string): string[] {
-  const blocks: string[] = [];
-  const pattern = /```[\w]*\n([\s\S]*?)```/g;
-  let match;
-  while ((match = pattern.exec(section)) !== null) {
-    const block = match[0].trim();
-    if (block.length > 10 && block.length < 2000) {
-      blocks.push(block);
-    }
-  }
-  return blocks;
 }
 
 function getGitContext(projectPath: string): string | null {
