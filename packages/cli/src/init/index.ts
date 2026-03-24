@@ -16,7 +16,9 @@ import {
   generateBugTemplate,
   generateFeatureTemplate,
   type InitChoices,
+  type GatewayInfo,
 } from './templates.js';
+import { createGatewayClient } from '@brainstorm/gateway';
 
 export interface InitOptions {
   yes?: boolean;
@@ -24,25 +26,60 @@ export interface InitOptions {
 }
 
 /**
- * Orchestrate the init flow: detect → prompt → generate → report.
+ * Orchestrate the init flow: detect → gateway probe → prompt → generate → report.
  */
 export async function runInit(projectDir: string, options: InitOptions): Promise<void> {
   // Phase 1: Detect
   const detection = await detectProject(projectDir);
 
+  // Phase 1.5: Probe BrainstormRouter gateway if API key is set
+  let gatewayInfo: GatewayInfo | null = null;
+  const gw = createGatewayClient();
+  if (gw) {
+    try {
+      const [self, health, discovery] = await Promise.all([
+        gw.getSelf().catch(() => null),
+        gw.getHealth().catch(() => ({ status: 'unknown' })),
+        gw.getDiscovery().catch(() => null),
+      ]);
+      if (self) {
+        gatewayInfo = {
+          connected: true,
+          modelCount: discovery?.models?.available ?? 0,
+          budget: discovery?.budget ? `$${discovery.budget.remaining_usd?.toFixed(2)}/${discovery.budget.period}` : undefined,
+          health: health.status,
+        };
+      }
+    } catch {
+      // Gateway not reachable — proceed without it
+    }
+  }
+
   // Phase 2: Get choices (interactive or defaults)
   let choices: InitChoices | null;
   if (options.yes) {
     choices = buildDefaultChoices(detection);
+    // Auto-set cloud provider when gateway is detected
+    if (gatewayInfo) choices.cloudProvider = 'brainstormrouter';
     console.log('\n  brainstorm init --yes\n');
     console.log(`  Auto-detected: ${choices.language} ${choices.type}`);
     if (detection.localModels.length > 0) {
       console.log(`  Local models: ${detection.localModels.join(', ')}`);
     }
+    if (gatewayInfo) {
+      console.log(`  Gateway: connected (${gatewayInfo.modelCount} models, ${gatewayInfo.health})`);
+      if (gatewayInfo.budget) console.log(`  Budget: ${gatewayInfo.budget}`);
+    }
     console.log();
   } else {
+    // Show gateway detection before prompts
+    if (gatewayInfo) {
+      console.log(`\n  BrainstormRouter detected: ${gatewayInfo.modelCount} models, ${gatewayInfo.health}`);
+    }
     choices = await runPrompts(detection);
     if (!choices) return; // User aborted
+    // Auto-set cloud provider when gateway is detected
+    if (gatewayInfo) choices.cloudProvider = 'brainstormrouter';
   }
 
   // Phase 3: Generate files

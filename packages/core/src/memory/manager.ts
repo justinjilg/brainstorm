@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, unlink
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { createHash } from 'node:crypto';
+import type { BrainstormGateway } from '@brainstorm/gateway';
 
 export interface MemoryEntry {
   id: string;
@@ -19,15 +20,17 @@ export interface MemoryEntry {
  * Storage: ~/.brainstorm/projects/<project-hash>/memory/
  * Index: MEMORY.md (first 200 lines loaded at session start)
  *
- * When BR SaaS is available, memory syncs to cloud RMM for
- * cross-device/cross-agent recall. Local SQLite as fallback.
+ * Gateway push: When a BrainstormGateway client is provided, saved entries
+ * are pushed fire-and-forget to the cloud RMM. Local is source of truth.
  */
 export class MemoryManager {
   private memoryDir: string;
   private indexPath: string;
   private entries: Map<string, MemoryEntry> = new Map();
+  private gateway: BrainstormGateway | null;
 
-  constructor(projectPath: string) {
+  constructor(projectPath: string, gateway?: BrainstormGateway | null) {
+    this.gateway = gateway ?? null;
     const projectHash = createHash('sha256').update(projectPath).digest('hex').slice(0, 16);
     this.memoryDir = join(homedir(), '.brainstorm', 'projects', projectHash, 'memory');
     this.indexPath = join(this.memoryDir, 'MEMORY.md');
@@ -63,6 +66,12 @@ export class MemoryManager {
 
     this.entries.set(id, memory);
     this.updateIndex();
+
+    // Fire-and-forget push to gateway
+    if (this.gateway) {
+      this.gateway.storeMemory(memory.type, `[${memory.name}] ${memory.content}`).catch(() => {});
+    }
+
     return memory;
   }
 

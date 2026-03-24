@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import type { EvalRun, CapabilityDimension } from './types.js';
 import type { CapabilityScores } from '@brainstorm/shared';
 import { createLogger } from '@brainstorm/shared';
+import { createGatewayClient } from '@brainstorm/gateway';
 
 const log = createLogger('eval:export');
 
@@ -43,10 +44,15 @@ export function exportCapabilityScores(run: EvalRun): CapabilityScores {
     if (field) scores[field] = score;
   }
 
-  // Persist
+  // Persist locally
   const allScores = loadAllCapabilityScores();
   allScores[run.modelId] = { scores, evaluatedAt: run.completedAt ?? Date.now() };
   saveAllCapabilityScores(allScores);
+
+  // Push to BrainstormRouter gateway (fire-and-forget)
+  pushToGateway(run.modelId, scores).catch((err) => {
+    log.warn({ modelId: run.modelId, err }, 'Failed to push capability scores to gateway');
+  });
 
   log.info({ modelId: run.modelId, scores }, 'Exported capability scores');
   return scores;
@@ -75,4 +81,13 @@ export function getCapabilityScores(modelId: string): CapabilityScores | null {
 function saveAllCapabilityScores(data: Record<string, { scores: CapabilityScores; evaluatedAt: number }>): void {
   if (!existsSync(SCORES_DIR)) mkdirSync(SCORES_DIR, { recursive: true });
   writeFileSync(SCORES_FILE, JSON.stringify(data, null, 2), 'utf-8');
+}
+
+/** Push capability scores to BrainstormRouter gateway. */
+async function pushToGateway(modelId: string, scores: CapabilityScores): Promise<void> {
+  const gw = createGatewayClient();
+  if (!gw) return;
+
+  await gw.pushCapabilityScores(modelId, scores as unknown as Record<string, number>);
+  log.info({ modelId }, 'Pushed capability scores to gateway');
 }

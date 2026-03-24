@@ -15,6 +15,13 @@ export interface InitChoices {
 
 // ── STORM.md ────────────────────────────────────────────────────────
 
+export interface GatewayInfo {
+  connected: boolean;
+  modelCount: number;
+  budget?: string;
+  health: string;
+}
+
 export function generateStormMd(choices: InitChoices): string {
   const lines = [
     '---',
