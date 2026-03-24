@@ -13,3 +13,4 @@ export { scanForCredentials, redactCredentials, type ScanResult } from './securi
 export { resolveSafe, isWithinWorkspace, PathTraversalError } from './security/path-guard.js';
 export { filterResponse, createStreamFilter, type StreamFilter } from './agent/response-filter.js';
 export { normalizeInsightMarkers } from './agent/insights.js';
+export { getOutputStylePrompt, OUTPUT_STYLES, type OutputStyle } from './agent/output-styles.js';
