@@ -79,9 +79,20 @@ export async function compactContext(
       let summaryText = '';
       for await (const part of result.fullStream) {
         if (part.type === 'text-delta') {
-          summaryText += (part as any).text ?? '';
+          summaryText += (part as any).text ?? (part as any).delta ?? '';
         }
       }
+
+      // Capture summarization cost from usage
+      try {
+        const usage = await result.usage;
+        if (usage) {
+          const inputTokens = (usage as any).inputTokens ?? 0;
+          const outputTokens = (usage as any).outputTokens ?? 0;
+          summaryCost = (inputTokens + outputTokens) * 0.000001; // rough estimate
+        }
+      } catch { /* usage not available — non-fatal */ }
+
       summary = summaryText || fallbackSummary(oldMessages);
     } catch {
       summary = fallbackSummary(oldMessages);

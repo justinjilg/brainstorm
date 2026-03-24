@@ -21,6 +21,15 @@ const providersSchema = z.object({
   llamacpp: localProviderSchema.default({ baseUrl: 'http://localhost:8080', enabled: false }),
 });
 
+// ── Compaction Config ────────────────────────────────────────────────
+
+const compactionSchema = z.object({
+  enabled: z.boolean().default(true),
+  threshold: z.number().min(0.1).max(1.0).default(0.8),
+  keepRecent: z.number().min(1).default(5),
+  summarizeModel: z.string().optional(),
+});
+
 // ── Budget Config ────────────────────────────────────────────────────
 
 const budgetSchema = z.object({
@@ -143,6 +152,7 @@ const mcpSchema = z.object({
 
 export const brainstormConfigSchema = z.object({
   general: generalSchema.default({}),
+  compaction: compactionSchema.default({}),
   budget: budgetSchema.default({}),
   providers: providersSchema.default({}),
   routing: z.object({
@@ -163,3 +173,4 @@ export type AgentConfig = z.infer<typeof agentConfigSchema>;
 export type WorkflowConfig = z.infer<typeof workflowConfigSchema>;
 export type WorkflowStepConfig = z.infer<typeof workflowStepConfigSchema>;
 export type MCPServerConfigSchema = z.infer<typeof mcpServerSchema>;
+export type CompactionConfig = z.infer<typeof compactionSchema>;

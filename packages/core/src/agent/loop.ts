@@ -16,6 +16,15 @@ if (!process.env.BRAINSTORM_LOG_LEVEL) {
   (globalThis as any).AI_SDK_LOG_WARNINGS = false;
 }
 
+export interface CompactionCallbacks {
+  /** Current estimated token count of conversation history. */
+  getTokenEstimate: () => number;
+  /** Run compaction on the conversation. Returns compaction result. */
+  compact: (options: { contextWindow: number; keepRecent?: number; summarizeModel?: any }) => Promise<{
+    compacted: boolean; removed: number; tokensBefore: number; tokensAfter: number; summaryCost: number;
+  }>;
+}
+
 export interface AgentLoopOptions {
   config: BrainstormConfig;
   registry: ProviderRegistry;
@@ -30,6 +39,8 @@ export interface AgentLoopOptions {
   preferredModelId?: string;
   /** Override max agentic steps (default: config.general.maxSteps). */
   maxSteps?: number;
+  /** Context compaction support. If provided, compaction is checked before each LLM call. */
+  compaction?: CompactionCallbacks;
 }
 
 // Task types that should NOT get tools (pure text generation)
@@ -53,11 +64,34 @@ export async function* runAgentLoop(
   const userText = lastUserMsg?.content ?? '';
 
   const task = router.classify(userText);
+  const conversationTokens = options.compaction?.getTokenEstimate() ?? 0;
   const decision = options.preferredModelId
-    ? { ...router.route(task), model: options.registry.getModel(options.preferredModelId) ?? router.route(task).model, reason: `Cross-model workflow override: ${options.preferredModelId}` }
-    : router.route(task);
+    ? { ...router.route(task, conversationTokens), model: options.registry.getModel(options.preferredModelId) ?? router.route(task, conversationTokens).model, reason: `Cross-model workflow override: ${options.preferredModelId}` }
+    : router.route(task, conversationTokens);
 
   yield { type: 'routing', decision };
+
+  // Check if context compaction is needed before the LLM call
+  if (options.compaction && config.compaction?.enabled !== false) {
+    const contextWindow = decision.model.limits.contextWindow || 128_000;
+    const threshold = config.compaction?.threshold ?? 0.8;
+    const tokenEstimate = options.compaction.getTokenEstimate();
+
+    if (tokenEstimate > contextWindow * threshold) {
+      const compactionResult = await options.compaction.compact({
+        contextWindow,
+        keepRecent: config.compaction?.keepRecent ?? 5,
+      });
+      if (compactionResult.compacted) {
+        yield {
+          type: 'compaction',
+          removed: compactionResult.removed,
+          tokensBefore: compactionResult.tokensBefore,
+          tokensAfter: compactionResult.tokensAfter,
+        };
+      }
+    }
+  }
 
   // Always resolve through the provider registry — it handles local, cloud, and SaaS models
   const modelId = options.registry.getProvider(decision.model.id);
