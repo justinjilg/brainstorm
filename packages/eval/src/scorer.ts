@@ -1,4 +1,7 @@
 import type { Probe, CheckResult } from './types.js';
+import { existsSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import { verifyTypeScriptCompiles } from './verifiers/typescript.js';
 
 export interface ProbeOutput {
   output: string;
@@ -82,23 +85,58 @@ export function scoreProbe(probe: Probe, result: ProbeOutput): CheckResult[] {
     });
   }
 
-  // Code compilation check (deferred to PR #3 — needs TypeScript compiler integration)
+  // Code compilation check — verify TypeScript code blocks compile
   if (v.code_compiles) {
-    checks.push({
-      check: 'code_compiles',
-      passed: true, // TODO: implement in PR #3
-      detail: 'Compilation check not yet implemented',
-    });
+    // Check any .ts files in the sandbox directory
+    const tsFiles = findTsFiles(result.sandboxDir);
+    if (tsFiles.length === 0) {
+      checks.push({
+        check: 'code_compiles',
+        passed: false,
+        detail: 'No TypeScript files found in sandbox to verify',
+      });
+    } else {
+      for (const tsFile of tsFiles) {
+        const { ok, error } = verifyTypeScriptCompiles(tsFile);
+        checks.push({
+          check: `code_compiles: ${tsFile.split('/').pop()}`,
+          passed: ok,
+          detail: ok ? undefined : error,
+        });
+      }
+    }
   }
 
-  // File modification check (deferred — needs filesystem diff tracking)
+  // File modification check — verify expected files exist in sandbox
   if (v.files_modified) {
-    checks.push({
-      check: `files_modified: ${v.files_modified.join(', ')}`,
-      passed: true, // TODO: implement with sandbox file diff
-      detail: 'File modification check not yet implemented',
-    });
+    for (const expectedFile of v.files_modified) {
+      const fullPath = join(result.sandboxDir, expectedFile);
+      const exists = existsSync(fullPath);
+      checks.push({
+        check: `files_modified: ${expectedFile}`,
+        passed: exists,
+        detail: exists ? undefined : `Expected file not found: ${expectedFile}`,
+      });
+    }
   }
 
   return checks;
+}
+
+/** Recursively find .ts files in a directory. */
+function findTsFiles(dir: string): string[] {
+  if (!existsSync(dir)) return [];
+  const results: string[] = [];
+  try {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      const stat = statSync(full);
+      if (stat.isDirectory() && !entry.startsWith('.') && entry !== 'node_modules') {
+        results.push(...findTsFiles(full));
+      } else if (entry.endsWith('.ts') && !entry.endsWith('.d.ts')) {
+        results.push(full);
+      }
+    }
+  } catch { /* best effort */ }
+  return results;
 }

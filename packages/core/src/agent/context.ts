@@ -272,5 +272,16 @@ export function buildToolAwarenessSection(
     ).join('\n')}`);
   }
 
-  return `\n## Available Tools\n\nYou have access to ${tools.length} tools:\n\n${sections.join('\n\n')}`;
+  const selfAwareness = [
+    '\n### Self-Configuration',
+    '- Global config: `~/.brainstorm/config.toml` (TOML format)',
+    '- Project config: `./brainstorm.toml` (overrides global)',
+    '- Project context: `./BRAINSTORM.md` or `./STORM.md` (Markdown with YAML frontmatter)',
+    '- Memory files: `~/.brainstorm/projects/<hash>/memory/` (Markdown with YAML frontmatter)',
+    '- Database: `~/.brainstorm/brainstorm.db` (SQLite)',
+    '- Eval scores: `~/.brainstorm/eval/capability-scores.json`',
+    '- To change models or routing, edit `~/.brainstorm/config.toml` or use `/model` and `/strategy` slash commands.',
+  ].join('\n');
+
+  return `\n## Available Tools\n\nYou have access to ${tools.length} tools:\n\n${sections.join('\n\n')}\n${selfAwareness}`;
 }
