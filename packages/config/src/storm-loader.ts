@@ -1,5 +1,6 @@
 import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
+import { homedir } from 'node:os';
 import { stormFrontmatterSchema, type StormFrontmatter } from './storm-schema.js';
 import { createLogger } from '@brainstorm/shared';
 
@@ -146,4 +147,97 @@ function parseValue(raw: string): unknown {
 
   // Plain string
   return raw;
+}
+
+// ── Hierarchical BRAINSTORM.md Loading ─────────────────────────────
+
+export interface HierarchicalStormResult {
+  /** Merged frontmatter from the most specific file that has one. */
+  frontmatter: StormFrontmatter | null;
+  /** Concatenated body sections (global → project root → ... → cwd). */
+  body: string;
+  /** Paths of all loaded files, in order. */
+  sources: string[];
+}
+
+/**
+ * Load BRAINSTORM.md / STORM.md files hierarchically.
+ *
+ * Loading order (later = higher priority):
+ * 1. ~/.brainstorm/BRAINSTORM.md (global user preferences)
+ * 2. Project root BRAINSTORM.md
+ * 3. Each directory from project root down to cwd
+ *
+ * Body sections are concatenated. Frontmatter uses the most specific
+ * file that defines it (closest to cwd wins).
+ */
+export function loadHierarchicalStormFiles(
+  projectRoot: string,
+  cwd?: string,
+): HierarchicalStormResult {
+  const effectiveCwd = cwd ?? process.cwd();
+  const sources: string[] = [];
+  const bodyParts: string[] = [];
+  let frontmatter: StormFrontmatter | null = null;
+
+  // 1. Global ~/.brainstorm/BRAINSTORM.md
+  const globalDir = join(homedir(), '.brainstorm');
+  const globalFile = loadStormFileFromDir(globalDir);
+  if (globalFile) {
+    sources.push(globalFile.source);
+    bodyParts.push(`# Global Preferences\n\n${globalFile.body}`);
+    if (globalFile.frontmatter) frontmatter = globalFile.frontmatter;
+  }
+
+  // 2. Walk from project root to cwd, collecting BRAINSTORM.md at each level
+  const resolvedRoot = resolve(projectRoot);
+  const resolvedCwd = resolve(effectiveCwd);
+
+  // Build list of directories from root to cwd (inclusive)
+  const dirs: string[] = [];
+  let current = resolvedCwd;
+  while (current.startsWith(resolvedRoot)) {
+    dirs.push(current);
+    if (current === resolvedRoot) break;
+    const parent = dirname(current);
+    if (parent === current) break; // filesystem root
+    current = parent;
+  }
+  dirs.reverse(); // root first, cwd last
+
+  for (const dir of dirs) {
+    const file = loadStormFileFromDir(dir);
+    if (file) {
+      const relPath = dir === resolvedRoot
+        ? file.source
+        : `${dir.slice(resolvedRoot.length + 1)}/${file.source}`;
+      sources.push(relPath);
+      bodyParts.push(`# Context: ${relPath}\n\n${file.body}`);
+      if (file.frontmatter) frontmatter = file.frontmatter;
+    }
+  }
+
+  return {
+    frontmatter,
+    body: bodyParts.join('\n\n---\n\n'),
+    sources,
+  };
+}
+
+/** Try to load a STORM.md or BRAINSTORM.md from a specific directory. */
+function loadStormFileFromDir(dir: string): StormFile | null {
+  for (const filename of STORM_FILES) {
+    const filepath = join(dir, filename);
+    if (!existsSync(filepath)) continue;
+
+    try {
+      const content = readFileSync(filepath, 'utf-8');
+      const { frontmatter, body } = parseStormFile(content);
+      return { frontmatter, body, source: filepath };
+    } catch (error) {
+      log.warn({ err: error, file: filepath }, 'Failed to read storm file');
+      return null;
+    }
+  }
+  return null;
 }
