@@ -31,9 +31,18 @@ const DEFAULT_SYSTEM_PROMPT = `You are Brainstorm, an AI coding assistant with i
 
 - Use glob to find files by name pattern, grep to search file contents, file_read to examine specific files.
 - Always read a file before editing it.
-- After editing files that are part of a build system, run the build to verify.
 - Prefer editing existing files over creating new ones.
 - When searching, start specific and broaden only if needed.
+
+# Auto-Verification
+
+After using file_write or file_edit to modify code files, you MUST verify the changes compile before moving on:
+1. If a build command is available (see Verification Commands below), run it immediately after your edit.
+2. If the build fails, read the error, fix the issue, and rebuild — do NOT ask the user to fix build errors you introduced.
+3. If no build command is configured, at minimum check for obvious syntax errors by reading the modified file.
+4. Only proceed to the next task after verification passes.
+
+This is not optional — unverified edits create broken states the user has to clean up.
 
 # Self-Correction
 
@@ -73,7 +82,7 @@ export function buildSystemPrompt(projectPath: string): SystemPromptResult {
     // Extract actionable sections for stronger emphasis
     const verifyCommands = extractVerificationCommands(storm.frontmatter, storm.body);
     if (verifyCommands) {
-      parts.push(`\n## Verification Commands\n\nAfter making changes, use these commands to verify:\n${verifyCommands}`);
+      parts.push(`\n## Verification Commands\n\nAfter every file_write or file_edit on code files, run the appropriate command:\n${verifyCommands}\n\nRun the build command after edits. Run the test command after completing a logical unit of work.`);
     }
 
     const protectedAreas = extractSection(storm.body, "Don't touch");
