@@ -3,6 +3,7 @@ import type { BrainstormConfig } from '@brainstorm/config';
 import type { ProviderRegistry } from '@brainstorm/providers';
 import { BrainstormRouter, CostTracker } from '@brainstorm/router';
 import type { ToolRegistry } from '@brainstorm/tools';
+import { serializeRoutingMetadata } from '@brainstorm/shared';
 
 export interface SubagentOptions {
   config: BrainstormConfig;
@@ -48,11 +49,15 @@ export async function spawnSubagent(
   const toolCallNames: string[] = [];
   let fullText = '';
 
+  // Serialize task context for gateway telemetry (x-br-metadata header)
+  const metadataHeader = serializeRoutingMetadata(taskProfile, decision);
+
   const result = streamText({
     model: modelId,
     system: systemPrompt,
     messages: [{ role: 'user' as const, content: task }],
     tools: tools.toAISDKTools(),
+    ...(metadataHeader ? { headers: { 'x-br-metadata': metadataHeader } } : {}),
     stopWhen: stepCountIs(options.maxSteps ?? 5),
     onStepFinish: async ({ usage }: any) => {
       if (usage) {

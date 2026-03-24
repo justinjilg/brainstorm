@@ -1,4 +1,5 @@
 import type { TaskProfile, ModelEntry, RoutingDecision, RoutingContext, StrategyName } from '@brainstorm/shared';
+import { createLogger } from '@brainstorm/shared';
 import type { BrainstormConfig } from '@brainstorm/config';
 import type { ProviderRegistry } from '@brainstorm/providers';
 import { classifyTask } from './classifier.js';
@@ -8,6 +9,8 @@ import { createRuleBasedStrategy } from './strategies/rule-based.js';
 import { createCombinedStrategy } from './strategies/combined.js';
 import type { RoutingStrategy } from './strategies/types.js';
 import type { CostTracker } from './cost-tracker.js';
+
+const log = createLogger('router');
 
 export class BrainstormRouter {
   private strategies: Record<StrategyName, RoutingStrategy>;
@@ -20,12 +23,17 @@ export class BrainstormRouter {
     private costTracker: CostTracker,
   ) {
     this.activeStrategy = config.general.defaultStrategy;
+    const combined = createCombinedStrategy(config.routing.rules);
     this.strategies = {
       'cost-first': costFirstStrategy,
       'quality-first': qualityFirstStrategy,
       'rule-based': createRuleBasedStrategy(config.routing.rules),
-      'combined': createCombinedStrategy(config.routing.rules),
+      'combined': combined,
+      'learned': combined, // Falls back to combined until ONNX model is available
     };
+    if (this.activeStrategy === 'learned') {
+      log.warn('Learned routing strategy not yet available — using combined strategy');
+    }
   }
 
   classify(message: string, context?: { fileCount?: number; hasErrors?: boolean }): TaskProfile {
