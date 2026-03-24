@@ -6,4 +6,5 @@ export { qualityFirstStrategy } from './strategies/quality-first.js';
 export { createRuleBasedStrategy } from './strategies/rule-based.js';
 export { createCombinedStrategy } from './strategies/combined.js';
 export { capabilityStrategy } from './strategies/capability.js';
+export { optimizeTeamComposition, type TeamAssignment, type TeamComposition } from './team-optimizer.js';
 export type { RoutingStrategy } from './strategies/types.js';
