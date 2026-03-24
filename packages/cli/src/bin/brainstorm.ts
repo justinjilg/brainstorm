@@ -3,7 +3,7 @@ import { loadConfig } from '@brainstorm/config';
 import { getDb } from '@brainstorm/db';
 import { createProviderRegistry } from '@brainstorm/providers';
 import { BrainstormRouter, CostTracker } from '@brainstorm/router';
-import { createDefaultToolRegistry } from '@brainstorm/tools';
+import { createDefaultToolRegistry, configureSandbox } from '@brainstorm/tools';
 import { runAgentLoop, buildSystemPrompt, SessionManager, type CompactionCallbacks } from '@brainstorm/core';
 import { AgentManager, parseAgentNL } from '@brainstorm/agents';
 import { runWorkflow, getPresetWorkflow, autoSelectPreset, PRESET_WORKFLOWS } from '@brainstorm/workflow';
@@ -991,8 +991,9 @@ program
     const costTracker = new CostTracker(db, config.budget);
     const tools = createDefaultToolRegistry();
     await connectMCPServers(tools, config);
-    const sessionManager = new SessionManager(db);
     const projectPath = process.cwd();
+    configureSandbox(config.shell.sandbox as any, projectPath);
+    const sessionManager = new SessionManager(db);
     const { prompt: systemPrompt, frontmatter } = buildSystemPrompt(projectPath);
     const router = new BrainstormRouter(config, registry, costTracker, frontmatter);
 

@@ -196,7 +196,7 @@ export function loadHierarchicalStormFiles(
   // Build list of directories from root to cwd (inclusive)
   const dirs: string[] = [];
   let current = resolvedCwd;
-  while (current.startsWith(resolvedRoot)) {
+  while (current === resolvedRoot || current.startsWith(resolvedRoot + '/')) {
     dirs.push(current);
     if (current === resolvedRoot) break;
     const parent = dirname(current);
