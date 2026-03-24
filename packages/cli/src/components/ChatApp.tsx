@@ -112,6 +112,12 @@ export function ChatApp({ strategy, modelCount, onSendMessage, onAbort }: ChatAp
             fullResponse += event.delta;
             setStreamingText(fullResponse);
             break;
+          case 'reasoning':
+            setMessages((prev) => [
+              ...prev,
+              { role: 'reasoning', content: event.content },
+            ]);
+            break;
           case 'tool-call-start':
             setMessages((prev) => [
               ...prev,
