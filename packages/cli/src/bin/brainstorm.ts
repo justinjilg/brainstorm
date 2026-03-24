@@ -4,7 +4,7 @@ import { getDb } from '@brainstorm/db';
 import { createProviderRegistry } from '@brainstorm/providers';
 import { BrainstormRouter, CostTracker } from '@brainstorm/router';
 import { createDefaultToolRegistry } from '@brainstorm/tools';
-import { runAgentLoop, buildSystemPrompt, SessionManager } from '@brainstorm/core';
+import { runAgentLoop, buildSystemPrompt, SessionManager, type CompactionCallbacks } from '@brainstorm/core';
 import { AgentManager, parseAgentNL } from '@brainstorm/agents';
 import { runWorkflow, getPresetWorkflow, autoSelectPreset, PRESET_WORKFLOWS } from '@brainstorm/workflow';
 import { renderMarkdownToString } from '../components/MarkdownRenderer.js';
@@ -47,6 +47,13 @@ async function resolveProviderKeys(): Promise<ResolvedKeys> {
   }
 
   return { get: (name: string) => resolved.get(name) ?? null };
+}
+
+function buildCompactionCallbacks(sessionManager: SessionManager): CompactionCallbacks {
+  return {
+    getTokenEstimate: () => sessionManager.getTokenEstimate(),
+    compact: (opts) => sessionManager.compact(opts),
+  };
 }
 
 /**
@@ -636,6 +643,7 @@ program
       disableTools: !opts.tools,
       ...(opts.model ? { preferredModelId: opts.model } : {}),
       maxSteps: parseInt(opts.maxSteps ?? '1'),
+      compaction: buildCompactionCallbacks(sessionManager),
     })) {
       switch (event.type) {
         case 'routing':
@@ -1023,6 +1031,7 @@ program
         for await (const event of runAgentLoop(sessionManager.getHistory(), {
           config, registry, router, costTracker, tools,
           sessionId: session.id, projectPath, systemPrompt,
+          compaction: buildCompactionCallbacks(sessionManager),
         })) {
           if (event.type === 'routing') process.stderr.write(`[${event.decision.strategy} -> ${event.decision.model.name}] `);
           if (event.type === 'text-delta') { fullResponse += event.delta; process.stdout.write(event.delta); }
@@ -1046,6 +1055,7 @@ program
       const gen = runAgentLoop(sessionManager.getHistory(), {
         config, registry, router, costTracker, tools,
         sessionId: session.id, projectPath, systemPrompt,
+        compaction: buildCompactionCallbacks(sessionManager),
       });
       // Wrap to capture assistant message after completion
       return (async function* () {
