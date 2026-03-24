@@ -10,9 +10,10 @@ interface ChatAppProps {
   strategy: string;
   modelCount: { local: number; cloud: number };
   onSendMessage: (text: string) => AsyncGenerator<AgentEvent>;
+  onAbort?: () => void;
 }
 
-export function ChatApp({ strategy, modelCount, onSendMessage }: ChatAppProps) {
+export function ChatApp({ strategy, modelCount, onSendMessage, onAbort }: ChatAppProps) {
   const { exit } = useApp();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -21,6 +22,13 @@ export function ChatApp({ strategy, modelCount, onSendMessage }: ChatAppProps) {
   const [sessionCost, setSessionCost] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [tasks, setTasks] = useState<AgentTask[]>([]);
+
+  // Escape key aborts current operation
+  useInput((_input, key) => {
+    if (key.escape && isProcessing && onAbort) {
+      onAbort();
+    }
+  });
 
   const handleSubmit = useCallback(async (text: string) => {
     if (!text.trim() || isProcessing) return;
@@ -75,6 +83,12 @@ export function ChatApp({ strategy, modelCount, onSendMessage }: ChatAppProps) {
             setTasks((prev) =>
               prev.map((t) => (t.id === event.task.id ? event.task : t)),
             );
+            break;
+          case 'interrupted':
+            setMessages((prev) => [
+              ...prev,
+              { role: 'routing', content: 'interrupted' },
+            ]);
             break;
           case 'done':
             cost = event.totalCost;
