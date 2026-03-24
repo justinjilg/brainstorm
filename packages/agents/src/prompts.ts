@@ -15,6 +15,9 @@ const ROLE_PROMPTS: Record<string, string> = {
   orchestrator: `You are a workflow orchestrator. Your job is to coordinate multi-agent workflows: decide which agent runs next, check budget constraints, handle review rejections, manage retry loops, and ensure the workflow completes successfully. You do NOT write code yourself — you delegate to specialized agents and manage the process.`,
 };
 
+// Re-export decomposition utilities for external use
+export { DECOMPOSITION_PROMPT, decompositionToWorkflow, type Subtask, type DecompositionResult } from './roles/orchestrator-decompose.js';
+
 export function buildAgentSystemPrompt(agent: AgentProfile, stepDescription?: string): string {
   const parts: string[] = [];
 
