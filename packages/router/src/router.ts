@@ -45,12 +45,22 @@ export class BrainstormRouter {
     return classifyTask(message, context, this.projectHints);
   }
 
-  route(task: TaskProfile, conversationTokens?: number): RoutingDecision {
+  route(task: TaskProfile, optionsOrTokens?: number | { conversationTokens?: number; preferCheap?: boolean }): RoutingDecision {
     // Check budget before routing
     this.costTracker.checkBudget();
 
+    const opts = typeof optionsOrTokens === 'number'
+      ? { conversationTokens: optionsOrTokens, preferCheap: false }
+      : { conversationTokens: optionsOrTokens?.conversationTokens, preferCheap: optionsOrTokens?.preferCheap ?? false };
+
     const candidates = this.getEligibleModels(task);
-    const context = this.buildRoutingContext(conversationTokens);
+    const context = this.buildRoutingContext(opts.conversationTokens);
+
+    // If preferCheap, try cost-first strategy first
+    if (opts.preferCheap && this.strategies['cost-first']) {
+      const cheapDecision = this.strategies['cost-first'].select(task, candidates, context);
+      if (cheapDecision) return cheapDecision;
+    }
 
     // Try active strategy
     const decision = this.strategies[this.activeStrategy].select(task, candidates, context);

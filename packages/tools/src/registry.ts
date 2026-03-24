@@ -28,6 +28,21 @@ export class ToolRegistry {
     return result;
   }
 
+  /**
+   * Return AI SDK tools filtered to only the named tools.
+   * Used by subagent types to restrict tool access.
+   */
+  toAISDKToolsFiltered(allowedNames: string[]): Record<string, ReturnType<BrainstormToolDef['toAISDKTool']>> {
+    const allowed = new Set(allowedNames);
+    const result: Record<string, any> = {};
+    for (const [name, tool] of this.tools) {
+      if (allowed.has(name)) {
+        result[name] = tool.toAISDKTool();
+      }
+    }
+    return result;
+  }
+
   getPermitted(overrides?: Record<string, ToolPermission>): Record<string, any> {
     const result: Record<string, any> = {};
     for (const [name, tool] of this.tools) {
