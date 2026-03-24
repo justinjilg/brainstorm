@@ -29,6 +29,17 @@ export type QualityTier = 1 | 2 | 3 | 4 | 5;
 export type SpeedTier = 1 | 2 | 3 | 4 | 5;
 export type ModelStatus = 'available' | 'degraded' | 'unavailable';
 
+/** Scored capability dimensions from the eval harness (0-1 scale). */
+export interface CapabilityScores {
+  toolSelection: number;
+  toolSequencing: number;
+  codeGeneration: number;
+  multiStepReasoning: number;
+  instructionFollowing: number;
+  contextUtilization: number;
+  selfCorrection: number;
+}
+
 export interface ModelCapabilities {
   toolCalling: boolean;
   streaming: boolean;
@@ -38,6 +49,8 @@ export interface ModelCapabilities {
   qualityTier: QualityTier;
   speedTier: SpeedTier;
   bestFor: TaskType[];
+  /** Scored capability profile from eval harness. Populated by `brainstorm eval`. */
+  capabilityScores?: CapabilityScores;
 }
 
 export interface ModelPricing {
