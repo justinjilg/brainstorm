@@ -1,6 +1,17 @@
 import { z } from 'zod';
 import { readFileSync, existsSync } from 'node:fs';
+import { resolve, relative } from 'node:path';
 import { defineTool } from '../base.js';
+
+function ensureSafePath(filePath: string): string {
+  const cwd = process.cwd();
+  const resolved = resolve(cwd, filePath);
+  const rel = relative(cwd, resolved);
+  if (rel.startsWith('..') || rel.startsWith('/')) {
+    throw new Error(`Path traversal blocked: "${filePath}" escapes workspace`);
+  }
+  return resolved;
+}
 
 export const fileReadTool = defineTool({
   name: 'file_read',
@@ -12,10 +23,13 @@ export const fileReadTool = defineTool({
     offset: z.number().optional().describe('Line number to start reading from (1-based)'),
   }),
   async execute({ path, limit, offset }) {
-    if (!existsSync(path)) {
+    let safePath: string;
+    try { safePath = ensureSafePath(path); } catch (e: any) { return { error: e.message }; }
+
+    if (!existsSync(safePath)) {
       return { error: `File not found: ${path}` };
     }
-    let content = readFileSync(path, 'utf-8');
+    const content = readFileSync(safePath, 'utf-8');
     const lines = content.split('\n');
 
     const start = (offset ?? 1) - 1;
