@@ -85,7 +85,7 @@ const agentGuardrailsSchema = z.object({
 const agentConfigSchema = z.object({
   id: z.string(),
   displayName: z.string().optional(),
-  role: z.enum(['architect', 'coder', 'reviewer', 'debugger', 'analyst', 'custom']).default('custom'),
+  role: z.enum(['architect', 'coder', 'reviewer', 'debugger', 'analyst', 'orchestrator', 'custom']).default('custom'),
   description: z.string().default(''),
   model: z.string(),
   systemPrompt: z.string().optional(),
@@ -102,7 +102,7 @@ const agentConfigSchema = z.object({
 
 const workflowStepConfigSchema = z.object({
   id: z.string(),
-  agentRole: z.enum(['architect', 'coder', 'reviewer', 'debugger', 'analyst', 'custom']),
+  agentRole: z.enum(['architect', 'coder', 'reviewer', 'debugger', 'analyst', 'orchestrator', 'custom']),
   agentId: z.string().optional(),
   description: z.string().default(''),
   inputArtifacts: z.array(z.string()).default([]),
