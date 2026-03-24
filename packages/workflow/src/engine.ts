@@ -85,6 +85,8 @@ export async function* runWorkflow(
 
   // Execute steps
   let stepIndex = 0;
+  let confidenceRetries = 0;
+  const MAX_CONFIDENCE_RETRIES = 2;
   while (stepIndex < definition.steps.length) {
     const stepDef = definition.steps[stepIndex];
     const agent = stepAgents.get(stepDef.id)!;
@@ -175,8 +177,13 @@ export async function* runWorkflow(
         return; // Pause workflow for user decision
       }
       if (escalation === 'retry') {
-        yield { type: 'confidence-escalation', step: stepRun, confidence: artifact.confidence, action: 'retrying step with same model' };
-        continue; // Re-run same step
+        confidenceRetries++;
+        if (confidenceRetries > MAX_CONFIDENCE_RETRIES) {
+          yield { type: 'confidence-escalation', step: stepRun, confidence: artifact.confidence, action: 'max confidence retries reached — continuing' };
+        } else {
+          yield { type: 'confidence-escalation', step: stepRun, confidence: artifact.confidence, action: `retrying step (${confidenceRetries}/${MAX_CONFIDENCE_RETRIES})` };
+          continue; // Re-run same step
+        }
       }
 
       // Handle review step rejection → loop back

@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { createHash } from 'node:crypto';
@@ -81,7 +81,7 @@ export class MemoryManager {
     if (!this.entries.has(id)) return false;
     this.entries.delete(id);
     const filePath = join(this.memoryDir, `${id}.md`);
-    try { writeFileSync(filePath, '', 'utf-8'); } catch {}
+    try { unlinkSync(filePath); } catch {}
     this.updateIndex();
     return true;
   }

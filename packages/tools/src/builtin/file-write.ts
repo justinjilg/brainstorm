@@ -1,7 +1,17 @@
 import { z } from 'zod';
 import { writeFileSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, resolve, relative } from 'node:path';
 import { defineTool } from '../base.js';
+
+function ensureSafePath(filePath: string): string {
+  const cwd = process.cwd();
+  const resolved = resolve(cwd, filePath);
+  const rel = relative(cwd, resolved);
+  if (rel.startsWith('..') || rel.startsWith('/')) {
+    throw new Error(`Path traversal blocked: "${filePath}" escapes workspace`);
+  }
+  return resolved;
+}
 
 export const fileWriteTool = defineTool({
   name: 'file_write',
@@ -12,8 +22,11 @@ export const fileWriteTool = defineTool({
     content: z.string().describe('The content to write to the file'),
   }),
   async execute({ path, content }) {
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, content, 'utf-8');
+    let safePath: string;
+    try { safePath = ensureSafePath(path); } catch (e: any) { return { error: e.message }; }
+
+    mkdirSync(dirname(safePath), { recursive: true });
+    writeFileSync(safePath, content, 'utf-8');
     return { success: true, path, bytesWritten: Buffer.byteLength(content) };
   },
 });
