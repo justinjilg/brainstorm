@@ -77,7 +77,7 @@ export async function spawnSubagent(
 
   for await (const part of result.fullStream) {
     if (part.type === 'text-delta') {
-      fullText += (part as any).text ?? '';
+      fullText += (part as any).delta ?? (part as any).text ?? '';
     } else if (part.type === 'tool-call') {
       toolCallNames.push(part.toolName);
     }

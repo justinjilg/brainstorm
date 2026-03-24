@@ -81,12 +81,12 @@ export async function* runAgentLoop(
     });
 
     // Apply response filter to strip LLM filler from the beginning of text output
-    const filter = createStreamFilter();
+    const streamFilter = createStreamFilter();
 
     for await (const part of result.fullStream) {
       if (part.type === 'text-delta') {
         const raw = (part as any).text ?? (part as any).delta ?? '';
-        const filtered = filter(raw);
+        const filtered = streamFilter.filter(raw);
         if (filtered) yield { type: 'text-delta', delta: filtered };
       } else if (part.type === 'tool-call') {
         yield { type: 'tool-call-start', toolName: part.toolName, args: (part as any).input ?? (part as any).args };
@@ -94,6 +94,10 @@ export async function* runAgentLoop(
         yield { type: 'tool-call-result', toolName: part.toolName, result: (part as any).output ?? (part as any).result };
       }
     }
+
+    // Flush any remaining buffered content (critical for short responses < 80 chars)
+    const remaining = streamFilter.flush();
+    if (remaining) yield { type: 'text-delta', delta: remaining };
 
     yield { type: 'done', totalCost: costTracker.getSessionCost() };
   } catch (error: any) {
