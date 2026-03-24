@@ -1,9 +1,10 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import { StatusBar } from './StatusBar.js';
 import { MessageList, type ChatMessage } from './MessageList.js';
 import { TaskList } from './TaskList.js';
+import { isSlashCommand, executeSlashCommand, type SlashContext } from '../commands/slash.js';
 import type { AgentEvent, AgentTask, RoutingDecision } from '@brainstorm/shared';
 
 interface ChatAppProps {
@@ -30,12 +31,24 @@ export function ChatApp({ strategy, modelCount, onSendMessage, onAbort }: ChatAp
     }
   });
 
+  const slashCtx: SlashContext = useMemo(() => ({
+    getModel: () => currentModel,
+    getSessionCost: () => sessionCost,
+    exit: () => exit(),
+    clearHistory: () => {
+      setMessages([]);
+      setStreamingText(undefined);
+    },
+  }), [currentModel, sessionCost, exit]);
+
   const handleSubmit = useCallback(async (text: string) => {
     if (!text.trim() || isProcessing) return;
 
     // Handle slash commands
-    if (text.trim() === '/quit' || text.trim() === '/exit') {
-      exit();
+    if (isSlashCommand(text)) {
+      setInput('');
+      const result = await executeSlashCommand(text, slashCtx);
+      setMessages((prev) => [...prev, { role: 'routing', content: result }]);
       return;
     }
 
@@ -111,7 +124,7 @@ export function ChatApp({ strategy, modelCount, onSendMessage, onAbort }: ChatAp
       setMessages((prev) => [...prev, { role: 'assistant', content: fullResponse, model, cost }]);
     }
     setIsProcessing(false);
-  }, [isProcessing, onSendMessage, exit]);
+  }, [isProcessing, onSendMessage, exit, slashCtx]);
 
   return (
     <Box flexDirection="column" height={process.stdout.rows || 24}>
