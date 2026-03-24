@@ -1,5 +1,6 @@
 import { SessionRepository, MessageRepository } from '@brainstorm/db';
 import type { Session } from '@brainstorm/shared';
+import { estimateTokenCount, needsCompaction, compactContext } from './compaction.js';
 
 export interface ConversationMessage {
   role: 'user' | 'assistant' | 'system';
@@ -99,5 +100,31 @@ export class SessionManager {
 
   listRecent(limit = 10): Session[] {
     return this.sessions.listRecent(limit);
+  }
+
+  getTokenEstimate(): number {
+    return estimateTokenCount(this.conversationHistory);
+  }
+
+  needsCompaction(contextWindow: number): boolean {
+    return needsCompaction(this.conversationHistory, contextWindow);
+  }
+
+  async compact(options: {
+    contextWindow: number;
+    keepRecent?: number;
+    summarizeModel?: any;
+  }): Promise<{ compacted: boolean; removed: number; tokensBefore: number; tokensAfter: number; summaryCost: number }> {
+    const tokensBefore = estimateTokenCount(this.conversationHistory);
+    const result = await compactContext(this.conversationHistory, options);
+
+    if (result.compacted) {
+      const removed = this.conversationHistory.length - result.messages.length;
+      this.conversationHistory = result.messages;
+      const tokensAfter = estimateTokenCount(this.conversationHistory);
+      return { compacted: true, removed, tokensBefore, tokensAfter, summaryCost: result.summaryCost };
+    }
+
+    return { compacted: false, removed: 0, tokensBefore, tokensAfter: tokensBefore, summaryCost: 0 };
   }
 }

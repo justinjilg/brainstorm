@@ -45,12 +45,12 @@ export class BrainstormRouter {
     return classifyTask(message, context, this.projectHints);
   }
 
-  route(task: TaskProfile): RoutingDecision {
+  route(task: TaskProfile, conversationTokens?: number): RoutingDecision {
     // Check budget before routing
     this.costTracker.checkBudget();
 
     const candidates = this.getEligibleModels(task);
-    const context = this.buildRoutingContext();
+    const context = this.buildRoutingContext(conversationTokens);
 
     // Try active strategy
     const decision = this.strategies[this.activeStrategy].select(task, candidates, context);
@@ -110,12 +110,12 @@ export class BrainstormRouter {
     });
   }
 
-  private buildRoutingContext(): RoutingContext {
+  private buildRoutingContext(conversationTokens?: number): RoutingContext {
     const budget = this.costTracker.getBudgetState();
     return {
       budget,
       sessionCost: this.costTracker.getSessionCost(),
-      conversationTokens: 0, // TODO: track from session
+      conversationTokens: conversationTokens ?? 0,
       userPreferences: {
         preferLocal: false,
         preferredProvider: undefined,
