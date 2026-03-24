@@ -35,6 +35,7 @@ const compactionSchema = z.object({
 const shellSchema = z.object({
   defaultTimeout: z.number().default(120_000),
   maxOutputBytes: z.number().default(50_000),
+  sandbox: z.enum(['none', 'restricted', 'container']).default('none'),
 });
 
 // ── Budget Config ────────────────────────────────────────────────────
