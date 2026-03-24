@@ -22,7 +22,8 @@
     "@brainstorm/router": "*",
     "@brainstorm/tools": "*",
     "@brainstorm/core": "*",
-    "@brainstorm/db": "*"
+    "@brainstorm/db": "*",
+    "@brainstorm/gateway": "*"
   },
   "devDependencies": {
     "tsup": "^8",
