@@ -35,6 +35,8 @@ export interface SlashContext {
   setOutputStyle?: (style: string) => void;
   /** Get current output style */
   getOutputStyle?: () => string;
+  /** Run memory consolidation (dream) */
+  dream?: () => Promise<string>;
 }
 
 interface SlashCommand {
@@ -172,6 +174,16 @@ const commands: SlashCommand[] = [
     execute: (_args, ctx) => {
       ctx.exit?.();
       return 'Goodbye.';
+    },
+  },
+  {
+    name: 'dream',
+    aliases: ['consolidate'],
+    description: 'Consolidate memory files — merge duplicates, fix dates, prune stale refs',
+    usage: '/dream',
+    execute: async (_args, ctx) => {
+      if (!ctx.dream) return 'Dream not available in this mode.';
+      return ctx.dream();
     },
   },
 ];

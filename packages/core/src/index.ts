@@ -1,11 +1,12 @@
 export { runAgentLoop, type AgentLoopOptions, type CompactionCallbacks } from './agent/loop.js';
-export { buildSystemPrompt, parseAtMentions } from './agent/context.js';
+export { buildSystemPrompt, parseAtMentions, buildToolAwarenessSection } from './agent/context.js';
 export { SessionManager } from './session/manager.js';
 export { PermissionManager } from './permissions/manager.js';
 export { compactContext, estimateTokenCount, needsCompaction } from './session/compaction.js';
 export { spawnSubagent, spawnParallel, getSubagentTypeConfig, SUBAGENT_TYPE_NAMES, type SubagentOptions, type SubagentResult, type SubagentType, type SubagentHookFn } from './agent/subagent.js';
 export { loadSkills, findSkill, type SkillDefinition } from './skills/loader.js';
 export { MemoryManager, type MemoryEntry } from './memory/manager.js';
+export { DREAM_SYSTEM_PROMPT, buildDreamPrompt } from './memory/dream.js';
 export { getPlanModeTools, getPlanModePrompt } from './plan/mode.js';
 export { readMultimodalFile, isImageFile, isPdfFile, requiresVisionModel, type MultimodalContent } from './multimodal/reader.js';
 export { loadIgnorePatterns, isIgnored } from './security/ignore.js';
