@@ -9,7 +9,7 @@ import { AgentManager, parseAgentNL } from '@brainstorm/agents';
 import { runWorkflow, getPresetWorkflow, autoSelectPreset, PRESET_WORKFLOWS } from '@brainstorm/workflow';
 import { renderMarkdownToString } from '../components/MarkdownRenderer.js';
 import { runInit } from '../init/index.js';
-import { runEvalCli } from '@brainstorm/eval';
+import { runEvalCli, runProbe } from '@brainstorm/eval';
 
 const program = new Command();
 
@@ -450,8 +450,6 @@ program
   .option('--json', 'Output full ProbeResult as JSON')
   .option('--setup-file <pairs...>', 'Setup files as path=content pairs')
   .action(async (prompt: string, opts: any) => {
-    const { runProbe } = await import('@brainstorm/eval');
-
     // Build Probe from CLI args
     const probe: any = {
       id: `adhoc-${Date.now().toString(36)}`,
