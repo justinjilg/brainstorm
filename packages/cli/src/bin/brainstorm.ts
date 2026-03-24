@@ -9,6 +9,7 @@ import { AgentManager, parseAgentNL } from '@brainstorm/agents';
 import { runWorkflow, getPresetWorkflow, autoSelectPreset, PRESET_WORKFLOWS } from '@brainstorm/workflow';
 import { renderMarkdownToString } from '../components/MarkdownRenderer.js';
 import { runInit } from '../init/index.js';
+import { runEvalCli } from '@brainstorm/eval';
 
 const program = new Command();
 
@@ -24,6 +25,22 @@ program
   .option('--force', 'Overwrite existing files')
   .action(async (opts: { yes?: boolean; force?: boolean }) => {
     await runInit(process.cwd(), opts);
+  });
+
+program
+  .command('eval')
+  .description('Run capability evaluation probes against a model')
+  .option('--model <id>', 'Model to evaluate (e.g., anthropic/claude-sonnet-4-6)')
+  .option('--capability <dim>', 'Run only probes for this dimension')
+  .option('--compare', 'Compare results across all previously evaluated models')
+  .option('--timeout <ms>', 'Timeout per probe in milliseconds', '30000')
+  .action(async (opts: { model?: string; capability?: string; compare?: boolean; timeout?: string }) => {
+    await runEvalCli({
+      model: opts.model,
+      capability: opts.capability,
+      compare: opts.compare,
+      timeout: parseInt(opts.timeout ?? '30000'),
+    });
   });
 
 program
