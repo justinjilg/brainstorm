@@ -67,7 +67,7 @@ export interface ModelEntry {
 
 // ── Routing ──────────────────────────────────────────────────────────
 
-export type StrategyName = 'cost-first' | 'quality-first' | 'rule-based' | 'combined';
+export type StrategyName = 'cost-first' | 'quality-first' | 'rule-based' | 'combined' | 'learned';
 
 export interface RoutingDecision {
   model: ModelEntry;

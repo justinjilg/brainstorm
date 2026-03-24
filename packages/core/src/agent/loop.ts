@@ -5,6 +5,7 @@ import type { ProviderRegistry } from '@brainstorm/providers';
 import { BrainstormRouter, CostTracker } from '@brainstorm/router';
 import type { ToolRegistry } from '@brainstorm/tools';
 import type { AgentEvent } from '@brainstorm/shared';
+import { serializeRoutingMetadata } from '@brainstorm/shared';
 
 // Suppress AI SDK warnings in non-debug mode
 if (!process.env.BRAINSTORM_LOG_LEVEL) {
@@ -47,12 +48,16 @@ export async function* runAgentLoop(
   // Only provide tools when the task needs them and they're not disabled
   const shouldUseTools = !options.disableTools && task.requiresToolUse && !NO_TOOL_TASKS.has(task.type);
 
+  // Serialize task context for gateway telemetry (x-br-metadata header)
+  const metadataHeader = serializeRoutingMetadata(task, decision);
+
   try {
     const result = streamText({
       model: modelId,
       system: systemPrompt,
       messages: messages as any,
       ...(shouldUseTools ? { tools: tools.toAISDKTools() } : {}),
+      ...(metadataHeader ? { headers: { 'x-br-metadata': metadataHeader } } : {}),
       stopWhen: stepCountIs(shouldUseTools ? config.general.maxSteps : 1),
       onStepFinish: async ({ usage }: any) => {
         if (usage) {
