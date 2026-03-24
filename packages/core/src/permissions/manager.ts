@@ -1,5 +1,5 @@
 import type { ToolPermission } from '@brainstorm/shared';
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -156,7 +156,10 @@ export class PermissionManager {
         allowlist: Array.from(this.persistentAllowlist),
         denylist: Array.from(this.persistentDenylist),
       };
-      writeFileSync(PERMISSIONS_FILE, JSON.stringify(data, null, 2) + '\n');
+      // Atomic write: write to temp file then rename to prevent corruption on crash
+      const tmpFile = PERMISSIONS_FILE + '.tmp';
+      writeFileSync(tmpFile, JSON.stringify(data, null, 2) + '\n');
+      renameSync(tmpFile, PERMISSIONS_FILE);
     } catch { /* best-effort persistence */ }
   }
 

@@ -22,9 +22,9 @@ interface SubagentTypeConfig {
 
 const SUBAGENT_TYPES: Record<SubagentType, SubagentTypeConfig> = {
   explore: {
-    allowedTools: ['file_read', 'glob', 'grep', 'list_dir', 'git_status', 'git_diff', 'git_log'],
+    allowedTools: ['file_read', 'glob', 'grep', 'list_dir', 'git_status', 'git_diff', 'git_log', 'web_fetch', 'web_search'],
     systemPrompt:
-      'You are an exploration subagent. Your job is to find information in the codebase quickly and return what you found. You have read-only tools — you cannot modify files. Be thorough but concise.',
+      'You are an exploration subagent. Your job is to find information in the codebase or online docs quickly and return what you found. You have read-only tools — you cannot modify files. Return results as a structured list of findings with file paths and line numbers where applicable.',
     defaultMaxSteps: 5,
     modelHint: 'cheap',
   },
@@ -50,9 +50,9 @@ const SUBAGENT_TYPES: Record<SubagentType, SubagentTypeConfig> = {
     modelHint: 'capable',
   },
   general: {
-    allowedTools: 'all',
+    allowedTools: ['file_read', 'glob', 'grep', 'list_dir', 'git_status', 'git_diff', 'git_log', 'web_fetch', 'web_search', 'shell', 'task_create', 'task_update', 'task_list'],
     systemPrompt:
-      'You are a focused subagent. Complete the given task concisely and return the result. Do not ask questions — make your best judgment.',
+      'You are a focused subagent. Complete the given task concisely and return the result. Do not ask questions — make your best judgment. You cannot create or edit files directly — use shell commands if you need to modify files.',
     defaultMaxSteps: 5,
     modelHint: 'cheap',
   },
@@ -140,6 +140,7 @@ export async function spawnSubagent(
     ? tools.toAISDKTools()
     : tools.toAISDKToolsFiltered(typeConfig.allowedTools);
 
+  const subagentSessionId = `subagent-${type}-${Date.now()}`;
   const budgetLimit = options.budgetLimit ?? costTracker.getSubagentBudget();
   const costBefore = costTracker.getSessionCost();
 
@@ -150,6 +151,7 @@ export async function spawnSubagent(
   const toolCallNames: string[] = [];
   let fullText = '';
   let budgetExceeded = false;
+  let subagentCostAccum = 0; // Track cost internally to avoid parallel race
 
   // AbortController for budget enforcement — terminates the subagent stream
   const budgetAbort = new AbortController();
@@ -166,20 +168,25 @@ export async function spawnSubagent(
     stopWhen: stepCountIs(maxSteps),
     onStepFinish: async ({ usage }: any) => {
       if (usage) {
+        const inputTokens = usage.inputTokens ?? 0;
+        const outputTokens = usage.outputTokens ?? 0;
+        const stepCost =
+          (inputTokens / 1_000_000) * decision.model.pricing.inputPer1MTokens +
+          (outputTokens / 1_000_000) * decision.model.pricing.outputPer1MTokens;
+        subagentCostAccum += stepCost;
         costTracker.record({
-          sessionId: 'subagent',
+          sessionId: subagentSessionId,
           modelId: decision.model.id,
           provider: decision.model.provider,
-          inputTokens: usage.inputTokens ?? 0,
-          outputTokens: usage.outputTokens ?? 0,
+          inputTokens,
+          outputTokens,
           taskType: taskProfile.type,
           projectPath,
           pricing: decision.model.pricing,
         });
       }
-      // Check subagent budget after each step
-      const subagentCost = costTracker.getSessionCost() - costBefore;
-      if (subagentCost >= budgetLimit) {
+      // Check budget using internal accumulator (not session delta) to avoid parallel races
+      if (subagentCostAccum >= budgetLimit) {
         budgetExceeded = true;
         budgetAbort.abort();
       }
@@ -199,9 +206,8 @@ export async function spawnSubagent(
     if (err.name !== 'AbortError') throw err;
   }
 
-  const subagentCost = costTracker.getSessionCost() - costBefore;
   if (budgetExceeded) {
-    fullText += `\n\n[Subagent terminated: budget limit of $${budgetLimit.toFixed(4)} exceeded ($${subagentCost.toFixed(4)} used)]`;
+    fullText += `\n\n[Subagent terminated: budget limit of $${budgetLimit.toFixed(4)} exceeded ($${subagentCostAccum.toFixed(4)} used)]`;
   }
 
   // Fire SubagentStop hook
@@ -209,7 +215,7 @@ export async function spawnSubagent(
     await options.onHook('SubagentStop', {
       subagentType: type,
       result: fullText.slice(0, 500),
-      cost: subagentCost,
+      cost: subagentCostAccum,
       toolCalls: toolCallNames.length,
       model: decision.model.name,
     });
@@ -217,7 +223,7 @@ export async function spawnSubagent(
 
   return {
     text: fullText,
-    cost: subagentCost,
+    cost: subagentCostAccum,
     modelUsed: decision.model.name,
     toolCalls: toolCallNames,
     type,

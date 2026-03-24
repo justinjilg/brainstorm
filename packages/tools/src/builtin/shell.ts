@@ -148,8 +148,12 @@ export const shellTool = defineTool({
           if (!child.killed) child.kill('SIGKILL');
         }, 5000);
       }, timeoutMs);
+      bgTimer.unref(); // Don't keep event loop alive for background timeout
 
+      let completed = false;
       const emitCompletion = (exitCode: number, stderr?: string) => {
+        if (completed) return; // Idempotent — error+close can both fire
+        completed = true;
         clearTimeout(bgTimer);
         backgroundTasks.delete(taskId);
         if (backgroundEventHandler) {
