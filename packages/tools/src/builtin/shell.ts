@@ -2,10 +2,21 @@ import { z } from 'zod';
 import { spawn } from 'node:child_process';
 import { defineTool } from '../base.js';
 import { checkGitSafety, formatViolations, hasHardBlock } from './git-safety.js';
+import { checkSandbox, type SandboxLevel } from './sandbox.js';
 
 const DEFAULT_TIMEOUT = 120_000;
 const HEAD_BYTES = 20_000;
 const TAIL_BYTES = 20_000;
+
+// Module-level sandbox config — set by the CLI during startup
+let currentSandboxLevel: SandboxLevel = 'none';
+let currentProjectPath: string | undefined;
+
+/** Configure the shell sandbox level. Call once during CLI startup. */
+export function configureSandbox(level: SandboxLevel, projectPath?: string): void {
+  currentSandboxLevel = level;
+  currentProjectPath = projectPath;
+}
 
 /**
  * Collect output with head+tail truncation.
@@ -64,6 +75,17 @@ export const shellTool = defineTool({
     timeout: z.number().optional().describe(`Timeout in milliseconds (default ${DEFAULT_TIMEOUT})`),
   }),
   async execute({ command, cwd, timeout }) {
+    // Sandbox check — block dangerous commands based on configured level
+    const sandboxResult = checkSandbox(command, currentSandboxLevel, currentProjectPath);
+    if (!sandboxResult.allowed) {
+      return {
+        stdout: '',
+        stderr: sandboxResult.reason ?? 'Command blocked by sandbox',
+        exitCode: 1,
+        blocked: true,
+      };
+    }
+
     // Git safety check — block destructive git operations
     if (/\bgit\b/.test(command)) {
       const violations = checkGitSafety(command);

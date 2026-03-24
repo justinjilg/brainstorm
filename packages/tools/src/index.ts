@@ -12,6 +12,8 @@ export { gitDiffTool } from './builtin/git-diff.js';
 export { gitLogTool } from './builtin/git-log.js';
 export { gitCommitTool } from './builtin/git-commit.js';
 export { checkGitSafety, formatViolations, hasHardBlock, type GitSafetyViolation } from './builtin/git-safety.js';
+export { checkSandbox, type SandboxLevel } from './builtin/sandbox.js';
+export { configureSandbox } from './builtin/shell.js';
 export { ghPrTool } from './builtin/gh-pr.js';
 export { ghIssueTool } from './builtin/gh-issue.js';
 export { gitBranchTool } from './builtin/git-branch.js';
