@@ -6,6 +6,7 @@ import { BrainstormRouter, CostTracker } from '@brainstorm/router';
 import type { ToolRegistry } from '@brainstorm/tools';
 import type { AgentEvent } from '@brainstorm/shared';
 import { serializeRoutingMetadata } from '@brainstorm/shared';
+import { createStreamFilter } from './response-filter.js';
 
 // Suppress AI SDK warnings in non-debug mode
 if (!process.env.BRAINSTORM_LOG_LEVEL) {
@@ -75,9 +76,14 @@ export async function* runAgentLoop(
       },
     });
 
+    // Apply response filter to strip LLM filler from the beginning of text output
+    const filter = createStreamFilter();
+
     for await (const part of result.fullStream) {
       if (part.type === 'text-delta') {
-        yield { type: 'text-delta', delta: (part as any).text ?? (part as any).delta ?? '' };
+        const raw = (part as any).text ?? (part as any).delta ?? '';
+        const filtered = filter(raw);
+        if (filtered) yield { type: 'text-delta', delta: filtered };
       } else if (part.type === 'tool-call') {
         yield { type: 'tool-call-start', toolName: part.toolName, args: (part as any).input ?? (part as any).args };
       } else if (part.type === 'tool-result') {
