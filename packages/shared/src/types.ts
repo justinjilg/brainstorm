@@ -196,6 +196,7 @@ export type AgentEvent =
   | { type: 'task-updated'; task: AgentTask }
   | { type: 'subagent-result'; subagentType: string; model: string; cost: number; toolCalls: string[] }
   | { type: 'reasoning'; content: string }
+  | { type: 'background-complete'; taskId: string; command: string; exitCode: number; stdout: string; stderr: string }
   | { type: 'interrupted' }
   | { type: 'error'; error: Error }
   | { type: 'done'; totalCost: number; totalTokens?: { input: number; output: number } };

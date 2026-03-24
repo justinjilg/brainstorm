@@ -144,6 +144,12 @@ export function ChatApp({ strategy, modelCount, onSendMessage, onAbort }: ChatAp
               prev.map((t) => (t.id === event.task.id ? event.task : t)),
             );
             break;
+          case 'background-complete':
+            setMessages((prev) => [
+              ...prev,
+              { role: 'routing', content: `[bg] ${event.taskId} completed (exit ${event.exitCode}): ${event.command.slice(0, 60)}` },
+            ]);
+            break;
           case 'interrupted':
             setMessages((prev) => [
               ...prev,
