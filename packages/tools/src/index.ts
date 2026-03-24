@@ -16,6 +16,7 @@ export { multiEditTool } from './builtin/multi-edit.js';
 export { webFetchTool } from './builtin/web-fetch.js';
 export { webSearchTool } from './builtin/web-search.js';
 export { processSpawnTool, processKillTool } from './builtin/process-manage.js';
+export { taskCreateTool, taskUpdateTool, taskListTool, setTaskEventHandler, clearTasks } from './builtin/task-manage.js';
 
 import { ToolRegistry } from './registry.js';
 import { fileReadTool } from './builtin/file-read.js';
@@ -33,6 +34,7 @@ import { multiEditTool } from './builtin/multi-edit.js';
 import { webFetchTool } from './builtin/web-fetch.js';
 import { webSearchTool } from './builtin/web-search.js';
 import { processSpawnTool, processKillTool } from './builtin/process-manage.js';
+import { taskCreateTool, taskUpdateTool, taskListTool } from './builtin/task-manage.js';
 
 export function createDefaultToolRegistry(): ToolRegistry {
   const registry = new ToolRegistry();
@@ -56,5 +58,9 @@ export function createDefaultToolRegistry(): ToolRegistry {
   // Web (2)
   registry.register(webFetchTool);
   registry.register(webSearchTool);
+  // Tasks (3)
+  registry.register(taskCreateTool);
+  registry.register(taskUpdateTool);
+  registry.register(taskListTool);
   return registry;
 }
