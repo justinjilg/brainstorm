@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { spawn } from 'node:child_process';
 import { defineTool } from '../base.js';
+import { checkGitSafety, formatViolations, hasHardBlock } from './git-safety.js';
 
 const DEFAULT_TIMEOUT = 120_000;
 const HEAD_BYTES = 20_000;
@@ -63,6 +64,19 @@ export const shellTool = defineTool({
     timeout: z.number().optional().describe(`Timeout in milliseconds (default ${DEFAULT_TIMEOUT})`),
   }),
   async execute({ command, cwd, timeout }) {
+    // Git safety check — block destructive git operations
+    if (/\bgit\b/.test(command)) {
+      const violations = checkGitSafety(command);
+      if (violations.length > 0 && hasHardBlock(violations)) {
+        return {
+          stdout: '',
+          stderr: formatViolations(violations),
+          exitCode: 1,
+          blocked: true,
+        };
+      }
+    }
+
     const timeoutMs = timeout ?? DEFAULT_TIMEOUT;
 
     return new Promise((resolve) => {
