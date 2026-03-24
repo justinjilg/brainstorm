@@ -1,0 +1,101 @@
+[
+  {
+    "id": "tool-select-01",
+    "capability": "tool-selection",
+    "prompt": "Find all TypeScript files that export a function named 'classifyTask'",
+    "verify": {
+      "tool_calls_include": ["grep"],
+      "answer_contains": ["classifier.ts"],
+      "max_steps": 5
+    }
+  },
+  {
+    "id": "tool-select-02",
+    "capability": "tool-selection",
+    "prompt": "What is the type definition for TaskProfile? Show me the interface.",
+    "verify": {
+      "tool_calls_include": ["file_read"],
+      "answer_contains": ["TaskProfile", "type", "complexity"],
+      "max_steps": 5
+    }
+  },
+  {
+    "id": "tool-select-03",
+    "capability": "tool-selection",
+    "prompt": "List all .ts files in the packages/router/src/strategies/ directory",
+    "verify": {
+      "tool_calls_include": ["glob"],
+      "answer_contains": ["cost-first", "quality-first"],
+      "max_steps": 3
+    }
+  },
+  {
+    "id": "tool-select-04",
+    "capability": "tool-selection",
+    "prompt": "Search the codebase for any usage of 'BudgetExceededError'",
+    "verify": {
+      "tool_calls_include": ["grep"],
+      "tool_calls_exclude": ["shell"],
+      "max_steps": 5
+    }
+  },
+  {
+    "id": "tool-select-05",
+    "capability": "tool-selection",
+    "prompt": "What's on line 70 of packages/shared/src/types.ts?",
+    "verify": {
+      "tool_calls_include": ["file_read"],
+      "answer_contains": ["StrategyName"],
+      "max_steps": 3
+    }
+  },
+  {
+    "id": "tool-select-06",
+    "capability": "tool-selection",
+    "prompt": "Find all files that import from '@brainstorm/router'",
+    "verify": {
+      "tool_calls_include": ["grep"],
+      "max_steps": 5
+    }
+  },
+  {
+    "id": "tool-select-07",
+    "capability": "tool-selection",
+    "prompt": "How many packages are in this monorepo? List them.",
+    "verify": {
+      "tool_calls_include": ["glob"],
+      "answer_contains": ["shared", "config", "router", "core", "cli"],
+      "max_steps": 5
+    }
+  },
+  {
+    "id": "tool-select-08",
+    "capability": "tool-selection",
+    "prompt": "What build system does this project use? Check the root configuration.",
+    "verify": {
+      "tool_calls_include": ["file_read"],
+      "answer_contains": ["turbo"],
+      "max_steps": 5
+    }
+  },
+  {
+    "id": "tool-select-09",
+    "capability": "tool-selection",
+    "prompt": "Find where the CostTracker class is defined",
+    "verify": {
+      "tool_calls_include": ["grep"],
+      "answer_contains": ["cost-tracker"],
+      "max_steps": 5
+    }
+  },
+  {
+    "id": "tool-select-10",
+    "capability": "tool-selection",
+    "prompt": "What database does this project use? Check the db package.",
+    "verify": {
+      "tool_calls_include": ["file_read"],
+      "answer_contains": ["sqlite"],
+      "max_steps": 5
+    }
+  }
+]
