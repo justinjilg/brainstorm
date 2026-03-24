@@ -1,5 +1,8 @@
+import { tool } from 'ai';
 import type { ToolPermission } from '@brainstorm/shared';
 import type { BrainstormToolDef } from './base.js';
+
+export type PermissionCheckFn = (toolName: string, toolPermission: ToolPermission) => 'allow' | 'confirm' | 'deny';
 
 export class ToolRegistry {
   private tools = new Map<string, BrainstormToolDef>();
@@ -50,6 +53,29 @@ export class ToolRegistry {
       if (permission !== 'deny') {
         result[name] = tool.toAISDKTool();
       }
+    }
+    return result;
+  }
+
+  /**
+   * Return AI SDK tools with permission checks wrapping each execute.
+   * Tools denied by the check return an error message instead of executing.
+   */
+  toAISDKToolsWithPermissions(check: PermissionCheckFn): Record<string, any> {
+    const result: Record<string, any> = {};
+    for (const [name, toolDef] of this.tools) {
+      result[name] = tool({
+        description: toolDef.description,
+        inputSchema: toolDef.inputSchema,
+        execute: async (input: any) => {
+          const decision = check(name, toolDef.permission);
+          if (decision === 'deny') {
+            return { error: `Tool '${name}' is blocked in the current permission mode.`, blocked: true };
+          }
+          // 'allow' and 'confirm' (confirm handled upstream by TUI) both proceed
+          return toolDef.execute(input);
+        },
+      });
     }
     return result;
   }

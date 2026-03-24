@@ -3,7 +3,7 @@ import type { ConversationMessage } from '../session/manager.js';
 import type { BrainstormConfig } from '@brainstorm/config';
 import type { ProviderRegistry } from '@brainstorm/providers';
 import { BrainstormRouter, CostTracker } from '@brainstorm/router';
-import type { ToolRegistry } from '@brainstorm/tools';
+import type { ToolRegistry, PermissionCheckFn } from '@brainstorm/tools';
 import { setTaskEventHandler, clearTasks, setBackgroundEventHandler } from '@brainstorm/tools';
 import type { AgentEvent, GatewayFeedbackData } from '@brainstorm/shared';
 import { serializeRoutingMetadata } from '@brainstorm/shared';
@@ -43,6 +43,8 @@ export interface AgentLoopOptions {
   compaction?: CompactionCallbacks;
   /** AbortSignal to cancel in-flight LLM calls and tool executions. */
   signal?: AbortSignal;
+  /** Permission check function. When provided, tools are gated by this check. */
+  permissionCheck?: PermissionCheckFn;
 }
 
 // Task types that should NOT get tools (pure text generation)
@@ -113,6 +115,13 @@ export async function* runAgentLoop(
   // Only provide tools when the task needs them and they're not disabled
   const shouldUseTools = !options.disableTools && task.requiresToolUse && !NO_TOOL_TASKS.has(task.type);
 
+  // Build tools with permission gating if a check function is provided
+  const aiTools = shouldUseTools
+    ? (options.permissionCheck
+      ? tools.toAISDKToolsWithPermissions(options.permissionCheck)
+      : tools.toAISDKTools())
+    : undefined;
+
   // Serialize task context for gateway telemetry (x-br-metadata header)
   const metadataHeader = serializeRoutingMetadata(task, decision);
 
@@ -121,7 +130,7 @@ export async function* runAgentLoop(
       model: modelId,
       system: systemPrompt,
       messages: messages as any,
-      ...(shouldUseTools ? { tools: tools.toAISDKTools() } : {}),
+      ...(aiTools ? { tools: aiTools } : {}),
       ...(metadataHeader ? { headers: { 'x-br-metadata': metadataHeader } } : {}),
       ...(options.signal ? { abortSignal: options.signal } : {}),
       stopWhen: stepCountIs(shouldUseTools ? (options.maxSteps ?? config.general.maxSteps) : 1),

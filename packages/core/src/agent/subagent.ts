@@ -43,9 +43,9 @@ const SUBAGENT_TYPES: Record<SubagentType, SubagentTypeConfig> = {
     modelHint: 'capable',
   },
   review: {
-    allowedTools: ['file_read', 'glob', 'grep', 'list_dir', 'git_status', 'git_diff', 'git_log', 'git_commit'],
+    allowedTools: ['file_read', 'glob', 'grep', 'list_dir', 'git_status', 'git_diff', 'git_log'],
     systemPrompt:
-      'You are a code review subagent. Review the changes for bugs, style issues, and correctness. Be specific — cite file paths and line numbers. Focus on real issues, not nitpicks.',
+      'You are a code review subagent. Review the changes for bugs, style issues, and correctness. Be specific — cite file paths and line numbers. Focus on real issues, not nitpicks. You have read-only access — you cannot modify files or commit.',
     defaultMaxSteps: 5,
     modelHint: 'capable',
   },
@@ -159,7 +159,7 @@ export async function spawnSubagent(
   const result = streamText({
     model: modelId,
     system: systemPrompt,
-    messages: [{ role: 'user' as const, content: task }],
+    messages: [{ role: 'user' as const, content: `[Project: ${projectPath}]\n\n${task}` }],
     tools: filteredTools,
     ...(metadataHeader ? { headers: { 'x-br-metadata': metadataHeader } } : {}),
     abortSignal: budgetAbort.signal,
@@ -226,14 +226,26 @@ export async function spawnSubagent(
 
 /**
  * Spawn multiple subagents in parallel.
+ * Uses Promise.allSettled so one failure doesn't kill all results.
  */
 export async function spawnParallel(
   specs: Array<{ task: string; type?: SubagentType }>,
   options: SubagentOptions,
 ): Promise<SubagentResult[]> {
-  return Promise.all(
+  const settled = await Promise.allSettled(
     specs.map((spec) =>
       spawnSubagent(spec.task, { ...options, type: spec.type }),
     ),
   );
+  return settled.map((result, i) => {
+    if (result.status === 'fulfilled') return result.value;
+    // Return error result for failed subagents instead of throwing
+    return {
+      text: `[Subagent failed: ${result.reason?.message ?? 'unknown error'}]`,
+      cost: 0,
+      modelUsed: 'unknown',
+      toolCalls: [],
+      type: specs[i].type ?? 'general',
+    };
+  });
 }
