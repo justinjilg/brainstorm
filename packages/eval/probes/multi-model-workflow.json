@@ -1,0 +1,62 @@
+[
+  {
+    "id": "e2e-decompose-01",
+    "capability": "multi-step",
+    "prompt": "I want to refactor the routing strategies to use a plugin architecture. First, search the codebase to understand the current strategy pattern. Then design the new plugin interface. Then implement it for one strategy as a proof of concept. Finally, review your changes for correctness.",
+    "verify": {
+      "tool_calls_include": ["grep", "file_read"],
+      "answer_contains": ["strategy", "plugin"],
+      "min_steps": 4,
+      "max_steps": 20
+    },
+    "timeout_ms": 120000
+  },
+  {
+    "id": "e2e-decompose-02",
+    "capability": "multi-step",
+    "prompt": "Add a new CLI command called 'brainstorm doctor' that checks the health of the project: verifies all packages build, checks for missing environment variables referenced in .env.example, and reports any models that are unreachable. Search the codebase for existing patterns, design the command, implement it, and verify it builds.",
+    "verify": {
+      "tool_calls_include": ["grep", "file_read"],
+      "answer_contains": ["doctor"],
+      "min_steps": 4,
+      "max_steps": 20
+    },
+    "timeout_ms": 120000
+  },
+  {
+    "id": "e2e-decompose-03",
+    "capability": "multi-step",
+    "prompt": "Analyze the cost tracking system end-to-end: find where costs are recorded, how budgets are enforced, what happens when a budget is exceeded, and whether there are any gaps. Then write a summary of your findings with specific file references and line numbers.",
+    "verify": {
+      "tool_calls_include": ["grep", "file_read"],
+      "answer_contains": ["CostTracker", "budget"],
+      "min_steps": 3,
+      "max_steps": 15
+    },
+    "timeout_ms": 90000
+  },
+  {
+    "id": "e2e-cross-model-01",
+    "capability": "tool-sequencing",
+    "prompt": "Map the complete data flow for a chat message: from user input in the CLI, through the router classification, to the model provider, and back to the terminal renderer. For each step, identify the file, the key function, and what data transforms happen. This requires reading at least 5 files across different packages.",
+    "verify": {
+      "tool_calls_include": ["file_read"],
+      "answer_contains": ["brainstorm.ts", "loop.ts", "classifier", "streamText"],
+      "min_steps": 5,
+      "max_steps": 15
+    },
+    "timeout_ms": 90000
+  },
+  {
+    "id": "e2e-cross-model-02",
+    "capability": "multi-step",
+    "prompt": "Create a comprehensive architecture diagram (in text/ASCII format) of the brainstorm monorepo. Show all 13 packages, their dependencies, and the key interfaces between them. Read the package.json files and source code to verify the dependency graph is accurate.",
+    "verify": {
+      "tool_calls_include": ["file_read"],
+      "answer_contains": ["shared", "config", "router", "core", "cli", "eval"],
+      "min_steps": 5,
+      "max_steps": 20
+    },
+    "timeout_ms": 120000
+  }
+]
