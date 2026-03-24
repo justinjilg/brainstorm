@@ -13,6 +13,7 @@ export { gitLogTool } from './builtin/git-log.js';
 export { gitCommitTool } from './builtin/git-commit.js';
 export { listDirTool } from './builtin/list-dir.js';
 export { multiEditTool } from './builtin/multi-edit.js';
+export { batchEditTool } from './builtin/batch-edit.js';
 export { webFetchTool } from './builtin/web-fetch.js';
 export { webSearchTool } from './builtin/web-search.js';
 export { processSpawnTool, processKillTool } from './builtin/process-manage.js';
@@ -31,6 +32,7 @@ import { gitLogTool } from './builtin/git-log.js';
 import { gitCommitTool } from './builtin/git-commit.js';
 import { listDirTool } from './builtin/list-dir.js';
 import { multiEditTool } from './builtin/multi-edit.js';
+import { batchEditTool } from './builtin/batch-edit.js';
 import { webFetchTool } from './builtin/web-fetch.js';
 import { webSearchTool } from './builtin/web-search.js';
 import { processSpawnTool, processKillTool } from './builtin/process-manage.js';
@@ -38,11 +40,12 @@ import { taskCreateTool, taskUpdateTool, taskListTool } from './builtin/task-man
 
 export function createDefaultToolRegistry(): ToolRegistry {
   const registry = new ToolRegistry();
-  // Filesystem (7)
+  // Filesystem (8)
   registry.register(fileReadTool);
   registry.register(fileWriteTool);
   registry.register(fileEditTool);
   registry.register(multiEditTool);
+  registry.register(batchEditTool);
   registry.register(listDirTool);
   registry.register(globTool);
   registry.register(grepTool);
