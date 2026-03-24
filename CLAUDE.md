@@ -12,7 +12,7 @@ Brainstorm — an open-source, CLI-first AI coding assistant with intelligent mo
 
 ## Architecture
 
-Turborepo monorepo with 12 TypeScript packages:
+Turborepo monorepo with 15 TypeScript packages:
 
 - `packages/shared` — Types (TaskProfile, ModelEntry, AgentProfile, WorkflowEvent, etc.), errors, pino logger
 - `packages/config` — Zod schemas, TOML config loader, layered config (defaults → global → project → env), BRAINSTORM.md parser
@@ -25,6 +25,9 @@ Turborepo monorepo with 12 TypeScript packages:
 - `packages/workflow` — Workflow engine state machine, context filtering, confidence/escalation, 4 preset workflows
 - `packages/hooks` — HookManager for lifecycle automation (PreToolUse, PostToolUse, SessionStart, etc.)
 - `packages/mcp` — MCP client for external tool integration (SSE/HTTP transports)
+- `packages/eval` — Capability probes, eval runner, scorer, scorecard, JSONL result storage
+- `packages/gateway` — Typed BrainstormRouter API client, header parsing, cost reconciliation
+- `packages/vault` — Encrypted key manager (AES-256-GCM + Argon2id), 1Password bridge, env var fallback
 - `packages/cli` — Commander subcommands (chat, run, models, config, budget, agent, workflow, sessions), Ink TUI
 
 ## Build & Run
