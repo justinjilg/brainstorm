@@ -16,16 +16,18 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brainstorm/shared": "*",
     "@brainstorm/config": "*",
     "@brainstorm/db": "*",
-    "@brainstorm/router": "*",
-    "@brainstorm/providers": "*",
-    "@brainstorm/tools": "*",
     "@brainstorm/gateway": "*",
-    "ai": "^6"
+    "@brainstorm/providers": "*",
+    "@brainstorm/router": "*",
+    "@brainstorm/shared": "*",
+    "@brainstorm/tools": "*",
+    "ai": "^6",
+    "pdf-parse": "^2.4.5"
   },
   "devDependencies": {
+    "@types/pdf-parse": "^1.1.5",
     "tsup": "^8",
     "typescript": "^5.7"
   }
