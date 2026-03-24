@@ -1019,6 +1019,20 @@ program
       console.log(`  Strategy: ${config.general.defaultStrategy} | Models: ${localCount} local, ${cloudCount} cloud`);
       console.log(`  Type your message. /quit to exit.\n`);
 
+      let simpleAbortController: AbortController | null = null;
+
+      // First Ctrl-C aborts current operation, second exits
+      process.on('SIGINT', () => {
+        if (simpleAbortController) {
+          simpleAbortController.abort();
+          simpleAbortController = null;
+          process.stdout.write('\n  [interrupted]\n\n');
+        } else {
+          rl.close();
+          process.exit(0);
+        }
+      });
+
       while (true) {
         const input = await rl.question('you > ');
         if (!input.trim()) continue;
@@ -1027,18 +1041,22 @@ program
         sessionManager.addUserMessage(input);
         let fullResponse = '';
         process.stdout.write('\nbrainstorm > ');
+        simpleAbortController = new AbortController();
 
         for await (const event of runAgentLoop(sessionManager.getHistory(), {
           config, registry, router, costTracker, tools,
           sessionId: session.id, projectPath, systemPrompt,
           compaction: buildCompactionCallbacks(sessionManager),
+          signal: simpleAbortController.signal,
         })) {
           if (event.type === 'routing') process.stderr.write(`[${event.decision.strategy} -> ${event.decision.model.name}] `);
           if (event.type === 'text-delta') { fullResponse += event.delta; process.stdout.write(event.delta); }
           if (event.type === 'gateway-feedback') { const gw = formatGatewayFeedback(event.feedback); if (gw) process.stderr.write(`\n  ${gw}`); }
+          if (event.type === 'interrupted') process.stdout.write('\n  [interrupted]\n\n');
           if (event.type === 'done') process.stdout.write(`\n  [$${event.totalCost.toFixed(4)}]\n\n`);
           if (event.type === 'error') process.stdout.write(`\n  Error: ${event.error.message}\n\n`);
         }
+        simpleAbortController = null;
         if (fullResponse) sessionManager.addAssistantMessage(fullResponse);
       }
       rl.close();
@@ -1050,12 +1068,16 @@ program
     const React = await import('react');
     const { ChatApp } = await import('../components/ChatApp.js');
 
+    let currentAbortController: AbortController | null = null;
+
     function handleSendMessage(text: string) {
       sessionManager.addUserMessage(text);
+      currentAbortController = new AbortController();
       const gen = runAgentLoop(sessionManager.getHistory(), {
         config, registry, router, costTracker, tools,
         sessionId: session.id, projectPath, systemPrompt,
         compaction: buildCompactionCallbacks(sessionManager),
+        signal: currentAbortController.signal,
       });
       // Wrap to capture assistant message after completion
       return (async function* () {
@@ -1065,7 +1087,15 @@ program
           yield event;
         }
         if (fullResponse) sessionManager.addAssistantMessage(fullResponse);
+        currentAbortController = null;
       })();
+    }
+
+    function handleAbort() {
+      if (currentAbortController) {
+        currentAbortController.abort();
+        currentAbortController = null;
+      }
     }
 
     render(
@@ -1073,6 +1103,7 @@ program
         strategy: config.general.defaultStrategy,
         modelCount: { local: localCount, cloud: cloudCount },
         onSendMessage: handleSendMessage,
+        onAbort: handleAbort,
       }),
     );
   });
