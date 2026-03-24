@@ -196,7 +196,7 @@ export type AgentEvent =
   | { type: 'task-updated'; task: AgentTask }
   | { type: 'interrupted' }
   | { type: 'error'; error: Error }
-  | { type: 'done'; totalCost: number };
+  | { type: 'done'; totalCost: number; totalTokens?: { input: number; output: number } };
 
 // ── Tool System ──────────────────────────────────────────────────────
 
