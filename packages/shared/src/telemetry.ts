@@ -66,16 +66,19 @@ export function serializeRoutingMetadata(
       src: 'cli',
     };
 
+    // Optional fields — gateway enforces max 10 key-value pairs.
+    // Base has 9 keys. Add at most 1 optional field to stay under limit.
     if (task.language) meta.lang = task.language;
-    if (task.domain) meta.dom = task.domain;
-    if (decision.reason) meta.rs = asciiSafe(decision.reason.slice(0, 64));
+    else if (task.domain) meta.dom = task.domain;
+    else if (decision.reason) meta.rs = asciiSafe(decision.reason.slice(0, 64));
 
     let serialized = JSON.stringify(meta);
 
-    // If over budget, drop optional fields to fit
+    // If over size budget, drop optional fields
     if (serialized.length > MAX_HEADER_BYTES) {
       delete meta.rs;
       delete meta.dom;
+      delete meta.lang;
       serialized = JSON.stringify(meta);
     }
 
