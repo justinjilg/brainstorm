@@ -59,7 +59,7 @@ const modelOverrideSchema = z.object({
 // ── General Config ───────────────────────────────────────────────────
 
 const generalSchema = z.object({
-  defaultStrategy: z.enum(['cost-first', 'quality-first', 'rule-based', 'combined', 'learned']).default('combined'),
+  defaultStrategy: z.enum(['cost-first', 'quality-first', 'rule-based', 'combined', 'capability', 'learned']).default('combined'),
   confirmTools: z.boolean().default(true),
   defaultPermissionMode: z.enum(['auto', 'confirm', 'plan']).default('confirm'),
   theme: z.enum(['dark', 'light']).default('dark'),
