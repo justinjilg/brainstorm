@@ -50,30 +50,51 @@ async function resolveProviderKeys(): Promise<ResolvedKeys> {
 }
 
 /**
- * Auto-connect to BrainstormRouter MCP server when API key is set.
- * Registers gateway tools (budget, memory, config, etc.) into the tool registry.
+ * Connect to MCP servers from config + BrainstormRouter gateway.
+ * Loads user-configured servers from config.mcp.servers (populated from
+ * config.toml and .brainstorm/mcp.json), plus the built-in gateway server.
  */
-async function connectGatewayMCP(tools: ReturnType<typeof createDefaultToolRegistry>): Promise<void> {
-  if (!process.env.BRAINSTORM_API_KEY) return;
-
+async function connectMCPServers(
+  tools: ReturnType<typeof createDefaultToolRegistry>,
+  config: ReturnType<typeof loadConfig>,
+): Promise<void> {
   const mcp = new MCPClientManager();
-  mcp.addServers([{
-    name: 'brainstormrouter',
-    transport: 'stdio',
-    url: 'brainstormrouter-mcp',
-    command: 'npx',
-    args: ['brainstormrouter-mcp'],
-    env: { BRAINSTORM_API_KEY: process.env.BRAINSTORM_API_KEY },
-    toolFilter: [
-      'br_get_ops_status', 'br_list_models', 'br_get_budget',
-      'br_get_memory', 'br_store_memory', 'br_query_memory',
-      'br_get_config', 'br_set_config', 'br_get_insights',
-    ],
-  }]);
+
+  // User-configured MCP servers from config.toml / .brainstorm/mcp.json
+  if (config.mcp.servers.length > 0) {
+    mcp.addServers(config.mcp.servers.map((s) => ({
+      name: s.name,
+      transport: s.transport,
+      url: s.url ?? '',
+      command: s.command,
+      args: s.args,
+      env: s.env,
+      enabled: s.enabled,
+      toolFilter: s.toolFilter,
+    })));
+  }
+
+  // Built-in BrainstormRouter gateway MCP (if API key available)
+  const brKey = process.env.BRAINSTORM_API_KEY;
+  if (brKey) {
+    mcp.addServers([{
+      name: 'brainstormrouter',
+      transport: 'stdio',
+      url: 'brainstormrouter-mcp',
+      command: 'npx',
+      args: ['brainstormrouter-mcp'],
+      env: { BRAINSTORM_API_KEY: brKey },
+      toolFilter: [
+        'br_get_ops_status', 'br_list_models', 'br_get_budget',
+        'br_get_memory', 'br_store_memory', 'br_query_memory',
+        'br_get_config', 'br_set_config', 'br_get_insights',
+      ],
+    }]);
+  }
 
   const { connected, errors } = await mcp.connectAll(tools);
   if (connected.length > 0) {
-    process.stderr.write(`[mcp] Connected to BrainstormRouter (${connected.length} servers)\n`);
+    process.stderr.write(`[mcp] Connected: ${connected.join(', ')}\n`);
   }
   for (const err of errors) {
     process.stderr.write(`[mcp] ${err.name}: ${err.error}\n`);
@@ -597,7 +618,7 @@ program
     const registry = await createProviderRegistry(config, await resolveProviderKeys());
     const costTracker = new CostTracker(db, config.budget);
     const tools = createDefaultToolRegistry();
-    await connectGatewayMCP(tools);
+    await connectMCPServers(tools, config);
     const sessionManager = new SessionManager(db);
     const projectPath = process.cwd();
     const { prompt: systemPrompt, frontmatter } = buildSystemPrompt(projectPath);
@@ -954,7 +975,7 @@ program
     const registry = await createProviderRegistry(config, resolvedKeys);
     const costTracker = new CostTracker(db, config.budget);
     const tools = createDefaultToolRegistry();
-    await connectGatewayMCP(tools);
+    await connectMCPServers(tools, config);
     const sessionManager = new SessionManager(db);
     const projectPath = process.cwd();
     const { prompt: systemPrompt, frontmatter } = buildSystemPrompt(projectPath);
