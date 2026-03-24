@@ -60,13 +60,29 @@ export async function compactContext(
     return { messages, compacted: false, summaryCost: 0 };
   }
 
+  // Classify messages into keep/summarize/drop buckets
+  const kept: ConversationMessage[] = [];
+  const toSummarize: ConversationMessage[] = [];
+  let dropped = 0;
+
+  for (let i = 0; i < oldMessages.length; i++) {
+    const classification = classifyMessage(oldMessages[i], oldMessages, i);
+    if (classification === 'keep') {
+      kept.push(oldMessages[i]);
+    } else if (classification === 'summarize') {
+      toSummarize.push(oldMessages[i]);
+    } else {
+      dropped++;
+    }
+  }
+
   let summary: string;
   let summaryCost = 0;
 
-  if (summarizeModel) {
-    // Use an LLM to summarize the old messages
+  if (summarizeModel && toSummarize.length > 0) {
+    // Use an LLM to summarize only the 'summarize' bucket
     try {
-      const oldText = oldMessages
+      const oldText = toSummarize
         .map((m) => `[${m.role}]: ${m.content.slice(0, 500)}`)
         .join('\n\n');
 
@@ -93,24 +109,98 @@ export async function compactContext(
         }
       } catch { /* usage not available — non-fatal */ }
 
-      summary = summaryText || fallbackSummary(oldMessages);
+      summary = summaryText || fallbackSummary(toSummarize);
     } catch {
-      summary = fallbackSummary(oldMessages);
+      summary = fallbackSummary(toSummarize);
     }
   } else {
-    summary = fallbackSummary(oldMessages);
+    summary = toSummarize.length > 0 ? fallbackSummary(toSummarize) : '';
   }
 
-  // Build compacted message list
+  // Build compacted message list: system + kept messages + summary + recent
   const compacted: ConversationMessage[] = [];
   if (systemMsg) compacted.push(systemMsg);
-  compacted.push({
-    role: 'system',
-    content: `[Context compacted — ${oldMessages.length} messages summarized]\n\n${summary}`,
-  });
+
+  // Inject kept messages as a structured block
+  if (kept.length > 0) {
+    const keptContent = kept.map((m) => `[${m.role}]: ${m.content.slice(0, 800)}`).join('\n\n');
+    compacted.push({
+      role: 'system',
+      content: `[Preserved context — ${kept.length} critical messages retained, ${dropped} dropped]\n\n${keptContent}`,
+    });
+  }
+
+  if (summary) {
+    compacted.push({
+      role: 'system',
+      content: `[Summarized context — ${toSummarize.length} messages condensed]\n\n${summary}`,
+    });
+  }
+
   compacted.push(...recentMessages);
 
   return { messages: compacted, compacted: true, summaryCost };
+}
+
+// ── Message Classification ────────────────────────────────────────
+
+/** Tool names that produce write/mutation results — always keep their output. */
+const WRITE_TOOLS = new Set(['file_write', 'file_edit', 'multi_edit', 'batch_edit', 'git_commit', 'shell']);
+
+/** Tool names whose results are often superseded by later calls. */
+const SEARCH_TOOLS = new Set(['grep', 'glob', 'file_read', 'list_dir']);
+
+/**
+ * Classify a message for compaction: keep, summarize, or drop.
+ *
+ * - keep: file edits, error messages, user decisions, write tool results
+ * - summarize: long assistant explanations, verbose tool outputs
+ * - drop: duplicate reads, superseded searches, intermediate results
+ */
+function classifyMessage(
+  msg: ConversationMessage,
+  allMessages: ConversationMessage[],
+  index: number,
+): 'keep' | 'summarize' | 'drop' {
+  // Always keep user messages (they contain decisions and intent)
+  if (msg.role === 'user') return 'keep';
+
+  // Check for tool result patterns in content
+  const content = msg.content;
+
+  // Keep error messages
+  if (content.includes('Error:') || content.includes('error:') || content.includes('FAIL')) {
+    return 'keep';
+  }
+
+  // Keep write tool results (edits, commits)
+  for (const toolName of WRITE_TOOLS) {
+    if (content.includes(`tool: ${toolName}`) || content.includes(`[${toolName}]`)) {
+      return 'keep';
+    }
+  }
+
+  // Drop search results that were superseded by later searches of the same type
+  for (const toolName of SEARCH_TOOLS) {
+    if (content.includes(`tool: ${toolName}`) || content.includes(`[${toolName}]`)) {
+      // Check if a later message has the same tool pattern
+      const hasLaterSameSearch = allMessages.slice(index + 1).some(
+        (later) => later.content.includes(`tool: ${toolName}`) || later.content.includes(`[${toolName}]`),
+      );
+      if (hasLaterSameSearch) return 'drop';
+    }
+  }
+
+  // Long assistant messages get summarized
+  if (msg.role === 'assistant' && content.length > 2000) {
+    return 'summarize';
+  }
+
+  // Short assistant messages that aren't tool calls — keep
+  if (msg.role === 'assistant') return 'keep';
+
+  // Default: summarize
+  return 'summarize';
 }
 
 /**
