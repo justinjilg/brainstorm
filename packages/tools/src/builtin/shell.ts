@@ -1,33 +1,112 @@
 import { z } from 'zod';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { spawn } from 'node:child_process';
 import { defineTool } from '../base.js';
 
-const execFileAsync = promisify(execFile);
+const DEFAULT_TIMEOUT = 120_000;
+const HEAD_BYTES = 20_000;
+const TAIL_BYTES = 20_000;
+
+/**
+ * Collect output with head+tail truncation.
+ * Keeps the first HEAD_BYTES and last TAIL_BYTES of output,
+ * so both the start (config/setup) and end (errors/summary) are visible.
+ */
+class OutputCollector {
+  private head = '';
+  private tail = '';
+  private totalBytes = 0;
+  private readonly maxHead: number;
+  private readonly maxTail: number;
+  private headFull = false;
+
+  constructor(maxHead = HEAD_BYTES, maxTail = TAIL_BYTES) {
+    this.maxHead = maxHead;
+    this.maxTail = maxTail;
+  }
+
+  append(chunk: string): void {
+    this.totalBytes += chunk.length;
+
+    if (!this.headFull) {
+      const remaining = this.maxHead - this.head.length;
+      if (chunk.length <= remaining) {
+        this.head += chunk;
+        return;
+      }
+      this.head += chunk.slice(0, remaining);
+      this.headFull = true;
+      chunk = chunk.slice(remaining);
+    }
+
+    // Ring-buffer the tail
+    this.tail += chunk;
+    if (this.tail.length > this.maxTail * 2) {
+      this.tail = this.tail.slice(-this.maxTail);
+    }
+  }
+
+  toString(): string {
+    if (!this.headFull) return this.head;
+    const trimmedTail = this.tail.slice(-this.maxTail);
+    const omitted = this.totalBytes - this.head.length - trimmedTail.length;
+    return `${this.head}\n\n... ${omitted.toLocaleString()} bytes omitted ...\n\n${trimmedTail}`;
+  }
+}
 
 export const shellTool = defineTool({
   name: 'shell',
-  description: 'Execute a shell command and return its stdout, stderr, and exit code. Use for running tests, builds, git operations, etc.',
+  description: 'Execute a shell command and return its stdout, stderr, and exit code. Streams output in real-time for long-running commands (builds, tests). Use for running tests, builds, git operations, etc.',
   permission: 'confirm',
   inputSchema: z.object({
     command: z.string().describe('The command to execute (passed to /bin/sh -c)'),
     cwd: z.string().optional().describe('Working directory for the command'),
-    timeout: z.number().optional().describe('Timeout in milliseconds (default 30000)'),
+    timeout: z.number().optional().describe(`Timeout in milliseconds (default ${DEFAULT_TIMEOUT})`),
   }),
   async execute({ command, cwd, timeout }) {
-    try {
-      const { stdout, stderr } = await execFileAsync('/bin/sh', ['-c', command], {
+    const timeoutMs = timeout ?? DEFAULT_TIMEOUT;
+
+    return new Promise((resolve) => {
+      const stdout = new OutputCollector();
+      const stderr = new OutputCollector();
+
+      const child = spawn('/bin/sh', ['-c', command], {
         cwd: cwd ?? process.cwd(),
-        timeout: timeout ?? 30_000,
-        maxBuffer: 1024 * 1024 * 10,
+        stdio: ['ignore', 'pipe', 'pipe'],
       });
-      return { stdout: stdout.slice(0, 10000), stderr: stderr.slice(0, 5000), exitCode: 0 };
-    } catch (err: any) {
-      return {
-        stdout: (err.stdout ?? '').slice(0, 10000),
-        stderr: (err.stderr ?? err.message ?? '').slice(0, 5000),
-        exitCode: err.code ?? 1,
-      };
-    }
+
+      child.stdout.setEncoding('utf-8');
+      child.stderr.setEncoding('utf-8');
+
+      child.stdout.on('data', (chunk: string) => stdout.append(chunk));
+      child.stderr.on('data', (chunk: string) => stderr.append(chunk));
+
+      const timer = setTimeout(() => {
+        child.kill('SIGTERM');
+        // Give 5s for graceful shutdown, then force kill
+        setTimeout(() => {
+          if (!child.killed) child.kill('SIGKILL');
+        }, 5000);
+      }, timeoutMs);
+
+      child.on('close', (code, signal) => {
+        clearTimeout(timer);
+        const exitCode = code ?? (signal ? 128 : 1);
+        resolve({
+          stdout: stdout.toString(),
+          stderr: stderr.toString(),
+          exitCode,
+          ...(signal ? { signal } : {}),
+        });
+      });
+
+      child.on('error', (err) => {
+        clearTimeout(timer);
+        resolve({
+          stdout: '',
+          stderr: err.message,
+          exitCode: 1,
+        });
+      });
+    });
   },
 });
