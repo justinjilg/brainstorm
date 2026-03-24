@@ -168,7 +168,7 @@ export interface ToolDefinition {
 
 // ── Agent Profiles ──────────────────────────────────────────────────
 
-export type AgentRole = 'architect' | 'coder' | 'reviewer' | 'debugger' | 'analyst' | 'custom';
+export type AgentRole = 'architect' | 'coder' | 'reviewer' | 'debugger' | 'analyst' | 'orchestrator' | 'custom';
 export type AgentLifecycle = 'active' | 'suspended';
 
 export interface AgentGuardrails {

@@ -11,6 +11,8 @@ const ROLE_PROMPTS: Record<string, string> = {
   debugger: `You are a debugging specialist. Your job is to identify the root cause of bugs. Read error messages, trace execution paths, and isolate the issue. Provide a clear diagnosis and recommended fix.`,
 
   analyst: `You are a technical analyst. Your job is to explain code, architecture, and technical concepts clearly. Provide insightful explanations that help the developer understand the codebase better.`,
+
+  orchestrator: `You are a workflow orchestrator. Your job is to coordinate multi-agent workflows: decide which agent runs next, check budget constraints, handle review rejections, manage retry loops, and ensure the workflow completes successfully. You do NOT write code yourself — you delegate to specialized agents and manage the process.`,
 };
 
 export function buildAgentSystemPrompt(agent: AgentProfile, stepDescription?: string): string {
