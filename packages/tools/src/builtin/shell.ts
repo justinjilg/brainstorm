@@ -5,6 +5,7 @@ import { checkGitSafety, formatViolations, hasHardBlock } from './git-safety.js'
 import { checkSandbox, type SandboxLevel } from './sandbox.js';
 
 const DEFAULT_TIMEOUT = 120_000;
+const BACKGROUND_TIMEOUT = 600_000; // 10 minutes max for background tasks
 const HEAD_BYTES = 20_000;
 const TAIL_BYTES = 20_000;
 
@@ -122,18 +123,17 @@ export const shellTool = defineTool({
       }
     }
 
-    // Background mode: spawn detached and return immediately
+    // Background mode: spawn and return immediately, notify on completion
     if (background) {
       const taskId = `bg-${nextTaskId++}`;
+      const timeoutMs = timeout ?? BACKGROUND_TIMEOUT;
       const child = spawn('/bin/sh', ['-c', command], {
         cwd: cwd ?? process.cwd(),
         stdio: ['ignore', 'pipe', 'pipe'],
-        detached: true,
       });
 
       backgroundTasks.set(taskId, { id: taskId, command, startedAt: Date.now() });
 
-      // Collect output in background
       const bgStdout = new OutputCollector();
       const bgStderr = new OutputCollector();
       child.stdout.setEncoding('utf-8');
@@ -141,20 +141,36 @@ export const shellTool = defineTool({
       child.stdout.on('data', (chunk: string) => bgStdout.append(chunk));
       child.stderr.on('data', (chunk: string) => bgStderr.append(chunk));
 
-      child.on('close', (code) => {
+      // Timeout: SIGTERM then SIGKILL, same pattern as foreground
+      const bgTimer = setTimeout(() => {
+        child.kill('SIGTERM');
+        setTimeout(() => {
+          if (!child.killed) child.kill('SIGKILL');
+        }, 5000);
+      }, timeoutMs);
+
+      const emitCompletion = (exitCode: number, stderr?: string) => {
+        clearTimeout(bgTimer);
         backgroundTasks.delete(taskId);
         if (backgroundEventHandler) {
           backgroundEventHandler({
             taskId,
             command,
-            exitCode: code ?? 1,
+            exitCode,
             stdout: bgStdout.toString(),
-            stderr: bgStderr.toString(),
+            stderr: stderr ?? bgStderr.toString(),
           });
         }
+      };
+
+      child.on('close', (code) => {
+        emitCompletion(code ?? 1);
       });
 
-      child.unref(); // Allow parent process to exit independently
+      child.on('error', (err) => {
+        emitCompletion(1, err.message);
+      });
+
       return { taskId, status: 'running', message: `Running in background (${taskId}). You will be notified on completion.` };
     }
 
