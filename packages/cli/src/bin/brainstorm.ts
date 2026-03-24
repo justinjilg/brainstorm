@@ -12,6 +12,10 @@ import { runInit } from '../init/index.js';
 import { runEvalCli, runProbe } from '@brainstorm/eval';
 import { createGatewayClient, formatGatewayFeedback } from '@brainstorm/gateway';
 import { MCPClientManager } from '@brainstorm/mcp';
+import { BrainstormVault, KeyResolver } from '@brainstorm/vault';
+import { createInterface } from 'node:readline';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 /**
  * Auto-connect to BrainstormRouter MCP server when API key is set.
@@ -708,6 +712,175 @@ program
     }
 
     process.exit(result.passed ? 0 : 1);
+  });
+
+// ── Vault Commands ─────────────────────────────────────────────────
+
+const VAULT_PATH = join(homedir(), '.brainstorm', 'vault.enc');
+
+/** Prompt for a password with no echo. */
+function promptPassword(prompt: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const rl = createInterface({ input: process.stdin, output: process.stderr });
+    process.stderr.write(prompt);
+    // Disable echo
+    if (process.stdin.isTTY) process.stdin.setRawMode?.(true);
+    let password = '';
+    const onData = (ch: Buffer) => {
+      const c = ch.toString();
+      if (c === '\n' || c === '\r' || c === '\u0004') {
+        if (process.stdin.isTTY) process.stdin.setRawMode?.(false);
+        process.stdin.removeListener('data', onData);
+        process.stderr.write('\n');
+        rl.close();
+        resolve(password);
+      } else if (c === '\u0003') {
+        if (process.stdin.isTTY) process.stdin.setRawMode?.(false);
+        process.stdin.removeListener('data', onData);
+        rl.close();
+        reject(new Error('Cancelled'));
+      } else if (c === '\u007F' || c === '\b') {
+        password = password.slice(0, -1);
+      } else {
+        password += c;
+      }
+    };
+    process.stdin.on('data', onData);
+  });
+}
+
+const vaultCmd = program.command('vault').description('Manage encrypted key vault');
+
+vaultCmd
+  .command('init')
+  .description('Create a new encrypted vault')
+  .action(async () => {
+    const vault = new BrainstormVault(VAULT_PATH);
+    if (vault.exists()) {
+      console.error('  Vault already exists. Use `brainstorm vault rotate` to change password.');
+      process.exit(1);
+    }
+    const password = await promptPassword('  Master password: ');
+    const confirm = await promptPassword('  Confirm password: ');
+    if (password !== confirm) {
+      console.error('  Passwords do not match.');
+      process.exit(1);
+    }
+    if (password.length < 8) {
+      console.error('  Password must be at least 8 characters.');
+      process.exit(1);
+    }
+    await vault.init(password);
+    console.log(`  Vault created at ${VAULT_PATH}`);
+  });
+
+vaultCmd
+  .command('add <name>')
+  .description('Add a key to the vault')
+  .argument('[value]', 'Key value (prompted if omitted)')
+  .action(async (name: string, value?: string) => {
+    const vault = new BrainstormVault(VAULT_PATH);
+    const password = await promptPassword('  Master password: ');
+    vault.open(password);
+    const keyValue = value ?? await promptPassword(`  Value for ${name}: `);
+    vault.set(name, keyValue);
+    vault.seal();
+    console.log(`  Added ${name} to vault.`);
+  });
+
+vaultCmd
+  .command('list')
+  .description('List stored key names')
+  .action(async () => {
+    const vault = new BrainstormVault(VAULT_PATH);
+    if (!vault.exists()) {
+      console.log('  No vault found. Run `brainstorm vault init` first.');
+      return;
+    }
+    const password = await promptPassword('  Master password: ');
+    vault.open(password);
+    const keys = vault.list();
+    if (keys.length === 0) {
+      console.log('  Vault is empty.');
+    } else {
+      console.log(`\n  Keys (${keys.length}):\n`);
+      for (const k of keys) console.log(`    ${k}`);
+      console.log();
+    }
+  });
+
+vaultCmd
+  .command('get <name>')
+  .description('Show a key value')
+  .action(async (name: string) => {
+    const vault = new BrainstormVault(VAULT_PATH);
+    const password = await promptPassword('  Master password: ');
+    vault.open(password);
+    const value = vault.get(name);
+    if (value) {
+      console.log(value);
+    } else {
+      console.error(`  Key "${name}" not found in vault.`);
+      process.exit(1);
+    }
+  });
+
+vaultCmd
+  .command('remove <name>')
+  .description('Remove a key from the vault')
+  .action(async (name: string) => {
+    const vault = new BrainstormVault(VAULT_PATH);
+    const password = await promptPassword('  Master password: ');
+    vault.open(password);
+    if (vault.delete(name)) {
+      vault.seal();
+      console.log(`  Removed ${name} from vault.`);
+    } else {
+      console.error(`  Key "${name}" not found in vault.`);
+      process.exit(1);
+    }
+  });
+
+vaultCmd
+  .command('rotate')
+  .description('Change vault master password')
+  .action(async () => {
+    const vault = new BrainstormVault(VAULT_PATH);
+    const current = await promptPassword('  Current password: ');
+    vault.open(current);
+    const newPass = await promptPassword('  New password: ');
+    const confirm = await promptPassword('  Confirm new password: ');
+    if (newPass !== confirm) {
+      console.error('  Passwords do not match.');
+      process.exit(1);
+    }
+    if (newPass.length < 8) {
+      console.error('  Password must be at least 8 characters.');
+      process.exit(1);
+    }
+    vault.rotate(newPass);
+    console.log('  Vault password rotated.');
+  });
+
+vaultCmd
+  .command('lock')
+  .description('Clear vault keys from memory')
+  .action(() => {
+    console.log('  Vault locked (keys cleared from memory).');
+  });
+
+vaultCmd
+  .command('status')
+  .description('Show vault and backend status')
+  .action(async () => {
+    const vault = new BrainstormVault(VAULT_PATH);
+    const resolver = new KeyResolver(vault.exists() ? vault : null);
+    const s = resolver.status();
+    console.log('\n  Vault Status:\n');
+    console.log(`    Vault:      ${s.vault}`);
+    console.log(`    1Password:  ${s.op}`);
+    console.log(`    Env vars:   ${s.env}`);
+    console.log(`    Priority:   vault → 1Password → env vars\n`);
   });
 
 // ── Sessions Command ───────────────────────────────────────────────
