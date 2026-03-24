@@ -45,6 +45,33 @@ function applyEnvOverrides(config: Record<string, unknown>): Record<string, unkn
   return result;
 }
 
+function readJsonSafe(path: string): Record<string, unknown> {
+  if (!existsSync(path)) return {};
+  try {
+    return JSON.parse(readFileSync(path, 'utf-8'));
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Load MCP server configs from .brainstorm/mcp.json files.
+ * Project-level servers override global by name.
+ */
+function loadMCPServers(projectDir: string): Array<Record<string, unknown>> {
+  const globalMcp = readJsonSafe(join(GLOBAL_CONFIG_DIR, 'mcp.json'));
+  const projectMcp = readJsonSafe(join(projectDir, '.brainstorm', 'mcp.json'));
+
+  const globalServers = Array.isArray(globalMcp.servers) ? globalMcp.servers : [];
+  const projectServers = Array.isArray(projectMcp.servers) ? projectMcp.servers : [];
+
+  // Project servers override global by name
+  const byName = new Map<string, Record<string, unknown>>();
+  for (const s of globalServers) byName.set((s as any).name, s as Record<string, unknown>);
+  for (const s of projectServers) byName.set((s as any).name, s as Record<string, unknown>);
+  return Array.from(byName.values());
+}
+
 export function loadConfig(projectDir: string = process.cwd()): BrainstormConfig {
   // Layer 1: Global config
   const global = readToml(GLOBAL_CONFIG_FILE);
@@ -54,6 +81,14 @@ export function loadConfig(projectDir: string = process.cwd()): BrainstormConfig
   let merged = deepMerge(global, project);
   // Layer 3: Environment variables
   merged = applyEnvOverrides(merged);
+  // Layer 4: MCP servers from mcp.json files
+  const mcpServers = loadMCPServers(projectDir);
+  if (mcpServers.length > 0) {
+    const mcp = (merged.mcp ?? {}) as Record<string, unknown>;
+    const existing = Array.isArray(mcp.servers) ? mcp.servers : [];
+    mcp.servers = [...existing, ...mcpServers];
+    merged.mcp = mcp;
+  }
   // Validate and apply defaults
   return brainstormConfigSchema.parse(merged);
 }
