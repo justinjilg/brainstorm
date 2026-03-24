@@ -87,12 +87,32 @@ export function buildSystemPrompt(projectPath: string): SystemPromptResult {
 
     const protectedAreas = extractSection(storm.body, "Don't touch");
     if (protectedAreas) {
-      parts.push(`\n## Protected Areas\n\nDo NOT modify these files without asking the user first:\n${protectedAreas}`);
+      parts.push(`\n## Protected Areas\n\nThese files are off-limits. Do NOT modify them without explicit user approval:\n${protectedAreas}\nIf a task requires changes to a protected file, explain WHY and ask before proceeding.`);
     }
 
     const conventions = extractSection(storm.body, 'Conventions');
     if (conventions) {
-      parts.push(`\n## Code Patterns\n\nAlways follow these patterns when writing code in this project:\n${conventions}`);
+      const codeExamples = extractCodeBlocks(conventions);
+      parts.push(`\n## Code Patterns (MANDATORY)\n\nAlways follow these patterns when writing code in this project:\n${conventions}`);
+      if (codeExamples.length > 0) {
+        parts.push(`\nReference examples — match this style exactly:\n${codeExamples.join('\n')}`);
+      }
+    }
+
+    // Additional decision-relevant sections
+    const architecture = extractSection(storm.body, 'Architecture');
+    if (architecture) {
+      parts.push(`\n## Architecture Constraints\n\nRespect these architectural decisions when making changes:\n${architecture}`);
+    }
+
+    const stack = extractSection(storm.body, 'Stack');
+    if (stack) {
+      parts.push(`\n## Stack\n\n${stack}`);
+    }
+
+    const dependencies = extractSection(storm.body, 'Dependencies');
+    if (dependencies) {
+      parts.push(`\n## Dependency Rules\n\nFollow these dependency guidelines:\n${dependencies}`);
     }
   }
 
@@ -133,6 +153,23 @@ function extractSection(body: string, heading: string): string | null {
   // Skip sections that only contain placeholder comments
   if (!trimmed || trimmed.startsWith('<!--') && trimmed.endsWith('-->')) return null;
   return trimmed;
+}
+
+/**
+ * Extract fenced code blocks from a markdown section.
+ * These become explicit "match this style" examples in the system prompt.
+ */
+function extractCodeBlocks(section: string): string[] {
+  const blocks: string[] = [];
+  const pattern = /```[\w]*\n([\s\S]*?)```/g;
+  let match;
+  while ((match = pattern.exec(section)) !== null) {
+    const block = match[0].trim();
+    if (block.length > 10 && block.length < 2000) {
+      blocks.push(block);
+    }
+  }
+  return blocks;
 }
 
 function getGitContext(projectPath: string): string | null {
