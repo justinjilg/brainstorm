@@ -1,0 +1,111 @@
+[
+  {
+    "id": "tool-seq-01",
+    "capability": "tool-sequencing",
+    "prompt": "Read the file packages/router/src/classifier.ts and tell me how many task types are defined in TASK_SIGNALS",
+    "verify": {
+      "tool_calls_include": ["file_read"],
+      "answer_contains": ["9"],
+      "max_steps": 3
+    }
+  },
+  {
+    "id": "tool-seq-02",
+    "capability": "tool-sequencing",
+    "prompt": "Find where RoutingDecision is defined, then list all the fields it contains",
+    "verify": {
+      "tool_calls_include": ["grep", "file_read"],
+      "answer_contains": ["model", "fallbacks", "reason", "strategy"],
+      "min_steps": 2,
+      "max_steps": 6
+    }
+  },
+  {
+    "id": "tool-seq-03",
+    "capability": "tool-sequencing",
+    "prompt": "Search for all files that use streamText from the 'ai' package, then read one of them to show me how it's called",
+    "verify": {
+      "tool_calls_include": ["grep", "file_read"],
+      "answer_contains": ["streamText"],
+      "min_steps": 2,
+      "max_steps": 6
+    }
+  },
+  {
+    "id": "tool-seq-04",
+    "capability": "tool-sequencing",
+    "prompt": "Find the entry point for the CLI, then trace how the 'chat' command is set up",
+    "verify": {
+      "tool_calls_include": ["file_read"],
+      "answer_contains": ["chat", "command"],
+      "min_steps": 1,
+      "max_steps": 5
+    }
+  },
+  {
+    "id": "tool-seq-05",
+    "capability": "tool-sequencing",
+    "prompt": "Find all routing strategies, then read the combined strategy to explain how it works",
+    "verify": {
+      "tool_calls_include": ["glob", "file_read"],
+      "answer_contains": ["combined"],
+      "min_steps": 2,
+      "max_steps": 6
+    }
+  },
+  {
+    "id": "tool-seq-06",
+    "capability": "tool-sequencing",
+    "prompt": "Search for where sessions are persisted to the database, then explain the schema",
+    "verify": {
+      "tool_calls_include": ["grep", "file_read"],
+      "answer_contains": ["session"],
+      "min_steps": 2,
+      "max_steps": 6
+    }
+  },
+  {
+    "id": "tool-seq-07",
+    "capability": "tool-sequencing",
+    "prompt": "Find all tool definitions in packages/tools/src/builtin/, count them, and list their names",
+    "verify": {
+      "tool_calls_include": ["glob"],
+      "answer_contains": ["file_read", "file_write"],
+      "min_steps": 1,
+      "max_steps": 8
+    }
+  },
+  {
+    "id": "tool-seq-08",
+    "capability": "tool-sequencing",
+    "prompt": "Find the STORM.md parser, read it, and explain what frontmatter fields it supports",
+    "verify": {
+      "tool_calls_include": ["grep", "file_read"],
+      "answer_contains": ["version", "routing"],
+      "min_steps": 2,
+      "max_steps": 6
+    }
+  },
+  {
+    "id": "tool-seq-09",
+    "capability": "tool-sequencing",
+    "prompt": "Find where the x-br-metadata header is constructed, then explain what fields it includes",
+    "verify": {
+      "tool_calls_include": ["grep", "file_read"],
+      "answer_contains": ["telemetry", "metadata"],
+      "min_steps": 2,
+      "max_steps": 6
+    }
+  },
+  {
+    "id": "tool-seq-10",
+    "capability": "tool-sequencing",
+    "prompt": "Find the workflow engine, read it, and explain what events it emits",
+    "verify": {
+      "tool_calls_include": ["file_read"],
+      "answer_contains": ["workflow"],
+      "min_steps": 1,
+      "max_steps": 6
+    }
+  }
+]
