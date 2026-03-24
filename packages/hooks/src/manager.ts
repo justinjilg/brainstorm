@@ -44,10 +44,16 @@ export class HookManager {
   ): Promise<HookResult[]> {
     const matching = this.hooks.filter((h) => {
       if (h.event !== event) return false;
-      if (h.matcher && context?.toolName) {
-        try {
-          return new RegExp(h.matcher).test(context.toolName);
-        } catch { return false; }
+      if (h.matcher) {
+        // For subagent hooks, match against subagent type
+        const matchTarget = (event === 'SubagentStart' || event === 'SubagentStop')
+          ? context?.subagentType as string
+          : context?.toolName;
+        if (matchTarget) {
+          try {
+            return new RegExp(h.matcher).test(matchTarget);
+          } catch { return false; }
+        }
       }
       return true;
     });
@@ -64,6 +70,9 @@ export class HookManager {
           let cmd = hook.command;
           if (context?.filePath) cmd = cmd.replace(/\$FILE/g, context.filePath);
           if (context?.toolName) cmd = cmd.replace(/\$TOOL/g, context.toolName);
+          if (context?.subagentType) cmd = cmd.replace(/\$SUBAGENT_TYPE/g, String(context.subagentType));
+          if (context?.subagentCost !== undefined) cmd = cmd.replace(/\$SUBAGENT_COST/g, String(context.subagentCost));
+          if (context?.subagentModel) cmd = cmd.replace(/\$SUBAGENT_MODEL/g, String(context.subagentModel));
 
           const { stdout, stderr } = await execFileAsync('/bin/sh', ['-c', cmd], {
             timeout: 10_000,
