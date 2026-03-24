@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="security-gradient-green" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10B981" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+    <linearGradient id="security-gradient-light" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34D399" />
+      <stop offset="100%" stop-color="#10B981" />
+    </linearGradient>
+    <linearGradient id="security-gradient-dark" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#065F46" />
+      <stop offset="100%" stop-color="#047857" />
+    </linearGradient>
+    <filter id="shield-glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="2" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Shield background -->
+  <path d="M32,6 L12,16 C12,16 8,20 8,28 C8,44 20,52 32,58 C44,52 56,44 56,28 C56,20 52,16 52,16 L32,6 Z" 
+        fill="url(#security-gradient-dark)" />
+  
+  <!-- Shield main body -->
+  <path d="M32,10 L16,18 C16,18 14,20 14,28 C14,42 24,48 32,52 C40,48 50,42 50,28 C50,20 48,18 48,18 L32,10 Z" 
+        fill="url(#security-gradient-green)" filter="url(#shield-glow)" />
+  
+  <!-- Shield inner highlight -->
+  <path d="M32,14 L20,20 C20,20 18,22 18,28 C18,40 26,46 32,48 C38,46 46,40 46,28 C46,22 44,20 44,20 L32,14 Z" 
+        fill="url(#security-gradient-light)" opacity="0.7" />
+  
+  <!-- Shield border -->
+  <path d="M32,6 L12,16 C12,16 8,20 8,28 C8,44 20,52 32,58 C44,52 56,44 56,28 C56,20 52,16 52,16 L32,6 Z" 
+        fill="none" stroke="#FFFFFF" stroke-width="1.5" stroke-linejoin="round" opacity="0.3" />
+  
+  <!-- Checkmark -->
+  <g transform="translate(0, 4)">
+    <path d="M24,34 L30,40 L40,28" 
+          fill="none" 
+          stroke="#FFFFFF" 
+          stroke-width="4" 
+          stroke-linecap="round" 
+          stroke-linejoin="round" />
+    
+    <!-- Checkmark inner highlight -->
+    <path d="M24,34 L30,40 L40,28" 
+          fill="none" 
+          stroke="#D1FAE5" 
+          stroke-width="2" 
+          stroke-linecap="round" 
+          stroke-linejoin="round" />
+  </g>
+  
+  <!-- Shield details -->
+  <g stroke="#FFFFFF" stroke-width="1" opacity="0.4">
+    <!-- Top curves -->
+    <path d="M20,18 Q26,16 32,16 Q38,16 44,18" fill="none" />
+    
+    <!-- Side details -->
+    <line x1="22" y1="24" x2="22" y2="30" />
+    <line x1="42" y1="24" x2="42" y2="30" />
+    
+    <!-- Bottom arc -->
+    <path d="M24,44 Q32,48 40,44" fill="none" />
+  </g>
+  
+  <!-- Glow effect dots -->
+  <g opacity="0.5">
+    <circle cx="28" cy="22" r="1" fill="#A7F3D0" />
+    <circle cx="36" cy="22" r="1" fill="#A7F3D0" />
+    <circle cx="32" cy="38" r="1.5" fill="#A7F3D0" />
+    <circle cx="26" cy="42" r="1" fill="#A7F3D0" />
+    <circle cx="38" cy="42" r="1" fill="#A7F3D0" />
+  </g>
+</svg>
