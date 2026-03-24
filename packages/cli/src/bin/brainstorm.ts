@@ -976,8 +976,15 @@ program
   .option('--continue', 'Resume the most recent session')
   .option('--resume <id>', 'Resume a specific session by ID')
   .option('--fork <id>', 'Fork a session (copy history, new session)')
-  .action(async (opts: { simple?: boolean; continue?: boolean; resume?: string; fork?: string }) => {
+  .option('--lfg', 'Full auto mode — skip all permission confirmations')
+  .action(async (opts: { simple?: boolean; continue?: boolean; resume?: string; fork?: string; lfg?: boolean }) => {
     const config = loadConfig();
+
+    // --lfg: full auto mode, skip all permission confirmations
+    if (opts.lfg) {
+      config.general.defaultPermissionMode = 'auto';
+    }
+
     const db = getDb();
     const resolvedKeys = await resolveProviderKeys();
     const registry = await createProviderRegistry(config, resolvedKeys);
