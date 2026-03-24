@@ -1,0 +1,93 @@
+[
+  {
+    "id": "self-correct-01",
+    "capability": "self-correction",
+    "prompt": "Read the file packages/router/src/clasifier.ts and explain what it does",
+    "verify": {
+      "tool_calls_include": ["file_read"],
+      "answer_contains": ["classif"],
+      "min_steps": 2,
+      "max_steps": 6
+    }
+  },
+  {
+    "id": "self-correct-02",
+    "capability": "self-correction",
+    "prompt": "Find the file that defines the AgentLoop class",
+    "verify": {
+      "answer_contains": ["loop"],
+      "max_steps": 6
+    }
+  },
+  {
+    "id": "self-correct-03",
+    "capability": "self-correction",
+    "prompt": "Read packages/shared/src/models.ts and tell me about the model types",
+    "verify": {
+      "answer_contains": ["types"],
+      "min_steps": 2,
+      "max_steps": 6
+    }
+  },
+  {
+    "id": "self-correct-04",
+    "capability": "self-correction",
+    "prompt": "Search for a function called 'routeRequest' in the codebase",
+    "verify": {
+      "tool_calls_include": ["grep"],
+      "max_steps": 6
+    }
+  },
+  {
+    "id": "self-correct-05",
+    "capability": "self-correction",
+    "prompt": "Read the Dockerfile in this project",
+    "verify": {
+      "max_steps": 4
+    }
+  },
+  {
+    "id": "self-correct-06",
+    "capability": "self-correction",
+    "prompt": "Find the test files for the router package",
+    "verify": {
+      "tool_calls_include": ["glob"],
+      "max_steps": 5
+    }
+  },
+  {
+    "id": "self-correct-07",
+    "capability": "self-correction",
+    "prompt": "Read packages/core/src/agent/orchestrator.ts and explain the orchestration logic",
+    "verify": {
+      "min_steps": 2,
+      "max_steps": 6
+    }
+  },
+  {
+    "id": "self-correct-08",
+    "capability": "self-correction",
+    "prompt": "Find the webpack configuration for this project",
+    "verify": {
+      "max_steps": 4
+    }
+  },
+  {
+    "id": "self-correct-09",
+    "capability": "self-correction",
+    "prompt": "Search for the function 'validateSchema' that's used somewhere in the config package",
+    "verify": {
+      "tool_calls_include": ["grep"],
+      "max_steps": 5
+    }
+  },
+  {
+    "id": "self-correct-10",
+    "capability": "self-correction",
+    "prompt": "Read the file packages/tools/src/builtin/database.ts",
+    "verify": {
+      "min_steps": 2,
+      "max_steps": 6
+    }
+  }
+]

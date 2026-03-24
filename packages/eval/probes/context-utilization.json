@@ -1,0 +1,92 @@
+[
+  {
+    "id": "context-01",
+    "capability": "context-utilization",
+    "prompt": "What routing strategy does this project use by default? Don't look at code — check the project configuration.",
+    "verify": {
+      "answer_contains": ["combined"],
+      "max_steps": 3
+    }
+  },
+  {
+    "id": "context-02",
+    "capability": "context-utilization",
+    "prompt": "What build command should I use for this project?",
+    "verify": {
+      "answer_contains": ["turbo"],
+      "max_steps": 3
+    }
+  },
+  {
+    "id": "context-03",
+    "capability": "context-utilization",
+    "prompt": "What test framework does this project use?",
+    "verify": {
+      "answer_contains": ["vitest"],
+      "max_steps": 3
+    }
+  },
+  {
+    "id": "context-04",
+    "capability": "context-utilization",
+    "prompt": "What database does this project use for persistence?",
+    "verify": {
+      "answer_contains": ["sqlite"],
+      "max_steps": 3
+    }
+  },
+  {
+    "id": "context-05",
+    "capability": "context-utilization",
+    "prompt": "Is this project a monorepo? How many packages does it have?",
+    "verify": {
+      "answer_contains": ["monorepo", "13"],
+      "max_steps": 3
+    }
+  },
+  {
+    "id": "context-06",
+    "capability": "context-utilization",
+    "prompt": "What AI SDK version patterns does this project use? (e.g., streamText vs generateText, tool definition style)",
+    "verify": {
+      "answer_contains": ["streamText"],
+      "max_steps": 5
+    }
+  },
+  {
+    "id": "context-07",
+    "capability": "context-utilization",
+    "prompt": "What local model providers does this project support?",
+    "verify": {
+      "answer_contains": ["ollama"],
+      "max_steps": 3
+    }
+  },
+  {
+    "id": "context-08",
+    "capability": "context-utilization",
+    "prompt": "What module system does this project use — CommonJS or ESM?",
+    "verify": {
+      "answer_contains": ["ESM"],
+      "max_steps": 3
+    }
+  },
+  {
+    "id": "context-09",
+    "capability": "context-utilization",
+    "prompt": "What bundler does this project use for building packages?",
+    "verify": {
+      "answer_contains": ["tsup"],
+      "max_steps": 3
+    }
+  },
+  {
+    "id": "context-10",
+    "capability": "context-utilization",
+    "prompt": "What cloud routing service does this project integrate with for LLM requests?",
+    "verify": {
+      "answer_contains": ["BrainstormRouter"],
+      "max_steps": 3
+    }
+  }
+]
