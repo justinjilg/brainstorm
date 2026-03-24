@@ -4,7 +4,8 @@ import type { BrainstormConfig } from '@brainstorm/config';
 import type { ProviderRegistry } from '@brainstorm/providers';
 import { BrainstormRouter, CostTracker } from '@brainstorm/router';
 import type { ToolRegistry } from '@brainstorm/tools';
-import type { AgentEvent, GatewayFeedbackData } from '@brainstorm/shared';
+import { setTaskEventHandler } from '@brainstorm/tools';
+import type { AgentEvent, AgentTask, GatewayFeedbackData } from '@brainstorm/shared';
 import { serializeRoutingMetadata } from '@brainstorm/shared';
 import { createStreamFilter } from './response-filter.js';
 import { parseGatewayHeaders } from '@brainstorm/gateway';
@@ -38,6 +39,12 @@ export async function* runAgentLoop(
   options: AgentLoopOptions,
 ): AsyncGenerator<AgentEvent> {
   const { router, costTracker, tools, config, sessionId, systemPrompt } = options;
+
+  // Wire task event handler so task_create/task_update yield events to the TUI
+  const taskEventQueue: AgentEvent[] = [];
+  setTaskEventHandler((type, task) => {
+    taskEventQueue.push({ type, task } as AgentEvent);
+  });
 
   // Classify from the last user message
   const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
@@ -95,6 +102,10 @@ export async function* runAgentLoop(
         yield { type: 'tool-call-start', toolName: part.toolName, args: (part as any).input ?? (part as any).args };
       } else if (part.type === 'tool-result') {
         yield { type: 'tool-call-result', toolName: part.toolName, result: (part as any).output ?? (part as any).result };
+        // Drain any task events queued by task_create/task_update tool executions
+        while (taskEventQueue.length > 0) {
+          yield taskEventQueue.shift()!;
+        }
       }
     }
 
