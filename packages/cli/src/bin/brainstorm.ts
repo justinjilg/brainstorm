@@ -16,6 +16,23 @@ import { BrainstormVault, KeyResolver } from '@brainstorm/vault';
 import { createInterface } from 'node:readline';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import type { ResolvedKeys } from '@brainstorm/providers';
+
+/** Create a KeyResolver backed by the vault, with lazy password prompt. */
+function createKeyResolverForCli(): { resolver: KeyResolver; asResolvedKeys: ResolvedKeys } {
+  const vaultPath = join(homedir(), '.brainstorm', 'vault.enc');
+  const vault = new BrainstormVault(vaultPath);
+  const resolver = new KeyResolver(
+    vault.exists() ? vault : null,
+    () => promptPassword('  Vault password: '),
+  );
+  // Adapter: KeyResolver.get is async, but ResolvedKeys.get is sync.
+  // Pre-resolve keys before passing to createProviderRegistry.
+  return {
+    resolver,
+    asResolvedKeys: { get: (name: string) => vault.isOpen() ? vault.get(name) : null },
+  };
+}
 
 /**
  * Auto-connect to BrainstormRouter MCP server when API key is set.
@@ -918,7 +935,8 @@ program
   .action(async (opts: { simple?: boolean; continue?: boolean; resume?: string; fork?: string }) => {
     const config = loadConfig();
     const db = getDb();
-    const registry = await createProviderRegistry(config);
+    const { asResolvedKeys } = createKeyResolverForCli();
+    const registry = await createProviderRegistry(config, asResolvedKeys);
     const costTracker = new CostTracker(db, config.budget);
     const tools = createDefaultToolRegistry();
     await connectGatewayMCP(tools);
