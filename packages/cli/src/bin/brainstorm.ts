@@ -367,7 +367,10 @@ program
   .argument('<prompt>', 'The prompt to send')
   .option('--json', 'Output structured JSON (for CI/CD pipelines)')
   .option('--pipe', 'Read from stdin if no prompt given')
-  .action(async (prompt: string, opts: { json?: boolean; pipe?: boolean }) => {
+  .option('--model <id>', 'Target a specific model (bypass routing)')
+  .option('--tools', 'Enable tool use (default: disabled)')
+  .option('--max-steps <n>', 'Maximum agentic steps (default: 1)', '1')
+  .action(async (prompt: string, opts: { json?: boolean; pipe?: boolean; model?: string; tools?: boolean; maxSteps?: string }) => {
     const config = loadConfig();
     const db = getDb();
     const registry = await createProviderRegistry(config);
@@ -387,7 +390,9 @@ program
     for await (const event of runAgentLoop(sessionManager.getHistory(), {
       config, registry, router, costTracker, tools,
       sessionId: session.id, projectPath, systemPrompt,
-      disableTools: true,
+      disableTools: !opts.tools,
+      ...(opts.model ? { preferredModelId: opts.model } : {}),
+      maxSteps: parseInt(opts.maxSteps ?? '1'),
     })) {
       switch (event.type) {
         case 'routing':
@@ -427,6 +432,93 @@ program
     if (fullResponse) {
       sessionManager.addAssistantMessage(fullResponse);
     }
+  });
+
+// ── Probe Command ─────────────────────────────────────────────────
+
+program
+  .command('probe')
+  .description('Run an ad-hoc eval probe with verification (for autonomous testing)')
+  .argument('<prompt>', 'The prompt to test')
+  .option('--model <id>', 'Target a specific model')
+  .option('--expect-tools <tools>', 'Comma-separated tool names that must be called')
+  .option('--expect-contains <strings>', 'Comma-separated strings that must appear in output')
+  .option('--expect-excludes <strings>', 'Comma-separated strings that must NOT appear')
+  .option('--min-steps <n>', 'Minimum number of agentic steps')
+  .option('--max-steps <n>', 'Maximum number of agentic steps', '10')
+  .option('--timeout <ms>', 'Timeout in milliseconds', '30000')
+  .option('--json', 'Output full ProbeResult as JSON')
+  .option('--setup-file <pairs...>', 'Setup files as path=content pairs')
+  .action(async (prompt: string, opts: any) => {
+    const { runProbe } = await import('@brainstorm/eval');
+
+    // Build Probe from CLI args
+    const probe: any = {
+      id: `adhoc-${Date.now().toString(36)}`,
+      capability: 'multi-step' as const,
+      prompt,
+      verify: {},
+      timeout_ms: parseInt(opts.timeout),
+    };
+
+    if (opts.expectTools) {
+      probe.verify.tool_calls_include = opts.expectTools.split(',').map((s: string) => s.trim());
+    }
+    if (opts.expectContains) {
+      probe.verify.answer_contains = opts.expectContains.split(',').map((s: string) => s.trim());
+    }
+    if (opts.expectExcludes) {
+      probe.verify.answer_excludes = opts.expectExcludes.split(',').map((s: string) => s.trim());
+    }
+    if (opts.minSteps) {
+      probe.verify.min_steps = parseInt(opts.minSteps);
+    }
+    if (opts.maxSteps) {
+      probe.verify.max_steps = parseInt(opts.maxSteps);
+    }
+
+    // Parse setup files: --setup-file "path=content" --setup-file "path2=content2"
+    if (opts.setupFile) {
+      probe.setup = { files: {} as Record<string, string> };
+      for (const pair of opts.setupFile) {
+        const eqIdx = pair.indexOf('=');
+        if (eqIdx > 0) {
+          probe.setup.files[pair.slice(0, eqIdx)] = pair.slice(eqIdx + 1);
+        }
+      }
+    }
+
+    const result = await runProbe(probe, {
+      modelId: opts.model,
+      maxSteps: parseInt(opts.maxSteps),
+      defaultTimeout: parseInt(opts.timeout),
+    });
+
+    if (opts.json) {
+      process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    } else {
+      const status = result.passed ? 'PASSED' : 'FAILED';
+      console.log(`\n  Probe: ${status}`);
+      console.log(`  Model: ${result.modelId}`);
+      console.log(`  Steps: ${result.steps}`);
+      console.log(`  Cost:  $${result.cost.toFixed(4)}`);
+      console.log(`  Time:  ${result.durationMs}ms`);
+      if (result.toolCalls.length > 0) {
+        console.log(`  Tools: ${result.toolCalls.map((t) => t.name).join(', ')}`);
+      }
+      if (!result.passed) {
+        const failures = result.checks.filter((c) => !c.passed);
+        console.log(`  Failures:`);
+        for (const f of failures) {
+          console.log(`    - ${f.check}: ${f.detail ?? 'failed'}`);
+        }
+      }
+      if (result.error) console.log(`  Error: ${result.error}`);
+      console.log(`  Output: ${result.output.slice(0, 200)}${result.output.length > 200 ? '...' : ''}`);
+      console.log();
+    }
+
+    process.exit(result.passed ? 0 : 1);
   });
 
 // ── Sessions Command ───────────────────────────────────────────────
