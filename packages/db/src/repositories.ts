@@ -125,6 +125,24 @@ export class CostRepository {
     return row.total;
   }
 
+  lastForSession(sessionId: string): CostRecord | null {
+    const row = this.db
+      .prepare('SELECT * FROM cost_records WHERE session_id = ? ORDER BY timestamp DESC LIMIT 1')
+      .get(sessionId) as any;
+    if (!row) return null;
+    return {
+      id: row.id, timestamp: row.timestamp, sessionId: row.session_id,
+      modelId: row.model_id, provider: row.provider,
+      inputTokens: row.input_tokens, outputTokens: row.output_tokens,
+      cachedTokens: row.cached_tokens, cost: row.cost,
+      taskType: row.task_type, projectPath: row.project_path,
+    };
+  }
+
+  updateCost(id: string, cost: number): void {
+    this.db.prepare('UPDATE cost_records SET cost = ? WHERE id = ?').run(cost, id);
+  }
+
   recentByModel(limit = 20): Array<{ modelId: string; totalCost: number; requestCount: number }> {
     const rows = this.db
       .prepare(`SELECT model_id, SUM(cost) as total_cost, COUNT(*) as request_count FROM cost_records GROUP BY model_id ORDER BY total_cost DESC LIMIT ?`)
