@@ -2,7 +2,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 
 export interface ChatMessage {
-  role: 'user' | 'assistant' | 'system' | 'routing';
+  role: 'user' | 'assistant' | 'system' | 'routing' | 'reasoning';
   content: string;
   model?: string;
   cost?: number;
@@ -52,6 +52,13 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           {message.cost !== undefined && message.cost > 0 && (
             <Text color="gray" dimColor>  ${message.cost.toFixed(4)}</Text>
           )}
+        </Box>
+      );
+    case 'reasoning':
+      return (
+        <Box marginBottom={0} paddingLeft={2}>
+          <Text color="gray" dimColor>{'▸ '}</Text>
+          <Text color="gray" dimColor>{message.content.length > 200 ? message.content.slice(0, 200) + '...' : message.content}</Text>
         </Box>
       );
     case 'routing':
