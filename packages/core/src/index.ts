@@ -5,3 +5,4 @@ export { PermissionManager } from './permissions/manager.js';
 export { compactContext, estimateTokenCount, needsCompaction } from './session/compaction.js';
 export { spawnSubagent, type SubagentOptions, type SubagentResult } from './agent/subagent.js';
 export { loadSkills, findSkill, type SkillDefinition } from './skills/loader.js';
+export { MemoryManager, type MemoryEntry } from './memory/manager.js';
