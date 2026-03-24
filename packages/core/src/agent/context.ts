@@ -228,3 +228,49 @@ export function parseAtMentions(
   const cleanedInput = input.replace(atPattern, '$1').trim();
   return { cleanedInput, fileContexts };
 }
+
+// ── Tool Self-Awareness ─────────────────────────────────────────────
+
+const TOOL_CATEGORIES: Record<string, string[]> = {
+  'Filesystem': ['file_read', 'file_write', 'file_edit', 'multi_edit', 'batch_edit', 'list_dir', 'glob', 'grep'],
+  'Shell': ['shell', 'process_spawn', 'process_kill'],
+  'Git': ['git_status', 'git_diff', 'git_log', 'git_commit', 'git_branch', 'git_stash'],
+  'GitHub': ['gh_pr', 'gh_issue'],
+  'Web': ['web_fetch', 'web_search'],
+  'Tasks': ['task_create', 'task_update', 'task_list'],
+  'Subagent': ['subagent'],
+};
+
+/**
+ * Build a natural-language tool listing for injection into the system prompt.
+ * Helps models understand available tools without relying solely on AI SDK schemas.
+ */
+export function buildToolAwarenessSection(
+  tools: Array<{ name: string; description: string; permission: string }>,
+): string {
+  if (tools.length === 0) return '';
+
+  const toolMap = new Map(tools.map((t) => [t.name, t]));
+  const used = new Set<string>();
+  const sections: string[] = [];
+
+  for (const [category, names] of Object.entries(TOOL_CATEGORIES)) {
+    const categoryTools = names
+      .filter((n) => toolMap.has(n))
+      .map((n) => { used.add(n); return toolMap.get(n)!; });
+    if (categoryTools.length === 0) continue;
+    sections.push(`### ${category}\n${categoryTools.map((t) =>
+      `- **${t.name}** (${t.permission}) — ${t.description.slice(0, 120)}`
+    ).join('\n')}`);
+  }
+
+  // Catch uncategorized tools
+  const other = tools.filter((t) => !used.has(t.name));
+  if (other.length > 0) {
+    sections.push(`### Other\n${other.map((t) =>
+      `- **${t.name}** (${t.permission}) — ${t.description.slice(0, 120)}`
+    ).join('\n')}`);
+  }
+
+  return `\n## Available Tools\n\nYou have access to ${tools.length} tools:\n\n${sections.join('\n\n')}`;
+}

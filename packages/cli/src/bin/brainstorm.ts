@@ -4,7 +4,7 @@ import { getDb } from '@brainstorm/db';
 import { createProviderRegistry } from '@brainstorm/providers';
 import { BrainstormRouter, CostTracker } from '@brainstorm/router';
 import { createDefaultToolRegistry, configureSandbox } from '@brainstorm/tools';
-import { runAgentLoop, buildSystemPrompt, SessionManager, PermissionManager, createSubagentTool, type CompactionCallbacks } from '@brainstorm/core';
+import { runAgentLoop, buildSystemPrompt, buildToolAwarenessSection, SessionManager, PermissionManager, createSubagentTool, spawnSubagent, type CompactionCallbacks } from '@brainstorm/core';
 import type { OutputStyle } from '@brainstorm/core';
 import { AgentManager, parseAgentNL } from '@brainstorm/agents';
 import { runWorkflow, getPresetWorkflow, autoSelectPreset, PRESET_WORKFLOWS } from '@brainstorm/workflow';
@@ -629,7 +629,8 @@ program
     await connectMCPServers(tools, config);
     const sessionManager = new SessionManager(db);
     const projectPath = process.cwd();
-    const { prompt: systemPrompt, frontmatter } = buildSystemPrompt(projectPath);
+    const { prompt: rawPrompt, frontmatter } = buildSystemPrompt(projectPath);
+    const systemPrompt = rawPrompt + buildToolAwarenessSection(tools.listTools());
     const router = new BrainstormRouter(config, registry, costTracker, frontmatter);
     const session = sessionManager.start(projectPath);
 
@@ -1006,6 +1007,7 @@ program
 
     const sessionManager = new SessionManager(db);
     let { prompt: systemPrompt, frontmatter } = buildSystemPrompt(projectPath, currentOutputStyle);
+    systemPrompt += buildToolAwarenessSection(tools.listTools());
     const router = new BrainstormRouter(config, registry, costTracker, frontmatter);
 
     // Register the subagent tool (model can spawn focused subagents)
@@ -1146,7 +1148,7 @@ program
           setOutputStyle: (style: string) => {
             currentOutputStyle = style as OutputStyle;
             const rebuilt = buildSystemPrompt(projectPath, currentOutputStyle);
-            systemPrompt = rebuilt.prompt;
+            systemPrompt = rebuilt.prompt + buildToolAwarenessSection(tools.listTools());
           },
           getOutputStyle: () => currentOutputStyle,
           getBudget: () => {
@@ -1163,6 +1165,21 @@ program
             const contextWindow = activeModel?.limits?.contextWindow || 128_000;
             const cb = buildCompactionCallbacks(sessionManager);
             await cb.compact({ contextWindow });
+          },
+          dream: async () => {
+            const { MemoryManager, DREAM_SYSTEM_PROMPT, buildDreamPrompt } = await import('@brainstorm/core');
+            const memory = new MemoryManager(projectPath);
+            const rawFiles = memory.getRawFiles();
+            if (rawFiles.length === 0) return 'No memory files to consolidate.';
+            const dreamPrompt = buildDreamPrompt(memory.getMemoryDir(), rawFiles);
+            const result = await spawnSubagent(dreamPrompt, {
+              config, registry, router, costTracker, tools, projectPath,
+              type: 'code',
+              systemPrompt: DREAM_SYSTEM_PROMPT,
+              maxSteps: 12,
+              budgetLimit: 0.50,
+            });
+            return `Dream complete. ${result.toolCalls.length} tool calls, $${result.cost.toFixed(4)}.\n${result.text}`;
           },
         },
       }),
