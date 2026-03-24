@@ -140,7 +140,18 @@ export async function* runAgentLoop(
       } else if (part.type === 'tool-call') {
         yield { type: 'tool-call-start', toolName: part.toolName, args: (part as any).input ?? (part as any).args };
       } else if (part.type === 'tool-result') {
-        yield { type: 'tool-call-result', toolName: part.toolName, result: (part as any).output ?? (part as any).result };
+        const toolResult = (part as any).output ?? (part as any).result;
+        yield { type: 'tool-call-result', toolName: part.toolName, result: toolResult };
+        // Emit subagent-result events for TUI display
+        if (part.toolName === 'subagent' && toolResult && typeof toolResult === 'object') {
+          if (toolResult.mode === 'single') {
+            yield { type: 'subagent-result', subagentType: toolResult.type, model: toolResult.model, cost: toolResult.cost, toolCalls: toolResult.toolCalls };
+          } else if (toolResult.mode === 'parallel' && Array.isArray(toolResult.results)) {
+            for (const r of toolResult.results) {
+              yield { type: 'subagent-result', subagentType: r.type, model: r.model, cost: r.cost, toolCalls: r.toolCalls };
+            }
+          }
+        }
         // Drain any task events queued by task_create/task_update tool executions
         while (taskEventQueue.length > 0) {
           yield taskEventQueue.shift()!;

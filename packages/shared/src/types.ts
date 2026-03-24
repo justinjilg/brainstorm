@@ -194,6 +194,7 @@ export type AgentEvent =
   | { type: 'tool-output-partial'; toolName: string; chunk: string }
   | { type: 'task-created'; task: AgentTask }
   | { type: 'task-updated'; task: AgentTask }
+  | { type: 'subagent-result'; subagentType: string; model: string; cost: number; toolCalls: string[] }
   | { type: 'interrupted' }
   | { type: 'error'; error: Error }
   | { type: 'done'; totalCost: number; totalTokens?: { input: number; output: number } };
