@@ -5,4 +5,5 @@ export { costFirstStrategy } from './strategies/cost-first.js';
 export { qualityFirstStrategy } from './strategies/quality-first.js';
 export { createRuleBasedStrategy } from './strategies/rule-based.js';
 export { createCombinedStrategy } from './strategies/combined.js';
+export { capabilityStrategy } from './strategies/capability.js';
 export type { RoutingStrategy } from './strategies/types.js';
