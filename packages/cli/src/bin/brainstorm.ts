@@ -1007,7 +1007,8 @@ program
   .option('--resume <id>', 'Resume a specific session by ID')
   .option('--fork <id>', 'Fork a session (copy history, new session)')
   .option('--lfg', 'Full auto mode — skip all permission confirmations')
-  .action(async (opts: { simple?: boolean; continue?: boolean; resume?: string; fork?: string; lfg?: boolean }) => {
+  .option('--strategy <name>', 'Routing strategy: cost-first, quality-first, combined, capability')
+  .action(async (opts: { simple?: boolean; continue?: boolean; resume?: string; fork?: string; lfg?: boolean; strategy?: string }) => {
     const config = loadConfig();
 
     // --lfg: full auto mode, skip all permission confirmations
@@ -1037,6 +1038,7 @@ program
     let { prompt: systemPrompt, frontmatter } = buildSystemPrompt(projectPath, currentOutputStyle);
     systemPrompt += buildToolAwarenessSection(tools.listTools());
     const router = new BrainstormRouter(config, registry, costTracker, frontmatter);
+    if (opts.strategy) router.setStrategy(opts.strategy as any);
 
     // Register the subagent tool (model can spawn focused subagents)
     const subagentTool = createSubagentTool({

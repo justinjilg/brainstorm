@@ -77,15 +77,27 @@ const commands: SlashCommand[] = [
     },
   },
   {
-    name: 'fast',
-    aliases: [],
-    description: 'Toggle cost-first routing (cheapest capable model)',
-    usage: '/fast',
-    execute: (_args, ctx) => {
-      const current = ctx.getStrategy?.() ?? 'quality-first';
-      const next = current === 'cost-first' ? 'quality-first' : 'cost-first';
-      ctx.setStrategy?.(next);
-      return `Routing strategy: ${next}`;
+    name: 'strategy',
+    aliases: ['fast'],
+    description: 'Switch routing strategy',
+    usage: '/strategy [cost-first|quality-first|combined|capability|rule-based]',
+    execute: (args, ctx) => {
+      const valid = ['cost-first', 'quality-first', 'combined', 'capability', 'rule-based'];
+      if (!args) {
+        return `Current strategy: ${ctx.getStrategy?.() ?? 'combined'}. Options: ${valid.join(', ')}`;
+      }
+      // /fast backward compat
+      if (args === 'fast' || args === 'toggle') {
+        const current = ctx.getStrategy?.() ?? 'combined';
+        const next = current === 'cost-first' ? 'quality-first' : 'cost-first';
+        ctx.setStrategy?.(next);
+        return `Routing strategy: ${next}`;
+      }
+      if (!valid.includes(args)) {
+        return `Unknown strategy: ${args}. Options: ${valid.join(', ')}`;
+      }
+      ctx.setStrategy?.(args);
+      return `Routing strategy: ${args}`;
     },
   },
   {
