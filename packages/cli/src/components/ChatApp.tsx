@@ -26,6 +26,7 @@ interface ChatAppProps {
     getBudget?: () => { remaining: number; limit: number } | null;
     compact?: () => Promise<void>;
     dream?: () => Promise<string>;
+    vault?: (action: string, args: string) => Promise<string>;
   };
 }
 
@@ -97,6 +98,7 @@ export function ChatApp({ strategy, modelCount, onSendMessage, onAbort, slashCal
     getBudget: slashCallbacks?.getBudget,
     compact: slashCallbacks?.compact,
     dream: slashCallbacks?.dream,
+    vault: slashCallbacks?.vault,
   }), [currentModel, sessionCost, tokenCount, exit, slashCallbacks]);
 
   const handleSubmit = useCallback(async (text: string) => {

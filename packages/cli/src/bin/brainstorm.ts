@@ -1220,6 +1220,35 @@ program
             });
             return `Dream complete. ${result.toolCalls.length} tool calls, $${result.cost.toFixed(4)}.\n${result.text}`;
           },
+          vault: async (action: string, args: string) => {
+            const vault = new BrainstormVault(VAULT_PATH);
+            switch (action) {
+              case 'list': case 'ls': {
+                if (!vault.exists()) return 'No vault found. Run `brainstorm vault init` to create one.';
+                const keys = vault.list();
+                if (keys.length === 0) return 'Vault is empty (or locked). Keys: none';
+                return `Vault keys (${keys.length}):\n${keys.map((k) => `  - ${k}`).join('\n')}`;
+              }
+              case 'status': {
+                if (!vault.exists()) return 'Vault: not initialized';
+                return `Vault: ${VAULT_PATH}\nStatus: ${vault.isOpen() ? 'unlocked' : 'locked'}\nKeys: ${vault.list().length}`;
+              }
+              case 'get': {
+                if (!args) return 'Usage: /vault get <key-name>';
+                const val = vault.get(args);
+                if (val === null) return `Key '${args}' not found (or vault is locked).`;
+                return `${args} = ${val.slice(0, 8)}${'*'.repeat(Math.max(0, val.length - 8))}`;
+              }
+              case 'add': case 'set': {
+                return 'Use `brainstorm vault add <name>` from the terminal — requires interactive password input.';
+              }
+              case 'remove': case 'rm': case 'delete': {
+                return 'Use `brainstorm vault remove <name>` from the terminal — requires interactive password input.';
+              }
+              default:
+                return 'Usage: /vault [list|status|get <name>]\nFor add/remove, use the `brainstorm vault` CLI command.';
+            }
+          },
         },
       }),
     );

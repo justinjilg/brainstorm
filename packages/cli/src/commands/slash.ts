@@ -37,6 +37,8 @@ export interface SlashContext {
   getOutputStyle?: () => string;
   /** Run memory consolidation (dream) */
   dream?: () => Promise<string>;
+  /** Vault operations (list, add, get) */
+  vault?: (action: string, args: string) => Promise<string>;
 }
 
 interface SlashCommand {
@@ -186,6 +188,19 @@ const commands: SlashCommand[] = [
     execute: (_args, ctx) => {
       ctx.exit?.();
       return 'Goodbye.';
+    },
+  },
+  {
+    name: 'vault',
+    aliases: ['keys'],
+    description: 'Manage API keys in the encrypted vault',
+    usage: '/vault [list|add <name>|get <name>|remove <name>|status]',
+    execute: async (args, ctx) => {
+      if (!ctx.vault) return 'Vault not available in this mode.';
+      const parts = args.split(/\s+/);
+      const action = parts[0] || 'list';
+      const rest = parts.slice(1).join(' ');
+      return ctx.vault(action, rest);
     },
   },
   {
