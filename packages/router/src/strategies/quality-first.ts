@@ -5,8 +5,17 @@ export const qualityFirstStrategy: RoutingStrategy = {
   name: 'quality-first',
 
   select(task: TaskProfile, candidates: ModelEntry[], context: RoutingContext): RoutingDecision | null {
-    const available = candidates.filter((m) => m.status === 'available');
+    let available = candidates.filter((m) => m.status === 'available');
     if (available.length === 0) return null;
+
+    // Prefer explicit models over brainstormrouter/auto.
+    // Auto is a black box — we can't predict which model it picks, and the
+    // user is paying for a key that gives access to specific quality models.
+    // Keep auto only as a last resort.
+    if (available.length > 1) {
+      const explicit = available.filter((m) => m.id !== 'brainstormrouter/auto');
+      if (explicit.length > 0) available = explicit;
+    }
 
     // Sort by quality tier (1 = best) then speed
     const sorted = available.sort((a, b) => {
