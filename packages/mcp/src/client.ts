@@ -46,7 +46,14 @@ export class MCPClientManager {
 
         const transport = server.transport === 'stdio'
           ? await this.createStdioTransport(server)
-          : { type: server.transport as 'sse' | 'http', url: server.url };
+          : {
+              type: server.transport as 'sse' | 'http',
+              url: server.url,
+              // Pass API key as Bearer token for authenticated MCP servers
+              ...(server.env?.BRAINSTORM_API_KEY ? {
+                headers: { Authorization: `Bearer ${server.env.BRAINSTORM_API_KEY}` },
+              } : {}),
+            };
 
         const client = await createMCPClient({ transport });
 
@@ -57,8 +64,10 @@ export class MCPClientManager {
           const filterSet = server.toolFilter ? new Set(server.toolFilter) : null;
           for (const [toolName, toolDef] of Object.entries(tools)) {
             if (filterSet && !filterSet.has(toolName)) continue;
-            (registry as any).tools.set(`mcp:${server.name}:${toolName}`, {
-              name: `mcp:${server.name}:${toolName}`,
+            // Use underscores instead of colons — LLM providers reject colons in tool names
+            const registeredName = `mcp_${server.name}_${toolName}`;
+            (registry as any).tools.set(registeredName, {
+              name: registeredName,
               description: (toolDef as any).description ?? toolName,
               permission: 'confirm' as const,
               toAISDKTool: () => toolDef,

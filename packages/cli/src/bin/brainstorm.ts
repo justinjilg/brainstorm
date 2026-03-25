@@ -65,6 +65,7 @@ function buildCompactionCallbacks(sessionManager: SessionManager): CompactionCal
 async function connectMCPServers(
   tools: ReturnType<typeof createDefaultToolRegistry>,
   config: ReturnType<typeof loadConfig>,
+  resolvedBRKey?: string | null,
 ): Promise<void> {
   const mcp = new MCPClientManager();
 
@@ -82,21 +83,17 @@ async function connectMCPServers(
     })));
   }
 
-  // Built-in BrainstormRouter gateway MCP (if API key available)
-  const brKey = process.env.BRAINSTORM_API_KEY;
+  // Built-in BrainstormRouter MCP — connects to BR's 64 control-plane tools
+  // via Streamable HTTP transport. All BR tools become available to the model.
+  const brKey = resolvedBRKey ?? process.env.BRAINSTORM_API_KEY;
   if (brKey) {
     mcp.addServers([{
       name: 'brainstormrouter',
-      transport: 'stdio',
-      url: 'brainstormrouter-mcp',
-      command: 'npx',
-      args: ['brainstormrouter-mcp'],
+      transport: 'http',
+      url: 'https://api.brainstormrouter.com/v1/mcp/connect',
       env: { BRAINSTORM_API_KEY: brKey },
-      toolFilter: [
-        'br_get_ops_status', 'br_list_models', 'br_get_budget',
-        'br_get_memory', 'br_store_memory', 'br_query_memory',
-        'br_get_config', 'br_set_config', 'br_get_insights',
-      ],
+      // No toolFilter — expose all 64 BR tools to the model.
+      // The model decides which to use based on the system prompt guidance.
     }]);
   }
 
@@ -662,7 +659,7 @@ program
     const registry = await createProviderRegistry(config, resolvedKeys);
     const costTracker = new CostTracker(db, config.budget);
     const tools = createDefaultToolRegistry();
-    await connectMCPServers(tools, config);
+    await connectMCPServers(tools, config, resolvedKeys.get('BRAINSTORM_API_KEY'));
     const sessionManager = new SessionManager(db);
     const projectPath = process.cwd();
     configureSandbox(config.shell.sandbox as any, projectPath);
@@ -1080,7 +1077,7 @@ program
     const registry = await createProviderRegistry(config, resolvedKeys);
     const costTracker = new CostTracker(db, config.budget);
     const tools = createDefaultToolRegistry();
-    await connectMCPServers(tools, config);
+    await connectMCPServers(tools, config, resolvedKeys.get('BRAINSTORM_API_KEY'));
     const projectPath = process.cwd();
     configureSandbox(config.shell.sandbox as any, projectPath);
 
