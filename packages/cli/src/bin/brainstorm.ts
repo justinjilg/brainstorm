@@ -1045,7 +1045,13 @@ program
     let { prompt: systemPrompt, frontmatter } = buildSystemPrompt(projectPath, currentOutputStyle);
     systemPrompt += buildToolAwarenessSection(tools.listTools());
     const router = new BrainstormRouter(config, registry, costTracker, frontmatter);
-    if (opts.strategy) router.setStrategy(opts.strategy as any);
+    // Paid keys get quality-first by default — you're paying, use the good models.
+    // Community tier stays on whatever BR's server-side routing picks (cost-first).
+    if (opts.strategy) {
+      router.setStrategy(opts.strategy as any);
+    } else if (!isCommunityTier && router.getActiveStrategy() !== 'capability') {
+      router.setStrategy('quality-first');
+    }
 
     // Register the subagent tool (model can spawn focused subagents)
     const subagentTool = createSubagentTool({
