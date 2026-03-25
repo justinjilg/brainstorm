@@ -15,47 +15,56 @@ import { parseGatewayHeaders } from '@brainstorm/gateway';
  * Enrich raw API errors with actionable user-facing messages.
  * The original error is preserved; the message is replaced with a helpful one.
  */
+/**
+ * Enrich raw API errors with actionable user-facing messages.
+ * First tries to parse BR's built-in recovery hints from the response body.
+ * Falls back to heuristic matching for non-BR errors.
+ */
 function enrichError(error: any, modelId: string): Error {
   const msg = error.message ?? '';
   const status = error.statusCode ?? error.status;
 
-  // Budget exceeded
-  if (msg.includes('Budget exceeded') || msg.includes('budget_exceeded')) {
-    const match = msg.match(/Limit: \$([\d.]+)/);
-    const limit = match?.[1] ?? '?';
-    error.message = `Daily budget exceeded ($${limit}). Increase with: curl -X PUT api.brainstormrouter.com/v1/budget/limits -d '{"daily_limit_usd": 50}'`;
+  // Try to parse BR's structured recovery hint from the response body
+  // BR sends: { error: {...}, recovery: { action, message, endpoint, wait_ms } }
+  const recovery = extractBRRecovery(error);
+  if (recovery) {
+    const parts = [recovery.message];
+    if (recovery.endpoint) parts.push(`Action: ${recovery.method ?? 'GET'} ${recovery.endpoint}`);
+    if (recovery.wait_ms) parts.push(`Retry after: ${Math.ceil(recovery.wait_ms / 1000)}s`);
+    if (recovery.docs_url) parts.push(`Docs: ${recovery.docs_url}`);
+    error.message = parts.join(' | ');
     return error;
   }
 
-  // Rate limited
-  if (status === 429 || msg.includes('rate limit') || msg.includes('community_limit')) {
-    error.message = `Rate limited. ${msg.includes('community') ? 'Community plan: 5 req/min. Set BRAINSTORM_API_KEY for full access.' : 'Wait a moment and retry.'}`;
-    return error;
-  }
-
-  // Model not available
-  if (msg.includes('model_not_allowed') || msg.includes('not available on the community plan')) {
-    error.message = `Model not available on your plan. Try: storm run --model deepseek/deepseek-chat, or set a paid API key with: storm vault add BRAINSTORM_API_KEY`;
-    return error;
-  }
-
-  // Auth failure
-  if (status === 401 || msg.includes('Unauthorized') || msg.includes('invalid_api_key')) {
-    error.message = `Authentication failed. Check your API key: storm vault status. Or get a key at brainstormrouter.com`;
-    return error;
-  }
-
-  // Network/connectivity
+  // Fallback: heuristic matching for non-BR errors
   if (msg.includes('fetch failed') || msg.includes('ECONNREFUSED') || msg.includes('ETIMEDOUT')) {
-    error.message = `Cannot reach BrainstormRouter. Check your internet connection. Gateway: api.brainstormrouter.com`;
+    error.message = `Cannot reach BrainstormRouter. Check your internet connection.`;
+    return error;
+  }
+  if (status === 401 || msg.includes('Unauthorized')) {
+    error.message = `Authentication failed. Check: storm vault status`;
     return error;
   }
 
-  // Fallback: keep original but add model context
+  // Last resort: add model context
   if (!msg.includes(modelId)) {
     error.message = `[${modelId}] ${msg}`;
   }
   return error;
+}
+
+/** Extract BR's recovery hint from the error's response body. */
+function extractBRRecovery(error: any): any {
+  // AI SDK stores the parsed response body in error.data
+  if (error.data?.recovery) return error.data.recovery;
+  // Also try responseBody (raw string)
+  if (error.responseBody) {
+    try {
+      const parsed = JSON.parse(error.responseBody);
+      if (parsed.recovery) return parsed.recovery;
+    } catch { /* not JSON */ }
+  }
+  return null;
 }
 
 // Suppress AI SDK warnings in non-debug mode
