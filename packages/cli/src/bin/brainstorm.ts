@@ -83,31 +83,9 @@ async function connectMCPServers(
     })));
   }
 
-  // Built-in BrainstormRouter MCP — connects to BR's control-plane tools
-  // via Streamable HTTP transport. Filter to most useful tools to avoid
-  // schema compatibility issues with some providers.
-  const brKey = resolvedBRKey ?? process.env.BRAINSTORM_API_KEY;
-  if (brKey) {
-    mcp.addServers([{
-      name: 'brainstormrouter',
-      transport: 'http',
-      url: 'https://api.brainstormrouter.com/v1/mcp/connect',
-      env: { BRAINSTORM_API_KEY: brKey },
-      toolFilter: [
-        'br_get_ops_status',    // System dashboard
-        'br_get_leaderboard',   // Model rankings
-        'br_agent_limits',      // Budget + rate limits
-        'br_agent_status',      // Full self-check
-        'br_list_models',       // Available models
-        'br_get_insights',      // Cost optimization
-        'br_get_health',        // Connectivity test
-        'br_get_usage',         // Spend tracking
-        'br_memory_query',      // Search persistent memory
-        'br_memory_store',      // Save persistent memory
-        'br_memory_list',       // List all memory
-      ],
-    }]);
-  }
+  // BrainstormRouter intelligence tools are now built-in natively
+  // (br_status, br_budget, br_leaderboard, etc.) — no MCP needed.
+  // MCP connection disabled to avoid schema compatibility issues.
 
   const { connected, errors } = await mcp.connectAll(tools);
   if (connected.length > 0) {
@@ -665,9 +643,10 @@ program
 
     const db = getDb();
     const resolvedKeys = await resolveProviderKeys();
-    const isCommunityTier = isCommunityKey(
-      resolvedKeys.get('BRAINSTORM_API_KEY') ?? getBrainstormApiKey()
-    );
+    const resolvedBRKey = resolvedKeys.get('BRAINSTORM_API_KEY') ?? getBrainstormApiKey();
+    const isCommunityTier = isCommunityKey(resolvedBRKey);
+    // Set env for native BR tools (br_status, br_budget, etc.)
+    if (resolvedBRKey) process.env._BR_RESOLVED_KEY = resolvedBRKey;
     const registry = await createProviderRegistry(config, resolvedKeys);
     const costTracker = new CostTracker(db, config.budget);
     const tools = createDefaultToolRegistry();
@@ -1083,9 +1062,10 @@ program
 
     const db = getDb();
     const resolvedKeys = await resolveProviderKeys();
-    const isCommunityTier = isCommunityKey(
-      resolvedKeys.get('BRAINSTORM_API_KEY') ?? getBrainstormApiKey()
-    );
+    const resolvedBRKey = resolvedKeys.get('BRAINSTORM_API_KEY') ?? getBrainstormApiKey();
+    const isCommunityTier = isCommunityKey(resolvedBRKey);
+    // Set env for native BR tools (br_status, br_budget, etc.)
+    if (resolvedBRKey) process.env._BR_RESOLVED_KEY = resolvedBRKey;
     const registry = await createProviderRegistry(config, resolvedKeys);
     const costTracker = new CostTracker(db, config.budget);
     const tools = createDefaultToolRegistry();
