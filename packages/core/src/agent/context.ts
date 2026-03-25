@@ -293,5 +293,23 @@ export function buildToolAwarenessSection(
     '- To change models or routing, edit `~/.brainstorm/config.toml` or use `/model` and `/strategy` slash commands.',
   ].join('\n');
 
-  return `\n## Available Tools\n\nYou have access to ${tools.length} tools:\n\n${sections.join('\n\n')}\n${selfAwareness}`;
+  // Add BrainstormRouter intelligence section if BR MCP tools are connected
+  const hasBRTools = tools.some((t) => t.name.startsWith('mcp_brainstormrouter_'));
+  const brSection = hasBRTools ? [
+    '',
+    '### BrainstormRouter Intelligence',
+    'You are connected to BrainstormRouter — an intelligent AI gateway with 64 control-plane tools.',
+    'Use these situationally when the context calls for it:',
+    '',
+    '- **Before expensive operations** → `mcp_brainstormrouter_br_agent_limits` (check budget and rate limits)',
+    '- **When something fails** → `mcp_brainstormrouter_br_get_ops_status` (system health dashboard)',
+    '- **For model info** → `mcp_brainstormrouter_br_get_leaderboard` (real performance rankings)',
+    '- **For cost savings** → `mcp_brainstormrouter_br_get_insights` (optimization recommendations)',
+    '- **For persistent memory** → `mcp_brainstormrouter_br_memory_query` / `br_memory_store`',
+    '- **For system overview** → `mcp_brainstormrouter_br_get_ops_status` (start here)',
+    '',
+    'You don\'t need to call these routinely — use them when the situation calls for it.',
+  ].join('\n') : '';
+
+  return `\n## Available Tools\n\nYou have access to ${tools.length} tools:\n\n${sections.join('\n\n')}\n${selfAwareness}${brSection}`;
 }
