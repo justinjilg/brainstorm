@@ -813,8 +813,12 @@ program
 
 const VAULT_PATH = join(homedir(), '.brainstorm', 'vault.enc');
 
-/** Prompt for a password with no echo. */
+/** Prompt for a password with masked echo. Supports BRAINSTORM_VAULT_PASSWORD env for non-interactive use. */
 function promptPassword(prompt: string): Promise<string> {
+  // Non-interactive: use env var if set (for CI/CD and scripting)
+  const envPassword = process.env.BRAINSTORM_VAULT_PASSWORD;
+  if (envPassword) return Promise.resolve(envPassword);
+
   return new Promise((resolve, reject) => {
     const rl = createInterface({ input: process.stdin, output: process.stderr });
     process.stderr.write(prompt);
@@ -835,9 +839,13 @@ function promptPassword(prompt: string): Promise<string> {
         rl.close();
         reject(new Error('Cancelled'));
       } else if (c === '\u007F' || c === '\b') {
-        password = password.slice(0, -1);
+        if (password.length > 0) {
+          password = password.slice(0, -1);
+          process.stderr.write('\b \b'); // Erase the * character
+        }
       } else {
         password += c;
+        process.stderr.write('*'); // Show * for each character typed
       }
     };
     process.stdin.on('data', onData);
