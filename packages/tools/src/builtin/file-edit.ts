@@ -1,21 +1,31 @@
 import { z } from 'zod';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { resolve, relative } from 'node:path';
+import { homedir } from 'node:os';
 import { defineTool } from '../base.js';
 
 function ensureSafePath(filePath: string): string {
   const cwd = process.cwd();
   const resolved = resolve(cwd, filePath);
-  const rel = relative(cwd, resolved);
-  if (rel.startsWith('..') || rel.startsWith('/')) {
-    throw new Error(`Path traversal blocked: "${filePath}" escapes workspace`);
+  const home = homedir();
+
+  const BLOCKED_PREFIXES = ['/etc', '/usr', '/var', '/proc', '/sys', '/dev', '/sbin', '/boot'];
+  if (BLOCKED_PREFIXES.some((p) => resolved.startsWith(p))) {
+    throw new Error(`Path blocked: "${filePath}" is a protected system path`);
   }
+
+  const isInHome = resolved.startsWith(home);
+  const isInCwd = !relative(cwd, resolved).startsWith('..');
+  if (!isInHome && !isInCwd) {
+    throw new Error(`Path blocked: "${filePath}" is outside home directory and workspace`);
+  }
+
   return resolved;
 }
 
 export const fileEditTool = defineTool({
   name: 'file_edit',
-  description: 'Perform a surgical string replacement in a file. The old_string must match exactly one location in the file.',
+  description: 'Perform a surgical string replacement in a file. The old_string must match exactly one location. Returns { success, replacements } or { error }. Supports absolute paths within home directory.',
   permission: 'confirm',
   inputSchema: z.object({
     path: z.string().describe('Path to the file to edit'),

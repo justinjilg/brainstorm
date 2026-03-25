@@ -7,7 +7,7 @@ const execFileAsync = promisify(execFile);
 
 export const grepTool = defineTool({
   name: 'grep',
-  description: 'Search file contents using ripgrep. Returns matching lines with file paths and line numbers.',
+  description: 'Search file contents using ripgrep (regex). Returns matching lines with file:line format. Default: max 50 results from current directory. Use `glob` to filter files (e.g., "*.ts"). Use `path` to search a specific directory. Returns { matches: string[], matchCount } or { error }.',
   permission: 'auto',
   inputSchema: z.object({
     pattern: z.string().describe('Regex pattern to search for'),

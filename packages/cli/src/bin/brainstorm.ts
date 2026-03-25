@@ -705,9 +705,20 @@ program
       permissionCheck: (tool, args) => permissionManager.check(tool, args),
     })) {
       switch (event.type) {
+        case 'thinking':
+          if (!opts.json) {
+            const phases: Record<string, string> = {
+              classifying: 'Classifying task...',
+              routing: 'Selecting model...',
+              connecting: `Connecting...`,
+              streaming: 'Streaming...',
+            };
+            process.stderr.write(`\r${phases[event.phase] ?? event.phase}`);
+          }
+          break;
         case 'routing':
           modelName = event.decision.model.name;
-          process.stderr.write(`[${event.decision.strategy}] → ${modelName}\n`);
+          process.stderr.write(`\r[${event.decision.strategy}] → ${modelName}\n`);
           break;
         case 'text-delta':
           fullResponse += event.delta;
