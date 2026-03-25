@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { loadConfig } from '@brainstorm/config';
 import { getDb } from '@brainstorm/db';
-import { createProviderRegistry } from '@brainstorm/providers';
+import { createProviderRegistry, getBrainstormApiKey, isCommunityKey } from '@brainstorm/providers';
 import { BrainstormRouter, CostTracker } from '@brainstorm/router';
 import { createDefaultToolRegistry, configureSandbox } from '@brainstorm/tools';
 import { runAgentLoop, buildSystemPrompt, buildToolAwarenessSection, SessionManager, PermissionManager, createSubagentTool, spawnSubagent, type CompactionCallbacks } from '@brainstorm/core';
@@ -1022,6 +1022,9 @@ program
 
     const db = getDb();
     const resolvedKeys = await resolveProviderKeys();
+    const isCommunityTier = isCommunityKey(
+      resolvedKeys.get('BRAINSTORM_API_KEY') ?? getBrainstormApiKey()
+    );
     const registry = await createProviderRegistry(config, resolvedKeys);
     const costTracker = new CostTracker(db, config.budget);
     const tools = createDefaultToolRegistry();
@@ -1081,7 +1084,8 @@ program
       const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
       console.log(`\n  brainstorm v0.1.0`);
-      console.log(`  Strategy: ${config.general.defaultStrategy} | Models: ${localCount} local, ${cloudCount} cloud`);
+      console.log(`  Strategy: ${router.getActiveStrategy()} | Models: ${localCount} local, ${cloudCount} cloud`);
+      if (isCommunityTier) console.log(`  Community tier (100 req/day, cheap models). Set BRAINSTORM_API_KEY for full access.`);
       console.log(`  Type your message. /quit to exit.\n`);
 
       let simpleAbortController: AbortController | null = null;
