@@ -51,7 +51,14 @@ function getRequiredCapabilities(task: TaskProfile): Partial<Record<keyof Capabi
  */
 function scoreModel(model: ModelEntry, requirements: Partial<Record<keyof CapabilityScores, number>>): number {
   const scores = model.capabilities.capabilityScores;
-  if (!scores) return 0.5; // Default score for models without eval data
+
+  // Models without eval data: derive score from qualityTier (1=best → 0.9, 2 → 0.7, 3 → 0.5)
+  // This prevents brainstormrouter/auto (qualityTier 1, $0 cost) from always winning the
+  // tiebreaker — explicit models with known capabilities should be preferred.
+  if (!scores) {
+    const tier = model.capabilities.qualityTier ?? 3;
+    return tier === 1 ? 0.9 : tier === 2 ? 0.7 : 0.5;
+  }
 
   let totalScore = 0;
   let totalWeight = 0;
@@ -84,8 +91,16 @@ export const capabilityStrategy: RoutingStrategy = {
   name: 'capability',
 
   select(task: TaskProfile, candidates: ModelEntry[], context: RoutingContext): RoutingDecision | null {
-    const available = candidates.filter((m) => m.status === 'available');
+    let available = candidates.filter((m) => m.status === 'available');
     if (available.length === 0) return null;
+
+    // Prefer explicit models over brainstormrouter/auto.
+    // Auto is a black box — we can't predict or control what model it picks.
+    // Keep auto only as a last resort when no explicit models are available.
+    if (available.length > 1) {
+      const explicit = available.filter((m) => m.id !== 'brainstormrouter/auto');
+      if (explicit.length > 0) available = explicit;
+    }
 
     const requirements = getRequiredCapabilities(task);
 
