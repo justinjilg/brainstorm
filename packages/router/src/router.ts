@@ -17,6 +17,7 @@ export class BrainstormRouter {
   private strategies: Record<StrategyName, RoutingStrategy>;
   private activeStrategy: StrategyName;
   private recentFailures: Array<{ modelId: string; timestamp: number; error: string }> = [];
+  private momentum: { modelId: string; successCount: number; lastSuccess: number } | null = null;
   private projectHints?: StormFrontmatter['routing'];
 
   constructor(
@@ -73,6 +74,20 @@ export class BrainstormRouter {
     const candidates = this.getEligibleModels(task);
     const context = this.buildRoutingContext(opts.conversationTokens);
 
+    // Model momentum: if a model has been working well, stick with it (within 5 min)
+    if (this.momentum && Date.now() - this.momentum.lastSuccess < 300_000) {
+      const momentumModel = candidates.find((m) => m.id === this.momentum!.modelId);
+      if (momentumModel) {
+        return {
+          model: momentumModel,
+          fallbacks: candidates.filter((m) => m.id !== momentumModel.id).slice(0, 3),
+          reason: `Momentum: ${momentumModel.name} (${this.momentum.successCount} consecutive successes)`,
+          estimatedCost: 0,
+          strategy: this.activeStrategy,
+        };
+      }
+    }
+
     // If preferCheap, try cost-first strategy first
     if (opts.preferCheap && this.strategies['cost-first']) {
       const cheapDecision = this.strategies['cost-first'].select(task, candidates, context);
@@ -97,7 +112,7 @@ export class BrainstormRouter {
 
     return {
       model: anyModel,
-      fallbacks: [],
+      fallbacks: candidates.filter((m) => m.id !== anyModel.id && m.status === 'available').slice(0, 3),
       reason: `Fallback: only available model is ${anyModel.name}`,
       estimatedCost: 0,
       strategy: this.activeStrategy,
@@ -108,6 +123,20 @@ export class BrainstormRouter {
     this.recentFailures.push({ modelId, timestamp: Date.now(), error });
     // Keep only last 10 failures
     if (this.recentFailures.length > 10) this.recentFailures.shift();
+    // Break momentum on failure
+    if (this.momentum?.modelId === modelId) {
+      this.momentum = null;
+    }
+  }
+
+  /** Record a successful completion — builds model momentum. */
+  recordSuccess(modelId: string): void {
+    if (this.momentum?.modelId === modelId) {
+      this.momentum.successCount++;
+      this.momentum.lastSuccess = Date.now();
+    } else {
+      this.momentum = { modelId, successCount: 1, lastSuccess: Date.now() };
+    }
   }
 
   setStrategy(name: StrategyName): void {

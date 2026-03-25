@@ -721,6 +721,11 @@ program
           if (gwLine) process.stderr.write(`${gwLine}\n`);
           break;
         }
+        case 'model-retry':
+          process.stderr.write(`\n[retry] ${event.fromModel} → ${event.toModel} (${event.reason})\n`);
+          modelName = event.toModel;
+          fullResponse = ''; // Reset for retry
+          break;
         case 'done':
           if (opts.json) {
             // Structured JSON output for CI/CD — only valid JSON on stdout
