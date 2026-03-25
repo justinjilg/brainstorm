@@ -4,6 +4,32 @@ import type { BrainstormToolDef } from './base.js';
 
 export type PermissionCheckFn = (toolName: string, toolPermission: ToolPermission) => 'allow' | 'confirm' | 'deny';
 
+/**
+ * Normalize tool results into a consistent format the model can parse.
+ * Wraps the raw result to always include an `ok` field for reliable success/failure detection.
+ */
+function normalizeResult(raw: any): any {
+  if (raw == null) return { ok: true };
+
+  // Already has 'error' key → it's a failure
+  if (raw.error) {
+    return { ok: false, error: raw.error, ...raw };
+  }
+
+  // Shell tool: check exitCode
+  if ('exitCode' in raw && raw.exitCode !== 0) {
+    return { ok: false, error: raw.stderr || `Exit code ${raw.exitCode}`, ...raw };
+  }
+
+  // Blocked tool
+  if (raw.blocked) {
+    return { ok: false, error: raw.error ?? raw.stderr ?? 'Tool blocked', ...raw };
+  }
+
+  // Everything else is success
+  return { ok: true, ...raw };
+}
+
 export class ToolRegistry {
   private tools = new Map<string, BrainstormToolDef>();
 
@@ -70,10 +96,14 @@ export class ToolRegistry {
         execute: async (input: any) => {
           const decision = check(name, toolDef.permission);
           if (decision === 'deny') {
-            return { error: `Tool '${name}' is blocked in the current permission mode.`, blocked: true };
+            return normalizeResult({ error: `Tool '${name}' is blocked in the current permission mode.`, blocked: true });
           }
-          // 'allow' and 'confirm' (confirm handled upstream by TUI) both proceed
-          return toolDef.execute(input);
+          try {
+            const raw = await toolDef.execute(input);
+            return normalizeResult(raw);
+          } catch (err: any) {
+            return normalizeResult({ error: err.message ?? String(err) });
+          }
         },
       });
     }
