@@ -102,7 +102,25 @@ export const brMemorySearchTool = defineTool({
     query: z.string().describe('Search query for memory entries'),
   }),
   async execute({ query }) {
-    return brFetch(`/v1/memory/search?q=${encodeURIComponent(query)}`);
+    const key = getBRKey();
+    if (!key) return { error: 'No BrainstormRouter API key available.' };
+
+    const res = await fetch(`${BR_BASE}/v1/memory/query`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query }),
+      signal: AbortSignal.timeout(10_000),
+    });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      return { error: `BR API ${res.status}: ${body.slice(0, 200)}` };
+    }
+
+    return res.json();
   },
 });
 
@@ -119,13 +137,13 @@ export const brMemoryStoreTool = defineTool({
     const key = getBRKey();
     if (!key) return { error: 'No BrainstormRouter API key available.' };
 
-    const res = await fetch(`${BR_BASE}/v1/memory`, {
+    const res = await fetch(`${BR_BASE}/v1/memory/store`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${key}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ text, block: block ?? 'semantic' }),
+      body: JSON.stringify({ context: text, block: block ?? 'semantic' }),
       signal: AbortSignal.timeout(10_000),
     });
 
