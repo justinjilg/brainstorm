@@ -24,6 +24,29 @@ export interface MCPServerConfig {
  * Uses @ai-sdk/mcp for SSE/HTTP transports. Tools from MCP servers register
  * into the same ToolRegistry as built-in tools.
  */
+/**
+ * Normalize MCP tool definitions for LLM provider compatibility.
+ * Anthropic requires input_schema.type = "object" — some MCP tools omit it.
+ */
+function normalizeMCPTool(toolDef: any): any {
+  if (!toolDef || typeof toolDef !== 'object') return toolDef;
+
+  // Deep clone to avoid mutating the original
+  const normalized = { ...toolDef };
+
+  // If the tool has a parameters/inputSchema, ensure it has type: "object"
+  if (normalized.parameters && typeof normalized.parameters === 'object') {
+    if (!normalized.parameters.type) {
+      normalized.parameters = { type: 'object', ...normalized.parameters };
+    }
+    if (!normalized.parameters.properties) {
+      normalized.parameters.properties = {};
+    }
+  }
+
+  return normalized;
+}
+
 export class MCPClientManager {
   private servers: MCPServerConfig[] = [];
   private connections: Map<string, any> = new Map();
@@ -66,11 +89,16 @@ export class MCPClientManager {
             if (filterSet && !filterSet.has(toolName)) continue;
             // Use underscores instead of colons — LLM providers reject colons in tool names
             const registeredName = `mcp_${server.name}_${toolName}`;
+
+            // Normalize MCP tool schema for LLM provider compatibility:
+            // Anthropic requires input_schema.type = "object", some MCP tools omit it
+            const normalized = normalizeMCPTool(toolDef as any);
+
             (registry as any).tools.set(registeredName, {
               name: registeredName,
-              description: (toolDef as any).description ?? toolName,
+              description: normalized.description ?? toolName,
               permission: 'confirm' as const,
-              toAISDKTool: () => toolDef,
+              toAISDKTool: () => normalized,
             });
           }
         }
