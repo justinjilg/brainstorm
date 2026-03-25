@@ -25,6 +25,10 @@ export { webFetchTool } from './builtin/web-fetch.js';
 export { webSearchTool } from './builtin/web-search.js';
 export { processSpawnTool, processKillTool } from './builtin/process-manage.js';
 export { taskCreateTool, taskUpdateTool, taskListTool, setTaskEventHandler, clearTasks } from './builtin/task-manage.js';
+export {
+  brStatusTool, brBudgetTool, brLeaderboardTool, brInsightsTool,
+  brModelsTool, brMemorySearchTool, brMemoryStoreTool, brHealthTool,
+} from './builtin/br-intelligence.js';
 
 import { ToolRegistry } from './registry.js';
 import { fileReadTool } from './builtin/file-read.js';
@@ -48,6 +52,10 @@ import { webFetchTool } from './builtin/web-fetch.js';
 import { webSearchTool } from './builtin/web-search.js';
 import { processSpawnTool, processKillTool } from './builtin/process-manage.js';
 import { taskCreateTool, taskUpdateTool, taskListTool } from './builtin/task-manage.js';
+import {
+  brStatusTool, brBudgetTool, brLeaderboardTool, brInsightsTool,
+  brModelsTool, brMemorySearchTool, brMemoryStoreTool, brHealthTool,
+} from './builtin/br-intelligence.js';
 
 export function createDefaultToolRegistry(): ToolRegistry {
   const registry = new ToolRegistry();
@@ -81,5 +89,14 @@ export function createDefaultToolRegistry(): ToolRegistry {
   registry.register(taskCreateTool);
   registry.register(taskUpdateTool);
   registry.register(taskListTool);
+  // BrainstormRouter intelligence (8) — native REST calls, no MCP needed
+  registry.register(brStatusTool);
+  registry.register(brBudgetTool);
+  registry.register(brLeaderboardTool);
+  registry.register(brInsightsTool);
+  registry.register(brModelsTool);
+  registry.register(brMemorySearchTool);
+  registry.register(brMemoryStoreTool);
+  registry.register(brHealthTool);
   return registry;
 }
