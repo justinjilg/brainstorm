@@ -204,10 +204,15 @@ export async function* runAgentLoop(
     const remaining = streamFilter.flush();
     if (remaining) yield { type: 'text-delta', delta: normalizeInsightMarkers(remaining) };
 
-    // Extract gateway response headers (X-BR-*) for cost reconciliation and telemetry
+    // Extract gateway response headers (X-BR-*) for cost reconciliation and telemetry.
+    // Use a timeout to prevent hanging if the response promise never resolves
+    // (happens when the stream errored on the guardian SSE event).
     try {
-      const response = await result.response;
-      if (response.headers) {
+      const response = await Promise.race([
+        result.response,
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+      ]);
+      if (response?.headers) {
         const feedback = parseGatewayHeaders(response.headers);
         if (Object.keys(feedback).length > 0) {
           yield { type: 'gateway-feedback', feedback: feedback as GatewayFeedbackData };
