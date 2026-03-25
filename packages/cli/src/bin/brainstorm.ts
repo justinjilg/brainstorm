@@ -672,7 +672,7 @@ program
       config, registry, router, costTracker, tools,
       sessionId: session.id, projectPath, systemPrompt,
       disableTools: !opts.tools,
-      ...(opts.model ? { preferredModelId: opts.model } : {}),
+      preferredModelId: opts.model ?? (isCommunityKey(getBrainstormApiKey()) ? 'brainstormrouter/auto' : undefined),
       maxSteps: parseInt(opts.maxSteps ?? '1'),
       compaction: buildCompactionCallbacks(sessionManager),
     })) {
@@ -1055,7 +1055,8 @@ program
     tools.register(subagentTool);
 
     // Preferred model override — mutable so /model can change it
-    let preferredModelId: string | undefined;
+    // Community tier: force brainstormrouter/auto so server-side routing picks allowed models
+    let preferredModelId: string | undefined = isCommunityTier ? 'brainstormrouter/auto' : undefined;
 
     // Session management: resume, fork, or start new
     let session: any;
