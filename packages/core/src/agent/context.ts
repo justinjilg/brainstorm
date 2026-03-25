@@ -242,6 +242,7 @@ const TOOL_CATEGORIES: Record<string, string[]> = {
   'Web': ['web_fetch', 'web_search'],
   'Tasks': ['task_create', 'task_update', 'task_list'],
   'Subagent': ['subagent'],
+  'BrainstormRouter': ['br_status', 'br_budget', 'br_leaderboard', 'br_insights', 'br_models', 'br_memory_search', 'br_memory_store', 'br_health'],
 };
 
 /**
@@ -294,21 +295,22 @@ export function buildToolAwarenessSection(
   ].join('\n');
 
   // Add BrainstormRouter intelligence section if BR MCP tools are connected
-  const hasBRTools = tools.some((t) => t.name.startsWith('mcp_brainstormrouter_'));
+  const hasBRTools = tools.some((t) => t.name.startsWith('br_'));
   const brSection = hasBRTools ? [
     '',
     '### BrainstormRouter Intelligence',
-    'You are connected to BrainstormRouter — an intelligent AI gateway with 64 control-plane tools.',
-    'Use these situationally when the context calls for it:',
+    'You are connected to BrainstormRouter — an intelligent AI gateway. You have native tools to query it:',
     '',
-    '- **Before expensive operations** → `mcp_brainstormrouter_br_agent_limits` (check budget and rate limits)',
-    '- **When something fails** → `mcp_brainstormrouter_br_get_ops_status` (system health dashboard)',
-    '- **For model info** → `mcp_brainstormrouter_br_get_leaderboard` (real performance rankings)',
-    '- **For cost savings** → `mcp_brainstormrouter_br_get_insights` (optimization recommendations)',
-    '- **For persistent memory** → `mcp_brainstormrouter_br_memory_query` / `br_memory_store`',
-    '- **For system overview** → `mcp_brainstormrouter_br_get_ops_status` (start here)',
+    '- **br_status** — Full self-check: identity, budget, health, errors, suggestions. Start here.',
+    '- **br_budget** — Check budget: daily/monthly spend, limits, forecast. Call before expensive operations.',
+    '- **br_leaderboard** — Real model rankings from production data. See which models perform best.',
+    '- **br_insights** — Cost optimization: waste detection, cheaper alternatives, savings estimates.',
+    '- **br_models** — List all available models with pricing.',
+    '- **br_memory_search** — Search persistent memory across sessions.',
+    '- **br_memory_store** — Save important facts that persist across sessions.',
+    '- **br_health** — Quick connectivity test.',
     '',
-    'You don\'t need to call these routinely — use them when the situation calls for it.',
+    'Use these when the situation calls for it — not routinely.',
   ].join('\n') : '';
 
   return `\n## Available Tools\n\nYou have access to ${tools.length} tools:\n\n${sections.join('\n\n')}\n${selfAwareness}${brSection}`;

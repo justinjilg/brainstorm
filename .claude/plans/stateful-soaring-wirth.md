@@ -1,566 +1,308 @@
-# Phase Plan: Bridge the Claude Code Parity Gap
+# HawkTalk — AI Book Club App for Fishhawk, Lithia FL
 
 ## Vision
 
-Brainstorm is at 63/100 parity with Claude Code. It already wins on routing (97), cost tracking, multi-provider, eval, and workflow. The gaps are in tools & execution (49), developer experience (53), extensibility (59), and advanced features (28). This plan closes the highest-impact gaps to reach ~80/100 parity.
+A real book club app for Justin's wife and the Fishhawk community. When you're reading your book, you highlight a passage, tag it, and save it for Tuesday's discussion. When the group meets, everyone's highlights are there — organized by chapter, theme, and who flagged what. AI helps generate discussion questions, summarize what you missed, and recommend what to read next.
 
-## Current Parity Scorecard
+This is not a tech demo. Real people will use this. Design matters. Mobile matters. The reading experience matters.
 
-| Category | Score | After Plan |
-|----------|-------|------------|
-| Intelligence & Routing | 97 | 97 |
-| Context & Memory | 76 | 85 |
-| Core Engine | 70 | 82 |
-| Security & Permissions | 69 | 75 |
-| Extensibility | 59 | 70 |
-| Developer Experience | 53 | 72 |
-| Tools & Execution | 49 | 68 |
-| Advanced Features | 28 | 45 |
-| **Overall** | **63** | **~74** |
+## Stack
 
----
+- **Web**: Next.js 16 on Vercel
+- **Database**: PostgreSQL (Neon via Vercel Marketplace)
+- **Auth**: Clerk (Vercel Marketplace)
+- **Mobile**: React Native or Expo (cross-platform)
+- **AI**: BrainstormRouter for all LLM calls
+- **Design**: shadcn/ui + Tailwind, dark mode, mobile-first
+- **Integrations**: GoodReads, Open Library, Google Books API
 
-## 20-PR Plan
+## Core Features
 
-### Phase 7: Git Safety & Integration (PRs 1-4)
+1. **Book Clubs** — create/join clubs, invite members, set reading schedule
+2. **Reading Tracker** — mark progress by chapter/page, see who's caught up
+3. **Passage Tagging** — highlight text, add notes, tag for discussion ("let's talk about this")
+4. **Discussion Prep** — AI generates questions per chapter based on tagged passages
+5. **Catch-Up Summaries** — fell behind? AI summarizes what you missed with key themes
+6. **Book Recommendations** — AI suggests next reads based on club's taste
+7. **Meeting Scheduler** — set next meeting, RSVP, agenda from tagged passages
+8. **GoodReads Sync** — import shelves, ratings, reviews
 
-#### PR #1 — Git safety protocol
+## Ground Rules
 
-**Why first:** Git operations are the highest-risk tool category. Every other CLI coding assistant has guardrails here. Without them, Brainstorm can destroy work.
+1. **Brainstorm tools preferred** — use `storm --lfg` and `brainstorm run --tools` as much as possible. When Brainstorm can't do something, do it directly and journal WHY it couldn't.
+2. **BrainstormRouter for all AI** — every LLM call routes through BR
+3. **Fix forward** — when Brainstorm breaks, fix it, push, rebuild, journal, continue
+4. **Journal everything** — bugs, model behaviors, routing decisions, workarounds
+5. **Recursive improvement** — after every phase, review the code, then add a new improvement phase
+6. **Ask Justin when stuck** — don't guess on UX decisions for his wife's book club
+7. **Perfection is the goal** — this should be as good as anything Claude Code could build
+8. **Research first** — study existing book club apps (Bookclubz, Fable, Literati) before building
 
-**Files to create:**
-- `packages/tools/src/builtin/git-safety.ts` — Safety layer wrapping all git tool executions
+## Execution Protocol
 
-**Files to modify:**
-- `packages/tools/src/builtin/git-commit.ts` — Integrate safety checks before commit
-- `packages/tools/src/registry.ts` — Register safety hooks on git tools
+1. **Find actionable phase**: Read this plan. Find the first phase not marked ✅.
+2. **Build**: Use `storm --lfg` or `brainstorm run --tools` where possible. Direct coding allowed when Brainstorm can't handle it — but journal why.
+3. **When Brainstorm breaks**: Switch to brainstorm repo, fix the bug, push, rebuild CLI, journal in `~/Projects/hawktalk/docs/bug-journal.md`, switch back.
+4. **After each phase completes**: Mark it ✅, then:
+   a. Code review the work (use /code-review:code-review skill if there's a PR, otherwise self-review)
+   b. Journal: bugs found, models used, costs, time in `~/Projects/hawktalk/docs/build-journal.md`
+   c. Append a NEW improvement phase at the bottom of this plan based on review findings
+   d. Ask Justin to `/compact` if context is getting long
+5. **Continue**: Immediately start the next phase. Never stop to ask unless it's a UX decision.
+6. **Research phases**: Use web search, read competitor apps, study APIs before building
 
-**Safety rules to enforce:**
-```typescript
-interface GitSafetyRules {
-  neverForceMain: true;        // Block git push --force to main/master
-  neverSkipHooks: true;        // Block --no-verify, --no-gpg-sign
-  preferNewCommits: true;      // Warn on --amend, suggest new commit
-  smartStaging: true;          // Never git add -A; stage specific files
-  blockSecrets: true;          // Scan staged files for credentials before commit
-  confirmDestructive: true;    // Require permission for reset --hard, checkout --, clean -f
-}
-```
+## Hard Limits
 
-**Build:** `npx turbo run build --filter=@brainstorm/tools`
-
-**Verify:** Attempt `git push --force origin main` via shell tool — should be blocked with explanation.
-
----
-
-#### PR #2 — Smart git commit with message generation
-
-**Why here:** Builds on PR #1 safety. Users expect the AI to write good commit messages.
-
-**Files to modify:**
-- `packages/tools/src/builtin/git-commit.ts` — Replace raw commit with smart commit flow
-
-**Smart commit flow:**
-1. `git status` — check staged vs unstaged
-2. `git diff --cached` — analyze staged changes
-3. `git log --oneline -5` — match existing commit message style
-4. Generate commit message (what + why, not just what)
-5. Scan staged files for credentials (via secret-scanner)
-6. Stage specific files (never `git add -A`)
-7. Commit with generated message + `Co-Authored-By` attribution
-
-**Build:** `npx turbo run build --filter=@brainstorm/tools`
-
-**Verify:** Stage a file change, run git-commit tool — should produce a contextual commit message matching repo style.
+| Limit | Value |
+|-------|-------|
+| Max wall clock per phase | 30 minutes |
+| Build failure retries | 2 attempts, then journal and skip |
+| /loop duration | 7 days |
+| Stop condition | Justin says stop, or /loop expires |
 
 ---
 
-#### PR #3 — GitHub CLI integration (PR creation)
+## Phase 0: Stabilize Brainstorm Chat + Vault
 
-**Why here:** PR creation is the second most-used git workflow after commits. Requires gh CLI.
-
-**Files to create:**
-- `packages/tools/src/builtin/gh-pr.ts` — Tool: create/list/view PRs via gh CLI
-- `packages/tools/src/builtin/gh-issue.ts` — Tool: create/list/view issues via gh CLI
-
-**gh-pr tool flow:**
-1. `git log main..HEAD` — understand all commits on branch
-2. `git diff main...HEAD` — understand full change scope
-3. Generate PR title (< 70 chars) + body (summary bullets + test plan)
-4. `gh pr create --title "..." --body "..."`
-5. Return PR URL
-
-**Files to modify:**
-- `packages/tools/src/registry.ts` — Register gh-pr and gh-issue tools
-- `packages/shared/src/types.ts` — Add tool names to ToolName union
-
-**Build:** `npx turbo run build --filter=@brainstorm/tools`
-
-**Verify:** On a feature branch with commits, run gh-pr tool — should create a well-formatted PR.
+**Status**: ✅ (vault set up, password masking fixed, provider resolution fixed)
 
 ---
 
-#### PR #4 — Branch management tools
+## Phase 1: Research — Book Club App Landscape
 
-**Files to create:**
-- `packages/tools/src/builtin/git-branch.ts` — Tool: create/switch/delete branches
-- `packages/tools/src/builtin/git-stash.ts` — Tool: stash/pop/list
+**Status**: ✅ Complete
 
-**Files to modify:**
-- `packages/tools/src/registry.ts` — Register new tools
+**Objective**: Understand what exists, what works, what's missing. Design HawkTalk to be better.
 
-**Safety integration:**
-- Branch delete: require confirmation, never delete main/master
-- Branch switch: warn if uncommitted changes, suggest stash
+**Tasks**:
+- Research top book club apps: Bookclubz, Fable, Literati, Libro.fm clubs, The StoryGraph
+- Research GoodReads API (or lack thereof — may need scraping)
+- Research Open Library API, Google Books API
+- Research passage highlighting/annotation UX patterns (Kindle highlights, Readwise, Hypothesis)
+- Study: what do real book club members actually need? (Reddit r/bookclub, forums)
+- Document findings in `~/Projects/hawktalk/docs/research.md`
+- Create initial feature priority list based on research
 
-**Build:** `npx turbo run build --filter=@brainstorm/tools`
-
-**Verify:** Create a branch, switch to it, make changes, stash, switch back — all via tools.
-
----
-
-### Phase 8: Developer Experience (PRs 5-9)
-
-#### PR #5 — Built-in slash commands
-
-**Why here:** Slash commands are the primary DX differentiator. Users expect /model, /clear, /help.
-
-**Files to create:**
-- `packages/cli/src/commands/slash.ts` — Slash command registry and dispatcher
-
-**Commands to implement:**
-```
-/model [name]    — Switch model (e.g., /model opus, /model sonnet, /model ollama:qwen2.5)
-/fast            — Toggle cost-first routing
-/clear           — Clear conversation history
-/compact         — Trigger context compaction now
-/help            — Show available commands
-/cost            — Show session cost so far
-/mode [auto|confirm|plan] — Switch permission mode
-/budget          — Show remaining budget
-```
-
-**Files to modify:**
-- `packages/cli/src/components/ChatApp.tsx` — Detect `/` prefix in input, route to slash handler
-- `packages/core/src/agent/loop.ts` — Export mode/model switching functions
-
-**Build:** `npx turbo run build --filter=@brainstorm/cli`
-
-**Verify:** In chat, type `/model sonnet` — should switch model and confirm. Type `/cost` — should show session spend.
+**Verify**: research.md has competitor analysis, API options, and feature priorities.
 
 ---
 
-#### PR #6 — TUI status bar
+## Phase 2: Project Setup + Private GitHub Repo
 
-**Why here:** Users lose track of what model they're on, how much they've spent, and what mode they're in.
+**Status**: ✅ Complete (landing page via Brainstorm CLI, Vercel deployed, 5 Brainstorm bugs fixed)
 
-**Files to create:**
-- `packages/cli/src/components/StatusBar.tsx` — Ink component: `[mode] | model | tokens | cost | session`
+**Objective**: Scaffold HawkTalk as a Vercel Next.js app with PostgreSQL.
 
-**Display format:**
-```
- auto │ claude-sonnet-4.6 │ 12.4k tokens │ $0.03 │ session-abc
-```
+**Tasks**:
+- `mkdir -p ~/Projects/hawktalk && cd ~/Projects/hawktalk`
+- `git init && gh repo create justinjilg/hawktalk --private --source=. --push`
+- Initialize Next.js 16 project with TypeScript, Tailwind, shadcn/ui
+- Set up Vercel project: `vercel link`
+- Set up Neon PostgreSQL via Vercel Marketplace
+- Set up Clerk auth via Vercel Marketplace
+- Create BRAINSTORM.md for the project
+- Create `docs/bug-journal.md`, `docs/build-journal.md`, `docs/model-journal.md`
+- Deploy initial "Coming Soon" page to Vercel
 
-**Files to modify:**
-- `packages/cli/src/components/ChatApp.tsx` — Render StatusBar at bottom of TUI
-- `packages/core/src/agent/loop.ts` — Emit token/cost events for StatusBar consumption
-
-**Build:** `npx turbo run build --filter=@brainstorm/cli`
-
-**Verify:** Start chat, send a message — status bar shows model name, token count updates in real-time, cost accumulates.
-
----
-
-#### PR #7 — Keybinding system
-
-**Files to create:**
-- `packages/cli/src/keybindings.ts` — Keybinding registry with defaults
-
-**Default keybindings:**
-```
-Ctrl+C     — Interrupt current operation (abort)
-Ctrl+D     — Exit Brainstorm
-Shift+Tab  — Cycle permission mode (auto → confirm → plan)
-Ctrl+L     — Clear screen
-Ctrl+K     — Clear conversation (/clear)
-Up/Down    — Input history navigation
-```
-
-**Files to modify:**
-- `packages/cli/src/components/ChatApp.tsx` — Wire keybindings to Ink useInput hook
-
-**Build:** `npx turbo run build --filter=@brainstorm/cli`
-
-**Verify:** Press Shift+Tab — mode cycles in status bar. Press Ctrl+L — screen clears.
+**Verify**: Vercel deployment live. PostgreSQL connected. Clerk auth working.
 
 ---
 
-#### PR #8 — Output style modes
+## Phase 3: Database Schema + API Foundation
 
-**Files to create:**
-- `packages/core/src/agent/output-styles.ts` — Style definitions and system prompt segments
+**Status**: Not started
 
-**Styles:**
-```typescript
-type OutputStyle = 'concise' | 'detailed' | 'learning';
+**Objective**: PostgreSQL schema for books, clubs, members, passages, discussions.
 
-// concise: Default. Short answers, no explanations unless asked.
-// detailed: Longer explanations, reasoning shown.
-// learning: Includes ★ Insight annotations, explains trade-offs.
-```
+**Tasks**:
+- Drizzle ORM setup with Neon PostgreSQL
+- Schema: users, clubs, club_members, books, club_books, reading_progress, passages (tagged highlights), discussions, discussion_comments
+- Migration system
+- Seed data: 10 popular book club books, sample club "Fishhawk Readers"
+- API routes: CRUD for clubs, books, members
 
-**Files to modify:**
-- `packages/core/src/agent/context.ts` — Inject style instructions into system prompt
-- `packages/config/src/schema.ts` — Add `outputStyle` to config schema
-- `packages/cli/src/commands/slash.ts` — Add `/style [name]` slash command
-
-**Build:** `npx turbo run build --filter=@brainstorm/core --filter=@brainstorm/cli`
-
-**Verify:** `/style learning` then ask a coding question — response should include ★ Insight annotations.
+**Verify**: Migrations run. Seed data loads. API routes return JSON.
 
 ---
 
-#### PR #9 — Input history and markdown rendering
+## Phase 4: Core UI — Landing + Auth + Club Dashboard
 
-**Files to modify:**
-- `packages/cli/src/components/ChatApp.tsx` — Add input history (up/down arrows cycle previous inputs)
-- `packages/cli/src/components/MessageView.tsx` — Basic markdown rendering (bold, code blocks, headers, lists)
+**Status**: Not started
 
-**Input history:**
-- Store last 100 inputs in memory
-- Persist to `~/.brainstorm/input-history.json` (last 500)
-- Up arrow recalls previous, Down arrow goes forward
+**Objective**: Users can sign up, create/join a club, see the dashboard.
 
-**Markdown rendering:**
-- `` `code` `` → dimmed/highlighted
-- `**bold**` → bold
-- `# Header` → bold + underline
-- ``` ```code blocks``` ``` → boxed with syntax hint
-- `- list items` → indented with bullet
+**Tasks**:
+- Landing page: hero, features, CTA "Start Your Book Club"
+- Clerk auth: sign up, sign in, profile
+- Club dashboard: current book, reading progress of members, upcoming meeting
+- Club creation: name, description, invite link
+- Club discovery: browse public clubs (Fishhawk community)
+- Mobile-responsive from day 1
 
-**Build:** `npx turbo run build --filter=@brainstorm/cli`
-
-**Verify:** Send multiple messages, press Up — previous input appears. Model response with code blocks renders with visual distinction.
+**Verify**: Can sign up, create club, see dashboard on mobile browser.
 
 ---
 
-### Phase 9: Subagent System (PRs 10-13)
+## Phase 5: Book Management + Reading Progress
 
-#### PR #10 — Specialized subagent types
+**Status**: Not started
 
-**Why here:** Subagents are how Claude Code parallelizes complex work. Brainstorm's subagent is a thin wrapper.
+**Objective**: Add books to club, track reading progress.
 
-**Files to modify:**
-- `packages/core/src/agent/subagent.ts` — Add subagent type system
+**Tasks**:
+- Book search (Open Library API / Google Books API)
+- Add book to club reading list
+- Set reading schedule (chapters per week)
+- Mark reading progress (chapter/page)
+- Progress visualization: who's caught up, who's behind
+- Book detail page: cover, description, author, club activity
 
-**Subagent types:**
-```typescript
-type SubagentType = 'explore' | 'plan' | 'code' | 'review' | 'general';
-
-// explore: Read-only tools (glob, grep, file_read, git_log). Fast, cheap.
-// plan: Read-only + task tools. Designs implementation approaches.
-// code: Full tool access. Writes and verifies code.
-// review: Read-only + git tools. Reviews changes for bugs.
-// general: All tools. Default.
-```
-
-**Each type gets:**
-- Tool filter (which tools available)
-- System prompt segment (behavioral instructions for the role)
-- Default model hint (explore → cheap model, code → capable model)
-
-**Build:** `npx turbo run build --filter=@brainstorm/core`
-
-**Verify:** Spawn an `explore` subagent — should only have read tools. Spawn a `code` subagent — should have full tools.
+**Verify**: Can search, add book, track progress, see club members' progress.
 
 ---
 
-#### PR #11 — Parallel subagent execution
+## Phase 6: Passage Tagging — The Killer Feature
 
-**Files to modify:**
-- `packages/core/src/agent/subagent.ts` — Add `spawnParallel(specs[])` that runs multiple subagents concurrently
+**Status**: Not started
 
-**Implementation:**
-```typescript
-async function spawnParallel(specs: SubagentSpec[]): Promise<SubagentResult[]> {
-  return Promise.all(specs.map(spec => spawnSubagent(spec)));
-}
-```
+**Objective**: Highlight and tag passages for discussion.
 
-**Files to modify:**
-- `packages/tools/src/builtin/` — Add `subagent` tool that the model can call with type + prompt
-- `packages/core/src/agent/loop.ts` — Handle parallel subagent tool calls
+**Tasks**:
+- Passage creation: enter text (typed or pasted from ebook), page number, chapter
+- Tag system: "discuss this", "favorite quote", "confused", "disagree", custom tags
+- Passage feed per book per club: see everyone's highlights
+- Filter by chapter, by member, by tag
+- Discussion thread per passage: comment on someone's highlight
+- Mobile-optimized: quick-add passage while reading
 
-**Build:** `npx turbo run build --filter=@brainstorm/core --filter=@brainstorm/tools`
-
-**Verify:** Ask "search for X in three different directories" — model spawns 3 explore subagents in parallel, results aggregated.
+**Verify**: Can add passages, see others' passages, comment on them. Works on phone.
 
 ---
 
-#### PR #12 — Subagent budget isolation
+## Phase 7: AI Features — Discussion Prep + Summaries
 
-**Files to modify:**
-- `packages/router/src/cost-tracker.ts` — Add per-subagent budget tracking
-- `packages/core/src/agent/subagent.ts` — Pass budget limit to subagent context
+**Status**: Not started
 
-**Budget rules:**
-- Each subagent gets a budget slice (default: parent budget / 4)
-- Subagent cost counted against parent session
-- If subagent exceeds budget, it's terminated (not the parent)
+**Objective**: AI that helps the book club prepare for meetings.
 
-**Build:** `npx turbo run build --filter=@brainstorm/router --filter=@brainstorm/core`
+**Tasks**:
+- API: Generate discussion questions from tagged passages + book context
+- API: "Catch me up" — summarize chapters you haven't read yet based on club's passages
+- API: Theme analysis — what themes is the club highlighting most?
+- API: Book recommendations based on club's reading history and ratings
+- All AI routes through BrainstormRouter
+- Test with multiple models: cheap for summaries, quality for nuanced analysis
+- Show which model generated each response (transparency)
 
-**Verify:** Spawn a subagent with $0.01 budget, give it an expensive task — should terminate at budget limit.
-
----
-
-#### PR #13 — Subagent hook events
-
-**Files to modify:**
-- `packages/hooks/src/manager.ts` — Add `SubagentStop` event, `SubagentStart` event
-- `packages/core/src/agent/subagent.ts` — Emit hook events on subagent lifecycle
-
-**Events:**
-```typescript
-SubagentStart: { type: SubagentType, prompt: string, budget: number }
-SubagentStop:  { type: SubagentType, result: string, cost: number, toolCalls: number }
-```
-
-**Build:** `npx turbo run build --filter=@brainstorm/hooks --filter=@brainstorm/core`
-
-**Verify:** Register a PostToolUse hook on SubagentStop, spawn a subagent — hook fires with result summary.
+**Verify**: Discussion questions are insightful. Summaries are accurate. Recommendations are relevant.
 
 ---
 
-### Phase 10: Advanced Context (PRs 14-17)
+## Phase 8: Meeting Management
 
-#### PR #14 — Hierarchical BRAINSTORM.md loading
+**Status**: Not started
 
-**Why here:** Claude Code loads CLAUDE.md from every directory in the path. This gives per-directory conventions.
+**Objective**: Schedule meetings, generate agendas from tagged passages.
 
-**Files to modify:**
-- `packages/core/src/agent/context.ts` — Walk up from cwd to project root, collect all BRAINSTORM.md files
+**Tasks**:
+- Meeting scheduler: date, time, location (in-person or virtual)
+- RSVP system
+- Auto-generated agenda from most-tagged passages since last meeting
+- Meeting notes: capture discussion highlights
+- Post-meeting: rate the book, vote on next book
 
-**Loading order:**
-```
-~/.brainstorm/BRAINSTORM.md        (global — user preferences)
-/project/BRAINSTORM.md             (project root)
-/project/packages/core/BRAINSTORM.md  (package-level)
-/project/packages/core/src/BRAINSTORM.md  (directory-level)
-```
-
-**Merge strategy:** Concatenate all found files, with directory-level overriding project-level on conflicts (later = higher priority).
-
-**Build:** `npx turbo run build --filter=@brainstorm/core`
-
-**Verify:** Create a BRAINSTORM.md in a subdirectory with "Always use arrow functions in this directory." Edit a file in that directory — model should follow the convention.
+**Verify**: Can schedule, RSVP, see agenda, take notes, vote.
 
 ---
 
-#### PR #15 — Structured context compression
+## Phase 9: Integrations — GoodReads + External
 
-**Files to modify:**
-- `packages/core/src/session/compaction.ts` — Preserve structured content during compaction
+**Status**: Not started
 
-**Preservation rules:**
-1. **Always keep:** File paths mentioned, tool results that changed files, error messages, user decisions
-2. **Summarize:** Explanations, reasoning, verbose tool outputs
-3. **Drop:** Duplicate file reads, superseded edits, intermediate search results
+**Objective**: Connect HawkTalk to the broader reading ecosystem.
 
-**Implementation:**
-```typescript
-function classifyMessage(msg: Message): 'keep' | 'summarize' | 'drop' {
-  if (msg.role === 'tool' && msg.toolName === 'file_edit') return 'keep';
-  if (msg.role === 'tool' && msg.toolName === 'grep' && wasSuperseded(msg)) return 'drop';
-  if (msg.role === 'assistant' && msg.content.length > 2000) return 'summarize';
-  return 'keep';
-}
-```
+**Tasks**:
+- GoodReads import (web scraping since API is restricted)
+- Google Books API for metadata and covers
+- Open Library API for free book data
+- Share to social: "Our club is reading X"
+- Export reading list to GoodReads format
 
-**Build:** `npx turbo run build --filter=@brainstorm/core`
-
-**Verify:** In a long session, trigger compaction — verify that file edit results are preserved but verbose grep outputs are dropped.
+**Verify**: Can import GoodReads shelf. Book metadata auto-populates.
 
 ---
 
-#### PR #16 — Extended thinking/reasoning block support
+## Phase 10: Mobile App (React Native / Expo)
 
-**Files to modify:**
-- `packages/core/src/agent/loop.ts` — Detect and yield `reasoning` events from models that support thinking blocks
-- `packages/cli/src/components/MessageView.tsx` — Render thinking blocks (collapsible, dimmed)
+**Status**: Not started
 
-**AI SDK integration:**
-```typescript
-// In the stream handler:
-if (event.type === 'reasoning') {
-  yield { type: 'reasoning', content: event.content };
-}
-```
+**Objective**: Native mobile experience for tagging passages while reading.
 
-**TUI rendering:**
-```
-▸ Thinking... (click to expand)
-  I need to check if the function exists first, then understand
-  the parameter types before modifying the signature...
-```
+**Tasks**:
+- Research: Expo vs React Native CLI
+- Scaffold mobile app
+- Shared API with web app
+- Core screens: Club dashboard, Book view, Add passage, Discussion feed
+- Push notifications: new passages, meeting reminders, discussion replies
+- Offline support: cache recent book/passages for reading without connection
 
-**Build:** `npx turbo run build --filter=@brainstorm/core --filter=@brainstorm/cli`
-
-**Verify:** Use a model that supports thinking (Claude with extended thinking), observe reasoning blocks appear in TUI.
+**Verify**: App runs on iOS simulator. Core flows work. Push notifications fire.
 
 ---
 
-#### PR #17 — PDF parsing
+## Phase 11: Design Polish + Fishhawk Customization
 
-**Files to modify:**
-- `packages/core/src/multimodal/reader.ts` — Replace PDF stub with actual text extraction
-- `package.json` (root) — Add `pdf-parse` dependency (or `pdfjs-dist`)
+**Status**: Not started
 
-**Implementation:**
-```typescript
-async function readPdf(filePath: string, pages?: string): Promise<string> {
-  const pdfParse = await import('pdf-parse');
-  const buffer = readFileSync(filePath);
-  const data = await pdfParse.default(buffer);
-  // If pages specified, extract only those pages
-  return data.text;
-}
-```
+**Objective**: Make it beautiful and personal for the Fishhawk community.
 
-**Build:** `npx turbo run build --filter=@brainstorm/core`
+**Tasks**:
+- Professional design system: typography, colors, spacing
+- Book cover gallery views
+- Reading streak / gamification
+- Club themes (Fishhawk Readers gets a custom theme)
+- Onboarding flow for non-technical book club members
+- Accessibility: screen reader, high contrast, font size
 
-**Verify:** `@document.pdf` in chat — should inject PDF text content into conversation.
+**Verify**: Non-technical person can sign up, join club, add a passage in under 2 minutes.
 
 ---
 
-### Phase 11: Security & Advanced Execution (PRs 18-20)
+## Phase 12: Brainstorm Stress Test + Multi-Model Workflows
 
-#### PR #18 — Persistent permission allowlists
+**Status**: Not started
 
-**Files to modify:**
-- `packages/core/src/permissions/manager.ts` — Persist "always allow" decisions to config file
-- `packages/config/src/schema.ts` — Add `permissions.allowlist` to config schema
+**Objective**: Push Brainstorm to the limit building advanced HawkTalk features.
 
-**Storage:**
-```toml
-# ~/.brainstorm/config.toml
-[permissions]
-allowlist = [
-  "file_read",
-  "glob",
-  "grep",
-  "git_status",
-  "git_diff",
-  "git_log",
-]
-denylist = [
-  "shell:rm -rf *",
-  "shell:git push --force",
-]
-```
+**Tasks**:
+- Use `brainstorm workflow run implement-feature` for a complex feature
+- Spawn parallel subagents to build multiple components
+- Test context compaction during long sessions
+- Run /dream to consolidate memories
+- Run `brainstorm eval --all-models` on HawkTalk codebase
+- Journal model performance data extensively
 
-**Build:** `npx turbo run build --filter=@brainstorm/core --filter=@brainstorm/config`
-
-**Verify:** Allow `file_read` once with "always" — restart session, `file_read` should be auto-allowed.
+**Verify**: Workflow produces working code. Eval scorecard generated. Journal complete.
 
 ---
 
-#### PR #19 — Shell sandbox mode
+## Phase 13: Documentation + Final Review
 
-**Files to create:**
-- `packages/tools/src/builtin/sandbox.ts` — Sandboxed shell execution environment
+**Status**: Not started
 
-**Sandbox levels:**
-```typescript
-type SandboxLevel = 'none' | 'restricted' | 'container';
+**Objective**: Ship-quality documentation and honest Brainstorm assessment.
 
-// none: Current behavior (full access)
-// restricted: Block dangerous commands (rm -rf /, sudo, etc.), limit to project dir
-// container: Run in Docker container (if available) — full isolation
-```
+**Tasks**:
+- HawkTalk README with screenshots, architecture, setup guide
+- docs/bug-journal.md — every Brainstorm bug found and fixed
+- docs/build-journal.md — the build story, decisions made, time/cost
+- docs/model-journal.md — which models work for what
+- docs/brainstorm-vs-claude-code.md — honest comparison from building a real app
+- Final Brainstorm eval with all findings fed back
 
-**Restricted mode blocklist:**
-- `rm -rf /`, `sudo`, `chmod 777`, `mkfs`, `dd if=`, `:(){ :|:& };:`
-- Any command writing outside project directory
-- Network access commands (curl to non-localhost, wget)
-
-**Files to modify:**
-- `packages/tools/src/builtin/shell.ts` — Check sandbox level before execution
-- `packages/config/src/schema.ts` — Add `security.sandbox` to config
-
-**Build:** `npx turbo run build --filter=@brainstorm/tools --filter=@brainstorm/config`
-
-**Verify:** Set sandbox to `restricted`, try `rm -rf /` — should be blocked with explanation.
+**Verify**: A stranger could clone and deploy HawkTalk. Brainstorm docs are honest and useful.
 
 ---
 
-#### PR #20 — Background shell execution
-
-**Files to modify:**
-- `packages/tools/src/builtin/shell.ts` — Add `background: true` option to shell tool
-- `packages/core/src/agent/loop.ts` — Handle background task completion notifications
-
-**Implementation:**
-```typescript
-// In shell tool execute:
-if (input.background) {
-  const proc = spawn(command, { detached: true });
-  backgroundTasks.set(taskId, proc);
-  return { taskId, status: 'running', message: 'Running in background. You will be notified on completion.' };
-}
-```
-
-**Notification system:**
-- Background process completes → emit `BackgroundComplete` event
-- Agent loop picks up event → injects result into conversation
-- TUI shows notification: `[bg] Task abc completed (exit 0)`
-
-**Build:** `npx turbo run build --filter=@brainstorm/tools --filter=@brainstorm/core`
-
-**Verify:** Run `npm test` in background, continue chatting — notification appears when tests finish.
-
----
-
-## Execution Order
-
-| PR | Package(s) | Dependency | Est. Lines |
-|----|-----------|------------|------------|
-| 1 | tools | None | ~150 |
-| 2 | tools | PR 1 | ~200 |
-| 3 | tools, shared | PR 1 | ~250 |
-| 4 | tools | PR 1 | ~150 |
-| 5 | cli, core | None (parallel with 1-4) | ~200 |
-| 6 | cli | PR 5 | ~120 |
-| 7 | cli | PR 5 | ~100 |
-| 8 | core, config, cli | PR 5 | ~150 |
-| 9 | cli | PR 6 | ~200 |
-| 10 | core | None (parallel with 5-9) | ~200 |
-| 11 | core, tools | PR 10 | ~150 |
-| 12 | router, core | PR 11 | ~100 |
-| 13 | hooks, core | PR 10 | ~80 |
-| 14 | core | None (parallel with 10-13) | ~120 |
-| 15 | core | PR 14 | ~150 |
-| 16 | core, cli | None | ~100 |
-| 17 | core | None | ~80 |
-| 18 | core, config | None | ~100 |
-| 19 | tools, config | PR 1 | ~200 |
-| 20 | tools, core | PR 19 | ~150 |
-
-**Total: ~2,950 lines across 20 PRs**
-
-**Critical path:** PRs 1→2→3 (git safety → smart commit → PR creation)
-**Parallel tracks:**
-- PRs 5→6→7→8→9 (DX — slash commands → status bar → keybindings → styles → history)
-- PRs 10→11→12→13 (subagents — types → parallel → budget → hooks)
-- PRs 14→15 (context — hierarchical → compression)
-- PRs 16, 17 (standalone — thinking blocks, PDF parsing)
-- PRs 18→19→20 (security — permissions → sandbox → background)
-
-## Verification
-
-After each PR:
-1. `npx turbo run build` — all packages compile
-2. `npx turbo run test` — all tests pass
-3. Manual test: `node packages/cli/dist/brainstorm.js chat` — interactive session
-4. PR-specific verification (listed in each PR's Verify section)
+<!-- NEW PHASES GET APPENDED BELOW THIS LINE -->
+<!-- After each phase completes, the review findings generate a new improvement phase here -->
