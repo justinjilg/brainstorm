@@ -163,8 +163,14 @@ export async function createProviderRegistry(
         return providers[cloudProvider](cloudModelName);
       }
 
+      // No direct provider SDK available — route through BrainstormRouter if available.
+      // This handles the common case where the router picks "openai/gpt-4.1" but the
+      // user only has a BR key (no OPENAI_API_KEY). BR can route to any model.
+      if (providers.brainstormrouter) {
+        return providers.brainstormrouter(modelId);
+      }
+
       // Last resort: return the raw model ID string
-      // (will fail unless AI Gateway or environment provides resolution)
       return modelId;
     },
 
