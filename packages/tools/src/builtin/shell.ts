@@ -90,7 +90,7 @@ class OutputCollector {
 
 export const shellTool = defineTool({
   name: 'shell',
-  description: 'Execute a shell command and return its stdout, stderr, and exit code. Streams output in real-time for long-running commands (builds, tests). Use for running tests, builds, git operations, etc.',
+  description: 'Execute a shell command via /bin/sh -c. Returns { stdout, stderr, exitCode }. Output is truncated to first 200 + last 200 lines if >400 lines total. Default timeout: 30s. Use `background: true` for long-running commands (returns immediately with a task ID, notifies on completion). Blocked by sandbox for dangerous commands (rm -rf, sudo, etc.).',
   permission: 'confirm',
   inputSchema: z.object({
     command: z.string().describe('The command to execute (passed to /bin/sh -c)'),
