@@ -624,7 +624,9 @@ program
   .option('--model <id>', 'Target a specific model (bypass routing)')
   .option('--tools', 'Enable tool use (default: disabled)')
   .option('--max-steps <n>', 'Maximum agentic steps (default: 1)', '1')
-  .action(async (prompt: string | undefined, opts: { json?: boolean; pipe?: boolean; model?: string; tools?: boolean; maxSteps?: string }) => {
+  .option('--strategy <name>', 'Routing strategy: cost-first, quality-first, combined, capability')
+  .option('--lfg', 'Full auto mode — skip all permission confirmations')
+  .action(async (prompt: string | undefined, opts: { json?: boolean; pipe?: boolean; model?: string; tools?: boolean; maxSteps?: string; strategy?: string; lfg?: boolean }) => {
     // Handle --pipe: read prompt from stdin
     let finalPrompt = prompt;
     if (opts.pipe) {
@@ -646,16 +648,41 @@ program
     }
 
     const config = loadConfig();
+
+    // --lfg: full auto mode, skip all permission confirmations
+    if (opts.lfg) {
+      config.general.defaultPermissionMode = 'auto';
+    }
+
     const db = getDb();
-    const registry = await createProviderRegistry(config, await resolveProviderKeys());
+    const resolvedKeys = await resolveProviderKeys();
+    const isCommunityTier = isCommunityKey(
+      resolvedKeys.get('BRAINSTORM_API_KEY') ?? getBrainstormApiKey()
+    );
+    const registry = await createProviderRegistry(config, resolvedKeys);
     const costTracker = new CostTracker(db, config.budget);
     const tools = createDefaultToolRegistry();
     await connectMCPServers(tools, config);
     const sessionManager = new SessionManager(db);
     const projectPath = process.cwd();
+    configureSandbox(config.shell.sandbox as any, projectPath);
     const { prompt: rawPrompt, frontmatter } = buildSystemPrompt(projectPath);
     const systemPrompt = rawPrompt + buildToolAwarenessSection(tools.listTools());
     const router = new BrainstormRouter(config, registry, costTracker, frontmatter);
+
+    // Permission manager — gates tool execution
+    const permissionManager = new PermissionManager(
+      config.general.defaultPermissionMode as any,
+      config.permissions,
+    );
+
+    // Strategy: CLI flag → paid-key default → config default
+    if (opts.strategy) {
+      router.setStrategy(opts.strategy as any);
+    } else if (!isCommunityTier) {
+      router.setStrategy('quality-first');
+    }
+
     const session = sessionManager.start(projectPath);
 
     sessionManager.addUserMessage(finalPrompt);
@@ -672,9 +699,10 @@ program
       config, registry, router, costTracker, tools,
       sessionId: session.id, projectPath, systemPrompt,
       disableTools: !opts.tools,
-      preferredModelId: opts.model ?? (isCommunityKey(getBrainstormApiKey()) ? 'brainstormrouter/auto' : undefined),
+      preferredModelId: opts.model ?? (isCommunityTier ? 'brainstormrouter/auto' : undefined),
       maxSteps: parseInt(opts.maxSteps ?? '1'),
       compaction: buildCompactionCallbacks(sessionManager),
+      permissionCheck: (tool, args) => permissionManager.check(tool, args),
     })) {
       switch (event.type) {
         case 'routing':
