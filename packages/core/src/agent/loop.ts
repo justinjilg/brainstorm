@@ -45,6 +45,8 @@ export interface AgentLoopOptions {
   signal?: AbortSignal;
   /** Permission check function. When provided, tools are gated by this check. */
   permissionCheck?: PermissionCheckFn;
+  /** Internal: marks this as a retry attempt to prevent infinite recursion. */
+  _retryAttempt?: boolean;
 }
 
 // All task types get tools — the model decides whether to use them.
@@ -155,18 +157,24 @@ export async function* runAgentLoop(
 
     // Apply response filter to strip LLM filler from the beginning of text output
     const streamFilter = createStreamFilter();
+    let textDeltaCount = 0;
+    let toolCallCount = 0;
+    let hasToolBlocked = false;
 
     try {
       for await (const part of result.fullStream) {
         if (part.type === 'reasoning-delta') {
           const content = (part as any).text ?? (part as any).delta ?? '';
-          if (content) yield { type: 'reasoning', content };
+          if (content) yield { type: 'reasoning' as const, content };
         } else if (part.type === 'text-delta') {
+          textDeltaCount++;
           const raw = (part as any).text ?? (part as any).delta ?? '';
+          if (raw.includes('[TOOL BLOCKED]')) hasToolBlocked = true;
           const filtered = streamFilter.filter(raw);
-          if (filtered) yield { type: 'text-delta', delta: normalizeInsightMarkers(filtered) };
+          if (filtered) yield { type: 'text-delta' as const, delta: normalizeInsightMarkers(filtered) };
         } else if (part.type === 'tool-call') {
-          yield { type: 'tool-call-start', toolName: part.toolName, args: (part as any).input ?? (part as any).args };
+          toolCallCount++;
+          yield { type: 'tool-call-start' as const, toolName: part.toolName, args: (part as any).input ?? (part as any).args };
         } else if (part.type === 'tool-result') {
           const toolResult = (part as any).output ?? (part as any).result;
           yield { type: 'tool-call-result', toolName: part.toolName, result: toolResult };
@@ -204,6 +212,25 @@ export async function* runAgentLoop(
     const remaining = streamFilter.flush();
     if (remaining) yield { type: 'text-delta', delta: normalizeInsightMarkers(remaining) };
 
+    // ── Empty/blocked response detection + retry with fallback model ──
+    const isEmpty = textDeltaCount === 0 && toolCallCount === 0;
+    const isBlocked = hasToolBlocked && toolCallCount === 0;
+    if ((isEmpty || isBlocked) && decision.fallbacks.length > 0 && !options._retryAttempt) {
+      const reason = isEmpty ? 'empty_response' : 'tool_blocked';
+      router.recordFailure(decision.model.id, reason);
+      const fallbackModel = decision.fallbacks[0];
+      yield { type: 'model-retry' as const, fromModel: decision.model.id, toModel: fallbackModel.id, reason };
+
+      // Retry with fallback model — recurse with _retryAttempt flag to prevent infinite loop
+      const retryDecision = { ...decision, model: fallbackModel, fallbacks: decision.fallbacks.slice(1) };
+      yield* runAgentLoop(messages, {
+        ...options,
+        preferredModelId: fallbackModel.id,
+        _retryAttempt: true,
+      } as any);
+      return;
+    }
+
     // Extract gateway response headers (X-BR-*) for cost reconciliation and telemetry.
     // Use a timeout to prevent hanging if the response promise never resolves
     // (happens when the stream errored on the guardian SSE event).
@@ -226,6 +253,9 @@ export async function* runAgentLoop(
     } catch {
       // Gateway headers not available (local models) — non-fatal
     }
+
+    // Record success for model momentum
+    router.recordSuccess?.(decision.model.id);
 
     yield { type: 'done', totalCost: costTracker.getSessionCost(), totalTokens: costTracker.getSessionTokens() };
   } catch (error: any) {
