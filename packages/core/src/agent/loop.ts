@@ -11,6 +11,53 @@ import { createStreamFilter } from './response-filter.js';
 import { normalizeInsightMarkers } from './insights.js';
 import { parseGatewayHeaders } from '@brainstorm/gateway';
 
+/**
+ * Enrich raw API errors with actionable user-facing messages.
+ * The original error is preserved; the message is replaced with a helpful one.
+ */
+function enrichError(error: any, modelId: string): Error {
+  const msg = error.message ?? '';
+  const status = error.statusCode ?? error.status;
+
+  // Budget exceeded
+  if (msg.includes('Budget exceeded') || msg.includes('budget_exceeded')) {
+    const match = msg.match(/Limit: \$([\d.]+)/);
+    const limit = match?.[1] ?? '?';
+    error.message = `Daily budget exceeded ($${limit}). Increase with: curl -X PUT api.brainstormrouter.com/v1/budget/limits -d '{"daily_limit_usd": 50}'`;
+    return error;
+  }
+
+  // Rate limited
+  if (status === 429 || msg.includes('rate limit') || msg.includes('community_limit')) {
+    error.message = `Rate limited. ${msg.includes('community') ? 'Community plan: 5 req/min. Set BRAINSTORM_API_KEY for full access.' : 'Wait a moment and retry.'}`;
+    return error;
+  }
+
+  // Model not available
+  if (msg.includes('model_not_allowed') || msg.includes('not available on the community plan')) {
+    error.message = `Model not available on your plan. Try: storm run --model deepseek/deepseek-chat, or set a paid API key with: storm vault add BRAINSTORM_API_KEY`;
+    return error;
+  }
+
+  // Auth failure
+  if (status === 401 || msg.includes('Unauthorized') || msg.includes('invalid_api_key')) {
+    error.message = `Authentication failed. Check your API key: storm vault status. Or get a key at brainstormrouter.com`;
+    return error;
+  }
+
+  // Network/connectivity
+  if (msg.includes('fetch failed') || msg.includes('ECONNREFUSED') || msg.includes('ETIMEDOUT')) {
+    error.message = `Cannot reach BrainstormRouter. Check your internet connection. Gateway: api.brainstormrouter.com`;
+    return error;
+  }
+
+  // Fallback: keep original but add model context
+  if (!msg.includes(modelId)) {
+    error.message = `[${modelId}] ${msg}`;
+  }
+  return error;
+}
+
 // Suppress AI SDK warnings in non-debug mode
 if (!process.env.BRAINSTORM_LOG_LEVEL) {
   (globalThis as any).AI_SDK_LOG_WARNINGS = false;
@@ -280,7 +327,9 @@ export async function* runAgentLoop(
       yield { type: 'interrupted' };
     } else {
       router.recordFailure(decision.model.id, error.message);
-      yield { type: 'error', error };
+      // Wrap raw API errors with actionable messages
+      const enriched = enrichError(error, decision.model.id);
+      yield { type: 'error', error: enriched };
     }
   } finally {
     setTaskEventHandler(null);
