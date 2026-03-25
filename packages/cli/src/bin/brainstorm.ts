@@ -1142,10 +1142,12 @@ program
       const readline = await import('node:readline/promises');
       const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-      console.log(`\n  brainstorm v0.1.0`);
+      console.log(`\n  🧠 brainstorm v0.1.0`);
       console.log(`  Strategy: ${router.getActiveStrategy()} | Models: ${localCount} local, ${cloudCount} cloud`);
-      if (isCommunityTier) console.log(`  Community tier (100 req/day, cheap models). Set BRAINSTORM_API_KEY for full access.`);
-      console.log(`  Type your message. /quit to exit.\n`);
+      console.log(`  Project: ${projectPath}`);
+      if (isCommunityTier) console.log(`  Community tier (5 req/min, cheap models). Set BRAINSTORM_API_KEY for full access.`);
+      console.log(`  Commands: /quit, /model <id>, /strategy <name>, /compact`);
+      console.log(`  Ctrl+C to interrupt, Ctrl+D to exit.\n`);
 
       let simpleAbortController: AbortController | null = null;
 
@@ -1166,6 +1168,35 @@ program
         if (!input.trim()) continue;
         if (input.trim() === '/quit' || input.trim() === '/exit') break;
 
+        // Handle slash commands in simple mode
+        if (input.startsWith('/')) {
+          const [cmd, ...args] = input.trim().split(/\s+/);
+          const arg = args.join(' ');
+          if (cmd === '/model') {
+            if (!arg) { console.log('  Usage: /model <provider/model-id>'); continue; }
+            preferredModelId = arg;
+            console.log(`  Model set to: ${arg}`);
+            continue;
+          }
+          if (cmd === '/strategy') {
+            if (!arg) { console.log(`  Current: ${router.getActiveStrategy()}. Options: cost-first, quality-first, combined, capability`); continue; }
+            router.setStrategy(arg as any);
+            console.log(`  Strategy set to: ${arg}`);
+            continue;
+          }
+          if (cmd === '/compact') {
+            const result = await sessionManager.compact({ contextWindow: 200000, keepRecent: 5 });
+            console.log(`  Compacted: ${result.removed} messages removed (${result.tokensBefore} → ${result.tokensAfter} tokens)`);
+            continue;
+          }
+          if (cmd === '/clear') {
+            session = sessionManager.start(projectPath);
+            console.log('  Session cleared.');
+            continue;
+          }
+          // Unknown slash command — pass to model as regular message
+        }
+
         sessionManager.addUserMessage(input);
         let fullResponse = '';
         process.stdout.write('\nbrainstorm > ');
@@ -1179,12 +1210,43 @@ program
           permissionCheck: (name, perm) => permissionManager.check(name, perm),
           preferredModelId,
         })) {
-          if (event.type === 'routing') process.stderr.write(`[${event.decision.strategy} -> ${event.decision.model.name}] `);
-          if (event.type === 'text-delta') { fullResponse += event.delta; process.stdout.write(event.delta); }
-          if (event.type === 'gateway-feedback') { const gw = formatGatewayFeedback(event.feedback); if (gw) process.stderr.write(`\n  ${gw}`); }
-          if (event.type === 'interrupted') process.stdout.write('\n  [interrupted]\n\n');
-          if (event.type === 'done') process.stdout.write(`\n  [$${event.totalCost.toFixed(4)}]\n\n`);
-          if (event.type === 'error') process.stdout.write(`\n  Error: ${event.error.message}\n\n`);
+          switch (event.type) {
+            case 'thinking':
+              process.stderr.write(`\r  ${event.phase === 'classifying' ? 'Analyzing...' : event.phase === 'routing' ? 'Selecting model...' : event.phase === 'connecting' ? 'Connecting...' : 'Streaming...'}`);
+              break;
+            case 'routing':
+              process.stderr.write(`\r  [${event.decision.model.name}]\n`);
+              break;
+            case 'text-delta':
+              fullResponse += event.delta;
+              process.stdout.write(event.delta);
+              break;
+            case 'tool-call-start':
+              process.stdout.write(`\n  [tool: ${event.toolName}]\n`);
+              break;
+            case 'tool-call-result':
+              break; // Tool results are shown by the model's text response
+            case 'model-retry':
+              process.stderr.write(`\n  [retry: ${event.fromModel} → ${event.toModel}]\n`);
+              break;
+            case 'gateway-feedback': {
+              const gw = formatGatewayFeedback(event.feedback);
+              if (gw) process.stderr.write(`  ${gw}\n`);
+              break;
+            }
+            case 'context-budget':
+              process.stderr.write(`  [${Math.round(event.used / 1000)}k/${Math.round(event.limit / 1000)}k tokens (${event.percent}%)]\n`);
+              break;
+            case 'interrupted':
+              process.stdout.write('\n  [interrupted]\n\n');
+              break;
+            case 'done':
+              process.stdout.write(`\n  [$${event.totalCost.toFixed(4)}]\n\n`);
+              break;
+            case 'error':
+              process.stderr.write(`\n  Error: ${event.error.message}\n\n`);
+              break;
+          }
         }
         simpleAbortController = null;
         if (fullResponse) sessionManager.addAssistantMessage(fullResponse);
