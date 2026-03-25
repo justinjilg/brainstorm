@@ -213,9 +213,17 @@ export async function* runAgentLoop(
     let textDeltaCount = 0;
     let toolCallCount = 0;
     let hasToolBlocked = false;
+    let lastEventTime = Date.now();
+    const STREAM_TIMEOUT_MS = 60_000; // 60s without any SSE event = dead stream
 
     try {
       for await (const part of result.fullStream) {
+        // Detect hung streams: if no event for 60s, break out
+        const now = Date.now();
+        if (now - lastEventTime > STREAM_TIMEOUT_MS && textDeltaCount === 0 && toolCallCount === 0) {
+          break; // Fall through to empty detection + retry
+        }
+        lastEventTime = now;
         if (part.type === 'reasoning-delta') {
           const content = (part as any).text ?? (part as any).delta ?? '';
           if (content) yield { type: 'reasoning' as const, content };
@@ -267,10 +275,9 @@ export async function* runAgentLoop(
 
     // ── Empty/blocked response detection + retry with fallback model ──
     const isEmpty = textDeltaCount === 0 && toolCallCount === 0;
-    const isBlocked = hasToolBlocked && toolCallCount === 0;
     // Build fallback list: use decision.fallbacks, or generate from registry if empty
     let fallbacks = decision.fallbacks;
-    if (fallbacks.length === 0 && (isEmpty || isBlocked)) {
+    if (fallbacks.length === 0 && (isEmpty)) {
       // When BR Auto returns empty, construct fallbacks from explicit models in the registry
       const RETRY_MODELS = ['anthropic/claude-sonnet-4-5-20250929', 'openai/gpt-4.1', 'anthropic/claude-haiku-4-5-20251001'];
       fallbacks = RETRY_MODELS
@@ -279,7 +286,7 @@ export async function* runAgentLoop(
         .filter((m): m is ModelEntry => m != null && m.status === 'available');
     }
 
-    if ((isEmpty || isBlocked) && fallbacks.length > 0 && !options._retryAttempt) {
+    if ((isEmpty) && fallbacks.length > 0 && !options._retryAttempt) {
       const reason = isEmpty ? 'empty_response' : 'tool_blocked';
       router.recordFailure(decision.model.id, reason);
       const fallbackModel = fallbacks[0];
