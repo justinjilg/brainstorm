@@ -2,18 +2,15 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 
 /**
  * BrainstormRouter sends a "guardian" SSE event after [DONE] with cost/audit metadata.
- * The AI SDK's OpenAI-compatible parser can't handle this non-standard event and throws
- * a TypeValidationError, which kills multi-step tool calling (step 2+ never runs).
+ * The AI SDK's parser can't handle it and hangs or throws.
  *
- * Fix: wrap the response body stream to filter out guardian JSON lines before they
- * reach the AI SDK parser. Guardian events are identified by containing a "guardian"
- * key at the top level of the parsed JSON.
+ * Fix: simple line-level filter that drops any SSE data line containing guardian JSON
+ * and any event: guardian lines. Operates on raw text, no buffering needed.
  */
 function createGuardianFilterFetch(): typeof globalThis.fetch {
   return async (input: string | URL | Request, init?: RequestInit) => {
     const response = await globalThis.fetch(input, init);
 
-    // Only filter streaming responses
     const contentType = response.headers.get('content-type') ?? '';
     if (!contentType.includes('text/event-stream') || !response.body) {
       return response;
@@ -22,36 +19,44 @@ function createGuardianFilterFetch(): typeof globalThis.fetch {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     const encoder = new TextEncoder();
-    let buffer = '';
 
     const filteredStream = new ReadableStream({
       async pull(controller) {
-        try {
-          const { done, value } = await reader.read();
-          if (done) {
-            // Flush any remaining buffer
-            if (buffer.trim()) {
-              const filtered = filterGuardianLines(buffer);
-              if (filtered) controller.enqueue(encoder.encode(filtered));
-            }
-            controller.close();
-            return;
+        const { done, value } = await reader.read();
+        if (done) {
+          controller.close();
+          return;
+        }
+
+        const text = decoder.decode(value, { stream: true });
+
+        // Fast path: most chunks don't contain guardian data
+        if (!text.includes('guardian') && !text.includes(': guardian')) {
+          controller.enqueue(value);
+          return;
+        }
+
+        // Slow path: filter line by line
+        const lines = text.split('\n');
+        const kept: string[] = [];
+        for (const line of lines) {
+          // Drop event: guardian lines
+          if (line.startsWith('event: guardian') || line.startsWith('event:guardian')) continue;
+          // Drop SSE comments with guardian prefix
+          if (line.startsWith(': guardian')) continue;
+          // Drop data lines containing guardian JSON
+          if (line.startsWith('data: ') && line.includes('"guardian"')) {
+            try {
+              const parsed = JSON.parse(line.slice(6));
+              if (parsed && typeof parsed === 'object' && 'guardian' in parsed) continue;
+            } catch { /* not JSON, pass through */ }
           }
+          kept.push(line);
+        }
 
-          buffer += decoder.decode(value, { stream: true });
-
-          // Process complete SSE lines (delimited by double newlines)
-          const parts = buffer.split('\n\n');
-          buffer = parts.pop() ?? ''; // Keep incomplete part in buffer
-
-          for (const part of parts) {
-            const filtered = filterGuardianLines(part);
-            if (filtered) {
-              controller.enqueue(encoder.encode(filtered + '\n\n'));
-            }
-          }
-        } catch (err) {
-          controller.error(err);
+        const filtered = kept.join('\n');
+        if (filtered.trim()) {
+          controller.enqueue(encoder.encode(filtered));
         }
       },
       cancel() {
@@ -67,42 +72,10 @@ function createGuardianFilterFetch(): typeof globalThis.fetch {
   };
 }
 
-/** Filter out SSE data lines that contain guardian metadata. */
-function filterGuardianLines(sseBlock: string): string | null {
-  const lines = sseBlock.split('\n');
-  const filtered: string[] = [];
-
-  for (const line of lines) {
-    // SSE data lines start with "data: "
-    if (line.startsWith('data: ')) {
-      const jsonStr = line.slice(6).trim();
-      if (jsonStr === '[DONE]') {
-        filtered.push(line);
-        continue;
-      }
-      try {
-        const parsed = JSON.parse(jsonStr);
-        if (parsed && typeof parsed === 'object' && 'guardian' in parsed) {
-          // Skip guardian metadata event
-          continue;
-        }
-      } catch {
-        // Not valid JSON — pass through
-      }
-    }
-    filtered.push(line);
-  }
-
-  const result = filtered.join('\n').trim();
-  return result || null;
-}
-
 /**
  * BrainstormRouter SaaS provider.
  * Uses OpenAI-compatible API at api.brainstormrouter.com.
- * Supports model="auto" for intelligent routing by the SaaS.
- * Includes a custom fetch wrapper that filters out guardian SSE events
- * that would otherwise crash the AI SDK's stream parser.
+ * Includes a custom fetch wrapper that filters out guardian SSE events.
  */
 export function createBrainstormSaaSProvider(apiKey: string) {
   return createOpenAICompatible({
@@ -117,23 +90,13 @@ export function createBrainstormSaaSProvider(apiKey: string) {
 
 /**
  * Community tier API key — ships with the CLI for zero-setup onboarding.
- * Rate-limited server-side by BrainstormRouter: 5 RPM, 100 req/day, $2/day,
- * cheap models only (DeepSeek V3, Haiku, GPT-4.1-mini, Gemini Flash).
- * Users override with BRAINSTORM_API_KEY for full access to 357 models.
  */
 const COMMUNITY_KEY = 'br_live_b028d73791f9a2d614acafe80b89d36f66e69d3091d9b70b24658ccc03a5a48a';
 
-/**
- * Get the BrainstormRouter API key.
- * Priority: BRAINSTORM_API_KEY env var → community key (free tier).
- */
 export function getBrainstormApiKey(): string {
   return process.env.BRAINSTORM_API_KEY ?? COMMUNITY_KEY;
 }
 
-/**
- * Check if the current key is the community tier (for UI messaging).
- */
 export function isCommunityKey(key: string): boolean {
   return key === COMMUNITY_KEY;
 }
