@@ -47,8 +47,11 @@ export interface AgentLoopOptions {
   permissionCheck?: PermissionCheckFn;
 }
 
-// Task types that should NOT get tools (pure text generation)
-const NO_TOOL_TASKS = new Set(['explanation', 'conversation', 'analysis']);
+// All task types get tools — the model decides whether to use them.
+// Previously conversation/explanation/analysis were excluded, but this
+// caused the model to print shell commands as text instead of calling tools
+// when the classifier miscategorized a request (e.g., "look at files on my desktop"
+// classified as "conversation"). A coding assistant should always have tools available.
 
 export async function* runAgentLoop(
   messages: ConversationMessage[],
@@ -112,8 +115,8 @@ export async function* runAgentLoop(
   // Always resolve through the provider registry — it handles local, cloud, and SaaS models
   const modelId = options.registry.getProvider(decision.model.id);
 
-  // Only provide tools when the task needs them and they're not disabled
-  const shouldUseTools = !options.disableTools && task.requiresToolUse && !NO_TOOL_TASKS.has(task.type);
+  // Provide tools unless explicitly disabled by the caller (e.g., brainstorm run without --tools)
+  const shouldUseTools = !options.disableTools;
 
   // Build tools with permission gating if a check function is provided
   const aiTools = shouldUseTools
