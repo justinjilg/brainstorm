@@ -2,6 +2,7 @@ import { loadStormFile, loadHierarchicalStormFiles, type StormFrontmatter } from
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { homedir } from 'node:os';
 import { INSIGHT_PROMPT_SECTION } from './insights.js';
 import { getOutputStylePrompt, type OutputStyle } from './output-styles.js';
 
@@ -272,8 +273,15 @@ export function buildToolAwarenessSection(
     ).join('\n')}`);
   }
 
+  const home = homedir();
   const selfAwareness = [
-    '\n### Self-Configuration',
+    '\n### Environment',
+    `- Home directory: \`${home}\``,
+    `- Current working directory: \`${process.cwd()}\``,
+    '- You CAN read files outside the project (e.g., ~/Desktop, ~/Documents). Use absolute paths.',
+    '- You should only WRITE files within the project directory unless the user explicitly asks otherwise.',
+    '',
+    '### Self-Configuration',
     '- Global config: `~/.brainstorm/config.toml` (TOML format)',
     '- Project config: `./brainstorm.toml` (overrides global)',
     '- Project context: `./BRAINSTORM.md` or `./STORM.md` (Markdown with YAML frontmatter)',
