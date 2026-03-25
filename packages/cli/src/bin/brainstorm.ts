@@ -83,8 +83,9 @@ async function connectMCPServers(
     })));
   }
 
-  // Built-in BrainstormRouter MCP — connects to BR's 64 control-plane tools
-  // via Streamable HTTP transport. All BR tools become available to the model.
+  // Built-in BrainstormRouter MCP — connects to BR's control-plane tools
+  // via Streamable HTTP transport. Filter to most useful tools to avoid
+  // schema compatibility issues with some providers.
   const brKey = resolvedBRKey ?? process.env.BRAINSTORM_API_KEY;
   if (brKey) {
     mcp.addServers([{
@@ -92,8 +93,19 @@ async function connectMCPServers(
       transport: 'http',
       url: 'https://api.brainstormrouter.com/v1/mcp/connect',
       env: { BRAINSTORM_API_KEY: brKey },
-      // No toolFilter — expose all 64 BR tools to the model.
-      // The model decides which to use based on the system prompt guidance.
+      toolFilter: [
+        'br_get_ops_status',    // System dashboard
+        'br_get_leaderboard',   // Model rankings
+        'br_agent_limits',      // Budget + rate limits
+        'br_agent_status',      // Full self-check
+        'br_list_models',       // Available models
+        'br_get_insights',      // Cost optimization
+        'br_get_health',        // Connectivity test
+        'br_get_usage',         // Spend tracking
+        'br_memory_query',      // Search persistent memory
+        'br_memory_store',      // Save persistent memory
+        'br_memory_list',       // List all memory
+      ],
     }]);
   }
 
