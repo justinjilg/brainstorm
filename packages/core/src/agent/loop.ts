@@ -80,17 +80,23 @@ export async function* runAgentLoop(
     } as AgentEvent);
   });
 
-  // Classify from the last user message
+  // Phase: classifying
+  yield { type: 'thinking' as const, phase: 'classifying' as const };
   const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
   const userText = lastUserMsg?.content ?? '';
-
   const task = router.classify(userText);
+
+  // Phase: routing
+  yield { type: 'thinking' as const, phase: 'routing' as const };
   const conversationTokens = options.compaction?.getTokenEstimate() ?? 0;
   const decision = options.preferredModelId
     ? { ...router.route(task, conversationTokens), model: options.registry.getModel(options.preferredModelId) ?? router.route(task, conversationTokens).model, reason: `Cross-model workflow override: ${options.preferredModelId}` }
     : router.route(task, conversationTokens);
 
   yield { type: 'routing', decision };
+
+  // Phase: connecting
+  yield { type: 'thinking' as const, phase: 'connecting' as const };
 
   // Check if context compaction is needed before the LLM call
   if (options.compaction && config.compaction?.enabled !== false) {

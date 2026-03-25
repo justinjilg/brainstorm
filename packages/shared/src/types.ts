@@ -184,6 +184,7 @@ export interface AgentTask {
 }
 
 export type AgentEvent =
+  | { type: 'thinking'; phase: 'classifying' | 'routing' | 'connecting' | 'streaming' }
   | { type: 'routing'; decision: RoutingDecision }
   | { type: 'text-delta'; delta: string }
   | { type: 'tool-call-start'; toolName: string; args: unknown }
