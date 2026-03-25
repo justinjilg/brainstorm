@@ -5,7 +5,7 @@ import type { ProviderRegistry } from '@brainstorm/providers';
 import { BrainstormRouter, CostTracker } from '@brainstorm/router';
 import type { ToolRegistry, PermissionCheckFn } from '@brainstorm/tools';
 import { setTaskEventHandler, clearTasks, setBackgroundEventHandler } from '@brainstorm/tools';
-import type { AgentEvent, GatewayFeedbackData } from '@brainstorm/shared';
+import type { AgentEvent, GatewayFeedbackData, ModelEntry } from '@brainstorm/shared';
 import { serializeRoutingMetadata } from '@brainstorm/shared';
 import { createStreamFilter } from './response-filter.js';
 import { normalizeInsightMarkers } from './insights.js';
@@ -215,14 +215,24 @@ export async function* runAgentLoop(
     // ── Empty/blocked response detection + retry with fallback model ──
     const isEmpty = textDeltaCount === 0 && toolCallCount === 0;
     const isBlocked = hasToolBlocked && toolCallCount === 0;
-    if ((isEmpty || isBlocked) && decision.fallbacks.length > 0 && !options._retryAttempt) {
+    // Build fallback list: use decision.fallbacks, or generate from registry if empty
+    let fallbacks = decision.fallbacks;
+    if (fallbacks.length === 0 && (isEmpty || isBlocked)) {
+      // When BR Auto returns empty, construct fallbacks from explicit models in the registry
+      const RETRY_MODELS = ['anthropic/claude-sonnet-4-5-20250929', 'openai/gpt-4.1', 'anthropic/claude-haiku-4-5-20251001'];
+      fallbacks = RETRY_MODELS
+        .filter((id) => id !== decision.model.id)
+        .map((id) => options.registry.getModel(id))
+        .filter((m): m is ModelEntry => m != null && m.status === 'available');
+    }
+
+    if ((isEmpty || isBlocked) && fallbacks.length > 0 && !options._retryAttempt) {
       const reason = isEmpty ? 'empty_response' : 'tool_blocked';
       router.recordFailure(decision.model.id, reason);
-      const fallbackModel = decision.fallbacks[0];
+      const fallbackModel = fallbacks[0];
       yield { type: 'model-retry' as const, fromModel: decision.model.id, toModel: fallbackModel.id, reason };
 
       // Retry with fallback model — recurse with _retryAttempt flag to prevent infinite loop
-      const retryDecision = { ...decision, model: fallbackModel, fallbacks: decision.fallbacks.slice(1) };
       yield* runAgentLoop(messages, {
         ...options,
         preferredModelId: fallbackModel.id,
