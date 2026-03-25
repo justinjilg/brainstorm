@@ -156,38 +156,47 @@ export async function* runAgentLoop(
     // Apply response filter to strip LLM filler from the beginning of text output
     const streamFilter = createStreamFilter();
 
-    for await (const part of result.fullStream) {
-      if (part.type === 'reasoning-delta') {
-        const content = (part as any).text ?? (part as any).delta ?? '';
-        if (content) yield { type: 'reasoning', content };
-      } else if (part.type === 'text-delta') {
-        const raw = (part as any).text ?? (part as any).delta ?? '';
-        const filtered = streamFilter.filter(raw);
-        if (filtered) yield { type: 'text-delta', delta: normalizeInsightMarkers(filtered) };
-      } else if (part.type === 'tool-call') {
-        yield { type: 'tool-call-start', toolName: part.toolName, args: (part as any).input ?? (part as any).args };
-      } else if (part.type === 'tool-result') {
-        const toolResult = (part as any).output ?? (part as any).result;
-        yield { type: 'tool-call-result', toolName: part.toolName, result: toolResult };
-        // Emit subagent-result events for TUI display
-        if (part.toolName === 'subagent' && toolResult && typeof toolResult === 'object') {
-          if (toolResult.mode === 'single') {
-            yield { type: 'subagent-result', subagentType: toolResult.type, model: toolResult.model, cost: toolResult.cost, toolCalls: toolResult.toolCalls };
-          } else if (toolResult.mode === 'parallel' && Array.isArray(toolResult.results)) {
-            for (const r of toolResult.results) {
-              yield { type: 'subagent-result', subagentType: r.type, model: r.model, cost: r.cost, toolCalls: r.toolCalls };
+    try {
+      for await (const part of result.fullStream) {
+        if (part.type === 'reasoning-delta') {
+          const content = (part as any).text ?? (part as any).delta ?? '';
+          if (content) yield { type: 'reasoning', content };
+        } else if (part.type === 'text-delta') {
+          const raw = (part as any).text ?? (part as any).delta ?? '';
+          const filtered = streamFilter.filter(raw);
+          if (filtered) yield { type: 'text-delta', delta: normalizeInsightMarkers(filtered) };
+        } else if (part.type === 'tool-call') {
+          yield { type: 'tool-call-start', toolName: part.toolName, args: (part as any).input ?? (part as any).args };
+        } else if (part.type === 'tool-result') {
+          const toolResult = (part as any).output ?? (part as any).result;
+          yield { type: 'tool-call-result', toolName: part.toolName, result: toolResult };
+          // Emit subagent-result events for TUI display
+          if (part.toolName === 'subagent' && toolResult && typeof toolResult === 'object') {
+            if (toolResult.mode === 'single') {
+              yield { type: 'subagent-result', subagentType: toolResult.type, model: toolResult.model, cost: toolResult.cost, toolCalls: toolResult.toolCalls };
+            } else if (toolResult.mode === 'parallel' && Array.isArray(toolResult.results)) {
+              for (const r of toolResult.results) {
+                yield { type: 'subagent-result', subagentType: r.type, model: r.model, cost: r.cost, toolCalls: r.toolCalls };
+              }
             }
           }
+          // Drain any task events queued by task_create/task_update tool executions
+          while (taskEventQueue.length > 0) {
+            yield taskEventQueue.shift()!;
+          }
+          // Check for abort between tool executions
+          if (options.signal?.aborted) {
+            yield { type: 'interrupted' };
+            return;
+          }
         }
-        // Drain any task events queued by task_create/task_update tool executions
-        while (taskEventQueue.length > 0) {
-          yield taskEventQueue.shift()!;
-        }
-        // Check for abort between tool executions
-        if (options.signal?.aborted) {
-          yield { type: 'interrupted' };
-          return;
-        }
+      }
+    } catch (streamErr: any) {
+      // BrainstormRouter sends a guardian SSE event after [DONE] that the AI SDK
+      // can't parse (TypeValidationError). This is non-fatal — all content and
+      // tool calls have already been yielded. Swallow validation errors silently.
+      if (streamErr.name !== 'AI_TypeValidationError' && !streamErr.message?.includes('Type validation failed')) {
+        throw streamErr; // Re-throw real errors
       }
     }
 
