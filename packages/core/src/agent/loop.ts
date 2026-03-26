@@ -16,6 +16,7 @@ import type { MiddlewarePipeline } from '../middleware/pipeline.js';
 import { TrajectoryRecorder } from '../session/trajectory.js';
 import { predictTaskCost } from './cost-predictor.js';
 import { detectTone, toneGuidance } from './sentiment.js';
+import { shouldUseEnsemble } from './ensemble.js';
 
 /**
  * Enrich raw API errors with actionable user-facing messages.
@@ -210,6 +211,14 @@ export async function* runAgentLoop(
     taskType: task.type,
     complexity: task.complexity,
   });
+
+  // Check if ensemble generation should be used for this task
+  const ensembleEnabled = (config as any).ensemble?.enabled ?? false;
+  if (shouldUseEnsemble(task.complexity, ensembleEnabled)) {
+    yield { type: 'ensemble-info', message: `Ensemble mode: task complexity "${task.complexity}" qualifies for multi-model generation` } as any;
+    // Full ensemble execution (parallel streamText calls + voting) is a future enhancement.
+    // For now, single-model path continues with the routing decision above.
+  }
 
   // Cost prediction — yield estimate so CLI can display it
   const costPrediction = predictTaskCost(task, [decision.model]);
