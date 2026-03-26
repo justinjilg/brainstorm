@@ -15,6 +15,7 @@ import { parseGatewayHeaders } from '@brainstorm/gateway';
 import type { MiddlewarePipeline } from '../middleware/pipeline.js';
 import { TrajectoryRecorder } from '../session/trajectory.js';
 import { predictTaskCost } from './cost-predictor.js';
+import { detectTone, toneGuidance } from './sentiment.js';
 
 /**
  * Enrich raw API errors with actionable user-facing messages.
@@ -130,7 +131,8 @@ export async function* runAgentLoop(
   messages: ConversationMessage[],
   options: AgentLoopOptions,
 ): AsyncGenerator<AgentEvent> {
-  const { router, costTracker, tools, config, sessionId, systemPrompt } = options;
+  const { router, costTracker, tools, config, sessionId } = options;
+  let { systemPrompt } = options;
 
   // Initialize trajectory recorder if enabled
   const trajectory = options.trajectoryEnabled ? new TrajectoryRecorder(sessionId) : null;
@@ -181,6 +183,14 @@ export async function* runAgentLoop(
   const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
   const userText = lastUserMsg?.content ?? '';
   const task = router.classify(userText);
+
+  // Detect user tone and inject guidance into system prompt
+  const userMessages = messages.filter((m) => m.role === 'user').map((m) => m.content);
+  const tone = detectTone(userMessages);
+  const toneHint = toneGuidance(tone.tone);
+  if (toneHint && tone.confidence > 0.3) {
+    systemPrompt += '\n' + toneHint;
+  }
 
   // Phase: routing
   yield { type: 'thinking' as const, phase: 'routing' as const };
