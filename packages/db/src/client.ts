@@ -1,10 +1,10 @@
-import Database from 'better-sqlite3';
-import { mkdirSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
+import Database from "better-sqlite3";
+import { mkdirSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
 
-const DB_DIR = join(homedir(), '.brainstorm');
-const DB_PATH = join(DB_DIR, 'brainstorm.db');
+const DB_DIR = join(homedir(), ".brainstorm");
+const DB_PATH = join(DB_DIR, "brainstorm.db");
 
 let _db: Database.Database | null = null;
 
@@ -16,12 +16,12 @@ export function getDb(): Database.Database {
   }
 
   _db = new Database(DB_PATH);
-  _db.pragma('journal_mode = WAL');
-  _db.pragma('foreign_keys = ON');
+  _db.pragma("journal_mode = WAL");
+  _db.pragma("foreign_keys = ON");
 
   runMigrations(_db);
   cleanupOldRecords(_db);
-  _db.pragma('optimize');
+  _db.pragma("optimize");
   return _db;
 }
 
@@ -33,8 +33,8 @@ export function closeDb(): void {
 }
 
 export function getTestDb(): Database.Database {
-  const db = new Database(':memory:');
-  db.pragma('foreign_keys = ON');
+  const db = new Database(":memory:");
+  db.pragma("foreign_keys = ON");
   runMigrations(db);
   return db;
 }
@@ -43,9 +43,11 @@ export function getTestDb(): Database.Database {
 function cleanupOldRecords(db: Database.Database): void {
   const cutoff = Math.floor(Date.now() / 1000) - 90 * 24 * 60 * 60;
   try {
-    db.prepare('DELETE FROM cost_records WHERE timestamp < ?').run(cutoff);
-    db.prepare('DELETE FROM model_performance WHERE timestamp < ?').run(cutoff);
-    db.prepare('DELETE FROM model_performance_v2 WHERE timestamp < ?').run(cutoff);
+    db.prepare("DELETE FROM cost_records WHERE timestamp < ?").run(cutoff);
+    db.prepare("DELETE FROM model_performance WHERE timestamp < ?").run(cutoff);
+    db.prepare("DELETE FROM model_performance_v2 WHERE timestamp < ?").run(
+      cutoff,
+    );
   } catch {
     // Tables may not exist yet on first run — safe to ignore
   }
@@ -61,26 +63,33 @@ function runMigrations(db: Database.Database): void {
   `);
 
   const applied = new Set(
-    db.prepare('SELECT name FROM _migrations').all().map((r: any) => r.name),
+    db
+      .prepare("SELECT name FROM _migrations")
+      .all()
+      .map((r: any) => r.name),
   );
 
   for (const migration of MIGRATIONS) {
     if (applied.has(migration.name)) continue;
     try {
-      db.exec('BEGIN');
+      db.exec("BEGIN");
       db.exec(migration.sql);
-      db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(migration.name);
-      db.exec('COMMIT');
+      db.prepare("INSERT INTO _migrations (name) VALUES (?)").run(
+        migration.name,
+      );
+      db.exec("COMMIT");
     } catch (err) {
-      db.exec('ROLLBACK');
-      throw new Error(`Migration "${migration.name}" failed: ${err instanceof Error ? err.message : String(err)}`);
+      db.exec("ROLLBACK");
+      throw new Error(
+        `Migration "${migration.name}" failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 }
 
 const MIGRATIONS = [
   {
-    name: '001_sessions',
+    name: "001_sessions",
     sql: `
       CREATE TABLE sessions (
         id TEXT PRIMARY KEY,
@@ -93,7 +102,7 @@ const MIGRATIONS = [
     `,
   },
   {
-    name: '002_messages',
+    name: "002_messages",
     sql: `
       CREATE TABLE messages (
         id TEXT PRIMARY KEY,
@@ -108,7 +117,7 @@ const MIGRATIONS = [
     `,
   },
   {
-    name: '003_cost_records',
+    name: "003_cost_records",
     sql: `
       CREATE TABLE cost_records (
         id TEXT PRIMARY KEY,
@@ -128,7 +137,7 @@ const MIGRATIONS = [
     `,
   },
   {
-    name: '004_model_performance',
+    name: "004_model_performance",
     sql: `
       CREATE TABLE model_performance (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -143,7 +152,7 @@ const MIGRATIONS = [
     `,
   },
   {
-    name: '005_agent_profiles',
+    name: "005_agent_profiles",
     sql: `
       CREATE TABLE agent_profiles (
         id TEXT PRIMARY KEY,
@@ -169,7 +178,7 @@ const MIGRATIONS = [
     `,
   },
   {
-    name: '006_workflow_definitions',
+    name: "006_workflow_definitions",
     sql: `
       CREATE TABLE workflow_definitions (
         id TEXT PRIMARY KEY,
@@ -184,7 +193,7 @@ const MIGRATIONS = [
     `,
   },
   {
-    name: '007_workflow_runs',
+    name: "007_workflow_runs",
     sql: `
       CREATE TABLE workflow_runs (
         id TEXT PRIMARY KEY,
@@ -205,7 +214,7 @@ const MIGRATIONS = [
     `,
   },
   {
-    name: '008_workflow_step_runs',
+    name: "008_workflow_step_runs",
     sql: `
       CREATE TABLE workflow_step_runs (
         id TEXT PRIMARY KEY,
@@ -224,7 +233,7 @@ const MIGRATIONS = [
     `,
   },
   {
-    name: '010_session_patterns',
+    name: "010_session_patterns",
     sql: `
       CREATE TABLE session_patterns (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -243,7 +252,7 @@ const MIGRATIONS = [
     `,
   },
   {
-    name: '009_model_performance_v2',
+    name: "009_model_performance_v2",
     sql: `
       CREATE TABLE model_performance_v2 (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -266,7 +275,7 @@ const MIGRATIONS = [
     `,
   },
   {
-    name: '011_session_checkpoints',
+    name: "011_session_checkpoints",
     sql: `
       CREATE TABLE session_checkpoints (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -280,13 +289,20 @@ const MIGRATIONS = [
     `,
   },
   {
-    name: '012_session_locks',
+    name: "012_session_locks",
     sql: `
       CREATE TABLE session_locks (
         session_id TEXT PRIMARY KEY,
         holder TEXT NOT NULL,
         acquired_at INTEGER NOT NULL DEFAULT (unixepoch())
       );
+    `,
+  },
+  {
+    name: "013_message_timestamp_index",
+    sql: `
+      CREATE INDEX IF NOT EXISTS idx_messages_session_ts
+        ON messages(session_id, timestamp DESC);
     `,
   },
 ];
