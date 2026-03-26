@@ -9,6 +9,7 @@ export { routingHintTool, getRoutingHint, consumeRoutingHint, resetRoutingHint, 
 export { costEstimateTool } from './builtin/cost-estimate.js';
 export { isParallelSafe, classifyToolBatch, executeWithParallelism } from './parallel.js';
 export { planPreviewTool } from './builtin/plan-preview.js';
+export { beginTransactionTool, commitTransactionTool, rollbackTransactionTool, isTransactionActive, recordTransactionFile } from './builtin/transaction.js';
 export { ToolRegistry, type PermissionCheckFn } from './registry.js';
 export { fileReadTool } from './builtin/file-read.js';
 export { fileWriteTool } from './builtin/file-write.js';
@@ -67,6 +68,7 @@ import { askUserTool } from './builtin/ask-user.js';
 import { routingHintTool } from './builtin/routing-hint.js';
 import { costEstimateTool } from './builtin/cost-estimate.js';
 import { planPreviewTool } from './builtin/plan-preview.js';
+import { beginTransactionTool, commitTransactionTool, rollbackTransactionTool } from './builtin/transaction.js';
 import {
   brStatusTool, brBudgetTool, brLeaderboardTool, brInsightsTool,
   brModelsTool, brMemorySearchTool, brMemoryStoreTool, brHealthTool,
@@ -115,6 +117,10 @@ export function createDefaultToolRegistry(): ToolRegistry {
   registry.register(routingHintTool);
   registry.register(costEstimateTool);
   registry.register(planPreviewTool);
+  // Transactions (3)
+  registry.register(beginTransactionTool);
+  registry.register(commitTransactionTool);
+  registry.register(rollbackTransactionTool);
   // BrainstormRouter intelligence (8) — native REST calls, no MCP needed
   registry.register(brStatusTool);
   registry.register(brBudgetTool);
