@@ -54,6 +54,10 @@ export const fileWriteTool = defineTool({
     const { getFileTracker } = await import('../file-tracker.js');
     getFileTracker().recordWrite(safePath);
 
+    // Track in active transaction
+    const { recordTransactionFile } = await import('./transaction.js');
+    recordTransactionFile(safePath);
+
     // Diff preview (non-blocking)
     const { getDiffSummary } = await import('../diff-preview.js');
     const diff = getDiffSummary(safePath);
