@@ -1,11 +1,11 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 // ── Provider Config ──────────────────────────────────────────────────
 
 const gatewayProviderSchema = z.object({
   enabled: z.boolean().default(true),
-  apiKeyEnv: z.string().default('AI_GATEWAY_API_KEY'),
-  baseUrl: z.string().default('https://ai-gateway.vercel.sh/v1'),
+  apiKeyEnv: z.string().default("AI_GATEWAY_API_KEY"),
+  baseUrl: z.string().default("https://ai-gateway.vercel.sh/v1"),
 });
 
 const localProviderSchema = z.object({
@@ -16,9 +16,12 @@ const localProviderSchema = z.object({
 
 const providersSchema = z.object({
   gateway: gatewayProviderSchema.default({}),
-  ollama: localProviderSchema.default({ baseUrl: 'http://localhost:11434' }),
-  lmstudio: localProviderSchema.default({ baseUrl: 'http://localhost:1234' }),
-  llamacpp: localProviderSchema.default({ baseUrl: 'http://localhost:8080', enabled: false }),
+  ollama: localProviderSchema.default({ baseUrl: "http://localhost:11434" }),
+  lmstudio: localProviderSchema.default({ baseUrl: "http://localhost:1234" }),
+  llamacpp: localProviderSchema.default({
+    baseUrl: "http://localhost:8080",
+    enabled: false,
+  }),
 });
 
 // ── Compaction Config ────────────────────────────────────────────────
@@ -35,7 +38,7 @@ const compactionSchema = z.object({
 const shellSchema = z.object({
   defaultTimeout: z.number().default(120_000),
   maxOutputBytes: z.number().default(50_000),
-  sandbox: z.enum(['none', 'restricted', 'container']).default('none'),
+  sandbox: z.enum(["none", "restricted", "container"]).default("none"),
 });
 
 // ── Budget Config ────────────────────────────────────────────────────
@@ -61,7 +64,7 @@ const routingRuleSchema = z.object({
   match: routingRuleMatchSchema,
   model: z.string().optional(),
   preferProvider: z.string().optional(),
-  strategy: z.enum(['cost-first', 'quality-first']).optional(),
+  strategy: z.enum(["cost-first", "quality-first"]).optional(),
 });
 
 // ── Model Override ───────────────────────────────────────────────────
@@ -76,12 +79,28 @@ const modelOverrideSchema = z.object({
 // ── General Config ───────────────────────────────────────────────────
 
 const generalSchema = z.object({
-  defaultStrategy: z.enum(['cost-first', 'quality-first', 'rule-based', 'combined', 'capability', 'learned']).default('combined'),
+  defaultStrategy: z
+    .enum([
+      "cost-first",
+      "quality-first",
+      "rule-based",
+      "combined",
+      "capability",
+      "learned",
+    ])
+    .default("combined"),
   confirmTools: z.boolean().default(true),
-  defaultPermissionMode: z.enum(['auto', 'confirm', 'plan']).default('confirm'),
-  theme: z.enum(['dark', 'light']).default('dark'),
+  defaultPermissionMode: z.enum(["auto", "confirm", "plan"]).default("confirm"),
+  theme: z.enum(["dark", "light"]).default("dark"),
   maxSteps: z.number().default(10),
-  outputStyle: z.enum(['concise', 'detailed', 'learning']).default('concise'),
+  outputStyle: z.enum(["concise", "detailed", "learning"]).default("concise"),
+  costSafetyMargin: z.number().min(1).max(3).default(1.3),
+  loopDetector: z
+    .object({
+      readThreshold: z.number().default(4),
+      repeatThreshold: z.number().default(3),
+    })
+    .default({}),
 });
 
 // ── Full Config ──────────────────────────────────────────────────────
@@ -91,7 +110,7 @@ const generalSchema = z.object({
 const agentBudgetSchema = z.object({
   perWorkflow: z.number().optional(),
   daily: z.number().optional(),
-  exhaustionAction: z.enum(['downgrade', 'stop']).default('downgrade'),
+  exhaustionAction: z.enum(["downgrade", "stop"]).default("downgrade"),
   downgradeModel: z.string().optional(),
 });
 
@@ -103,11 +122,21 @@ const agentGuardrailsSchema = z.object({
 const agentConfigSchema = z.object({
   id: z.string(),
   displayName: z.string().optional(),
-  role: z.enum(['architect', 'coder', 'reviewer', 'debugger', 'analyst', 'orchestrator', 'custom']).default('custom'),
-  description: z.string().default(''),
+  role: z
+    .enum([
+      "architect",
+      "coder",
+      "reviewer",
+      "debugger",
+      "analyst",
+      "orchestrator",
+      "custom",
+    ])
+    .default("custom"),
+  description: z.string().default(""),
   model: z.string(),
   systemPrompt: z.string().optional(),
-  allowedTools: z.union([z.literal('all'), z.array(z.string())]).default('all'),
+  allowedTools: z.union([z.literal("all"), z.array(z.string())]).default("all"),
   outputFormat: z.string().optional(),
   confidenceThreshold: z.number().min(0).max(1).default(0.7),
   maxSteps: z.number().default(10),
@@ -120,9 +149,17 @@ const agentConfigSchema = z.object({
 
 const workflowStepConfigSchema = z.object({
   id: z.string(),
-  agentRole: z.enum(['architect', 'coder', 'reviewer', 'debugger', 'analyst', 'orchestrator', 'custom']),
+  agentRole: z.enum([
+    "architect",
+    "coder",
+    "reviewer",
+    "debugger",
+    "analyst",
+    "orchestrator",
+    "custom",
+  ]),
   agentId: z.string().optional(),
-  description: z.string().default(''),
+  description: z.string().default(""),
   inputArtifacts: z.array(z.string()).default([]),
   outputArtifact: z.string(),
   outputSchema: z.string().optional(),
@@ -134,8 +171,8 @@ const workflowStepConfigSchema = z.object({
 const workflowConfigSchema = z.object({
   id: z.string(),
   name: z.string().optional(),
-  description: z.string().default(''),
-  communicationMode: z.enum(['handoff', 'shared']).default('handoff'),
+  description: z.string().default(""),
+  communicationMode: z.enum(["handoff", "shared"]).default("handoff"),
   maxIterations: z.number().default(3),
   steps: z.array(workflowStepConfigSchema).default([]),
 });
@@ -144,7 +181,7 @@ const workflowConfigSchema = z.object({
 
 const mcpServerSchema = z.object({
   name: z.string(),
-  transport: z.enum(['sse', 'http', 'stdio']),
+  transport: z.enum(["sse", "http", "stdio"]),
   url: z.string().optional(),
   command: z.string().optional(),
   args: z.array(z.string()).optional(),
@@ -173,9 +210,11 @@ export const brainstormConfigSchema = z.object({
   budget: budgetSchema.default({}),
   providers: providersSchema.default({}),
   permissions: permissionsSchema.default({}),
-  routing: z.object({
-    rules: z.array(routingRuleSchema).default([]),
-  }).default({}),
+  routing: z
+    .object({
+      rules: z.array(routingRuleSchema).default([]),
+    })
+    .default({}),
   models: z.array(modelOverrideSchema).default([]),
   agents: z.array(agentConfigSchema).default([]),
   workflows: z.array(workflowConfigSchema).default([]),
