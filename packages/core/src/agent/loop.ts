@@ -115,6 +115,8 @@ export interface AgentLoopOptions {
   middleware?: MiddlewarePipeline;
   /** Enable trajectory recording to JSONL. */
   trajectoryEnabled?: boolean;
+  /** Session checkpointer for crash recovery. */
+  checkpointer?: { saveIfNeeded: (data: any) => boolean };
 }
 
 // All task types get tools — the model decides whether to use them.
@@ -437,6 +439,21 @@ export async function* runAgentLoop(
         buildStatus: options.buildState?.getStatus() ?? 'unknown',
         buildWarning: options.buildState?.formatBuildWarning() ?? '',
         costPerHour: 0, // caller sets this based on session duration
+      });
+    }
+
+    // Save checkpoint for crash recovery (if checkpointer provided)
+    if (options.checkpointer) {
+      options.checkpointer.saveIfNeeded({
+        sessionId,
+        turnNumber: 0, // caller sets actual turn
+        conversationHistory: messages,
+        scratchpad: {},
+        filesRead: [],
+        filesWritten: [],
+        buildStatus: options.buildState?.getStatus() ?? 'unknown',
+        totalCost: costTracker.getSessionCost(),
+        projectPath: options.projectPath,
       });
     }
 
