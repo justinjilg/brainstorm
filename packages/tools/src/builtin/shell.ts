@@ -1,22 +1,35 @@
-import { z } from 'zod';
-import { spawn } from 'node:child_process';
-import { defineTool } from '../base.js';
-import { checkGitSafety, formatViolations, hasHardBlock } from './git-safety.js';
-import { checkSandbox, type SandboxLevel } from './sandbox.js';
+import { z } from "zod";
+import { spawn } from "node:child_process";
+import { defineTool } from "../base.js";
+import {
+  checkGitSafety,
+  formatViolations,
+  hasHardBlock,
+} from "./git-safety.js";
+import { checkSandbox, type SandboxLevel } from "./sandbox.js";
 
 const DEFAULT_TIMEOUT = 120_000;
 const BACKGROUND_TIMEOUT = 600_000; // 10 minutes max for background tasks
-const HEAD_BYTES = 20_000;
-const TAIL_BYTES = 20_000;
+let HEAD_BYTES = 20_000;
+let TAIL_BYTES = 20_000;
 
 // Module-level sandbox config — set by the CLI during startup
-let currentSandboxLevel: SandboxLevel = 'none';
+let currentSandboxLevel: SandboxLevel = "none";
 let currentProjectPath: string | undefined;
 
-/** Configure the shell sandbox level. Call once during CLI startup. */
-export function configureSandbox(level: SandboxLevel, projectPath?: string): void {
+/** Configure the shell sandbox level and output limits. Call once during CLI startup. */
+export function configureSandbox(
+  level: SandboxLevel,
+  projectPath?: string,
+  maxOutputBytes?: number,
+): void {
   currentSandboxLevel = level;
   currentProjectPath = projectPath;
+  if (maxOutputBytes) {
+    // Split output budget: 40% head, 60% tail (tail is more useful for errors)
+    HEAD_BYTES = Math.floor(maxOutputBytes * 0.4);
+    TAIL_BYTES = Math.floor(maxOutputBytes * 0.6);
+  }
 }
 
 // ── Background Task Management ──────────────────────────────────────
@@ -29,16 +42,28 @@ interface BackgroundTask {
 
 const backgroundTasks = new Map<string, BackgroundTask>();
 let nextTaskId = 0;
-let backgroundEventHandler: ((event: { taskId: string; command: string; exitCode: number; stdout: string; stderr: string }) => void) | null = null;
+let backgroundEventHandler:
+  | ((event: {
+      taskId: string;
+      command: string;
+      exitCode: number;
+      stdout: string;
+      stderr: string;
+    }) => void)
+  | null = null;
 
 /** Set a callback for background task completion events. */
-export function setBackgroundEventHandler(handler: typeof backgroundEventHandler): void {
+export function setBackgroundEventHandler(
+  handler: typeof backgroundEventHandler,
+): void {
   backgroundEventHandler = handler;
 }
 
 // ── Tool Output Streaming ──────────────────────────────────────
 
-let toolOutputHandler: ((event: { toolName: string; chunk: string }) => void) | null = null;
+let toolOutputHandler:
+  | ((event: { toolName: string; chunk: string }) => void)
+  | null = null;
 
 /** Set a callback for streaming tool output chunks during foreground execution. */
 export function setToolOutputHandler(handler: typeof toolOutputHandler): void {
@@ -56,8 +81,8 @@ export function getBackgroundTasks(): BackgroundTask[] {
  * so both the start (config/setup) and end (errors/summary) are visible.
  */
 class OutputCollector {
-  private head = '';
-  private tail = '';
+  private head = "";
+  private tail = "";
   private totalBytes = 0;
   private readonly maxHead: number;
   private readonly maxTail: number;
@@ -98,22 +123,37 @@ class OutputCollector {
 }
 
 export const shellTool = defineTool({
-  name: 'shell',
-  description: 'Execute a shell command via /bin/sh -c. Returns { stdout, stderr, exitCode }. Output is truncated to first 200 + last 200 lines if >400 lines total. Default timeout: 30s. Use `background: true` for long-running commands (returns immediately with a task ID, notifies on completion). Blocked by sandbox for dangerous commands (rm -rf, sudo, etc.).',
-  permission: 'confirm',
+  name: "shell",
+  description:
+    "Execute a shell command via /bin/sh -c. Returns { stdout, stderr, exitCode }. Output is truncated to first 200 + last 200 lines if >400 lines total. Default timeout: 30s. Use `background: true` for long-running commands (returns immediately with a task ID, notifies on completion). Blocked by sandbox for dangerous commands (rm -rf, sudo, etc.).",
+  permission: "confirm",
   inputSchema: z.object({
-    command: z.string().describe('The command to execute (passed to /bin/sh -c)'),
-    cwd: z.string().optional().describe('Working directory for the command'),
-    timeout: z.number().optional().describe(`Timeout in milliseconds (default ${DEFAULT_TIMEOUT})`),
-    background: z.boolean().optional().describe('Run in background. Returns immediately with a task ID. You will be notified on completion.'),
+    command: z
+      .string()
+      .describe("The command to execute (passed to /bin/sh -c)"),
+    cwd: z.string().optional().describe("Working directory for the command"),
+    timeout: z
+      .number()
+      .optional()
+      .describe(`Timeout in milliseconds (default ${DEFAULT_TIMEOUT})`),
+    background: z
+      .boolean()
+      .optional()
+      .describe(
+        "Run in background. Returns immediately with a task ID. You will be notified on completion.",
+      ),
   }),
   async execute({ command, cwd, timeout, background }) {
     // Sandbox check — block dangerous commands based on configured level
-    const sandboxResult = checkSandbox(command, currentSandboxLevel, currentProjectPath);
+    const sandboxResult = checkSandbox(
+      command,
+      currentSandboxLevel,
+      currentProjectPath,
+    );
     if (!sandboxResult.allowed) {
       return {
-        stdout: '',
-        stderr: sandboxResult.reason ?? 'Command blocked by sandbox',
+        stdout: "",
+        stderr: sandboxResult.reason ?? "Command blocked by sandbox",
         exitCode: 1,
         blocked: true,
       };
@@ -124,7 +164,7 @@ export const shellTool = defineTool({
       const violations = checkGitSafety(command);
       if (violations.length > 0 && hasHardBlock(violations)) {
         return {
-          stdout: '',
+          stdout: "",
           stderr: formatViolations(violations),
           exitCode: 1,
           blocked: true,
@@ -136,25 +176,29 @@ export const shellTool = defineTool({
     if (background) {
       const taskId = `bg-${nextTaskId++}`;
       const timeoutMs = timeout ?? BACKGROUND_TIMEOUT;
-      const child = spawn('/bin/sh', ['-c', command], {
+      const child = spawn("/bin/sh", ["-c", command], {
         cwd: cwd ?? process.cwd(),
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: ["ignore", "pipe", "pipe"],
       });
 
-      backgroundTasks.set(taskId, { id: taskId, command, startedAt: Date.now() });
+      backgroundTasks.set(taskId, {
+        id: taskId,
+        command,
+        startedAt: Date.now(),
+      });
 
       const bgStdout = new OutputCollector();
       const bgStderr = new OutputCollector();
-      child.stdout.setEncoding('utf-8');
-      child.stderr.setEncoding('utf-8');
-      child.stdout.on('data', (chunk: string) => bgStdout.append(chunk));
-      child.stderr.on('data', (chunk: string) => bgStderr.append(chunk));
+      child.stdout.setEncoding("utf-8");
+      child.stderr.setEncoding("utf-8");
+      child.stdout.on("data", (chunk: string) => bgStdout.append(chunk));
+      child.stderr.on("data", (chunk: string) => bgStderr.append(chunk));
 
       // Timeout: SIGTERM then SIGKILL, same pattern as foreground
       const bgTimer = setTimeout(() => {
-        child.kill('SIGTERM');
+        child.kill("SIGTERM");
         setTimeout(() => {
-          if (!child.killed) child.kill('SIGKILL');
+          if (!child.killed) child.kill("SIGKILL");
         }, 5000);
       }, timeoutMs);
       bgTimer.unref(); // Don't keep event loop alive for background timeout
@@ -176,15 +220,19 @@ export const shellTool = defineTool({
         }
       };
 
-      child.on('close', (code) => {
+      child.on("close", (code) => {
         emitCompletion(code ?? 1);
       });
 
-      child.on('error', (err) => {
+      child.on("error", (err) => {
         emitCompletion(1, err.message);
       });
 
-      return { taskId, status: 'running', message: `Running in background (${taskId}). You will be notified on completion.` };
+      return {
+        taskId,
+        status: "running",
+        message: `Running in background (${taskId}). You will be notified on completion.`,
+      };
     }
 
     const timeoutMs = timeout ?? DEFAULT_TIMEOUT;
@@ -193,32 +241,32 @@ export const shellTool = defineTool({
       const stdout = new OutputCollector();
       const stderr = new OutputCollector();
 
-      const child = spawn('/bin/sh', ['-c', command], {
+      const child = spawn("/bin/sh", ["-c", command], {
         cwd: cwd ?? process.cwd(),
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: ["ignore", "pipe", "pipe"],
       });
 
-      child.stdout.setEncoding('utf-8');
-      child.stderr.setEncoding('utf-8');
+      child.stdout.setEncoding("utf-8");
+      child.stderr.setEncoding("utf-8");
 
-      child.stdout.on('data', (chunk: string) => {
+      child.stdout.on("data", (chunk: string) => {
         stdout.append(chunk);
-        if (toolOutputHandler) toolOutputHandler({ toolName: 'shell', chunk });
+        if (toolOutputHandler) toolOutputHandler({ toolName: "shell", chunk });
       });
-      child.stderr.on('data', (chunk: string) => {
+      child.stderr.on("data", (chunk: string) => {
         stderr.append(chunk);
-        if (toolOutputHandler) toolOutputHandler({ toolName: 'shell', chunk });
+        if (toolOutputHandler) toolOutputHandler({ toolName: "shell", chunk });
       });
 
       const timer = setTimeout(() => {
-        child.kill('SIGTERM');
+        child.kill("SIGTERM");
         // Give 5s for graceful shutdown, then force kill
         setTimeout(() => {
-          if (!child.killed) child.kill('SIGKILL');
+          if (!child.killed) child.kill("SIGKILL");
         }, 5000);
       }, timeoutMs);
 
-      child.on('close', (code, signal) => {
+      child.on("close", (code, signal) => {
         clearTimeout(timer);
         const exitCode = code ?? (signal ? 128 : 1);
         resolve({
@@ -229,10 +277,10 @@ export const shellTool = defineTool({
         });
       });
 
-      child.on('error', (err) => {
+      child.on("error", (err) => {
         clearTimeout(timer);
         resolve({
-          stdout: '',
+          stdout: "",
           stderr: err.message,
           exitCode: 1,
         });
