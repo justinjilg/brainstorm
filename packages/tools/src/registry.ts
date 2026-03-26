@@ -1,9 +1,12 @@
-import { tool } from 'ai';
-import type { ToolPermission } from '@brainstorm/shared';
-import type { BrainstormToolDef } from './base.js';
-import { getToolHealthTracker } from './tool-health.js';
+import { tool } from "ai";
+import type { ToolPermission } from "@brainstorm/shared";
+import type { BrainstormToolDef } from "./base.js";
+import { getToolHealthTracker } from "./tool-health.js";
 
-export type PermissionCheckFn = (toolName: string, toolPermission: ToolPermission) => 'allow' | 'confirm' | 'deny';
+export type PermissionCheckFn = (
+  toolName: string,
+  toolPermission: ToolPermission,
+) => "allow" | "confirm" | "deny";
 
 /**
  * Sliding-window rate limiter per tool.
@@ -57,19 +60,30 @@ export function getToolRateLimiter(): ToolRateLimiter {
 function normalizeResult(raw: any): any {
   if (raw == null) return { ok: true };
 
-  // Already has 'error' key → it's a failure
+  // Already has 'error' or 'message' key → it's a failure
   if (raw.error) {
     return { ok: false, error: raw.error, ...raw };
   }
+  if (raw.message && !raw.ok && !("exitCode" in raw)) {
+    return { ok: false, error: raw.message, ...raw };
+  }
 
   // Shell tool: check exitCode
-  if ('exitCode' in raw && raw.exitCode !== 0) {
-    return { ok: false, error: raw.stderr || `Exit code ${raw.exitCode}`, ...raw };
+  if ("exitCode" in raw && raw.exitCode !== 0) {
+    return {
+      ok: false,
+      error: raw.stderr || `Exit code ${raw.exitCode}`,
+      ...raw,
+    };
   }
 
   // Blocked tool
   if (raw.blocked) {
-    return { ok: false, error: raw.error ?? raw.stderr ?? 'Tool blocked', ...raw };
+    return {
+      ok: false,
+      error: raw.error ?? raw.stderr ?? "Tool blocked",
+      ...raw,
+    };
   }
 
   // Everything else is success
@@ -95,7 +109,7 @@ export class ToolRegistry {
     return Array.from(this.tools.values());
   }
 
-  toAISDKTools(): Record<string, ReturnType<BrainstormToolDef['toAISDKTool']>> {
+  toAISDKTools(): Record<string, ReturnType<BrainstormToolDef["toAISDKTool"]>> {
     const result: Record<string, any> = {};
     for (const [name, tool] of this.tools) {
       result[name] = tool.toAISDKTool();
@@ -107,7 +121,9 @@ export class ToolRegistry {
    * Return AI SDK tools filtered to only the named tools.
    * Used by subagent types to restrict tool access.
    */
-  toAISDKToolsFiltered(allowedNames: string[]): Record<string, ReturnType<BrainstormToolDef['toAISDKTool']>> {
+  toAISDKToolsFiltered(
+    allowedNames: string[],
+  ): Record<string, ReturnType<BrainstormToolDef["toAISDKTool"]>> {
     const allowed = new Set(allowedNames);
     const result: Record<string, any> = {};
     for (const [name, tool] of this.tools) {
@@ -118,11 +134,13 @@ export class ToolRegistry {
     return result;
   }
 
-  getPermitted(overrides?: Record<string, ToolPermission>): Record<string, any> {
+  getPermitted(
+    overrides?: Record<string, ToolPermission>,
+  ): Record<string, any> {
     const result: Record<string, any> = {};
     for (const [name, tool] of this.tools) {
       const permission = overrides?.[name] ?? tool.permission;
-      if (permission !== 'deny') {
+      if (permission !== "deny") {
         result[name] = tool.toAISDKTool();
       }
     }
@@ -133,7 +151,10 @@ export class ToolRegistry {
    * Return AI SDK tools with permission checks wrapping each execute.
    * Tools denied by the check return an error message instead of executing.
    */
-  toAISDKToolsWithPermissions(check: PermissionCheckFn, allowedNames?: string[]): Record<string, any> {
+  toAISDKToolsWithPermissions(
+    check: PermissionCheckFn,
+    allowedNames?: string[],
+  ): Record<string, any> {
     const allowed = allowedNames ? new Set(allowedNames) : null;
     const result: Record<string, any> = {};
     for (const [name, toolDef] of this.tools) {
@@ -143,13 +164,16 @@ export class ToolRegistry {
         inputSchema: toolDef.inputSchema,
         execute: async (input: any) => {
           const decision = check(name, toolDef.permission);
-          if (decision === 'deny') {
-            const result = normalizeResult({ error: `Tool '${name}' is blocked in the current permission mode.`, blocked: true });
+          if (decision === "deny") {
+            const result = normalizeResult({
+              error: `Tool '${name}' is blocked in the current permission mode.`,
+              blocked: true,
+            });
             getToolHealthTracker().recordFailure(name, result.error);
             return result;
           }
           if (!getToolRateLimiter().check(name)) {
-            const msg = `Tool '${name}' rate-limited (max ${getToolRateLimiter()['maxPerMinute']}/min). Wait before retrying.`;
+            const msg = `Tool '${name}' rate-limited (max ${getToolRateLimiter()["maxPerMinute"]}/min). Wait before retrying.`;
             getToolHealthTracker().recordFailure(name, msg);
             return normalizeResult({ error: msg, blocked: true });
           }
@@ -159,11 +183,16 @@ export class ToolRegistry {
             if (result.ok) {
               getToolHealthTracker().recordSuccess(name);
             } else {
-              getToolHealthTracker().recordFailure(name, result.error ?? 'unknown error');
+              getToolHealthTracker().recordFailure(
+                name,
+                result.error ?? "unknown error",
+              );
             }
             return result;
           } catch (err: any) {
-            const result = normalizeResult({ error: err.message ?? String(err) });
+            const result = normalizeResult({
+              error: err.message ?? String(err),
+            });
             getToolHealthTracker().recordFailure(name, result.error);
             return result;
           }
@@ -173,7 +202,11 @@ export class ToolRegistry {
     return result;
   }
 
-  listTools(): Array<{ name: string; description: string; permission: ToolPermission }> {
+  listTools(): Array<{
+    name: string;
+    description: string;
+    permission: ToolPermission;
+  }> {
     return this.getAll().map((t) => ({
       name: t.name,
       description: t.description,
