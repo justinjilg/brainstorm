@@ -97,10 +97,16 @@ export async function createProviderRegistry(
     });
   }
 
-  // If BR SaaS is available, all cloud models are reachable through it
-  const reachableCloudModels = hasBrainstormSaaS
-    ? CLOUD_MODELS
-    : CLOUD_MODELS.filter((m) => availableCloudProviders.has(m.provider));
+  // Determine reachable cloud models:
+  // If user has direct provider keys, prefer those models (avoid SaaS routing failures).
+  // Only fall back to "all models via SaaS" when no direct keys are set.
+  const hasDirectKeys =
+    availableCloudProviders.size > (hasBrainstormSaaS ? 1 : 0);
+  const reachableCloudModels = hasDirectKeys
+    ? CLOUD_MODELS.filter((m) => availableCloudProviders.has(m.provider))
+    : hasBrainstormSaaS
+      ? CLOUD_MODELS
+      : [];
 
   let allModels = [...reachableCloudModels];
 
