@@ -20,3 +20,4 @@ export { BuildStateTracker, type BuildResult, type BuildStatus } from './agent/b
 export { LoopDetector, type LoopWarning } from './agent/loop-detector.js';
 export { detectTone, toneGuidance, type UserTone, type ToneResult } from './agent/sentiment.js';
 export { ReactionTracker, type ReactionSignal, type ReactionEntry } from './agent/reaction-tracker.js';
+export { SessionPatternLearner } from './learning/session-patterns.js';

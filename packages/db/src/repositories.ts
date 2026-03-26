@@ -154,3 +154,81 @@ export class CostRepository {
     }));
   }
 }
+
+// ── Session Patterns ────────────────────────────────────────────────
+
+export interface SessionPattern {
+  id: number;
+  projectPath: string;
+  patternType: 'tool_success' | 'command_timing' | 'user_preference' | 'model_choice';
+  key: string;
+  value: string;
+  confidence: number;
+  occurrences: number;
+  lastSeen: number;
+}
+
+export class PatternRepository {
+  constructor(private db: Database.Database) {}
+
+  /** Upsert a pattern — increments occurrences if exists, creates if not. */
+  record(projectPath: string, patternType: SessionPattern['patternType'], key: string, value: string, confidence = 0.5): void {
+    this.db.prepare(`
+      INSERT INTO session_patterns (project_path, pattern_type, key, value, confidence, occurrences, last_seen)
+      VALUES (?, ?, ?, ?, ?, 1, unixepoch())
+      ON CONFLICT(project_path, pattern_type, key)
+      DO UPDATE SET
+        value = excluded.value,
+        confidence = MIN(1.0, confidence + 0.1),
+        occurrences = occurrences + 1,
+        last_seen = unixepoch()
+    `).run(projectPath, patternType, key, value, confidence);
+  }
+
+  /** Get all patterns for a project, optionally filtered by type. */
+  getForProject(projectPath: string, patternType?: SessionPattern['patternType']): SessionPattern[] {
+    const query = patternType
+      ? 'SELECT * FROM session_patterns WHERE project_path = ? AND pattern_type = ? ORDER BY confidence DESC'
+      : 'SELECT * FROM session_patterns WHERE project_path = ? ORDER BY confidence DESC';
+    const rows = (patternType
+      ? this.db.prepare(query).all(projectPath, patternType)
+      : this.db.prepare(query).all(projectPath)) as any[];
+
+    return rows.map((r) => ({
+      id: r.id,
+      projectPath: r.project_path,
+      patternType: r.pattern_type,
+      key: r.key,
+      value: r.value,
+      confidence: r.confidence,
+      occurrences: r.occurrences,
+      lastSeen: r.last_seen,
+    }));
+  }
+
+  /** Decay old patterns — reduce confidence for patterns not seen in N days. */
+  decayOld(maxAgeDays = 30): number {
+    const cutoff = Math.floor(Date.now() / 1000) - maxAgeDays * 86400;
+    const result = this.db.prepare(`
+      DELETE FROM session_patterns WHERE last_seen < ? AND confidence < 0.3
+    `).run(cutoff);
+    // Decay confidence for old but still-relevant patterns
+    this.db.prepare(`
+      UPDATE session_patterns SET confidence = MAX(0.1, confidence - 0.2)
+      WHERE last_seen < ?
+    `).run(cutoff);
+    return result.changes;
+  }
+
+  /** Format patterns as a context string for system prompt injection. */
+  formatForPrompt(projectPath: string): string {
+    const patterns = this.getForProject(projectPath);
+    if (patterns.length === 0) return '';
+
+    const lines: string[] = ['[Project patterns from previous sessions]'];
+    for (const p of patterns.slice(0, 10)) {
+      lines.push(`- ${p.patternType}: ${p.key} → ${p.value} (${p.occurrences}x, confidence ${p.confidence.toFixed(1)})`);
+    }
+    return lines.join('\n');
+  }
+}
