@@ -131,6 +131,11 @@ export {
 } from "./search/lineage.js";
 export { createAuditMiddleware, getAuditLog } from "./audit/logger.js";
 export {
+  learnStyle,
+  formatStyleContext,
+  type StyleProfile,
+} from "./learning/style-learner.js";
+export {
   invokeExternalAgent,
   type ExternalAgentConfig,
   type ExternalAgentResult,

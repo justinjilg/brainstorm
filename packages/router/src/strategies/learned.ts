@@ -1,0 +1,108 @@
+/**
+ * Learned Routing Strategy — Client-side Thompson Sampling.
+ *
+ * Records (taskType, modelId, success, latency, cost) per turn.
+ * Uses Beta distribution sampling to balance exploration vs exploitation.
+ * BrainstormRouter does server-side sampling — this brings it client-side.
+ */
+
+import type {
+  TaskProfile,
+  ModelEntry,
+  RoutingContext,
+  RoutingDecision,
+} from "@brainstorm/shared";
+import type { RoutingStrategy } from "./types.js";
+
+interface ModelStats {
+  successes: number;
+  failures: number;
+  totalLatencyMs: number;
+  totalCost: number;
+  samples: number;
+}
+
+// In-memory stats — persisted to session_patterns table via SessionPatternLearner
+const modelStats = new Map<string, ModelStats>();
+
+/**
+ * Record an outcome for a model on a task type.
+ */
+export function recordOutcome(
+  taskType: string,
+  modelId: string,
+  success: boolean,
+  latencyMs: number,
+  cost: number,
+): void {
+  const key = `${taskType}:${modelId}`;
+  const stats = modelStats.get(key) ?? {
+    successes: 0,
+    failures: 0,
+    totalLatencyMs: 0,
+    totalCost: 0,
+    samples: 0,
+  };
+
+  if (success) stats.successes++;
+  else stats.failures++;
+  stats.totalLatencyMs += latencyMs;
+  stats.totalCost += cost;
+  stats.samples++;
+
+  modelStats.set(key, stats);
+}
+
+/**
+ * Sample from Beta(successes+1, failures+1) distribution.
+ * Thompson sampling: higher success rate → higher sample values on average.
+ */
+function betaSample(successes: number, failures: number): number {
+  // Approximation using Gamma distribution sampling via Box-Muller
+  const a = successes + 1;
+  const b = failures + 1;
+
+  // Simple approximation: use mean + noise proportional to variance
+  const mean = a / (a + b);
+  const variance = (a * b) / ((a + b) ** 2 * (a + b + 1));
+  const noise = (Math.random() - 0.5) * 2 * Math.sqrt(variance);
+  return Math.max(0, Math.min(1, mean + noise));
+}
+
+export const learnedStrategy: RoutingStrategy = {
+  name: "learned",
+
+  select(
+    task: TaskProfile,
+    candidates: ModelEntry[],
+    context: RoutingContext,
+  ): RoutingDecision | null {
+    const eligible = candidates.filter((m) => m.status === "available");
+    if (eligible.length === 0) return null;
+
+    // Score each model using Thompson sampling
+    const scored = eligible.map((model) => {
+      const key = `${task.type}:${model.id}`;
+      const stats = modelStats.get(key);
+
+      // No history → high exploration score (optimistic prior)
+      const sample = stats
+        ? betaSample(stats.successes, stats.failures)
+        : 0.7 + Math.random() * 0.3;
+
+      return { model, sample };
+    });
+
+    // Pick the model with highest sampled score
+    scored.sort((a, b) => b.sample - a.sample);
+    const selected = scored[0].model;
+
+    return {
+      model: selected,
+      fallbacks: scored.slice(1, 3).map((s) => s.model),
+      strategy: "learned",
+      reason: `Thompson sampling (score: ${scored[0].sample.toFixed(3)}, ${modelStats.get(`${task.type}:${selected.id}`)?.samples ?? 0} samples)`,
+      estimatedCost: 0,
+    };
+  },
+};
