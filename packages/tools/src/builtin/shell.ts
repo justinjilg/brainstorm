@@ -79,18 +79,30 @@ export function getBackgroundTasks(): BackgroundTask[] {
  * Collect output with head+tail truncation.
  * Keeps the first HEAD_BYTES and last TAIL_BYTES of output,
  * so both the start (config/setup) and end (errors/summary) are visible.
+ *
+ * Tail uses a fixed-size circular line buffer to avoid repeated large
+ * string allocations from concatenation + slicing.
  */
 class OutputCollector {
   private head = "";
-  private tail = "";
   private totalBytes = 0;
   private readonly maxHead: number;
   private readonly maxTail: number;
   private headFull = false;
 
+  // Circular line buffer for tail
+  private readonly tailLines: string[];
+  private tailWriteIdx = 0;
+  private tailLineCount = 0;
+  private tailBytes = 0;
+  private readonly maxTailLines: number;
+
   constructor(maxHead = HEAD_BYTES, maxTail = TAIL_BYTES) {
     this.maxHead = maxHead;
     this.maxTail = maxTail;
+    // Pre-allocate ring buffer — estimate ~80 chars/line average
+    this.maxTailLines = Math.max(64, Math.ceil(maxTail / 80));
+    this.tailLines = new Array(this.maxTailLines).fill("");
   }
 
   append(chunk: string): void {
@@ -107,18 +119,41 @@ class OutputCollector {
       chunk = chunk.slice(remaining);
     }
 
-    // Ring-buffer the tail
-    this.tail += chunk;
-    if (this.tail.length > this.maxTail * 2) {
-      this.tail = this.tail.slice(-this.maxTail);
+    // Split into lines and push into circular buffer
+    const lines = chunk.split("\n");
+    for (const line of lines) {
+      const evicted = this.tailLines[this.tailWriteIdx];
+      this.tailBytes -= evicted.length;
+      this.tailLines[this.tailWriteIdx] = line;
+      this.tailBytes += line.length;
+      this.tailWriteIdx = (this.tailWriteIdx + 1) % this.maxTailLines;
+      this.tailLineCount++;
     }
   }
 
   toString(): string {
     if (!this.headFull) return this.head;
-    const trimmedTail = this.tail.slice(-this.maxTail);
-    const omitted = this.totalBytes - this.head.length - trimmedTail.length;
-    return `${this.head}\n\n... ${omitted.toLocaleString()} bytes omitted ...\n\n${trimmedTail}`;
+
+    // Read lines from ring buffer in order
+    const count = Math.min(this.tailLineCount, this.maxTailLines);
+    const start =
+      this.tailLineCount >= this.maxTailLines ? this.tailWriteIdx : 0;
+    const ordered: string[] = [];
+    let bytes = 0;
+
+    for (let i = 0; i < count; i++) {
+      const idx = (start + i) % this.maxTailLines;
+      const line = this.tailLines[idx];
+      bytes += line.length;
+      // Trim from the start if we exceed maxTail bytes
+      if (bytes > this.maxTail && ordered.length > 0) continue;
+      ordered.push(line);
+    }
+
+    const tail = ordered.join("\n");
+    const omitted = this.totalBytes - this.head.length - tail.length;
+    if (omitted <= 0) return this.head + tail;
+    return `${this.head}\n\n... ${omitted.toLocaleString()} bytes omitted ...\n\n${tail}`;
   }
 }
 
