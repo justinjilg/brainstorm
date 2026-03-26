@@ -1,16 +1,29 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID } from "node:crypto";
 import type {
-  WorkflowDefinition, WorkflowRun, WorkflowStepRun, WorkflowStepDef,
-  WorkflowEvent, Artifact, AgentProfile, StepStatus,
-} from '@brainstorm/shared';
-import type { BrainstormConfig } from '@brainstorm/config';
-import type { ProviderRegistry } from '@brainstorm/providers';
-import { BrainstormRouter, CostTracker } from '@brainstorm/router';
-import { createDefaultToolRegistry, type ToolRegistry } from '@brainstorm/tools';
-import { runAgentLoop, buildSystemPrompt } from '@brainstorm/core';
-import { AgentManager, buildAgentSystemPrompt } from '@brainstorm/agents';
-import { buildStepContext } from './context-filter.js';
-import { extractConfidence, determineEscalation, isReviewApproved } from './confidence.js';
+  WorkflowDefinition,
+  WorkflowRun,
+  WorkflowStepRun,
+  WorkflowStepDef,
+  WorkflowEvent,
+  Artifact,
+  AgentProfile,
+  StepStatus,
+} from "@brainstorm/shared";
+import type { BrainstormConfig } from "@brainstorm/config";
+import type { ProviderRegistry } from "@brainstorm/providers";
+import { BrainstormRouter, CostTracker } from "@brainstorm/router";
+import {
+  createDefaultToolRegistry,
+  type ToolRegistry,
+} from "@brainstorm/tools";
+import { runAgentLoop, buildSystemPrompt } from "@brainstorm/core";
+import { AgentManager, buildAgentSystemPrompt } from "@brainstorm/agents";
+import { buildStepContext } from "./context-filter.js";
+import {
+  extractConfidence,
+  determineEscalation,
+  isReviewApproved,
+} from "./confidence.js";
 
 export interface WorkflowEngineOptions {
   config: BrainstormConfig;
@@ -32,14 +45,15 @@ export async function* runWorkflow(
   agentOverrides: Record<string, string>, // role → agentId overrides
   options: WorkflowEngineOptions,
 ): AsyncGenerator<WorkflowEvent> {
-  const { router, costTracker, agentManager, config, registry, projectPath } = options;
+  const { router, costTracker, agentManager, config, registry, projectPath } =
+    options;
 
   // Initialize the run
   const run: WorkflowRun = {
     id: randomUUID(),
     workflowId: definition.id,
     description: userRequest,
-    status: 'running',
+    status: "running",
     steps: [],
     artifacts: [],
     totalCost: 0,
@@ -54,7 +68,8 @@ export async function* runWorkflow(
   // Resolve agents for each step
   const stepAgents = new Map<string, AgentProfile>();
   for (const step of definition.steps) {
-    const overrideId = agentOverrides[step.agentRole] ?? agentOverrides[step.id];
+    const overrideId =
+      agentOverrides[step.agentRole] ?? agentOverrides[step.id];
     let agent: AgentProfile | null = null;
 
     if (overrideId) {
@@ -76,7 +91,8 @@ export async function* runWorkflow(
   // Cost forecast
   const forecast: Array<{ step: string; cost: number }> = [];
   for (const step of definition.steps) {
-    const agent = stepAgents.get(step.id)!;
+    const agent = stepAgents.get(step.id);
+    if (!agent) continue;
     const task = router.classify(userRequest);
     const decision = router.route(task);
     forecast.push({ step: step.id, cost: decision.estimatedCost });
@@ -84,8 +100,12 @@ export async function* runWorkflow(
   const totalEstimate = forecast.reduce((sum, f) => sum + f.cost, 0) * 1.3; // safety margin
   run.estimatedCost = totalEstimate;
 
-  yield { type: 'cost-forecast', estimated: totalEstimate, breakdown: forecast };
-  yield { type: 'workflow-started', run };
+  yield {
+    type: "cost-forecast",
+    estimated: totalEstimate,
+    breakdown: forecast,
+  };
+  yield { type: "workflow-started", run };
 
   // Execute steps
   let stepIndex = 0;
@@ -93,29 +113,49 @@ export async function* runWorkflow(
   const MAX_CONFIDENCE_RETRIES = 2;
   while (stepIndex < definition.steps.length) {
     const stepDef = definition.steps[stepIndex];
-    const agent = stepAgents.get(stepDef.id)!;
+    const agent = stepAgents.get(stepDef.id);
+    if (!agent) {
+      yield {
+        type: "step-failed" as any,
+        step: {
+          id: randomUUID(),
+          stepDefId: stepDef.id,
+          agentId: "unknown",
+          status: "failed" as const,
+          cost: 0,
+          iteration: run.iteration,
+        },
+        error: new Error(`No agent resolved for step "${stepDef.id}"`),
+      };
+      stepIndex++;
+      continue;
+    }
 
     // Create step run
     const stepRun: WorkflowStepRun = {
       id: randomUUID(),
       stepDefId: stepDef.id,
       agentId: agent.id,
-      status: 'running',
+      status: "running",
       cost: 0,
       iteration: run.iteration,
       startedAt: Math.floor(Date.now() / 1000),
     };
     run.steps.push(stepRun);
 
-    yield { type: 'step-started', step: stepRun, agent };
+    yield { type: "step-started", step: stepRun, agent };
 
     // Check build state before executing step — pause if build is broken
     if (options.buildState) {
       const bs = options.buildState;
       if (bs.isBroken()) {
-        yield { type: 'workflow-paused', reason: `Build is broken: ${bs.getLastError()}. Fix before continuing.`, run };
-        stepRun.status = 'skipped';
-        stepRun.error = 'Build broken — step skipped';
+        yield {
+          type: "workflow-paused",
+          reason: `Build is broken: ${bs.getLastError()}. Fix before continuing.`,
+          run,
+        };
+        stepRun.status = "skipped";
+        stepRun.error = "Build broken — step skipped";
         break;
       }
     }
@@ -129,7 +169,7 @@ export async function* runWorkflow(
       const tools = createDefaultToolRegistry();
 
       // Run the agent loop
-      let fullResponse = '';
+      let fullResponse = "";
       const sessionId = run.id;
       const systemPrompt = ctx.systemPrompt;
 
@@ -149,12 +189,12 @@ export async function* runWorkflow(
         ...(stepModelId ? { preferredModelId: stepModelId } : {}),
       })) {
         // Forward agent events as step progress
-        yield { type: 'step-progress', stepId: stepDef.id, event };
+        yield { type: "step-progress", stepId: stepDef.id, event };
 
-        if (event.type === 'text-delta') {
+        if (event.type === "text-delta") {
           fullResponse += event.delta;
         }
-        if (event.type === 'done') {
+        if (event.type === "done") {
           stepRun.cost = event.totalCost - run.totalCost;
           run.totalCost = event.totalCost;
         }
@@ -179,10 +219,10 @@ export async function* runWorkflow(
 
       run.artifacts.push(artifact);
       stepRun.artifactId = artifact.id;
-      stepRun.status = 'completed';
+      stepRun.status = "completed";
       stepRun.completedAt = Math.floor(Date.now() / 1000);
 
-      yield { type: 'step-completed', step: stepRun, artifact };
+      yield { type: "step-completed", step: stepRun, artifact };
 
       // Check confidence escalation
       const escalation = determineEscalation(
@@ -190,17 +230,32 @@ export async function* runWorkflow(
         agent.confidenceThreshold,
         run.iteration < run.maxIterations,
       );
-      if (escalation === 'pause') {
-        yield { type: 'confidence-escalation', step: stepRun, confidence: artifact.confidence, action: 'paused — low confidence' };
-        run.status = 'paused';
+      if (escalation === "pause") {
+        yield {
+          type: "confidence-escalation",
+          step: stepRun,
+          confidence: artifact.confidence,
+          action: "paused — low confidence",
+        };
+        run.status = "paused";
         return; // Pause workflow for user decision
       }
-      if (escalation === 'retry') {
+      if (escalation === "retry") {
         confidenceRetries++;
         if (confidenceRetries > MAX_CONFIDENCE_RETRIES) {
-          yield { type: 'confidence-escalation', step: stepRun, confidence: artifact.confidence, action: 'max confidence retries reached — continuing' };
+          yield {
+            type: "confidence-escalation",
+            step: stepRun,
+            confidence: artifact.confidence,
+            action: "max confidence retries reached — continuing",
+          };
         } else {
-          yield { type: 'confidence-escalation', step: stepRun, confidence: artifact.confidence, action: `retrying step (${confidenceRetries}/${MAX_CONFIDENCE_RETRIES})` };
+          yield {
+            type: "confidence-escalation",
+            step: stepRun,
+            confidence: artifact.confidence,
+            action: `retrying step (${confidenceRetries}/${MAX_CONFIDENCE_RETRIES})`,
+          };
           continue; // Re-run same step
         }
       }
@@ -209,10 +264,12 @@ export async function* runWorkflow(
       if (stepDef.isReviewStep && !isReviewApproved(artifact)) {
         if (run.iteration < run.maxIterations && stepDef.loopBackTo) {
           run.iteration++;
-          const loopBackIndex = definition.steps.findIndex((s) => s.id === stepDef.loopBackTo);
+          const loopBackIndex = definition.steps.findIndex(
+            (s) => s.id === stepDef.loopBackTo,
+          );
           if (loopBackIndex >= 0) {
             yield {
-              type: 'review-rejected',
+              type: "review-rejected",
               step: stepRun,
               reason: artifact.content.slice(0, 200),
               loopingBackTo: stepDef.loopBackTo,
@@ -225,40 +282,44 @@ export async function* runWorkflow(
 
       stepIndex++;
     } catch (error: any) {
-      stepRun.status = 'failed';
+      stepRun.status = "failed";
       stepRun.error = error.message;
       stepRun.completedAt = Math.floor(Date.now() / 1000);
 
-      yield { type: 'step-failed', step: stepRun, error };
+      yield { type: "step-failed", step: stepRun, error };
 
       // Record failure for routing fallback
       router.recordFailure(agent.modelId, error.message);
 
-      run.status = 'failed';
-      yield { type: 'workflow-failed', run, error };
+      run.status = "failed";
+      yield { type: "workflow-failed", run, error };
       return;
     }
   }
 
-  run.status = 'completed';
+  run.status = "completed";
   run.updatedAt = Math.floor(Date.now() / 1000);
-  yield { type: 'workflow-completed', run };
+  yield { type: "workflow-completed", run };
 }
 
 function shouldUseTools(step: WorkflowStepDef, agent: AgentProfile): boolean {
-  if (agent.allowedTools === 'all') return true;
-  if (Array.isArray(agent.allowedTools) && agent.allowedTools.length > 0) return true;
+  if (agent.allowedTools === "all") return true;
+  if (Array.isArray(agent.allowedTools) && agent.allowedTools.length > 0)
+    return true;
   return false;
 }
 
-function detectContentType(content: string): Artifact['contentType'] {
+function detectContentType(content: string): Artifact["contentType"] {
   const trimmed = content.trim();
-  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-    try { JSON.parse(trimmed); return 'json'; } catch {}
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      JSON.parse(trimmed);
+      return "json";
+    } catch {}
   }
-  if (trimmed.includes('```')) return 'code';
-  if (trimmed.includes('# ') || trimmed.includes('## ')) return 'markdown';
-  return 'text';
+  if (trimmed.includes("```")) return "code";
+  if (trimmed.includes("# ") || trimmed.includes("## ")) return "markdown";
+  return "text";
 }
 
 function createDefaultAgent(role: string): AgentProfile {
@@ -267,15 +328,15 @@ function createDefaultAgent(role: string): AgentProfile {
     id: `default-${role}`,
     displayName: role.charAt(0).toUpperCase() + role.slice(1),
     role: role as any,
-    description: '',
-    modelId: 'auto',
-    allowedTools: role === 'coder' ? 'all' : ['file_read', 'glob', 'grep'],
-    budget: { exhaustionAction: 'downgrade' },
+    description: "",
+    modelId: "auto",
+    allowedTools: role === "coder" ? "all" : ["file_read", "glob", "grep"],
+    budget: { exhaustionAction: "downgrade" },
     confidenceThreshold: 0.7,
     maxSteps: 10,
     fallbackChain: [],
     guardrails: {},
-    lifecycle: 'active',
+    lifecycle: "active",
     createdAt: now,
     updatedAt: now,
   };
