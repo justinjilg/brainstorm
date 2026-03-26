@@ -1,81 +1,183 @@
-export { defineTool, type BrainstormToolDef } from './base.js';
-export { FileReadCache, getFileReadCache, resetFileReadCache } from './file-cache.js';
-export { SessionFileTracker, getFileTracker, resetFileTracker } from './file-tracker.js';
-export { ToolHealthTracker, getToolHealthTracker, resetToolHealthTracker, type ToolHealthEntry } from './tool-health.js';
-export { CheckpointManager, initCheckpointManager, getCheckpointManager } from './checkpoint.js';
-export { undoTool } from './builtin/undo.js';
-export { scratchpadWriteTool, scratchpadReadTool, getScratchpadEntries, clearScratchpad, formatScratchpadContext } from './builtin/scratchpad.js';
-export { askUserTool, resolveAskUser, hasPendingQuestion } from './builtin/ask-user.js';
-export { routingHintTool, getRoutingHint, consumeRoutingHint, resetRoutingHint, type RoutingPreference } from './builtin/routing-hint.js';
-export { costEstimateTool } from './builtin/cost-estimate.js';
-export { isParallelSafe, classifyToolBatch, executeWithParallelism } from './parallel.js';
-export { getTierForComplexity, getToolsForTier, isToolInTier, escalateTier, getTierForTool, estimateTokenSavings, type ToolTier } from './progressive.js';
-export { DockerSandbox, isSafeCommand, translatePath, type SandboxConfig, type SandboxExecResult } from './sandbox/docker-sandbox.js';
-export { planPreviewTool } from './builtin/plan-preview.js';
-export { beginTransactionTool, commitTransactionTool, rollbackTransactionTool, isTransactionActive, recordTransactionFile } from './builtin/transaction.js';
-export { ToolRegistry, ToolRateLimiter, getToolRateLimiter, type PermissionCheckFn } from './registry.js';
-export { fileReadTool } from './builtin/file-read.js';
-export { fileWriteTool } from './builtin/file-write.js';
-export { fileEditTool } from './builtin/file-edit.js';
-export { shellTool } from './builtin/shell.js';
-export { globTool } from './builtin/glob.js';
-export { grepTool } from './builtin/grep.js';
-export { gitStatusTool } from './builtin/git-status.js';
-export { gitDiffTool } from './builtin/git-diff.js';
-export { gitLogTool } from './builtin/git-log.js';
-export { gitCommitTool } from './builtin/git-commit.js';
-export { checkGitSafety, formatViolations, hasHardBlock, type GitSafetyViolation } from './builtin/git-safety.js';
-export { checkSandbox, type SandboxLevel } from './builtin/sandbox.js';
-export { configureSandbox, setBackgroundEventHandler, getBackgroundTasks, setToolOutputHandler } from './builtin/shell.js';
-export { ghPrTool } from './builtin/gh-pr.js';
-export { ghIssueTool } from './builtin/gh-issue.js';
-export { gitBranchTool } from './builtin/git-branch.js';
-export { gitStashTool } from './builtin/git-stash.js';
-export { listDirTool } from './builtin/list-dir.js';
-export { multiEditTool } from './builtin/multi-edit.js';
-export { batchEditTool } from './builtin/batch-edit.js';
-export { webFetchTool } from './builtin/web-fetch.js';
-export { webSearchTool } from './builtin/web-search.js';
-export { processSpawnTool, processKillTool } from './builtin/process-manage.js';
-export { taskCreateTool, taskUpdateTool, taskListTool, setTaskEventHandler, clearTasks } from './builtin/task-manage.js';
+export { createTimeoutController } from "./timeout.js";
+export { defineTool, type BrainstormToolDef } from "./base.js";
 export {
-  brStatusTool, brBudgetTool, brLeaderboardTool, brInsightsTool,
-  brModelsTool, brMemorySearchTool, brMemoryStoreTool, brHealthTool,
-} from './builtin/br-intelligence.js';
+  FileReadCache,
+  getFileReadCache,
+  resetFileReadCache,
+} from "./file-cache.js";
+export {
+  SessionFileTracker,
+  getFileTracker,
+  resetFileTracker,
+} from "./file-tracker.js";
+export {
+  ToolHealthTracker,
+  getToolHealthTracker,
+  resetToolHealthTracker,
+  type ToolHealthEntry,
+} from "./tool-health.js";
+export {
+  CheckpointManager,
+  initCheckpointManager,
+  getCheckpointManager,
+} from "./checkpoint.js";
+export { undoTool } from "./builtin/undo.js";
+export {
+  scratchpadWriteTool,
+  scratchpadReadTool,
+  getScratchpadEntries,
+  clearScratchpad,
+  formatScratchpadContext,
+} from "./builtin/scratchpad.js";
+export {
+  askUserTool,
+  resolveAskUser,
+  hasPendingQuestion,
+} from "./builtin/ask-user.js";
+export {
+  routingHintTool,
+  getRoutingHint,
+  consumeRoutingHint,
+  resetRoutingHint,
+  type RoutingPreference,
+} from "./builtin/routing-hint.js";
+export { costEstimateTool } from "./builtin/cost-estimate.js";
+export {
+  isParallelSafe,
+  classifyToolBatch,
+  executeWithParallelism,
+} from "./parallel.js";
+export {
+  getTierForComplexity,
+  getToolsForTier,
+  isToolInTier,
+  escalateTier,
+  getTierForTool,
+  estimateTokenSavings,
+  type ToolTier,
+} from "./progressive.js";
+export {
+  DockerSandbox,
+  isSafeCommand,
+  translatePath,
+  type SandboxConfig,
+  type SandboxExecResult,
+} from "./sandbox/docker-sandbox.js";
+export { planPreviewTool } from "./builtin/plan-preview.js";
+export {
+  beginTransactionTool,
+  commitTransactionTool,
+  rollbackTransactionTool,
+  isTransactionActive,
+  recordTransactionFile,
+} from "./builtin/transaction.js";
+export {
+  ToolRegistry,
+  ToolRateLimiter,
+  getToolRateLimiter,
+  type PermissionCheckFn,
+} from "./registry.js";
+export { fileReadTool } from "./builtin/file-read.js";
+export { fileWriteTool } from "./builtin/file-write.js";
+export { fileEditTool } from "./builtin/file-edit.js";
+export { shellTool } from "./builtin/shell.js";
+export { globTool } from "./builtin/glob.js";
+export { grepTool } from "./builtin/grep.js";
+export { gitStatusTool } from "./builtin/git-status.js";
+export { gitDiffTool } from "./builtin/git-diff.js";
+export { gitLogTool } from "./builtin/git-log.js";
+export { gitCommitTool } from "./builtin/git-commit.js";
+export {
+  checkGitSafety,
+  formatViolations,
+  hasHardBlock,
+  type GitSafetyViolation,
+} from "./builtin/git-safety.js";
+export { checkSandbox, type SandboxLevel } from "./builtin/sandbox.js";
+export {
+  configureSandbox,
+  setBackgroundEventHandler,
+  getBackgroundTasks,
+  setToolOutputHandler,
+} from "./builtin/shell.js";
+export { ghPrTool } from "./builtin/gh-pr.js";
+export { ghIssueTool } from "./builtin/gh-issue.js";
+export { gitBranchTool } from "./builtin/git-branch.js";
+export { gitStashTool } from "./builtin/git-stash.js";
+export { listDirTool } from "./builtin/list-dir.js";
+export { multiEditTool } from "./builtin/multi-edit.js";
+export { batchEditTool } from "./builtin/batch-edit.js";
+export { webFetchTool } from "./builtin/web-fetch.js";
+export { webSearchTool } from "./builtin/web-search.js";
+export { processSpawnTool, processKillTool } from "./builtin/process-manage.js";
+export {
+  taskCreateTool,
+  taskUpdateTool,
+  taskListTool,
+  setTaskEventHandler,
+  clearTasks,
+} from "./builtin/task-manage.js";
+export {
+  brStatusTool,
+  brBudgetTool,
+  brLeaderboardTool,
+  brInsightsTool,
+  brModelsTool,
+  brMemorySearchTool,
+  brMemoryStoreTool,
+  brHealthTool,
+} from "./builtin/br-intelligence.js";
 
-import { ToolRegistry } from './registry.js';
-import { fileReadTool } from './builtin/file-read.js';
-import { fileWriteTool } from './builtin/file-write.js';
-import { fileEditTool } from './builtin/file-edit.js';
-import { shellTool } from './builtin/shell.js';
-import { globTool } from './builtin/glob.js';
-import { grepTool } from './builtin/grep.js';
-import { gitStatusTool } from './builtin/git-status.js';
-import { gitDiffTool } from './builtin/git-diff.js';
-import { gitLogTool } from './builtin/git-log.js';
-import { gitCommitTool } from './builtin/git-commit.js';
-import { ghPrTool } from './builtin/gh-pr.js';
-import { ghIssueTool } from './builtin/gh-issue.js';
-import { gitBranchTool } from './builtin/git-branch.js';
-import { gitStashTool } from './builtin/git-stash.js';
-import { listDirTool } from './builtin/list-dir.js';
-import { multiEditTool } from './builtin/multi-edit.js';
-import { batchEditTool } from './builtin/batch-edit.js';
-import { webFetchTool } from './builtin/web-fetch.js';
-import { webSearchTool } from './builtin/web-search.js';
-import { processSpawnTool, processKillTool } from './builtin/process-manage.js';
-import { taskCreateTool, taskUpdateTool, taskListTool } from './builtin/task-manage.js';
-import { undoTool } from './builtin/undo.js';
-import { scratchpadWriteTool, scratchpadReadTool } from './builtin/scratchpad.js';
-import { askUserTool } from './builtin/ask-user.js';
-import { routingHintTool } from './builtin/routing-hint.js';
-import { costEstimateTool } from './builtin/cost-estimate.js';
-import { planPreviewTool } from './builtin/plan-preview.js';
-import { beginTransactionTool, commitTransactionTool, rollbackTransactionTool } from './builtin/transaction.js';
+import { ToolRegistry } from "./registry.js";
+import { fileReadTool } from "./builtin/file-read.js";
+import { fileWriteTool } from "./builtin/file-write.js";
+import { fileEditTool } from "./builtin/file-edit.js";
+import { shellTool } from "./builtin/shell.js";
+import { globTool } from "./builtin/glob.js";
+import { grepTool } from "./builtin/grep.js";
+import { gitStatusTool } from "./builtin/git-status.js";
+import { gitDiffTool } from "./builtin/git-diff.js";
+import { gitLogTool } from "./builtin/git-log.js";
+import { gitCommitTool } from "./builtin/git-commit.js";
+import { ghPrTool } from "./builtin/gh-pr.js";
+import { ghIssueTool } from "./builtin/gh-issue.js";
+import { gitBranchTool } from "./builtin/git-branch.js";
+import { gitStashTool } from "./builtin/git-stash.js";
+import { listDirTool } from "./builtin/list-dir.js";
+import { multiEditTool } from "./builtin/multi-edit.js";
+import { batchEditTool } from "./builtin/batch-edit.js";
+import { webFetchTool } from "./builtin/web-fetch.js";
+import { webSearchTool } from "./builtin/web-search.js";
+import { processSpawnTool, processKillTool } from "./builtin/process-manage.js";
 import {
-  brStatusTool, brBudgetTool, brLeaderboardTool, brInsightsTool,
-  brModelsTool, brMemorySearchTool, brMemoryStoreTool, brHealthTool,
-} from './builtin/br-intelligence.js';
+  taskCreateTool,
+  taskUpdateTool,
+  taskListTool,
+} from "./builtin/task-manage.js";
+import { undoTool } from "./builtin/undo.js";
+import {
+  scratchpadWriteTool,
+  scratchpadReadTool,
+} from "./builtin/scratchpad.js";
+import { askUserTool } from "./builtin/ask-user.js";
+import { routingHintTool } from "./builtin/routing-hint.js";
+import { costEstimateTool } from "./builtin/cost-estimate.js";
+import { planPreviewTool } from "./builtin/plan-preview.js";
+import {
+  beginTransactionTool,
+  commitTransactionTool,
+  rollbackTransactionTool,
+} from "./builtin/transaction.js";
+import {
+  brStatusTool,
+  brBudgetTool,
+  brLeaderboardTool,
+  brInsightsTool,
+  brModelsTool,
+  brMemorySearchTool,
+  brMemoryStoreTool,
+  brHealthTool,
+} from "./builtin/br-intelligence.js";
 
 export function createDefaultToolRegistry(): ToolRegistry {
   const registry = new ToolRegistry();
