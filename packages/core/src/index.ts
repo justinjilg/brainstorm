@@ -17,3 +17,4 @@ export { normalizeInsightMarkers } from './agent/insights.js';
 export { getOutputStylePrompt, OUTPUT_STYLES, type OutputStyle } from './agent/output-styles.js';
 export { createSubagentTool } from './agent/subagent-tool.js';
 export { BuildStateTracker, type BuildResult, type BuildStatus } from './agent/build-state.js';
+export { LoopDetector, type LoopWarning } from './agent/loop-detector.js';

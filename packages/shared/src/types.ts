@@ -201,6 +201,7 @@ export type AgentEvent =
   | { type: 'model-retry'; fromModel: string; toModel: string; reason: string }
   | { type: 'empty-response'; modelId: string }
   | { type: 'context-budget'; used: number; limit: number; percent: number }
+  | { type: 'loop-warning'; message: string }
   | { type: 'interrupted' }
   | { type: 'error'; error: Error }
   | { type: 'done'; totalCost: number; totalTokens?: { input: number; output: number } };
