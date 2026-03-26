@@ -34,3 +34,4 @@ export { predictTaskCost, formatCostPrediction, type CostPrediction, type CostTi
 export { MiddlewarePipeline, createDefaultMiddlewarePipeline, isBlocked, type AgentMiddleware, type MiddlewareState, type MiddlewareMessage, type MiddlewareToolCall, type MiddlewareToolResult, type MiddlewareBlock } from './middleware/index.js';
 export { turnContextMiddleware, toolHealthMiddleware, buildStateMiddleware, loopDetectionMiddleware, sentimentMiddleware, subagentLimitMiddleware, trajectoryReductionMiddleware, autoLintMiddleware } from './middleware/index.js';
 export { SessionCheckpointer, type SessionCheckpointData } from './session/session-checkpoint.js';
+export { shouldUseEnsemble, pruneResults, selectWinner, checkEarlyTermination, formatEnsembleResult, type EnsembleCandidate, type EnsembleResult, type EnsembleStrategy } from './agent/ensemble.js';
