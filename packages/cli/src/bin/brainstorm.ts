@@ -846,6 +846,16 @@ program
 const VAULT_PATH = join(homedir(), '.brainstorm', 'vault.enc');
 
 /** Prompt for a password with masked echo. Supports BRAINSTORM_VAULT_PASSWORD env for non-interactive use. */
+function printResumeSummary(session: any, sessionManager: SessionManager): void {
+  const age = Math.floor((Date.now() / 1000 - session.createdAt) / 60);
+  const ageStr = age < 60 ? `${age}m ago` : age < 1440 ? `${Math.floor(age / 60)}h ago` : `${Math.floor(age / 1440)}d ago`;
+  const history = sessionManager.getHistory();
+  const lastMsg = history.length > 0 ? history[history.length - 1] : null;
+  const lastPreview = lastMsg ? `"${lastMsg.content.slice(0, 60)}${lastMsg.content.length > 60 ? '...' : ''}"` : 'none';
+  console.log(`  Resumed session ${session.id.slice(0, 8)} | ${session.messageCount} msgs | $${(session.totalCost ?? 0).toFixed(4)} | ${ageStr}`);
+  if (lastMsg) console.log(`  Last ${lastMsg.role}: ${lastPreview}`);
+}
+
 function promptPassword(prompt: string): Promise<string> {
   // Non-interactive: use env var if set (for CI/CD and scripting)
   const envPassword = process.env.BRAINSTORM_VAULT_PASSWORD;
@@ -1115,11 +1125,11 @@ program
     } else if (opts.resume) {
       session = sessionManager.resume(opts.resume);
       if (!session) { console.error(`  Session '${opts.resume}' not found.`); process.exit(1); }
-      console.log(`  Resumed session ${session.id.slice(0, 8)} (${session.messageCount} messages)`);
+      printResumeSummary(session, sessionManager);
     } else if (opts.continue) {
       session = sessionManager.resumeLatest(projectPath);
       if (!session) { session = sessionManager.start(projectPath); }
-      else { console.log(`  Continued session ${session.id.slice(0, 8)} (${session.messageCount} messages)`); }
+      else { printResumeSummary(session, sessionManager); }
     } else {
       session = sessionManager.start(projectPath);
     }
