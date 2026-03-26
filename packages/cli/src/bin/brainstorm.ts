@@ -107,9 +107,9 @@ async function connectMCPServers(
     );
   }
 
-  // BrainstormRouter intelligence tools are now built-in natively
-  // (br_status, br_budget, br_leaderboard, etc.) — no MCP needed.
-  // MCP connection disabled to avoid schema compatibility issues.
+  // BrainstormRouter intelligence tools are built-in natively
+  // (br_status, br_budget, etc.). MCP is used for user-configured servers.
+  // Tool definitions are validated before registration (see mcp/client.ts).
 
   const { connected, errors } = await mcp.connectAll(tools);
   if (connected.length > 0) {
