@@ -114,8 +114,10 @@ export interface AgentLoopOptions {
   onTurnComplete?: (ctx: TurnContext) => void;
   /** Build state tracker — records build/test results for persistent warnings. */
   buildState?: BuildStateTracker;
-  /** Internal: marks this as a retry attempt to prevent infinite recursion. */
-  _retryAttempt?: boolean;
+  /** Internal: tracks fallback depth to cap retries (max 2). */
+  _retryDepth?: number;
+  /** Internal: tracks models already tried for error reporting. */
+  _modelsTried?: string[];
   /** Optional middleware pipeline for composable agent interceptors. */
   middleware?: MiddlewarePipeline;
   /** Enable trajectory recording to JSONL. */
@@ -406,19 +408,36 @@ export async function* runAgentLoop(
         .filter((m): m is ModelEntry => m != null && m.status === 'available');
     }
 
-    if ((isEmpty) && fallbacks.length > 0 && !options._retryAttempt) {
+    const MAX_FALLBACK_DEPTH = 2;
+    const retryDepth = options._retryDepth ?? 0;
+    const modelsTried = [...(options._modelsTried ?? []), decision.model.id];
+
+    if ((isEmpty) && fallbacks.length > 0 && retryDepth < MAX_FALLBACK_DEPTH) {
       const reason = isEmpty ? 'empty_response' : 'tool_blocked';
       router.recordFailure(decision.model.id, reason);
-      const fallbackModel = fallbacks[0];
-      yield { type: 'model-retry' as const, fromModel: decision.model.id, toModel: fallbackModel.id, reason };
+      // Pick next fallback that hasn't been tried yet
+      const fallbackModel = fallbacks.find((f) => !modelsTried.includes(f.id));
+      if (fallbackModel) {
+        yield { type: 'model-retry' as const, fromModel: decision.model.id, toModel: fallbackModel.id, reason };
 
-      // Retry with fallback model — recurse with _retryAttempt flag to prevent infinite loop
-      yield* runAgentLoop(messages, {
-        ...options,
-        preferredModelId: fallbackModel.id,
-        _retryAttempt: true,
-      } as any);
-      return;
+        // Retry with fallback model — increment depth and track models tried
+        yield* runAgentLoop(messages, {
+          ...options,
+          preferredModelId: fallbackModel.id,
+          _retryDepth: retryDepth + 1,
+          _modelsTried: modelsTried,
+        } as any);
+        return;
+      }
+    }
+
+    // All retries exhausted — yield structured error so caller can surface it
+    if (isEmpty) {
+      yield {
+        type: 'fallback-exhausted' as const,
+        modelsTried,
+        reason: 'All fallback models returned empty responses',
+      };
     }
 
     // Extract gateway response headers (X-BR-*) for cost reconciliation and telemetry.
