@@ -28,3 +28,4 @@ export { FileWatcher, type FileChange } from './agent/file-watcher.js';
 export { collectProjectHealth, formatProjectHealth, type ProjectHealth } from './agent/project-health.js';
 export { buildRepoMap, repoMapToContext, type RepoMap, type RepoMapEntry } from './agent/repo-map.js';
 export { submitCommunityFix, queryCommunityFixes, formatCommunityFixes, detectFramework, type CommunityFixPair, type CommunityFixResult } from './learning/community-fixes.js';
+export { reduceTrajectory, formatReductionStats, type MessageStatus, type ReductionResult } from './session/trajectory-reducer.js';
