@@ -1,6 +1,6 @@
 import type { Probe, CheckResult } from './types.js';
 import { existsSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve, relative } from 'node:path';
 import { verifyTypeScriptCompiles } from './verifiers/typescript.js';
 
 export interface ProbeOutput {
@@ -110,7 +110,17 @@ export function scoreProbe(probe: Probe, result: ProbeOutput): CheckResult[] {
   // File modification check — verify expected files exist in sandbox
   if (v.files_modified) {
     for (const expectedFile of v.files_modified) {
-      const fullPath = join(result.sandboxDir, expectedFile);
+      // Validate path stays within sandbox (block traversal)
+      const fullPath = resolve(result.sandboxDir, expectedFile);
+      const rel = relative(result.sandboxDir, fullPath);
+      if (rel.startsWith('..') || rel.includes('..')) {
+        checks.push({
+          check: `files_modified: ${expectedFile}`,
+          passed: false,
+          detail: `Path traversal blocked: "${expectedFile}" escapes sandbox`,
+        });
+        continue;
+      }
       const exists = existsSync(fullPath);
       checks.push({
         check: `files_modified: ${expectedFile}`,
