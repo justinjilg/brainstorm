@@ -220,6 +220,8 @@ export interface TurnContext {
   filesWritten: string[];
   sessionMinutes: number;
   unhealthyTools: Array<{ name: string; error: string }>;
+  buildStatus: 'passing' | 'failing' | 'unknown';
+  buildWarning: string;
 }
 
 /** Format TurnContext as a compact one-line summary for system message injection. */
@@ -243,8 +245,13 @@ export function formatTurnContext(ctx: TurnContext): string {
   if (ctx.unhealthyTools.length > 0) {
     parts.push(`unhealthy: ${ctx.unhealthyTools.map((t) => t.name).join(',')}`);
   }
+  if (ctx.buildStatus !== 'unknown') {
+    parts.push(`build: ${ctx.buildStatus}`);
+  }
   parts.push(`${ctx.sessionMinutes}min`);
-  return `[${parts.join(' | ')}]`;
+  let result = `[${parts.join(' | ')}]`;
+  if (ctx.buildWarning) result += `\n${ctx.buildWarning}`;
+  return result;
 }
 
 function basename(path: string): string {
