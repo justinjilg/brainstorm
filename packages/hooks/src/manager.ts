@@ -1,8 +1,10 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { createLogger } from '@brainstorm/shared';
 import type { HookDefinition, HookEvent, HookResult } from './types.js';
 
 const execFileAsync = promisify(execFile);
+const log = createLogger('hooks');
 
 /**
  * HookManager — registers and fires hooks at lifecycle events.
@@ -52,7 +54,7 @@ export class HookManager {
         if (matchTarget) {
           try {
             return new RegExp(h.matcher).test(matchTarget);
-          } catch { return false; }
+          } catch (e) { log.warn({ err: e, matcher: h.matcher }, 'Invalid hook matcher regex'); return false; }
         }
       }
       return true;

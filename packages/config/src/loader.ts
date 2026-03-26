@@ -2,8 +2,11 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import TOML from '@iarna/toml';
+import { createLogger } from '@brainstorm/shared';
 import { brainstormConfigSchema, type BrainstormConfig } from './schema.js';
 import { loadStormFile } from './storm-loader.js';
+
+const log = createLogger('config');
 
 const GLOBAL_CONFIG_DIR = join(homedir(), '.brainstorm');
 const GLOBAL_CONFIG_FILE = join(GLOBAL_CONFIG_DIR, 'config.toml');
@@ -49,7 +52,8 @@ function readJsonSafe(path: string): Record<string, unknown> {
   if (!existsSync(path)) return {};
   try {
     return JSON.parse(readFileSync(path, 'utf-8'));
-  } catch {
+  } catch (e) {
+    log.warn({ err: e, path }, 'Failed to parse JSON config file');
     return {};
   }
 }

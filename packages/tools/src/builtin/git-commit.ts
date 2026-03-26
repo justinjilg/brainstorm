@@ -1,9 +1,11 @@
 import { z } from 'zod';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { createLogger } from '@brainstorm/shared';
 import { defineTool } from '../base.js';
 
 const execFileAsync = promisify(execFile);
+const log = createLogger('git-commit');
 
 /**
  * Smart git commit tool with two modes:
@@ -52,7 +54,9 @@ export const gitCommitTool = defineTool({
       const credentialHits = scanDiffForCredentials(diff);
       if (credentialHits.length > 0) {
         // Unstage and abort
-        await execFileAsync('git', ['reset', 'HEAD', ...files], opts).catch(() => {});
+        await execFileAsync('git', ['reset', 'HEAD', ...files], opts).catch((e) => {
+          log.warn({ err: e }, 'Failed to unstage files after credential detection');
+        });
         return {
           error: `Credential detected in staged changes — commit blocked.\n${credentialHits.map((h) => `  ${h.file}: ${h.pattern} (${h.preview})`).join('\n')}\n\nRemove the credential before committing.`,
         };
