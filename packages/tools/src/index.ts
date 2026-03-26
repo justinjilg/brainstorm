@@ -1,4 +1,5 @@
 export { defineTool, type BrainstormToolDef } from './base.js';
+export { SessionFileTracker, getFileTracker, resetFileTracker } from './file-tracker.js';
 export { CheckpointManager } from './checkpoint.js';
 export { ToolRegistry, type PermissionCheckFn } from './registry.js';
 export { fileReadTool } from './builtin/file-read.js';
