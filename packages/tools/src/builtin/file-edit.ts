@@ -23,6 +23,52 @@ function ensureSafePath(filePath: string): string {
   return resolved;
 }
 
+/**
+ * Find the closest matching substring in the file content.
+ * Uses the first line of old_string to find candidate locations,
+ * then returns surrounding context.
+ */
+function findClosestMatch(content: string, oldString: string): string | null {
+  // Use the first non-empty line as a search anchor
+  const lines = oldString.split('\n').filter((l) => l.trim().length > 0);
+  if (lines.length === 0) return null;
+
+  const firstLine = lines[0].trim();
+  if (firstLine.length < 5) return null; // Too short to be useful
+
+  // Search for the first line (case-insensitive, trimmed)
+  const contentLines = content.split('\n');
+  let bestIdx = -1;
+  let bestScore = 0;
+
+  for (let i = 0; i < contentLines.length; i++) {
+    const trimmed = contentLines[i].trim();
+    // Exact match of first line
+    if (trimmed === firstLine) {
+      bestIdx = i;
+      bestScore = 100;
+      break;
+    }
+    // Partial match — check if the line contains most of the search
+    if (trimmed.includes(firstLine.slice(0, Math.min(30, firstLine.length)))) {
+      if (bestScore < 50) {
+        bestIdx = i;
+        bestScore = 50;
+      }
+    }
+  }
+
+  if (bestIdx === -1) return null;
+
+  // Return context: 2 lines before + match area + 2 lines after
+  const numLines = oldString.split('\n').length;
+  const start = Math.max(0, bestIdx - 1);
+  const end = Math.min(contentLines.length, bestIdx + numLines + 1);
+  const context = contentLines.slice(start, end);
+
+  return context.map((l, i) => `${start + i + 1}\t${l}`).join('\n');
+}
+
 export const fileEditTool = defineTool({
   name: 'file_edit',
   description: 'Perform a surgical string replacement in a file. The old_string must match exactly one location. Returns { success, replacements } or { error }. Supports absolute paths within home directory.',
@@ -43,6 +89,14 @@ export const fileEditTool = defineTool({
     const occurrences = content.split(old_string).length - 1;
 
     if (occurrences === 0) {
+      // Try to find the closest match for recovery
+      const suggestion = findClosestMatch(content, old_string);
+      if (suggestion) {
+        return {
+          error: 'old_string not found in file',
+          suggestion: `Closest match found:\n${suggestion}`,
+        };
+      }
       return { error: 'old_string not found in file' };
     }
     if (occurrences > 1) {
