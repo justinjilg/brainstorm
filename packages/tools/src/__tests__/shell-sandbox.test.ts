@@ -108,9 +108,12 @@ describe("checkSandbox", () => {
     });
   });
 
-  describe("container level falls back to restricted", () => {
-    it("blocks sudo in container mode", () => {
-      expect(checkSandbox("sudo whoami", "container").allowed).toBe(false);
+  describe("container level allows all commands (Docker provides isolation)", () => {
+    it("allows sudo in container mode", () => {
+      expect(checkSandbox("sudo whoami", "container").allowed).toBe(true);
+    });
+    it("allows rm in container mode", () => {
+      expect(checkSandbox("rm -rf /tmp/test", "container").allowed).toBe(true);
     });
   });
 });
