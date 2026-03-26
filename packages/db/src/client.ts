@@ -305,4 +305,20 @@ const MIGRATIONS = [
         ON messages(session_id, timestamp DESC);
     `,
   },
+  {
+    name: "014_code_embeddings",
+    sql: `
+      CREATE TABLE IF NOT EXISTS code_embeddings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_path TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        symbol_name TEXT,
+        content_snippet TEXT NOT NULL,
+        tfidf_vector TEXT NOT NULL,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      CREATE INDEX IF NOT EXISTS idx_embeddings_project ON code_embeddings(project_path);
+      CREATE INDEX IF NOT EXISTS idx_embeddings_file ON code_embeddings(file_path);
+    `,
+  },
 ];
