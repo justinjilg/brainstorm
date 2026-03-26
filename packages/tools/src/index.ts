@@ -7,6 +7,7 @@ export { scratchpadWriteTool, scratchpadReadTool, getScratchpadEntries, clearScr
 export { askUserTool, resolveAskUser, hasPendingQuestion } from './builtin/ask-user.js';
 export { routingHintTool, getRoutingHint, consumeRoutingHint, resetRoutingHint, type RoutingPreference } from './builtin/routing-hint.js';
 export { costEstimateTool } from './builtin/cost-estimate.js';
+export { planPreviewTool } from './builtin/plan-preview.js';
 export { ToolRegistry, type PermissionCheckFn } from './registry.js';
 export { fileReadTool } from './builtin/file-read.js';
 export { fileWriteTool } from './builtin/file-write.js';
@@ -64,6 +65,7 @@ import { scratchpadWriteTool, scratchpadReadTool } from './builtin/scratchpad.js
 import { askUserTool } from './builtin/ask-user.js';
 import { routingHintTool } from './builtin/routing-hint.js';
 import { costEstimateTool } from './builtin/cost-estimate.js';
+import { planPreviewTool } from './builtin/plan-preview.js';
 import {
   brStatusTool, brBudgetTool, brLeaderboardTool, brInsightsTool,
   brModelsTool, brMemorySearchTool, brMemoryStoreTool, brHealthTool,
@@ -111,6 +113,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
   // Routing + Cost (2)
   registry.register(routingHintTool);
   registry.register(costEstimateTool);
+  registry.register(planPreviewTool);
   // BrainstormRouter intelligence (8) — native REST calls, no MCP needed
   registry.register(brStatusTool);
   registry.register(brBudgetTool);
