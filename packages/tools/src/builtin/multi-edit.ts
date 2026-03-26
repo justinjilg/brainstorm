@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { defineTool } from '../base.js';
+import { applyEdits } from './edit-common.js';
 
 export const multiEditTool = defineTool({
   name: 'multi_edit',
@@ -16,31 +17,16 @@ export const multiEditTool = defineTool({
   async execute({ path, edits }) {
     if (!existsSync(path)) return { error: `File not found: ${path}` };
 
-    let content = readFileSync(path, 'utf-8');
-    const results: Array<{ old: string; applied: boolean; reason?: string }> = [];
+    const original = readFileSync(path, 'utf-8');
+    const { content, results, appliedCount } = applyEdits(original, edits);
 
-    for (const edit of edits) {
-      const count = content.split(edit.old_string).length - 1;
-      if (count === 0) {
-        results.push({ old: edit.old_string.slice(0, 40), applied: false, reason: 'not found' });
-        continue;
-      }
-      if (count > 1) {
-        results.push({ old: edit.old_string.slice(0, 40), applied: false, reason: `${count} occurrences (must be unique)` });
-        continue;
-      }
-      content = content.replace(edit.old_string, edit.new_string);
-      results.push({ old: edit.old_string.slice(0, 40), applied: true });
-    }
-
-    const applied = results.filter((r) => r.applied).length;
-    if (applied > 0) {
+    if (appliedCount > 0) {
       const { getCheckpointManager } = await import('../checkpoint.js');
       const cp = getCheckpointManager();
       if (cp) cp.snapshot(path);
       writeFileSync(path, content, 'utf-8');
     }
 
-    return { path, applied, total: edits.length, results };
+    return { path, applied: appliedCount, total: edits.length, results };
   },
 });
