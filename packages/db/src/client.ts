@@ -306,7 +306,25 @@ const MIGRATIONS = [
     `,
   },
   {
-    name: "014_code_embeddings",
+    name: "014_audit_log",
+    sql: `
+      CREATE TABLE IF NOT EXISTS audit_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        args_json TEXT,
+        result_ok INTEGER NOT NULL DEFAULT 1,
+        duration_ms INTEGER,
+        model_id TEXT,
+        cost REAL,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      CREATE INDEX IF NOT EXISTS idx_audit_session ON audit_log(session_id);
+      CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at);
+    `,
+  },
+  {
+    name: "015_code_embeddings",
     sql: `
       CREATE TABLE IF NOT EXISTS code_embeddings (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
