@@ -3,6 +3,7 @@ export { SessionFileTracker, getFileTracker, resetFileTracker } from './file-tra
 export { ToolHealthTracker, getToolHealthTracker, resetToolHealthTracker, type ToolHealthEntry } from './tool-health.js';
 export { CheckpointManager, initCheckpointManager, getCheckpointManager } from './checkpoint.js';
 export { undoTool } from './builtin/undo.js';
+export { scratchpadWriteTool, scratchpadReadTool, getScratchpadEntries, clearScratchpad, formatScratchpadContext } from './builtin/scratchpad.js';
 export { ToolRegistry, type PermissionCheckFn } from './registry.js';
 export { fileReadTool } from './builtin/file-read.js';
 export { fileWriteTool } from './builtin/file-write.js';
@@ -56,6 +57,7 @@ import { webSearchTool } from './builtin/web-search.js';
 import { processSpawnTool, processKillTool } from './builtin/process-manage.js';
 import { taskCreateTool, taskUpdateTool, taskListTool } from './builtin/task-manage.js';
 import { undoTool } from './builtin/undo.js';
+import { scratchpadWriteTool, scratchpadReadTool } from './builtin/scratchpad.js';
 import {
   brStatusTool, brBudgetTool, brLeaderboardTool, brInsightsTool,
   brModelsTool, brMemorySearchTool, brMemoryStoreTool, brHealthTool,
@@ -95,6 +97,9 @@ export function createDefaultToolRegistry(): ToolRegistry {
   registry.register(taskListTool);
   // Undo (1)
   registry.register(undoTool);
+  // Scratchpad (2)
+  registry.register(scratchpadWriteTool);
+  registry.register(scratchpadReadTool);
   // BrainstormRouter intelligence (8) — native REST calls, no MCP needed
   registry.register(brStatusTool);
   registry.register(brBudgetTool);
