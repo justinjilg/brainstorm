@@ -96,3 +96,15 @@ export class CheckpointManager {
     }
   }
 }
+
+/** Global checkpoint manager singleton — set during session init. */
+let activeCheckpoint: CheckpointManager | null = null;
+
+export function initCheckpointManager(sessionId: string): CheckpointManager {
+  activeCheckpoint = new CheckpointManager(sessionId);
+  return activeCheckpoint;
+}
+
+export function getCheckpointManager(): CheckpointManager | null {
+  return activeCheckpoint;
+}

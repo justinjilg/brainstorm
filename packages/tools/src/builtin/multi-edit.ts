@@ -35,6 +35,9 @@ export const multiEditTool = defineTool({
 
     const applied = results.filter((r) => r.applied).length;
     if (applied > 0) {
+      const { getCheckpointManager } = await import('../checkpoint.js');
+      const cp = getCheckpointManager();
+      if (cp) cp.snapshot(path);
       writeFileSync(path, content, 'utf-8');
     }
 
