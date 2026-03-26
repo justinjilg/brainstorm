@@ -182,6 +182,14 @@ const workflowConfigSchema = z.object({
 
 // ── MCP Config ──────────────────────────────────────────────────────
 
+const mcpAuthSchema = z.object({
+  type: z.literal("oauth"),
+  clientId: z.string(),
+  clientSecret: z.string(),
+  tokenUrl: z.string(),
+  scopes: z.array(z.string()).optional(),
+});
+
 const mcpServerSchema = z.object({
   name: z.string(),
   transport: z.enum(["sse", "http", "stdio"]),
@@ -191,6 +199,7 @@ const mcpServerSchema = z.object({
   env: z.record(z.string()).optional(),
   enabled: z.boolean().default(true),
   toolFilter: z.array(z.string()).optional(),
+  auth: mcpAuthSchema.optional(),
 });
 
 const mcpSchema = z.object({
@@ -202,6 +211,8 @@ const mcpSchema = z.object({
 const permissionsSchema = z.object({
   allowlist: z.array(z.string()).default([]),
   denylist: z.array(z.string()).default([]),
+  /** Role preset: viewer (read-only), developer (confirm destructive), admin (auto-approve all). */
+  role: z.enum(["viewer", "developer", "admin"]).optional(),
 });
 
 // ── Full Config ─────────────────────────────────────────────────────

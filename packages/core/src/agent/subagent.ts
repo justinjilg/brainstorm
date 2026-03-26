@@ -11,7 +11,14 @@ import { serializeRoutingMetadata } from "@brainstorm/shared";
 
 // ── Subagent Types ──────────────────────────────────────────────────
 
-export type SubagentType = "explore" | "plan" | "code" | "review" | "general";
+export type SubagentType =
+  | "explore"
+  | "plan"
+  | "code"
+  | "review"
+  | "general"
+  | "decompose"
+  | "external";
 
 interface SubagentTypeConfig {
   /** Tools this subagent type is allowed to use */
@@ -101,6 +108,31 @@ const SUBAGENT_TYPES: Record<SubagentType, SubagentTypeConfig> = {
     systemPrompt:
       "You are a focused subagent. Complete the given task concisely and return the result. Do not ask questions — make your best judgment. You cannot create or edit files directly — use shell commands if you need to modify files.",
     defaultMaxSteps: 5,
+    modelHint: "cheap",
+  },
+  decompose: {
+    allowedTools: [
+      "file_read",
+      "glob",
+      "grep",
+      "list_dir",
+      "git_status",
+      "git_diff",
+      "git_log",
+    ],
+    systemPrompt:
+      "You are a task decomposition agent. Break down the given task into discrete implementation steps. " +
+      "For each step, specify: title, subagent type (explore/plan/code/review), dependencies on other steps, " +
+      "and estimated relative cost (low/medium/high). Return a structured JSON array of steps. " +
+      "Read the codebase to understand the architecture before decomposing.",
+    defaultMaxSteps: 5,
+    modelHint: "capable",
+  },
+  external: {
+    allowedTools: [],
+    systemPrompt:
+      "External agent — execution is delegated to an external CLI tool.",
+    defaultMaxSteps: 1,
     modelHint: "cheap",
   },
 };
