@@ -9,8 +9,17 @@ import { StormProcess } from './storm-process.js';
  */
 export class BrainstormChatProvider {
   private stormProcess: StormProcess | null = null;
+  private preferredModel: string | undefined;
 
   constructor(private context: vscode.ExtensionContext) {}
+
+  /** Set the preferred model — restarts storm process to apply. */
+  setPreferredModel(modelId: string | undefined): void {
+    this.preferredModel = modelId;
+    // Restart process to pick up new model
+    this.stormProcess?.stop();
+    this.stormProcess = null;
+  }
 
   /** Handle a chat request from VS Code. */
   async handleRequest(
@@ -100,7 +109,7 @@ export class BrainstormChatProvider {
     }
 
     const workspaceFolder = this.getWorkspacePath();
-    this.stormProcess = new StormProcess(workspaceFolder);
+    this.stormProcess = new StormProcess(workspaceFolder, this.preferredModel);
     this.stormProcess.start();
 
     this.stormProcess.on('exit', () => {
