@@ -35,3 +35,4 @@ export { MiddlewarePipeline, createDefaultMiddlewarePipeline, isBlocked, type Ag
 export { turnContextMiddleware, toolHealthMiddleware, buildStateMiddleware, loopDetectionMiddleware, sentimentMiddleware, subagentLimitMiddleware, trajectoryReductionMiddleware, autoLintMiddleware } from './middleware/index.js';
 export { SessionCheckpointer, type SessionCheckpointData } from './session/session-checkpoint.js';
 export { shouldUseEnsemble, pruneResults, selectWinner, checkEarlyTermination, formatEnsembleResult, type EnsembleCandidate, type EnsembleResult, type EnsembleStrategy } from './agent/ensemble.js';
+export { classifyActivity, summarizeStep, formatStepTimeline, type ActivityTag, type StepSummary } from './agent/step-summary.js';
