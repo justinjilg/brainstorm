@@ -20,6 +20,7 @@ import {
   PermissionManager,
   createSubagentTool,
   spawnSubagent,
+  createDefaultMiddlewarePipeline,
   type CompactionCallbacks,
 } from "@brainstorm/core";
 import type { OutputStyle } from "@brainstorm/core";
@@ -926,6 +927,7 @@ program
         process.stdout.write("\n");
       }
 
+      const middleware = createDefaultMiddlewarePipeline(projectPath);
       for await (const event of runAgentLoop(sessionManager.getHistory(), {
         config,
         registry,
@@ -941,6 +943,7 @@ program
         maxSteps: parseInt(opts.maxSteps ?? "1"),
         compaction: buildCompactionCallbacks(sessionManager),
         permissionCheck: (tool, args) => permissionManager.check(tool, args),
+        middleware,
       })) {
         switch (event.type) {
           case "thinking":
@@ -1497,6 +1500,7 @@ program
         (config.general.outputStyle as OutputStyle) ?? "concise";
 
       const sessionManager = new SessionManager(db);
+      const middleware = createDefaultMiddlewarePipeline(projectPath);
       let { prompt: systemPrompt, frontmatter } = buildSystemPrompt(
         projectPath,
         currentOutputStyle,
@@ -1673,6 +1677,7 @@ program
             permissionCheck: (name, perm) =>
               permissionManager.check(name, perm),
             preferredModelId,
+            middleware,
             onTurnComplete: (ctx) => {
               ctx.turn = sessionManager.incrementTurn();
               ctx.sessionMinutes = sessionManager.getSessionMinutes();
@@ -1785,6 +1790,7 @@ program
           compaction: buildCompactionCallbacks(sessionManager),
           signal: currentAbortController.signal,
           permissionCheck: (name, perm) => permissionManager.check(name, perm),
+          middleware,
           preferredModelId,
         });
         // Wrap to capture assistant message after completion
