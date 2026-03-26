@@ -1052,7 +1052,8 @@ program
   .option('--fork <id>', 'Fork a session (copy history, new session)')
   .option('--lfg', 'Full auto mode — skip all permission confirmations')
   .option('--strategy <name>', 'Routing strategy: cost-first, quality-first, combined, capability')
-  .action(async (opts: { simple?: boolean; continue?: boolean; resume?: string; fork?: string; lfg?: boolean; strategy?: string }) => {
+  .option('--verbose-routing', 'Print routing decisions to stderr')
+  .action(async (opts: { simple?: boolean; continue?: boolean; resume?: string; fork?: string; lfg?: boolean; strategy?: string; verboseRouting?: boolean }) => {
     const config = loadConfig();
 
     // --lfg: full auto mode, skip all permission confirmations
@@ -1210,6 +1211,10 @@ program
               break;
             case 'routing':
               process.stderr.write(`\r  [${event.decision.model.name}]\n`);
+              if (opts.verboseRouting) {
+                const d = event.decision;
+                process.stderr.write(`  routing: strategy=${d.strategy} model=${d.model.id} provider=${d.model.provider} cost=$${d.estimatedCost.toFixed(4)} reason="${d.reason}"\n`);
+              }
               break;
             case 'text-delta':
               fullResponse += event.delta;
