@@ -61,6 +61,10 @@ export const fileWriteTool = defineTool({
       throw e;
     }
 
+    // Invalidate read cache for this file
+    const { getFileReadCache } = await import('../file-cache.js');
+    getFileReadCache().invalidate(safePath);
+
     // Track file access
     const { getFileTracker } = await import('../file-tracker.js');
     getFileTracker().recordWrite(safePath);

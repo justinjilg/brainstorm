@@ -47,7 +47,14 @@ export const fileReadTool = defineTool({
     const { getFileTracker } = await import('../file-tracker.js');
     getFileTracker().recordRead(safePath);
 
-    const content = readFileSync(safePath, 'utf-8');
+    // Check cache first to avoid redundant disk reads
+    const { getFileReadCache } = await import('../file-cache.js');
+    const cache = getFileReadCache();
+    let content = cache.get(safePath);
+    if (content === null) {
+      content = readFileSync(safePath, 'utf-8');
+      cache.set(safePath, content);
+    }
     const lines = content.split('\n');
 
     const start = (offset ?? 1) - 1;

@@ -1,4 +1,5 @@
 export { defineTool, type BrainstormToolDef } from './base.js';
+export { FileReadCache, getFileReadCache, resetFileReadCache } from './file-cache.js';
 export { SessionFileTracker, getFileTracker, resetFileTracker } from './file-tracker.js';
 export { ToolHealthTracker, getToolHealthTracker, resetToolHealthTracker, type ToolHealthEntry } from './tool-health.js';
 export { CheckpointManager, initCheckpointManager, getCheckpointManager } from './checkpoint.js';
