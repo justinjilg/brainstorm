@@ -84,6 +84,30 @@ export class MessageRepository {
       timestamp: row.timestamp,
     }));
   }
+
+  /** Load only the most recent N messages for a session. Used for lazy loading. */
+  listBySessionRecent(sessionId: string, limit = 50): Message[] {
+    const rows = this.db
+      .prepare('SELECT * FROM (SELECT * FROM messages WHERE session_id = ? ORDER BY timestamp DESC LIMIT ?) ORDER BY timestamp ASC')
+      .all(sessionId, limit) as any[];
+    return rows.map((row) => ({
+      id: row.id,
+      sessionId: row.session_id,
+      role: row.role,
+      content: row.content,
+      modelId: row.model_id ?? undefined,
+      tokenCount: row.token_count ?? undefined,
+      timestamp: row.timestamp,
+    }));
+  }
+
+  /** Count total messages in a session. */
+  countBySession(sessionId: string): number {
+    const row = this.db
+      .prepare('SELECT COUNT(*) as count FROM messages WHERE session_id = ?')
+      .get(sessionId) as any;
+    return row?.count ?? 0;
+  }
 }
 
 // ── Cost Records ─────────────────────────────────────────────────────
