@@ -337,6 +337,17 @@ export async function* runAgentLoop(
         // Detect hung streams: if no event for 60s, break out
         const now = Date.now();
         if (now - lastEventTime > STREAM_TIMEOUT_MS && textDeltaCount === 0 && toolCallCount === 0) {
+          const elapsed = now - sessionStartTime;
+          log.warn({
+            model: decision.model.id,
+            elapsedMs: elapsed,
+            lastEventAgo: now - lastEventTime,
+            textDeltas: textDeltaCount,
+            toolCalls: toolCallCount,
+          }, 'Stream timeout — no events received, breaking out');
+          if (trajectory) {
+            trajectory.recordError({ message: `Stream timeout after ${elapsed}ms`, model: decision.model.id });
+          }
           break; // Fall through to empty detection + retry
         }
         lastEventTime = now;
