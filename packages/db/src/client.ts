@@ -244,4 +244,18 @@ const MIGRATIONS = [
       CREATE INDEX idx_perf_v2_timestamp ON model_performance_v2(timestamp);
     `,
   },
+  {
+    name: '011_session_checkpoints',
+    sql: `
+      CREATE TABLE session_checkpoints (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        turn_number INTEGER NOT NULL,
+        state_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      CREATE INDEX idx_checkpoint_session ON session_checkpoints(session_id);
+      CREATE INDEX idx_checkpoint_created ON session_checkpoints(created_at);
+    `,
+  },
 ];
