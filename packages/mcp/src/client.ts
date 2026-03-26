@@ -87,6 +87,13 @@ export class MCPClientManager {
           const filterSet = server.toolFilter ? new Set(server.toolFilter) : null;
           for (const [toolName, toolDef] of Object.entries(tools)) {
             if (filterSet && !filterSet.has(toolName)) continue;
+
+            // Validate MCP tool definition before registering
+            if (!validateMCPTool(toolName, toolDef)) {
+              errors.push({ name: server.name, error: `Malformed tool "${toolName}" — skipped` });
+              continue;
+            }
+
             // Use underscores instead of colons — LLM providers reject colons in tool names
             const registeredName = `mcp_${server.name}_${toolName}`;
 
@@ -131,4 +138,19 @@ export class MCPClientManager {
   listConnected(): string[] {
     return Array.from(this.connections.keys());
   }
+}
+
+/**
+ * Validate an MCP tool definition has required fields.
+ * Rejects malformed tools to prevent injection or runtime errors.
+ */
+function validateMCPTool(name: string, toolDef: any): boolean {
+  if (!toolDef || typeof toolDef !== 'object') return false;
+  if (typeof name !== 'string' || name.length === 0) return false;
+  // Must have a description (string)
+  if (toolDef.description && typeof toolDef.description !== 'string') return false;
+  // If inputSchema/parameters exist, must be an object
+  const schema = toolDef.parameters ?? toolDef.inputSchema;
+  if (schema && typeof schema !== 'object') return false;
+  return true;
 }
