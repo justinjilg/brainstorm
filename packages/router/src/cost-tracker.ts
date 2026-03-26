@@ -91,6 +91,13 @@ export class CostTracker {
     };
   }
 
+  /** Get remaining session budget, or null if no session limit is set. */
+  getRemainingBudget(): number | null {
+    const sessionLimit = this.budgetConfig.perSession;
+    if (!sessionLimit) return null;
+    return Math.max(0, sessionLimit - this.sessionCost);
+  }
+
   /**
    * Calculate a budget limit for a subagent.
    * Default: remaining session budget / 4, or a fixed amount if no session limit.

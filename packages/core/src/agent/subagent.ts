@@ -126,6 +126,25 @@ export async function spawnSubagent(
   const type = options.type ?? 'general';
   const typeConfig = SUBAGENT_TYPES[type];
 
+  // Budget guard: reserve 20% of remaining budget for parent.
+  // Fail early rather than spawning a subagent that will immediately be killed.
+  const PARENT_RESERVE_RATIO = 0.2;
+  const remainingBudget = costTracker.getRemainingBudget();
+  const subagentBudget = options.budgetLimit ?? costTracker.getSubagentBudget();
+  if (remainingBudget !== null && remainingBudget > 0) {
+    const reserved = remainingBudget * PARENT_RESERVE_RATIO;
+    const available = remainingBudget - reserved;
+    if (available <= 0) {
+      return {
+        text: `[Subagent not spawned: insufficient budget. $${remainingBudget.toFixed(4)} remaining, $${reserved.toFixed(4)} reserved for parent.]`,
+        cost: 0,
+        modelUsed: 'none',
+        toolCalls: [],
+        type,
+      };
+    }
+  }
+
   const taskProfile = router.classify(task);
 
   // Apply model hint: override routing strategy for this subagent
