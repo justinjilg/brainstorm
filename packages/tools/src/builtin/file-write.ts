@@ -38,6 +38,11 @@ export const fileWriteTool = defineTool({
     let safePath: string;
     try { safePath = ensureSafePath(path); } catch (e: any) { return { error: e.message }; }
 
+    // Snapshot before overwriting (if file exists)
+    const { getCheckpointManager } = await import('../checkpoint.js');
+    const cp = getCheckpointManager();
+    if (cp) cp.snapshot(safePath);
+
     mkdirSync(dirname(safePath), { recursive: true });
     writeFileSync(safePath, content, 'utf-8');
 

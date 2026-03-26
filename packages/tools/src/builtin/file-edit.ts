@@ -49,6 +49,11 @@ export const fileEditTool = defineTool({
       return { error: `old_string found ${occurrences} times — must be unique. Provide more surrounding context.` };
     }
 
+    // Snapshot before editing
+    const { getCheckpointManager } = await import('../checkpoint.js');
+    const cp = getCheckpointManager();
+    if (cp) cp.snapshot(safePath);
+
     const updated = content.replace(old_string, new_string);
     writeFileSync(safePath, updated, 'utf-8');
     return { success: true, path };
