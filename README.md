@@ -11,11 +11,25 @@ storm chat
 
 **Intelligent routing.** Every other CLI sends all requests to one model. Brainstorm routes each task to the best model for that specific job — complex code to Claude Sonnet, quick reads to GPT-4.1-mini, reasoning tasks to o3 — powered by real production performance data from BrainstormRouter.
 
-**Gateway intelligence.** Native tools to query your AI gateway: check budget (`br_budget`), view model rankings (`br_leaderboard`), search persistent memory (`br_memory_search`), get cost optimization insights (`br_insights`). The agent knows its own infrastructure.
+**Self-aware agent.** Brainstorm knows what model it's using, how much it's spent, which tools are healthy, whether the build is passing, and what files it has touched. This context is injected every turn so the agent makes better decisions.
 
-**32 built-in tools.** Filesystem (8), shell (3), git (6), GitHub (2), web (2), tasks (3), BrainstormRouter intelligence (8). Every tool returns consistent `{ ok, data, error }` format.
+**42 built-in tools.** Filesystem (8), shell (3), git (6), GitHub (2), web (2), tasks (3), agent (6), planning (1), transactions (3), BrainstormRouter intelligence (8). Every tool returns consistent `{ ok, data, error }` format.
 
 **Multi-model, multi-provider.** Works with Anthropic, OpenAI, Google, DeepSeek, xAI, Mistral — plus local models via Ollama, LM Studio, and llama.cpp. Switch models mid-session with `/model`.
+
+**Plugin system.** Extend Brainstorm with custom tools, hooks, and skills via the Plugin SDK.
+
+## Features
+
+| Category | Features |
+|----------|---------|
+| **Routing** | 5 strategies (quality, cost, combined, capability, rule-based), fallback chains, cost tracking |
+| **Tools** | 42 built-in, pre-validation, checkpoint/undo, transactions, diff preview |
+| **Intelligence** | Turn context, file tracking, tool health, build state, loop detection, sentiment analysis |
+| **Learning** | Cross-session patterns, error-fix pairs, reaction tracking |
+| **Context** | Scratchpad (compaction-resistant), hierarchical BRAINSTORM.md, compaction warnings |
+| **Security** | Encrypted vault (AES-256-GCM), permission modes, path guard, credential scanner |
+| **Extensibility** | Plugin SDK, lifecycle hooks, MCP client, skills system, subagents |
 
 ## Quick Start
 
@@ -36,28 +50,33 @@ storm run --tools "Create a React component for user authentication"
 storm run --tools --lfg "Read the codebase and fix the failing tests"
 ```
 
+See [Getting Started](docs/getting-started.md) for the full tutorial.
+
 ## Architecture
 
-Turborepo monorepo with 15 TypeScript packages:
+Turborepo monorepo with 16 TypeScript packages:
 
 ```
 packages/
-├── cli         Command-line interface (Commander + Ink TUI)
-├── core        Agent loop, session management, context, permissions
-├── router      Task classifier, 6 routing strategies, cost tracking
-├── providers   AI Gateway + local model discovery (Ollama, LM Studio)
-├── tools       32 built-in tools with Zod schemas
-├── shared      Types, errors, logging (pino)
-├── config      TOML config, Zod schemas, BRAINSTORM.md parser
-├── db          SQLite persistence (sessions, costs, agent profiles)
-├── agents      Agent profiles, subagent system (5 types, parallel)
-├── workflow    Workflow engine, preset workflows
-├── hooks       Lifecycle hooks (PreToolUse, PostToolUse, etc.)
-├── mcp         MCP client for external tool integration
-├── eval        Capability probes, eval runner, scorecard
-├── gateway     BrainstormRouter API client, header parsing
-└── vault       Encrypted key store (AES-256-GCM + Argon2id)
+├── cli          Command-line interface (Commander + Ink TUI)
+├── core         Agent loop, session management, context, permissions
+├── router       Task classifier, 5 routing strategies, cost tracking
+├── providers    AI Gateway + local model discovery (Ollama, LM Studio)
+├── tools        42 built-in tools with Zod schemas
+├── shared       Types, errors, logging (pino)
+├── config       TOML config, Zod schemas, BRAINSTORM.md parser
+├── db           SQLite persistence (sessions, costs, patterns)
+├── agents       Agent profiles, subagent system (5 types, parallel)
+├── workflow     Workflow engine, preset workflows
+├── hooks        Lifecycle hooks (PreToolUse, PostToolUse, etc.)
+├── mcp          MCP client for external tool integration
+├── eval         Capability probes, eval runner, scorecard
+├── gateway      BrainstormRouter API client, header parsing
+├── vault        Encrypted key store (AES-256-GCM + Argon2id)
+└── plugin-sdk   SDK for building Brainstorm plugins
 ```
+
+See [Architecture Guide](docs/architecture.md) for the full dependency graph and data flow.
 
 ## Routing Strategies
 
@@ -98,6 +117,8 @@ test_command: npm test
 Description and conventions for the AI assistant.
 ```
 
+See [Configuration Guide](docs/config-guide.md) for the full schema.
+
 ## BrainstormRouter Integration
 
 Brainstorm ships with native tools for querying [BrainstormRouter](https://brainstormrouter.com):
@@ -113,13 +134,26 @@ Brainstorm ships with native tools for querying [BrainstormRouter](https://brain
 | `br_memory_store` | Save facts that persist across sessions |
 | `br_health` | Quick connectivity test |
 
+See [BrainstormRouter Integration](docs/brainstormrouter-integration.md) for API details.
+
+## Documentation
+
+| Document | Description |
+|----------|------------|
+| [Getting Started](docs/getting-started.md) | 5-minute setup and first session |
+| [Architecture](docs/architecture.md) | Package graph, data flow, intelligence features |
+| [Tools Reference](docs/tools.md) | All 42 tools with descriptions and permissions |
+| [Configuration Guide](docs/config-guide.md) | config.toml, BRAINSTORM.md, environment variables |
+| [BrainstormRouter](docs/brainstormrouter-integration.md) | API endpoints, headers, error recovery |
+| [Plugin Development](docs/plugin-development.md) | Build custom tools, hooks, and skills |
+
 ## Development
 
 ```bash
 git clone https://github.com/justinjilg/brainstorm.git
 cd brainstorm
 npm install
-npx turbo run build        # Build all packages
+npx turbo run build        # Build all 16 packages
 npx turbo run test         # Run tests
 node packages/cli/dist/brainstorm.js chat  # Run locally
 ```
