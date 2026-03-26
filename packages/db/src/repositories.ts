@@ -285,6 +285,34 @@ export class CostRepository {
       .get(taskType, since) as any;
     return { totalCost: row.total_cost, requestCount: row.request_count };
   }
+
+  /** Aggregate cost by project path with 7-day trend. */
+  byProject(): Array<{
+    projectPath: string;
+    totalCost: number;
+    requestCount: number;
+    last7DaysCost: number;
+  }> {
+    const weekAgo = Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60;
+    const rows = this.db
+      .prepare(
+        `SELECT project_path,
+                SUM(cost) as total_cost,
+                COUNT(*) as request_count,
+                SUM(CASE WHEN timestamp >= ? THEN cost ELSE 0 END) as last_7_days_cost
+         FROM cost_records
+         WHERE project_path IS NOT NULL
+         GROUP BY project_path
+         ORDER BY total_cost DESC`,
+      )
+      .all(weekAgo) as any[];
+    return rows.map((r: any) => ({
+      projectPath: r.project_path,
+      totalCost: r.total_cost,
+      requestCount: r.request_count,
+      last7DaysCost: r.last_7_days_cost,
+    }));
+  }
 }
 
 // ── Session Patterns ────────────────────────────────────────────────

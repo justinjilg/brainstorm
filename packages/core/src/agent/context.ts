@@ -12,6 +12,7 @@ import { INSIGHT_PROMPT_SECTION } from "./insights.js";
 import { getOutputStylePrompt, type OutputStyle } from "./output-styles.js";
 import { loadSkills } from "../skills/loader.js";
 import { formatCommitContext } from "../search/lineage.js";
+import { formatStyleContext } from "../learning/style-learner.js";
 import { buildRepoMap, repoMapToContext } from "./repo-map.js";
 
 const DEFAULT_SYSTEM_PROMPT = `You are Brainstorm, an AI coding assistant powered by BrainstormRouter — an intelligent model routing gateway. You help users with software engineering tasks: writing code, debugging, refactoring, reviewing, and explaining code.
@@ -155,6 +156,12 @@ export function buildSystemPrompt(
   const skillsSection = buildSkillsSection(projectPath);
   if (skillsSection) {
     parts.push(skillsSection);
+  }
+
+  // Learned style conventions
+  const styleContext = formatStyleContext(projectPath);
+  if (styleContext) {
+    parts.push(`\n## Project Style Guide (auto-detected)\n\n${styleContext}`);
   }
 
   // Transient context (session-specific, changes frequently)
