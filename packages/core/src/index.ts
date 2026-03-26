@@ -19,3 +19,4 @@ export { createSubagentTool } from './agent/subagent-tool.js';
 export { BuildStateTracker, type BuildResult, type BuildStatus } from './agent/build-state.js';
 export { LoopDetector, type LoopWarning } from './agent/loop-detector.js';
 export { detectTone, toneGuidance, type UserTone, type ToneResult } from './agent/sentiment.js';
+export { ReactionTracker, type ReactionSignal, type ReactionEntry } from './agent/reaction-tracker.js';
