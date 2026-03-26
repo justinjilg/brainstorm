@@ -132,7 +132,12 @@ export function ChatApp({
         setMessages([]);
         setStreamingText(undefined);
       },
-      setModel: slashCallbacks?.setModel,
+      setModel: (model: string) => {
+        slashCallbacks?.setModel?.(model);
+        // Update displayed model name immediately (don't wait for routing event)
+        const name = model.split("/").pop() ?? model;
+        setCurrentModel(name);
+      },
       setStrategy: slashCallbacks?.setStrategy,
       getStrategy: slashCallbacks?.getStrategy,
       setMode: slashCallbacks?.setMode,
