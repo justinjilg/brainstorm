@@ -1,29 +1,41 @@
-import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
-import TOML from '@iarna/toml';
-import { createLogger } from '@brainstorm/shared';
-import { brainstormConfigSchema, type BrainstormConfig } from './schema.js';
-import { loadStormFile } from './storm-loader.js';
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
+import TOML from "@iarna/toml";
+import { createLogger } from "@brainstorm/shared";
+import { brainstormConfigSchema, type BrainstormConfig } from "./schema.js";
 
-const log = createLogger('config');
+const log = createLogger("config");
 
-const GLOBAL_CONFIG_DIR = join(homedir(), '.brainstorm');
-const GLOBAL_CONFIG_FILE = join(GLOBAL_CONFIG_DIR, 'config.toml');
-const PROJECT_CONFIG_FILE = 'brainstorm.toml';
+const GLOBAL_CONFIG_DIR = join(homedir(), ".brainstorm");
+const GLOBAL_CONFIG_FILE = join(GLOBAL_CONFIG_DIR, "config.toml");
+const PROJECT_CONFIG_FILE = "brainstorm.toml";
 function readToml(path: string): Record<string, unknown> {
   if (!existsSync(path)) return {};
-  const content = readFileSync(path, 'utf-8');
+  const content = readFileSync(path, "utf-8");
   return TOML.parse(content) as Record<string, unknown>;
 }
 
-function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {
+function deepMerge(
+  target: Record<string, unknown>,
+  source: Record<string, unknown>,
+): Record<string, unknown> {
   const result = { ...target };
   for (const key of Object.keys(source)) {
     const sv = source[key];
     const tv = result[key];
-    if (sv && typeof sv === 'object' && !Array.isArray(sv) && tv && typeof tv === 'object' && !Array.isArray(tv)) {
-      result[key] = deepMerge(tv as Record<string, unknown>, sv as Record<string, unknown>);
+    if (
+      sv &&
+      typeof sv === "object" &&
+      !Array.isArray(sv) &&
+      tv &&
+      typeof tv === "object" &&
+      !Array.isArray(tv)
+    ) {
+      result[key] = deepMerge(
+        tv as Record<string, unknown>,
+        sv as Record<string, unknown>,
+      );
     } else {
       result[key] = sv;
     }
@@ -31,7 +43,9 @@ function deepMerge(target: Record<string, unknown>, source: Record<string, unkno
   return result;
 }
 
-function applyEnvOverrides(config: Record<string, unknown>): Record<string, unknown> {
+function applyEnvOverrides(
+  config: Record<string, unknown>,
+): Record<string, unknown> {
   const result = { ...config };
   // BRAINSTORM_DEFAULT_STRATEGY overrides general.defaultStrategy
   if (process.env.BRAINSTORM_DEFAULT_STRATEGY) {
@@ -51,9 +65,9 @@ function applyEnvOverrides(config: Record<string, unknown>): Record<string, unkn
 function readJsonSafe(path: string): Record<string, unknown> {
   if (!existsSync(path)) return {};
   try {
-    return JSON.parse(readFileSync(path, 'utf-8'));
+    return JSON.parse(readFileSync(path, "utf-8"));
   } catch (e) {
-    log.warn({ err: e, path }, 'Failed to parse JSON config file');
+    log.warn({ err: e, path }, "Failed to parse JSON config file");
     return {};
   }
 }
@@ -63,20 +77,28 @@ function readJsonSafe(path: string): Record<string, unknown> {
  * Project-level servers override global by name.
  */
 function loadMCPServers(projectDir: string): Array<Record<string, unknown>> {
-  const globalMcp = readJsonSafe(join(GLOBAL_CONFIG_DIR, 'mcp.json'));
-  const projectMcp = readJsonSafe(join(projectDir, '.brainstorm', 'mcp.json'));
+  const globalMcp = readJsonSafe(join(GLOBAL_CONFIG_DIR, "mcp.json"));
+  const projectMcp = readJsonSafe(join(projectDir, ".brainstorm", "mcp.json"));
 
-  const globalServers = Array.isArray(globalMcp.servers) ? globalMcp.servers : [];
-  const projectServers = Array.isArray(projectMcp.servers) ? projectMcp.servers : [];
+  const globalServers = Array.isArray(globalMcp.servers)
+    ? globalMcp.servers
+    : [];
+  const projectServers = Array.isArray(projectMcp.servers)
+    ? projectMcp.servers
+    : [];
 
   // Project servers override global by name
   const byName = new Map<string, Record<string, unknown>>();
-  for (const s of globalServers) byName.set((s as any).name, s as Record<string, unknown>);
-  for (const s of projectServers) byName.set((s as any).name, s as Record<string, unknown>);
+  for (const s of globalServers)
+    byName.set((s as any).name, s as Record<string, unknown>);
+  for (const s of projectServers)
+    byName.set((s as any).name, s as Record<string, unknown>);
   return Array.from(byName.values());
 }
 
-export function loadConfig(projectDir: string = process.cwd()): BrainstormConfig {
+export function loadConfig(
+  projectDir: string = process.cwd(),
+): BrainstormConfig {
   // Layer 1: Global config
   const global = readToml(GLOBAL_CONFIG_FILE);
   // Layer 2: Project config
@@ -95,12 +117,6 @@ export function loadConfig(projectDir: string = process.cwd()): BrainstormConfig
   }
   // Validate and apply defaults
   return brainstormConfigSchema.parse(merged);
-}
-
-/** @deprecated Use loadStormFile() from './storm-loader.js' instead. */
-export function loadProjectContext(projectDir: string = process.cwd()): string | null {
-  const storm = loadStormFile(projectDir);
-  return storm ? storm.body : null;
 }
 
 export { GLOBAL_CONFIG_DIR, GLOBAL_CONFIG_FILE };
