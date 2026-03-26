@@ -1198,6 +1198,11 @@ program
           signal: simpleAbortController.signal,
           permissionCheck: (name, perm) => permissionManager.check(name, perm),
           preferredModelId,
+          onTurnComplete: (ctx) => {
+            ctx.turn = sessionManager.incrementTurn();
+            ctx.sessionMinutes = sessionManager.getSessionMinutes();
+            sessionManager.addTurnContext(ctx);
+          },
         })) {
           switch (event.type) {
             case 'thinking':
