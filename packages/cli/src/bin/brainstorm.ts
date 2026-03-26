@@ -908,10 +908,15 @@ program
         config.permissions,
       );
 
-      // Strategy: CLI flag → paid-key default → config default
+      // Strategy: CLI flag → paid/direct-key default → config default
+      const hasDirectKeys =
+        !!resolvedKeys.get("DEEPSEEK_API_KEY") ||
+        !!resolvedKeys.get("ANTHROPIC_API_KEY") ||
+        !!resolvedKeys.get("OPENAI_API_KEY") ||
+        !!resolvedKeys.get("GOOGLE_GENERATIVE_AI_API_KEY");
       if (opts.strategy) {
         router.setStrategy(opts.strategy as any);
-      } else if (!isCommunityTier) {
+      } else if (!isCommunityTier || hasDirectKeys) {
         router.setStrategy("quality-first");
       }
 
@@ -939,7 +944,14 @@ program
         systemPrompt,
         disableTools: !opts.tools,
         preferredModelId:
-          opts.model ?? (isCommunityTier ? "brainstormrouter/auto" : undefined),
+          opts.model ??
+          (isCommunityTier &&
+          !resolvedKeys.get("DEEPSEEK_API_KEY") &&
+          !resolvedKeys.get("ANTHROPIC_API_KEY") &&
+          !resolvedKeys.get("OPENAI_API_KEY") &&
+          !resolvedKeys.get("GOOGLE_GENERATIVE_AI_API_KEY")
+            ? "brainstormrouter/auto"
+            : undefined),
         maxSteps: parseInt(opts.maxSteps ?? "1"),
         compaction: buildCompactionCallbacks(sessionManager),
         permissionCheck: (tool, args) => permissionManager.check(tool, args),
@@ -1512,12 +1524,17 @@ program
         costTracker,
         frontmatter,
       );
-      // Paid keys get quality-first by default — you're paying, use the good models.
-      // Community tier stays on whatever BR's server-side routing picks (cost-first).
+      // Paid keys or direct provider keys get quality-first by default.
+      // Community tier without own keys stays on BR server-side routing.
+      const hasOwnKeys =
+        !!resolvedKeys.get("DEEPSEEK_API_KEY") ||
+        !!resolvedKeys.get("ANTHROPIC_API_KEY") ||
+        !!resolvedKeys.get("OPENAI_API_KEY") ||
+        !!resolvedKeys.get("GOOGLE_GENERATIVE_AI_API_KEY");
       if (opts.strategy) {
         router.setStrategy(opts.strategy as any);
       } else if (
-        !isCommunityTier &&
+        (!isCommunityTier || hasOwnKeys) &&
         router.getActiveStrategy() !== "capability"
       ) {
         router.setStrategy("quality-first");
@@ -1537,10 +1554,17 @@ program
       tools.register(subagentTool);
 
       // Preferred model override — mutable so /model can change it
-      // Community tier: force brainstormrouter/auto so server-side routing picks allowed models
-      let preferredModelId: string | undefined = isCommunityTier
-        ? "brainstormrouter/auto"
-        : undefined;
+      // Community tier without direct provider keys: force brainstormrouter/auto
+      // If user has their own keys (DEEPSEEK, ANTHROPIC, etc.), let local routing use them
+      const hasDirectProviderKeys =
+        !!resolvedKeys.get("DEEPSEEK_API_KEY") ||
+        !!resolvedKeys.get("ANTHROPIC_API_KEY") ||
+        !!resolvedKeys.get("OPENAI_API_KEY") ||
+        !!resolvedKeys.get("GOOGLE_GENERATIVE_AI_API_KEY");
+      let preferredModelId: string | undefined =
+        isCommunityTier && !hasDirectProviderKeys
+          ? "brainstormrouter/auto"
+          : undefined;
 
       // Session management: resume, fork, or start new
       let session: any;
