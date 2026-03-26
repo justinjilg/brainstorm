@@ -191,6 +191,12 @@ function classifyMessage(
   // [keep] prefix marks messages as compaction-resistant
   if (content.startsWith('[keep]') || content.startsWith('[KEEP]')) return 'keep';
 
+  // Preserve memory-injected context (survives compaction by design)
+  if (content.includes('[Memory]') || content.includes('[memory]') || content.includes('Memory context:')) return 'keep';
+
+  // Preserve loop warnings (critical for preventing repeated mistakes)
+  if (content.includes('[Loop warning]') || content.includes('loop-warning') || content.includes('Loop detected')) return 'keep';
+
   // Keep error messages
   if (content.includes('Error:') || content.includes('error:') || content.includes('FAIL')) {
     return 'keep';
