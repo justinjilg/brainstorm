@@ -1,6 +1,7 @@
 import { streamText } from 'ai';
 import type { ConversationMessage } from './manager.js';
 import { formatScratchpadContext } from '@brainstorm/tools';
+import { reduceTrajectory } from './trajectory-reducer.js';
 
 /**
  * Estimate token count for a list of messages.
@@ -50,13 +51,18 @@ export async function compactContext(
 ): Promise<{ messages: ConversationMessage[]; compacted: boolean; summaryCost: number }> {
   const { contextWindow, keepRecent = 5, summarizeModel } = options;
 
-  if (!needsCompaction(messages, contextWindow)) {
-    return { messages, compacted: false, summaryCost: 0 };
+  // Phase 1: Trajectory reduction — remove expired/redundant messages before compaction
+  const turnEstimate = Math.floor(messages.length / 2); // rough turn count
+  const reduction = reduceTrajectory(messages, turnEstimate);
+  const workingMessages = reduction.removedCount > 0 ? reduction.reduced : messages;
+
+  if (!needsCompaction(workingMessages, contextWindow)) {
+    return { messages: workingMessages, compacted: reduction.removedCount > 0, summaryCost: 0 };
   }
 
   // Separate system message (if any)
-  const systemMsg = messages[0]?.role === 'system' ? messages[0] : null;
-  const conversationMsgs = systemMsg ? messages.slice(1) : messages;
+  const systemMsg = workingMessages[0]?.role === 'system' ? workingMessages[0] : null;
+  const conversationMsgs = systemMsg ? workingMessages.slice(1) : workingMessages;
 
   // Keep the most recent messages
   const recentStart = Math.max(0, conversationMsgs.length - keepRecent);
