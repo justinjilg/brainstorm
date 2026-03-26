@@ -7,6 +7,14 @@ export interface SkillDefinition {
   description: string;
   content: string;
   source: 'project' | 'global' | 'claude-compat';
+  /** Optional: restrict which tools this skill can use. */
+  tools?: string[];
+  /** Optional: routing preference when this skill is active. */
+  modelPreference?: 'cheap' | 'quality' | 'fast' | 'auto';
+  /** Optional: max agentic steps for this skill. */
+  maxSteps?: number;
+  /** Optional: system prompt override (separate from content which is the user prompt). */
+  systemPrompt?: string;
 }
 
 /**
@@ -47,13 +55,17 @@ function loadSkillsFromDir(dir: string, source: SkillDefinition['source']): Skil
     try {
       const content = readFileSync(join(dir, file), 'utf-8');
       const name = basename(file, '.md');
-      const { description, body } = parseFrontmatter(content);
+      const { description, body, tools, modelPreference, maxSteps, systemPrompt } = parseFrontmatter(content);
 
       skills.push({
         name,
         description: description || `Skill: ${name}`,
         content: body,
         source,
+        ...(tools ? { tools } : {}),
+        ...(modelPreference ? { modelPreference: modelPreference as any } : {}),
+        ...(maxSteps ? { maxSteps } : {}),
+        ...(systemPrompt ? { systemPrompt } : {}),
       });
     } catch { /* skip unreadable files */ }
   }
@@ -61,22 +73,51 @@ function loadSkillsFromDir(dir: string, source: SkillDefinition['source']): Skil
   return skills;
 }
 
+interface ParsedFrontmatter {
+  description: string;
+  body: string;
+  tools?: string[];
+  modelPreference?: string;
+  maxSteps?: number;
+  systemPrompt?: string;
+}
+
 /**
  * Parse YAML frontmatter from a markdown file.
- * Returns the description field and the body content.
+ * Supports: description, tools, model_preference, max_steps, system_prompt.
  */
-function parseFrontmatter(content: string): { description: string; body: string } {
+function parseFrontmatter(content: string): ParsedFrontmatter {
   const fmMatch = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
   if (!fmMatch) return { description: '', body: content };
 
   const frontmatter = fmMatch[1];
   const body = fmMatch[2];
 
-  // Extract description from frontmatter (simple key: value parsing)
+  // Extract fields from frontmatter (simple key: value parsing)
   const descMatch = frontmatter.match(/description:\s*"?([^"\n]+)"?/);
   const description = descMatch?.[1]?.trim() ?? '';
 
-  return { description, body };
+  // tools: list (YAML array on separate lines or inline)
+  const toolsMatch = frontmatter.match(/tools:\s*\n((?:\s+-\s+\S+\n?)+)/);
+  const tools = toolsMatch
+    ? toolsMatch[1].split('\n').map((l) => l.replace(/^\s+-\s+/, '').trim()).filter(Boolean)
+    : undefined;
+
+  // model_preference: cheap | quality | fast | auto
+  const modelMatch = frontmatter.match(/model_preference:\s*(\S+)/);
+  const modelPreference = modelMatch?.[1]?.trim();
+
+  // max_steps: number
+  const stepsMatch = frontmatter.match(/max_steps:\s*(\d+)/);
+  const maxSteps = stepsMatch ? parseInt(stepsMatch[1], 10) : undefined;
+
+  // system_prompt: multiline via |
+  const sysMatch = frontmatter.match(/system_prompt:\s*\|\s*\n((?:\s{2,}.+\n?)+)/);
+  const systemPrompt = sysMatch
+    ? sysMatch[1].split('\n').map((l) => l.replace(/^\s{2,}/, '')).join('\n').trim()
+    : undefined;
+
+  return { description, body, tools, modelPreference, maxSteps, systemPrompt };
 }
 
 /**
