@@ -205,6 +205,48 @@ export type AgentEvent =
   | { type: 'error'; error: Error }
   | { type: 'done'; totalCost: number; totalTokens?: { input: number; output: number } };
 
+// ── Turn Context ─────────────────────────────────────────────────────
+
+/** Per-turn state injected between turns so the agent knows what just happened. */
+export interface TurnContext {
+  turn: number;
+  model: string;
+  strategy: string;
+  toolCalls: Array<{ name: string; ok: boolean }>;
+  turnCost: number;
+  budgetRemaining: number;
+  budgetPercent: number;
+  filesRead: string[];
+  filesWritten: string[];
+  sessionMinutes: number;
+}
+
+/** Format TurnContext as a compact one-line summary for system message injection. */
+export function formatTurnContext(ctx: TurnContext): string {
+  const tools = ctx.toolCalls.length > 0
+    ? ctx.toolCalls.map((t) => `${t.name}${t.ok ? '' : '✗'}`).join(' ')
+    : 'none';
+  const files = [
+    ...ctx.filesRead.map((f) => `${basename(f)}↓`),
+    ...ctx.filesWritten.map((f) => `${basename(f)}↑`),
+  ];
+  const fileStr = files.length > 0 ? files.slice(0, 6).join(' ') : '';
+  const parts = [
+    `Turn ${ctx.turn}`,
+    ctx.model,
+    `tools: ${tools}`,
+    `$${ctx.turnCost.toFixed(3)}`,
+    `budget ${ctx.budgetPercent}%`,
+  ];
+  if (fileStr) parts.push(`files: ${fileStr}`);
+  parts.push(`${ctx.sessionMinutes}min`);
+  return `[${parts.join(' | ')}]`;
+}
+
+function basename(path: string): string {
+  return path.split('/').pop() ?? path;
+}
+
 // ── Tool System ──────────────────────────────────────────────────────
 
 export type ToolPermission = 'auto' | 'confirm' | 'deny';
