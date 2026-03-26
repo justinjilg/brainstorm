@@ -129,6 +129,12 @@ export {
   formatCommitContext,
   type CommitSummary,
 } from "./search/lineage.js";
+export { createAuditMiddleware, getAuditLog } from "./audit/logger.js";
+export {
+  invokeExternalAgent,
+  type ExternalAgentConfig,
+  type ExternalAgentResult,
+} from "./agent/acp-client.js";
 export {
   submitCommunityFix,
   queryCommunityFixes,

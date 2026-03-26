@@ -8,7 +8,7 @@
  * Brainstorm's SQLite-based persistence.
  */
 
-import type { ConversationMessage } from './manager.js';
+import type { ConversationMessage } from "./manager.js";
 
 export interface SessionCheckpointData {
   sessionId: string;
@@ -20,6 +20,14 @@ export interface SessionCheckpointData {
   buildStatus: string;
   totalCost: number;
   projectPath: string;
+  /** Subagent state for long-running task recovery. */
+  subagentState?: {
+    type: string;
+    task: string;
+    toolCallsSoFar: string[];
+    partialOutput: string;
+    cost: number;
+  };
 }
 
 /**
@@ -66,7 +74,7 @@ export class SessionCheckpointer {
 
       this.db
         .prepare(
-          'INSERT INTO session_checkpoints (session_id, turn_number, state_json) VALUES (?, ?, ?)',
+          "INSERT INTO session_checkpoints (session_id, turn_number, state_json) VALUES (?, ?, ?)",
         )
         .run(data.sessionId, data.turnNumber, stateJson);
 
@@ -99,9 +107,11 @@ export class SessionCheckpointer {
     try {
       const row = this.db
         .prepare(
-          'SELECT session_id, turn_number, state_json FROM session_checkpoints WHERE session_id = ? ORDER BY turn_number DESC LIMIT 1',
+          "SELECT session_id, turn_number, state_json FROM session_checkpoints WHERE session_id = ? ORDER BY turn_number DESC LIMIT 1",
         )
-        .get(sessionId) as { session_id: string; turn_number: number; state_json: string } | undefined;
+        .get(sessionId) as
+        | { session_id: string; turn_number: number; state_json: string }
+        | undefined;
 
       if (!row) return null;
 
@@ -135,7 +145,12 @@ export class SessionCheckpointer {
            WHERE created_at > ?
            ORDER BY created_at DESC`,
         )
-        .all(cutoff) as Array<{ session_id: string; turn_number: number; created_at: number; state_json: string }>;
+        .all(cutoff) as Array<{
+        session_id: string;
+        turn_number: number;
+        created_at: number;
+        state_json: string;
+      }>;
 
       return rows.map((row) => {
         const state = JSON.parse(row.state_json);
@@ -143,7 +158,7 @@ export class SessionCheckpointer {
           sessionId: row.session_id,
           turnNumber: row.turn_number,
           createdAt: row.created_at,
-          projectPath: state.projectPath ?? '',
+          projectPath: state.projectPath ?? "",
         };
       });
     } catch {
@@ -156,7 +171,9 @@ export class SessionCheckpointer {
    */
   cleanup(sessionId: string): void {
     try {
-      this.db.prepare('DELETE FROM session_checkpoints WHERE session_id = ?').run(sessionId);
+      this.db
+        .prepare("DELETE FROM session_checkpoints WHERE session_id = ?")
+        .run(sessionId);
     } catch {
       // Best effort
     }
@@ -168,7 +185,9 @@ export class SessionCheckpointer {
   cleanupOld(maxAgeMs = 24 * 60 * 60 * 1000): number {
     try {
       const cutoff = Math.floor((Date.now() - maxAgeMs) / 1000);
-      const result = this.db.prepare('DELETE FROM session_checkpoints WHERE created_at < ?').run(cutoff);
+      const result = this.db
+        .prepare("DELETE FROM session_checkpoints WHERE created_at < ?")
+        .run(cutoff);
       return result.changes;
     } catch {
       return 0;

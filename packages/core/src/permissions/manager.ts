@@ -40,9 +40,28 @@ export class PermissionManager {
 
   constructor(
     defaultMode: PermissionMode = "confirm",
-    configPermissions?: { allowlist?: string[]; denylist?: string[] },
+    configPermissions?: {
+      allowlist?: string[];
+      denylist?: string[];
+      role?: "viewer" | "developer" | "admin";
+    },
   ) {
-    this.mode = defaultMode;
+    // Role presets override default mode
+    if (configPermissions?.role) {
+      switch (configPermissions.role) {
+        case "viewer":
+          this.mode = "plan";
+          break;
+        case "developer":
+          this.mode = "confirm";
+          break;
+        case "admin":
+          this.mode = "auto";
+          break;
+      }
+    } else {
+      this.mode = defaultMode;
+    }
 
     // Load from config.toml permissions section
     if (configPermissions?.allowlist) {
