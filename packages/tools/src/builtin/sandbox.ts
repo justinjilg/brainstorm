@@ -4,7 +4,7 @@
  * Three levels:
  * - none: no restrictions (current default)
  * - restricted: block dangerous patterns, warn on risky ones
- * - container: (future) Docker isolation
+ * - container: Docker isolation (routes commands through DockerSandbox)
  */
 
 export type SandboxLevel = "none" | "restricted" | "container";
@@ -116,8 +116,8 @@ export function checkSandbox(
   }
 
   if (level === "container") {
-    // Container mode not yet implemented — fall back to restricted
-    return checkRestricted(command, projectPath);
+    // Container mode: Docker provides isolation, allow all commands
+    return { allowed: true };
   }
 
   return checkRestricted(command, projectPath);

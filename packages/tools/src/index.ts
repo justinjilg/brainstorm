@@ -96,6 +96,7 @@ export {
 export { checkSandbox, type SandboxLevel } from "./builtin/sandbox.js";
 export {
   configureSandbox,
+  stopDockerSandbox,
   setBackgroundEventHandler,
   getBackgroundTasks,
   setToolOutputHandler,

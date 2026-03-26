@@ -7,7 +7,11 @@ import {
   isCommunityKey,
 } from "@brainstorm/providers";
 import { BrainstormRouter, CostTracker } from "@brainstorm/router";
-import { createDefaultToolRegistry, configureSandbox } from "@brainstorm/tools";
+import {
+  createDefaultToolRegistry,
+  configureSandbox,
+  stopDockerSandbox,
+} from "@brainstorm/tools";
 import {
   runAgentLoop,
   buildSystemPrompt,
@@ -884,6 +888,8 @@ program
         config.shell.sandbox as any,
         projectPath,
         config.shell.maxOutputBytes,
+        config.shell.containerImage,
+        config.shell.containerTimeout,
       );
       const { prompt: rawPrompt, frontmatter } = buildSystemPrompt(projectPath);
       const systemPrompt =
@@ -1476,6 +1482,8 @@ program
         config.shell.sandbox as any,
         projectPath,
         config.shell.maxOutputBytes,
+        config.shell.containerImage,
+        config.shell.containerTimeout,
       );
 
       // Permission manager — gates tool execution
@@ -1912,8 +1920,13 @@ program
   );
 
 export function run() {
-  // Graceful shutdown: finalize session, close DB, kill background tasks
+  // Graceful shutdown: stop Docker sandbox, close DB
   const cleanup = () => {
+    try {
+      stopDockerSandbox();
+    } catch {
+      // Best effort — container may already be stopped
+    }
     try {
       closeDb();
     } catch {
