@@ -52,7 +52,7 @@ export async function compactContext(
   const { contextWindow, keepRecent = 5, summarizeModel } = options;
 
   // Phase 1: Trajectory reduction — remove expired/redundant messages before compaction
-  const turnEstimate = Math.floor(messages.length / 2); // rough turn count
+  const turnEstimate = messages.length; // use message count as turn proxy for age-based expiry
   const reduction = reduceTrajectory(messages, turnEstimate);
   const workingMessages = reduction.removedCount > 0 ? reduction.reduced : messages;
 
@@ -70,7 +70,7 @@ export async function compactContext(
   const recentMessages = conversationMsgs.slice(recentStart);
 
   if (oldMessages.length === 0) {
-    return { messages, compacted: false, summaryCost: 0 };
+    return { messages: workingMessages, compacted: reduction.removedCount > 0, summaryCost: 0 };
   }
 
   // Classify messages into keep/summarize/drop buckets

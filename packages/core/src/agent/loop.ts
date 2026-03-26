@@ -197,16 +197,18 @@ export async function* runAgentLoop(
   // Provide tools unless explicitly disabled by the caller (e.g., brainstorm run without --tools)
   const shouldUseTools = !options.disableTools;
 
-  // Progressive tool loading: select tool tier based on task complexity
+  // Progressive tool loading: select tool tier based on task complexity.
+  // Only restrict tools for trivial tasks (Q&A, simple reads). All other tasks
+  // get the full tool set until mid-session escalation is implemented.
   const toolTier = getTierForComplexity(task.complexity);
-  const tierToolNames = getToolsForTier(toolTier);
+  const useFullTools = toolTier !== 'minimal';
+  const tierToolNames = useFullTools ? undefined : getToolsForTier(toolTier);
 
   // Build tools with permission gating if a check function is provided
-  // Filter to tier-appropriate tools for token savings
   const aiTools = shouldUseTools
     ? (options.permissionCheck
       ? tools.toAISDKToolsWithPermissions(options.permissionCheck, tierToolNames)
-      : tools.toAISDKToolsFiltered(tierToolNames))
+      : (tierToolNames ? tools.toAISDKToolsFiltered(tierToolNames) : tools.toAISDKTools()))
     : undefined;
 
   // Serialize task context for gateway telemetry (x-br-metadata header)
