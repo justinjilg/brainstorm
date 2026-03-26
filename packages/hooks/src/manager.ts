@@ -6,6 +6,30 @@ import type { HookDefinition, HookEvent, HookResult } from './types.js';
 const execFileAsync = promisify(execFile);
 const log = createLogger('hooks');
 
+/** Cache compiled RegExps to avoid recompilation on every hook fire. */
+const regexCache = new Map<string, RegExp | null>();
+
+/** Simple ReDoS heuristic: reject patterns with nested quantifiers. */
+const REDOS_PATTERN = /(\+|\*|\{)\s*(\+|\*|\{)/;
+
+function getCachedRegex(pattern: string): RegExp | null {
+  if (regexCache.has(pattern)) return regexCache.get(pattern)!;
+  if (REDOS_PATTERN.test(pattern)) {
+    log.warn({ pattern }, 'Rejected hook matcher — potential ReDoS (nested quantifiers)');
+    regexCache.set(pattern, null);
+    return null;
+  }
+  try {
+    const re = new RegExp(pattern);
+    regexCache.set(pattern, re);
+    return re;
+  } catch (e) {
+    log.warn({ err: e, pattern }, 'Invalid hook matcher regex');
+    regexCache.set(pattern, null);
+    return null;
+  }
+}
+
 /**
  * HookManager — registers and fires hooks at lifecycle events.
  *
@@ -52,9 +76,9 @@ export class HookManager {
           ? context?.subagentType as string
           : context?.toolName;
         if (matchTarget) {
-          try {
-            return new RegExp(h.matcher).test(matchTarget);
-          } catch (e) { log.warn({ err: e, matcher: h.matcher }, 'Invalid hook matcher regex'); return false; }
+          const re = getCachedRegex(h.matcher);
+          if (!re) return false;
+          return re.test(matchTarget);
         }
       }
       return true;
