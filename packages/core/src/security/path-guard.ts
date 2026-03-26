@@ -1,4 +1,5 @@
 import { resolve, relative } from 'node:path';
+import { realpathSync, existsSync } from 'node:fs';
 
 /**
  * Path Safety Guard — prevents path traversal attacks.
@@ -11,12 +12,26 @@ import { resolve, relative } from 'node:path';
 /**
  * Resolve a path safely within the project directory.
  * Throws if the resolved path escapes the workspace root.
+ *
+ * Security: resolves symlinks via realpathSync to prevent symlink-based escapes.
+ * Also blocks explicit '..' segments in the path.
  */
 export function resolveSafe(filePath: string, workspaceRoot: string): string {
-  const resolved = resolve(workspaceRoot, filePath);
-  const rel = relative(workspaceRoot, resolved);
+  // Block explicit '..' segments before resolution
+  const segments = filePath.split(/[/\\]/);
+  if (segments.includes('..')) {
+    throw new PathTraversalError(filePath, workspaceRoot);
+  }
 
-  // Check for path traversal (relative path starts with ..)
+  const resolved = resolve(workspaceRoot, filePath);
+
+  // Resolve symlinks if the file exists (prevents symlink-based escapes)
+  const realResolved = existsSync(resolved) ? realpathSync(resolved) : resolved;
+  const realWorkspace = existsSync(workspaceRoot) ? realpathSync(workspaceRoot) : resolve(workspaceRoot);
+
+  const rel = relative(realWorkspace, realResolved);
+
+  // Check for path traversal (relative path starts with .. or is absolute)
   if (rel.startsWith('..') || rel.startsWith('/')) {
     throw new PathTraversalError(filePath, workspaceRoot);
   }
