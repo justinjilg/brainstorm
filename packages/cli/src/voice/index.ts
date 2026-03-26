@@ -60,3 +60,4 @@ export class VoiceInput {
 
 export { AudioRecorder } from './recorder.js';
 export { detectBackend, transcribe, type TranscriptionResult, type WhisperBackend } from './transcriber.js';
+export { analyzeVoiceSentiment, type VoiceSentimentResult } from './voice-sentiment.js';
