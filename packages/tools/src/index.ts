@@ -7,6 +7,7 @@ export { scratchpadWriteTool, scratchpadReadTool, getScratchpadEntries, clearScr
 export { askUserTool, resolveAskUser, hasPendingQuestion } from './builtin/ask-user.js';
 export { routingHintTool, getRoutingHint, consumeRoutingHint, resetRoutingHint, type RoutingPreference } from './builtin/routing-hint.js';
 export { costEstimateTool } from './builtin/cost-estimate.js';
+export { isParallelSafe, classifyToolBatch, executeWithParallelism } from './parallel.js';
 export { planPreviewTool } from './builtin/plan-preview.js';
 export { ToolRegistry, type PermissionCheckFn } from './registry.js';
 export { fileReadTool } from './builtin/file-read.js';
