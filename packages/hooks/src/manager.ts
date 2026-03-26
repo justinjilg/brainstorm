@@ -66,13 +66,13 @@ export class HookManager {
 
       if (hook.type === 'command') {
         try {
-          // Expand variables in command
+          // Expand variables in command (shell-escaped to prevent injection)
           let cmd = hook.command;
-          if (context?.filePath) cmd = cmd.replace(/\$FILE/g, context.filePath);
-          if (context?.toolName) cmd = cmd.replace(/\$TOOL/g, context.toolName);
-          if (context?.subagentType) cmd = cmd.replace(/\$SUBAGENT_TYPE/g, String(context.subagentType));
-          if (context?.subagentCost !== undefined) cmd = cmd.replace(/\$SUBAGENT_COST/g, String(context.subagentCost));
-          if (context?.subagentModel) cmd = cmd.replace(/\$SUBAGENT_MODEL/g, String(context.subagentModel));
+          if (context?.filePath) cmd = cmd.replace(/\$FILE/g, shellEscape(context.filePath));
+          if (context?.toolName) cmd = cmd.replace(/\$TOOL/g, shellEscape(context.toolName));
+          if (context?.subagentType) cmd = cmd.replace(/\$SUBAGENT_TYPE/g, shellEscape(String(context.subagentType)));
+          if (context?.subagentCost !== undefined) cmd = cmd.replace(/\$SUBAGENT_COST/g, shellEscape(String(context.subagentCost)));
+          if (context?.subagentModel) cmd = cmd.replace(/\$SUBAGENT_MODEL/g, shellEscape(String(context.subagentModel)));
 
           const { stdout, stderr } = await execFileAsync('/bin/sh', ['-c', cmd], {
             timeout: 10_000,
@@ -110,4 +110,14 @@ export class HookManager {
   isBlocked(results: HookResult[]): boolean {
     return results.some((r) => r.blocked);
   }
+}
+
+/**
+ * Escape a string for safe inclusion in a shell command.
+ * Wraps in single quotes and escapes internal single quotes.
+ * Prevents command injection via $FILE, $TOOL, etc.
+ */
+function shellEscape(str: string): string {
+  // Replace single quotes with '\'' (end quote, escaped quote, start quote)
+  return "'" + str.replace(/'/g, "'\\''") + "'";
 }
