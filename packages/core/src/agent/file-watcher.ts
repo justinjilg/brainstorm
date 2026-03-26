@@ -17,10 +17,13 @@ export interface FileChange {
   type: 'created' | 'modified' | 'deleted';
 }
 
+const DEBOUNCE_MS = 200;
+
 export class FileWatcher {
   private watcher: FSWatcher | null = null;
   private changes = new Map<string, FileChange['type']>();
   private agentWrites = new Set<string>();
+  private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(private projectPath: string) {}
 
@@ -48,9 +51,15 @@ export class FileWatcher {
           return;
         }
 
-        // Record the change
-        const changeType = eventType === 'rename' ? 'created' : 'modified';
-        this.changes.set(filename, changeType);
+        // Debounce: coalesce rapid events for the same file (e.g., save + lint)
+        const existing = this.debounceTimers.get(filename);
+        if (existing) clearTimeout(existing);
+
+        this.debounceTimers.set(filename, setTimeout(() => {
+          this.debounceTimers.delete(filename);
+          const changeType = eventType === 'rename' ? 'created' : 'modified';
+          this.changes.set(filename, changeType);
+        }, DEBOUNCE_MS));
       });
 
       // Don't let the watcher keep the process alive
@@ -96,5 +105,7 @@ export class FileWatcher {
     }
     this.changes.clear();
     this.agentWrites.clear();
+    for (const timer of this.debounceTimers.values()) clearTimeout(timer);
+    this.debounceTimers.clear();
   }
 }
