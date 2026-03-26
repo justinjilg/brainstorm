@@ -13,6 +13,7 @@ import { createStreamFilter } from './response-filter.js';
 import { normalizeInsightMarkers } from './insights.js';
 import { parseGatewayHeaders } from '@brainstorm/gateway';
 import type { MiddlewarePipeline } from '../middleware/pipeline.js';
+import { TrajectoryRecorder } from '../session/trajectory.js';
 
 /**
  * Enrich raw API errors with actionable user-facing messages.
@@ -112,6 +113,8 @@ export interface AgentLoopOptions {
   _retryAttempt?: boolean;
   /** Optional middleware pipeline for composable agent interceptors. */
   middleware?: MiddlewarePipeline;
+  /** Enable trajectory recording to JSONL. */
+  trajectoryEnabled?: boolean;
 }
 
 // All task types get tools — the model decides whether to use them.
@@ -125,6 +128,10 @@ export async function* runAgentLoop(
   options: AgentLoopOptions,
 ): AsyncGenerator<AgentEvent> {
   const { router, costTracker, tools, config, sessionId, systemPrompt } = options;
+
+  // Initialize trajectory recorder if enabled
+  const trajectory = options.trajectoryEnabled ? new TrajectoryRecorder(sessionId) : null;
+  trajectory?.recordSessionStart({ projectPath: options.projectPath, systemPrompt: systemPrompt.slice(0, 200) });
 
   // Reset task state and wire event handlers for this invocation
   clearTasks();
@@ -180,6 +187,16 @@ export async function* runAgentLoop(
     : router.route(task, conversationTokens);
 
   yield { type: 'routing', decision };
+
+  // Record routing decision in trajectory
+  trajectory?.recordRoutingDecision({
+    candidates: [],
+    winner: decision.model.id,
+    strategy: decision.strategy ?? 'unknown',
+    reasoning: decision.reason ?? '',
+    taskType: task.type,
+    complexity: task.complexity,
+  });
 
   // Phase: connecting
   yield { type: 'thinking' as const, phase: 'connecting' as const };
