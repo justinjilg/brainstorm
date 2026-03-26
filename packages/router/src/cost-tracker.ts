@@ -1,7 +1,7 @@
-import type { CostRecord, TaskType, BudgetState } from '@brainstorm/shared';
-import type { BudgetConfig } from '@brainstorm/config';
-import { BudgetExceededError } from '@brainstorm/shared';
-import { CostRepository } from '@brainstorm/db';
+import type { CostRecord, TaskType, BudgetState } from "@brainstorm/shared";
+import type { BudgetConfig } from "@brainstorm/config";
+import { BudgetExceededError } from "@brainstorm/shared";
+import { CostRepository } from "@brainstorm/db";
 
 export class CostTracker {
   private repo: CostRepository;
@@ -64,13 +64,28 @@ export class CostTracker {
     const state = this.getBudgetState();
 
     if (state.dailyLimit && state.dailyUsed >= state.dailyLimit) {
-      if (state.hardLimit) throw new BudgetExceededError('daily', state.dailyUsed, state.dailyLimit);
+      if (state.hardLimit)
+        throw new BudgetExceededError(
+          "daily",
+          state.dailyUsed,
+          state.dailyLimit,
+        );
     }
     if (state.monthlyLimit && state.monthlyUsed >= state.monthlyLimit) {
-      if (state.hardLimit) throw new BudgetExceededError('monthly', state.monthlyUsed, state.monthlyLimit);
+      if (state.hardLimit)
+        throw new BudgetExceededError(
+          "monthly",
+          state.monthlyUsed,
+          state.monthlyLimit,
+        );
     }
     if (state.sessionLimit && state.sessionUsed >= state.sessionLimit) {
-      if (state.hardLimit) throw new BudgetExceededError('session', state.sessionUsed, state.sessionLimit);
+      if (state.hardLimit)
+        throw new BudgetExceededError(
+          "session",
+          state.sessionUsed,
+          state.sessionLimit,
+        );
     }
   }
 
@@ -88,6 +103,7 @@ export class CostTracker {
       today: this.repo.totalCostToday(),
       thisMonth: this.repo.totalCostThisMonth(),
       byModel: this.repo.recentByModel(),
+      byTaskType: this.repo.byTaskType(),
     };
   }
 
