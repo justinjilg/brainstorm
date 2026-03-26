@@ -22,3 +22,4 @@ export { detectTone, toneGuidance, type UserTone, type ToneResult } from './agen
 export { ReactionTracker, type ReactionSignal, type ReactionEntry } from './agent/reaction-tracker.js';
 export { SessionPatternLearner } from './learning/session-patterns.js';
 export { buildSelfReviewPrompt, parseSelfReviewResponse, type SelfReviewResult, type SelfReviewOptions } from './agent/self-review.js';
+export { FileWatcher, type FileChange } from './agent/file-watcher.js';
