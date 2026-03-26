@@ -7,7 +7,7 @@
  * - container: (future) Docker isolation
  */
 
-export type SandboxLevel = 'none' | 'restricted' | 'container';
+export type SandboxLevel = "none" | "restricted" | "container";
 
 export interface SandboxResult {
   allowed: boolean;
@@ -17,50 +17,105 @@ export interface SandboxResult {
 /** Patterns that are always blocked in restricted mode. */
 const BLOCKED_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   // Destructive filesystem operations
-  { pattern: /\brm\s+(-\w*r\w*\s+.*)?\/\s*$/, reason: 'Recursive deletion of root filesystem' },
-  { pattern: /\brm\s+-\w*rf\w*\s+\//, reason: 'Recursive force deletion from root' },
-  { pattern: /\bmkfs\b/, reason: 'Filesystem creation is destructive' },
-  { pattern: /\bdd\s+if=/, reason: 'Raw disk operations blocked' },
-  { pattern: />\s*\/dev\/sd[a-z]/, reason: 'Direct device writes blocked' },
-  { pattern: /\bchmod\s+777\b/, reason: 'World-writable permissions are insecure' },
+  {
+    pattern: /\brm\s+(-\w*r\w*\s+.*)?\/\s*$/,
+    reason: "Recursive deletion of root filesystem",
+  },
+  {
+    pattern: /\brm\s+-\w*rf\w*\s+\//,
+    reason: "Recursive force deletion from root",
+  },
+  { pattern: /\bmkfs\b/, reason: "Filesystem creation is destructive" },
+  { pattern: /\bdd\s+if=/, reason: "Raw disk operations blocked" },
+  { pattern: />\s*\/dev\/sd[a-z]/, reason: "Direct device writes blocked" },
+  {
+    pattern: /\bchmod\s+777\b/,
+    reason: "World-writable permissions are insecure",
+  },
   // Privilege escalation
-  { pattern: /\bsudo\b/, reason: 'Elevated privileges not allowed in sandbox' },
-  { pattern: /\bsu\s+-c\b/, reason: 'Privilege escalation via su blocked' },
-  { pattern: /\bpkexec\b/, reason: 'Privilege escalation via pkexec blocked' },
-  { pattern: /\bdoas\b/, reason: 'Privilege escalation via doas blocked' },
+  { pattern: /\bsudo\b/, reason: "Elevated privileges not allowed in sandbox" },
+  { pattern: /\bsu\s+-c\b/, reason: "Privilege escalation via su blocked" },
+  { pattern: /\bpkexec\b/, reason: "Privilege escalation via pkexec blocked" },
+  { pattern: /\bdoas\b/, reason: "Privilege escalation via doas blocked" },
   // Fork bombs and system control
-  { pattern: /:\(\)\s*\{\s*:\|:&\s*\}\s*;/, reason: 'Fork bomb detected' },
-  { pattern: /\bshutdown\b/, reason: 'System shutdown blocked' },
-  { pattern: /\breboot\b/, reason: 'System reboot blocked' },
-  { pattern: /\binit\s+[06]\b/, reason: 'System halt/reboot blocked' },
+  { pattern: /:\(\)\s*\{\s*:\|:&\s*\}\s*;/, reason: "Fork bomb detected" },
+  { pattern: /\bshutdown\b/, reason: "System shutdown blocked" },
+  { pattern: /\breboot\b/, reason: "System reboot blocked" },
+  { pattern: /\binit\s+[06]\b/, reason: "System halt/reboot blocked" },
   // Remote code execution
-  { pattern: /\bcurl\b.*\|\s*(ba)?sh/, reason: 'Piping remote content to shell is risky' },
-  { pattern: /\bwget\b.*\|\s*(ba)?sh/, reason: 'Piping remote content to shell is risky' },
-  { pattern: /\beval\s+"?\$\(.*curl/, reason: 'Eval of remote content blocked' },
+  {
+    pattern: /\bcurl\b.*\|\s*(ba)?sh/,
+    reason: "Piping remote content to shell is risky",
+  },
+  {
+    pattern: /\bwget\b.*\|\s*(ba)?sh/,
+    reason: "Piping remote content to shell is risky",
+  },
+  {
+    pattern: /\beval\s+"?\$\(.*curl/,
+    reason: "Eval of remote content blocked",
+  },
   // Encoding bypass detection — catch attempts to obfuscate dangerous commands
-  { pattern: /\bbase64\s+(-d|--decode)\b.*\|\s*(ba)?sh/, reason: 'Encoded command piped to shell blocked' },
-  { pattern: /\bbase64\b.*\|\s*(ba)?sh/, reason: 'Encoded command piped to shell blocked' },
-  { pattern: /\bpython[23]?\s+-c\b/, reason: 'Inline Python execution blocked in sandbox — use a .py file' },
-  { pattern: /\bnode\s+-e\b/, reason: 'Inline Node.js execution blocked in sandbox — use a .js file' },
-  { pattern: /\bperl\s+-e\b/, reason: 'Inline Perl execution blocked in sandbox — use a .pl file' },
-  { pattern: /\bruby\s+-e\b/, reason: 'Inline Ruby execution blocked in sandbox — use a .rb file' },
-  { pattern: /\$'\\x[0-9a-fA-F]/, reason: 'ANSI-C quoted escape sequence blocked' },
+  {
+    pattern: /\bbase64\s+(-d|--decode)\b.*\|\s*(ba)?sh/,
+    reason: "Encoded command piped to shell blocked",
+  },
+  {
+    pattern: /\bbase64\b.*\|\s*(ba)?sh/,
+    reason: "Encoded command piped to shell blocked",
+  },
+  {
+    pattern: /\bpython[23]?\s+-c\b/,
+    reason: "Inline Python execution blocked in sandbox — use a .py file",
+  },
+  {
+    pattern: /\bnode\s+-e\b/,
+    reason: "Inline Node.js execution blocked in sandbox — use a .js file",
+  },
+  {
+    pattern: /\bperl\s+-e\b/,
+    reason: "Inline Perl execution blocked in sandbox — use a .pl file",
+  },
+  {
+    pattern: /\bruby\s+-e\b/,
+    reason: "Inline Ruby execution blocked in sandbox — use a .rb file",
+  },
+  {
+    pattern: /\$'\\x[0-9a-fA-F]/,
+    reason: "ANSI-C quoted escape sequence blocked",
+  },
   // Git history rewriting
-  { pattern: /\bgit\s+filter-branch\b/, reason: 'History rewriting via filter-branch blocked' },
-  { pattern: /\bgit\s+filter-repo\b/, reason: 'History rewriting via filter-repo blocked' },
-  { pattern: /\bgit\s+gc\s+.*--prune=now/, reason: 'Aggressive garbage collection blocked' },
-  { pattern: /\bgit\s+reflog\s+expire\s+.*--expire=now/, reason: 'Reflog expiry blocked' },
+  {
+    pattern: /\bgit\s+filter-branch\b/,
+    reason: "History rewriting via filter-branch blocked",
+  },
+  {
+    pattern: /\bgit\s+filter-repo\b/,
+    reason: "History rewriting via filter-repo blocked",
+  },
+  {
+    pattern: /\bgit\s+gc\s+.*--prune=now/,
+    reason: "Aggressive garbage collection blocked",
+  },
+  {
+    pattern: /\bgit\s+reflog\s+expire\s+.*--expire=now/,
+    reason: "Reflog expiry blocked",
+  },
 ];
 
 /**
  * Check if a command is allowed under the given sandbox level.
  */
-export function checkSandbox(command: string, level: SandboxLevel, projectPath?: string): SandboxResult {
-  if (level === 'none') {
+export function checkSandbox(
+  command: string,
+  level: SandboxLevel,
+  projectPath?: string,
+): SandboxResult {
+  if (level === "none") {
     return { allowed: true };
   }
 
-  if (level === 'container') {
+  if (level === "container") {
     // Container mode not yet implemented — fall back to restricted
     return checkRestricted(command, projectPath);
   }
@@ -69,8 +124,19 @@ export function checkSandbox(command: string, level: SandboxLevel, projectPath?:
 }
 
 function checkRestricted(command: string, projectPath?: string): SandboxResult {
-  // Split chained commands and check each subcommand independently.
-  // Prevents bypass via: "npm install; rm -rf /" where only first is checked.
+  // Phase 1: Check blocked patterns against the FULL command string first.
+  // This catches pipe-based patterns like "curl ... | sh" that would be
+  // destroyed by command splitting (the pipe is the attack vector).
+  for (const { pattern, reason } of BLOCKED_PATTERNS) {
+    pattern.lastIndex = 0;
+    if (pattern.test(command)) {
+      return { allowed: false, reason: `Sandbox blocked: ${reason}` };
+    }
+  }
+
+  // Phase 2: Split chained commands and check each subcommand independently.
+  // Catches bypass via: "npm install; rm -rf /" where Phase 1 might miss
+  // patterns that only appear in a subcommand (e.g., after ; or &&).
   const subcommands = splitChainedCommands(command);
 
   for (const sub of subcommands) {
@@ -82,9 +148,13 @@ function checkRestricted(command: string, projectPath?: string): SandboxResult {
     }
 
     if (projectPath) {
-      const systemPaths = /(?:>|tee|cp|mv|install)\s+\/?(?:usr|etc|var|opt|tmp|home|root|Library|System|private|proc|sys|dev)\//;
+      const systemPaths =
+        /(?:>|tee|cp|mv|install)\s+\/?(?:usr|etc|var|opt|tmp|home|root|Library|System|private|proc|sys|dev)\//;
       if (systemPaths.test(sub)) {
-        return { allowed: false, reason: 'Sandbox blocked: writing outside project directory' };
+        return {
+          allowed: false,
+          reason: "Sandbox blocked: writing outside project directory",
+        };
       }
     }
   }
