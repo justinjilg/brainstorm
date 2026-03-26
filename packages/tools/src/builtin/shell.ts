@@ -42,21 +42,28 @@ interface BackgroundTask {
 
 const backgroundTasks = new Map<string, BackgroundTask>();
 let nextTaskId = 0;
-let backgroundEventHandler:
-  | ((event: {
-      taskId: string;
-      command: string;
-      exitCode: number;
-      stdout: string;
-      stderr: string;
-    }) => void)
-  | null = null;
 
-/** Set a callback for background task completion events. */
+type BackgroundEvent = {
+  taskId: string;
+  command: string;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+};
+
+let backgroundEventHandler: ((event: BackgroundEvent) => void) | null = null;
+const pendingEvents: BackgroundEvent[] = [];
+
+/** Set a callback for background task completion events. Replays any queued events. */
 export function setBackgroundEventHandler(
   handler: typeof backgroundEventHandler,
 ): void {
   backgroundEventHandler = handler;
+  // Replay any events that arrived before handler was registered
+  if (handler && pendingEvents.length > 0) {
+    for (const event of pendingEvents) handler(event);
+    pendingEvents.length = 0;
+  }
 }
 
 // ── Tool Output Streaming ──────────────────────────────────────
@@ -244,14 +251,17 @@ export const shellTool = defineTool({
         completed = true;
         clearTimeout(bgTimer);
         backgroundTasks.delete(taskId);
+        const event: BackgroundEvent = {
+          taskId,
+          command,
+          exitCode,
+          stdout: bgStdout.toString(),
+          stderr: stderr ?? bgStderr.toString(),
+        };
         if (backgroundEventHandler) {
-          backgroundEventHandler({
-            taskId,
-            command,
-            exitCode,
-            stdout: bgStdout.toString(),
-            stderr: stderr ?? bgStderr.toString(),
-          });
+          backgroundEventHandler(event);
+        } else {
+          pendingEvents.push(event);
         }
       };
 
