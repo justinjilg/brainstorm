@@ -279,4 +279,14 @@ const MIGRATIONS = [
       CREATE INDEX idx_checkpoint_created ON session_checkpoints(created_at);
     `,
   },
+  {
+    name: '012_session_locks',
+    sql: `
+      CREATE TABLE session_locks (
+        session_id TEXT PRIMARY KEY,
+        holder TEXT NOT NULL,
+        acquired_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+    `,
+  },
 ];

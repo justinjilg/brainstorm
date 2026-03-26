@@ -256,3 +256,53 @@ export class PatternRepository {
     return lines.join('\n');
   }
 }
+
+// ── Session Locks ───────────────────────────────────────────────────
+
+const STALE_LOCK_SECONDS = 5 * 60; // 5 minutes
+
+export class SessionLockManager {
+  constructor(private db: Database.Database) {}
+
+  /** Acquire a lock for a session. Returns true if acquired, false if held by another. */
+  acquire(sessionId: string, holder: string): boolean {
+    // Clean stale locks first
+    this.cleanStale();
+
+    try {
+      this.db.prepare(
+        'INSERT INTO session_locks (session_id, holder) VALUES (?, ?)',
+      ).run(sessionId, holder);
+      return true;
+    } catch {
+      // UNIQUE constraint violation — check if we already hold it
+      const existing = this.db.prepare(
+        'SELECT holder FROM session_locks WHERE session_id = ?',
+      ).get(sessionId) as any;
+      return existing?.holder === holder;
+    }
+  }
+
+  /** Release a lock. Only the holder can release. */
+  release(sessionId: string, holder: string): boolean {
+    const result = this.db.prepare(
+      'DELETE FROM session_locks WHERE session_id = ? AND holder = ?',
+    ).run(sessionId, holder);
+    return result.changes > 0;
+  }
+
+  /** Check if a session is locked. */
+  isLocked(sessionId: string): boolean {
+    this.cleanStale();
+    const row = this.db.prepare(
+      'SELECT 1 FROM session_locks WHERE session_id = ?',
+    ).get(sessionId);
+    return !!row;
+  }
+
+  /** Remove locks older than 5 minutes (stale/crashed processes). */
+  private cleanStale(): void {
+    const cutoff = Math.floor(Date.now() / 1000) - STALE_LOCK_SECONDS;
+    this.db.prepare('DELETE FROM session_locks WHERE acquired_at < ?').run(cutoff);
+  }
+}
