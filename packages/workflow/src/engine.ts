@@ -97,7 +97,9 @@ export async function* runWorkflow(
     const decision = router.route(task);
     forecast.push({ step: step.id, cost: decision.estimatedCost });
   }
-  const totalEstimate = forecast.reduce((sum, f) => sum + f.cost, 0) * 1.3; // safety margin
+  const safetyMargin = config.general?.costSafetyMargin ?? 1.3;
+  const totalEstimate =
+    forecast.reduce((sum, f) => sum + f.cost, 0) * safetyMargin;
   run.estimatedCost = totalEstimate;
 
   yield {

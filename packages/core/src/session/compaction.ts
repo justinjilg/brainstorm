@@ -74,6 +74,7 @@ export async function compactContext(
     contextWindow: number;
     keepRecent?: number;
     summarizeModel?: any; // AI SDK model instance for summarization
+    pricing?: { inputPer1MTokens: number; outputPer1MTokens: number };
   },
 ): Promise<{
   messages: ConversationMessage[];
@@ -163,7 +164,11 @@ export async function compactContext(
         if (usage) {
           const inputTokens = (usage as any).inputTokens ?? 0;
           const outputTokens = (usage as any).outputTokens ?? 0;
-          summaryCost = (inputTokens + outputTokens) * 0.000001; // rough estimate
+          const p = options.pricing;
+          summaryCost = p
+            ? (inputTokens / 1_000_000) * p.inputPer1MTokens +
+              (outputTokens / 1_000_000) * p.outputPer1MTokens
+            : (inputTokens + outputTokens) * 0.000001;
         }
       } catch {
         /* usage not available — non-fatal */
