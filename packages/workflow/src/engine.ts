@@ -22,6 +22,8 @@ export interface WorkflowEngineOptions {
   projectPath: string;
   /** Per-step model overrides: stepId → modelId. Used for cross-model workflows. */
   stepModelOverrides?: Record<string, string>;
+  /** Build state tracker — if build is broken, workflow pauses before next step. */
+  buildState?: { isBroken(): boolean; getLastError(): string | null };
 }
 
 export async function* runWorkflow(
@@ -106,6 +108,17 @@ export async function* runWorkflow(
     run.steps.push(stepRun);
 
     yield { type: 'step-started', step: stepRun, agent };
+
+    // Check build state before executing step — pause if build is broken
+    if (options.buildState) {
+      const bs = options.buildState;
+      if (bs.isBroken()) {
+        yield { type: 'workflow-paused', reason: `Build is broken: ${bs.getLastError()}. Fix before continuing.`, run };
+        stepRun.status = 'skipped';
+        stepRun.error = 'Build broken — step skipped';
+        break;
+      }
+    }
 
     try {
       // Build context for this step
