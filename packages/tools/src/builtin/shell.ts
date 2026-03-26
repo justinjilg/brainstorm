@@ -7,6 +7,7 @@ import {
   hasHardBlock,
 } from "./git-safety.js";
 import { checkSandbox, type SandboxLevel } from "./sandbox.js";
+import { DockerSandbox } from "../sandbox/docker-sandbox.js";
 
 const DEFAULT_TIMEOUT = 120_000;
 const BACKGROUND_TIMEOUT = 600_000; // 10 minutes max for background tasks
@@ -17,11 +18,20 @@ let TAIL_BYTES = 20_000;
 let currentSandboxLevel: SandboxLevel = "none";
 let currentProjectPath: string | undefined;
 
+// Docker sandbox — lazy-started on first container-mode shell call
+let dockerSandbox: DockerSandbox | null = null;
+let dockerConfig: { image: string; timeout: number } = {
+  image: "node:22-slim",
+  timeout: 120_000,
+};
+
 /** Configure the shell sandbox level and output limits. Call once during CLI startup. */
 export function configureSandbox(
   level: SandboxLevel,
   projectPath?: string,
   maxOutputBytes?: number,
+  containerImage?: string,
+  containerTimeout?: number,
 ): void {
   currentSandboxLevel = level;
   currentProjectPath = projectPath;
@@ -30,6 +40,25 @@ export function configureSandbox(
     HEAD_BYTES = Math.floor(maxOutputBytes * 0.4);
     TAIL_BYTES = Math.floor(maxOutputBytes * 0.6);
   }
+  if (containerImage) dockerConfig.image = containerImage;
+  if (containerTimeout) dockerConfig.timeout = containerTimeout;
+}
+
+/** Stop and clean up the Docker sandbox container, if running. */
+export function stopDockerSandbox(): void {
+  if (dockerSandbox) {
+    dockerSandbox.stop();
+    dockerSandbox = null;
+  }
+}
+
+/** Swap the Docker sandbox instance. Returns the previous instance for restore. */
+export function setDockerSandbox(
+  instance: DockerSandbox | null,
+): DockerSandbox | null {
+  const prev = dockerSandbox;
+  dockerSandbox = instance;
+  return prev;
 }
 
 // ── Background Task Management ──────────────────────────────────────
@@ -212,6 +241,34 @@ export const shellTool = defineTool({
           blocked: true,
         };
       }
+    }
+
+    // Container mode: route through Docker sandbox
+    if (currentSandboxLevel === "container" && currentProjectPath) {
+      if (!dockerSandbox) {
+        if (!DockerSandbox.isAvailable()) {
+          return {
+            stdout: "",
+            stderr:
+              "Docker is not available. Install Docker or switch to sandbox = 'restricted'.",
+            exitCode: 1,
+            blocked: true,
+          };
+        }
+        dockerSandbox = new DockerSandbox({
+          hostWorkspace: currentProjectPath,
+          image: dockerConfig.image,
+          timeout: dockerConfig.timeout,
+        });
+        dockerSandbox.start();
+      }
+
+      const result = dockerSandbox.exec(command);
+      return {
+        stdout: result.output,
+        stderr: "",
+        exitCode: result.exitCode,
+      };
     }
 
     // Background mode: spawn and return immediately, notify on completion
