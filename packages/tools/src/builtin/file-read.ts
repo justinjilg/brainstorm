@@ -43,6 +43,10 @@ export const fileReadTool = defineTool({
     if (!existsSync(safePath)) {
       return { error: `File not found: ${path}` };
     }
+    // Track file access
+    const { getFileTracker } = await import('../file-tracker.js');
+    getFileTracker().recordRead(safePath);
+
     const content = readFileSync(safePath, 'utf-8');
     const lines = content.split('\n');
 
