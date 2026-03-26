@@ -1,9 +1,6 @@
 import { z } from 'zod';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { defineTool } from '../base.js';
-
-const execFileAsync = promisify(execFile);
+import { runGit } from './git-common.js';
 
 export const gitStatusTool = defineTool({
   name: 'git_status',
@@ -13,11 +10,10 @@ export const gitStatusTool = defineTool({
     cwd: z.string().optional().describe('Working directory (default: current)'),
   }),
   async execute({ cwd }) {
-    try {
-      const { stdout } = await execFileAsync('git', ['status', '--short'], { cwd: cwd ?? process.cwd() });
-      return { status: stdout.trim() || '(clean working tree)', isGitRepo: true };
-    } catch {
+    const result = await runGit(['status', '--short'], cwd);
+    if (result.exitCode !== 0) {
       return { status: 'Not a git repository', isGitRepo: false };
     }
+    return { status: result.stdout.trim() || '(clean working tree)', isGitRepo: true };
   },
 });
