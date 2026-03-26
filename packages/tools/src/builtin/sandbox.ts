@@ -69,21 +69,36 @@ export function checkSandbox(command: string, level: SandboxLevel, projectPath?:
 }
 
 function checkRestricted(command: string, projectPath?: string): SandboxResult {
-  // Check against blocked patterns
-  for (const { pattern, reason } of BLOCKED_PATTERNS) {
-    if (pattern.test(command)) {
-      return { allowed: false, reason: `Sandbox blocked: ${reason}` };
+  // Split chained commands and check each subcommand independently.
+  // Prevents bypass via: "npm install; rm -rf /" where only first is checked.
+  const subcommands = splitChainedCommands(command);
+
+  for (const sub of subcommands) {
+    for (const { pattern, reason } of BLOCKED_PATTERNS) {
+      pattern.lastIndex = 0;
+      if (pattern.test(sub)) {
+        return { allowed: false, reason: `Sandbox blocked: ${reason}` };
+      }
+    }
+
+    if (projectPath) {
+      const systemPaths = /(?:>|tee|cp|mv|install)\s+\/?(?:usr|etc|var|opt|tmp|home|root|Library|System|private|proc|sys|dev)\//;
+      if (systemPaths.test(sub)) {
+        return { allowed: false, reason: 'Sandbox blocked: writing outside project directory' };
+      }
     }
   }
 
-  // Check for writes outside project directory (heuristic)
-  if (projectPath) {
-    const systemPaths = /(?:>|tee|cp|mv|install)\s+\/?(?:usr|etc|var|opt|tmp|home|root|Library|System|private|proc|sys|dev)\//;
-    if (systemPaths.test(command)) {
-      return { allowed: false, reason: 'Sandbox blocked: writing outside project directory' };
-    }
-  }
-
-  // Warn if container mode was expected but fell back to restricted
   return { allowed: true };
+}
+
+/** Split shell command into subcommands (;, &&, ||, |, $(), backticks). */
+function splitChainedCommands(command: string): string[] {
+  const parts = command.split(/\s*(?:;|&&|\|\||\|)\s*/);
+  const subshellRe = /\$\(([^)]+)\)|`([^`]+)`/g;
+  let m;
+  while ((m = subshellRe.exec(command)) !== null) {
+    parts.push(m[1] ?? m[2]);
+  }
+  return parts.filter((p) => p.trim().length > 0);
 }
