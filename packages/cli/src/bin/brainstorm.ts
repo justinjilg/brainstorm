@@ -1189,6 +1189,7 @@ program
 
         sessionManager.addUserMessage(input);
         let fullResponse = '';
+        const sessionTotalBefore = costTracker.getSessionCost();
         process.stdout.write('\nbrainstorm > ');
         simpleAbortController = new AbortController();
 
@@ -1239,9 +1240,12 @@ program
             case 'interrupted':
               process.stdout.write('\n  [interrupted]\n\n');
               break;
-            case 'done':
-              process.stdout.write(`\n  [$${event.totalCost.toFixed(4)}]\n\n`);
+            case 'done': {
+              const turn = sessionManager.getTurnCount();
+              const turnCost = event.totalCost - (sessionTotalBefore ?? 0);
+              process.stdout.write(`\n  [Turn ${turn}: $${turnCost.toFixed(4)} | Session: $${event.totalCost.toFixed(4)}]\n\n`);
               break;
+            }
             case 'error':
               process.stderr.write(`\n  Error: ${event.error.message}\n\n`);
               break;
