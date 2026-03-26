@@ -1511,6 +1511,9 @@ program
       let currentOutputStyle: OutputStyle =
         (config.general.outputStyle as OutputStyle) ?? "concise";
 
+      // Active role — mutable, set by /architect, /sr-developer, etc.
+      let currentRole: string | undefined;
+
       const sessionManager = new SessionManager(db);
       const middleware = createDefaultMiddlewarePipeline(projectPath);
       let { prompt: systemPrompt, frontmatter } = buildSystemPrompt(
@@ -1887,6 +1890,19 @@ program
                 rebuilt.prompt + buildToolAwarenessSection(tools.listTools());
             },
             getOutputStyle: () => currentOutputStyle,
+            rebuildSystemPrompt: (basePromptOverride?: string) => {
+              const rebuilt = buildSystemPrompt(
+                projectPath,
+                currentOutputStyle,
+                basePromptOverride,
+              );
+              systemPrompt =
+                rebuilt.prompt + buildToolAwarenessSection(tools.listTools());
+            },
+            getActiveRole: () => currentRole,
+            setActiveRole: (role: string | undefined) => {
+              currentRole = role;
+            },
             getBudget: () => {
               const state = costTracker.getBudgetState();
               if (!state.sessionLimit) return null;
