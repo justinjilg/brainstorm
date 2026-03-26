@@ -1,2 +1,2 @@
 export { getDb, closeDb, getTestDb } from './client.js';
-export { SessionRepository, MessageRepository, CostRepository, PatternRepository, type SessionPattern } from './repositories.js';
+export { SessionRepository, MessageRepository, CostRepository, PatternRepository, SessionLockManager, type SessionPattern } from './repositories.js';
