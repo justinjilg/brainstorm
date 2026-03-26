@@ -397,6 +397,7 @@ export async function* runAgentLoop(
         unhealthyTools: getToolHealthTracker().getUnhealthy(),
         buildStatus: options.buildState?.getStatus() ?? 'unknown',
         buildWarning: options.buildState?.formatBuildWarning() ?? '',
+        costPerHour: 0, // caller sets this based on session duration
       });
     }
 

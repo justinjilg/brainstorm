@@ -223,6 +223,7 @@ export interface TurnContext {
   unhealthyTools: Array<{ name: string; error: string }>;
   buildStatus: 'passing' | 'failing' | 'unknown';
   buildWarning: string;
+  costPerHour: number;
 }
 
 /** Format TurnContext as a compact one-line summary for system message injection. */
@@ -250,6 +251,7 @@ export function formatTurnContext(ctx: TurnContext): string {
     parts.push(`build: ${ctx.buildStatus}`);
   }
   parts.push(`${ctx.sessionMinutes}min`);
+  if (ctx.costPerHour > 0) parts.push(`$${ctx.costPerHour.toFixed(2)}/hr`);
   let result = `[${parts.join(' | ')}]`;
   if (ctx.buildWarning) result += `\n${ctx.buildWarning}`;
   return result;
