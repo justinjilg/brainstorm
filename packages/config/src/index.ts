@@ -9,7 +9,12 @@ export {
   type WorkflowConfig,
   type WorkflowStepConfig,
 } from "./schema.js";
-export { loadConfig, GLOBAL_CONFIG_DIR, GLOBAL_CONFIG_FILE } from "./loader.js";
+export {
+  loadConfig,
+  watchConfig,
+  GLOBAL_CONFIG_DIR,
+  GLOBAL_CONFIG_FILE,
+} from "./loader.js";
 export { DEFAULT_CONFIG } from "./defaults.js";
 export {
   stormFrontmatterSchema,

@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, watch, type FSWatcher } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import TOML from "@iarna/toml";
@@ -120,3 +120,58 @@ export function loadConfig(
 }
 
 export { GLOBAL_CONFIG_DIR, GLOBAL_CONFIG_FILE };
+
+/**
+ * Watch config files for changes and invoke callback.
+ * Watches both global (~/.brainstorm/config.toml) and project (brainstorm.toml).
+ * Returns a cleanup function to stop watching.
+ */
+export function watchConfig(
+  projectDir: string,
+  onChange: (file: string) => void,
+): () => void {
+  const watchers: FSWatcher[] = [];
+  let debounce: ReturnType<typeof setTimeout> | null = null;
+
+  const notify = (file: string) => {
+    if (debounce) clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      log.info({ file }, "Config file changed");
+      onChange(file);
+    }, 500);
+  };
+
+  // Watch global config
+  if (existsSync(GLOBAL_CONFIG_FILE)) {
+    try {
+      const w = watch(GLOBAL_CONFIG_FILE, () => notify(GLOBAL_CONFIG_FILE));
+      w.unref();
+      watchers.push(w);
+    } catch (e) {
+      log.warn({ err: e }, "Failed to watch global config");
+    }
+  }
+
+  // Watch project config
+  const projectFile = join(projectDir, PROJECT_CONFIG_FILE);
+  if (existsSync(projectFile)) {
+    try {
+      const w = watch(projectFile, () => notify(projectFile));
+      w.unref();
+      watchers.push(w);
+    } catch (e) {
+      log.warn({ err: e }, "Failed to watch project config");
+    }
+  }
+
+  return () => {
+    if (debounce) clearTimeout(debounce);
+    for (const w of watchers) {
+      try {
+        w.close();
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+}
