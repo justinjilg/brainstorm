@@ -49,36 +49,34 @@ function writeCache(result: DiscoveryResult): void {
 export async function discoverLocalModels(config: ProviderConfig): Promise<DiscoveryResult> {
   const cached = readCache();
   if (cached) return cached;
+  // Build probe tasks — one per enabled provider
+  const probes: Array<{ provider: string; promise: Promise<ModelEntry[]> }> = [];
+
+  if (config.ollama.enabled && config.ollama.autoDiscover) {
+    probes.push({ provider: 'ollama', promise: discoverOllamaModels(config.ollama.baseUrl) });
+  }
+  if (config.lmstudio.enabled && config.lmstudio.autoDiscover) {
+    probes.push({ provider: 'lmstudio', promise: discoverOpenAICompatModels('lmstudio', config.lmstudio.baseUrl) });
+  }
+  if (config.llamacpp.enabled && config.llamacpp.autoDiscover) {
+    probes.push({ provider: 'llamacpp', promise: discoverOpenAICompatModels('llamacpp', config.llamacpp.baseUrl) });
+  }
+
+  // Run all probes in parallel — one failure doesn't block others
+  const settled = await Promise.allSettled(probes.map((p) => p.promise));
+
   const models: ModelEntry[] = [];
   const errors: Array<{ provider: string; error: string }> = [];
 
-  const tasks: Promise<void>[] = [];
-
-  if (config.ollama.enabled && config.ollama.autoDiscover) {
-    tasks.push(
-      discoverOllamaModels(config.ollama.baseUrl)
-        .then((m) => { models.push(...m); })
-        .catch((e) => { errors.push({ provider: 'ollama', error: String(e) }); }),
-    );
+  for (let i = 0; i < settled.length; i++) {
+    const outcome = settled[i];
+    if (outcome.status === 'fulfilled') {
+      models.push(...outcome.value);
+    } else {
+      errors.push({ provider: probes[i].provider, error: String(outcome.reason) });
+    }
   }
 
-  if (config.lmstudio.enabled && config.lmstudio.autoDiscover) {
-    tasks.push(
-      discoverOpenAICompatModels('lmstudio', config.lmstudio.baseUrl)
-        .then((m) => { models.push(...m); })
-        .catch((e) => { errors.push({ provider: 'lmstudio', error: String(e) }); }),
-    );
-  }
-
-  if (config.llamacpp.enabled && config.llamacpp.autoDiscover) {
-    tasks.push(
-      discoverOpenAICompatModels('llamacpp', config.llamacpp.baseUrl)
-        .then((m) => { models.push(...m); })
-        .catch((e) => { errors.push({ provider: 'llamacpp', error: String(e) }); }),
-    );
-  }
-
-  await Promise.all(tasks);
   const result = { models, errors };
   if (models.length > 0) writeCache(result);
   return result;
