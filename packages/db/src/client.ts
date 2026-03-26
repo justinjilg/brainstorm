@@ -52,8 +52,15 @@ function runMigrations(db: Database.Database): void {
 
   for (const migration of MIGRATIONS) {
     if (applied.has(migration.name)) continue;
-    db.exec(migration.sql);
-    db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(migration.name);
+    try {
+      db.exec('BEGIN');
+      db.exec(migration.sql);
+      db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(migration.name);
+      db.exec('COMMIT');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw new Error(`Migration "${migration.name}" failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 }
 
