@@ -116,6 +116,10 @@ export const fileEditTool = defineTool({
 
     writeFileSync(safePath, updated, 'utf-8');
 
+    // Invalidate read cache for this file
+    const { getFileReadCache } = await import('../file-cache.js');
+    getFileReadCache().invalidate(safePath);
+
     // Diff preview (non-blocking)
     const { getDiffSummary } = await import('../diff-preview.js');
     const diff = getDiffSummary(safePath);
