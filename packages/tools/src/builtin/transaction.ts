@@ -87,21 +87,41 @@ export const rollbackTransactionTool = defineTool({
     const cp = getCheckpointManager();
     const reverted: string[] = [];
 
+    const failed: Array<{ file: string; error: string }> = [];
+
     if (cp) {
       // Revert files in reverse order (last written first)
       for (const file of [...transactionFiles].reverse()) {
-        const result = cp.revertLast(file);
-        if (result) reverted.push(result);
+        try {
+          const result = cp.revertLast(file);
+          if (result) {
+            reverted.push(result);
+          } else {
+            failed.push({ file, error: 'No checkpoint snapshot available' });
+          }
+        } catch (e: any) {
+          failed.push({ file, error: e.message ?? String(e) });
+        }
+      }
+    } else {
+      // No checkpoint manager — all files fail
+      for (const file of transactionFiles) {
+        failed.push({ file, error: 'CheckpointManager not initialized' });
       }
     }
 
     transactionActive = false;
     transactionFiles = [];
 
+    const partialRollback = failed.length > 0 && reverted.length > 0;
+
     return {
-      success: true,
+      success: failed.length === 0,
       filesReverted: reverted,
+      filesFailed: failed,
       count: reverted.length,
+      total: reverted.length + failed.length,
+      partialRollback,
       reason,
     };
   },
