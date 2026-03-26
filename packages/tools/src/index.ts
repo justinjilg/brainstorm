@@ -9,6 +9,7 @@ export { routingHintTool, getRoutingHint, consumeRoutingHint, resetRoutingHint, 
 export { costEstimateTool } from './builtin/cost-estimate.js';
 export { isParallelSafe, classifyToolBatch, executeWithParallelism } from './parallel.js';
 export { getTierForComplexity, getToolsForTier, isToolInTier, escalateTier, getTierForTool, estimateTokenSavings, type ToolTier } from './progressive.js';
+export { DockerSandbox, isSafeCommand, translatePath, type SandboxConfig, type SandboxExecResult } from './sandbox/docker-sandbox.js';
 export { planPreviewTool } from './builtin/plan-preview.js';
 export { beginTransactionTool, commitTransactionTool, rollbackTransactionTool, isTransactionActive, recordTransactionFile } from './builtin/transaction.js';
 export { ToolRegistry, type PermissionCheckFn } from './registry.js';
