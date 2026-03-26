@@ -30,3 +30,4 @@ export { buildRepoMap, repoMapToContext, type RepoMap, type RepoMapEntry } from 
 export { submitCommunityFix, queryCommunityFixes, formatCommunityFixes, detectFramework, type CommunityFixPair, type CommunityFixResult } from './learning/community-fixes.js';
 export { reduceTrajectory, formatReductionStats, type MessageStatus, type ReductionResult } from './session/trajectory-reducer.js';
 export { TrajectoryRecorder, type TrajectoryEvent, type TrajectoryEventType, type LLMCallData, type ToolCallData, type ToolResultData, type RoutingDecisionData } from './session/trajectory.js';
+export { predictTaskCost, formatCostPrediction, type CostPrediction, type CostTier } from './agent/cost-predictor.js';
