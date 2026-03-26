@@ -61,10 +61,16 @@ export const fileEditTool = defineTool({
     const validation = preValidate(safePath, updated);
 
     writeFileSync(safePath, updated, 'utf-8');
+
+    // Diff preview (non-blocking)
+    const { getDiffSummary } = await import('../diff-preview.js');
+    const diff = getDiffSummary(safePath);
+
     return {
       success: true,
       path,
       ...(validation.warnings.length > 0 ? { preValidation: validation.warnings } : {}),
+      ...(diff ? { diff: diff.preview } : {}),
     };
   },
 });
