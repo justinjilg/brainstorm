@@ -1,5 +1,6 @@
 import { SessionRepository, MessageRepository } from '@brainstorm/db';
-import type { Session } from '@brainstorm/shared';
+import type { Session, TurnContext } from '@brainstorm/shared';
+import { formatTurnContext } from '@brainstorm/shared';
 import { estimateTokenCount, needsCompaction, compactContext } from './compaction.js';
 
 export interface ConversationMessage {
@@ -12,6 +13,8 @@ export class SessionManager {
   private messages: MessageRepository;
   private currentSession: Session | null = null;
   private conversationHistory: ConversationMessage[] = [];
+  private turnCount = 0;
+  private sessionStartTime = Date.now();
 
   constructor(private db: any) {
     this.sessions = new SessionRepository(db);
@@ -88,6 +91,24 @@ export class SessionManager {
     this.messages.create(this.currentSession.id, 'assistant', content, modelId);
     this.sessions.incrementMessages(this.currentSession.id);
     this.conversationHistory.push({ role: 'assistant', content });
+  }
+
+  /** Inject turn context as an invisible system message the model sees but the user doesn't. */
+  addTurnContext(ctx: TurnContext): void {
+    const summary = formatTurnContext(ctx);
+    this.conversationHistory.push({ role: 'system', content: summary });
+  }
+
+  getTurnCount(): number {
+    return this.turnCount;
+  }
+
+  incrementTurn(): number {
+    return ++this.turnCount;
+  }
+
+  getSessionMinutes(): number {
+    return Math.round((Date.now() - this.sessionStartTime) / 60_000);
   }
 
   getHistory(): ConversationMessage[] {
