@@ -22,6 +22,7 @@ export { subagentLimitMiddleware } from "./builtin/subagent-limit.js";
 export { trajectoryReductionMiddleware } from "./builtin/trajectory-reduction.js";
 export { autoLintMiddleware } from "./builtin/auto-lint.js";
 export { createMemoryExtractionMiddleware } from "./builtin/memory-extract.js";
+export { createProactiveCompactionMiddleware } from "./builtin/proactive-compaction.js";
 
 /**
  * Create a default middleware pipeline with all built-in middleware.
@@ -37,9 +38,11 @@ import { subagentLimitMiddleware } from "./builtin/subagent-limit.js";
 import { trajectoryReductionMiddleware } from "./builtin/trajectory-reduction.js";
 import { autoLintMiddleware } from "./builtin/auto-lint.js";
 import { createMemoryExtractionMiddleware } from "./builtin/memory-extract.js";
+import { createProactiveCompactionMiddleware } from "./builtin/proactive-compaction.js";
 
 export function createDefaultMiddlewarePipeline(
   projectPath?: string,
+  contextWindow?: number,
 ): MiddlewarePipeline {
   const pipeline = new MiddlewarePipeline();
   pipeline.use(turnContextMiddleware);
@@ -50,6 +53,7 @@ export function createDefaultMiddlewarePipeline(
   pipeline.use(subagentLimitMiddleware);
   pipeline.use(trajectoryReductionMiddleware);
   pipeline.use(autoLintMiddleware);
+  pipeline.use(createProactiveCompactionMiddleware(contextWindow));
   if (projectPath) {
     pipeline.use(createMemoryExtractionMiddleware(projectPath));
   }

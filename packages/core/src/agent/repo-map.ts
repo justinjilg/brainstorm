@@ -11,7 +11,13 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import {
+  readFileSync,
+  existsSync,
+  writeFileSync,
+  mkdirSync,
+  statSync,
+} from "node:fs";
 import { join, relative, extname, basename } from "node:path";
 
 export interface RepoMapEntry {
@@ -30,15 +36,19 @@ export interface RepoMap {
   generated: number;
 }
 
-// Cache: one repo map per projectPath, expires after 30s
+// In-memory cache with TTL
 let _repoMapCache: { path: string; map: RepoMap; ts: number } | null = null;
 const REPO_MAP_TTL_MS = 30_000;
 
+// Persistent entry cache keyed by file path → mtime for incremental updates
+let _entryCache: Map<string, { mtime: number; entry: RepoMapEntry }> =
+  new Map();
+let _entryCacheProject: string | null = null;
+
 /**
  * Build a repository map for the given project.
- * Results are cached for 30s to avoid repeated git/fs scans during prompt rebuilds.
- *
- * Uses execFileSync (git ls-files) + readFileSync — all I/O is synchronous.
+ * Uses incremental updates: only re-parses files whose mtime changed.
+ * Results cached in memory (30s TTL) and entries cached by mtime.
  *
  * @param projectPath - Root directory of the project
  * @param maxFiles - Maximum number of top files to include (default: 15)
@@ -52,23 +62,41 @@ export function buildRepoMap(projectPath: string, maxFiles = 15): RepoMap {
     return _repoMapCache.map;
   }
 
+  // Reset entry cache if project changed
+  if (_entryCacheProject !== projectPath) {
+    _entryCache = new Map();
+    _entryCacheProject = projectPath;
+  }
+
   const files = findSourceFiles(projectPath);
   const entries: RepoMapEntry[] = [];
 
   for (const file of files) {
     try {
-      const content = readFileSync(join(projectPath, file), "utf-8");
-      const entry = parseFile(file, content);
-      entries.push(entry);
+      const fullPath = join(projectPath, file);
+      const mtime = statSync(fullPath).mtimeMs;
+      const cached = _entryCache.get(file);
+
+      if (cached && cached.mtime === mtime) {
+        entries.push(cached.entry);
+      } else {
+        const content = readFileSync(fullPath, "utf-8");
+        const entry = parseFile(file, content);
+        entries.push(entry);
+        _entryCache.set(file, { mtime, entry });
+      }
     } catch {
       // Skip unreadable files
     }
   }
 
-  // Build dependency edges from import statements
-  const edges = buildEdges(entries);
+  // Clean stale entries from cache
+  const fileSet = new Set(files);
+  for (const key of _entryCache.keys()) {
+    if (!fileSet.has(key)) _entryCache.delete(key);
+  }
 
-  // Rank files by connectivity
+  const edges = buildEdges(entries);
   const ranked = rankFiles(entries, edges);
   const topFiles = ranked.slice(0, maxFiles);
 
