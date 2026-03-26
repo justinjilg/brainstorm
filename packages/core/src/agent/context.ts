@@ -11,6 +11,7 @@ import { homedir } from "node:os";
 import { INSIGHT_PROMPT_SECTION } from "./insights.js";
 import { getOutputStylePrompt, type OutputStyle } from "./output-styles.js";
 import { loadSkills } from "../skills/loader.js";
+import { formatCommitContext } from "../search/lineage.js";
 import { buildRepoMap, repoMapToContext } from "./repo-map.js";
 
 const DEFAULT_SYSTEM_PROMPT = `You are Brainstorm, an AI coding assistant powered by BrainstormRouter — an intelligent model routing gateway. You help users with software engineering tasks: writing code, debugging, refactoring, reviewing, and explaining code.
@@ -165,6 +166,12 @@ export function buildSystemPrompt(
   const gitContext = getGitContext(projectPath);
   if (gitContext) {
     parts.push(`\n## Git Context\n\n${gitContext}`);
+  }
+
+  // Recent commit history (context lineage)
+  const commitContext = formatCommitContext(projectPath);
+  if (commitContext) {
+    parts.push(`\n## Recent Commits\n\n${commitContext}`);
   }
 
   return { prompt: parts.join("\n"), frontmatter };

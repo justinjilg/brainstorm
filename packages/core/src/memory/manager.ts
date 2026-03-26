@@ -156,15 +156,39 @@ export class MemoryManager {
       }));
   }
 
-  /** Search memories by keyword. */
+  /** Search memories by TF-IDF relevance, with keyword fallback. */
   search(query: string): MemoryEntry[] {
+    const entries = this.list();
+    if (entries.length === 0) return [];
+
     const lower = query.toLowerCase();
-    return this.list().filter(
-      (m) =>
-        m.name.toLowerCase().includes(lower) ||
-        m.description.toLowerCase().includes(lower) ||
-        m.content.toLowerCase().includes(lower),
-    );
+    const queryTerms = lower
+      .replace(/[^a-z0-9_]+/g, " ")
+      .split(/\s+/)
+      .filter((t) => t.length > 1);
+
+    if (queryTerms.length === 0) return [];
+
+    // Score each entry by term frequency overlap
+    const scored = entries.map((m) => {
+      const text = `${m.name} ${m.description} ${m.content}`.toLowerCase();
+      let score = 0;
+      for (const term of queryTerms) {
+        if (text.includes(term)) {
+          // Count occurrences for TF-like scoring
+          const count = text.split(term).length - 1;
+          score += Math.log(1 + count);
+        }
+      }
+      // Boost exact phrase matches
+      if (text.includes(lower)) score += 2;
+      return { entry: m, score };
+    });
+
+    return scored
+      .filter((s) => s.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .map((s) => s.entry);
   }
 
   private loadAll(): void {
