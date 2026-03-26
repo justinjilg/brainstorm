@@ -12,6 +12,7 @@ import { serializeRoutingMetadata } from '@brainstorm/shared';
 import { createStreamFilter } from './response-filter.js';
 import { normalizeInsightMarkers } from './insights.js';
 import { parseGatewayHeaders } from '@brainstorm/gateway';
+import type { MiddlewarePipeline } from '../middleware/pipeline.js';
 
 /**
  * Enrich raw API errors with actionable user-facing messages.
@@ -109,6 +110,8 @@ export interface AgentLoopOptions {
   buildState?: BuildStateTracker;
   /** Internal: marks this as a retry attempt to prevent infinite recursion. */
   _retryAttempt?: boolean;
+  /** Optional middleware pipeline for composable agent interceptors. */
+  middleware?: MiddlewarePipeline;
 }
 
 // All task types get tools — the model decides whether to use them.
@@ -150,6 +153,18 @@ export async function* runAgentLoop(
       chunk: event.chunk,
     } as AgentEvent);
   });
+
+  // Run middleware beforeAgent hook (if pipeline provided)
+  if (options.middleware) {
+    const mwState = {
+      turn: 0,
+      messages: messages.map((m) => ({ role: m.role, content: m.content })),
+      systemPrompt,
+      toolNames: [],
+      metadata: {},
+    };
+    options.middleware.runBeforeAgent(mwState);
+  }
 
   // Phase: classifying
   yield { type: 'thinking' as const, phase: 'classifying' as const };
