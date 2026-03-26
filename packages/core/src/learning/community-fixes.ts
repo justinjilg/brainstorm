@@ -12,6 +12,8 @@
  * Opt-in via config: [community] share_fixes = true
  */
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { normalizeErrorSignature, type ErrorFixPair } from './error-fix-pairs.js';
 
 export interface CommunityFixPair {
@@ -59,7 +61,7 @@ export async function submitCommunityFix(
 ): Promise<boolean> {
   try {
     const communityFix: CommunityFixPair = {
-      errorSignature: normalizeErrorSignature(fixPair.errorSignature),
+      errorSignature: fixPair.errorSignature,
       framework,
       fixDescription: fixPair.fixDescription,
       confidence: 0.8,
@@ -138,8 +140,6 @@ export function formatCommunityFixes(result: CommunityFixResult): string {
  */
 export function detectFramework(projectPath: string): string {
   try {
-    const { readFileSync } = require('node:fs');
-    const { join } = require('node:path');
     const pkg = JSON.parse(readFileSync(join(projectPath, 'package.json'), 'utf-8'));
     const deps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
 
