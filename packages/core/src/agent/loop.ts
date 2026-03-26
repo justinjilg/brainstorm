@@ -5,7 +5,7 @@ import type { ProviderRegistry } from '@brainstorm/providers';
 import { BrainstormRouter, CostTracker } from '@brainstorm/router';
 import type { ToolRegistry, PermissionCheckFn } from '@brainstorm/tools';
 import { setTaskEventHandler, clearTasks, setBackgroundEventHandler } from '@brainstorm/tools';
-import type { AgentEvent, GatewayFeedbackData, ModelEntry } from '@brainstorm/shared';
+import type { AgentEvent, GatewayFeedbackData, ModelEntry, TurnContext } from '@brainstorm/shared';
 import { serializeRoutingMetadata } from '@brainstorm/shared';
 import { createStreamFilter } from './response-filter.js';
 import { normalizeInsightMarkers } from './insights.js';
@@ -101,6 +101,8 @@ export interface AgentLoopOptions {
   signal?: AbortSignal;
   /** Permission check function. When provided, tools are gated by this check. */
   permissionCheck?: PermissionCheckFn;
+  /** Callback to inject turn context after each completion. */
+  onTurnComplete?: (ctx: TurnContext) => void;
   /** Internal: marks this as a retry attempt to prevent infinite recursion. */
   _retryAttempt?: boolean;
 }
@@ -223,6 +225,9 @@ export async function* runAgentLoop(
     let toolCallCount = 0;
     let hasToolBlocked = false;
     let lastEventTime = Date.now();
+    const toolCallResults: Array<{ name: string; ok: boolean }> = [];
+    const filesRead: string[] = [];
+    const filesWritten: string[] = [];
     const STREAM_TIMEOUT_MS = 60_000; // 60s without any SSE event = dead stream
 
     try {
@@ -247,6 +252,17 @@ export async function* runAgentLoop(
           yield { type: 'tool-call-start' as const, toolName: part.toolName, args: (part as any).input ?? (part as any).args };
         } else if (part.type === 'tool-result') {
           const toolResult = (part as any).output ?? (part as any).result;
+          // Track tool call success/failure for turn context
+          const toolOk = !(toolResult && typeof toolResult === 'object' && (toolResult.error || toolResult.ok === false));
+          toolCallResults.push({ name: part.toolName, ok: toolOk });
+          // Track file access for turn context
+          if (part.toolName === 'file_read' && toolOk) {
+            const path = (part as any).input?.path ?? (part as any).args?.path;
+            if (path) filesRead.push(path);
+          } else if ((part.toolName === 'file_write' || part.toolName === 'file_edit') && toolOk) {
+            const path = (part as any).input?.path ?? (part as any).args?.path;
+            if (path) filesWritten.push(path);
+          }
           yield { type: 'tool-call-result', toolName: part.toolName, result: toolResult };
           // Emit subagent-result events for TUI display
           if (part.toolName === 'subagent' && toolResult && typeof toolResult === 'object') {
@@ -335,6 +351,26 @@ export async function* runAgentLoop(
 
     // Record success for model momentum
     router.recordSuccess?.(decision.model.id);
+
+    // Inject turn context for next turn's self-awareness
+    if (options.onTurnComplete) {
+      const turnCost = costTracker.getSessionCost(); // approximate per-turn
+      const budget = costTracker.getBudgetState();
+      const budgetRemaining = budget.dailyLimit ? budget.dailyLimit - budget.dailyUsed : 0;
+      const budgetPercent = budget.dailyLimit ? Math.round((budgetRemaining / budget.dailyLimit) * 100) : 100;
+      options.onTurnComplete({
+        turn: 0, // caller sets this
+        model: decision.model.name,
+        strategy: decision.strategy,
+        toolCalls: toolCallResults,
+        turnCost,
+        budgetRemaining,
+        budgetPercent,
+        filesRead,
+        filesWritten,
+        sessionMinutes: 0, // caller sets this
+      });
+    }
 
     yield { type: 'done', totalCost: costTracker.getSessionCost(), totalTokens: costTracker.getSessionTokens() };
   } catch (error: any) {
