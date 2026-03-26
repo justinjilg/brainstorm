@@ -249,6 +249,64 @@ export function ChatApp({
                 },
               ]);
               break;
+            case "model-retry":
+              setCurrentModel(event.toModel);
+              setMessages((prev) => [
+                ...prev,
+                {
+                  role: "routing",
+                  content: `↻ retry: ${event.fromModel} → ${event.toModel} (${event.reason})`,
+                },
+              ]);
+              break;
+            case "fallback-exhausted":
+              setMessages((prev) => [
+                ...prev,
+                {
+                  role: "routing",
+                  content: `⚠ all models failed: ${event.modelsTried.join(", ")}`,
+                },
+              ]);
+              break;
+            case "budget-warning":
+              setMessages((prev) => [
+                ...prev,
+                {
+                  role: "routing",
+                  content: `⚠ budget: $${event.used.toFixed(4)} / $${event.limit.toFixed(4)} ($${event.remaining.toFixed(4)} remaining)`,
+                },
+              ]);
+              break;
+            case "context-budget":
+              setMessages((prev) => [
+                ...prev,
+                {
+                  role: "routing",
+                  content: `context: ${event.percent}% (${event.used.toLocaleString()} / ${event.limit.toLocaleString()} tokens)`,
+                },
+              ]);
+              break;
+            case "loop-warning":
+              setMessages((prev) => [
+                ...prev,
+                { role: "routing", content: `⚠ ${event.message}` },
+              ]);
+              break;
+            case "empty-response":
+              setMessages((prev) => [
+                ...prev,
+                {
+                  role: "routing",
+                  content: `⚠ empty response from ${event.modelId}`,
+                },
+              ]);
+              break;
+            case "gateway-feedback":
+              // Silently update — displayed in StatusBar in future
+              break;
+            case "tool-output-partial":
+              // Live tool output — update active tool display in future
+              break;
             case "interrupted":
               setMessages((prev) => [
                 ...prev,
