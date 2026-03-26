@@ -1,60 +1,103 @@
-import { streamText, stepCountIs } from 'ai';
-import type { BrainstormConfig } from '@brainstorm/config';
-import type { ProviderRegistry } from '@brainstorm/providers';
-import { BrainstormRouter, CostTracker } from '@brainstorm/router';
-import type { ToolRegistry } from '@brainstorm/tools';
-import { serializeRoutingMetadata } from '@brainstorm/shared';
+import { streamText, stepCountIs } from "ai";
+import type { BrainstormConfig } from "@brainstorm/config";
+import type { ProviderRegistry } from "@brainstorm/providers";
+import { BrainstormRouter, CostTracker } from "@brainstorm/router";
+import type { ToolRegistry } from "@brainstorm/tools";
+import { serializeRoutingMetadata } from "@brainstorm/shared";
 
 // ── Subagent Types ──────────────────────────────────────────────────
 
-export type SubagentType = 'explore' | 'plan' | 'code' | 'review' | 'general';
+export type SubagentType = "explore" | "plan" | "code" | "review" | "general";
 
 interface SubagentTypeConfig {
   /** Tools this subagent type is allowed to use */
-  allowedTools: string[] | 'all';
+  allowedTools: string[] | "all";
   /** System prompt prefix for behavioral instructions */
   systemPrompt: string;
   /** Default max steps (keep focused subagents short) */
   defaultMaxSteps: number;
   /** Model complexity hint: 'cheap' routes to cost-first, 'capable' to quality-first */
-  modelHint: 'cheap' | 'capable';
+  modelHint: "cheap" | "capable";
 }
 
 const SUBAGENT_TYPES: Record<SubagentType, SubagentTypeConfig> = {
   explore: {
-    allowedTools: ['file_read', 'glob', 'grep', 'list_dir', 'git_status', 'git_diff', 'git_log', 'web_fetch', 'web_search'],
+    allowedTools: [
+      "file_read",
+      "glob",
+      "grep",
+      "list_dir",
+      "git_status",
+      "git_diff",
+      "git_log",
+      "web_fetch",
+      "web_search",
+    ],
     systemPrompt:
-      'You are an exploration subagent. Your job is to find information in the codebase or online docs quickly and return what you found. You have read-only tools — you cannot modify files. Return results as a structured list of findings with file paths and line numbers where applicable.',
+      "You are an exploration subagent. Your job is to find information in the codebase or online docs quickly and return what you found. You have read-only tools — you cannot modify files. Return results as a structured list of findings with file paths and line numbers where applicable.",
     defaultMaxSteps: 5,
-    modelHint: 'cheap',
+    modelHint: "cheap",
   },
   plan: {
-    allowedTools: ['file_read', 'glob', 'grep', 'list_dir', 'git_status', 'git_diff', 'git_log', 'task_create', 'task_update', 'task_list'],
+    allowedTools: [
+      "file_read",
+      "glob",
+      "grep",
+      "list_dir",
+      "git_status",
+      "git_diff",
+      "git_log",
+      "task_create",
+      "task_update",
+      "task_list",
+    ],
     systemPrompt:
-      'You are a planning subagent. Analyze the codebase and design an implementation approach. Create tasks to track the plan. You have read-only file tools plus task management. Return a structured plan.',
+      "You are a planning subagent. Analyze the codebase and design an implementation approach. Create tasks to track the plan. You have read-only file tools plus task management. Return a structured plan.",
     defaultMaxSteps: 8,
-    modelHint: 'capable',
+    modelHint: "capable",
   },
   code: {
-    allowedTools: 'all',
+    allowedTools: "all",
     systemPrompt:
-      'You are a coding subagent. Implement the requested changes, verify they compile, and return a summary of what you changed. Follow existing patterns in the codebase.',
+      "You are a coding subagent. Implement the requested changes, verify they compile, and return a summary of what you changed. Follow existing patterns in the codebase.",
     defaultMaxSteps: 10,
-    modelHint: 'capable',
+    modelHint: "capable",
   },
   review: {
-    allowedTools: ['file_read', 'glob', 'grep', 'list_dir', 'git_status', 'git_diff', 'git_log'],
+    allowedTools: [
+      "file_read",
+      "glob",
+      "grep",
+      "list_dir",
+      "git_status",
+      "git_diff",
+      "git_log",
+    ],
     systemPrompt:
-      'You are a code review subagent. Review the changes for bugs, style issues, and correctness. Be specific — cite file paths and line numbers. Focus on real issues, not nitpicks. You have read-only access — you cannot modify files or commit.',
+      "You are a code review subagent. Review the changes for bugs, style issues, and correctness. Be specific — cite file paths and line numbers. Focus on real issues, not nitpicks. You have read-only access — you cannot modify files or commit.",
     defaultMaxSteps: 5,
-    modelHint: 'capable',
+    modelHint: "capable",
   },
   general: {
-    allowedTools: ['file_read', 'glob', 'grep', 'list_dir', 'git_status', 'git_diff', 'git_log', 'web_fetch', 'web_search', 'shell', 'task_create', 'task_update', 'task_list'],
+    allowedTools: [
+      "file_read",
+      "glob",
+      "grep",
+      "list_dir",
+      "git_status",
+      "git_diff",
+      "git_log",
+      "web_fetch",
+      "web_search",
+      "shell",
+      "task_create",
+      "task_update",
+      "task_list",
+    ],
     systemPrompt:
-      'You are a focused subagent. Complete the given task concisely and return the result. Do not ask questions — make your best judgment. You cannot create or edit files directly — use shell commands if you need to modify files.',
+      "You are a focused subagent. Complete the given task concisely and return the result. Do not ask questions — make your best judgment. You cannot create or edit files directly — use shell commands if you need to modify files.",
     defaultMaxSteps: 5,
-    modelHint: 'cheap',
+    modelHint: "cheap",
   },
 };
 
@@ -68,14 +111,28 @@ export function getSubagentTypeConfig(type: SubagentType): SubagentTypeConfig {
 /**
  * All valid subagent type names.
  */
-export const SUBAGENT_TYPE_NAMES: SubagentType[] = ['explore', 'plan', 'code', 'review', 'general'];
+export const SUBAGENT_TYPE_NAMES: SubagentType[] = [
+  "explore",
+  "plan",
+  "code",
+  "review",
+  "general",
+];
 
 // ── Subagent Execution ──────────────────────────────────────────────
 
 /** Callback for subagent lifecycle hooks (injected to avoid circular deps with @brainstorm/hooks). */
 export type SubagentHookFn = (
-  event: 'SubagentStart' | 'SubagentStop',
-  context: { subagentType: string; prompt?: string; budget?: number; result?: string; cost?: number; toolCalls?: number; model?: string },
+  event: "SubagentStart" | "SubagentStop",
+  context: {
+    subagentType: string;
+    prompt?: string;
+    budget?: number;
+    result?: string;
+    cost?: number;
+    toolCalls?: number;
+    model?: string;
+  },
 ) => Promise<void>;
 
 export interface SubagentOptions {
@@ -96,7 +153,10 @@ export interface SubagentOptions {
   /** Optional hook callback for SubagentStart/SubagentStop events. */
   onHook?: SubagentHookFn;
   /** Permission check — when provided, subagent tools are gated by this function. */
-  permissionCheck?: (toolName: string, toolPermission: any) => 'allow' | 'confirm' | 'deny';
+  permissionCheck?: (
+    toolName: string,
+    toolPermission: any,
+  ) => "allow" | "confirm" | "deny";
 }
 
 export interface SubagentResult {
@@ -105,6 +165,8 @@ export interface SubagentResult {
   modelUsed: string;
   toolCalls: string[];
   type: SubagentType;
+  budgetExceeded: boolean;
+  partialOutput?: string;
 }
 
 /**
@@ -123,7 +185,7 @@ export async function spawnSubagent(
   options: SubagentOptions,
 ): Promise<SubagentResult> {
   const { router, costTracker, tools, config, registry, projectPath } = options;
-  const type = options.type ?? 'general';
+  const type = options.type ?? "general";
   const typeConfig = SUBAGENT_TYPES[type];
 
   // Budget guard: reserve 20% of remaining budget for parent.
@@ -138,9 +200,10 @@ export async function spawnSubagent(
       return {
         text: `[Subagent not spawned: insufficient budget. $${remainingBudget.toFixed(4)} remaining, $${reserved.toFixed(4)} reserved for parent.]`,
         cost: 0,
-        modelUsed: 'none',
+        modelUsed: "none",
         toolCalls: [],
         type,
+        budgetExceeded: true,
       };
     }
   }
@@ -149,7 +212,7 @@ export async function spawnSubagent(
 
   // Apply model hint: override routing strategy for this subagent
   const decision = router.route(taskProfile, {
-    preferCheap: typeConfig.modelHint === 'cheap',
+    preferCheap: typeConfig.modelHint === "cheap",
   });
 
   const modelId = registry.getProvider(decision.model.id);
@@ -157,11 +220,12 @@ export async function spawnSubagent(
   const maxSteps = options.maxSteps ?? typeConfig.defaultMaxSteps;
 
   // Filter tools based on subagent type, with permission gating if available
-  const baseTools = typeConfig.allowedTools === 'all'
-    ? (options.permissionCheck
-      ? tools.toAISDKToolsWithPermissions(options.permissionCheck)
-      : tools.toAISDKTools())
-    : tools.toAISDKToolsFiltered(typeConfig.allowedTools);
+  const baseTools =
+    typeConfig.allowedTools === "all"
+      ? options.permissionCheck
+        ? tools.toAISDKToolsWithPermissions(options.permissionCheck)
+        : tools.toAISDKTools()
+      : tools.toAISDKToolsFiltered(typeConfig.allowedTools);
   const filteredTools = baseTools;
 
   const subagentSessionId = `subagent-${type}-${Date.now()}`;
@@ -170,10 +234,14 @@ export async function spawnSubagent(
 
   // Fire SubagentStart hook
   if (options.onHook) {
-    await options.onHook('SubagentStart', { subagentType: type, prompt: task, budget: budgetLimit });
+    await options.onHook("SubagentStart", {
+      subagentType: type,
+      prompt: task,
+      budget: budgetLimit,
+    });
   }
   const toolCallNames: string[] = [];
-  let fullText = '';
+  let fullText = "";
   let budgetExceeded = false;
   let subagentCostAccum = 0; // Track cost internally to avoid parallel race
 
@@ -185,9 +253,14 @@ export async function spawnSubagent(
   const result = streamText({
     model: modelId,
     system: systemPrompt,
-    messages: [{ role: 'user' as const, content: `[Project: ${projectPath}]\n\n${task}` }],
+    messages: [
+      {
+        role: "user" as const,
+        content: `[Project: ${projectPath}]\n\n${task}`,
+      },
+    ],
     tools: filteredTools,
-    ...(metadataHeader ? { headers: { 'x-br-metadata': metadataHeader } } : {}),
+    ...(metadataHeader ? { headers: { "x-br-metadata": metadataHeader } } : {}),
     abortSignal: budgetAbort.signal,
     stopWhen: stepCountIs(maxSteps),
     onStepFinish: async ({ usage }: any) => {
@@ -219,15 +292,15 @@ export async function spawnSubagent(
 
   try {
     for await (const part of result.fullStream) {
-      if (part.type === 'text-delta') {
-        fullText += (part as any).delta ?? (part as any).text ?? '';
-      } else if (part.type === 'tool-call') {
+      if (part.type === "text-delta") {
+        fullText += (part as any).delta ?? (part as any).text ?? "";
+      } else if (part.type === "tool-call") {
         toolCallNames.push(part.toolName);
       }
     }
   } catch (err: any) {
     // AbortError from budget enforcement is expected — not an error
-    if (err.name !== 'AbortError') throw err;
+    if (err.name !== "AbortError") throw err;
   }
 
   if (budgetExceeded) {
@@ -236,7 +309,7 @@ export async function spawnSubagent(
 
   // Fire SubagentStop hook
   if (options.onHook) {
-    await options.onHook('SubagentStop', {
+    await options.onHook("SubagentStop", {
       subagentType: type,
       result: fullText.slice(0, 500),
       cost: subagentCostAccum,
@@ -251,6 +324,8 @@ export async function spawnSubagent(
     modelUsed: decision.model.name,
     toolCalls: toolCallNames,
     type,
+    budgetExceeded,
+    partialOutput: budgetExceeded ? fullText : undefined,
   };
 }
 
@@ -268,14 +343,15 @@ export async function spawnParallel(
     ),
   );
   return settled.map((result, i) => {
-    if (result.status === 'fulfilled') return result.value;
+    if (result.status === "fulfilled") return result.value;
     // Return error result for failed subagents instead of throwing
     return {
-      text: `[Subagent failed: ${result.reason?.message ?? 'unknown error'}]`,
+      text: `[Subagent failed: ${result.reason?.message ?? "unknown error"}]`,
       cost: 0,
-      modelUsed: 'unknown',
+      modelUsed: "unknown",
       toolCalls: [],
-      type: specs[i].type ?? 'general',
+      type: specs[i].type ?? "general",
+      budgetExceeded: false,
     };
   });
 }
