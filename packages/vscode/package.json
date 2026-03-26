@@ -1,0 +1,63 @@
+{
+  "name": "@brainstorm/vscode",
+  "displayName": "Brainstorm AI",
+  "description": "AI coding assistant with intelligent model routing",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "publisher": "brainstorm",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "AI",
+    "Chat"
+  ],
+  "activationEvents": [
+    "onChatParticipant:brainstorm"
+  ],
+  "main": "./dist/extension.js",
+  "exports": {
+    ".": {
+      "types": "./dist/extension.d.ts",
+      "import": "./dist/extension.js"
+    }
+  },
+  "contributes": {
+    "chatParticipants": [
+      {
+        "id": "brainstorm",
+        "name": "brainstorm",
+        "fullName": "Brainstorm AI",
+        "description": "AI coding assistant with intelligent model routing",
+        "isSticky": true
+      }
+    ],
+    "commands": [
+      {
+        "command": "brainstorm.startChat",
+        "title": "Start Brainstorm Chat",
+        "category": "Brainstorm"
+      },
+      {
+        "command": "brainstorm.selectModel",
+        "title": "Select Model",
+        "category": "Brainstorm"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "package": "vsce package"
+  },
+  "dependencies": {
+    "@brainstorm/shared": "*"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.90.0",
+    "tsup": "^8",
+    "typescript": "^5.7"
+  }
+}
