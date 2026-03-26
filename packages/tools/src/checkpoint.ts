@@ -1,8 +1,17 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync, readdirSync, unlinkSync } from 'node:fs';
-import { join, dirname, basename, relative } from 'node:path';
-import { homedir } from 'node:os';
+import {
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  existsSync,
+  copyFileSync,
+  readdirSync,
+  unlinkSync,
+} from "node:fs";
+import { join, dirname, basename, relative } from "node:path";
+import { homedir } from "node:os";
+import { randomUUID } from "node:crypto";
 
-const CHECKPOINT_DIR = join(homedir(), '.brainstorm', 'checkpoints');
+const CHECKPOINT_DIR = join(homedir(), ".brainstorm", "checkpoints");
 
 /**
  * CheckpointManager — snapshots files before modification.
@@ -11,7 +20,11 @@ const CHECKPOINT_DIR = join(homedir(), '.brainstorm', 'checkpoints');
 export class CheckpointManager {
   private sessionId: string;
   private sessionDir: string;
-  private history: Array<{ timestamp: number; filePath: string; checkpointPath: string }> = [];
+  private history: Array<{
+    timestamp: number;
+    filePath: string;
+    checkpointPath: string;
+  }> = [];
 
   constructor(sessionId: string) {
     this.sessionId = sessionId;
@@ -27,10 +40,20 @@ export class CheckpointManager {
     if (!existsSync(filePath)) return null; // New file, nothing to snapshot
 
     const timestamp = Date.now();
-    const safeName = relative(process.cwd(), filePath).replace(/[/\\]/g, '__');
-    const checkpointPath = join(this.sessionDir, `${timestamp}-${safeName}`);
+    const safeName = relative(process.cwd(), filePath).replace(/[/\\]/g, "__");
+    const uid = randomUUID().slice(0, 8);
+    const checkpointPath = join(
+      this.sessionDir,
+      `${timestamp}-${uid}-${safeName}`,
+    );
 
-    copyFileSync(filePath, checkpointPath);
+    try {
+      copyFileSync(filePath, checkpointPath);
+    } catch (e: any) {
+      // Handle locked/busy files gracefully
+      if (e.code === "EBUSY" || e.code === "EPERM") return null;
+      throw e;
+    }
 
     this.history.push({ timestamp, filePath, checkpointPath });
     return checkpointPath;
@@ -48,7 +71,10 @@ export class CheckpointManager {
       // Find most recent checkpoint for this specific file
       let idx = -1;
       for (let i = this.history.length - 1; i >= 0; i--) {
-        if (this.history[i].filePath === filePath) { idx = i; break; }
+        if (this.history[i].filePath === filePath) {
+          idx = i;
+          break;
+        }
       }
       if (idx === -1) return null;
       entry = this.history[idx];
