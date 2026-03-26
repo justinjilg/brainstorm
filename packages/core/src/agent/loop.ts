@@ -7,6 +7,7 @@ import type { ToolRegistry, PermissionCheckFn } from '@brainstorm/tools';
 import { setTaskEventHandler, clearTasks, setBackgroundEventHandler, getToolHealthTracker } from '@brainstorm/tools';
 import type { AgentEvent, GatewayFeedbackData, ModelEntry, TurnContext } from '@brainstorm/shared';
 import type { BuildStateTracker } from './build-state.js';
+import { LoopDetector } from './loop-detector.js';
 import { serializeRoutingMetadata } from '@brainstorm/shared';
 import { createStreamFilter } from './response-filter.js';
 import { normalizeInsightMarkers } from './insights.js';
@@ -231,6 +232,7 @@ export async function* runAgentLoop(
     const toolCallResults: Array<{ name: string; ok: boolean }> = [];
     const filesRead: string[] = [];
     const filesWritten: string[] = [];
+    const loopDetector = new LoopDetector();
     const STREAM_TIMEOUT_MS = 60_000; // 60s without any SSE event = dead stream
 
     try {
@@ -272,6 +274,12 @@ export async function* runAgentLoop(
             options.buildState.recordShellResult(cmd, toolResult.exitCode ?? 0, toolResult.stderr ?? '');
           }
           yield { type: 'tool-call-result', toolName: part.toolName, result: toolResult };
+          // Loop detection — warn about repetitive behavior
+          const toolPath = (part as any).input?.path ?? (part as any).args?.path;
+          const loopWarnings = loopDetector.recordToolCall(part.toolName, toolPath);
+          for (const w of loopWarnings) {
+            yield { type: 'loop-warning' as const, message: w.message };
+          }
           // Emit subagent-result events for TUI display
           if (part.toolName === 'subagent' && toolResult && typeof toolResult === 'object') {
             if (toolResult.mode === 'single') {
