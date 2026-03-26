@@ -248,10 +248,16 @@ export async function spawnSubagent(
 
   const taskProfile = router.classify(task);
 
-  // Apply model hint: override routing strategy for this subagent
-  const decision = router.route(taskProfile, {
-    preferCheap: typeConfig.modelHint === "cheap",
-  });
+  // Cost-aware routing: budget pressure overrides static model hint
+  const remaining = costTracker.getRemainingBudget();
+  const budgetPressure =
+    remaining !== null && remaining > 0
+      ? 1 - remaining / (costTracker.getSubagentBudget() * 4 || 1)
+      : 0;
+  // >60% budget used → prefer cheap, regardless of type hint
+  const preferCheap = typeConfig.modelHint === "cheap" || budgetPressure > 0.6;
+
+  const decision = router.route(taskProfile, { preferCheap });
 
   const modelId = registry.getProvider(decision.model.id);
   const systemPrompt = options.systemPrompt ?? typeConfig.systemPrompt;

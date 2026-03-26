@@ -9,6 +9,7 @@ export class CostTracker {
   private sessionCost = 0;
   private sessionInputTokens = 0;
   private sessionOutputTokens = 0;
+  private sessionTurns = 0;
 
   constructor(db: any, budgetConfig: BudgetConfig) {
     this.repo = new CostRepository(db);
@@ -33,6 +34,7 @@ export class CostTracker {
     this.sessionCost += cost;
     this.sessionInputTokens += params.inputTokens;
     this.sessionOutputTokens += params.outputTokens;
+    this.sessionTurns++;
 
     return this.repo.record({
       timestamp: Math.floor(Date.now() / 1000),
@@ -142,5 +144,31 @@ export class CostTracker {
       this.sessionCost += delta;
       this.repo.updateCost(lastRecord.id, actualCost);
     }
+  }
+
+  /**
+   * Forecast total session cost based on current velocity.
+   * Projects cost from average cost-per-turn over remaining estimated turns.
+   */
+  forecast(estimatedTotalTurns = 20): {
+    currentCost: number;
+    projectedCost: number;
+    costPerTurn: number;
+    turnsCompleted: number;
+    exceedsLimit: boolean;
+  } {
+    const costPerTurn =
+      this.sessionTurns > 0 ? this.sessionCost / this.sessionTurns : 0;
+    const remainingTurns = Math.max(0, estimatedTotalTurns - this.sessionTurns);
+    const projectedCost = this.sessionCost + costPerTurn * remainingTurns;
+    const sessionLimit = this.budgetConfig.perSession;
+
+    return {
+      currentCost: this.sessionCost,
+      projectedCost,
+      costPerTurn,
+      turnsCompleted: this.sessionTurns,
+      exceedsLimit: sessionLimit != null && projectedCost > sessionLimit,
+    };
   }
 }
