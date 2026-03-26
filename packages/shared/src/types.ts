@@ -200,6 +200,7 @@ export type AgentEvent =
   | { type: 'background-complete'; taskId: string; command: string; exitCode: number; stdout: string; stderr: string }
   | { type: 'model-retry'; fromModel: string; toModel: string; reason: string }
   | { type: 'fallback-exhausted'; modelsTried: string[]; reason: string }
+  | { type: 'budget-warning'; used: number; limit: number; remaining: number }
   | { type: 'empty-response'; modelId: string }
   | { type: 'context-budget'; used: number; limit: number; percent: number }
   | { type: 'loop-warning'; message: string }
