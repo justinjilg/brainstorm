@@ -4,7 +4,7 @@ import type { BrainstormConfig } from '@brainstorm/config';
 import type { ProviderRegistry } from '@brainstorm/providers';
 import { BrainstormRouter, CostTracker } from '@brainstorm/router';
 import type { ToolRegistry, PermissionCheckFn } from '@brainstorm/tools';
-import { setTaskEventHandler, clearTasks, setBackgroundEventHandler, getToolHealthTracker } from '@brainstorm/tools';
+import { setTaskEventHandler, clearTasks, setBackgroundEventHandler, getToolHealthTracker, setToolOutputHandler } from '@brainstorm/tools';
 import type { AgentEvent, GatewayFeedbackData, ModelEntry, TurnContext } from '@brainstorm/shared';
 import type { BuildStateTracker } from './build-state.js';
 import { LoopDetector } from './loop-detector.js';
@@ -139,6 +139,15 @@ export async function* runAgentLoop(
       exitCode: event.exitCode,
       stdout: event.stdout,
       stderr: event.stderr,
+    } as AgentEvent);
+  });
+
+  // Wire tool output streaming into the same queue
+  setToolOutputHandler((event) => {
+    taskEventQueue.push({
+      type: 'tool-output-partial',
+      toolName: event.toolName,
+      chunk: event.chunk,
     } as AgentEvent);
   });
 
@@ -404,6 +413,7 @@ export async function* runAgentLoop(
     }
   } finally {
     setTaskEventHandler(null);
+    setToolOutputHandler(null);
     // Keep background handler alive — background tasks outlive individual agent loop runs
   }
 }
