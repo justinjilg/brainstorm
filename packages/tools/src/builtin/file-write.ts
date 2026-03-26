@@ -1,6 +1,7 @@
 import { z } from 'zod';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, renameSync, unlinkSync } from 'node:fs';
 import { dirname, resolve, relative } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { defineTool } from '../base.js';
 
 import { homedir } from 'node:os';
@@ -48,7 +49,17 @@ export const fileWriteTool = defineTool({
     const validation = preValidate(safePath, content);
 
     mkdirSync(dirname(safePath), { recursive: true });
-    writeFileSync(safePath, content, 'utf-8');
+
+    // Atomic write: write to temp file, then rename to target.
+    // Prevents partial writes on crash/interrupt.
+    const tmpPath = `${safePath}.${randomUUID().slice(0, 8)}.tmp`;
+    try {
+      writeFileSync(tmpPath, content, 'utf-8');
+      renameSync(tmpPath, safePath);
+    } catch (e) {
+      try { unlinkSync(tmpPath); } catch {}
+      throw e;
+    }
 
     // Track file access
     const { getFileTracker } = await import('../file-tracker.js');
