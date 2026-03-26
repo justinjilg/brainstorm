@@ -84,8 +84,9 @@ export interface SystemPromptResult {
 export function buildSystemPrompt(
   projectPath: string,
   outputStyle?: OutputStyle,
+  basePromptOverride?: string,
 ): SystemPromptResult {
-  const parts = [DEFAULT_SYSTEM_PROMPT];
+  const parts = [basePromptOverride ?? DEFAULT_SYSTEM_PROMPT];
 
   // Inject output style instructions
   if (outputStyle) {
