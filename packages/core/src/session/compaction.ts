@@ -1,5 +1,6 @@
 import { streamText } from 'ai';
 import type { ConversationMessage } from './manager.js';
+import { formatScratchpadContext } from '@brainstorm/tools';
 
 /**
  * Estimate token count for a list of messages.
@@ -135,6 +136,12 @@ export async function compactContext(
       role: 'system',
       content: `[Summarized context — ${toSummarize.length} messages condensed]\n\n${summary}`,
     });
+  }
+
+  // Inject scratchpad entries so they survive compaction
+  const scratchpadCtx = formatScratchpadContext();
+  if (scratchpadCtx) {
+    compacted.push({ role: 'system', content: scratchpadCtx });
   }
 
   compacted.push(...recentMessages);
