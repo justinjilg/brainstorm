@@ -15,6 +15,8 @@ export class SessionManager {
   private conversationHistory: ConversationMessage[] = [];
   private turnCount = 0;
   private sessionStartTime = Date.now();
+  /** Cached token estimate — updated incrementally on addMessage, invalidated on compact. */
+  private cachedTokenCount: number | null = null;
 
   constructor(private db: any) {
     this.sessions = new SessionRepository(db);
@@ -24,6 +26,7 @@ export class SessionManager {
   start(projectPath: string): Session {
     this.currentSession = this.sessions.create(projectPath);
     this.conversationHistory = [];
+    this.cachedTokenCount = 0;
     return this.currentSession;
   }
 
@@ -39,6 +42,7 @@ export class SessionManager {
         role: m.role as 'user' | 'assistant' | 'system',
         content: m.content,
       }));
+    this.cachedTokenCount = null; // Force recount after resume
 
     return session;
   }
@@ -84,6 +88,7 @@ export class SessionManager {
     this.messages.create(this.currentSession.id, 'user', content);
     this.sessions.incrementMessages(this.currentSession.id);
     this.conversationHistory.push({ role: 'user', content });
+    this.addTokenDelta(content);
   }
 
   addAssistantMessage(content: string, modelId?: string): void {
@@ -91,12 +96,21 @@ export class SessionManager {
     this.messages.create(this.currentSession.id, 'assistant', content, modelId);
     this.sessions.incrementMessages(this.currentSession.id);
     this.conversationHistory.push({ role: 'assistant', content });
+    this.addTokenDelta(content);
   }
 
   /** Inject turn context as an invisible system message the model sees but the user doesn't. */
   addTurnContext(ctx: TurnContext): void {
     const summary = formatTurnContext(ctx);
     this.conversationHistory.push({ role: 'system', content: summary });
+    this.addTokenDelta(summary);
+  }
+
+  /** Incrementally update cached token count for a new message. */
+  private addTokenDelta(content: string): void {
+    if (this.cachedTokenCount !== null) {
+      this.cachedTokenCount += Math.ceil((content.length + 20) / 4);
+    }
   }
 
   getTurnCount(): number {
@@ -124,7 +138,10 @@ export class SessionManager {
   }
 
   getTokenEstimate(): number {
-    return estimateTokenCount(this.conversationHistory);
+    if (this.cachedTokenCount === null) {
+      this.cachedTokenCount = estimateTokenCount(this.conversationHistory);
+    }
+    return this.cachedTokenCount;
   }
 
   needsCompaction(contextWindow: number): boolean {
@@ -142,7 +159,9 @@ export class SessionManager {
     if (result.compacted) {
       const removed = this.conversationHistory.length - result.messages.length;
       this.conversationHistory = result.messages;
-      const tokensAfter = estimateTokenCount(this.conversationHistory);
+      // Invalidate cache — full recount after compaction
+      this.cachedTokenCount = null;
+      const tokensAfter = this.getTokenEstimate();
       return { compacted: true, removed, tokensBefore, tokensAfter, summaryCost: result.summaryCost };
     }
 
