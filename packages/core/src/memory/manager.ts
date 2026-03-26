@@ -2,7 +2,10 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, unlink
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { createHash } from 'node:crypto';
+import { createLogger } from '@brainstorm/shared';
 import type { BrainstormGateway } from '@brainstorm/gateway';
+
+const log = createLogger('memory');
 
 export interface MemoryEntry {
   id: string;
@@ -69,7 +72,9 @@ export class MemoryManager {
 
     // Fire-and-forget push to gateway
     if (this.gateway) {
-      this.gateway.storeMemory(memory.type, `[${memory.name}] ${memory.content}`).catch(() => {});
+      this.gateway.storeMemory(memory.type, `[${memory.name}] ${memory.content}`).catch((e) => {
+        log.warn({ err: e, memoryId: id }, 'Failed to push memory to gateway');
+      });
     }
 
     return memory;
@@ -90,7 +95,7 @@ export class MemoryManager {
     if (!this.entries.has(id)) return false;
     this.entries.delete(id);
     const filePath = join(this.memoryDir, `${id}.md`);
-    try { unlinkSync(filePath); } catch {}
+    try { unlinkSync(filePath); } catch (e) { log.warn({ err: e, filePath }, 'Failed to delete memory file'); }
     this.updateIndex();
     return true;
   }
@@ -138,7 +143,7 @@ export class MemoryManager {
         const content = readFileSync(join(this.memoryDir, file), 'utf-8');
         const entry = this.parseMemoryFile(file, content);
         if (entry) this.entries.set(entry.id, entry);
-      } catch {}
+      } catch (e) { log.warn({ err: e, file }, 'Failed to parse memory file'); }
     }
   }
 
