@@ -14,6 +14,7 @@ import { normalizeInsightMarkers } from './insights.js';
 import { parseGatewayHeaders } from '@brainstorm/gateway';
 import type { MiddlewarePipeline } from '../middleware/pipeline.js';
 import { TrajectoryRecorder } from '../session/trajectory.js';
+import { predictTaskCost } from './cost-predictor.js';
 
 /**
  * Enrich raw API errors with actionable user-facing messages.
@@ -199,6 +200,12 @@ export async function* runAgentLoop(
     taskType: task.type,
     complexity: task.complexity,
   });
+
+  // Cost prediction — yield estimate so CLI can display it
+  const costPrediction = predictTaskCost(task, [decision.model]);
+  if (costPrediction.estimated > 0.01) {
+    yield { type: 'cost-prediction', prediction: costPrediction } as any;
+  }
 
   // Phase: connecting
   yield { type: 'thinking' as const, phase: 'connecting' as const };
