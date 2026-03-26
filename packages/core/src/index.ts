@@ -33,3 +33,4 @@ export { TrajectoryRecorder, type TrajectoryEvent, type TrajectoryEventType, typ
 export { predictTaskCost, formatCostPrediction, type CostPrediction, type CostTier } from './agent/cost-predictor.js';
 export { MiddlewarePipeline, createDefaultMiddlewarePipeline, isBlocked, type AgentMiddleware, type MiddlewareState, type MiddlewareMessage, type MiddlewareToolCall, type MiddlewareToolResult, type MiddlewareBlock } from './middleware/index.js';
 export { turnContextMiddleware, toolHealthMiddleware, buildStateMiddleware, loopDetectionMiddleware, sentimentMiddleware, subagentLimitMiddleware, trajectoryReductionMiddleware, autoLintMiddleware } from './middleware/index.js';
+export { SessionCheckpointer, type SessionCheckpointData } from './session/session-checkpoint.js';
