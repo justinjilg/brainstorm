@@ -29,3 +29,4 @@ export { collectProjectHealth, formatProjectHealth, type ProjectHealth } from '.
 export { buildRepoMap, repoMapToContext, type RepoMap, type RepoMapEntry } from './agent/repo-map.js';
 export { submitCommunityFix, queryCommunityFixes, formatCommunityFixes, detectFramework, type CommunityFixPair, type CommunityFixResult } from './learning/community-fixes.js';
 export { reduceTrajectory, formatReductionStats, type MessageStatus, type ReductionResult } from './session/trajectory-reducer.js';
+export { TrajectoryRecorder, type TrajectoryEvent, type TrajectoryEventType, type LLMCallData, type ToolCallData, type ToolResultData, type RoutingDecisionData } from './session/trajectory.js';
