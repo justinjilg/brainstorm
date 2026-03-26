@@ -20,6 +20,8 @@ export function getDb(): Database.Database {
   _db.pragma('foreign_keys = ON');
 
   runMigrations(_db);
+  cleanupOldRecords(_db);
+  _db.pragma('optimize');
   return _db;
 }
 
@@ -35,6 +37,18 @@ export function getTestDb(): Database.Database {
   db.pragma('foreign_keys = ON');
   runMigrations(db);
   return db;
+}
+
+/** Delete cost records and model performance data older than 90 days. */
+function cleanupOldRecords(db: Database.Database): void {
+  const cutoff = Math.floor(Date.now() / 1000) - 90 * 24 * 60 * 60;
+  try {
+    db.prepare('DELETE FROM cost_records WHERE timestamp < ?').run(cutoff);
+    db.prepare('DELETE FROM model_performance WHERE timestamp < ?').run(cutoff);
+    db.prepare('DELETE FROM model_performance_v2 WHERE timestamp < ?').run(cutoff);
+  } catch {
+    // Tables may not exist yet on first run — safe to ignore
+  }
 }
 
 function runMigrations(db: Database.Database): void {
