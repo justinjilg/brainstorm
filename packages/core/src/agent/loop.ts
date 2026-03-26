@@ -4,7 +4,7 @@ import type { BrainstormConfig } from '@brainstorm/config';
 import type { ProviderRegistry } from '@brainstorm/providers';
 import { BrainstormRouter, CostTracker } from '@brainstorm/router';
 import type { ToolRegistry, PermissionCheckFn } from '@brainstorm/tools';
-import { setTaskEventHandler, clearTasks, setBackgroundEventHandler, getToolHealthTracker, setToolOutputHandler } from '@brainstorm/tools';
+import { setTaskEventHandler, clearTasks, setBackgroundEventHandler, getToolHealthTracker, setToolOutputHandler, getTierForComplexity, getToolsForTier } from '@brainstorm/tools';
 import type { AgentEvent, GatewayFeedbackData, ModelEntry, TurnContext } from '@brainstorm/shared';
 import type { BuildStateTracker } from './build-state.js';
 import { LoopDetector } from './loop-detector.js';
@@ -197,11 +197,16 @@ export async function* runAgentLoop(
   // Provide tools unless explicitly disabled by the caller (e.g., brainstorm run without --tools)
   const shouldUseTools = !options.disableTools;
 
+  // Progressive tool loading: select tool tier based on task complexity
+  const toolTier = getTierForComplexity(task.complexity);
+  const tierToolNames = getToolsForTier(toolTier);
+
   // Build tools with permission gating if a check function is provided
+  // Filter to tier-appropriate tools for token savings
   const aiTools = shouldUseTools
     ? (options.permissionCheck
-      ? tools.toAISDKToolsWithPermissions(options.permissionCheck)
-      : tools.toAISDKTools())
+      ? tools.toAISDKToolsWithPermissions(options.permissionCheck, tierToolNames)
+      : tools.toAISDKToolsFiltered(tierToolNames))
     : undefined;
 
   // Serialize task context for gateway telemetry (x-br-metadata header)

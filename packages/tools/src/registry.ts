@@ -88,9 +88,11 @@ export class ToolRegistry {
    * Return AI SDK tools with permission checks wrapping each execute.
    * Tools denied by the check return an error message instead of executing.
    */
-  toAISDKToolsWithPermissions(check: PermissionCheckFn): Record<string, any> {
+  toAISDKToolsWithPermissions(check: PermissionCheckFn, allowedNames?: string[]): Record<string, any> {
+    const allowed = allowedNames ? new Set(allowedNames) : null;
     const result: Record<string, any> = {};
     for (const [name, toolDef] of this.tools) {
+      if (allowed && !allowed.has(name)) continue;
       result[name] = tool({
         description: toolDef.description,
         inputSchema: toolDef.inputSchema,
