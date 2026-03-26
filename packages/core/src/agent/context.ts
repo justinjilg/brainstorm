@@ -1,11 +1,17 @@
-import { loadStormFile, loadHierarchicalStormFiles, type StormFrontmatter } from '@brainstorm/config';
-import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-import { homedir } from 'node:os';
-import { INSIGHT_PROMPT_SECTION } from './insights.js';
-import { getOutputStylePrompt, type OutputStyle } from './output-styles.js';
+import {
+  loadStormFile,
+  loadHierarchicalStormFiles,
+  type StormFrontmatter,
+} from "@brainstorm/config";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { homedir } from "node:os";
+import { INSIGHT_PROMPT_SECTION } from "./insights.js";
+import { getOutputStylePrompt, type OutputStyle } from "./output-styles.js";
+import { loadSkills } from "../skills/loader.js";
+import { buildRepoMap, repoMapToContext } from "./repo-map.js";
 
 const DEFAULT_SYSTEM_PROMPT = `You are Brainstorm, an AI coding assistant powered by BrainstormRouter — an intelligent model routing gateway. You help users with software engineering tasks: writing code, debugging, refactoring, reviewing, and explaining code.
 
@@ -73,12 +79,15 @@ export interface SystemPromptResult {
   frontmatter: StormFrontmatter | null;
 }
 
-export function buildSystemPrompt(projectPath: string, outputStyle?: OutputStyle): SystemPromptResult {
+export function buildSystemPrompt(
+  projectPath: string,
+  outputStyle?: OutputStyle,
+): SystemPromptResult {
   const parts = [DEFAULT_SYSTEM_PROMPT];
 
   // Inject output style instructions
   if (outputStyle) {
-    parts.push('\n' + getOutputStylePrompt(outputStyle));
+    parts.push("\n" + getOutputStylePrompt(outputStyle));
   }
   let frontmatter: StormFrontmatter | null = null;
 
@@ -86,65 +95,148 @@ export function buildSystemPrompt(projectPath: string, outputStyle?: OutputStyle
   const storm = loadHierarchicalStormFiles(projectPath);
   if (storm.sources.length > 0) {
     frontmatter = storm.frontmatter;
-    parts.push(`\n## Project Context (from ${storm.sources.join(', ')})\n\n${storm.body}`);
+    parts.push(
+      `\n## Project Context (from ${storm.sources.join(", ")})\n\n${storm.body}`,
+    );
 
     // Extract actionable sections for stronger emphasis
-    const verifyCommands = extractVerificationCommands(storm.frontmatter, storm.body);
+    const verifyCommands = extractVerificationCommands(
+      storm.frontmatter,
+      storm.body,
+    );
     if (verifyCommands) {
-      parts.push(`\n## Verification Commands\n\nAfter every file_write or file_edit on code files, run the appropriate command:\n${verifyCommands}\n\nRun the build command after edits. Run the test command after completing a logical unit of work.`);
+      parts.push(
+        `\n## Verification Commands\n\nAfter every file_write or file_edit on code files, run the appropriate command:\n${verifyCommands}\n\nRun the build command after edits. Run the test command after completing a logical unit of work.`,
+      );
     }
 
     const protectedAreas = extractSection(storm.body, "Don't touch");
     if (protectedAreas) {
-      parts.push(`\n## Protected Areas\n\nThese files are off-limits. Do NOT modify them without explicit user approval:\n${protectedAreas}\nIf a task requires changes to a protected file, explain WHY and ask before proceeding.`);
+      parts.push(
+        `\n## Protected Areas\n\nThese files are off-limits. Do NOT modify them without explicit user approval:\n${protectedAreas}\nIf a task requires changes to a protected file, explain WHY and ask before proceeding.`,
+      );
     }
 
-    const conventions = extractSection(storm.body, 'Conventions');
+    const conventions = extractSection(storm.body, "Conventions");
     if (conventions) {
-      parts.push(`\n## Code Patterns (MANDATORY)\n\nAlways follow these patterns when writing code in this project. Any code blocks below are reference examples — match this style exactly:\n${conventions}`);
+      parts.push(
+        `\n## Code Patterns (MANDATORY)\n\nAlways follow these patterns when writing code in this project. Any code blocks below are reference examples — match this style exactly:\n${conventions}`,
+      );
     }
 
     // Additional decision-relevant sections
-    const architecture = extractSection(storm.body, 'Architecture');
+    const architecture = extractSection(storm.body, "Architecture");
     if (architecture) {
-      parts.push(`\n## Architecture Constraints\n\nRespect these architectural decisions when making changes:\n${architecture}`);
+      parts.push(
+        `\n## Architecture Constraints\n\nRespect these architectural decisions when making changes:\n${architecture}`,
+      );
     }
 
-    const stack = extractSection(storm.body, 'Stack');
+    const stack = extractSection(storm.body, "Stack");
     if (stack) {
       parts.push(`\n## Stack\n\n${stack}`);
     }
 
-    const dependencies = extractSection(storm.body, 'Dependencies');
+    const dependencies = extractSection(storm.body, "Dependencies");
     if (dependencies) {
-      parts.push(`\n## Dependency Rules\n\nFollow these dependency guidelines:\n${dependencies}`);
+      parts.push(
+        `\n## Dependency Rules\n\nFollow these dependency guidelines:\n${dependencies}`,
+      );
     }
   }
 
-  // Memory context (persistent notes from previous sessions)
+  // Structural context (high-signal, stable across session)
+  const repoMapSection = buildRepoMapSection(projectPath);
+  if (repoMapSection) {
+    parts.push(repoMapSection);
+  }
+
+  const skillsSection = buildSkillsSection(projectPath);
+  if (skillsSection) {
+    parts.push(skillsSection);
+  }
+
+  // Transient context (session-specific, changes frequently)
   const memoryContext = loadMemoryContext(projectPath);
   if (memoryContext) {
     parts.push(`\n## Memory (from previous sessions)\n\n${memoryContext}`);
   }
 
-  // Git context (if in a git repo)
   const gitContext = getGitContext(projectPath);
   if (gitContext) {
     parts.push(`\n## Git Context\n\n${gitContext}`);
   }
 
-  return { prompt: parts.join('\n'), frontmatter };
+  return { prompt: parts.join("\n"), frontmatter };
+}
+
+// Cache: skills rarely change within a session
+let _skillsCache: { path: string; result: string | null; ts: number } | null =
+  null;
+const SKILLS_TTL_MS = 30_000;
+
+/**
+ * Build an "Available Skills" section from loaded skill definitions.
+ * Skills are user-defined .md files that can be invoked as /commands.
+ * Cached for 30s to avoid repeated directory scans.
+ */
+function buildSkillsSection(projectPath: string): string | null {
+  if (
+    _skillsCache &&
+    _skillsCache.path === projectPath &&
+    Date.now() - _skillsCache.ts < SKILLS_TTL_MS
+  ) {
+    return _skillsCache.result;
+  }
+
+  try {
+    const skills = loadSkills(projectPath);
+    if (skills.length === 0) {
+      _skillsCache = { path: projectPath, result: null, ts: Date.now() };
+      return null;
+    }
+
+    const lines = skills.map((s) => {
+      const source = s.source === "claude-compat" ? "claude" : s.source;
+      return `- **/${s.name}** (${source}) — ${s.description}`;
+    });
+
+    const result = `\n## Available Skills\n\nYou can invoke these skills when the user requests them with /<name>:\n${lines.join("\n")}`;
+    _skillsCache = { path: projectPath, result, ts: Date.now() };
+    return result;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Build a "Project Structure" section from the repository map.
+ * Shows top files ranked by connectivity (simplified PageRank).
+ */
+function buildRepoMapSection(projectPath: string): string | null {
+  try {
+    const map = buildRepoMap(projectPath);
+    const context = repoMapToContext(map);
+    if (!context) return null;
+
+    return `\n## Project Structure\n\n${context}`;
+  } catch {
+    return null;
+  }
 }
 
 /**
  * Extract verification commands from STORM.md frontmatter and body.
  */
-function extractVerificationCommands(fm: StormFrontmatter | null, body: string): string | null {
+function extractVerificationCommands(
+  fm: StormFrontmatter | null,
+  body: string,
+): string | null {
   const commands: string[] = [];
   if (fm?.build_command) commands.push(`- Build: \`${fm.build_command}\``);
   if (fm?.test_command) commands.push(`- Test: \`${fm.test_command}\``);
   if (fm?.dev_command) commands.push(`- Dev server: \`${fm.dev_command}\``);
-  return commands.length > 0 ? commands.join('\n') : null;
+  return commands.length > 0 ? commands.join("\n") : null;
 }
 
 /**
@@ -152,46 +244,61 @@ function extractVerificationCommands(fm: StormFrontmatter | null, body: string):
  * Returns the content between the heading and the next heading (or EOF).
  */
 function extractSection(body: string, heading: string): string | null {
-  const pattern = new RegExp(`^##\\s+${heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'mi');
+  const pattern = new RegExp(
+    `^##\\s+${heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`,
+    "mi",
+  );
   const match = body.match(pattern);
   if (!match || match.index === undefined) return null;
 
   const start = match.index + match[0].length;
-  const nextHeading = body.indexOf('\n## ', start);
-  const section = nextHeading >= 0 ? body.slice(start, nextHeading) : body.slice(start);
+  const nextHeading = body.indexOf("\n## ", start);
+  const section =
+    nextHeading >= 0 ? body.slice(start, nextHeading) : body.slice(start);
 
   const trimmed = section.trim();
   // Skip sections that only contain placeholder comments
-  if (!trimmed || trimmed.startsWith('<!--') && trimmed.endsWith('-->')) return null;
+  if (!trimmed || (trimmed.startsWith("<!--") && trimmed.endsWith("-->")))
+    return null;
   return trimmed;
 }
 
 function getGitContext(projectPath: string): string | null {
   // Check if it's a git repo
-  if (!existsSync(join(projectPath, '.git'))) return null;
+  if (!existsSync(join(projectPath, ".git"))) return null;
 
   try {
     const parts: string[] = [];
 
     // Current branch
-    const branch = execFileSync('git', ['branch', '--show-current'], { cwd: projectPath, timeout: 3000 })
-      .toString().trim();
+    const branch = execFileSync("git", ["branch", "--show-current"], {
+      cwd: projectPath,
+      timeout: 3000,
+    })
+      .toString()
+      .trim();
     if (branch) parts.push(`Branch: ${branch}`);
 
     // Short status
-    const status = execFileSync('git', ['status', '--short'], { cwd: projectPath, timeout: 3000 })
-      .toString().trim();
+    const status = execFileSync("git", ["status", "--short"], {
+      cwd: projectPath,
+      timeout: 3000,
+    })
+      .toString()
+      .trim();
     if (status) {
-      const lines = status.split('\n');
-      parts.push(`Working tree: ${lines.length} changed file${lines.length === 1 ? '' : 's'}`);
+      const lines = status.split("\n");
+      parts.push(
+        `Working tree: ${lines.length} changed file${lines.length === 1 ? "" : "s"}`,
+      );
       // Show first 10 files
-      parts.push(lines.slice(0, 10).join('\n'));
+      parts.push(lines.slice(0, 10).join("\n"));
       if (lines.length > 10) parts.push(`... and ${lines.length - 10} more`);
     } else {
-      parts.push('Working tree: clean');
+      parts.push("Working tree: clean");
     }
 
-    return parts.join('\n');
+    return parts.join("\n");
   } catch {
     return null;
   }
@@ -203,12 +310,22 @@ function getGitContext(projectPath: string): string | null {
  */
 function loadMemoryContext(projectPath: string): string | null {
   try {
-    const projectHash = createHash('sha256').update(projectPath).digest('hex').slice(0, 12);
-    const indexPath = join(homedir(), '.brainstorm', 'projects', projectHash, 'memory', 'MEMORY.md');
+    const projectHash = createHash("sha256")
+      .update(projectPath)
+      .digest("hex")
+      .slice(0, 12);
+    const indexPath = join(
+      homedir(),
+      ".brainstorm",
+      "projects",
+      projectHash,
+      "memory",
+      "MEMORY.md",
+    );
     if (!existsSync(indexPath)) return null;
-    const content = readFileSync(indexPath, 'utf-8').trim();
+    const content = readFileSync(indexPath, "utf-8").trim();
     if (!content) return null;
-    return content.split('\n').slice(0, 200).join('\n');
+    return content.split("\n").slice(0, 200).join("\n");
   } catch {
     return null;
   }
@@ -224,9 +341,12 @@ function loadMemoryContext(projectPath: string): string | null {
 export function parseAtMentions(
   input: string,
   projectPath: string,
-): { cleanedInput: string; fileContexts: Array<{ role: 'user'; content: string }> } {
+): {
+  cleanedInput: string;
+  fileContexts: Array<{ role: "user"; content: string }>;
+} {
   const atPattern = /@(\.?[\w./-]+\.\w{1,10})/g;
-  const fileContexts: Array<{ role: 'user'; content: string }> = [];
+  const fileContexts: Array<{ role: "user"; content: string }> = [];
   const seen = new Set<string>();
 
   let match;
@@ -239,34 +359,63 @@ export function parseAtMentions(
 
     if (existsSync(filePath)) {
       try {
-        const content = readFileSync(filePath, 'utf-8');
-        const lines = content.split('\n');
-        const truncated = lines.length > 500
-          ? lines.slice(0, 500).join('\n') + `\n... (${lines.length - 500} more lines)`
-          : content;
+        const content = readFileSync(filePath, "utf-8");
+        const lines = content.split("\n");
+        const truncated =
+          lines.length > 500
+            ? lines.slice(0, 500).join("\n") +
+              `\n... (${lines.length - 500} more lines)`
+            : content;
         fileContexts.push({
-          role: 'user',
+          role: "user",
           content: `[File: ${ref}]\n\`\`\`\n${truncated}\n\`\`\``,
         });
-      } catch { /* skip unreadable files */ }
+      } catch {
+        /* skip unreadable files */
+      }
     }
   }
 
-  const cleanedInput = input.replace(atPattern, '$1').trim();
+  const cleanedInput = input.replace(atPattern, "$1").trim();
   return { cleanedInput, fileContexts };
 }
 
 // ── Tool Self-Awareness ─────────────────────────────────────────────
 
 const TOOL_CATEGORIES: Record<string, string[]> = {
-  'Filesystem': ['file_read', 'file_write', 'file_edit', 'multi_edit', 'batch_edit', 'list_dir', 'glob', 'grep'],
-  'Shell': ['shell', 'process_spawn', 'process_kill'],
-  'Git': ['git_status', 'git_diff', 'git_log', 'git_commit', 'git_branch', 'git_stash'],
-  'GitHub': ['gh_pr', 'gh_issue'],
-  'Web': ['web_fetch', 'web_search'],
-  'Tasks': ['task_create', 'task_update', 'task_list'],
-  'Subagent': ['subagent'],
-  'BrainstormRouter': ['br_status', 'br_budget', 'br_leaderboard', 'br_insights', 'br_models', 'br_memory_search', 'br_memory_store', 'br_health'],
+  Filesystem: [
+    "file_read",
+    "file_write",
+    "file_edit",
+    "multi_edit",
+    "batch_edit",
+    "list_dir",
+    "glob",
+    "grep",
+  ],
+  Shell: ["shell", "process_spawn", "process_kill"],
+  Git: [
+    "git_status",
+    "git_diff",
+    "git_log",
+    "git_commit",
+    "git_branch",
+    "git_stash",
+  ],
+  GitHub: ["gh_pr", "gh_issue"],
+  Web: ["web_fetch", "web_search"],
+  Tasks: ["task_create", "task_update", "task_list"],
+  Subagent: ["subagent"],
+  BrainstormRouter: [
+    "br_status",
+    "br_budget",
+    "br_leaderboard",
+    "br_insights",
+    "br_models",
+    "br_memory_search",
+    "br_memory_store",
+    "br_health",
+  ],
 };
 
 /**
@@ -276,7 +425,7 @@ const TOOL_CATEGORIES: Record<string, string[]> = {
 export function buildToolAwarenessSection(
   tools: Array<{ name: string; description: string; permission: string }>,
 ): string {
-  if (tools.length === 0) return '';
+  if (tools.length === 0) return "";
 
   const toolMap = new Map(tools.map((t) => [t.name, t]));
   const used = new Set<string>();
@@ -285,57 +434,72 @@ export function buildToolAwarenessSection(
   for (const [category, names] of Object.entries(TOOL_CATEGORIES)) {
     const categoryTools = names
       .filter((n) => toolMap.has(n))
-      .map((n) => { used.add(n); return toolMap.get(n)!; });
+      .map((n) => {
+        used.add(n);
+        return toolMap.get(n)!;
+      });
     if (categoryTools.length === 0) continue;
-    sections.push(`### ${category}\n${categoryTools.map((t) =>
-      `- **${t.name}** (${t.permission}) — ${t.description.slice(0, 120)}`
-    ).join('\n')}`);
+    sections.push(
+      `### ${category}\n${categoryTools
+        .map(
+          (t) =>
+            `- **${t.name}** (${t.permission}) — ${t.description.slice(0, 120)}`,
+        )
+        .join("\n")}`,
+    );
   }
 
   // Catch uncategorized tools
   const other = tools.filter((t) => !used.has(t.name));
   if (other.length > 0) {
-    sections.push(`### Other\n${other.map((t) =>
-      `- **${t.name}** (${t.permission}) — ${t.description.slice(0, 120)}`
-    ).join('\n')}`);
+    sections.push(
+      `### Other\n${other
+        .map(
+          (t) =>
+            `- **${t.name}** (${t.permission}) — ${t.description.slice(0, 120)}`,
+        )
+        .join("\n")}`,
+    );
   }
 
   const home = homedir();
   const selfAwareness = [
-    '\n### Environment',
+    "\n### Environment",
     `- Home directory: \`${home}\``,
     `- Current working directory: \`${process.cwd()}\``,
-    '- You CAN read files outside the project (e.g., ~/Desktop, ~/Documents). Use absolute paths.',
-    '- You should only WRITE files within the project directory unless the user explicitly asks otherwise.',
-    '',
-    '### Self-Configuration',
-    '- Global config: `~/.brainstorm/config.toml` (TOML format)',
-    '- Project config: `./brainstorm.toml` (overrides global)',
-    '- Project context: `./BRAINSTORM.md` or `./STORM.md` (Markdown with YAML frontmatter)',
-    '- Memory files: `~/.brainstorm/projects/<hash>/memory/` (Markdown with YAML frontmatter)',
-    '- Database: `~/.brainstorm/brainstorm.db` (SQLite)',
-    '- Eval scores: `~/.brainstorm/eval/capability-scores.json`',
-    '- To change models or routing, edit `~/.brainstorm/config.toml` or use `/model` and `/strategy` slash commands.',
-  ].join('\n');
+    "- You CAN read files outside the project (e.g., ~/Desktop, ~/Documents). Use absolute paths.",
+    "- You should only WRITE files within the project directory unless the user explicitly asks otherwise.",
+    "",
+    "### Self-Configuration",
+    "- Global config: `~/.brainstorm/config.toml` (TOML format)",
+    "- Project config: `./brainstorm.toml` (overrides global)",
+    "- Project context: `./BRAINSTORM.md` or `./STORM.md` (Markdown with YAML frontmatter)",
+    "- Memory files: `~/.brainstorm/projects/<hash>/memory/` (Markdown with YAML frontmatter)",
+    "- Database: `~/.brainstorm/brainstorm.db` (SQLite)",
+    "- Eval scores: `~/.brainstorm/eval/capability-scores.json`",
+    "- To change models or routing, edit `~/.brainstorm/config.toml` or use `/model` and `/strategy` slash commands.",
+  ].join("\n");
 
   // Add BrainstormRouter intelligence section if BR MCP tools are connected
-  const hasBRTools = tools.some((t) => t.name.startsWith('br_'));
-  const brSection = hasBRTools ? [
-    '',
-    '### BrainstormRouter Intelligence',
-    'You are connected to BrainstormRouter — an intelligent AI gateway. You have native tools to query it:',
-    '',
-    '- **br_status** — Full self-check: identity, budget, health, errors, suggestions. Start here.',
-    '- **br_budget** — Check budget: daily/monthly spend, limits, forecast. Call before expensive operations.',
-    '- **br_leaderboard** — Real model rankings from production data. See which models perform best.',
-    '- **br_insights** — Cost optimization: waste detection, cheaper alternatives, savings estimates.',
-    '- **br_models** — List all available models with pricing.',
-    '- **br_memory_search** — Search persistent memory across sessions.',
-    '- **br_memory_store** — Save important facts that persist across sessions.',
-    '- **br_health** — Quick connectivity test.',
-    '',
-    'Use these when the situation calls for it — not routinely.',
-  ].join('\n') : '';
+  const hasBRTools = tools.some((t) => t.name.startsWith("br_"));
+  const brSection = hasBRTools
+    ? [
+        "",
+        "### BrainstormRouter Intelligence",
+        "You are connected to BrainstormRouter — an intelligent AI gateway. You have native tools to query it:",
+        "",
+        "- **br_status** — Full self-check: identity, budget, health, errors, suggestions. Start here.",
+        "- **br_budget** — Check budget: daily/monthly spend, limits, forecast. Call before expensive operations.",
+        "- **br_leaderboard** — Real model rankings from production data. See which models perform best.",
+        "- **br_insights** — Cost optimization: waste detection, cheaper alternatives, savings estimates.",
+        "- **br_models** — List all available models with pricing.",
+        "- **br_memory_search** — Search persistent memory across sessions.",
+        "- **br_memory_store** — Save important facts that persist across sessions.",
+        "- **br_health** — Quick connectivity test.",
+        "",
+        "Use these when the situation calls for it — not routinely.",
+      ].join("\n")
+    : "";
 
-  return `\n## Available Tools\n\nYou have access to ${tools.length} tools:\n\n${sections.join('\n\n')}\n${selfAwareness}${brSection}`;
+  return `\n## Available Tools\n\nYou have access to ${tools.length} tools:\n\n${sections.join("\n\n")}\n${selfAwareness}${brSection}`;
 }
