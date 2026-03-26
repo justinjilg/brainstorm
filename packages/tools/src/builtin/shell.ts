@@ -52,6 +52,15 @@ export function stopDockerSandbox(): void {
   }
 }
 
+/** Swap the Docker sandbox instance. Returns the previous instance for restore. */
+export function setDockerSandbox(
+  instance: DockerSandbox | null,
+): DockerSandbox | null {
+  const prev = dockerSandbox;
+  dockerSandbox = instance;
+  return prev;
+}
+
 // ── Background Task Management ──────────────────────────────────────
 
 interface BackgroundTask {

@@ -2,7 +2,11 @@ import { streamText, stepCountIs } from "ai";
 import type { BrainstormConfig } from "@brainstorm/config";
 import type { ProviderRegistry } from "@brainstorm/providers";
 import { BrainstormRouter, CostTracker } from "@brainstorm/router";
-import type { ToolRegistry } from "@brainstorm/tools";
+import {
+  type ToolRegistry,
+  setDockerSandbox,
+  DockerSandbox,
+} from "@brainstorm/tools";
 import { serializeRoutingMetadata } from "@brainstorm/shared";
 
 // ── Subagent Types ──────────────────────────────────────────────────
@@ -157,6 +161,8 @@ export interface SubagentOptions {
     toolName: string,
     toolPermission: any,
   ) => "allow" | "confirm" | "deny";
+  /** When true and container mode is active, code subagents get their own DockerSandbox. */
+  containerIsolation?: boolean;
 }
 
 export interface SubagentResult {
@@ -232,6 +238,21 @@ export async function spawnSubagent(
   const budgetLimit = options.budgetLimit ?? costTracker.getSubagentBudget();
   const costBefore = costTracker.getSessionCost();
 
+  // Docker isolation: code subagents get their own container
+  let ownSandbox: DockerSandbox | null = null;
+  let prevSandbox: DockerSandbox | null = null;
+  if (
+    options.containerIsolation &&
+    type === "code" &&
+    DockerSandbox.isAvailable()
+  ) {
+    ownSandbox = new DockerSandbox({
+      hostWorkspace: projectPath,
+    });
+    ownSandbox.start();
+    prevSandbox = setDockerSandbox(ownSandbox);
+  }
+
   // Fire SubagentStart hook
   if (options.onHook) {
     await options.onHook("SubagentStart", {
@@ -301,6 +322,12 @@ export async function spawnSubagent(
   } catch (err: any) {
     // AbortError from budget enforcement is expected — not an error
     if (err.name !== "AbortError") throw err;
+  } finally {
+    // Clean up subagent's Docker sandbox and restore parent's
+    if (ownSandbox) {
+      ownSandbox.stop();
+      setDockerSandbox(prevSandbox);
+    }
   }
 
   if (budgetExceeded) {

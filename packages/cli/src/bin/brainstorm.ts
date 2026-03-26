@@ -1528,6 +1528,7 @@ program
         tools,
         projectPath,
         permissionCheck: (name, perm) => permissionManager.check(name, perm),
+        containerIsolation: config.shell.sandbox === "container",
       });
       tools.register(subagentTool);
 
