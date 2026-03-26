@@ -395,6 +395,20 @@ export async function* runAgentLoop(
     const remaining = streamFilter.flush();
     if (remaining) yield { type: 'text-delta', delta: normalizeInsightMarkers(remaining) };
 
+    // ── Budget warning at 80% ──
+    const budgetRemaining = costTracker.getRemainingBudget();
+    if (budgetRemaining !== null) {
+      const sessionLimit = (config.budget as any)?.perSession;
+      if (sessionLimit && budgetRemaining <= sessionLimit * 0.2) {
+        yield {
+          type: 'budget-warning' as const,
+          used: costTracker.getSessionCost(),
+          limit: sessionLimit,
+          remaining: budgetRemaining,
+        };
+      }
+    }
+
     // ── Empty/blocked response detection + retry with fallback model ──
     const isEmpty = textDeltaCount === 0 && toolCallCount === 0;
     // Build fallback list: use decision.fallbacks, or generate from registry if empty
