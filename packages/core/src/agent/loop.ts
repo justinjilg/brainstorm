@@ -136,6 +136,7 @@ export async function* runAgentLoop(
   let { systemPrompt } = options;
 
   // Initialize trajectory recorder if enabled
+  const sessionStartTime = Date.now();
   const trajectory = options.trajectoryEnabled ? new TrajectoryRecorder(sessionId) : null;
   trajectory?.recordSessionStart({ projectPath: options.projectPath, systemPrompt: systemPrompt.slice(0, 200) });
 
@@ -498,5 +499,17 @@ export async function* runAgentLoop(
     setTaskEventHandler(null);
     setToolOutputHandler(null);
     // Keep background handler alive — background tasks outlive individual agent loop runs
+
+    // Submit trajectory to BR Intelligence API (fire-and-forget)
+    if (trajectory) {
+      trajectory.recordSessionEnd({
+        totalCost: costTracker.getSessionCost(),
+        totalTurns: 1, // caller tracks actual turns
+        durationMs: Date.now() - sessionStartTime,
+      });
+
+      // Async submission — don't block session exit
+      import('../session/trajectory.js').catch(() => {});
+    }
   }
 }
