@@ -119,6 +119,11 @@ export {
   type RepoMapEntry,
 } from "./agent/repo-map.js";
 export {
+  semanticSearch,
+  indexProject,
+  type SearchResult,
+} from "./search/semantic.js";
+export {
   submitCommunityFix,
   queryCommunityFixes,
   formatCommunityFixes,
