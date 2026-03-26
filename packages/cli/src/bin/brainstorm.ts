@@ -7,7 +7,11 @@ import {
   isCommunityKey,
 } from "@brainstorm/providers";
 import { BrainstormRouter, CostTracker } from "@brainstorm/router";
-import { createDefaultToolRegistry, configureSandbox } from "@brainstorm/tools";
+import {
+  createDefaultToolRegistry,
+  configureSandbox,
+  stopDockerSandbox,
+} from "@brainstorm/tools";
 import {
   runAgentLoop,
   buildSystemPrompt,
@@ -16,6 +20,7 @@ import {
   PermissionManager,
   createSubagentTool,
   spawnSubagent,
+  createDefaultMiddlewarePipeline,
   type CompactionCallbacks,
 } from "@brainstorm/core";
 import type { OutputStyle } from "@brainstorm/core";
@@ -884,6 +889,8 @@ program
         config.shell.sandbox as any,
         projectPath,
         config.shell.maxOutputBytes,
+        config.shell.containerImage,
+        config.shell.containerTimeout,
       );
       const { prompt: rawPrompt, frontmatter } = buildSystemPrompt(projectPath);
       const systemPrompt =
@@ -920,6 +927,7 @@ program
         process.stdout.write("\n");
       }
 
+      const middleware = createDefaultMiddlewarePipeline(projectPath);
       for await (const event of runAgentLoop(sessionManager.getHistory(), {
         config,
         registry,
@@ -935,6 +943,7 @@ program
         maxSteps: parseInt(opts.maxSteps ?? "1"),
         compaction: buildCompactionCallbacks(sessionManager),
         permissionCheck: (tool, args) => permissionManager.check(tool, args),
+        middleware,
       })) {
         switch (event.type) {
           case "thinking":
@@ -1476,6 +1485,8 @@ program
         config.shell.sandbox as any,
         projectPath,
         config.shell.maxOutputBytes,
+        config.shell.containerImage,
+        config.shell.containerTimeout,
       );
 
       // Permission manager — gates tool execution
@@ -1489,6 +1500,7 @@ program
         (config.general.outputStyle as OutputStyle) ?? "concise";
 
       const sessionManager = new SessionManager(db);
+      const middleware = createDefaultMiddlewarePipeline(projectPath);
       let { prompt: systemPrompt, frontmatter } = buildSystemPrompt(
         projectPath,
         currentOutputStyle,
@@ -1520,6 +1532,7 @@ program
         tools,
         projectPath,
         permissionCheck: (name, perm) => permissionManager.check(name, perm),
+        containerIsolation: config.shell.sandbox === "container",
       });
       tools.register(subagentTool);
 
@@ -1664,6 +1677,7 @@ program
             permissionCheck: (name, perm) =>
               permissionManager.check(name, perm),
             preferredModelId,
+            middleware,
             onTurnComplete: (ctx) => {
               ctx.turn = sessionManager.incrementTurn();
               ctx.sessionMinutes = sessionManager.getSessionMinutes();
@@ -1776,6 +1790,7 @@ program
           compaction: buildCompactionCallbacks(sessionManager),
           signal: currentAbortController.signal,
           permissionCheck: (name, perm) => permissionManager.check(name, perm),
+          middleware,
           preferredModelId,
         });
         // Wrap to capture assistant message after completion
@@ -1912,8 +1927,13 @@ program
   );
 
 export function run() {
-  // Graceful shutdown: finalize session, close DB, kill background tasks
+  // Graceful shutdown: stop Docker sandbox, close DB
   const cleanup = () => {
+    try {
+      stopDockerSandbox();
+    } catch {
+      // Best effort — container may already be stopped
+    }
     try {
       closeDb();
     } catch {
