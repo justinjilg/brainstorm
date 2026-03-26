@@ -845,7 +845,6 @@ program
 
 const VAULT_PATH = join(homedir(), '.brainstorm', 'vault.enc');
 
-/** Prompt for a password with masked echo. Supports BRAINSTORM_VAULT_PASSWORD env for non-interactive use. */
 function printResumeSummary(session: any, sessionManager: SessionManager): void {
   const age = Math.floor((Date.now() / 1000 - session.createdAt) / 60);
   const ageStr = age < 60 ? `${age}m ago` : age < 1440 ? `${Math.floor(age / 60)}h ago` : `${Math.floor(age / 1440)}d ago`;
@@ -856,6 +855,7 @@ function printResumeSummary(session: any, sessionManager: SessionManager): void 
   if (lastMsg) console.log(`  Last ${lastMsg.role}: ${lastPreview}`);
 }
 
+/** Prompt for a password with masked echo. Supports BRAINSTORM_VAULT_PASSWORD env for non-interactive use. */
 function promptPassword(prompt: string): Promise<string> {
   // Non-interactive: use env var if set (for CI/CD and scripting)
   const envPassword = process.env.BRAINSTORM_VAULT_PASSWORD;
