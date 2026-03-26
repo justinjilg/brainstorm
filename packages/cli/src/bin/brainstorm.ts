@@ -1641,41 +1641,64 @@ program
 
           // Handle slash commands in simple mode
           if (input.startsWith("/")) {
-            const [cmd, ...args] = input.trim().split(/\s+/);
-            const arg = args.join(" ");
-            if (cmd === "/model") {
-              if (!arg) {
-                console.log("  Usage: /model <provider/model-id>");
-                continue;
-              }
-              preferredModelId = arg;
-              console.log(`  Model set to: ${arg}`);
-              continue;
-            }
-            if (cmd === "/strategy") {
-              if (!arg) {
-                console.log(
-                  `  Current: ${router.getActiveStrategy()}. Options: cost-first, quality-first, combined, capability`,
-                );
-                continue;
-              }
-              router.setStrategy(arg as any);
-              console.log(`  Strategy set to: ${arg}`);
-              continue;
-            }
-            if (cmd === "/compact") {
-              const result = await sessionManager.compact({
-                contextWindow: 200000,
-                keepRecent: 5,
+            const { isSlashCommand, executeSlashCommand } =
+              await import("../commands/slash.js");
+            if (isSlashCommand(input)) {
+              const result = await executeSlashCommand(input, {
+                getModel: () => preferredModelId,
+                getSessionCost: () => costTracker.getSessionCost(),
+                getTokenCount: () => ({
+                  input: 0,
+                  output: 0,
+                }),
+                exit: () => {
+                  rl.close();
+                  process.exit(0);
+                },
+                clearHistory: () => {
+                  session = sessionManager.start(projectPath);
+                },
+                setModel: (m) => {
+                  preferredModelId = m;
+                },
+                setStrategy: (s) => {
+                  router.setStrategy(s as any);
+                },
+                getStrategy: () => router.getActiveStrategy(),
+                setMode: (m) => {
+                  permissionManager.setMode(m as any);
+                },
+                getMode: () => permissionManager.getMode(),
+                setOutputStyle: (s) => {
+                  currentOutputStyle = s as any;
+                  const rebuilt = buildSystemPrompt(
+                    projectPath,
+                    currentOutputStyle,
+                  );
+                  systemPrompt =
+                    rebuilt.prompt +
+                    buildToolAwarenessSection(tools.listTools());
+                },
+                getOutputStyle: () => currentOutputStyle,
+                getBudget: () => {
+                  const remaining = costTracker.getRemainingBudget();
+                  if (remaining === null) return null;
+                  return {
+                    remaining,
+                    limit: config.budget.perSession ?? 0,
+                  };
+                },
+                compact: async () => {
+                  const result = await sessionManager.compact({
+                    contextWindow: 200000,
+                    keepRecent: 5,
+                  });
+                  console.log(
+                    `  Compacted: ${result.removed} messages removed (${result.tokensBefore} → ${result.tokensAfter} tokens)`,
+                  );
+                },
               });
-              console.log(
-                `  Compacted: ${result.removed} messages removed (${result.tokensBefore} → ${result.tokensAfter} tokens)`,
-              );
-              continue;
-            }
-            if (cmd === "/clear") {
-              session = sessionManager.start(projectPath);
-              console.log("  Session cleared.");
+              console.log(`  ${result}`);
               continue;
             }
             // Unknown slash command — pass to model as regular message
