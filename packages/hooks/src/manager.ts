@@ -125,8 +125,17 @@ export class HookManager {
 
           if (blocked) break; // Stop processing further hooks
         }
+      } else if (hook.type === 'prompt') {
+        // Prompt hooks require an LLM call — log warning until implemented
+        log.warn({ hookId, event }, 'Prompt hook type not yet implemented — skipping. Use "command" type instead.');
+        results.push({
+          hookId,
+          event,
+          success: false,
+          error: 'Prompt hook type not yet implemented. Use "command" type for now.',
+          durationMs: Date.now() - start,
+        });
       }
-      // 'prompt' type hooks would invoke an LLM — deferred to future PR
     }
 
     return results;
