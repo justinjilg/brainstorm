@@ -67,10 +67,23 @@ export function ChatApp({
     undefined,
   );
   const [activeTools, setActiveTools] = useState<ToolCallState[]>([]);
+  const [scrollOffset, setScrollOffset] = useState(0);
   const [history] = useState(() => new InputHistory());
 
-  // Keybinding handler + input history navigation
+  // Keybinding handler + input history navigation + scrolling
   useInput((inputChar, key) => {
+    // Shift+Up/Down for scrolling message history
+    if (key.upArrow && key.shift) {
+      setScrollOffset((prev) =>
+        Math.min(prev + 3, Math.max(0, messages.length - 3)),
+      );
+      return;
+    }
+    if (key.downArrow && key.shift) {
+      setScrollOffset((prev) => Math.max(0, prev - 3));
+      return;
+    }
+
     // Up/Down arrow for input history
     if (key.upArrow && !isProcessing) {
       const prev = history.up(input);
@@ -150,6 +163,7 @@ export function ChatApp({
       setStreamingText("");
       setTasks([]);
       setActiveTools([]);
+      setScrollOffset(0);
 
       let fullResponse = "";
       let model: string | undefined;
@@ -346,16 +360,33 @@ export function ChatApp({
     [isProcessing, onSendMessage, exit, slashCtx],
   );
 
+  // Compute available height for messages (terminal rows minus header + footer)
+  const termHeight = process.stdout.rows || 24;
+  const headerHeight = 3; // StatusBar
+  const footerHeight = 3; // Input box
+  const toolsHeight =
+    activeTools.filter((t) => t.status === "running").length > 0 ? 4 : 0;
+  const tasksHeight = tasks.length > 0 ? Math.min(tasks.length + 1, 5) : 0;
+  const messageHeight = Math.max(
+    5,
+    termHeight - headerHeight - footerHeight - toolsHeight - tasksHeight,
+  );
+
   return (
-    <Box flexDirection="column" height={process.stdout.rows || 24}>
+    <Box flexDirection="column" height={termHeight}>
       <StatusBar
         strategy={strategy}
         currentModel={currentModel}
         sessionCost={sessionCost}
         modelCount={modelCount}
         tokenCount={tokenCount}
+        isProcessing={isProcessing}
       />
-      <MessageList messages={messages} />
+      <MessageList
+        messages={messages}
+        maxHeight={messageHeight}
+        scrollOffset={scrollOffset}
+      />
       {(streamingText !== undefined || thinkingPhase) && (
         <StreamingMessage
           content={streamingText ?? ""}
@@ -366,20 +397,29 @@ export function ChatApp({
       )}
       <ToolCallList tools={activeTools} />
       {tasks.length > 0 && <TaskList tasks={tasks} />}
-      <Box
-        borderStyle="single"
-        borderColor={isProcessing ? "gray" : "cyan"}
-        paddingX={1}
-      >
-        <Text color={isProcessing ? "gray" : "cyan"} bold>
-          {"> "}
-        </Text>
-        <TextInput
-          value={input}
-          onChange={setInput}
-          onSubmit={handleSubmit}
-          placeholder={isProcessing ? "Thinking..." : "Type a message..."}
-        />
+      <Box flexDirection="column">
+        <Box
+          borderStyle="single"
+          borderColor={isProcessing ? "gray" : "cyan"}
+          paddingX={1}
+        >
+          <Text color={isProcessing ? "gray" : "cyan"} bold>
+            {"> "}
+          </Text>
+          <TextInput
+            value={input}
+            onChange={setInput}
+            onSubmit={handleSubmit}
+            placeholder={isProcessing ? "Thinking..." : "Type a message..."}
+          />
+        </Box>
+        <Box paddingX={2}>
+          <Text color="gray" dimColor>
+            {isProcessing
+              ? "Esc abort │ Shift+↑↓ scroll"
+              : "/help │ Shift+Tab mode │ ↑↓ history │ Ctrl+D exit"}
+          </Text>
+        </Box>
       </Box>
     </Box>
   );
