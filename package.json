@@ -8,13 +8,24 @@
     "test": "turbo run test",
     "test:dogfood": "npx tsx tests/dogfood/run-dogfood.ts",
     "test:workflow": "npx tsx tests/workflow-demo/run-demo.ts",
-    "typecheck": "turbo run typecheck"
+    "typecheck": "turbo run typecheck",
+    "prepare": "husky"
   },
   "devDependencies": {
+    "husky": "^9",
+    "lint-staged": "^15",
     "prettier": "^3",
     "turbo": "^2",
     "typescript": "^5.7",
     "vitest": "^3"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
   },
   "workspaces": [
     "packages/*",
