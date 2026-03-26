@@ -1,5 +1,9 @@
 # Brainstorm
 
+[![Build](https://github.com/justinjilg/brainstorm/actions/workflows/ci.yml/badge.svg)](https://github.com/justinjilg/brainstorm/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org/)
+
 An open-source AI coding assistant with intelligent model routing. Routes tasks to the optimal model across 357+ models and 7 providers via [BrainstormRouter](https://brainstormrouter.com).
 
 ```bash
