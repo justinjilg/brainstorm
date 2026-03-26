@@ -1,5 +1,6 @@
 import { loadStormFile, loadHierarchicalStormFiles, type StormFrontmatter } from '@brainstorm/config';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
@@ -120,6 +121,12 @@ export function buildSystemPrompt(projectPath: string, outputStyle?: OutputStyle
     }
   }
 
+  // Memory context (persistent notes from previous sessions)
+  const memoryContext = loadMemoryContext(projectPath);
+  if (memoryContext) {
+    parts.push(`\n## Memory (from previous sessions)\n\n${memoryContext}`);
+  }
+
   // Git context (if in a git repo)
   const gitContext = getGitContext(projectPath);
   if (gitContext) {
@@ -185,6 +192,23 @@ function getGitContext(projectPath: string): string | null {
     }
 
     return parts.join('\n');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Load memory context from the project's memory index.
+ * Reads the MEMORY.md file directly to avoid MemoryManager dependency chain.
+ */
+function loadMemoryContext(projectPath: string): string | null {
+  try {
+    const projectHash = createHash('sha256').update(projectPath).digest('hex').slice(0, 12);
+    const indexPath = join(homedir(), '.brainstorm', 'projects', projectHash, 'memory', 'MEMORY.md');
+    if (!existsSync(indexPath)) return null;
+    const content = readFileSync(indexPath, 'utf-8').trim();
+    if (!content) return null;
+    return content.split('\n').slice(0, 200).join('\n');
   } catch {
     return null;
   }
