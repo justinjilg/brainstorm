@@ -1,6 +1,11 @@
-import type Database from 'better-sqlite3';
-import { randomUUID } from 'node:crypto';
-import type { Session, Message, CostRecord, TaskType } from '@brainstorm/shared';
+import type Database from "better-sqlite3";
+import { randomUUID } from "node:crypto";
+import type {
+  Session,
+  Message,
+  CostRecord,
+  TaskType,
+} from "@brainstorm/shared";
 
 // ── Sessions ─────────────────────────────────────────────────────────
 
@@ -11,13 +16,24 @@ export class SessionRepository {
     const id = randomUUID();
     const now = Math.floor(Date.now() / 1000);
     this.db
-      .prepare('INSERT INTO sessions (id, created_at, updated_at, project_path) VALUES (?, ?, ?, ?)')
+      .prepare(
+        "INSERT INTO sessions (id, created_at, updated_at, project_path) VALUES (?, ?, ?, ?)",
+      )
       .run(id, now, now, projectPath);
-    return { id, createdAt: now, updatedAt: now, projectPath, totalCost: 0, messageCount: 0 };
+    return {
+      id,
+      createdAt: now,
+      updatedAt: now,
+      projectPath,
+      totalCost: 0,
+      messageCount: 0,
+    };
   }
 
   get(id: string): Session | null {
-    const row = this.db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as any;
+    const row = this.db
+      .prepare("SELECT * FROM sessions WHERE id = ?")
+      .get(id) as any;
     if (!row) return null;
     return {
       id: row.id,
@@ -31,19 +47,23 @@ export class SessionRepository {
 
   updateCost(id: string, cost: number): void {
     this.db
-      .prepare('UPDATE sessions SET total_cost = total_cost + ?, updated_at = unixepoch() WHERE id = ?')
+      .prepare(
+        "UPDATE sessions SET total_cost = total_cost + ?, updated_at = unixepoch() WHERE id = ?",
+      )
       .run(cost, id);
   }
 
   incrementMessages(id: string): void {
     this.db
-      .prepare('UPDATE sessions SET message_count = message_count + 1, updated_at = unixepoch() WHERE id = ?')
+      .prepare(
+        "UPDATE sessions SET message_count = message_count + 1, updated_at = unixepoch() WHERE id = ?",
+      )
       .run(id);
   }
 
   listRecent(limit = 10): Session[] {
     const rows = this.db
-      .prepare('SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?')
+      .prepare("SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?")
       .all(limit) as any[];
     return rows.map((row) => ({
       id: row.id,
@@ -61,18 +81,36 @@ export class SessionRepository {
 export class MessageRepository {
   constructor(private db: Database.Database) {}
 
-  create(sessionId: string, role: Message['role'], content: string, modelId?: string, tokenCount?: number): Message {
+  create(
+    sessionId: string,
+    role: Message["role"],
+    content: string,
+    modelId?: string,
+    tokenCount?: number,
+  ): Message {
     const id = randomUUID();
     const timestamp = Math.floor(Date.now() / 1000);
     this.db
-      .prepare('INSERT INTO messages (id, session_id, role, content, model_id, token_count, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(id, sessionId, role, content, modelId ?? null, tokenCount ?? null, timestamp);
+      .prepare(
+        "INSERT INTO messages (id, session_id, role, content, model_id, token_count, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(
+        id,
+        sessionId,
+        role,
+        content,
+        modelId ?? null,
+        tokenCount ?? null,
+        timestamp,
+      );
     return { id, sessionId, role, content, modelId, tokenCount, timestamp };
   }
 
   listBySession(sessionId: string): Message[] {
     const rows = this.db
-      .prepare('SELECT * FROM messages WHERE session_id = ? ORDER BY timestamp ASC')
+      .prepare(
+        "SELECT * FROM messages WHERE session_id = ? ORDER BY timestamp ASC",
+      )
       .all(sessionId) as any[];
     return rows.map((row) => ({
       id: row.id,
@@ -88,7 +126,9 @@ export class MessageRepository {
   /** Load only the most recent N messages for a session. Used for lazy loading. */
   listBySessionRecent(sessionId: string, limit = 50): Message[] {
     const rows = this.db
-      .prepare('SELECT * FROM (SELECT * FROM messages WHERE session_id = ? ORDER BY timestamp DESC LIMIT ?) ORDER BY timestamp ASC')
+      .prepare(
+        "SELECT * FROM (SELECT * FROM messages WHERE session_id = ? ORDER BY timestamp DESC LIMIT ?) ORDER BY timestamp ASC",
+      )
       .all(sessionId, limit) as any[];
     return rows.map((row) => ({
       id: row.id,
@@ -104,7 +144,7 @@ export class MessageRepository {
   /** Count total messages in a session. */
   countBySession(sessionId: string): number {
     const row = this.db
-      .prepare('SELECT COUNT(*) as count FROM messages WHERE session_id = ?')
+      .prepare("SELECT COUNT(*) as count FROM messages WHERE session_id = ?")
       .get(sessionId) as any;
     return row?.count ?? 0;
   }
@@ -115,11 +155,25 @@ export class MessageRepository {
 export class CostRepository {
   constructor(private db: Database.Database) {}
 
-  record(entry: Omit<CostRecord, 'id'>): CostRecord {
+  record(entry: Omit<CostRecord, "id">): CostRecord {
     const id = randomUUID();
     this.db
-      .prepare(`INSERT INTO cost_records (id, timestamp, session_id, model_id, provider, input_tokens, output_tokens, cached_tokens, cost, task_type, project_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(id, entry.timestamp, entry.sessionId, entry.modelId, entry.provider, entry.inputTokens, entry.outputTokens, entry.cachedTokens, entry.cost, entry.taskType, entry.projectPath ?? null);
+      .prepare(
+        `INSERT INTO cost_records (id, timestamp, session_id, model_id, provider, input_tokens, output_tokens, cached_tokens, cost, task_type, project_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        entry.timestamp,
+        entry.sessionId,
+        entry.modelId,
+        entry.provider,
+        entry.inputTokens,
+        entry.outputTokens,
+        entry.cachedTokens,
+        entry.cost,
+        entry.taskType,
+        entry.projectPath ?? null,
+      );
     return { ...entry, id };
   }
 
@@ -127,7 +181,9 @@ export class CostRepository {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
     const row = this.db
-      .prepare('SELECT COALESCE(SUM(cost), 0) as total FROM cost_records WHERE timestamp >= ?')
+      .prepare(
+        "SELECT COALESCE(SUM(cost), 0) as total FROM cost_records WHERE timestamp >= ?",
+      )
       .get(Math.floor(startOfDay.getTime() / 1000)) as any;
     return row.total;
   }
@@ -137,45 +193,97 @@ export class CostRepository {
     startOfMonth.setDate(1);
     startOfMonth.setHours(0, 0, 0, 0);
     const row = this.db
-      .prepare('SELECT COALESCE(SUM(cost), 0) as total FROM cost_records WHERE timestamp >= ?')
+      .prepare(
+        "SELECT COALESCE(SUM(cost), 0) as total FROM cost_records WHERE timestamp >= ?",
+      )
       .get(Math.floor(startOfMonth.getTime() / 1000)) as any;
     return row.total;
   }
 
   totalCostForSession(sessionId: string): number {
     const row = this.db
-      .prepare('SELECT COALESCE(SUM(cost), 0) as total FROM cost_records WHERE session_id = ?')
+      .prepare(
+        "SELECT COALESCE(SUM(cost), 0) as total FROM cost_records WHERE session_id = ?",
+      )
       .get(sessionId) as any;
     return row.total;
   }
 
   lastForSession(sessionId: string): CostRecord | null {
     const row = this.db
-      .prepare('SELECT * FROM cost_records WHERE session_id = ? ORDER BY timestamp DESC LIMIT 1')
+      .prepare(
+        "SELECT * FROM cost_records WHERE session_id = ? ORDER BY timestamp DESC LIMIT 1",
+      )
       .get(sessionId) as any;
     if (!row) return null;
     return {
-      id: row.id, timestamp: row.timestamp, sessionId: row.session_id,
-      modelId: row.model_id, provider: row.provider,
-      inputTokens: row.input_tokens, outputTokens: row.output_tokens,
-      cachedTokens: row.cached_tokens, cost: row.cost,
-      taskType: row.task_type, projectPath: row.project_path,
+      id: row.id,
+      timestamp: row.timestamp,
+      sessionId: row.session_id,
+      modelId: row.model_id,
+      provider: row.provider,
+      inputTokens: row.input_tokens,
+      outputTokens: row.output_tokens,
+      cachedTokens: row.cached_tokens,
+      cost: row.cost,
+      taskType: row.task_type,
+      projectPath: row.project_path,
     };
   }
 
   updateCost(id: string, cost: number): void {
-    this.db.prepare('UPDATE cost_records SET cost = ? WHERE id = ?').run(cost, id);
+    this.db
+      .prepare("UPDATE cost_records SET cost = ? WHERE id = ?")
+      .run(cost, id);
   }
 
-  recentByModel(limit = 20): Array<{ modelId: string; totalCost: number; requestCount: number }> {
+  recentByModel(
+    limit = 20,
+  ): Array<{ modelId: string; totalCost: number; requestCount: number }> {
     const rows = this.db
-      .prepare(`SELECT model_id, SUM(cost) as total_cost, COUNT(*) as request_count FROM cost_records GROUP BY model_id ORDER BY total_cost DESC LIMIT ?`)
+      .prepare(
+        `SELECT model_id, SUM(cost) as total_cost, COUNT(*) as request_count FROM cost_records GROUP BY model_id ORDER BY total_cost DESC LIMIT ?`,
+      )
       .all(limit) as any[];
     return rows.map((r) => ({
       modelId: r.model_id,
       totalCost: r.total_cost,
       requestCount: r.request_count,
     }));
+  }
+
+  /** Aggregate cost by task type. */
+  byTaskType(): Array<{
+    taskType: string;
+    totalCost: number;
+    requestCount: number;
+    avgCost: number;
+  }> {
+    const rows = this.db
+      .prepare(
+        `SELECT task_type, SUM(cost) as total_cost, COUNT(*) as request_count, AVG(cost) as avg_cost FROM cost_records GROUP BY task_type ORDER BY total_cost DESC`,
+      )
+      .all() as any[];
+    return rows.map((r) => ({
+      taskType: r.task_type,
+      totalCost: r.total_cost,
+      requestCount: r.request_count,
+      avgCost: r.avg_cost,
+    }));
+  }
+
+  /** Get cost for a specific task type within a time range. */
+  costForTaskType(
+    taskType: string,
+    sinceTimestamp?: number,
+  ): { totalCost: number; requestCount: number } {
+    const since = sinceTimestamp ?? 0;
+    const row = this.db
+      .prepare(
+        `SELECT COALESCE(SUM(cost), 0) as total_cost, COUNT(*) as request_count FROM cost_records WHERE task_type = ? AND timestamp >= ?`,
+      )
+      .get(taskType, since) as any;
+    return { totalCost: row.total_cost, requestCount: row.request_count };
   }
 }
 
@@ -184,7 +292,11 @@ export class CostRepository {
 export interface SessionPattern {
   id: number;
   projectPath: string;
-  patternType: 'tool_success' | 'command_timing' | 'user_preference' | 'model_choice';
+  patternType:
+    | "tool_success"
+    | "command_timing"
+    | "user_preference"
+    | "model_choice";
   key: string;
   value: string;
   confidence: number;
@@ -196,8 +308,16 @@ export class PatternRepository {
   constructor(private db: Database.Database) {}
 
   /** Upsert a pattern — increments occurrences if exists, creates if not. */
-  record(projectPath: string, patternType: SessionPattern['patternType'], key: string, value: string, confidence = 0.5): void {
-    this.db.prepare(`
+  record(
+    projectPath: string,
+    patternType: SessionPattern["patternType"],
+    key: string,
+    value: string,
+    confidence = 0.5,
+  ): void {
+    this.db
+      .prepare(
+        `
       INSERT INTO session_patterns (project_path, pattern_type, key, value, confidence, occurrences, last_seen)
       VALUES (?, ?, ?, ?, ?, 1, unixepoch())
       ON CONFLICT(project_path, pattern_type, key)
@@ -206,17 +326,24 @@ export class PatternRepository {
         confidence = MIN(1.0, confidence + 0.1),
         occurrences = occurrences + 1,
         last_seen = unixepoch()
-    `).run(projectPath, patternType, key, value, confidence);
+    `,
+      )
+      .run(projectPath, patternType, key, value, confidence);
   }
 
   /** Get all patterns for a project, optionally filtered by type. */
-  getForProject(projectPath: string, patternType?: SessionPattern['patternType']): SessionPattern[] {
+  getForProject(
+    projectPath: string,
+    patternType?: SessionPattern["patternType"],
+  ): SessionPattern[] {
     const query = patternType
-      ? 'SELECT * FROM session_patterns WHERE project_path = ? AND pattern_type = ? ORDER BY confidence DESC'
-      : 'SELECT * FROM session_patterns WHERE project_path = ? ORDER BY confidence DESC';
-    const rows = (patternType
-      ? this.db.prepare(query).all(projectPath, patternType)
-      : this.db.prepare(query).all(projectPath)) as any[];
+      ? "SELECT * FROM session_patterns WHERE project_path = ? AND pattern_type = ? ORDER BY confidence DESC"
+      : "SELECT * FROM session_patterns WHERE project_path = ? ORDER BY confidence DESC";
+    const rows = (
+      patternType
+        ? this.db.prepare(query).all(projectPath, patternType)
+        : this.db.prepare(query).all(projectPath)
+    ) as any[];
 
     return rows.map((r) => ({
       id: r.id,
@@ -233,27 +360,37 @@ export class PatternRepository {
   /** Decay old patterns — reduce confidence for patterns not seen in N days. */
   decayOld(maxAgeDays = 30): number {
     const cutoff = Math.floor(Date.now() / 1000) - maxAgeDays * 86400;
-    const result = this.db.prepare(`
+    const result = this.db
+      .prepare(
+        `
       DELETE FROM session_patterns WHERE last_seen < ? AND confidence < 0.3
-    `).run(cutoff);
+    `,
+      )
+      .run(cutoff);
     // Decay confidence for old but still-relevant patterns
-    this.db.prepare(`
+    this.db
+      .prepare(
+        `
       UPDATE session_patterns SET confidence = MAX(0.1, confidence - 0.2)
       WHERE last_seen < ?
-    `).run(cutoff);
+    `,
+      )
+      .run(cutoff);
     return result.changes;
   }
 
   /** Format patterns as a context string for system prompt injection. */
   formatForPrompt(projectPath: string): string {
     const patterns = this.getForProject(projectPath);
-    if (patterns.length === 0) return '';
+    if (patterns.length === 0) return "";
 
-    const lines: string[] = ['[Project patterns from previous sessions]'];
+    const lines: string[] = ["[Project patterns from previous sessions]"];
     for (const p of patterns.slice(0, 10)) {
-      lines.push(`- ${p.patternType}: ${p.key} → ${p.value} (${p.occurrences}x, confidence ${p.confidence.toFixed(1)})`);
+      lines.push(
+        `- ${p.patternType}: ${p.key} → ${p.value} (${p.occurrences}x, confidence ${p.confidence.toFixed(1)})`,
+      );
     }
-    return lines.join('\n');
+    return lines.join("\n");
   }
 }
 
@@ -270,39 +407,41 @@ export class SessionLockManager {
     this.cleanStale();
 
     try {
-      this.db.prepare(
-        'INSERT INTO session_locks (session_id, holder) VALUES (?, ?)',
-      ).run(sessionId, holder);
+      this.db
+        .prepare("INSERT INTO session_locks (session_id, holder) VALUES (?, ?)")
+        .run(sessionId, holder);
       return true;
     } catch {
       // UNIQUE constraint violation — check if we already hold it
-      const existing = this.db.prepare(
-        'SELECT holder FROM session_locks WHERE session_id = ?',
-      ).get(sessionId) as any;
+      const existing = this.db
+        .prepare("SELECT holder FROM session_locks WHERE session_id = ?")
+        .get(sessionId) as any;
       return existing?.holder === holder;
     }
   }
 
   /** Release a lock. Only the holder can release. */
   release(sessionId: string, holder: string): boolean {
-    const result = this.db.prepare(
-      'DELETE FROM session_locks WHERE session_id = ? AND holder = ?',
-    ).run(sessionId, holder);
+    const result = this.db
+      .prepare("DELETE FROM session_locks WHERE session_id = ? AND holder = ?")
+      .run(sessionId, holder);
     return result.changes > 0;
   }
 
   /** Check if a session is locked. */
   isLocked(sessionId: string): boolean {
     this.cleanStale();
-    const row = this.db.prepare(
-      'SELECT 1 FROM session_locks WHERE session_id = ?',
-    ).get(sessionId);
+    const row = this.db
+      .prepare("SELECT 1 FROM session_locks WHERE session_id = ?")
+      .get(sessionId);
     return !!row;
   }
 
   /** Remove locks older than 5 minutes (stale/crashed processes). */
   private cleanStale(): void {
     const cutoff = Math.floor(Date.now() / 1000) - STALE_LOCK_SECONDS;
-    this.db.prepare('DELETE FROM session_locks WHERE acquired_at < ?').run(cutoff);
+    this.db
+      .prepare("DELETE FROM session_locks WHERE acquired_at < ?")
+      .run(cutoff);
   }
 }
