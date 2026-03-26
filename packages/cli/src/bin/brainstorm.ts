@@ -519,7 +519,15 @@ agentCmd
 
     // Try natural language first
     const nlInput = descWords.join(" ");
-    const parsed = nlInput ? parseAgentNL(nlInput) : null;
+    const parseResult = nlInput ? parseAgentNL(nlInput) : null;
+    const parsed = parseResult?.intent;
+
+    if (nlInput && !parsed && parseResult?.suggestion) {
+      console.log(
+        `  Could not parse agent definition.\n  ${parseResult.suggestion}`,
+      );
+      process.exit(1);
+    }
 
     const id = opts.id ?? parsed?.id ?? "agent-" + Date.now().toString(36);
     const role = opts.role ?? parsed?.role ?? "custom";
