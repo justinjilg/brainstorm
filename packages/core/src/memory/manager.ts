@@ -5,6 +5,7 @@ import {
   existsSync,
   readdirSync,
   unlinkSync,
+  renameSync,
 } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -173,12 +174,19 @@ export class MemoryManager {
     );
 
     for (const file of files) {
+      const filePath = join(this.memoryDir, file);
       try {
-        const content = readFileSync(join(this.memoryDir, file), "utf-8");
+        const content = readFileSync(filePath, "utf-8");
         const entry = this.parseMemoryFile(file, content);
-        if (entry) this.entries.set(entry.id, entry);
+        if (entry) {
+          this.entries.set(entry.id, entry);
+        } else {
+          // File exists but couldn't parse — backup and warn
+          this.backupCorruptFile(filePath, file);
+        }
       } catch (e) {
-        log.warn({ err: e, file }, "Failed to parse memory file");
+        log.warn({ err: e, file }, "Failed to read memory file");
+        this.backupCorruptFile(filePath, file);
       }
     }
   }
@@ -235,5 +243,19 @@ export class MemoryManager {
       (m) => `- [${m.name}](${m.id}.md) — ${m.description}`,
     );
     writeFileSync(this.indexPath, lines.join("\n") + "\n", "utf-8");
+  }
+
+  /** Backup a corrupt memory file instead of deleting it. */
+  private backupCorruptFile(filePath: string, filename: string): void {
+    try {
+      const backupPath = `${filePath}.corrupt`;
+      renameSync(filePath, backupPath);
+      log.warn(
+        { file: filename, backup: backupPath },
+        "Corrupt memory file backed up",
+      );
+    } catch (e) {
+      log.warn({ err: e, file: filename }, "Failed to backup corrupt file");
+    }
   }
 }
