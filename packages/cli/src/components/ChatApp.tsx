@@ -5,6 +5,7 @@ import { StatusBar } from "./StatusBar.js";
 import { MessageList, type ChatMessage } from "./MessageList.js";
 import { TaskList } from "./TaskList.js";
 import { StreamingMessage } from "./StreamingMessage.js";
+import { ToolCallList, type ToolCallState } from "./ToolCallDisplay.js";
 import {
   isSlashCommand,
   executeSlashCommand,
@@ -65,6 +66,7 @@ export function ChatApp({
   const [thinkingPhase, setThinkingPhase] = useState<string | undefined>(
     undefined,
   );
+  const [activeTools, setActiveTools] = useState<ToolCallState[]>([]);
   const [history] = useState(() => new InputHistory());
 
   // Keybinding handler + input history navigation
@@ -147,6 +149,7 @@ export function ChatApp({
       setIsProcessing(true);
       setStreamingText("");
       setTasks([]);
+      setActiveTools([]);
 
       let fullResponse = "";
       let model: string | undefined;
@@ -182,10 +185,34 @@ export function ChatApp({
               ]);
               break;
             case "tool-call-start":
-              setMessages((prev) => [
+              setActiveTools((prev) => [
                 ...prev,
-                { role: "routing", content: `tool: ${event.toolName}` },
+                {
+                  id: `tc-${Date.now()}-${event.toolName}`,
+                  toolName: event.toolName,
+                  args: (event.args ?? {}) as Record<string, unknown>,
+                  status: "running",
+                  startTime: Date.now(),
+                },
               ]);
+              break;
+            case "tool-call-result":
+              setActiveTools((prev) => {
+                // Find the most recent running tool with this name
+                const idx = prev.findLastIndex(
+                  (t) =>
+                    t.status === "running" && t.toolName === event.toolName,
+                );
+                if (idx < 0) return prev;
+                const updated = [...prev];
+                updated[idx] = {
+                  ...updated[idx],
+                  status: "done",
+                  duration: Date.now() - updated[idx].startTime,
+                  ok: true,
+                };
+                return updated;
+              });
               break;
             case "compaction":
               setMessages((prev) => [
@@ -279,6 +306,7 @@ export function ChatApp({
           model={currentModel}
         />
       )}
+      <ToolCallList tools={activeTools} />
       {tasks.length > 0 && <TaskList tasks={tasks} />}
       <Box
         borderStyle="single"
