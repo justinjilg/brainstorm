@@ -8,3 +8,6 @@ export { runTestFile } from './verifiers/test-runner.js';
 export { formatScorecard, formatComparison } from './scorecard.js';
 export { runEvalCli, type EvalCliOptions } from './cli.js';
 export { exportCapabilityScores, loadAllCapabilityScores, getCapabilityScores } from './export.js';
+export { runSWEBench, loadInstances, getEvalDir, type SWEBenchInstance, type SWEBenchPatch } from './swe-bench/runner.js';
+export { scorePatch, generateScorecard, type SWEBenchScore, type SWEBenchScorecard } from './swe-bench/scorer.js';
+export { formatScorecard as formatSWEBenchScorecard, saveReport } from './swe-bench/reporter.js';
