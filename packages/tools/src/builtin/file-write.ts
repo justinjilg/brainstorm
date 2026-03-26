@@ -40,6 +40,11 @@ export const fileWriteTool = defineTool({
 
     mkdirSync(dirname(safePath), { recursive: true });
     writeFileSync(safePath, content, 'utf-8');
+
+    // Track file access
+    const { getFileTracker } = await import('../file-tracker.js');
+    getFileTracker().recordWrite(safePath);
+
     return { success: true, path, bytesWritten: Buffer.byteLength(content) };
   },
 });
