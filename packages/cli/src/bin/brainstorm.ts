@@ -939,13 +939,31 @@ program
         switch (event.type) {
           case "thinking":
             if (!opts.json) {
+              const spinnerFrames = [
+                "⠋",
+                "⠙",
+                "⠹",
+                "⠸",
+                "⠼",
+                "⠴",
+                "⠦",
+                "⠧",
+                "⠇",
+                "⠏",
+              ];
+              const frame =
+                spinnerFrames[
+                  Math.floor(Date.now() / 100) % spinnerFrames.length
+                ];
               const phases: Record<string, string> = {
                 classifying: "Classifying task...",
                 routing: "Selecting model...",
                 connecting: `Connecting...`,
                 streaming: "Streaming...",
               };
-              process.stderr.write(`\r${phases[event.phase] ?? event.phase}`);
+              process.stderr.write(
+                `\r${frame} ${phases[event.phase] ?? event.phase}`,
+              );
             }
             break;
           case "routing":

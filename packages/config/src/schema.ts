@@ -38,6 +38,7 @@ const compactionSchema = z.object({
 const shellSchema = z.object({
   defaultTimeout: z.number().default(120_000),
   maxOutputBytes: z.number().default(50_000),
+  // none: no restrictions, restricted: block dangerous commands, container: Docker sandbox (future)
   sandbox: z.enum(["none", "restricted", "container"]).default("none"),
 });
 
