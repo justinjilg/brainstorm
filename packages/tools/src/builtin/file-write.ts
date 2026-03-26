@@ -54,11 +54,16 @@ export const fileWriteTool = defineTool({
     const { getFileTracker } = await import('../file-tracker.js');
     getFileTracker().recordWrite(safePath);
 
+    // Diff preview (non-blocking)
+    const { getDiffSummary } = await import('../diff-preview.js');
+    const diff = getDiffSummary(safePath);
+
     return {
       success: true,
       path,
       bytesWritten: Buffer.byteLength(content),
       ...(validation.warnings.length > 0 ? { preValidation: validation.warnings } : {}),
+      ...(diff ? { diff: diff.preview } : {}),
     };
   },
 });
