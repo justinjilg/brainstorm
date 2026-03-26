@@ -31,6 +31,9 @@ interface ChatAppProps {
     getStrategy?: () => string;
     setMode?: (mode: string) => void;
     getMode?: () => string;
+    rebuildSystemPrompt?: (basePromptOverride?: string) => void;
+    getActiveRole?: () => string | undefined;
+    setActiveRole?: (role: string | undefined) => void;
     setOutputStyle?: (style: string) => void;
     getOutputStyle?: () => string;
     getBudget?: () => { remaining: number; limit: number } | null;
@@ -140,6 +143,9 @@ export function ChatApp({
       compact: slashCallbacks?.compact,
       dream: slashCallbacks?.dream,
       vault: slashCallbacks?.vault,
+      rebuildSystemPrompt: slashCallbacks?.rebuildSystemPrompt,
+      getActiveRole: slashCallbacks?.getActiveRole,
+      setActiveRole: slashCallbacks?.setActiveRole,
     }),
     [currentModel, sessionCost, tokenCount, exit, slashCallbacks],
   );
