@@ -36,6 +36,15 @@ export function setBackgroundEventHandler(handler: typeof backgroundEventHandler
   backgroundEventHandler = handler;
 }
 
+// ── Tool Output Streaming ──────────────────────────────────────
+
+let toolOutputHandler: ((event: { toolName: string; chunk: string }) => void) | null = null;
+
+/** Set a callback for streaming tool output chunks during foreground execution. */
+export function setToolOutputHandler(handler: typeof toolOutputHandler): void {
+  toolOutputHandler = handler;
+}
+
 /** Get list of currently running background tasks. */
 export function getBackgroundTasks(): BackgroundTask[] {
   return Array.from(backgroundTasks.values());
@@ -192,8 +201,14 @@ export const shellTool = defineTool({
       child.stdout.setEncoding('utf-8');
       child.stderr.setEncoding('utf-8');
 
-      child.stdout.on('data', (chunk: string) => stdout.append(chunk));
-      child.stderr.on('data', (chunk: string) => stderr.append(chunk));
+      child.stdout.on('data', (chunk: string) => {
+        stdout.append(chunk);
+        if (toolOutputHandler) toolOutputHandler({ toolName: 'shell', chunk });
+      });
+      child.stderr.on('data', (chunk: string) => {
+        stderr.append(chunk);
+        if (toolOutputHandler) toolOutputHandler({ toolName: 'shell', chunk });
+      });
 
       const timer = setTimeout(() => {
         child.kill('SIGTERM');
