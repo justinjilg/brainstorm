@@ -8,7 +8,7 @@
  */
 
 export interface LoopWarning {
-  type: 'consecutive-reads' | 'duplicate-read' | 'tool-repeat';
+  type: 'consecutive-reads' | 'duplicate-read' | 'tool-repeat' | 'escalation';
   message: string;
 }
 
@@ -18,6 +18,9 @@ export class LoopDetector {
   private writesSinceLastCheck = 0;
   private readonly readThreshold: number;
   private readonly repeatThreshold: number;
+  /** Count of consecutive warning-bearing tool calls (reset on clean call). */
+  private consecutiveWarnings = 0;
+  private readonly escalationThreshold = 2;
 
   constructor(readThreshold = 4, repeatThreshold = 3) {
     this.readThreshold = readThreshold;
@@ -65,6 +68,21 @@ export class LoopDetector {
       }
     }
 
+    // Track consecutive warnings for escalation
+    if (warnings.length > 0) {
+      this.consecutiveWarnings++;
+      // After N consecutive warning rounds, escalate to ask_user
+      if (this.consecutiveWarnings >= this.escalationThreshold) {
+        warnings.push({
+          type: 'escalation',
+          message: `Loop detected ${this.consecutiveWarnings} times in a row. Stop and ask the user for guidance using ask_user.`,
+        });
+        this.consecutiveWarnings = 0; // Reset after escalation
+      }
+    } else {
+      this.consecutiveWarnings = 0; // Clean call resets the counter
+    }
+
     return warnings;
   }
 
@@ -72,6 +90,7 @@ export class LoopDetector {
     this.recentTools = [];
     this.filesReadThisTurn.clear();
     this.writesSinceLastCheck = 0;
+    this.consecutiveWarnings = 0;
   }
 
   private countConsecutiveReads(): number {
