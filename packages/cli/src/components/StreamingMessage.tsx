@@ -1,33 +1,73 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Box, Text } from 'ink';
-import { MarkdownRenderer } from './MarkdownRenderer.js';
+import React from "react";
+import { Box, Text } from "ink";
+import Spinner from "ink-spinner";
+import { MarkdownRenderer } from "./MarkdownRenderer.js";
+
+const PHASE_LABELS: Record<string, string> = {
+  classifying: "Analyzing",
+  routing: "Selecting model",
+  connecting: "Connecting",
+  streaming: "Streaming",
+};
 
 interface StreamingMessageProps {
-  /** Text accumulated so far (grows as deltas arrive) */
+  /** Text accumulated so far (grows as deltas arrive). */
   content: string;
-  /** Whether the message is still streaming */
+  /** Whether the message is still streaming. */
   isStreaming: boolean;
-  /** Agent/role name to display */
-  sender?: string;
-  /** Model name */
+  /** Current thinking phase (classifying, routing, connecting, streaming). */
+  phase?: string;
+  /** Active model name. */
   model?: string;
 }
 
-export function StreamingMessage({ content, isStreaming, sender, model }: StreamingMessageProps) {
-  return (
-    <Box flexDirection="column" marginBottom={1}>
-      <Box>
-        <Text color="green" bold>{sender ?? 'brainstorm'} </Text>
-        {model && <Text color="gray" dimColor>[{model}] </Text>}
+export function StreamingMessage({
+  content,
+  isStreaming,
+  phase,
+  model,
+}: StreamingMessageProps) {
+  // No content yet — show spinner with phase
+  if (!content && isStreaming) {
+    const label = phase ? (PHASE_LABELS[phase] ?? phase) : "Thinking";
+    return (
+      <Box paddingLeft={1}>
+        <Text color="cyan">
+          <Spinner type="dots" />
+        </Text>
+        <Text color="gray" dimColor>
+          {" "}
+          {label}
+          {model ? ` · ${model}` : ""}
+          {"..."}
+        </Text>
       </Box>
-      <Box paddingLeft={0}>
-        {content ? (
+    );
+  }
+
+  // Content is streaming — render markdown with cursor
+  if (content && isStreaming) {
+    return (
+      <Box flexDirection="column" marginBottom={1}>
+        <Box>
+          <Text color="green" bold>
+            {"brainstorm "}
+          </Text>
+          {model && (
+            <Text color="gray" dimColor>
+              [{model}]{" "}
+            </Text>
+          )}
+        </Box>
+        <Box paddingLeft={0}>
           <MarkdownRenderer content={content} />
-        ) : (
-          isStreaming && <Text color="gray">thinking...</Text>
-        )}
-        {isStreaming && content && <Text color="cyan" bold>{'_'}</Text>}
+          <Text color="cyan" bold>
+            {"▌"}
+          </Text>
+        </Box>
       </Box>
-    </Box>
-  );
+    );
+  }
+
+  return null;
 }

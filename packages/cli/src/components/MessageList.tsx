@@ -1,8 +1,9 @@
-import React from 'react';
-import { Box, Text } from 'ink';
+import React from "react";
+import { Box, Text } from "ink";
+import { MarkdownRenderer } from "./MarkdownRenderer.js";
 
 export interface ChatMessage {
-  role: 'user' | 'assistant' | 'system' | 'routing' | 'reasoning';
+  role: "user" | "assistant" | "system" | "routing" | "reasoning";
   content: string;
   model?: string;
   cost?: number;
@@ -10,61 +11,73 @@ export interface ChatMessage {
 
 interface MessageListProps {
   messages: ChatMessage[];
-  streamingText?: string;
 }
 
-export function MessageList({ messages, streamingText }: MessageListProps) {
+export function MessageList({ messages }: MessageListProps) {
   return (
     <Box flexDirection="column" flexGrow={1} paddingX={1}>
       {messages.map((msg, i) => (
         <MessageBubble key={i} message={msg} />
       ))}
-      {streamingText !== undefined && (
-        <Box marginBottom={1}>
-          <Text color="gray" bold>{'brainstorm '}</Text>
-          <Text>{streamingText}</Text>
-          <Text color="cyan" bold>{'_'}</Text>
-        </Box>
-      )}
     </Box>
   );
 }
 
 function MessageBubble({ message }: { message: ChatMessage }) {
   switch (message.role) {
-    case 'user':
+    case "user":
       return (
         <Box marginBottom={1}>
-          <Text color="blue" bold>{'you '}</Text>
+          <Text color="blue" bold>
+            {"you "}
+          </Text>
           <Text>{message.content}</Text>
         </Box>
       );
-    case 'assistant':
+    case "assistant":
       return (
         <Box flexDirection="column" marginBottom={1}>
           <Box>
-            <Text color="green" bold>{'brainstorm '}</Text>
-            {message.model && <Text color="gray" dimColor>[{message.model}] </Text>}
+            <Text color="green" bold>
+              {"brainstorm "}
+            </Text>
+            {message.model && (
+              <Text color="gray" dimColor>
+                [{message.model}]{" "}
+              </Text>
+            )}
           </Box>
           <Box paddingLeft={0}>
-            <Text>{message.content}</Text>
+            <MarkdownRenderer content={message.content} />
           </Box>
           {message.cost !== undefined && message.cost > 0 && (
-            <Text color="gray" dimColor>  ${message.cost.toFixed(4)}</Text>
+            <Text color="gray" dimColor>
+              {" "}
+              ${message.cost.toFixed(4)}
+            </Text>
           )}
         </Box>
       );
-    case 'reasoning':
+    case "reasoning":
       return (
         <Box marginBottom={0} paddingLeft={2}>
-          <Text color="gray" dimColor>{'▸ '}</Text>
-          <Text color="gray" dimColor>{message.content.length > 200 ? message.content.slice(0, 200) + '...' : message.content}</Text>
+          <Text color="gray" dimColor>
+            {"▸ "}
+          </Text>
+          <Text color="gray" dimColor>
+            {message.content.length > 200
+              ? message.content.slice(0, 200) + "..."
+              : message.content}
+          </Text>
         </Box>
       );
-    case 'routing':
+    case "routing":
       return (
         <Box marginBottom={0}>
-          <Text color="gray" dimColor>  [{message.content}]</Text>
+          <Text color="gray" dimColor>
+            {" "}
+            [{message.content}]
+          </Text>
         </Box>
       );
     default:
