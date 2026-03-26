@@ -6,6 +6,51 @@ import { getToolHealthTracker } from './tool-health.js';
 export type PermissionCheckFn = (toolName: string, toolPermission: ToolPermission) => 'allow' | 'confirm' | 'deny';
 
 /**
+ * Sliding-window rate limiter per tool.
+ * Prevents runaway loops from exhausting resources by capping calls/minute.
+ */
+export class ToolRateLimiter {
+  private windows = new Map<string, number[]>();
+  private maxPerMinute: number;
+
+  constructor(maxPerMinute = 20) {
+    this.maxPerMinute = maxPerMinute;
+  }
+
+  /** Returns true if the call is allowed, false if rate-limited. */
+  check(toolName: string): boolean {
+    const now = Date.now();
+    const cutoff = now - 60_000;
+    let timestamps = this.windows.get(toolName);
+    if (!timestamps) {
+      timestamps = [];
+      this.windows.set(toolName, timestamps);
+    }
+    // Evict old entries
+    while (timestamps.length > 0 && timestamps[0] < cutoff) {
+      timestamps.shift();
+    }
+    if (timestamps.length >= this.maxPerMinute) {
+      return false;
+    }
+    timestamps.push(now);
+    return true;
+  }
+
+  /** Reset all windows (e.g., on session start). */
+  reset(): void {
+    this.windows.clear();
+  }
+}
+
+let _rateLimiter: ToolRateLimiter | null = null;
+
+export function getToolRateLimiter(): ToolRateLimiter {
+  if (!_rateLimiter) _rateLimiter = new ToolRateLimiter();
+  return _rateLimiter;
+}
+
+/**
  * Normalize tool results into a consistent format the model can parse.
  * Wraps the raw result to always include an `ok` field for reliable success/failure detection.
  */
@@ -102,6 +147,11 @@ export class ToolRegistry {
             const result = normalizeResult({ error: `Tool '${name}' is blocked in the current permission mode.`, blocked: true });
             getToolHealthTracker().recordFailure(name, result.error);
             return result;
+          }
+          if (!getToolRateLimiter().check(name)) {
+            const msg = `Tool '${name}' rate-limited (max ${getToolRateLimiter()['maxPerMinute']}/min). Wait before retrying.`;
+            getToolHealthTracker().recordFailure(name, msg);
+            return normalizeResult({ error: msg, blocked: true });
           }
           try {
             const raw = await toolDef.execute(input);
