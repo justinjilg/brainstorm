@@ -8,6 +8,7 @@ export { askUserTool, resolveAskUser, hasPendingQuestion } from './builtin/ask-u
 export { routingHintTool, getRoutingHint, consumeRoutingHint, resetRoutingHint, type RoutingPreference } from './builtin/routing-hint.js';
 export { costEstimateTool } from './builtin/cost-estimate.js';
 export { isParallelSafe, classifyToolBatch, executeWithParallelism } from './parallel.js';
+export { getTierForComplexity, getToolsForTier, isToolInTier, escalateTier, getTierForTool, estimateTokenSavings, type ToolTier } from './progressive.js';
 export { planPreviewTool } from './builtin/plan-preview.js';
 export { beginTransactionTool, commitTransactionTool, rollbackTransactionTool, isTransactionActive, recordTransactionFile } from './builtin/transaction.js';
 export { ToolRegistry, type PermissionCheckFn } from './registry.js';
