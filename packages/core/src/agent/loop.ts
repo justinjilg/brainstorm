@@ -51,7 +51,23 @@ function enrichError(error: any, modelId: string): Error {
     return error;
   }
   if (status === 401 || msg.includes('Unauthorized')) {
-    error.message = `Authentication failed. Check: storm vault status`;
+    error.message = `Authentication failed. Run: storm vault status\nThen: storm vault set BRAINSTORM_API_KEY <your-key>`;
+    return error;
+  }
+  if (msg.includes('No models available')) {
+    error.message = `No models available. Try:\n  1. storm models — check discovered models\n  2. Ensure Ollama/LM Studio is running for local models\n  3. Set BRAINSTORM_API_KEY for cloud models via BrainstormRouter`;
+    return error;
+  }
+  if (msg.includes('Budget exceeded') || error.name === 'BudgetExceededError') {
+    error.message = `${msg}\n\nTo continue:\n  1. storm budget — view current usage\n  2. Increase limit in ~/.brainstorm/config.toml [budget] section\n  3. Or start a new session: storm chat --new`;
+    return error;
+  }
+  if (msg.includes('blocked') || msg.includes('Sandbox blocked')) {
+    error.message = `${msg}\n\nIf this command is safe, adjust sandbox level in config.toml:\n  [shell]\n  sandbox = "none"`;
+    return error;
+  }
+  if (msg.includes('No active session')) {
+    error.message = `No active session. Start one with: storm chat\nOr resume the last session: storm chat --resume`;
     return error;
   }
 
