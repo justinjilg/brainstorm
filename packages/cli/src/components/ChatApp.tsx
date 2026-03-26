@@ -104,7 +104,15 @@ export function ChatApp({
 
     switch (action) {
       case "abort":
-        if (isProcessing && onAbort) onAbort();
+        if (isProcessing) {
+          onAbort?.();
+          // Safety: force-reset processing state after abort
+          setTimeout(() => {
+            setIsProcessing(false);
+            setStreamingText(undefined);
+            setThinkingPhase(undefined);
+          }, 2000);
+        }
         break;
       case "exit":
         exit();
@@ -357,16 +365,18 @@ export function ChatApp({
         }
       } catch (err: any) {
         fullResponse = `Error: ${err.message}`;
+      } finally {
+        setStreamingText(undefined);
+        setThinkingPhase(undefined);
+        setIsProcessing(false);
       }
 
-      setStreamingText(undefined);
       if (fullResponse) {
         setMessages((prev) => [
           ...prev,
           { role: "assistant", content: fullResponse, model, cost },
         ]);
       }
-      setIsProcessing(false);
     },
     [isProcessing, onSendMessage, exit, slashCtx],
   );
