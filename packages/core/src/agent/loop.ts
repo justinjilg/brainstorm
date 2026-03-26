@@ -5,7 +5,7 @@ import type { ProviderRegistry } from '@brainstorm/providers';
 import { BrainstormRouter, CostTracker } from '@brainstorm/router';
 import type { ToolRegistry, PermissionCheckFn } from '@brainstorm/tools';
 import { setTaskEventHandler, clearTasks, setBackgroundEventHandler, getToolHealthTracker, setToolOutputHandler, getTierForComplexity, getToolsForTier } from '@brainstorm/tools';
-import type { AgentEvent, GatewayFeedbackData, ModelEntry, TurnContext } from '@brainstorm/shared';
+import { createLogger, type AgentEvent, type GatewayFeedbackData, type ModelEntry, type TurnContext } from '@brainstorm/shared';
 import type { BuildStateTracker } from './build-state.js';
 import { LoopDetector } from './loop-detector.js';
 import { serializeRoutingMetadata } from '@brainstorm/shared';
@@ -17,6 +17,8 @@ import { TrajectoryRecorder } from '../session/trajectory.js';
 import { predictTaskCost } from './cost-predictor.js';
 import { detectTone, toneGuidance } from './sentiment.js';
 import { shouldUseEnsemble } from './ensemble.js';
+
+const log = createLogger('agent-loop');
 
 /**
  * Enrich raw API errors with actionable user-facing messages.
@@ -509,7 +511,9 @@ export async function* runAgentLoop(
       });
 
       // Async submission — don't block session exit
-      import('../session/trajectory.js').catch(() => {});
+      import('../session/trajectory.js').catch((e) => {
+        log.warn({ err: e }, 'Failed to load trajectory module for intelligence submission');
+      });
     }
   }
 }
