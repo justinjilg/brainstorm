@@ -18,3 +18,4 @@ export { getOutputStylePrompt, OUTPUT_STYLES, type OutputStyle } from './agent/o
 export { createSubagentTool } from './agent/subagent-tool.js';
 export { BuildStateTracker, type BuildResult, type BuildStatus } from './agent/build-state.js';
 export { LoopDetector, type LoopWarning } from './agent/loop-detector.js';
+export { detectTone, toneGuidance, type UserTone, type ToneResult } from './agent/sentiment.js';
