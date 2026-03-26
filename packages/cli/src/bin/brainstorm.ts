@@ -1671,11 +1671,32 @@ program
             },
           })) {
             switch (event.type) {
-              case "thinking":
+              case "thinking": {
+                const spinFrames = [
+                  "⠋",
+                  "⠙",
+                  "⠹",
+                  "⠸",
+                  "⠼",
+                  "⠴",
+                  "⠦",
+                  "⠧",
+                  "⠇",
+                  "⠏",
+                ];
+                const f =
+                  spinFrames[Math.floor(Date.now() / 100) % spinFrames.length];
+                const chatPhases: Record<string, string> = {
+                  classifying: "Analyzing...",
+                  routing: "Selecting model...",
+                  connecting: "Connecting...",
+                  streaming: "Streaming...",
+                };
                 process.stderr.write(
-                  `\r  ${event.phase === "classifying" ? "Analyzing..." : event.phase === "routing" ? "Selecting model..." : event.phase === "connecting" ? "Connecting..." : "Streaming..."}`,
+                  `\r  ${f} ${chatPhases[event.phase] ?? event.phase}`,
                 );
                 break;
+              }
               case "routing":
                 process.stderr.write(`\r  [${event.decision.model.name}]\n`);
                 if (opts.verboseRouting) {
@@ -1715,6 +1736,7 @@ program
               case "done": {
                 const turn = sessionManager.getTurnCount();
                 const turnCost = event.totalCost - (sessionTotalBefore ?? 0);
+                sessionManager.syncSessionCost(turnCost);
                 process.stdout.write(
                   `\n  [Turn ${turn}: $${turnCost.toFixed(4)} | Session: $${event.totalCost.toFixed(4)}]\n\n`,
                 );
