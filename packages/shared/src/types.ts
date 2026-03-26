@@ -396,6 +396,7 @@ export type WorkflowEvent =
   | { type: 'model-fallback'; originalModel: string; fallbackModel: string; reason: string; costImpact: number }
   | { type: 'provider-degraded'; provider: string; errorCount: number; resumeAt: number }
   | { type: 'cost-forecast'; estimated: number; breakdown: Array<{ step: string; cost: number }> }
+  | { type: 'workflow-paused'; reason: string; run: WorkflowRun }
   | { type: 'workflow-completed'; run: WorkflowRun }
   | { type: 'workflow-failed'; run: WorkflowRun; error: Error };
 
