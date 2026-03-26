@@ -219,6 +219,7 @@ export interface TurnContext {
   filesRead: string[];
   filesWritten: string[];
   sessionMinutes: number;
+  unhealthyTools: Array<{ name: string; error: string }>;
 }
 
 /** Format TurnContext as a compact one-line summary for system message injection. */
@@ -239,6 +240,9 @@ export function formatTurnContext(ctx: TurnContext): string {
     `budget ${ctx.budgetPercent}%`,
   ];
   if (fileStr) parts.push(`files: ${fileStr}`);
+  if (ctx.unhealthyTools.length > 0) {
+    parts.push(`unhealthy: ${ctx.unhealthyTools.map((t) => t.name).join(',')}`);
+  }
   parts.push(`${ctx.sessionMinutes}min`);
   return `[${parts.join(' | ')}]`;
 }

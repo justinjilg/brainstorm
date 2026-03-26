@@ -1,6 +1,7 @@
 import { tool } from 'ai';
 import type { ToolPermission } from '@brainstorm/shared';
 import type { BrainstormToolDef } from './base.js';
+import { getToolHealthTracker } from './tool-health.js';
 
 export type PermissionCheckFn = (toolName: string, toolPermission: ToolPermission) => 'allow' | 'confirm' | 'deny';
 
@@ -96,13 +97,23 @@ export class ToolRegistry {
         execute: async (input: any) => {
           const decision = check(name, toolDef.permission);
           if (decision === 'deny') {
-            return normalizeResult({ error: `Tool '${name}' is blocked in the current permission mode.`, blocked: true });
+            const result = normalizeResult({ error: `Tool '${name}' is blocked in the current permission mode.`, blocked: true });
+            getToolHealthTracker().recordFailure(name, result.error);
+            return result;
           }
           try {
             const raw = await toolDef.execute(input);
-            return normalizeResult(raw);
+            const result = normalizeResult(raw);
+            if (result.ok) {
+              getToolHealthTracker().recordSuccess(name);
+            } else {
+              getToolHealthTracker().recordFailure(name, result.error ?? 'unknown error');
+            }
+            return result;
           } catch (err: any) {
-            return normalizeResult({ error: err.message ?? String(err) });
+            const result = normalizeResult({ error: err.message ?? String(err) });
+            getToolHealthTracker().recordFailure(name, result.error);
+            return result;
           }
         },
       });
