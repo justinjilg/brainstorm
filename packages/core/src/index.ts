@@ -22,6 +22,7 @@ export { detectTone, toneGuidance, type UserTone, type ToneResult } from './agen
 export { ReactionTracker, type ReactionSignal, type ReactionEntry } from './agent/reaction-tracker.js';
 export { SessionPatternLearner } from './learning/session-patterns.js';
 export { ErrorFixTracker, normalizeErrorSignature, type ErrorFixPair } from './learning/error-fix-pairs.js';
+export { createWorktree, removeWorktree, checkBuild, getChangedFiles, pickWinner, type SpeculativeApproach, type SpeculativeResult, type SpeculativeOutcome } from './agent/speculative.js';
 export { buildSelfReviewPrompt, parseSelfReviewResponse, type SelfReviewResult, type SelfReviewOptions } from './agent/self-review.js';
 export { FileWatcher, type FileChange } from './agent/file-watcher.js';
 export { collectProjectHealth, formatProjectHealth, type ProjectHealth } from './agent/project-health.js';
