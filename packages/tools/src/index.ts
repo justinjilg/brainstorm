@@ -4,6 +4,7 @@ export { ToolHealthTracker, getToolHealthTracker, resetToolHealthTracker, type T
 export { CheckpointManager, initCheckpointManager, getCheckpointManager } from './checkpoint.js';
 export { undoTool } from './builtin/undo.js';
 export { scratchpadWriteTool, scratchpadReadTool, getScratchpadEntries, clearScratchpad, formatScratchpadContext } from './builtin/scratchpad.js';
+export { askUserTool, resolveAskUser, hasPendingQuestion } from './builtin/ask-user.js';
 export { ToolRegistry, type PermissionCheckFn } from './registry.js';
 export { fileReadTool } from './builtin/file-read.js';
 export { fileWriteTool } from './builtin/file-write.js';
@@ -58,6 +59,7 @@ import { processSpawnTool, processKillTool } from './builtin/process-manage.js';
 import { taskCreateTool, taskUpdateTool, taskListTool } from './builtin/task-manage.js';
 import { undoTool } from './builtin/undo.js';
 import { scratchpadWriteTool, scratchpadReadTool } from './builtin/scratchpad.js';
+import { askUserTool } from './builtin/ask-user.js';
 import {
   brStatusTool, brBudgetTool, brLeaderboardTool, brInsightsTool,
   brModelsTool, brMemorySearchTool, brMemoryStoreTool, brHealthTool,
@@ -100,6 +102,8 @@ export function createDefaultToolRegistry(): ToolRegistry {
   // Scratchpad (2)
   registry.register(scratchpadWriteTool);
   registry.register(scratchpadReadTool);
+  // Ask user (1)
+  registry.register(askUserTool);
   // BrainstormRouter intelligence (8) — native REST calls, no MCP needed
   registry.register(brStatusTool);
   registry.register(brBudgetTool);
