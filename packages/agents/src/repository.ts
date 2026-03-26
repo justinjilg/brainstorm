@@ -83,7 +83,7 @@ export class AgentRepository {
       description: row.description,
       modelId: row.model_id,
       systemPrompt: row.system_prompt ?? undefined,
-      allowedTools: JSON.parse(row.allowed_tools),
+      allowedTools: safeJsonParse(row.allowed_tools, []),
       outputFormat: row.output_format ?? undefined,
       budget: {
         perWorkflow: row.budget_per_workflow ?? undefined,
@@ -93,11 +93,21 @@ export class AgentRepository {
       },
       confidenceThreshold: row.confidence_threshold,
       maxSteps: row.max_steps,
-      fallbackChain: JSON.parse(row.fallback_chain),
-      guardrails: JSON.parse(row.guardrails),
+      fallbackChain: safeJsonParse(row.fallback_chain, []),
+      guardrails: safeJsonParse(row.guardrails, {}),
       lifecycle: row.lifecycle as AgentLifecycle,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
+  }
+}
+
+/** Safely parse JSON, returning fallback on error instead of crashing. */
+function safeJsonParse<T>(value: string | null | undefined, fallback: T): T {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
   }
 }
