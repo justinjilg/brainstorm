@@ -12,7 +12,7 @@ export { getTierForComplexity, getToolsForTier, isToolInTier, escalateTier, getT
 export { DockerSandbox, isSafeCommand, translatePath, type SandboxConfig, type SandboxExecResult } from './sandbox/docker-sandbox.js';
 export { planPreviewTool } from './builtin/plan-preview.js';
 export { beginTransactionTool, commitTransactionTool, rollbackTransactionTool, isTransactionActive, recordTransactionFile } from './builtin/transaction.js';
-export { ToolRegistry, type PermissionCheckFn } from './registry.js';
+export { ToolRegistry, ToolRateLimiter, getToolRateLimiter, type PermissionCheckFn } from './registry.js';
 export { fileReadTool } from './builtin/file-read.js';
 export { fileWriteTool } from './builtin/file-write.js';
 export { fileEditTool } from './builtin/file-edit.js';
