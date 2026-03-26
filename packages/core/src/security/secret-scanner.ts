@@ -1,6 +1,6 @@
 /**
  * Scans text for credential patterns and redacts them before sending to LLM providers.
- * 20 regex patterns matching common credential formats.
+ * 19 regex patterns matching common credential formats.
  */
 
 const CREDENTIAL_PATTERNS: Array<{ name: string; pattern: RegExp }> = [
@@ -15,8 +15,7 @@ const CREDENTIAL_PATTERNS: Array<{ name: string; pattern: RegExp }> = [
   // AI Providers
   { name: 'OpenAI Key', pattern: /sk-[A-Za-z0-9]{20,}/g },
   { name: 'Anthropic Key', pattern: /sk-ant-[A-Za-z0-9-]{20,}/g },
-  { name: 'Google API Key', pattern: /AIza[A-Za-z0-9_-]{35}/g },
-  { name: 'Gemini Key', pattern: /AIza[A-Za-z0-9_-]{35}/g },
+  { name: 'Google/Gemini API Key', pattern: /AIza[A-Za-z0-9_-]{35}/g },
   // Payment / SaaS
   { name: 'Stripe Key', pattern: /(?:sk|pk)_(?:live|test)_[A-Za-z0-9]{20,}/g },
   { name: 'Slack Token', pattern: /xox[bpras]-[A-Za-z0-9-]{10,}/g },
