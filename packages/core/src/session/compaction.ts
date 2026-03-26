@@ -23,6 +23,12 @@ export function needsCompaction(messages: ConversationMessage[], contextWindow: 
   return tokens > contextWindow * 0.8;
 }
 
+/** Get context usage as a percentage (0-100). Useful for pre-compaction warnings. */
+export function getContextPercent(messages: ConversationMessage[], contextWindow: number): number {
+  const tokens = estimateTokenCount(messages);
+  return Math.round((tokens / contextWindow) * 100);
+}
+
 /**
  * Compact conversation history by summarizing old messages.
  *
@@ -138,6 +144,14 @@ export async function compactContext(
     });
   }
 
+  // Post-compaction summary — tell the agent what happened
+  const summaryParts = [`Compacted: ${oldMessages.length} old messages processed.`];
+  if (kept.length > 0) summaryParts.push(`Preserved: ${kept.length} critical messages.`);
+  if (toSummarize.length > 0) summaryParts.push(`Summarized: ${toSummarize.length} messages.`);
+  if (dropped > 0) summaryParts.push(`Dropped: ${dropped} redundant messages.`);
+  summaryParts.push(`Retained: ${recentMessages.length} recent messages.`);
+  compacted.push({ role: 'system', content: `[Compaction summary] ${summaryParts.join(' ')}` });
+
   // Inject scratchpad entries so they survive compaction
   const scratchpadCtx = formatScratchpadContext();
   if (scratchpadCtx) {
@@ -167,6 +181,9 @@ function classifyMessage(
   if (msg.role === 'user') return 'keep';
 
   const content = msg.content;
+
+  // [keep] prefix marks messages as compaction-resistant
+  if (content.startsWith('[keep]') || content.startsWith('[KEEP]')) return 'keep';
 
   // Keep error messages
   if (content.includes('Error:') || content.includes('error:') || content.includes('FAIL')) {
