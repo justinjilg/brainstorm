@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { loadConfig } from "@brainstorm/config";
-import { getDb, closeDb } from "@brainstorm/db";
+import { getDb, closeDb, CostRepository } from "@brainstorm/db";
 import {
   createProviderRegistry,
   getBrainstormApiKey,
@@ -1356,6 +1356,52 @@ program
       console.log(
         `    ${s.id.slice(0, 8)}  ${s.messageCount} msgs  $${s.totalCost.toFixed(4)}  ${ageStr}  ${s.projectPath}`,
       );
+    }
+    console.log();
+  });
+
+// ── Metrics Command ────────────────────────────────────────────────
+
+program
+  .command("metrics")
+  .description("Export tool stats, model latency, and cost breakdown")
+  .option("--json", "Output as JSON")
+  .action(async (opts: { json?: boolean }) => {
+    const db = getDb();
+    const costRepo = new CostRepository(db);
+
+    const byModel = costRepo.recentByModel(20);
+    const byTaskType = costRepo.byTaskType();
+    const todayCost = costRepo.totalCostToday();
+    const monthCost = costRepo.totalCostThisMonth();
+
+    if (opts.json) {
+      console.log(
+        JSON.stringify({ todayCost, monthCost, byModel, byTaskType }, null, 2),
+      );
+      return;
+    }
+
+    console.log("\n  Cost Summary:");
+    console.log(`    Today:      $${todayCost.toFixed(4)}`);
+    console.log(`    This month: $${monthCost.toFixed(4)}`);
+
+    if (byModel.length > 0) {
+      console.log("\n  Cost by Model:");
+      for (const m of byModel) {
+        console.log(
+          `    ${m.modelId.padEnd(40)} $${m.totalCost.toFixed(4)}  (${m.requestCount} reqs)`,
+        );
+      }
+    }
+
+    if (byTaskType.length > 0) {
+      console.log("\n  Cost by Task Type:");
+      for (const t of byTaskType) {
+        console.log(
+          `    ${t.taskType.padEnd(20)} $${t.totalCost.toFixed(4)}  (${t.requestCount} reqs, avg $${t.avgCost.toFixed(4)})`,
+        );
+      }
     }
     console.log();
   });
