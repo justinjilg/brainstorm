@@ -21,3 +21,4 @@ export { LoopDetector, type LoopWarning } from './agent/loop-detector.js';
 export { detectTone, toneGuidance, type UserTone, type ToneResult } from './agent/sentiment.js';
 export { ReactionTracker, type ReactionSignal, type ReactionEntry } from './agent/reaction-tracker.js';
 export { SessionPatternLearner } from './learning/session-patterns.js';
+export { buildSelfReviewPrompt, parseSelfReviewResponse, type SelfReviewResult, type SelfReviewOptions } from './agent/self-review.js';
