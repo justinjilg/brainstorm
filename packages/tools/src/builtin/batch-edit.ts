@@ -79,6 +79,9 @@ export const batchEditTool = defineTool({
 
       // Write if any edits succeeded
       if (fileResult.applied > 0) {
+        const { getCheckpointManager } = await import('../checkpoint.js');
+        const cp = getCheckpointManager();
+        if (cp) cp.snapshot(safePath);
         writeFileSync(safePath, content, 'utf-8');
       }
 
