@@ -16,7 +16,7 @@ export class StormProcess extends EventEmitter {
   private process: ChildProcess | null = null;
   private buffer = '';
 
-  constructor(private cwd: string) {
+  constructor(private cwd: string, private modelId?: string) {
     super();
   }
 
@@ -24,8 +24,12 @@ export class StormProcess extends EventEmitter {
   start(): void {
     if (this.process) return;
 
+    // Build args — pass model if specified
+    const args = ['chat', '--simple', '--pipe'];
+    if (this.modelId) args.push('--model', this.modelId);
+
     // Try to find storm in PATH, fallback to npx
-    this.process = spawn('storm', ['chat', '--simple', '--pipe'], {
+    this.process = spawn('storm', args, {
       cwd: this.cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env },
