@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { loadConfig } from '@brainstorm/config';
-import { getDb } from '@brainstorm/db';
+import { getDb, closeDb } from '@brainstorm/db';
 import { createProviderRegistry, getBrainstormApiKey, isCommunityKey } from '@brainstorm/providers';
 import { BrainstormRouter, CostTracker } from '@brainstorm/router';
 import { createDefaultToolRegistry, configureSandbox } from '@brainstorm/tools';
@@ -1369,6 +1369,29 @@ program
   });
 
 export function run() {
+  // Graceful shutdown: finalize session, close DB, kill background tasks
+  const cleanup = () => {
+    try {
+      closeDb();
+    } catch {
+      // Best effort — DB may already be closed
+    }
+  };
+
+  process.on('SIGTERM', () => {
+    cleanup();
+    process.exit(0);
+  });
+
+  process.on('SIGINT', () => {
+    cleanup();
+    process.exit(0);
+  });
+
+  process.on('exit', () => {
+    cleanup();
+  });
+
   program.parse();
 }
 
