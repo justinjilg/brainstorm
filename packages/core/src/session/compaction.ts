@@ -103,6 +103,7 @@ export async function compactContext(
         model: summarizeModel,
         system: 'Summarize this conversation concisely. Preserve: key decisions, file paths mentioned, errors encountered, and current task context. Be brief.',
         messages: [{ role: 'user' as const, content: oldText }],
+        abortSignal: AbortSignal.timeout(30_000),
       });
 
       let summaryText = '';
