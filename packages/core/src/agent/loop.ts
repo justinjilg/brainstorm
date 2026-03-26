@@ -6,6 +6,7 @@ import { BrainstormRouter, CostTracker } from '@brainstorm/router';
 import type { ToolRegistry, PermissionCheckFn } from '@brainstorm/tools';
 import { setTaskEventHandler, clearTasks, setBackgroundEventHandler, getToolHealthTracker } from '@brainstorm/tools';
 import type { AgentEvent, GatewayFeedbackData, ModelEntry, TurnContext } from '@brainstorm/shared';
+import type { BuildStateTracker } from './build-state.js';
 import { serializeRoutingMetadata } from '@brainstorm/shared';
 import { createStreamFilter } from './response-filter.js';
 import { normalizeInsightMarkers } from './insights.js';
@@ -103,6 +104,8 @@ export interface AgentLoopOptions {
   permissionCheck?: PermissionCheckFn;
   /** Callback to inject turn context after each completion. */
   onTurnComplete?: (ctx: TurnContext) => void;
+  /** Build state tracker — records build/test results for persistent warnings. */
+  buildState?: BuildStateTracker;
   /** Internal: marks this as a retry attempt to prevent infinite recursion. */
   _retryAttempt?: boolean;
 }
@@ -263,6 +266,11 @@ export async function* runAgentLoop(
             const path = (part as any).input?.path ?? (part as any).args?.path;
             if (path) filesWritten.push(path);
           }
+          // Track build/test results for persistent build state warnings
+          if (part.toolName === 'shell' && options.buildState && toolResult && typeof toolResult === 'object') {
+            const cmd = (part as any).input?.command ?? (part as any).args?.command ?? '';
+            options.buildState.recordShellResult(cmd, toolResult.exitCode ?? 0, toolResult.stderr ?? '');
+          }
           yield { type: 'tool-call-result', toolName: part.toolName, result: toolResult };
           // Emit subagent-result events for TUI display
           if (part.toolName === 'subagent' && toolResult && typeof toolResult === 'object') {
@@ -370,6 +378,8 @@ export async function* runAgentLoop(
         filesWritten,
         sessionMinutes: 0, // caller sets this
         unhealthyTools: getToolHealthTracker().getUnhealthy(),
+        buildStatus: options.buildState?.getStatus() ?? 'unknown',
+        buildWarning: options.buildState?.formatBuildWarning() ?? '',
       });
     }
 
