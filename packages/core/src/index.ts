@@ -31,3 +31,5 @@ export { submitCommunityFix, queryCommunityFixes, formatCommunityFixes, detectFr
 export { reduceTrajectory, formatReductionStats, type MessageStatus, type ReductionResult } from './session/trajectory-reducer.js';
 export { TrajectoryRecorder, type TrajectoryEvent, type TrajectoryEventType, type LLMCallData, type ToolCallData, type ToolResultData, type RoutingDecisionData } from './session/trajectory.js';
 export { predictTaskCost, formatCostPrediction, type CostPrediction, type CostTier } from './agent/cost-predictor.js';
+export { MiddlewarePipeline, createDefaultMiddlewarePipeline, isBlocked, type AgentMiddleware, type MiddlewareState, type MiddlewareMessage, type MiddlewareToolCall, type MiddlewareToolResult, type MiddlewareBlock } from './middleware/index.js';
+export { turnContextMiddleware, toolHealthMiddleware, buildStateMiddleware, loopDetectionMiddleware, sentimentMiddleware, subagentLimitMiddleware, trajectoryReductionMiddleware, autoLintMiddleware } from './middleware/index.js';
