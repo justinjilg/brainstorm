@@ -26,3 +26,4 @@ export { createWorktree, removeWorktree, checkBuild, getChangedFiles, pickWinner
 export { buildSelfReviewPrompt, parseSelfReviewResponse, type SelfReviewResult, type SelfReviewOptions } from './agent/self-review.js';
 export { FileWatcher, type FileChange } from './agent/file-watcher.js';
 export { collectProjectHealth, formatProjectHealth, type ProjectHealth } from './agent/project-health.js';
+export { buildRepoMap, repoMapToContext, type RepoMap, type RepoMapEntry } from './agent/repo-map.js';
