@@ -35,7 +35,8 @@ export class SessionManager {
     if (!session) return null;
 
     this.currentSession = session;
-    const msgs = this.messages.listBySession(sessionId);
+    // Lazy load: only keep last 50 messages in memory (older available on demand via DB)
+    const msgs = this.messages.listBySessionRecent(sessionId, 50);
     this.conversationHistory = msgs
       .filter((m) => m.role !== 'tool')
       .map((m) => ({
