@@ -43,6 +43,10 @@ export const fileWriteTool = defineTool({
     const cp = getCheckpointManager();
     if (cp) cp.snapshot(safePath);
 
+    // Pre-validate content before writing (non-blocking)
+    const { preValidate } = await import('../pre-validate.js');
+    const validation = preValidate(safePath, content);
+
     mkdirSync(dirname(safePath), { recursive: true });
     writeFileSync(safePath, content, 'utf-8');
 
@@ -50,6 +54,11 @@ export const fileWriteTool = defineTool({
     const { getFileTracker } = await import('../file-tracker.js');
     getFileTracker().recordWrite(safePath);
 
-    return { success: true, path, bytesWritten: Buffer.byteLength(content) };
+    return {
+      success: true,
+      path,
+      bytesWritten: Buffer.byteLength(content),
+      ...(validation.warnings.length > 0 ? { preValidation: validation.warnings } : {}),
+    };
   },
 });
