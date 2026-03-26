@@ -88,7 +88,7 @@ export function createAutoLintHooks(projectPath: string): HookDefinition[] {
       event: 'PostToolUse',
       matcher: 'file_write|file_edit|multi_edit|batch_edit',
       type: 'command' as const,
-      command: `${lintCommand} "$BRAINSTORM_FILE_PATH"`,
+      command: `${lintCommand} "$FILE"`,
       blocking: false,
       description: `Auto-lint with ${linter} after file writes`,
     },
