@@ -55,7 +55,16 @@ export const fileEditTool = defineTool({
     if (cp) cp.snapshot(safePath);
 
     const updated = content.replace(old_string, new_string);
+
+    // Pre-validate content before writing (non-blocking)
+    const { preValidate } = await import('../pre-validate.js');
+    const validation = preValidate(safePath, updated);
+
     writeFileSync(safePath, updated, 'utf-8');
-    return { success: true, path };
+    return {
+      success: true,
+      path,
+      ...(validation.warnings.length > 0 ? { preValidation: validation.warnings } : {}),
+    };
   },
 });
