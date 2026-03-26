@@ -18,6 +18,10 @@
  *   GET  /v1/community/patterns     — Get community tool preferences
  */
 
+import { createLogger } from '@brainstorm/shared';
+
+const log = createLogger('intelligence-api');
+
 export interface TrajectorySubmission {
   sessionId: string;
   projectFramework: string;
@@ -67,6 +71,7 @@ export interface CommunityPattern {
 
 /**
  * Client for BrainstormRouter's Agent Intelligence API.
+ * Uses unified request() method consistent with BrainstormGateway client.
  */
 export class IntelligenceAPIClient {
   private baseUrl: string;
@@ -79,7 +84,13 @@ export class IntelligenceAPIClient {
 
   /** Submit a session trajectory for analysis and learning. */
   async submitTrajectory(submission: TrajectorySubmission): Promise<boolean> {
-    return this.post('/v1/agent/trajectory', submission);
+    try {
+      await this.request('POST', '/v1/agent/trajectory', submission);
+      return true;
+    } catch (e) {
+      log.warn({ err: e }, 'Failed to submit trajectory');
+      return false;
+    }
   }
 
   /** Get routing recommendations based on project patterns. */
@@ -87,7 +98,7 @@ export class IntelligenceAPIClient {
     taskType: string,
     framework: string,
   ): Promise<RoutingRecommendation[]> {
-    return this.get(`/v1/agent/recommendations?taskType=${encodeURIComponent(taskType)}&framework=${encodeURIComponent(framework)}`);
+    return this.request('GET', `/v1/agent/recommendations?taskType=${encodeURIComponent(taskType)}&framework=${encodeURIComponent(framework)}`);
   }
 
   /** Rank candidate models for ensemble generation. */
@@ -96,7 +107,7 @@ export class IntelligenceAPIClient {
     complexity: string,
     candidateModels: string[],
   ): Promise<EnsembleRanking> {
-    return this.postJson('/v1/agent/ensemble/rank', {
+    return this.request('POST', '/v1/agent/ensemble/rank', {
       taskType,
       complexity,
       candidateModels,
@@ -109,75 +120,77 @@ export class IntelligenceAPIClient {
     complexity: string,
     framework: string,
   ): Promise<CostForecast> {
-    return this.get(
+    return this.request('GET',
       `/v1/intelligence/cost-forecast?taskType=${encodeURIComponent(taskType)}&complexity=${encodeURIComponent(complexity)}&framework=${encodeURIComponent(framework)}`,
     );
   }
 
   /** Submit anonymized tool usage patterns. */
   async submitPattern(pattern: CommunityPattern): Promise<boolean> {
-    return this.post('/v1/community/patterns', pattern);
-  }
-
-  /** Get community tool preferences for a framework. */
-  async getPatterns(framework: string): Promise<CommunityPattern[]> {
-    return this.get(`/v1/community/patterns?framework=${encodeURIComponent(framework)}`);
-  }
-
-  private async post(path: string, body: unknown): Promise<boolean> {
     try {
-      const response = await fetch(`${this.baseUrl}${path}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.apiKey}`,
-        },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(15000),
-      });
-      return response.ok;
-    } catch {
+      await this.request('POST', '/v1/community/patterns', pattern);
+      return true;
+    } catch (e) {
+      log.warn({ err: e }, 'Failed to submit community pattern');
       return false;
     }
   }
 
-  private async postJson<T>(path: string, body: unknown): Promise<T> {
-    const response = await fetch(`${this.baseUrl}${path}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(15000),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Intelligence API error: ${response.status}`);
-    }
-
-    return (await response.json()) as T;
+  /** Get community tool preferences for a framework. */
+  async getPatterns(framework: string): Promise<CommunityPattern[]> {
+    return this.request('GET', `/v1/community/patterns?framework=${encodeURIComponent(framework)}`);
   }
 
-  private async get<T>(path: string): Promise<T> {
-    const response = await fetch(`${this.baseUrl}${path}`, {
-      headers: { Authorization: `Bearer ${this.apiKey}` },
-      signal: AbortSignal.timeout(15000),
-    });
+  /** Unified request method — consistent with BrainstormGateway client pattern. */
+  private async request(method: string, path: string, body?: unknown): Promise<any> {
+    const url = `${this.baseUrl}${path}`;
 
-    if (!response.ok) {
-      throw new Error(`Intelligence API error: ${response.status}`);
+    try {
+      const response = await fetch(url, {
+        method,
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          ...(body ? { 'Content-Type': 'application/json' } : {}),
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+        signal: AbortSignal.timeout(15_000),
+      });
+
+      const text = await response.text();
+      let data: any;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        const preview = text.slice(0, 200).replace(/\n/g, ' ');
+        const msg = `HTTP ${response.status}: non-JSON response (${preview})`;
+        log.warn({ method, path, status: response.status }, msg);
+        throw new Error(`Intelligence API ${method} ${path}: ${msg}`);
+      }
+
+      if (!response.ok) {
+        const msg = data?.error?.message ?? `HTTP ${response.status}`;
+        log.warn({ method, path, status: response.status, error: msg }, 'Intelligence API request failed');
+        throw new Error(`Intelligence API ${method} ${path}: ${msg}`);
+      }
+
+      return data;
+    } catch (error: any) {
+      if (error.message?.startsWith('Intelligence API ')) throw error;
+      if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+        throw new Error(`Intelligence API ${method} ${path}: request timed out after 15s`);
+      }
+      log.warn({ method, path, errorMessage: error.message }, 'Intelligence API request error');
+      throw new Error(`Intelligence API ${method} ${path}: ${error.message}`);
     }
-
-    return (await response.json()) as T;
   }
 }
 
 /**
  * Create an Intelligence API client from environment.
+ * Uses same env vars as BrainstormGateway for consistency.
  */
 export function createIntelligenceClient(): IntelligenceAPIClient | null {
-  const baseUrl = process.env.BRAINSTORM_ROUTER_URL ?? 'https://api.brainstormrouter.com';
+  const baseUrl = process.env.BRAINSTORM_GATEWAY_URL ?? 'https://api.brainstormrouter.com';
   const apiKey = process.env.BRAINSTORM_API_KEY;
 
   if (!apiKey) return null;
