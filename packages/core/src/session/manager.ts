@@ -1,10 +1,14 @@
-import { SessionRepository, MessageRepository } from '@brainstorm/db';
-import type { Session, TurnContext } from '@brainstorm/shared';
-import { formatTurnContext } from '@brainstorm/shared';
-import { estimateTokenCount, needsCompaction, compactContext } from './compaction.js';
+import { SessionRepository, MessageRepository } from "@brainstorm/db";
+import type { Session, TurnContext } from "@brainstorm/shared";
+import { formatTurnContext } from "@brainstorm/shared";
+import {
+  estimateTokenCount,
+  needsCompaction,
+  compactContext,
+} from "./compaction.js";
 
 export interface ConversationMessage {
-  role: 'user' | 'assistant' | 'system';
+  role: "user" | "assistant" | "system";
   content: string;
 }
 
@@ -38,9 +42,9 @@ export class SessionManager {
     // Lazy load: only keep last 50 messages in memory (older available on demand via DB)
     const msgs = this.messages.listBySessionRecent(sessionId, 50);
     this.conversationHistory = msgs
-      .filter((m) => m.role !== 'tool')
+      .filter((m) => m.role !== "tool")
       .map((m) => ({
-        role: m.role as 'user' | 'assistant' | 'system',
+        role: m.role as "user" | "assistant" | "system",
         content: m.content,
       }));
     this.cachedTokenCount = null; // Force recount after resume
@@ -69,15 +73,21 @@ export class SessionManager {
 
     // Copy all messages to the new session
     for (const m of msgs) {
-      this.messages.create(forked.id, m.role, m.content, m.modelId, m.tokenCount);
+      this.messages.create(
+        forked.id,
+        m.role,
+        m.content,
+        m.modelId,
+        m.tokenCount,
+      );
     }
 
     // Set as current session
     this.currentSession = forked;
     this.conversationHistory = msgs
-      .filter((m) => m.role !== 'tool')
+      .filter((m) => m.role !== "tool")
       .map((m) => ({
-        role: m.role as 'user' | 'assistant' | 'system',
+        role: m.role as "user" | "assistant" | "system",
         content: m.content,
       }));
 
@@ -85,25 +95,25 @@ export class SessionManager {
   }
 
   addUserMessage(content: string): void {
-    if (!this.currentSession) throw new Error('No active session');
-    this.messages.create(this.currentSession.id, 'user', content);
+    if (!this.currentSession) throw new Error("No active session");
+    this.messages.create(this.currentSession.id, "user", content);
     this.sessions.incrementMessages(this.currentSession.id);
-    this.conversationHistory.push({ role: 'user', content });
+    this.conversationHistory.push({ role: "user", content });
     this.addTokenDelta(content);
   }
 
   addAssistantMessage(content: string, modelId?: string): void {
-    if (!this.currentSession) throw new Error('No active session');
-    this.messages.create(this.currentSession.id, 'assistant', content, modelId);
+    if (!this.currentSession) throw new Error("No active session");
+    this.messages.create(this.currentSession.id, "assistant", content, modelId);
     this.sessions.incrementMessages(this.currentSession.id);
-    this.conversationHistory.push({ role: 'assistant', content });
+    this.conversationHistory.push({ role: "assistant", content });
     this.addTokenDelta(content);
   }
 
   /** Inject turn context as an invisible system message the model sees but the user doesn't. */
   addTurnContext(ctx: TurnContext): void {
     const summary = formatTurnContext(ctx);
-    this.conversationHistory.push({ role: 'system', content: summary });
+    this.conversationHistory.push({ role: "system", content: summary });
     this.addTokenDelta(summary);
   }
 
@@ -112,6 +122,12 @@ export class SessionManager {
     if (this.cachedTokenCount !== null) {
       this.cachedTokenCount += Math.ceil((content.length + 20) / 4);
     }
+  }
+
+  /** Sync session cost to DB. Call after each tool to keep DB accurate. */
+  syncSessionCost(cost: number): void {
+    if (!this.currentSession) return;
+    this.sessions.updateCost(this.currentSession.id, cost);
   }
 
   getTurnCount(): number {
@@ -153,7 +169,13 @@ export class SessionManager {
     contextWindow: number;
     keepRecent?: number;
     summarizeModel?: any;
-  }): Promise<{ compacted: boolean; removed: number; tokensBefore: number; tokensAfter: number; summaryCost: number }> {
+  }): Promise<{
+    compacted: boolean;
+    removed: number;
+    tokensBefore: number;
+    tokensAfter: number;
+    summaryCost: number;
+  }> {
     const tokensBefore = estimateTokenCount(this.conversationHistory);
     const result = await compactContext(this.conversationHistory, options);
 
@@ -163,9 +185,21 @@ export class SessionManager {
       // Invalidate cache — full recount after compaction
       this.cachedTokenCount = null;
       const tokensAfter = this.getTokenEstimate();
-      return { compacted: true, removed, tokensBefore, tokensAfter, summaryCost: result.summaryCost };
+      return {
+        compacted: true,
+        removed,
+        tokensBefore,
+        tokensAfter,
+        summaryCost: result.summaryCost,
+      };
     }
 
-    return { compacted: false, removed: 0, tokensBefore, tokensAfter: tokensBefore, summaryCost: 0 };
+    return {
+      compacted: false,
+      removed: 0,
+      tokensBefore,
+      tokensAfter: tokensBefore,
+      summaryCost: 0,
+    };
   }
 }

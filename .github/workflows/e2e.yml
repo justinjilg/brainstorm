@@ -1,0 +1,32 @@
+name: E2E Tests
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Weekly on Monday at 6 AM UTC
+  workflow_dispatch: # Manual trigger
+
+jobs:
+  e2e:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      - run: npx turbo run build
+
+      - name: Run E2E tests
+        run: npx turbo run test -- --reporter=verbose
+        env:
+          E2E: "1"
+          BRAINSTORM_API_KEY: ${{ secrets.BRAINSTORM_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
