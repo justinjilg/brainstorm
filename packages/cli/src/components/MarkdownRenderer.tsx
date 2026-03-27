@@ -90,7 +90,7 @@ getMarkedRenderer().catch(() => {});
 function renderTerminalMarkdownFallback(input: string): string {
   let text = input;
 
-  // Code blocks with line numbers
+  // Code blocks with line numbers (closed blocks)
   text = text.replace(
     /```([\w]*)\n([\s\S]*?)```/g,
     (_match, lang: string, code: string) => {
@@ -103,6 +103,25 @@ function renderTerminalMarkdownFallback(input: string): string {
       return `\n${langLabel}${numbered.join("\n")}\n`;
     },
   );
+
+  // Handle unclosed code blocks during streaming — render as dim code
+  const unclosedMatch = text.match(/```([\w]*)\n([\s\S]*)$/);
+  if (unclosedMatch) {
+    const lang = unclosedMatch[1];
+    const code = unclosedMatch[2];
+    const lines = code.trimEnd().split("\n");
+    const langLabel = lang
+      ? `\x1b[2m ─── ${lang} (streaming) ───\x1b[22m\n`
+      : "";
+    const numbered = lines.map((l: string, i: number) => {
+      const num = String(i + 1).padStart(3, " ");
+      return `\x1b[2m${num}\x1b[22m │ \x1b[2m${l}\x1b[22m`;
+    });
+    text = text.replace(
+      unclosedMatch[0],
+      `\n${langLabel}${numbered.join("\n")}`,
+    );
+  }
 
   text = text.replace(/`([^`]+)`/g, "\x1b[2m`$1`\x1b[22m");
   text = text.replace(

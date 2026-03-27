@@ -375,12 +375,16 @@ export function ChatApp({
         setIsProcessing(false);
       }
 
-      if (fullResponse) {
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: fullResponse, model, cost },
-        ]);
-      }
+      // Always show assistant message — even empty responses should display cost
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: fullResponse || "(No response received)",
+          model,
+          cost,
+        },
+      ]);
     },
     [isProcessing, onSendMessage, exit, slashCtx],
   );
