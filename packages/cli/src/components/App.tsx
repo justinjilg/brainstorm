@@ -83,6 +83,7 @@ export function App(props: AppProps) {
   const [sessionStart] = useState(Date.now());
   const { data: brData, refresh: refreshBR } = useBRData(props.gateway ?? null);
   const [lastCtrlD, setLastCtrlD] = useState(0);
+  const [guardianStatus, setGuardianStatus] = useState<string | undefined>();
 
   // Global key handler for mode switching
   //
@@ -203,13 +204,15 @@ export function App(props: AppProps) {
               return next;
             });
           }
-          // Capture gateway feedback: request ID + live cost update
+          // Capture gateway feedback: request ID + live cost + guardian status
           if (event.type === "gateway-feedback") {
             lastRequestId = (event as any).feedback?.requestId;
             const actualCost = (event as any).feedback?.actualCost;
             if (typeof actualCost === "number" && actualCost > 0) {
               setSessionCost((prev) => Math.max(prev, actualCost));
             }
+            const guardian = (event as any).feedback?.guardianStatus;
+            if (guardian) setGuardianStatus(guardian);
           }
           if (event.type === "done") {
             setSessionCost(event.totalCost);
@@ -241,6 +244,7 @@ export function App(props: AppProps) {
         model={currentModel}
         cost={sessionCost}
         role={currentRole}
+        guardianStatus={guardianStatus}
       />
 
       {/* ChatApp is always mounted to preserve conversation state.
