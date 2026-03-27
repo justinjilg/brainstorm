@@ -1821,7 +1821,7 @@ program
       // Ink TUI
       const { render } = await import("ink");
       const React = await import("react");
-      const { ChatApp } = await import("../components/ChatApp.js");
+      const { App } = await import("../components/App.js");
 
       let currentAbortController: AbortController | null = null;
 
@@ -1862,12 +1862,33 @@ program
         }
       }
 
+      // Prepare model data for Models mode
+      const modelData = registry.models.map((m: any) => ({
+        id: m.id,
+        name: m.name,
+        provider: m.provider,
+        qualityTier: m.capabilities?.qualityTier ?? 3,
+        speedTier: m.capabilities?.speedTier ?? 2,
+        pricing: {
+          input: m.pricing?.inputPer1MTokens ?? 0,
+          output: m.pricing?.outputPer1MTokens ?? 0,
+        },
+        status: m.status ?? "available",
+      }));
+
       render(
-        React.createElement(ChatApp, {
+        React.createElement(App, {
           strategy: config.general.defaultStrategy,
           modelCount: { local: localCount, cloud: cloudCount },
           onSendMessage: handleSendMessage,
           onAbort: handleAbort,
+          models: modelData,
+          configInfo: {
+            strategy: config.general.defaultStrategy,
+            permissionMode: config.general.defaultPermissionMode ?? "confirm",
+            outputStyle: config.general.outputStyle ?? "concise",
+            sandbox: config.shell?.sandbox ?? "none",
+          },
           slashCallbacks: {
             setModel: (model: string) => {
               preferredModelId = model;
