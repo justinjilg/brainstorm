@@ -190,7 +190,11 @@ export function ChatApp({
       if (isSlashCommand(text)) {
         setInput("");
         const result = await executeSlashCommand(text, slashCtx);
-        setMessages((prev) => [...prev, { role: "routing", content: result }]);
+        // Use 'assistant' role for readable output (not dim 'routing')
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: result },
+        ]);
         return;
       }
 
