@@ -70,18 +70,26 @@ export function App(props: AppProps) {
 
   // Global key handler for mode switching
   useInput((input, key) => {
-    // Number keys switch modes (but not during text input in chat mode)
-    if (mode !== "chat" || !isProcessing) {
+    // Escape returns to chat from any non-chat mode
+    if (key.escape && mode !== "chat") {
+      setMode("chat");
+      return;
+    }
+
+    // In non-chat modes: plain number keys switch modes
+    if (mode !== "chat") {
       if (setModeByKey(input)) return;
     }
 
-    // Tab cycles modes
-    if (key.tab && !key.shift) {
-      // Only cycle if not in chat input mode
-      if (mode !== "chat") {
-        cycleMode();
-        return;
-      }
+    // In chat mode: Ctrl+number switches modes (doesn't conflict with text input)
+    if (mode === "chat" && key.ctrl) {
+      if (setModeByKey(input)) return;
+    }
+
+    // Tab cycles modes (only from non-chat modes to avoid conflict with input)
+    if (key.tab && !key.shift && mode !== "chat") {
+      cycleMode();
+      return;
     }
 
     // Ctrl+D exits
