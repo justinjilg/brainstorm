@@ -8,13 +8,13 @@ interface KeyHintProps {
 }
 
 const HINTS: Record<TUIMode, string> = {
-  chat: "Ctrl+2 dashboard │ Ctrl+3 models │ Ctrl+4 config │ ↑↓ history │ Esc abort",
-  dashboard: "1-4 switch │ Esc chat │ Tab cycle │ Ctrl+D exit",
-  models: "1-4 switch │ j/k navigate │ Enter select │ Esc chat",
+  chat: "Esc dashboard │ ↑↓ history │ Shift+↑↓ scroll │ Ctrl+D exit",
+  dashboard: "1-4 switch │ Tab cycle │ Esc chat │ Ctrl+D exit",
+  models: "1-4 switch │ ↑↓ navigate │ Enter select │ Esc chat",
   config: "1-4 switch │ Esc chat │ Ctrl+D exit",
 };
 
-const PROCESSING_HINT = "Esc abort │ Shift+↑↓ scroll │ Ctrl+2 dashboard";
+const PROCESSING_HINT = "Esc abort │ Shift+↑↓ scroll";
 
 export function KeyHint({ mode, isProcessing }: KeyHintProps) {
   return (

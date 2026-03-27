@@ -69,30 +69,39 @@ export function App(props: AppProps) {
   const [sessionStart] = useState(Date.now());
 
   // Global key handler for mode switching
+  //
+  // Pattern: Escape toggles between Chat and other modes.
+  // In Chat: Escape (when idle) → Dashboard. Escape (when processing) → abort.
+  // In other modes: Escape → Chat. Number keys 1-4 switch modes. Arrows navigate.
   useInput((input, key) => {
-    // Escape returns to chat from any non-chat mode
-    if (key.escape && mode !== "chat") {
-      setMode("chat");
+    if (key.escape) {
+      if (mode === "chat") {
+        // In chat: Escape while processing aborts; while idle opens dashboard
+        if (isProcessing) {
+          props.onAbort?.();
+          setTimeout(() => {
+            setIsProcessing(false);
+          }, 2000);
+        } else {
+          setMode("dashboard");
+        }
+      } else {
+        // In any other mode: Escape returns to chat
+        setMode("chat");
+      }
       return;
     }
 
-    // In non-chat modes: plain number keys switch modes
+    // In non-chat modes: number keys switch modes, Tab cycles
     if (mode !== "chat") {
       if (setModeByKey(input)) return;
+      if (key.tab) {
+        cycleMode();
+        return;
+      }
     }
 
-    // In chat mode: Ctrl+number switches modes (doesn't conflict with text input)
-    if (mode === "chat" && key.ctrl) {
-      if (setModeByKey(input)) return;
-    }
-
-    // Tab cycles modes (only from non-chat modes to avoid conflict with input)
-    if (key.tab && !key.shift && mode !== "chat") {
-      cycleMode();
-      return;
-    }
-
-    // Ctrl+D exits
+    // Ctrl+D exits from anywhere
     if (input === "d" && key.ctrl) {
       exit();
       return;
