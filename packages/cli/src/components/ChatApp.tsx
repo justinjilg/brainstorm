@@ -193,6 +193,7 @@ export function ChatApp({
       let fullResponse = "";
       let model: string | undefined;
       let cost = 0;
+      const costBefore = sessionCost;
 
       try {
         for await (const event of onSendMessage(text.trim())) {
@@ -351,7 +352,7 @@ export function ChatApp({
               ]);
               break;
             case "done":
-              cost = event.totalCost;
+              cost = event.totalCost - costBefore; // Per-turn cost delta
               setSessionCost(event.totalCost);
               if (event.totalTokens) setTokenCount(event.totalTokens);
               break;
