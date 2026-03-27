@@ -165,6 +165,7 @@ export function ChatApp({
       rebuildSystemPrompt: slashCallbacks?.rebuildSystemPrompt,
       getActiveRole: slashCallbacks?.getActiveRole,
       setActiveRole: slashCallbacks?.setActiveRole,
+      gateway: slashCallbacks?.gateway,
     }),
     [currentModel, sessionCost, tokenCount, exit, slashCallbacks],
   );

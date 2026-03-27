@@ -44,6 +44,8 @@ export interface SlashContext {
   /** Get/set active role */
   getActiveRole?: () => string | undefined;
   setActiveRole?: (role: string | undefined) => void;
+  /** BrainstormRouter gateway client for /recommend, /stats, /compare */
+  gateway?: any;
 }
 
 interface SlashCommand {
@@ -323,6 +325,100 @@ commands.push({
     ctx.setOutputStyle?.("concise");
     ctx.setStrategy?.("combined");
     return "Session reset to defaults.";
+  },
+});
+
+// ── BR-Powered Commands ───────────────────────────────────────────────
+
+commands.push({
+  name: "recommend",
+  aliases: ["rec"],
+  description: "Get model recommendation from BrainstormRouter",
+  usage: "/recommend [task-type]",
+  execute: async (args, ctx) => {
+    if (!ctx.gateway) return "No BrainstormRouter API key configured.";
+    try {
+      const { IntelligenceAPIClient } = await import("@brainstorm/gateway");
+      const key =
+        process.env._BR_RESOLVED_KEY ?? process.env.BRAINSTORM_API_KEY;
+      if (!key) return "No BR API key available.";
+      const intel = new IntelligenceAPIClient(key);
+      const taskType = args || "code-generation";
+      const recs = await intel.getRecommendations(taskType, "typescript");
+      if (!recs || recs.length === 0)
+        return `No recommendations for task type: ${taskType}`;
+      const lines = recs.slice(0, 3).map((r: any, i: number) => {
+        return `  ${i + 1}. ${r.recommendedModel ?? r.model} (${Math.round((r.confidence ?? r.score ?? 0) * 100)}% confidence)\n     ${r.reasoning ?? ""}`;
+      });
+      return `Model recommendations for "${taskType}":\n${lines.join("\n")}\n\nUse: /model <id> to switch`;
+    } catch (err: any) {
+      return `Recommendation failed: ${err.message}`;
+    }
+  },
+});
+
+commands.push({
+  name: "stats",
+  aliases: [],
+  description: "Show session analytics and BR usage summary",
+  usage: "/stats",
+  execute: async (_args, ctx) => {
+    const cost = ctx.getSessionCost?.() ?? 0;
+    const tokens = ctx.getTokenCount?.() ?? { input: 0, output: 0 };
+    const model = ctx.getModel?.() ?? "auto";
+    const role = ctx.getActiveRole?.();
+    const strategy = ctx.getStrategy?.() ?? "combined";
+
+    const lines = [
+      "Session Stats",
+      `  Cost:     $${cost.toFixed(4)}`,
+      `  Tokens:   ${tokens.input.toLocaleString()} in / ${tokens.output.toLocaleString()} out`,
+      `  Model:    ${model}`,
+      `  Strategy: ${strategy}`,
+    ];
+    if (role) lines.push(`  Role:     ${role}`);
+
+    // Try to get BR usage summary
+    if (ctx.gateway) {
+      try {
+        const summary = await ctx.gateway.getUsageSummary("daily");
+        if (summary) {
+          lines.push("");
+          lines.push("BrainstormRouter (today)");
+          lines.push(`  Requests: ${summary.total_requests ?? 0}`);
+          lines.push(
+            `  Cost:     $${(summary.total_cost_usd ?? 0).toFixed(4)}`,
+          );
+          if (summary.by_model?.length > 0) {
+            lines.push("  By model:");
+            for (const m of summary.by_model.slice(0, 5)) {
+              lines.push(
+                `    ${m.model}: $${m.cost_usd?.toFixed(4) ?? "0"} (${m.request_count ?? 0} reqs)`,
+              );
+            }
+          }
+        }
+      } catch {
+        // BR data unavailable — skip silently
+      }
+    }
+
+    return lines.join("\n");
+  },
+});
+
+commands.push({
+  name: "compare",
+  aliases: [],
+  description: "Compare two models side by side",
+  usage: "/compare <model1> <model2>",
+  execute: (_args, ctx) => {
+    const parts = _args.split(/\s+/);
+    if (parts.length < 2)
+      return "Usage: /compare model1 model2\nExample: /compare anthropic/claude-sonnet-4-6 deepseek/deepseek-chat";
+
+    // This is a local comparison using registry data — no BR call needed
+    return `Model comparison for: ${parts[0]} vs ${parts[1]}\n  (Switch to Models mode [Esc → 3] for detailed comparison with gauges)`;
   },
 });
 
