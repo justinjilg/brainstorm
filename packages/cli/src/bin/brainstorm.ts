@@ -1903,6 +1903,8 @@ program
         status: m.status ?? "available",
       }));
 
+      const brGateway = createGatewayClient();
+
       render(
         React.createElement(App, {
           strategy: config.general.defaultStrategy,
@@ -1910,6 +1912,7 @@ program
           onSendMessage: handleSendMessage,
           onAbort: handleAbort,
           models: modelData,
+          gateway: brGateway,
           configInfo: {
             strategy: config.general.defaultStrategy,
             permissionMode: config.general.defaultPermissionMode ?? "confirm",
