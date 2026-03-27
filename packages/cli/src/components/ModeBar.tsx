@@ -8,9 +8,16 @@ interface ModeBarProps {
   model?: string;
   cost?: number;
   role?: string;
+  guardianStatus?: string;
 }
 
-export function ModeBar({ activeMode, model, cost, role }: ModeBarProps) {
+export function ModeBar({
+  activeMode,
+  model,
+  cost,
+  role,
+  guardianStatus,
+}: ModeBarProps) {
   return (
     <Box flexDirection="row" justifyContent="space-between" paddingX={1}>
       <Box>
@@ -66,6 +73,22 @@ export function ModeBar({ activeMode, model, cost, role }: ModeBarProps) {
         <Text color={cost && cost > 0.01 ? "yellow" : "green"}>
           ${(cost ?? 0).toFixed(4)}
         </Text>
+        {guardianStatus && (
+          <>
+            <Text color="gray"> │ </Text>
+            <Text
+              color={
+                guardianStatus === "safe"
+                  ? "green"
+                  : guardianStatus === "flagged"
+                    ? "yellow"
+                    : "red"
+              }
+            >
+              {guardianStatus === "safe" ? "●" : "⚠"}
+            </Text>
+          </>
+        )}
       </Box>
     </Box>
   );

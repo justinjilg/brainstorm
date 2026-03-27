@@ -4,6 +4,8 @@ import { Text } from "ink";
 // Lazy-loaded for performance — only loaded on first render
 let _markedRenderer: ((md: string) => string) | null = null;
 let _loadFailed = false;
+let _loadFailedAt = 0;
+const RETRY_AFTER_MS = 60_000; // Retry loading after 60s
 
 /**
  * Initialize marked-terminal renderer with syntax highlighting.
@@ -11,7 +13,8 @@ let _loadFailed = false;
  */
 async function getMarkedRenderer(): Promise<(md: string) => string> {
   if (_markedRenderer) return _markedRenderer;
-  if (_loadFailed) return renderTerminalMarkdownFallback;
+  if (_loadFailed && Date.now() - _loadFailedAt < RETRY_AFTER_MS)
+    return renderTerminalMarkdownFallback;
 
   try {
     const { Marked } = await import("marked");
@@ -77,6 +80,7 @@ async function getMarkedRenderer(): Promise<(md: string) => string> {
     return _markedRenderer;
   } catch {
     _loadFailed = true;
+    _loadFailedAt = Date.now();
     return renderTerminalMarkdownFallback;
   }
 }
