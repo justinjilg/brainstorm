@@ -380,8 +380,12 @@ commands.push({
       "",
       pipeline,
       "",
-      "To customize models: /build-customize",
-      "To execute with defaults: /build-go",
+      "Next steps — type one of these commands:",
+      "",
+      "  /build-go          Execute this pipeline now",
+      "  /build-customize   See all model options per step",
+      "  /build-set 1 2     Change step 1 to model #2",
+      "  /build             Start over with a new description",
     ];
 
     // Store wizard state in a module-level cache for /build-go
