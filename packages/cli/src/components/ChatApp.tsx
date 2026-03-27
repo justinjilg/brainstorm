@@ -381,28 +381,19 @@ export function ChatApp({
     [isProcessing, onSendMessage, exit, slashCtx],
   );
 
-  // Compute available height for messages (terminal rows minus header + footer)
+  // Compute available height for messages (App manages outer height)
   const termHeight = process.stdout.rows || 24;
-  const headerHeight = 3; // StatusBar
-  const footerHeight = 3; // Input box
+  const footerHeight = 4; // Input box + key hints
   const toolsHeight =
     activeTools.filter((t) => t.status === "running").length > 0 ? 4 : 0;
   const tasksHeight = tasks.length > 0 ? Math.min(tasks.length + 1, 5) : 0;
   const messageHeight = Math.max(
     5,
-    termHeight - headerHeight - footerHeight - toolsHeight - tasksHeight,
+    termHeight - 2 - footerHeight - toolsHeight - tasksHeight,
   );
 
   return (
-    <Box flexDirection="column" height={termHeight}>
-      <StatusBar
-        strategy={strategy}
-        currentModel={currentModel}
-        sessionCost={sessionCost}
-        modelCount={modelCount}
-        tokenCount={tokenCount}
-        isProcessing={isProcessing}
-      />
+    <Box flexDirection="column" flexGrow={1}>
       <MessageList
         messages={messages}
         maxHeight={messageHeight}
