@@ -326,10 +326,8 @@ export function ChatApp({
               ]);
               break;
             case "loop-warning":
-              setMessages((prev) => [
-                ...prev,
-                { role: "routing", content: `⚠ ${event.message}` },
-              ]);
+              // Loop warnings are injected into model context, not shown to user.
+              // They clutter the UI with internal guidance like "file_read called 3 times".
               break;
             case "empty-response":
               setMessages((prev) => [
