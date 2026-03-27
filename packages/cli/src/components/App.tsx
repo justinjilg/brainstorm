@@ -39,6 +39,15 @@ interface AppProps {
     outputStyle: string;
     sandbox: string;
   };
+  vaultInfo?: {
+    exists: boolean;
+    isOpen: boolean;
+    keyCount: number;
+    keys: string[];
+    createdAt: string | null;
+    opAvailable: boolean;
+    resolvedKeys: string[];
+  };
 }
 
 interface RoutingEntry {
@@ -246,6 +255,7 @@ export function App(props: AppProps) {
           modelCount={props.modelCount}
           turnCount={turnCount}
           sessionCost={sessionCost}
+          vaultInfo={props.vaultInfo}
         />
       )}
 

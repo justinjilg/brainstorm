@@ -2,6 +2,16 @@ import React from "react";
 import { Box, Text } from "ink";
 import { getRoleColor } from "../../theme.js";
 
+interface VaultInfo {
+  exists: boolean;
+  isOpen: boolean;
+  keyCount: number;
+  keys: string[];
+  createdAt: string | null;
+  opAvailable: boolean;
+  resolvedKeys: string[];
+}
+
 interface ConfigModeProps {
   strategy: string;
   permissionMode: string;
@@ -11,6 +21,7 @@ interface ConfigModeProps {
   modelCount?: { local: number; cloud: number };
   turnCount?: number;
   sessionCost?: number;
+  vaultInfo?: VaultInfo;
 }
 
 function ConfigItem({
@@ -32,6 +43,50 @@ function ConfigItem({
   );
 }
 
+function formatAge(isoDate: string): string {
+  const ms = Date.now() - new Date(isoDate).getTime();
+  const days = Math.floor(ms / 86400000);
+  if (days === 0) return "today";
+  if (days === 1) return "1 day ago";
+  if (days < 30) return `${days} days ago`;
+  if (days < 365) return `${Math.floor(days / 30)} months ago`;
+  return `${Math.floor(days / 365)} years ago`;
+}
+
+/** Known human-readable labels for provider keys */
+const KEY_LABELS: Record<
+  string,
+  { label: string; provider: string; color: string }
+> = {
+  BRAINSTORM_API_KEY: {
+    label: "BrainstormRouter",
+    provider: "brainstorm",
+    color: "green",
+  },
+  ANTHROPIC_API_KEY: {
+    label: "Anthropic",
+    provider: "anthropic",
+    color: "magenta",
+  },
+  OPENAI_API_KEY: { label: "OpenAI", provider: "openai", color: "yellow" },
+  GOOGLE_GENERATIVE_AI_API_KEY: {
+    label: "Google AI",
+    provider: "google",
+    color: "blue",
+  },
+  DEEPSEEK_API_KEY: { label: "DeepSeek", provider: "deepseek", color: "cyan" },
+  MOONSHOT_API_KEY: {
+    label: "Moonshot (Kimi)",
+    provider: "moonshot",
+    color: "white",
+  },
+  BRAINSTORM_ADMIN_KEY: {
+    label: "BR Admin",
+    provider: "brainstorm",
+    color: "red",
+  },
+};
+
 export function ConfigMode({
   strategy,
   permissionMode,
@@ -41,6 +96,7 @@ export function ConfigMode({
   modelCount,
   turnCount,
   sessionCost,
+  vaultInfo,
 }: ConfigModeProps) {
   const modeColor =
     permissionMode === "auto"
@@ -137,7 +193,7 @@ export function ConfigMode({
           </Box>
         </Box>
 
-        {/* Right: Quick Reference */}
+        {/* Right: Vault & Keys */}
         <Box
           borderStyle="round"
           borderColor="gray"
@@ -148,48 +204,117 @@ export function ConfigMode({
         >
           <Text bold color="cyan">
             {" "}
-            Quick Reference
+            Vault & API Keys
           </Text>
 
-          <Box marginTop={1} flexDirection="column">
-            <Text>
-              {" "}
-              <Text bold>Roles</Text>
-            </Text>
-            <Text color="gray"> /architect Deep thinking, read-only</Text>
-            <Text color="gray"> /product-manager Requirements, scope</Text>
-            <Text color="gray"> /sr-developer Quality implementation</Text>
-            <Text color="gray"> /jr-developer Fast, cheap coding</Text>
-            <Text color="gray"> /qa Testing, review</Text>
-            <Text color="gray"> /default Reset to defaults</Text>
-          </Box>
+          {vaultInfo ? (
+            <Box marginTop={1} flexDirection="column">
+              {/* Vault status */}
+              <Box>
+                <Text color="gray"> Status </Text>
+                <Text
+                  color={
+                    vaultInfo.isOpen
+                      ? "green"
+                      : vaultInfo.exists
+                        ? "yellow"
+                        : "red"
+                  }
+                  bold
+                >
+                  {vaultInfo.isOpen
+                    ? "● unlocked"
+                    : vaultInfo.exists
+                      ? "● locked"
+                      : "○ not initialized"}
+                </Text>
+              </Box>
+              {vaultInfo.createdAt && (
+                <Box>
+                  <Text color="gray"> Created </Text>
+                  <Text>{formatAge(vaultInfo.createdAt)}</Text>
+                </Box>
+              )}
+              <Box>
+                <Text color="gray"> 1Password </Text>
+                <Text color={vaultInfo.opAvailable ? "green" : "gray"}>
+                  {vaultInfo.opAvailable ? "● connected" : "○ not available"}
+                </Text>
+              </Box>
 
+              {/* Key list */}
+              <Box marginTop={1} flexDirection="column">
+                <Text>
+                  {" "}
+                  <Text bold>
+                    Resolved Keys ({vaultInfo.resolvedKeys.length})
+                  </Text>
+                </Text>
+                {vaultInfo.resolvedKeys.length === 0 ? (
+                  <Text color="gray" dimColor>
+                    {" "}
+                    No keys resolved. Use /vault add or set env vars.
+                  </Text>
+                ) : (
+                  vaultInfo.resolvedKeys.map((key) => {
+                    const info = KEY_LABELS[key];
+                    return (
+                      <Box key={key}>
+                        <Text color={info?.color ?? "gray"}> ● </Text>
+                        <Text>{(info?.label ?? key).padEnd(20)}</Text>
+                        <Text color="gray" dimColor>
+                          {key}
+                        </Text>
+                      </Box>
+                    );
+                  })
+                )}
+              </Box>
+
+              {/* Vault keys (if open and different from resolved) */}
+              {vaultInfo.isOpen && vaultInfo.keys.length > 0 && (
+                <Box marginTop={1} flexDirection="column">
+                  <Text>
+                    {" "}
+                    <Text bold>Vault Keys ({vaultInfo.keyCount})</Text>
+                  </Text>
+                  {vaultInfo.keys.map((key) => {
+                    const info = KEY_LABELS[key];
+                    return (
+                      <Box key={key}>
+                        <Text color="gray"> ◆ </Text>
+                        <Text>{(info?.label ?? key).padEnd(20)}</Text>
+                        <Text color="gray" dimColor>
+                          {key}
+                        </Text>
+                      </Box>
+                    );
+                  })}
+                </Box>
+              )}
+            </Box>
+          ) : (
+            <Box marginTop={1} flexDirection="column">
+              <Text color="gray" dimColor>
+                {" "}
+                Vault info not available.
+              </Text>
+              <Text color="gray" dimColor>
+                {" "}
+                Run `brainstorm vault init` to create.
+              </Text>
+            </Box>
+          )}
+
+          {/* Quick commands */}
           <Box marginTop={1} flexDirection="column">
             <Text>
               {" "}
-              <Text bold>Vault & Keys</Text>
+              <Text bold>Commands</Text>
             </Text>
             <Text color="gray"> /vault list Show stored keys</Text>
-            <Text color="gray"> /vault add NAME Add a key</Text>
-            <Text color="gray"> Resolver: vault → 1Password → env</Text>
-          </Box>
-
-          <Box marginTop={1} flexDirection="column">
-            <Text>
-              {" "}
-              <Text bold>Workflows</Text>
-            </Text>
-            <Text color="gray"> storm workflow list</Text>
-            <Text color="gray"> storm workflow run implement-feature</Text>
-            <Text color="gray"> storm workflow run fix-bug</Text>
-          </Box>
-
-          <Box marginTop={1} flexDirection="column">
-            <Text>
-              {" "}
-              <Text bold>Config File</Text>
-            </Text>
-            <Text color="gray"> ~/.brainstorm/config.toml</Text>
+            <Text color="gray"> /vault add KEY Add a key</Text>
+            <Text color="gray"> /role Show available roles</Text>
           </Box>
         </Box>
       </Box>
