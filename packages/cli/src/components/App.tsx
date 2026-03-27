@@ -8,6 +8,7 @@
 import React, { useState } from "react";
 import { Box, useApp, useInput } from "ink";
 import { useMode, type TUIMode } from "../hooks/useMode.js";
+import { useBRData } from "../hooks/useBRData.js";
 import { ModeBar } from "./ModeBar.js";
 import { KeyHint } from "./KeyHint.js";
 import { ChatApp } from "./ChatApp.js";
@@ -48,6 +49,8 @@ interface AppProps {
     opAvailable: boolean;
     resolvedKeys: string[];
   };
+  /** BrainstormRouter gateway client for dashboard data */
+  gateway?: any;
 }
 
 interface RoutingEntry {
@@ -76,6 +79,7 @@ export function App(props: AppProps) {
   const [toolStats, setToolStats] = useState<Map<string, ToolStat>>(new Map());
   const [turnCount, setTurnCount] = useState(0);
   const [sessionStart] = useState(Date.now());
+  const { data: brData, refresh: refreshBR } = useBRData(props.gateway ?? null);
 
   // Global key handler for mode switching
   //
@@ -101,11 +105,15 @@ export function App(props: AppProps) {
       return;
     }
 
-    // In non-chat modes: number keys switch modes, Tab cycles
+    // In non-chat modes: number keys switch modes, Tab cycles, r refreshes
     if (mode !== "chat") {
       if (setModeByKey(input)) return;
       if (key.tab) {
         cycleMode();
+        return;
+      }
+      if (input === "r" && mode === "dashboard") {
+        refreshBR();
         return;
       }
     }
@@ -230,6 +238,8 @@ export function App(props: AppProps) {
           toolStats={Array.from(toolStats.values())}
           turnCount={turnCount}
           sessionStart={sessionStart}
+          brData={brData}
+          onRefreshBR={refreshBR}
         />
       )}
 
