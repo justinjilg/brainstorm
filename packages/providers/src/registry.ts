@@ -96,6 +96,15 @@ export async function createProviderRegistry(
       headers: { Authorization: `Bearer ${deepseekKey}` },
     });
   }
+  const moonshotKey = getKey("MOONSHOT_API_KEY");
+  if (moonshotKey) {
+    availableCloudProviders.add("moonshot");
+    providers.moonshot = createOpenAICompatible({
+      name: "moonshot",
+      baseURL: "https://api.moonshot.ai/v1",
+      headers: { Authorization: `Bearer ${moonshotKey}` },
+    });
+  }
 
   // Include all cloud models reachable via SaaS or direct keys.
   // Models with direct provider keys are marked preferred for routing.

@@ -52,6 +52,7 @@ const PROVIDER_KEY_NAMES = [
   "OPENAI_API_KEY",
   "GOOGLE_GENERATIVE_AI_API_KEY",
   "DEEPSEEK_API_KEY",
+  "MOONSHOT_API_KEY",
   "BRAINSTORM_ADMIN_KEY",
 ];
 
@@ -913,7 +914,8 @@ program
         !!resolvedKeys.get("DEEPSEEK_API_KEY") ||
         !!resolvedKeys.get("ANTHROPIC_API_KEY") ||
         !!resolvedKeys.get("OPENAI_API_KEY") ||
-        !!resolvedKeys.get("GOOGLE_GENERATIVE_AI_API_KEY");
+        !!resolvedKeys.get("GOOGLE_GENERATIVE_AI_API_KEY") ||
+        !!resolvedKeys.get("MOONSHOT_API_KEY");
       if (opts.strategy) {
         router.setStrategy(opts.strategy as any);
       } else if (!isCommunityTier || hasDirectKeys) {
@@ -945,13 +947,15 @@ program
         disableTools: !opts.tools,
         preferredModelId:
           opts.model ??
-          (isCommunityTier &&
-          !resolvedKeys.get("DEEPSEEK_API_KEY") &&
-          !resolvedKeys.get("ANTHROPIC_API_KEY") &&
-          !resolvedKeys.get("OPENAI_API_KEY") &&
-          !resolvedKeys.get("GOOGLE_GENERATIVE_AI_API_KEY")
-            ? "brainstormrouter/auto"
-            : undefined),
+          (resolvedKeys.get("MOONSHOT_API_KEY")
+            ? "moonshot/kimi-k2.5"
+            : isCommunityTier &&
+                !resolvedKeys.get("DEEPSEEK_API_KEY") &&
+                !resolvedKeys.get("ANTHROPIC_API_KEY") &&
+                !resolvedKeys.get("OPENAI_API_KEY") &&
+                !resolvedKeys.get("GOOGLE_GENERATIVE_AI_API_KEY")
+              ? "brainstormrouter/auto"
+              : undefined),
         maxSteps: parseInt(opts.maxSteps ?? "1"),
         compaction: buildCompactionCallbacks(sessionManager),
         permissionCheck: (tool, args) => permissionManager.check(tool, args),
@@ -1533,6 +1537,7 @@ program
         !!resolvedKeys.get("DEEPSEEK_API_KEY") ||
         !!resolvedKeys.get("ANTHROPIC_API_KEY") ||
         !!resolvedKeys.get("OPENAI_API_KEY") ||
+        !!resolvedKeys.get("MOONSHOT_API_KEY") ||
         !!resolvedKeys.get("GOOGLE_GENERATIVE_AI_API_KEY");
       if (opts.strategy) {
         router.setStrategy(opts.strategy as any);
@@ -1563,9 +1568,14 @@ program
         !!resolvedKeys.get("DEEPSEEK_API_KEY") ||
         !!resolvedKeys.get("ANTHROPIC_API_KEY") ||
         !!resolvedKeys.get("OPENAI_API_KEY") ||
-        !!resolvedKeys.get("GOOGLE_GENERATIVE_AI_API_KEY");
-      let preferredModelId: string | undefined =
-        isCommunityTier && !hasDirectProviderKeys
+        !!resolvedKeys.get("GOOGLE_GENERATIVE_AI_API_KEY") ||
+        !!resolvedKeys.get("MOONSHOT_API_KEY");
+      // Default model: Kimi K2.5 when key available, otherwise router decides
+      let preferredModelId: string | undefined = resolvedKeys.get(
+        "MOONSHOT_API_KEY",
+      )
+        ? "moonshot/kimi-k2.5"
+        : isCommunityTier && !hasDirectProviderKeys
           ? "brainstormrouter/auto"
           : undefined;
 

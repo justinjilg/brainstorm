@@ -295,6 +295,45 @@ export const CLOUD_MODELS: ModelEntry[] = [
     isLocal: false,
     lastHealthCheck: 0,
   },
+  // ── Moonshot (Kimi) ────────────────────────────────────────────────
+  {
+    id: "moonshot/kimi-k2.5",
+    provider: "moonshot",
+    name: "Kimi K2.5",
+    capabilities: {
+      toolCalling: true,
+      streaming: true,
+      vision: true,
+      reasoning: true,
+      contextWindow: 131072,
+      qualityTier: 1,
+      speedTier: 2,
+      bestFor: [
+        "code-generation",
+        "debugging",
+        "refactoring",
+        "analysis",
+        "multi-file-edit",
+      ],
+      capabilityScores: {
+        toolSelection: 0.88,
+        toolSequencing: 0.84,
+        codeGeneration: 0.9,
+        multiStepReasoning: 0.87,
+        instructionFollowing: 0.86,
+        contextUtilization: 0.85,
+        selfCorrection: 0.8,
+      },
+    },
+    pricing: {
+      inputPer1MTokens: 0.6,
+      outputPer1MTokens: 2.4,
+    },
+    limits: { contextWindow: 131072, maxOutputTokens: 16384 },
+    status: "available",
+    isLocal: false,
+    lastHealthCheck: 0,
+  },
   // ── DeepSeek ───────────────────────────────────────────────────────
   {
     id: "deepseek/deepseek-chat",
