@@ -1200,35 +1200,52 @@ function promptPassword(prompt: string): Promise<string> {
   if (envPassword) return Promise.resolve(envPassword);
 
   return new Promise((resolve, reject) => {
-    const rl = createInterface({
-      input: process.stdin,
-      output: process.stderr,
-    });
     process.stderr.write(prompt);
-    // Disable echo
-    if (process.stdin.isTTY) process.stdin.setRawMode?.(true);
+
+    // Always try to set raw mode to prevent terminal echo
+    let rawModeWasSet = false;
+    try {
+      if (process.stdin.setRawMode) {
+        process.stdin.setRawMode(true);
+        rawModeWasSet = true;
+      }
+    } catch {
+      // Some environments don't support raw mode
+    }
+
+    // Ensure stdin is in flowing mode
+    if (process.stdin.isPaused?.()) process.stdin.resume();
+
     let password = "";
+    const cleanup = () => {
+      process.stdin.removeListener("data", onData);
+      if (rawModeWasSet) {
+        try {
+          process.stdin.setRawMode?.(false);
+        } catch {
+          /* ignore */
+        }
+      }
+      process.stderr.write("\n");
+    };
+
     const onData = (ch: Buffer) => {
       const c = ch.toString();
       if (c === "\n" || c === "\r" || c === "\u0004") {
-        if (process.stdin.isTTY) process.stdin.setRawMode?.(false);
-        process.stdin.removeListener("data", onData);
-        process.stderr.write("\n");
-        rl.close();
+        cleanup();
         resolve(password);
       } else if (c === "\u0003") {
-        if (process.stdin.isTTY) process.stdin.setRawMode?.(false);
-        process.stdin.removeListener("data", onData);
-        rl.close();
+        cleanup();
         reject(new Error("Cancelled"));
       } else if (c === "\u007F" || c === "\b") {
         if (password.length > 0) {
           password = password.slice(0, -1);
-          process.stderr.write("\b \b"); // Erase the * character
+          process.stderr.write("\b \b");
         }
-      } else {
+      } else if (c.charCodeAt(0) >= 32) {
+        // Only accept printable characters
         password += c;
-        process.stderr.write("*"); // Show * for each character typed
+        process.stderr.write("*");
       }
     };
     process.stdin.on("data", onData);
@@ -1898,6 +1915,15 @@ program
             permissionMode: config.general.defaultPermissionMode ?? "confirm",
             outputStyle: config.general.outputStyle ?? "concise",
             sandbox: config.shell?.sandbox ?? "none",
+          },
+          vaultInfo: {
+            exists: new BrainstormVault(VAULT_PATH).exists(),
+            isOpen: false,
+            keyCount: 0,
+            keys: [],
+            createdAt: null,
+            opAvailable: !!process.env.OP_SERVICE_ACCOUNT_TOKEN,
+            resolvedKeys: PROVIDER_KEY_NAMES.filter((k) => resolvedKeys.get(k)),
           },
           slashCallbacks: {
             setModel: (model: string) => {
