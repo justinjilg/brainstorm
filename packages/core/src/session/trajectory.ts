@@ -14,21 +14,21 @@
  * BrainstormRouter routing metadata that no other tool captures.
  */
 
-import { mkdirSync, appendFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
+import { mkdirSync, appendFile, existsSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
 
 export type TrajectoryEventType =
-  | 'session-start'
-  | 'llm-call'
-  | 'tool-call'
-  | 'tool-result'
-  | 'routing-decision'
-  | 'turn-summary'
-  | 'compaction'
-  | 'trajectory-reduction'
-  | 'error'
-  | 'session-end';
+  | "session-start"
+  | "llm-call"
+  | "tool-call"
+  | "tool-result"
+  | "routing-decision"
+  | "turn-summary"
+  | "compaction"
+  | "trajectory-reduction"
+  | "error"
+  | "session-end";
 
 export interface TrajectoryEvent {
   type: TrajectoryEventType;
@@ -83,7 +83,7 @@ export class TrajectoryRecorder {
     this.sessionId = sessionId;
     this.enabled = enabled;
 
-    const dir = join(homedir(), '.brainstorm', 'trajectories');
+    const dir = join(homedir(), ".brainstorm", "trajectories");
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true });
     }
@@ -97,52 +97,71 @@ export class TrajectoryRecorder {
 
   /** Record a session start event. */
   recordSessionStart(metadata: Record<string, unknown>): void {
-    this.record('session-start', metadata);
+    this.record("session-start", metadata);
   }
 
   /** Record an LLM call. */
   recordLLMCall(data: LLMCallData): void {
-    this.record('llm-call', data as unknown as Record<string, unknown>);
+    this.record("llm-call", data as unknown as Record<string, unknown>);
   }
 
   /** Record a tool call (before execution). */
   recordToolCall(data: ToolCallData): void {
-    this.record('tool-call', data as unknown as Record<string, unknown>);
+    this.record("tool-call", data as unknown as Record<string, unknown>);
   }
 
   /** Record a tool result (after execution). */
   recordToolResult(data: ToolResultData): void {
-    this.record('tool-result', data as unknown as Record<string, unknown>);
+    this.record("tool-result", data as unknown as Record<string, unknown>);
   }
 
   /** Record a routing decision. */
   recordRoutingDecision(data: RoutingDecisionData): void {
-    this.record('routing-decision', data as unknown as Record<string, unknown>);
+    this.record("routing-decision", data as unknown as Record<string, unknown>);
   }
 
   /** Record a turn summary (TurnContext snapshot). */
   recordTurnSummary(data: Record<string, unknown>): void {
-    this.record('turn-summary', data);
+    this.record("turn-summary", data);
   }
 
   /** Record a compaction event. */
-  recordCompaction(data: { messagesBefore: number; messagesAfter: number; tokensSaved: number }): void {
-    this.record('compaction', data as unknown as Record<string, unknown>);
+  recordCompaction(data: {
+    messagesBefore: number;
+    messagesAfter: number;
+    tokensSaved: number;
+  }): void {
+    this.record("compaction", data as unknown as Record<string, unknown>);
   }
 
   /** Record a trajectory reduction event. */
-  recordReduction(data: { removedCount: number; tokensSaved: number; reasons: Record<string, number> }): void {
-    this.record('trajectory-reduction', data as unknown as Record<string, unknown>);
+  recordReduction(data: {
+    removedCount: number;
+    tokensSaved: number;
+    reasons: Record<string, number>;
+  }): void {
+    this.record(
+      "trajectory-reduction",
+      data as unknown as Record<string, unknown>,
+    );
   }
 
   /** Record an error. */
-  recordError(data: { message: string; recoveryAction?: string; model?: string }): void {
-    this.record('error', data as unknown as Record<string, unknown>);
+  recordError(data: {
+    message: string;
+    recoveryAction?: string;
+    model?: string;
+  }): void {
+    this.record("error", data as unknown as Record<string, unknown>);
   }
 
   /** Record session end. */
-  recordSessionEnd(data: { totalCost: number; totalTurns: number; durationMs: number }): void {
-    this.record('session-end', data as unknown as Record<string, unknown>);
+  recordSessionEnd(data: {
+    totalCost: number;
+    totalTurns: number;
+    durationMs: number;
+  }): void {
+    this.record("session-end", data as unknown as Record<string, unknown>);
   }
 
   /** Get the trajectory file path. */
@@ -150,7 +169,10 @@ export class TrajectoryRecorder {
     return this.filePath;
   }
 
-  private record(type: TrajectoryEventType, data: Record<string, unknown>): void {
+  private record(
+    type: TrajectoryEventType,
+    data: Record<string, unknown>,
+  ): void {
     if (!this.enabled) return;
 
     const event: TrajectoryEvent = {
@@ -161,10 +183,9 @@ export class TrajectoryRecorder {
       data,
     };
 
-    try {
-      appendFileSync(this.filePath, JSON.stringify(event) + '\n');
-    } catch {
-      // Trajectory recording is best-effort — never fail the user's workflow
-    }
+    // Async write — trajectory recording is best-effort, never blocks the agent loop
+    appendFile(this.filePath, JSON.stringify(event) + "\n", () => {
+      // Fire-and-forget — errors are silently ignored
+    });
   }
 }
