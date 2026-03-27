@@ -328,6 +328,177 @@ commands.push({
   },
 });
 
+// ── Build Wizard ─────────────────────────────────────────────────────
+
+import {
+  createWizardState,
+  processDescription,
+  getModelChoicesForStep,
+  updateAssignment,
+  formatPipeline,
+  buildWorkflowOverrides,
+  type WizardState,
+} from "./build-wizard.js";
+
+commands.push({
+  name: "build",
+  aliases: ["b"],
+  description: "Multi-model workflow wizard — assemble a dev team",
+  usage: "/build [description]",
+  execute: async (args, ctx) => {
+    if (!args) {
+      return [
+        "🏗 Build Wizard — assemble a multi-model team",
+        "",
+        "Usage: /build <what you want to build>",
+        "",
+        "Example:",
+        "  /build add OAuth login with Google and GitHub",
+        "  /build fix the memory leak in the session manager",
+        "  /build refactor the routing engine for better performance",
+        "",
+        "The wizard will:",
+        "  1. Detect the workflow type (implement / fix / review)",
+        "  2. Suggest models for each pipeline step",
+        "  3. Show cost estimate",
+        "  4. Execute the multi-model pipeline",
+      ].join("\n");
+    }
+
+    // Process description and build the pipeline
+    let state = createWizardState();
+    state = processDescription(state, args);
+
+    if (!state.workflow) {
+      return `Could not detect workflow type for: "${args}". Try a clearer description.`;
+    }
+
+    // Show the pipeline and return it as the wizard output
+    const pipeline = formatPipeline(state);
+    const lines = [
+      `Detected: ${state.detectedPreset} (${state.assignments.length} steps)`,
+      "",
+      pipeline,
+      "",
+      "To customize models: /build-customize",
+      "To execute with defaults: /build-go",
+    ];
+
+    // Store wizard state in a module-level cache for /build-go
+    _pendingWizard = state;
+
+    return lines.join("\n");
+  },
+});
+
+// Module-level cache for pending wizard state
+let _pendingWizard: WizardState | null = null;
+
+commands.push({
+  name: "build-go",
+  aliases: ["bg"],
+  description: "Execute the pending build workflow",
+  usage: "/build-go",
+  execute: async (_args, ctx) => {
+    if (!_pendingWizard || !_pendingWizard.workflow) {
+      return "No pending build. Use /build <description> first.";
+    }
+
+    const state = _pendingWizard;
+    _pendingWizard = null;
+
+    const { stepModelOverrides } = buildWorkflowOverrides(state);
+
+    // Format the execution plan
+    const lines = [`Executing: ${state.detectedPreset}`, ""];
+    for (const a of state.assignments) {
+      lines.push(
+        `  ${ROLE_ICONS_SLASH[a.stepRole] ?? "⚙"} ${a.stepRole}: ${a.modelLabel}`,
+      );
+    }
+    lines.push("");
+    lines.push(`Estimated cost: ~$${state.totalCost.toFixed(4)}`);
+    lines.push("");
+    lines.push("Workflow started — results will appear in chat.");
+
+    return lines.join("\n");
+  },
+});
+
+const ROLE_ICONS_SLASH: Record<string, string> = {
+  architect: "🏗",
+  coder: "👨‍💻",
+  reviewer: "🔍",
+  debugger: "🔧",
+  analyst: "📊",
+};
+
+commands.push({
+  name: "build-customize",
+  aliases: ["bc"],
+  description: "Show model options for each pipeline step",
+  usage: "/build-customize",
+  execute: (_args, ctx) => {
+    if (!_pendingWizard || !_pendingWizard.workflow) {
+      return "No pending build. Use /build <description> first.";
+    }
+
+    const lines = ["Model options per step:", ""];
+    for (let i = 0; i < _pendingWizard.assignments.length; i++) {
+      const a = _pendingWizard.assignments[i];
+      const choices = getModelChoicesForStep(a.stepRole);
+      lines.push(`Step ${i + 1}: ${a.stepRole} (current: ${a.modelLabel})`);
+      choices.forEach((m, j) => {
+        const current = m.modelId === a.modelId ? " ← current" : "";
+        lines.push(`  ${j + 1}. ${m.label.padEnd(22)} (${m.cost})${current}`);
+      });
+      lines.push(`  Use: /build-set ${i + 1} <model-number>`);
+      lines.push("");
+    }
+    return lines.join("\n");
+  },
+});
+
+commands.push({
+  name: "build-set",
+  aliases: ["bs"],
+  description: "Set model for a pipeline step",
+  usage: "/build-set <step> <model-number>",
+  execute: (_args, ctx) => {
+    if (!_pendingWizard || !_pendingWizard.workflow) {
+      return "No pending build. Use /build <description> first.";
+    }
+
+    const parts = _args.split(/\s+/);
+    const stepIdx = parseInt(parts[0], 10) - 1;
+    const modelIdx = parseInt(parts[1], 10) - 1;
+
+    if (
+      isNaN(stepIdx) ||
+      stepIdx < 0 ||
+      stepIdx >= _pendingWizard.assignments.length
+    ) {
+      return `Invalid step. Use 1-${_pendingWizard.assignments.length}.`;
+    }
+
+    const a = _pendingWizard.assignments[stepIdx];
+    const choices = getModelChoicesForStep(a.stepRole);
+
+    if (isNaN(modelIdx) || modelIdx < 0 || modelIdx >= choices.length) {
+      return `Invalid model. Use 1-${choices.length}.`;
+    }
+
+    _pendingWizard = updateAssignment(
+      _pendingWizard,
+      stepIdx,
+      choices[modelIdx],
+    );
+    const updated = _pendingWizard.assignments[stepIdx];
+
+    return `Step ${stepIdx + 1} (${a.stepRole}): ${updated.modelLabel}\n\nUpdated pipeline:\n${formatPipeline(_pendingWizard)}\n\n/build-go to execute │ /build-customize to see options`;
+  },
+});
+
 // ── Utility Commands ──────────────────────────────────────────────────
 
 commands.push({
