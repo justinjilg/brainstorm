@@ -70,6 +70,7 @@ interface BackgroundTask {
 }
 
 const backgroundTasks = new Map<string, BackgroundTask>();
+const MAX_BACKGROUND_TASKS = 50;
 let nextTaskId = 0;
 
 type BackgroundEvent = {
@@ -82,6 +83,7 @@ type BackgroundEvent = {
 
 let backgroundEventHandler: ((event: BackgroundEvent) => void) | null = null;
 const pendingEvents: BackgroundEvent[] = [];
+const MAX_PENDING_EVENTS = 100;
 
 /** Set a callback for background task completion events. Replays any queued events. */
 export function setBackgroundEventHandler(
@@ -318,7 +320,8 @@ export const shellTool = defineTool({
         if (backgroundEventHandler) {
           backgroundEventHandler(event);
         } else {
-          pendingEvents.push(event);
+          if (pendingEvents.length < MAX_PENDING_EVENTS)
+            pendingEvents.push(event);
         }
       };
 
