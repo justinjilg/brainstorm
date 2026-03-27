@@ -12,6 +12,11 @@ interface VaultInfo {
   resolvedKeys: string[];
 }
 
+interface MemoryInfo {
+  localCount: number;
+  types: Record<string, number>;
+}
+
 interface ConfigModeProps {
   strategy: string;
   permissionMode: string;
@@ -22,6 +27,7 @@ interface ConfigModeProps {
   turnCount?: number;
   sessionCost?: number;
   vaultInfo?: VaultInfo;
+  memoryInfo?: MemoryInfo;
 }
 
 function ConfigItem({
@@ -97,6 +103,7 @@ export function ConfigMode({
   turnCount,
   sessionCost,
   vaultInfo,
+  memoryInfo,
 }: ConfigModeProps) {
   const modeColor =
     permissionMode === "auto"
@@ -306,6 +313,23 @@ export function ConfigMode({
             </Box>
           )}
 
+          {/* Memory */}
+          {memoryInfo && (
+            <Box marginTop={1} flexDirection="column">
+              <Text>
+                {" "}
+                <Text bold>Memory ({memoryInfo.localCount} entries)</Text>
+              </Text>
+              {Object.entries(memoryInfo.types).map(([type, count]) => (
+                <Text key={type} color="gray">
+                  {"      "}
+                  {type.padEnd(12)} {count}
+                </Text>
+              ))}
+              <Text color="gray"> /dream to consolidate</Text>
+            </Box>
+          )}
+
           {/* Quick commands */}
           <Box marginTop={1} flexDirection="column">
             <Text>
@@ -313,8 +337,9 @@ export function ConfigMode({
               <Text bold>Commands</Text>
             </Text>
             <Text color="gray"> /vault list Show stored keys</Text>
-            <Text color="gray"> /vault add KEY Add a key</Text>
             <Text color="gray"> /role Show available roles</Text>
+            <Text color="gray"> /recommend Get model suggestion</Text>
+            <Text color="gray"> /stats Session analytics</Text>
           </Box>
         </Box>
       </Box>

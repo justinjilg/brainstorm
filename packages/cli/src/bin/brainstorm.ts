@@ -1928,6 +1928,20 @@ program
             opAvailable: !!process.env.OP_SERVICE_ACCOUNT_TOKEN,
             resolvedKeys: PROVIDER_KEY_NAMES.filter((k) => resolvedKeys.get(k)),
           },
+          memoryInfo: await (async () => {
+            try {
+              const { MemoryManager } = await import("@brainstorm/core");
+              const mem = new MemoryManager(projectPath);
+              const entries = mem.list();
+              const types: Record<string, number> = {};
+              for (const e of entries) {
+                types[e.type] = (types[e.type] ?? 0) + 1;
+              }
+              return { localCount: entries.length, types };
+            } catch {
+              return { localCount: 0, types: {} };
+            }
+          })(),
           slashCallbacks: {
             setModel: (model: string) => {
               preferredModelId = model;
