@@ -122,7 +122,13 @@ export function App(props: AppProps) {
         role={currentRole}
       />
 
-      {mode === "chat" && (
+      {/* ChatApp is always mounted to preserve conversation state.
+          Hidden via display:none when other modes are active. */}
+      <Box
+        flexDirection="column"
+        flexGrow={mode === "chat" ? 1 : 0}
+        display={mode === "chat" ? "flex" : "none"}
+      >
         <ChatApp
           strategy={props.strategy}
           modelCount={props.modelCount}
@@ -130,7 +136,7 @@ export function App(props: AppProps) {
           onAbort={props.onAbort}
           slashCallbacks={wrappedSlashCallbacks}
         />
-      )}
+      </Box>
 
       {mode === "dashboard" && (
         <DashboardMode
