@@ -348,20 +348,11 @@ commands.push({
   execute: async (args, ctx) => {
     if (!args) {
       return [
-        "🏗 Build Wizard — assemble a multi-model team",
+        "Build Wizard",
         "",
-        "Usage: /build <what you want to build>",
-        "",
-        "Example:",
-        "  /build add OAuth login with Google and GitHub",
-        "  /build fix the memory leak in the session manager",
-        "  /build refactor the routing engine for better performance",
-        "",
-        "The wizard will:",
-        "  1. Detect the workflow type (implement / fix / review)",
-        "  2. Suggest models for each pipeline step",
-        "  3. Show cost estimate",
-        "  4. Execute the multi-model pipeline",
+        "/build add OAuth login",
+        "/build fix the auth bug",
+        "/build review the routing code",
       ].join("\n");
     }
 
@@ -376,16 +367,11 @@ commands.push({
     // Show the pipeline and return it as the wizard output
     const pipeline = formatPipeline(state);
     const lines = [
-      `Detected: ${state.detectedPreset} (${state.assignments.length} steps)`,
-      "",
       pipeline,
       "",
-      "Next steps — type one of these commands:",
-      "",
-      "  /build-go          Execute this pipeline now",
-      "  /build-customize   See all model options per step",
-      "  /build-set 1 2     Change step 1 to model #2",
-      "  /build             Start over with a new description",
+      "/build-go to run",
+      "/build-set 1 2 to change step 1",
+      "/build-customize for all options",
     ];
 
     // Store wizard state in a module-level cache for /build-go
@@ -451,12 +437,12 @@ commands.push({
     for (let i = 0; i < _pendingWizard.assignments.length; i++) {
       const a = _pendingWizard.assignments[i];
       const choices = getModelChoicesForStep(a.stepRole);
-      lines.push(`Step ${i + 1}: ${a.stepRole} (current: ${a.modelLabel})`);
+      lines.push(`${i + 1}. ${a.stepRole} [${a.modelLabel}]`);
       choices.forEach((m, j) => {
-        const current = m.modelId === a.modelId ? " ← current" : "";
-        lines.push(`  ${j + 1}. ${m.label.padEnd(22)} (${m.cost})${current}`);
+        const cur = m.modelId === a.modelId ? " ←" : "";
+        lines.push(`   ${j + 1}. ${m.label} ${m.cost}${cur}`);
       });
-      lines.push(`  Use: /build-set ${i + 1} <model-number>`);
+      lines.push(`   /build-set ${i + 1} N`);
       lines.push("");
     }
     return lines.join("\n");
@@ -499,7 +485,7 @@ commands.push({
     );
     const updated = _pendingWizard.assignments[stepIdx];
 
-    return `Step ${stepIdx + 1} (${a.stepRole}): ${updated.modelLabel}\n\nUpdated pipeline:\n${formatPipeline(_pendingWizard)}\n\n/build-go to execute │ /build-customize to see options`;
+    return `${a.stepRole} → ${updated.modelLabel}\n\n${formatPipeline(_pendingWizard)}\n\n/build-go to run`;
   },
 });
 

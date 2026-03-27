@@ -232,28 +232,26 @@ export function formatPipeline(state: WizardState): string {
   if (!state.workflow || state.assignments.length === 0) return "";
 
   const lines: string[] = [];
-  lines.push(`  Pipeline: ${state.detectedPreset}`);
-  lines.push("");
+  lines.push(`${state.detectedPreset}`);
 
   for (let i = 0; i < state.assignments.length; i++) {
     const a = state.assignments[i];
     const step = state.workflow.steps[i];
     const icon = ROLE_ICONS[a.stepRole] ?? "⚙";
-    const num = `[${i + 1}]`;
+    // Short model name (drop provider prefix)
+    const shortModel = a.modelLabel
+      .replace(/^Claude /, "")
+      .replace(/^GPT-/, "GPT-");
     lines.push(
-      `  ${num} ${icon} ${a.stepRole.padEnd(12)} ${a.modelLabel.padEnd(22)} ~$${a.estimatedCost.toFixed(4)}`,
+      `${i + 1}. ${icon} ${a.stepRole} → ${shortModel} ~$${a.estimatedCost.toFixed(3)}`,
     );
 
     if (step?.isReviewStep && step.loopBackTo) {
-      lines.push(`   │  (loops back to ${step.loopBackTo} if rejected)`);
-    }
-    if (i < state.assignments.length - 1) {
-      lines.push("   │");
+      lines.push(`   ↺ loops to ${step.loopBackTo}`);
     }
   }
 
-  lines.push("");
-  lines.push(`  Estimated total: ~$${state.totalCost.toFixed(4)}`);
+  lines.push(`Total: ~$${state.totalCost.toFixed(3)}`);
 
   return lines.join("\n");
 }
