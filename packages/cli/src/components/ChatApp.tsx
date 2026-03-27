@@ -172,7 +172,18 @@ export function ChatApp({
 
   const handleSubmit = useCallback(
     async (text: string) => {
-      if (!text.trim() || isProcessing) return;
+      if (isProcessing) return;
+      if (!text.trim()) {
+        // Brief hint for empty input
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "routing",
+            content: "Type a message or use /help for commands",
+          },
+        ]);
+        return;
+      }
       history.push(text.trim());
 
       // Handle slash commands

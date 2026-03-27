@@ -328,6 +328,19 @@ commands.push({
   },
 });
 
+// ── Utility Commands ──────────────────────────────────────────────────
+
+commands.push({
+  name: "history",
+  aliases: ["hist"],
+  description: "Show recent input history",
+  usage: "/history",
+  execute: (_args, ctx) => {
+    // History is managed in ChatApp's InputHistory — show what's accessible
+    return "Input history:\n  Use ↑/↓ arrow keys to navigate previous inputs.\n  History persists across sessions in ~/.brainstorm/input-history.json";
+  },
+});
+
 // ── BR-Powered Commands ───────────────────────────────────────────────
 
 commands.push({
