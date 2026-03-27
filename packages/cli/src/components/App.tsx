@@ -130,6 +130,7 @@ export function App(props: AppProps) {
   // Wrap ChatApp's callbacks to capture shared state
   const wrappedSlashCallbacks = {
     ...props.slashCallbacks,
+    gateway: props.gateway,
     setModel: (model: string) => {
       props.slashCallbacks?.setModel?.(model);
       const name = model.split("/").pop() ?? model;
@@ -145,12 +146,16 @@ export function App(props: AppProps) {
   function wrappedSendMessage(text: string): AsyncGenerator<AgentEvent> {
     setIsProcessing(true);
     const gen = props.onSendMessage(text);
+    let lastRequestId: string | undefined;
+    let lastModelUsed: string | undefined;
 
     return (async function* () {
       try {
         for await (const event of gen) {
           // Capture shared state from events
           if (event.type === "routing") {
+            lastModelUsed =
+              event.decision.model.id ?? event.decision.model.name;
             setCurrentModel(event.decision.model.name);
             setRoutingHistory((prev) => [
               {
@@ -190,10 +195,24 @@ export function App(props: AppProps) {
               return next;
             });
           }
+          // Capture gateway request ID for feedback
+          if (event.type === "gateway-feedback") {
+            lastRequestId = (event as any).feedback?.requestId;
+          }
           if (event.type === "done") {
             setSessionCost(event.totalCost);
             if (event.totalTokens) setTokenCount(event.totalTokens);
             setTurnCount((prev) => prev + 1);
+            // Auto-report outcome to BR for routing improvement
+            if (props.gateway && lastRequestId) {
+              props.gateway
+                .reportOutcome(lastRequestId, {
+                  success: true,
+                  signals: {},
+                  model_used: lastModelUsed,
+                })
+                .catch(() => {}); // fire-and-forget
+            }
           }
           yield event;
         }
