@@ -198,6 +198,7 @@ export function App(props: AppProps) {
           modelCount={props.modelCount}
           onSendMessage={wrappedSendMessage}
           onAbort={props.onAbort}
+          isActive={mode === "chat"}
           slashCallbacks={wrappedSlashCallbacks}
         />
       </Box>

@@ -24,6 +24,8 @@ interface ChatAppProps {
   modelCount: { local: number; cloud: number };
   onSendMessage: (text: string) => AsyncGenerator<AgentEvent>;
   onAbort?: () => void;
+  /** When false, ChatApp ignores keyboard input (hidden behind another mode). */
+  isActive?: boolean;
   /** Mutable context for slash commands — callbacks that affect session state */
   slashCallbacks?: {
     setModel?: (model: string) => void;
@@ -48,6 +50,7 @@ export function ChatApp({
   modelCount,
   onSendMessage,
   onAbort,
+  isActive = true,
   slashCallbacks,
 }: ChatAppProps) {
   const { exit } = useApp();
@@ -75,6 +78,9 @@ export function ChatApp({
 
   // Keybinding handler + input history navigation + scrolling
   useInput((inputChar, key) => {
+    // Skip all input when ChatApp is not the active mode
+    if (!isActive) return;
+
     // Shift+Up/Down for scrolling message history
     if (key.upArrow && key.shift) {
       setScrollOffset((prev) =>
