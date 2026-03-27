@@ -41,6 +41,20 @@ interface AppProps {
   };
 }
 
+interface RoutingEntry {
+  model: string;
+  strategy: string;
+  reason: string;
+  timestamp: number;
+}
+
+interface ToolStat {
+  name: string;
+  calls: number;
+  successes: number;
+  lastDuration?: number;
+}
+
 export function App(props: AppProps) {
   const { exit } = useApp();
   const { mode, setMode, cycleMode, setModeByKey } = useMode("chat");
@@ -49,6 +63,10 @@ export function App(props: AppProps) {
   const [currentModel, setCurrentModel] = useState<string | undefined>();
   const [currentRole, setCurrentRole] = useState<string | undefined>();
   const [isProcessing, setIsProcessing] = useState(false);
+  const [routingHistory, setRoutingHistory] = useState<RoutingEntry[]>([]);
+  const [toolStats, setToolStats] = useState<Map<string, ToolStat>>(new Map());
+  const [turnCount, setTurnCount] = useState(0);
+  const [sessionStart] = useState(Date.now());
 
   // Global key handler for mode switching
   useInput((input, key) => {
@@ -100,10 +118,48 @@ export function App(props: AppProps) {
           // Capture shared state from events
           if (event.type === "routing") {
             setCurrentModel(event.decision.model.name);
+            setRoutingHistory((prev) => [
+              {
+                model: event.decision.model.name,
+                strategy: event.decision.strategy,
+                reason: event.decision.reason,
+                timestamp: Date.now(),
+              },
+              ...prev.slice(0, 9),
+            ]);
+          }
+          if (event.type === "tool-call-start") {
+            setToolStats((prev) => {
+              const next = new Map(prev);
+              const existing = next.get(event.toolName) ?? {
+                name: event.toolName,
+                calls: 0,
+                successes: 0,
+              };
+              next.set(event.toolName, {
+                ...existing,
+                calls: existing.calls + 1,
+              });
+              return next;
+            });
+          }
+          if (event.type === "tool-call-result") {
+            setToolStats((prev) => {
+              const next = new Map(prev);
+              const existing = next.get(event.toolName);
+              if (existing) {
+                next.set(event.toolName, {
+                  ...existing,
+                  successes: existing.successes + 1,
+                });
+              }
+              return next;
+            });
           }
           if (event.type === "done") {
             setSessionCost(event.totalCost);
             if (event.totalTokens) setTokenCount(event.totalTokens);
+            setTurnCount((prev) => prev + 1);
           }
           yield event;
         }
@@ -143,10 +199,24 @@ export function App(props: AppProps) {
           sessionCost={sessionCost}
           tokenCount={tokenCount}
           modelCount={props.modelCount}
+          routingHistory={routingHistory}
+          toolStats={Array.from(toolStats.values())}
+          turnCount={turnCount}
+          sessionStart={sessionStart}
         />
       )}
 
-      {mode === "models" && <ModelsMode models={props.models ?? []} />}
+      {mode === "models" && (
+        <ModelsMode
+          models={props.models ?? []}
+          onSelectModel={(id) => {
+            props.slashCallbacks?.setModel?.(id);
+            const name = id.split("/").pop() ?? id;
+            setCurrentModel(name);
+            setMode("chat");
+          }}
+        />
+      )}
 
       {mode === "config" && (
         <ConfigMode
@@ -155,6 +225,9 @@ export function App(props: AppProps) {
           outputStyle={props.configInfo?.outputStyle ?? "concise"}
           sandbox={props.configInfo?.sandbox ?? "none"}
           role={currentRole}
+          modelCount={props.modelCount}
+          turnCount={turnCount}
+          sessionCost={sessionCost}
         />
       )}
 
