@@ -42,13 +42,13 @@ export function MessageList({
   return (
     <Box flexDirection="column" flexGrow={1} paddingX={1}>
       {hiddenAbove > 0 && (
-        <Text color="gray" dimColor>
+        <Text color="gray">
           {"  "}↑ {hiddenAbove} earlier message{hiddenAbove > 1 ? "s" : ""}{" "}
           (Shift+↑ to scroll)
         </Text>
       )}
       {visibleMessages.map((msg, i) => (
-        <MessageBubble key={messages.indexOf(msg)} message={msg} />
+        <MessageBubble key={i} message={msg} />
       ))}
     </Box>
   );

@@ -80,6 +80,7 @@ export function App(props: AppProps) {
   const [turnCount, setTurnCount] = useState(0);
   const [sessionStart] = useState(Date.now());
   const { data: brData, refresh: refreshBR } = useBRData(props.gateway ?? null);
+  const [lastCtrlD, setLastCtrlD] = useState(0);
 
   // Global key handler for mode switching
   //
@@ -118,9 +119,14 @@ export function App(props: AppProps) {
       }
     }
 
-    // Ctrl+D exits from anywhere
+    // Ctrl+D: double-press within 2s to exit
     if (input === "d" && key.ctrl) {
-      exit();
+      const now = Date.now();
+      if (lastCtrlD > 0 && now - lastCtrlD < 2000) {
+        exit();
+      } else {
+        setLastCtrlD(now);
+      }
       return;
     }
   });
@@ -195,9 +201,13 @@ export function App(props: AppProps) {
               return next;
             });
           }
-          // Capture gateway request ID for feedback
+          // Capture gateway feedback: request ID + live cost update
           if (event.type === "gateway-feedback") {
             lastRequestId = (event as any).feedback?.requestId;
+            const actualCost = (event as any).feedback?.actualCost;
+            if (typeof actualCost === "number" && actualCost > 0) {
+              setSessionCost((prev) => Math.max(prev, actualCost));
+            }
           }
           if (event.type === "done") {
             setSessionCost(event.totalCost);
