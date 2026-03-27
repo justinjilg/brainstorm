@@ -15,6 +15,7 @@ interface ModelInfo {
 
 interface ModelsModeProps {
   models: ModelInfo[];
+  currentModelId?: string;
   onSelectModel?: (modelId: string) => void;
 }
 
@@ -30,8 +31,20 @@ const SPEED_BARS: Record<number, { label: string; value: number }> = {
   3: { label: "Slow", value: 33 },
 };
 
-export function ModelsMode({ models, onSelectModel }: ModelsModeProps) {
-  const [selectedIdx, setSelectedIdx] = useState(0);
+export function ModelsMode({
+  models,
+  currentModelId,
+  onSelectModel,
+}: ModelsModeProps) {
+  const initialIdx = currentModelId
+    ? Math.max(
+        0,
+        models.findIndex(
+          (m) => m.id === currentModelId || m.name === currentModelId,
+        ),
+      )
+    : 0;
+  const [selectedIdx, setSelectedIdx] = useState(initialIdx);
 
   useInput((input, key) => {
     if (key.downArrow || input === "j") {

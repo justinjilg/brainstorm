@@ -280,7 +280,7 @@ export function formatModelMenu(roleId: RoleId): string {
     return `  ${num}. ${m.label.padEnd(22)} (${m.cost} per 1M)${def}`;
   });
 
-  return `\n${header}\n${choices.join("\n")}\n\nModel [1-${role.modelChoices.length}, Enter=default]:`;
+  return `\n${header}\n${choices.join("\n")}\n\nUse: /${roleId} 1  (or 2, 3, etc.)`;
 }
 
 /**

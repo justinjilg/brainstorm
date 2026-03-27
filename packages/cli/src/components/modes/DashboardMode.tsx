@@ -185,7 +185,7 @@ export function DashboardMode({
                 return (
                   <Box key={tool.name}>
                     <Text color={color}>
-                      {rate >= 90 ? "●" : rate >= 70 ? "●" : "●"}{" "}
+                      {rate >= 90 ? "●" : rate >= 70 ? "◐" : "○"}{" "}
                     </Text>
                     <Text>{tool.name.padEnd(16)}</Text>
                     <Text color="gray">
