@@ -51,6 +51,8 @@ interface AppProps {
   };
   /** BrainstormRouter gateway client for dashboard data */
   gateway?: any;
+  /** Memory info for Config mode */
+  memoryInfo?: { localCount: number; types: Record<string, number> };
 }
 
 interface RoutingEntry {
@@ -296,6 +298,7 @@ export function App(props: AppProps) {
           turnCount={turnCount}
           sessionCost={sessionCost}
           vaultInfo={props.vaultInfo}
+          memoryInfo={props.memoryInfo}
         />
       )}
 
