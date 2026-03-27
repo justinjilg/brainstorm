@@ -1,7 +1,21 @@
 import { execFileSync } from "node:child_process";
 
-/** Default 1Password vault name. Override via config: vault.op_vault_name */
-const DEFAULT_OP_VAULT = "Personal";
+/** Default 1Password vault name. Override via BRAINSTORM_OP_VAULT env var. */
+const DEFAULT_OP_VAULT = "Dev Keys";
+
+/**
+ * Map env var names to 1Password item names.
+ * Env vars use SCREAMING_SNAKE_CASE but 1Password items use human-readable names.
+ */
+const OP_ITEM_NAMES: Record<string, string> = {
+  BRAINSTORM_API_KEY: "BrainstormRouter API Key",
+  ANTHROPIC_API_KEY: "Anthropic API Key",
+  OPENAI_API_KEY: "OpenAI API Key",
+  GOOGLE_GENERATIVE_AI_API_KEY: "Google AI API Key (server)",
+  DEEPSEEK_API_KEY: "DeepSeek API Key",
+  MOONSHOT_API_KEY: "Moonshot API Key",
+  BRAINSTORM_ADMIN_KEY: "BrainstormRouter Admin Key",
+};
 
 /** Cached result of op availability check (stable for process lifetime). */
 let opAvailableCache: boolean | null = null;
@@ -45,7 +59,8 @@ export function opRead(keyName: string, vaultName?: string): string | null {
   try {
     const vault =
       vaultName ?? process.env.BRAINSTORM_OP_VAULT ?? DEFAULT_OP_VAULT;
-    const ref = `op://${vault}/${keyName}/credential`;
+    const itemName = OP_ITEM_NAMES[keyName] ?? keyName;
+    const ref = `op://${vault}/${itemName}/credential`;
     const value = execFileSync("op", ["read", ref], {
       timeout: 10000,
       stdio: ["pipe", "pipe", "pipe"],
