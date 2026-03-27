@@ -289,7 +289,19 @@ commands.push({
     const current = ctx.getActiveRole?.();
     if (current && ROLES[current as RoleId]) {
       const role = ROLES[current as RoleId];
-      return `Current: ${role.icon} ${role.displayName}\nSwitch: /architect, /product-manager, /sr-developer, /jr-developer, /qa\nReset: /default`;
+      const model = ctx.getModel?.() ?? "auto";
+      const lines = [
+        `${role.icon} ${role.displayName} (active)`,
+        `  Model:      ${model}`,
+        `  Tools:      ${role.permissionMode === "plan" ? "read-only" : "all"}`,
+        `  Style:      ${role.outputStyle}`,
+        `  Strategy:   ${role.routingStrategy}`,
+        `  Permission: ${role.permissionMode}`,
+        ``,
+        `Models: ${role.modelChoices.map((m, i) => `${i + 1}.${m.label}`).join(", ")}`,
+        `Switch: /${current} N │ /default to reset`,
+      ];
+      return lines.join("\n");
     }
     const lines = Object.values(ROLES).map(
       (r) =>
