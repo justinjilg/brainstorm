@@ -236,6 +236,7 @@ export function App(props: AppProps) {
       {mode === "models" && (
         <ModelsMode
           models={props.models ?? []}
+          currentModelId={currentModel}
           onSelectModel={(id) => {
             props.slashCallbacks?.setModel?.(id);
             const name = id.split("/").pop() ?? id;
