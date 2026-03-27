@@ -1,5 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
+import { getRoleColor } from "../../theme.js";
 
 interface ConfigModeProps {
   strategy: string;
@@ -7,6 +8,28 @@ interface ConfigModeProps {
   outputStyle: string;
   sandbox: string;
   role?: string;
+  modelCount?: { local: number; cloud: number };
+  turnCount?: number;
+  sessionCost?: number;
+}
+
+function ConfigItem({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: string;
+  color?: string;
+}) {
+  return (
+    <Box>
+      <Text color="gray"> {label.padEnd(18)}</Text>
+      <Text color={color ?? "white"} bold>
+        {value}
+      </Text>
+    </Box>
+  );
 }
 
 export function ConfigMode({
@@ -15,11 +38,21 @@ export function ConfigMode({
   outputStyle,
   sandbox,
   role,
+  modelCount,
+  turnCount,
+  sessionCost,
 }: ConfigModeProps) {
+  const modeColor =
+    permissionMode === "auto"
+      ? "green"
+      : permissionMode === "plan"
+        ? "cyan"
+        : "yellow";
+
   return (
     <Box flexDirection="column" flexGrow={1} paddingX={1}>
       <Box flexDirection="row" flexGrow={1}>
-        {/* Left: Config tree */}
+        {/* Left: Active Configuration */}
         <Box
           borderStyle="round"
           borderColor="gray"
@@ -29,69 +62,82 @@ export function ConfigMode({
         >
           <Text bold color="magenta">
             {" "}
-            Configuration
+            Active Configuration
           </Text>
+
           <Box marginTop={1} flexDirection="column">
             <Text>
               {" "}
               <Text color="green" bold>
                 ●
               </Text>{" "}
-              <Text bold>General</Text>
+              <Text bold>Routing</Text>
             </Text>
-            <Text color="gray">
-              {" "}
-              Strategy: <Text color="white">{strategy}</Text>
-            </Text>
-            <Text color="gray">
-              {" "}
-              Permission: <Text color="white">{permissionMode}</Text>
-            </Text>
-            <Text color="gray">
-              {" "}
-              Output style: <Text color="white">{outputStyle}</Text>
-            </Text>
-            <Text color="gray">
-              {" "}
-              Sandbox: <Text color="white">{sandbox}</Text>
-            </Text>
+            <ConfigItem label="Strategy" value={strategy} />
+            <ConfigItem
+              label="Permission"
+              value={permissionMode}
+              color={modeColor}
+            />
+            <ConfigItem label="Output style" value={outputStyle} />
             {role && (
-              <Text color="gray">
-                {" "}
-                Active role: <Text color="magenta">{role}</Text>
-              </Text>
+              <ConfigItem
+                label="Active role"
+                value={role}
+                color={getRoleColor(role)}
+              />
             )}
-            <Text> </Text>
+          </Box>
+
+          <Box marginTop={1} flexDirection="column">
             <Text>
               {" "}
               <Text color="yellow" bold>
                 ●
               </Text>{" "}
-              <Text bold>Budget</Text>
+              <Text bold>Shell</Text>
             </Text>
-            <Text color="gray"> Edit in ~/.brainstorm/config.toml</Text>
-            <Text> </Text>
+            <ConfigItem
+              label="Sandbox"
+              value={sandbox}
+              color={
+                sandbox === "container"
+                  ? "cyan"
+                  : sandbox === "restricted"
+                    ? "yellow"
+                    : "gray"
+              }
+            />
+          </Box>
+
+          <Box marginTop={1} flexDirection="column">
             <Text>
               {" "}
               <Text color="blue" bold>
                 ●
               </Text>{" "}
-              <Text bold>Providers</Text>
+              <Text bold>Session</Text>
             </Text>
-            <Text color="gray"> Edit in ~/.brainstorm/config.toml</Text>
-            <Text> </Text>
-            <Text>
-              {" "}
-              <Text color="cyan" bold>
-                ●
-              </Text>{" "}
-              <Text bold>MCP Servers</Text>
-            </Text>
-            <Text color="gray"> Edit in ~/.brainstorm/config.toml</Text>
+            {turnCount !== undefined && (
+              <ConfigItem label="Turns" value={String(turnCount)} />
+            )}
+            {sessionCost !== undefined && (
+              <ConfigItem
+                label="Cost"
+                value={`$${sessionCost.toFixed(4)}`}
+                color="yellow"
+              />
+            )}
+            {modelCount && (
+              <ConfigItem
+                label="Models"
+                value={`${modelCount.local} local, ${modelCount.cloud} cloud`}
+              />
+            )}
           </Box>
         </Box>
 
-        {/* Right: Agents + Vault */}
+        {/* Right: Quick Reference */}
         <Box
           borderStyle="round"
           borderColor="gray"
@@ -102,30 +148,48 @@ export function ConfigMode({
         >
           <Text bold color="cyan">
             {" "}
-            Agents & Security
+            Quick Reference
           </Text>
+
           <Box marginTop={1} flexDirection="column">
             <Text>
               {" "}
-              <Text bold>Vault</Text>
+              <Text bold>Roles</Text>
             </Text>
-            <Text color="gray"> Use /vault to manage API keys</Text>
-            <Text color="gray"> Keys resolve: vault → 1Password → env</Text>
-            <Text> </Text>
+            <Text color="gray"> /architect Deep thinking, read-only</Text>
+            <Text color="gray"> /product-manager Requirements, scope</Text>
+            <Text color="gray"> /sr-developer Quality implementation</Text>
+            <Text color="gray"> /jr-developer Fast, cheap coding</Text>
+            <Text color="gray"> /qa Testing, review</Text>
+            <Text color="gray"> /default Reset to defaults</Text>
+          </Box>
+
+          <Box marginTop={1} flexDirection="column">
             <Text>
               {" "}
-              <Text bold>Agents</Text>
+              <Text bold>Vault & Keys</Text>
             </Text>
-            <Text color="gray"> Use `storm agent list` to view</Text>
-            <Text color="gray"> Use `storm agent create` to add</Text>
-            <Text> </Text>
+            <Text color="gray"> /vault list Show stored keys</Text>
+            <Text color="gray"> /vault add NAME Add a key</Text>
+            <Text color="gray"> Resolver: vault → 1Password → env</Text>
+          </Box>
+
+          <Box marginTop={1} flexDirection="column">
             <Text>
               {" "}
               <Text bold>Workflows</Text>
             </Text>
-            <Text color="gray"> Use `storm workflow list` to view</Text>
-            <Text color="gray"> Presets: implement-feature, fix-bug,</Text>
-            <Text color="gray"> code-review, explain</Text>
+            <Text color="gray"> storm workflow list</Text>
+            <Text color="gray"> storm workflow run implement-feature</Text>
+            <Text color="gray"> storm workflow run fix-bug</Text>
+          </Box>
+
+          <Box marginTop={1} flexDirection="column">
+            <Text>
+              {" "}
+              <Text bold>Config File</Text>
+            </Text>
+            <Text color="gray"> ~/.brainstorm/config.toml</Text>
           </Box>
         </Box>
       </Box>
