@@ -421,6 +421,46 @@ commands.push({
 });
 
 commands.push({
+  name: "changelog",
+  aliases: ["whatsnew"],
+  description: "Show recent features and changes",
+  usage: "/changelog",
+  execute: () => {
+    return [
+      "What's New in Brainstorm",
+      "",
+      "v11 — Claude Code Parity",
+      "  /context      Token breakdown with visual gauge",
+      "  /insights     Session intelligence + BR waste tips",
+      "  /undo         Remove last turn",
+      "  /build        Multi-model workflow wizard",
+      "  Shift+Tab     Cycle permission modes",
+      "  SelectPrompt  Model asks you to pick from options",
+      "  Autocomplete  Type / to see command suggestions",
+      "  Multi-line    End line with \\ to continue",
+      "  Error badges  [NETWORK] [BUDGET] [AUTH] with hints",
+      "  ?             Shortcut overlay (in non-chat modes)",
+      "",
+      "v10 — DeerFlow Gaps",
+      "  Artifacts     Workflow outputs persist to disk",
+      "  Temporal      System prompt includes current date",
+      "  Style         Detects comment style, JSDoc, line length",
+      "  Test parsing  vitest/jest/pytest structured results",
+      "",
+      "v9 — Build Wizard",
+      "  /build desc   Auto-detect workflow + assign models",
+      "",
+      "v7 — Dashboard",
+      "  4 modes: Chat [1] Dashboard [2] Models [3] Config [4]",
+      "  BR leaderboard, waste detection, guardian audit",
+      "",
+      "v6 — Roles",
+      "  /architect /sr-developer /jr-developer /qa",
+    ].join("\n");
+  },
+});
+
+commands.push({
   name: "insights",
   aliases: [],
   description: "Session intelligence — what Brainstorm learned",
