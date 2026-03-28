@@ -104,6 +104,8 @@ const generalSchema = z.object({
       repeatThreshold: z.number().default(3),
     })
     .default({}),
+  /** Subagent filesystem isolation: none, git-stash, docker */
+  subagentIsolation: z.enum(["none", "git-stash", "docker"]).default("none"),
 });
 
 // ── Full Config ──────────────────────────────────────────────────────

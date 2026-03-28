@@ -12,7 +12,77 @@ export interface BuildResult {
   timestamp: number;
 }
 
-export type BuildStatus = 'passing' | 'failing' | 'unknown';
+export interface TestResult {
+  passed: number;
+  failed: number;
+  skipped: number;
+  coverage?: number;
+  failedNames: string[];
+}
+
+/**
+ * Parse test runner output for structured results.
+ * Supports vitest, jest, pytest output formats.
+ */
+export function parseTestOutput(output: string): TestResult | null {
+  // Vitest/Jest: "Tests: 3 failed, 42 passed, 2 skipped, 47 total"
+  const jestMatch = output.match(
+    /Tests:\s+(?:(\d+)\s+failed,?\s*)?(?:(\d+)\s+passed,?\s*)?(?:(\d+)\s+skipped,?\s*)?(\d+)\s+total/,
+  );
+  if (jestMatch) {
+    return {
+      failed: parseInt(jestMatch[1] ?? "0", 10),
+      passed: parseInt(jestMatch[2] ?? "0", 10),
+      skipped: parseInt(jestMatch[3] ?? "0", 10),
+      failedNames: extractFailedNames(output),
+    };
+  }
+
+  // Vitest compact: "Test Files  5 passed (5)" / "Tests  67 passed (67)"
+  const vitestMatch = output.match(
+    /Tests\s+(?:(\d+)\s+failed\s*\|?\s*)?(\d+)\s+passed\s*\((\d+)\)/,
+  );
+  if (vitestMatch) {
+    return {
+      failed: parseInt(vitestMatch[1] ?? "0", 10),
+      passed: parseInt(vitestMatch[2] ?? "0", 10),
+      skipped: 0,
+      failedNames: extractFailedNames(output),
+    };
+  }
+
+  // Pytest: "3 passed, 1 failed, 2 skipped"
+  const pytestMatch = output.match(
+    /(\d+)\s+passed(?:,\s*(\d+)\s+failed)?(?:,\s*(\d+)\s+skipped)?/,
+  );
+  if (pytestMatch) {
+    return {
+      passed: parseInt(pytestMatch[1] ?? "0", 10),
+      failed: parseInt(pytestMatch[2] ?? "0", 10),
+      skipped: parseInt(pytestMatch[3] ?? "0", 10),
+      failedNames: extractFailedNames(output),
+    };
+  }
+
+  // Coverage: "Coverage: 85.3%"
+  const coverageMatch = output.match(/(?:coverage|cov)[:\s]+(\d+(?:\.\d+)?)%/i);
+
+  return null;
+}
+
+function extractFailedNames(output: string): string[] {
+  const names: string[] = [];
+  // "FAIL src/__tests__/foo.test.ts" or "✗ test name"
+  const failLines = output.match(/(?:FAIL|✗|×)\s+(.+)/g);
+  if (failLines) {
+    for (const line of failLines.slice(0, 5)) {
+      names.push(line.replace(/^(?:FAIL|✗|×)\s+/, "").trim());
+    }
+  }
+  return names;
+}
+
+export type BuildStatus = "passing" | "failing" | "unknown";
 
 export class BuildStateTracker {
   private lastBuild: BuildResult | null = null;
@@ -51,7 +121,7 @@ export class BuildStateTracker {
       this.lastBuild = {
         command,
         exitCode,
-        errorSummary: exitCode !== 0 ? extractErrorSummary(stderr) : '',
+        errorSummary: exitCode !== 0 ? extractErrorSummary(stderr) : "",
         timestamp: Date.now(),
       };
     }
@@ -60,17 +130,17 @@ export class BuildStateTracker {
       this.lastTest = {
         command,
         exitCode,
-        errorSummary: exitCode !== 0 ? extractErrorSummary(stderr) : '',
+        errorSummary: exitCode !== 0 ? extractErrorSummary(stderr) : "",
         timestamp: Date.now(),
       };
     }
   }
 
   getStatus(): BuildStatus {
-    if (!this.lastBuild && !this.lastTest) return 'unknown';
-    if (this.lastBuild?.exitCode !== 0 && this.lastBuild) return 'failing';
-    if (this.lastTest?.exitCode !== 0 && this.lastTest) return 'failing';
-    return 'passing';
+    if (!this.lastBuild && !this.lastTest) return "unknown";
+    if (this.lastBuild?.exitCode !== 0 && this.lastBuild) return "failing";
+    if (this.lastTest?.exitCode !== 0 && this.lastTest) return "failing";
+    return "passing";
   }
 
   getLastBuild(): BuildResult | null {
@@ -86,14 +156,18 @@ export class BuildStateTracker {
     const warnings: string[] = [];
 
     if (this.lastBuild && this.lastBuild.exitCode !== 0) {
-      warnings.push(`BUILD BROKEN: ${this.lastBuild.errorSummary || 'non-zero exit'}`);
+      warnings.push(
+        `BUILD BROKEN: ${this.lastBuild.errorSummary || "non-zero exit"}`,
+      );
     }
     if (this.lastTest && this.lastTest.exitCode !== 0) {
-      warnings.push(`TESTS FAILING: ${this.lastTest.errorSummary || 'non-zero exit'}`);
+      warnings.push(
+        `TESTS FAILING: ${this.lastTest.errorSummary || "non-zero exit"}`,
+      );
     }
 
-    if (warnings.length === 0) return '';
-    return `[WARNING — ${warnings.join(' | ')}. Fix before creating new features.]`;
+    if (warnings.length === 0) return "";
+    return `[WARNING — ${warnings.join(" | ")}. Fix before creating new features.]`;
   }
 
   clear(): void {
@@ -104,12 +178,12 @@ export class BuildStateTracker {
 
 /** Extract the most useful error lines from stderr (last 3 non-empty lines, max 200 chars). */
 function extractErrorSummary(stderr: string): string {
-  if (!stderr) return '';
-  const lines = stderr.split('\n').filter((l) => l.trim().length > 0);
-  const summary = lines.slice(-3).join(' | ');
+  if (!stderr) return "";
+  const lines = stderr.split("\n").filter((l) => l.trim().length > 0);
+  const summary = lines.slice(-3).join(" | ");
   return summary.length > 200 ? summary.slice(-200) : summary;
 }
 
 function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

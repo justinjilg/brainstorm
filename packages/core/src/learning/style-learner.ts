@@ -19,6 +19,10 @@ export interface StyleProfile {
   namingConvention: "camelCase" | "snake_case" | "mixed";
   trailingCommas: "yes" | "no" | "mixed";
   importStyle: "named" | "default" | "mixed";
+  // Prose patterns
+  commentStyle: "line" | "block" | "jsdoc" | "mixed";
+  lineLength: number;
+  hasJSDoc: boolean;
 }
 
 // Cache: style rarely changes within a session
@@ -53,6 +57,11 @@ export function learnStyle(projectPath: string): StyleProfile {
     noTrailingComma: 0,
     namedImport: 0,
     defaultImport: 0,
+    lineComment: 0,
+    blockComment: 0,
+    jsdocComment: 0,
+    totalLineLength: 0,
+    lineCount: 0,
   };
 
   for (const entry of map.entries.slice(0, 30)) {
@@ -95,6 +104,20 @@ export function learnStyle(projectPath: string): StyleProfile {
       : majority(counts.defaultImport, counts.namedImport)
         ? "default"
         : "mixed",
+    commentStyle:
+      counts.jsdocComment > counts.lineComment &&
+      counts.jsdocComment > counts.blockComment
+        ? "jsdoc"
+        : majority(counts.lineComment, counts.blockComment)
+          ? "line"
+          : majority(counts.blockComment, counts.lineComment)
+            ? "block"
+            : "mixed",
+    lineLength:
+      counts.lineCount > 0
+        ? Math.round(counts.totalLineLength / counts.lineCount)
+        : 80,
+    hasJSDoc: counts.jsdocComment > 5,
   };
 
   _styleCache = { path: projectPath, profile, ts: Date.now() };
@@ -158,6 +181,20 @@ function analyzeFile(content: string, counts: Record<string, number>): void {
   const defaultImports = content.match(/import\s+\w+\s+from/g);
   if (namedImports) counts.namedImport += namedImports.length;
   if (defaultImports) counts.defaultImport += defaultImports.length;
+
+  // Comment style (prose patterns)
+  const lineComments = content.match(/\/\/.*/g);
+  const blockComments = content.match(/\/\*[^*][\s\S]*?\*\//g);
+  const jsdocComments = content.match(/\/\*\*[\s\S]*?\*\//g);
+  if (lineComments) counts.lineComment += lineComments.length;
+  if (blockComments) counts.blockComment += blockComments.length;
+  if (jsdocComments) counts.jsdocComment += jsdocComments.length;
+
+  // Line length tracking
+  for (const line of lines) {
+    counts.totalLineLength += line.length;
+    counts.lineCount++;
+  }
 }
 
 /**
@@ -178,6 +215,11 @@ export function formatStyleContext(projectPath: string): string | null {
     lines.push(`- Trailing commas: ${style.trailingCommas}`);
   if (style.importStyle !== "mixed")
     lines.push(`- Imports: ${style.importStyle}`);
+  if (style.commentStyle !== "mixed")
+    lines.push(`- Comments: ${style.commentStyle}`);
+  if (style.hasJSDoc) lines.push(`- JSDoc: yes`);
+  if (style.lineLength > 0)
+    lines.push(`- Avg line length: ${style.lineLength} chars`);
 
   if (lines.length === 0) return null;
   return lines.join("\n");
