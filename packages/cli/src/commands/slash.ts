@@ -291,6 +291,138 @@ const commands: SlashCommand[] = [
       return ctx.dream();
     },
   },
+  {
+    name: "project",
+    aliases: ["proj"],
+    description: "Manage projects — switch, list, show dashboard",
+    usage: "/project [name|list|register|show <name>]",
+    execute: async (args, ctx) => {
+      const { ProjectManager } = await import("@brainstorm/projects");
+      const { getDb } = await import("@brainstorm/db");
+      const db = getDb();
+      const pm = new ProjectManager(db);
+
+      const parts = args.trim().split(/\s+/);
+      const action = parts[0] || "";
+
+      if (!action || action === "list") {
+        const projects = pm.projects.list();
+        if (projects.length === 0) {
+          return "No projects registered. Run: /project register or storm projects import ~/Projects";
+        }
+        const active = pm.getActive();
+        const lines = projects.map((p) => {
+          const marker = active && active.id === p.id ? " ← active" : "";
+          return `  ${p.name.padEnd(25)} ${p.path}${marker}`;
+        });
+        return `Projects:\n${lines.join("\n")}`;
+      }
+
+      if (action === "register") {
+        const path = parts[1] || process.cwd();
+        try {
+          const project = pm.register(path);
+          return `✓ Registered "${project.name}" → ${project.path}`;
+        } catch (err) {
+          return `✗ ${err instanceof Error ? err.message : String(err)}`;
+        }
+      }
+
+      if (action === "show") {
+        const name = parts[1];
+        if (!name) return "Usage: /project show <name>";
+        const project = pm.projects.getByName(name);
+        if (!project) return `Project "${name}" not found.`;
+        const dash = pm.dashboard(project.id);
+        if (!dash) return "Failed to load dashboard.";
+        const lines = [
+          `── ${project.name} ──`,
+          `Path: ${project.path}`,
+          project.description ? `Description: ${project.description}` : "",
+          `Sessions: ${dash.sessionCount}`,
+          `Cost today: $${dash.costToday.toFixed(4)}`,
+          `Cost month: $${dash.costThisMonth.toFixed(4)}`,
+        ].filter(Boolean);
+        if (project.budgetDaily)
+          lines.push(
+            `Budget daily: $${project.budgetDaily.toFixed(2)} (${dash.budgetDailyUsed.toFixed(0)}% used)`,
+          );
+        if (project.budgetMonthly)
+          lines.push(
+            `Budget month: $${project.budgetMonthly.toFixed(2)} (${dash.budgetMonthlyUsed.toFixed(0)}% used)`,
+          );
+        return lines.join("\n");
+      }
+
+      // Default: treat arg as project name to switch to
+      try {
+        const project = pm.switch(action);
+        ctx.rebuildSystemPrompt?.();
+        return `✓ Switched to "${project.name}" (${project.path})`;
+      } catch (err) {
+        return `✗ ${err instanceof Error ? err.message : String(err)}`;
+      }
+    },
+  },
+  {
+    name: "schedule",
+    aliases: ["sched", "cron"],
+    description: "Manage scheduled tasks for the active project",
+    usage: "/schedule [list|add|history]",
+    execute: async (args) => {
+      const parts = args.trim().split(/\s+/);
+      const action = parts[0] || "list";
+
+      if (action === "list" || !action) {
+        // Lazy-load scheduler
+        const { getDb } = await import("@brainstorm/db");
+        const db = getDb();
+        const tasks = db
+          .prepare(
+            "SELECT * FROM scheduled_tasks WHERE status = 'active' ORDER BY name",
+          )
+          .all() as any[];
+
+        if (tasks.length === 0) {
+          return 'No scheduled tasks. Use: storm schedule add "<prompt>" --project <name> --cron "0 9 * * *"';
+        }
+
+        const lines = tasks.map((t: any) => {
+          const cron = t.cron_expression || "one-shot";
+          const mutations = t.allow_mutations ? "read+write" : "read-only";
+          return `  ${t.name.padEnd(25)} ${cron.padEnd(15)} ${mutations.padEnd(12)} $${(t.budget_limit ?? 0).toFixed(2)}`;
+        });
+        return `Scheduled Tasks:\n${lines.join("\n")}`;
+      }
+
+      if (action === "history") {
+        const { getDb } = await import("@brainstorm/db");
+        const db = getDb();
+        const runs = db
+          .prepare(
+            "SELECT r.*, t.name as task_name FROM scheduled_task_runs r JOIN scheduled_tasks t ON r.task_id = t.id ORDER BY r.created_at DESC LIMIT 10",
+          )
+          .all() as any[];
+
+        if (runs.length === 0) return "No task run history yet.";
+
+        const lines = runs.map((r: any) => {
+          const status =
+            r.status === "completed"
+              ? "✓"
+              : r.status === "failed"
+                ? "✗"
+                : r.status;
+          const cost = `$${r.cost.toFixed(4)}`;
+          const date = new Date(r.created_at * 1000).toLocaleDateString();
+          return `  ${status} ${(r.task_name ?? "").padEnd(20)} ${cost.padEnd(10)} ${date}`;
+        });
+        return `Recent Runs:\n${lines.join("\n")}`;
+      }
+
+      return `Unknown action "${action}". Usage: /schedule [list|history]`;
+    },
+  },
 ];
 
 // ── Role Commands ─────────────────────────────────────────────────────

@@ -1390,6 +1390,154 @@ vaultCmd
     console.log(`    Priority:   vault → 1Password → env vars\n`);
   });
 
+// ── Projects Command ──────────────────────────────────────────────
+
+const projectsCmd = program
+  .command("projects")
+  .description("Manage registered projects");
+
+projectsCmd
+  .command("list")
+  .description("List all registered projects")
+  .option("--all", "Include inactive projects")
+  .action(async (opts: { all?: boolean }) => {
+    const { ProjectManager } = await import("@brainstorm/projects");
+    const db = getDb();
+    const pm = new ProjectManager(db);
+    const projects = pm.projects.list(opts.all);
+
+    console.log("\n  Registered Projects:\n");
+    if (projects.length === 0) {
+      console.log(
+        "    No projects registered. Run: storm projects register <path>",
+      );
+      console.log("    Or scan all: storm projects import ~/Projects\n");
+      return;
+    }
+    for (const p of projects) {
+      const dash = pm.dashboard(p.id);
+      const cost = dash ? `$${dash.costToday.toFixed(4)}/day` : "";
+      const sessions = dash ? `${dash.sessionCount} sessions` : "";
+      const active = p.isActive ? "" : " [inactive]";
+      console.log(
+        `    ${p.name.padEnd(25)} ${sessions.padEnd(15)} ${cost.padEnd(15)} ${p.path}${active}`,
+      );
+    }
+    console.log();
+  });
+
+projectsCmd
+  .command("register")
+  .argument("<path>", "Path to project directory")
+  .option("-n, --name <name>", "Project name (default: directory name)")
+  .option("--budget-daily <amount>", "Daily budget limit in dollars")
+  .option("--budget-monthly <amount>", "Monthly budget limit in dollars")
+  .description("Register a project")
+  .action(
+    async (
+      path: string,
+      opts: { name?: string; budgetDaily?: string; budgetMonthly?: string },
+    ) => {
+      const { ProjectManager } = await import("@brainstorm/projects");
+      const db = getDb();
+      const pm = new ProjectManager(db);
+      try {
+        const project = pm.register(path, opts.name, {
+          budgetDaily: opts.budgetDaily
+            ? parseFloat(opts.budgetDaily)
+            : undefined,
+          budgetMonthly: opts.budgetMonthly
+            ? parseFloat(opts.budgetMonthly)
+            : undefined,
+        });
+        console.log(`\n  ✓ Registered "${project.name}" → ${project.path}\n`);
+      } catch (err) {
+        console.error(
+          `\n  ✗ ${err instanceof Error ? err.message : String(err)}\n`,
+        );
+      }
+    },
+  );
+
+projectsCmd
+  .command("switch")
+  .argument("<name>", "Project name to switch to")
+  .description("Set the active project for this session")
+  .action(async (name: string) => {
+    const { ProjectManager } = await import("@brainstorm/projects");
+    const db = getDb();
+    const pm = new ProjectManager(db);
+    try {
+      const project = pm.switch(name);
+      console.log(`\n  ✓ Switched to "${project.name}" (${project.path})\n`);
+    } catch (err) {
+      console.error(
+        `\n  ✗ ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+    }
+  });
+
+projectsCmd
+  .command("show")
+  .argument("<name>", "Project name")
+  .description("Show project dashboard")
+  .action(async (name: string) => {
+    const { ProjectManager } = await import("@brainstorm/projects");
+    const db = getDb();
+    const pm = new ProjectManager(db);
+    const project = pm.projects.getByName(name);
+    if (!project) {
+      console.error(`\n  ✗ Project "${name}" not found.\n`);
+      return;
+    }
+    const dash = pm.dashboard(project.id);
+    if (!dash) return;
+
+    console.log(`\n  ── ${project.name} ──`);
+    console.log(`  Path:         ${project.path}`);
+    if (project.description)
+      console.log(`  Description:  ${project.description}`);
+    console.log(`  Sessions:     ${dash.sessionCount}`);
+    console.log(`  Cost today:   $${dash.costToday.toFixed(4)}`);
+    console.log(`  Cost month:   $${dash.costThisMonth.toFixed(4)}`);
+    if (project.budgetDaily) {
+      console.log(
+        `  Budget daily: $${project.budgetDaily.toFixed(2)} (${dash.budgetDailyUsed.toFixed(0)}% used)`,
+      );
+    }
+    if (project.budgetMonthly) {
+      console.log(
+        `  Budget month: $${project.budgetMonthly.toFixed(2)} (${dash.budgetMonthlyUsed.toFixed(0)}% used)`,
+      );
+    }
+
+    const memory = pm.memory.list(project.id);
+    if (memory.length > 0) {
+      console.log(`  Memory:       ${memory.length} entries`);
+    }
+    console.log();
+  });
+
+projectsCmd
+  .command("import")
+  .argument("[dir]", "Parent directory to scan", join(homedir(), "Projects"))
+  .description("Scan a directory and register all project subdirectories")
+  .action(async (dir: string) => {
+    const { ProjectManager } = await import("@brainstorm/projects");
+    const db = getDb();
+    const pm = new ProjectManager(db);
+    const registered = pm.import(dir);
+    if (registered.length === 0) {
+      console.log(`\n  No new projects found in ${dir}\n`);
+    } else {
+      console.log(`\n  Registered ${registered.length} projects:`);
+      for (const p of registered) {
+        console.log(`    ✓ ${p.name} → ${p.path}`);
+      }
+      console.log();
+    }
+  });
+
 // ── Sessions Command ───────────────────────────────────────────────
 
 program
