@@ -1,17 +1,22 @@
 // ── Task Classification ──────────────────────────────────────────────
 
 export type TaskType =
-  | 'simple-edit'
-  | 'code-generation'
-  | 'refactoring'
-  | 'debugging'
-  | 'explanation'
-  | 'conversation'
-  | 'analysis'
-  | 'search'
-  | 'multi-file-edit';
+  | "simple-edit"
+  | "code-generation"
+  | "refactoring"
+  | "debugging"
+  | "explanation"
+  | "conversation"
+  | "analysis"
+  | "search"
+  | "multi-file-edit";
 
-export type Complexity = 'trivial' | 'simple' | 'moderate' | 'complex' | 'expert';
+export type Complexity =
+  | "trivial"
+  | "simple"
+  | "moderate"
+  | "complex"
+  | "expert";
 
 export interface TaskProfile {
   type: TaskType;
@@ -27,7 +32,7 @@ export interface TaskProfile {
 
 export type QualityTier = 1 | 2 | 3 | 4 | 5;
 export type SpeedTier = 1 | 2 | 3 | 4 | 5;
-export type ModelStatus = 'available' | 'degraded' | 'unavailable';
+export type ModelStatus = "available" | "degraded" | "unavailable";
 
 /** Scored capability dimensions from the eval harness (0-1 scale). */
 export interface CapabilityScores {
@@ -80,7 +85,13 @@ export interface ModelEntry {
 
 // ── Routing ──────────────────────────────────────────────────────────
 
-export type StrategyName = 'cost-first' | 'quality-first' | 'rule-based' | 'combined' | 'capability' | 'learned';
+export type StrategyName =
+  | "cost-first"
+  | "quality-first"
+  | "rule-based"
+  | "combined"
+  | "capability"
+  | "learned";
 
 export interface RoutingDecision {
   model: ModelEntry;
@@ -150,7 +161,7 @@ export interface Session {
 export interface Message {
   id: string;
   sessionId: string;
-  role: 'user' | 'assistant' | 'system' | 'tool';
+  role: "user" | "assistant" | "system" | "tool";
   content: string;
   modelId?: string;
   tokenCount?: number;
@@ -173,7 +184,7 @@ export interface GatewayFeedbackData {
   requestId?: string;
 }
 
-export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
+export type TaskStatus = "pending" | "in_progress" | "completed" | "failed";
 
 export interface AgentTask {
   id: string;
@@ -184,29 +195,54 @@ export interface AgentTask {
 }
 
 export type AgentEvent =
-  | { type: 'thinking'; phase: 'classifying' | 'routing' | 'connecting' | 'streaming' }
-  | { type: 'routing'; decision: RoutingDecision }
-  | { type: 'text-delta'; delta: string }
-  | { type: 'tool-call-start'; toolName: string; args: unknown }
-  | { type: 'tool-call-result'; toolName: string; result: unknown }
-  | { type: 'step-complete'; text: string; toolCalls: unknown[] }
-  | { type: 'gateway-feedback'; feedback: GatewayFeedbackData }
-  | { type: 'compaction'; removed: number; tokensBefore: number; tokensAfter: number }
-  | { type: 'tool-output-partial'; toolName: string; chunk: string }
-  | { type: 'task-created'; task: AgentTask }
-  | { type: 'task-updated'; task: AgentTask }
-  | { type: 'subagent-result'; subagentType: string; model: string; cost: number; toolCalls: string[] }
-  | { type: 'reasoning'; content: string }
-  | { type: 'background-complete'; taskId: string; command: string; exitCode: number; stdout: string; stderr: string }
-  | { type: 'model-retry'; fromModel: string; toModel: string; reason: string }
-  | { type: 'fallback-exhausted'; modelsTried: string[]; reason: string }
-  | { type: 'budget-warning'; used: number; limit: number; remaining: number }
-  | { type: 'empty-response'; modelId: string }
-  | { type: 'context-budget'; used: number; limit: number; percent: number }
-  | { type: 'loop-warning'; message: string }
-  | { type: 'interrupted' }
-  | { type: 'error'; error: Error }
-  | { type: 'done'; totalCost: number; totalTokens?: { input: number; output: number } };
+  | {
+      type: "thinking";
+      phase: "classifying" | "routing" | "connecting" | "streaming";
+    }
+  | { type: "routing"; decision: RoutingDecision }
+  | { type: "text-delta"; delta: string }
+  | { type: "tool-call-start"; toolName: string; args: unknown }
+  | { type: "tool-call-result"; toolName: string; result: unknown }
+  | { type: "step-complete"; text: string; toolCalls: unknown[] }
+  | { type: "gateway-feedback"; feedback: GatewayFeedbackData }
+  | {
+      type: "compaction";
+      removed: number;
+      tokensBefore: number;
+      tokensAfter: number;
+    }
+  | { type: "tool-output-partial"; toolName: string; chunk: string }
+  | { type: "task-created"; task: AgentTask }
+  | { type: "task-updated"; task: AgentTask }
+  | {
+      type: "subagent-result";
+      subagentType: string;
+      model: string;
+      cost: number;
+      toolCalls: string[];
+    }
+  | { type: "reasoning"; content: string }
+  | {
+      type: "background-complete";
+      taskId: string;
+      command: string;
+      exitCode: number;
+      stdout: string;
+      stderr: string;
+    }
+  | { type: "model-retry"; fromModel: string; toModel: string; reason: string }
+  | { type: "fallback-exhausted"; modelsTried: string[]; reason: string }
+  | { type: "budget-warning"; used: number; limit: number; remaining: number }
+  | { type: "empty-response"; modelId: string }
+  | { type: "context-budget"; used: number; limit: number; percent: number }
+  | { type: "loop-warning"; message: string }
+  | { type: "interrupted" }
+  | { type: "error"; error: Error }
+  | {
+      type: "done";
+      totalCost: number;
+      totalTokens?: { input: number; output: number };
+    };
 
 // ── Turn Context ─────────────────────────────────────────────────────
 
@@ -223,21 +259,22 @@ export interface TurnContext {
   filesWritten: string[];
   sessionMinutes: number;
   unhealthyTools: Array<{ name: string; error: string }>;
-  buildStatus: 'passing' | 'failing' | 'unknown';
+  buildStatus: "passing" | "failing" | "unknown";
   buildWarning: string;
   costPerHour: number;
 }
 
 /** Format TurnContext as a compact one-line summary for system message injection. */
 export function formatTurnContext(ctx: TurnContext): string {
-  const tools = ctx.toolCalls.length > 0
-    ? ctx.toolCalls.map((t) => `${t.name}${t.ok ? '' : '✗'}`).join(' ')
-    : 'none';
+  const tools =
+    ctx.toolCalls.length > 0
+      ? ctx.toolCalls.map((t) => `${t.name}${t.ok ? "" : "✗"}`).join(" ")
+      : "none";
   const files = [
     ...ctx.filesRead.map((f) => `${basename(f)}↓`),
     ...ctx.filesWritten.map((f) => `${basename(f)}↑`),
   ];
-  const fileStr = files.length > 0 ? files.slice(0, 6).join(' ') : '';
+  const fileStr = files.length > 0 ? files.slice(0, 6).join(" ") : "";
   const parts = [
     `Turn ${ctx.turn}`,
     ctx.model,
@@ -247,26 +284,26 @@ export function formatTurnContext(ctx: TurnContext): string {
   ];
   if (fileStr) parts.push(`files: ${fileStr}`);
   if (ctx.unhealthyTools.length > 0) {
-    parts.push(`unhealthy: ${ctx.unhealthyTools.map((t) => t.name).join(',')}`);
+    parts.push(`unhealthy: ${ctx.unhealthyTools.map((t) => t.name).join(",")}`);
   }
-  if (ctx.buildStatus !== 'unknown') {
+  if (ctx.buildStatus !== "unknown") {
     parts.push(`build: ${ctx.buildStatus}`);
   }
   parts.push(`${ctx.sessionMinutes}min`);
   if (ctx.costPerHour > 0) parts.push(`$${ctx.costPerHour.toFixed(2)}/hr`);
-  let result = `[${parts.join(' | ')}]`;
+  let result = `[${parts.join(" | ")}]`;
   if (ctx.buildWarning) result += `\n${ctx.buildWarning}`;
   return result;
 }
 
 function basename(path: string): string {
-  return path.split('/').pop() ?? path;
+  return path.split("/").pop() ?? path;
 }
 
 // ── Tool System ──────────────────────────────────────────────────────
 
-export type ToolPermission = 'auto' | 'confirm' | 'deny';
-export type PermissionMode = 'auto' | 'confirm' | 'plan';
+export type ToolPermission = "auto" | "confirm" | "deny";
+export type PermissionMode = "auto" | "confirm" | "plan";
 
 export interface ToolDefinition {
   name: string;
@@ -276,8 +313,15 @@ export interface ToolDefinition {
 
 // ── Agent Profiles ──────────────────────────────────────────────────
 
-export type AgentRole = 'architect' | 'coder' | 'reviewer' | 'debugger' | 'analyst' | 'orchestrator' | 'custom';
-export type AgentLifecycle = 'active' | 'suspended';
+export type AgentRole =
+  | "architect"
+  | "coder"
+  | "reviewer"
+  | "debugger"
+  | "analyst"
+  | "orchestrator"
+  | "custom";
+export type AgentLifecycle = "active" | "suspended";
 
 export interface AgentGuardrails {
   pii?: boolean;
@@ -287,7 +331,7 @@ export interface AgentGuardrails {
 export interface AgentBudgetConfig {
   perWorkflow?: number;
   daily?: number;
-  exhaustionAction: 'downgrade' | 'stop';
+  exhaustionAction: "downgrade" | "stop";
   downgradeModelId?: string;
 }
 
@@ -298,7 +342,7 @@ export interface AgentProfile {
   description: string;
   modelId: string;
   systemPrompt?: string;
-  allowedTools: string[] | 'all';
+  allowedTools: string[] | "all";
   outputFormat?: string;
   budget: AgentBudgetConfig;
   confidenceThreshold: number;
@@ -312,9 +356,20 @@ export interface AgentProfile {
 
 // ── Workflow Engine ─────────────────────────────────────────────────
 
-export type WorkflowStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
-export type StepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
-export type CommunicationMode = 'handoff' | 'shared';
+export type WorkflowStatus =
+  | "pending"
+  | "running"
+  | "paused"
+  | "completed"
+  | "failed"
+  | "cancelled";
+export type StepStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "skipped";
+export type CommunicationMode = "handoff" | "shared";
 
 export interface WorkflowDefinition {
   id: string;
@@ -343,7 +398,7 @@ export interface Artifact {
   stepId: string;
   agentId: string;
   content: string;
-  contentType: 'text' | 'code' | 'json' | 'markdown';
+  contentType: "text" | "code" | "json" | "markdown";
   metadata: Record<string, unknown>;
   confidence: number;
   cost: number;
@@ -385,26 +440,56 @@ export interface WorkflowStepRun {
 // ── Workflow Events ─────────────────────────────────────────────────
 
 export type WorkflowEvent =
-  | { type: 'workflow-started'; run: WorkflowRun }
-  | { type: 'step-started'; step: WorkflowStepRun; agent: AgentProfile }
-  | { type: 'step-progress'; stepId: string; event: AgentEvent }
-  | { type: 'step-completed'; step: WorkflowStepRun; artifact: Artifact }
-  | { type: 'step-failed'; step: WorkflowStepRun; error: Error }
-  | { type: 'review-rejected'; step: WorkflowStepRun; reason: string; loopingBackTo: string }
-  | { type: 'confidence-escalation'; step: WorkflowStepRun; confidence: number; action: string }
-  | { type: 'budget-warning'; agent: AgentProfile; remaining: number; action: string }
-  | { type: 'model-fallback'; originalModel: string; fallbackModel: string; reason: string; costImpact: number }
-  | { type: 'provider-degraded'; provider: string; errorCount: number; resumeAt: number }
-  | { type: 'cost-forecast'; estimated: number; breakdown: Array<{ step: string; cost: number }> }
-  | { type: 'workflow-paused'; reason: string; run: WorkflowRun }
-  | { type: 'workflow-completed'; run: WorkflowRun }
-  | { type: 'workflow-failed'; run: WorkflowRun; error: Error };
+  | { type: "workflow-started"; run: WorkflowRun }
+  | { type: "step-started"; step: WorkflowStepRun; agent: AgentProfile }
+  | { type: "step-progress"; stepId: string; event: AgentEvent }
+  | { type: "step-completed"; step: WorkflowStepRun; artifact: Artifact }
+  | { type: "step-failed"; step: WorkflowStepRun; error: Error }
+  | {
+      type: "review-rejected";
+      step: WorkflowStepRun;
+      reason: string;
+      loopingBackTo: string;
+    }
+  | {
+      type: "confidence-escalation";
+      step: WorkflowStepRun;
+      confidence: number;
+      action: string;
+    }
+  | {
+      type: "budget-warning";
+      agent: AgentProfile;
+      remaining: number;
+      action: string;
+    }
+  | {
+      type: "model-fallback";
+      originalModel: string;
+      fallbackModel: string;
+      reason: string;
+      costImpact: number;
+    }
+  | {
+      type: "provider-degraded";
+      provider: string;
+      errorCount: number;
+      resumeAt: number;
+    }
+  | {
+      type: "cost-forecast";
+      estimated: number;
+      breakdown: Array<{ step: string; cost: number }>;
+    }
+  | { type: "workflow-paused"; reason: string; run: WorkflowRun }
+  | { type: "workflow-completed"; run: WorkflowRun }
+  | { type: "workflow-failed"; run: WorkflowRun; error: Error };
 
 // ── Enhanced Intelligence ──────────────────────────────────────────
 
 export interface ComplexityAssessment {
   score: number;
-  level: 'simple' | 'moderate' | 'complex';
+  level: "simple" | "moderate" | "complex";
   signals: Record<string, number>;
 }
 
@@ -426,4 +511,121 @@ export interface BanditArm {
   sampleCount: number;
   validityMean: number;
   qualityMean: number | null;
+}
+
+// ── Projects ────────────────────────────────────────────────────────
+
+export interface Project {
+  id: string;
+  name: string;
+  path: string;
+  description: string;
+  customInstructions?: string;
+  knowledgeFiles: string[];
+  budgetDaily?: number;
+  budgetMonthly?: number;
+  isActive: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ProjectMemoryEntry {
+  id: number;
+  projectId: string;
+  key: string;
+  value: string;
+  category: "general" | "decision" | "convention" | "warning";
+  createdAt: number;
+  updatedAt: number;
+}
+
+// ── Scheduled Tasks ─────────────────────────────────────────────────
+
+export type ScheduledTaskStatus = "active" | "paused" | "expired" | "deleted";
+export type TaskRunStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "budget_exceeded"
+  | "timeout"
+  | "cancelled";
+export type ExecutionMode = "daemon" | "trigger";
+export type TriggerType = "cron" | "manual" | "daemon";
+
+export interface ScheduledTask {
+  id: string;
+  projectId: string;
+  name: string;
+  prompt: string;
+  cronExpression?: string;
+  executionMode: ExecutionMode;
+  allowMutations: boolean;
+  budgetLimit?: number;
+  maxTurns: number;
+  timeoutMs: number;
+  modelId?: string;
+  status: ScheduledTaskStatus;
+  expiresAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ScheduledTaskRun {
+  id: string;
+  taskId: string;
+  sessionId?: string;
+  status: TaskRunStatus;
+  triggerType: TriggerType;
+  outputSummary?: string;
+  cost: number;
+  turnsUsed: number;
+  error?: string;
+  trajectoryPath?: string;
+  startedAt?: number;
+  completedAt?: number;
+  createdAt: number;
+}
+
+// ── Orchestration ───────────────────────────────────────────────────
+
+export type OrchestrationStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
+export type OrchTaskStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "skipped";
+
+export interface OrchestrationRun {
+  id: string;
+  name: string;
+  description: string;
+  leadSessionId?: string;
+  status: OrchestrationStatus;
+  projectIds: string[];
+  budgetLimit?: number;
+  totalCost: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface OrchestrationTask {
+  id: string;
+  runId: string;
+  projectId: string;
+  prompt: string;
+  status: OrchTaskStatus;
+  subagentType: string;
+  resultSummary?: string;
+  cost: number;
+  sessionId?: string;
+  dependsOn: string[];
+  startedAt?: number;
+  completedAt?: number;
 }

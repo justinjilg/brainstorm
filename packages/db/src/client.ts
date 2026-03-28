@@ -339,4 +339,126 @@ const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_embeddings_file ON code_embeddings(file_path);
     `,
   },
+  {
+    name: "016_projects",
+    sql: `
+      CREATE TABLE IF NOT EXISTS projects (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        path TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        custom_instructions TEXT,
+        knowledge_files TEXT NOT NULL DEFAULT '[]',
+        budget_daily REAL,
+        budget_monthly REAL,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      CREATE INDEX IF NOT EXISTS idx_projects_name ON projects(name);
+      CREATE INDEX IF NOT EXISTS idx_projects_path ON projects(path);
+    `,
+  },
+  {
+    name: "017_project_memory",
+    sql: `
+      CREATE TABLE IF NOT EXISTS project_memory (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        key TEXT NOT NULL,
+        value TEXT NOT NULL,
+        category TEXT NOT NULL DEFAULT 'general',
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        UNIQUE(project_id, key)
+      );
+      CREATE INDEX IF NOT EXISTS idx_project_memory_project ON project_memory(project_id);
+    `,
+  },
+  {
+    name: "018_sessions_project_id",
+    sql: `
+      ALTER TABLE sessions ADD COLUMN project_id TEXT REFERENCES projects(id);
+      CREATE INDEX IF NOT EXISTS idx_sessions_project_id ON sessions(project_id);
+    `,
+  },
+  {
+    name: "019_scheduled_tasks",
+    sql: `
+      CREATE TABLE IF NOT EXISTS scheduled_tasks (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        prompt TEXT NOT NULL,
+        cron_expression TEXT,
+        execution_mode TEXT NOT NULL DEFAULT 'trigger',
+        allow_mutations INTEGER NOT NULL DEFAULT 0,
+        budget_limit REAL,
+        max_turns INTEGER NOT NULL DEFAULT 20,
+        timeout_ms INTEGER NOT NULL DEFAULT 600000,
+        model_id TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        expires_at INTEGER,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_project ON scheduled_tasks(project_id);
+      CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_status ON scheduled_tasks(status);
+    `,
+  },
+  {
+    name: "020_scheduled_task_runs",
+    sql: `
+      CREATE TABLE IF NOT EXISTS scheduled_task_runs (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL REFERENCES scheduled_tasks(id) ON DELETE CASCADE,
+        session_id TEXT REFERENCES sessions(id),
+        status TEXT NOT NULL DEFAULT 'pending',
+        trigger_type TEXT NOT NULL DEFAULT 'cron',
+        output_summary TEXT,
+        cost REAL NOT NULL DEFAULT 0,
+        turns_used INTEGER NOT NULL DEFAULT 0,
+        error TEXT,
+        trajectory_path TEXT,
+        started_at INTEGER,
+        completed_at INTEGER,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      CREATE INDEX IF NOT EXISTS idx_task_runs_task ON scheduled_task_runs(task_id);
+      CREATE INDEX IF NOT EXISTS idx_task_runs_status ON scheduled_task_runs(status);
+      CREATE INDEX IF NOT EXISTS idx_task_runs_created ON scheduled_task_runs(created_at);
+    `,
+  },
+  {
+    name: "021_orchestration",
+    sql: `
+      CREATE TABLE IF NOT EXISTS orchestration_runs (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        lead_session_id TEXT REFERENCES sessions(id),
+        status TEXT NOT NULL DEFAULT 'pending',
+        project_ids TEXT NOT NULL DEFAULT '[]',
+        budget_limit REAL,
+        total_cost REAL NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      CREATE TABLE IF NOT EXISTS orchestration_tasks (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL REFERENCES orchestration_runs(id) ON DELETE CASCADE,
+        project_id TEXT NOT NULL REFERENCES projects(id),
+        prompt TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        subagent_type TEXT NOT NULL DEFAULT 'code',
+        result_summary TEXT,
+        cost REAL NOT NULL DEFAULT 0,
+        session_id TEXT REFERENCES sessions(id),
+        depends_on TEXT NOT NULL DEFAULT '[]',
+        started_at INTEGER,
+        completed_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_orch_tasks_run ON orchestration_tasks(run_id);
+    `,
+  },
 ];
