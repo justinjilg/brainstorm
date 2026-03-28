@@ -461,4 +461,39 @@ const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_orch_tasks_run ON orchestration_tasks(run_id);
     `,
   },
+  {
+    name: "022_plan_runs",
+    sql: `
+      CREATE TABLE IF NOT EXISTS plan_runs (
+        id TEXT PRIMARY KEY,
+        plan_file_path TEXT NOT NULL,
+        plan_name TEXT NOT NULL,
+        project_id TEXT REFERENCES projects(id),
+        status TEXT NOT NULL DEFAULT 'pending',
+        total_tasks INTEGER NOT NULL DEFAULT 0,
+        completed_tasks INTEGER NOT NULL DEFAULT 0,
+        total_cost REAL NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      CREATE INDEX IF NOT EXISTS idx_plan_runs_project ON plan_runs(project_id);
+      CREATE TABLE IF NOT EXISTS plan_task_runs (
+        id TEXT PRIMARY KEY,
+        plan_run_id TEXT NOT NULL REFERENCES plan_runs(id) ON DELETE CASCADE,
+        task_path TEXT NOT NULL,
+        description TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        assigned_skill TEXT,
+        subagent_type TEXT,
+        model_used TEXT,
+        cost REAL NOT NULL DEFAULT 0,
+        tool_calls_json TEXT NOT NULL DEFAULT '[]',
+        started_at INTEGER,
+        completed_at INTEGER,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      CREATE INDEX IF NOT EXISTS idx_plan_task_runs_plan ON plan_task_runs(plan_run_id);
+      CREATE INDEX IF NOT EXISTS idx_plan_task_runs_status ON plan_task_runs(status);
+    `,
+  },
 ];
