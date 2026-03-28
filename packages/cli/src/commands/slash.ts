@@ -48,6 +48,8 @@ export interface SlashContext {
   gateway?: any;
   /** Get the context window size of the current model */
   getContextWindow?: () => number;
+  /** Remove last user message + assistant response */
+  undoLastTurn?: () => number;
 }
 
 interface SlashCommand {
@@ -402,6 +404,71 @@ commands.push({
           ? "  Consider running /compact soon."
           : "  Context usage is healthy.",
     ];
+    return lines.join("\n");
+  },
+});
+
+commands.push({
+  name: "undo",
+  aliases: [],
+  description: "Remove the last user message and assistant response",
+  usage: "/undo",
+  execute: (_args, ctx) => {
+    const removed = ctx.undoLastTurn?.() ?? 0;
+    if (removed === 0) return "Nothing to undo.";
+    return `Removed ${removed} message${removed > 1 ? "s" : ""}.`;
+  },
+});
+
+commands.push({
+  name: "insights",
+  aliases: [],
+  description: "Session intelligence — what Brainstorm learned",
+  usage: "/insights",
+  execute: async (_args, ctx) => {
+    const cost = ctx.getSessionCost?.() ?? 0;
+    const tokens = ctx.getTokenCount?.() ?? { input: 0, output: 0 };
+    const model = ctx.getModel?.() ?? "auto";
+    const strategy = ctx.getStrategy?.() ?? "combined";
+    const role = ctx.getActiveRole?.();
+
+    const lines = [
+      "Session Insights",
+      "",
+      `  Model: ${model}`,
+      `  Strategy: ${strategy}`,
+      `  Cost: $${cost.toFixed(4)}`,
+      `  Tokens: ${tokens.input.toLocaleString()} in / ${tokens.output.toLocaleString()} out`,
+    ];
+
+    if (role) lines.push(`  Role: ${role}`);
+
+    // Cost efficiency
+    const totalTokens = tokens.input + tokens.output;
+    if (totalTokens > 0) {
+      const costPer1k = (cost / totalTokens) * 1000;
+      lines.push("");
+      lines.push(`  Cost efficiency: $${costPer1k.toFixed(4)} per 1K tokens`);
+    }
+
+    // Try BR insights
+    if (ctx.gateway) {
+      try {
+        const waste = await ctx.gateway.getWasteInsights();
+        if (waste?.suggestions?.length > 0) {
+          lines.push("");
+          lines.push("  Optimization suggestions:");
+          for (const s of waste.suggestions.slice(0, 3)) {
+            lines.push(
+              `    → ${s.description} (save ~$${s.savings_usd?.toFixed(2) ?? "?"})`,
+            );
+          }
+        }
+      } catch {
+        /* BR unavailable */
+      }
+    }
+
     return lines.join("\n");
   },
 });

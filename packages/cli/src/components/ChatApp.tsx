@@ -217,6 +217,17 @@ export function ChatApp({
       dream: slashCallbacks?.dream,
       vault: slashCallbacks?.vault,
       rebuildSystemPrompt: slashCallbacks?.rebuildSystemPrompt,
+      undoLastTurn: () => {
+        // Find last user message and remove it + everything after
+        let removed = 0;
+        setMessages((prev) => {
+          const lastUserIdx = prev.findLastIndex((m) => m.role === "user");
+          if (lastUserIdx < 0) return prev;
+          removed = prev.length - lastUserIdx;
+          return prev.slice(0, lastUserIdx);
+        });
+        return removed;
+      },
       getActiveRole: slashCallbacks?.getActiveRole,
       setActiveRole: slashCallbacks?.setActiveRole,
       gateway: slashCallbacks?.gateway,
@@ -275,11 +286,16 @@ export function ChatApp({
               model = event.decision.model.name;
               setCurrentModel(model);
               setThinkingPhase(undefined);
+              const est = event.decision.estimatedCost;
+              const estStr = est > 0 ? ` ~$${est.toFixed(3)}` : "";
+              const fb = event.decision.fallbacks?.length ?? 0;
+              const fbStr =
+                fb > 0 ? ` (${fb} fallback${fb > 1 ? "s" : ""})` : "";
               setMessages((prev) => [
                 ...prev,
                 {
                   role: "routing",
-                  content: `${event.decision.strategy} → ${model}`,
+                  content: `→ ${model} via ${event.decision.strategy}${estStr}${fbStr}`,
                 },
               ]);
               break;
@@ -565,12 +581,17 @@ export function ChatApp({
             }}
             onSubmit={(val) => {
               setShowAutocomplete(false);
+              // Backslash continuation: \ at end of line adds newline instead of submitting
+              if (val.endsWith("\\")) {
+                setInput(val.slice(0, -1) + "\n");
+                return;
+              }
               handleSubmit(val);
             }}
             placeholder={
               isProcessing
                 ? "Thinking..."
-                : "Type a message... (/ for commands)"
+                : "Type a message... (/ commands, @file to include)"
             }
           />
         </Box>
