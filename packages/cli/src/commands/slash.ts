@@ -337,7 +337,9 @@ function createRoleCommand(roleId: RoleId): SlashCommand {
       ctx.setOutputStyle?.(role.outputStyle);
       ctx.setMode?.(role.permissionMode);
       ctx.setStrategy?.(role.routingStrategy);
-      ctx.rebuildSystemPrompt?.(role.systemPrompt);
+      // Use persona-composed prompt (model-tuned expert playbook)
+      const { getRolePrompt } = await import("./roles.js");
+      ctx.rebuildSystemPrompt?.(getRolePrompt(roleId, modelId));
       ctx.setActiveRole?.(roleId);
       return formatRoleConfirmation(roleId, modelId);
     },

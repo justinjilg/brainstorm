@@ -4,6 +4,12 @@ export {
   type CompactionCallbacks,
 } from "./agent/loop.js";
 export {
+  composePersonaPrompt,
+  getPersona,
+  listPersonas,
+  type Persona,
+} from "./personas/index.js";
+export {
   buildSystemPrompt,
   parseAtMentions,
   buildToolAwarenessSection,
