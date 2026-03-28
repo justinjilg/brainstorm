@@ -27,8 +27,8 @@ export interface SlashContext {
   getBudget?: () => { remaining: number; limit: number } | null;
   /** Clear conversation history */
   clearHistory?: () => void;
-  /** Trigger context compaction */
-  compact?: () => Promise<void>;
+  /** Trigger context compaction, optionally with focus instruction */
+  compact?: (focusInstruction?: string) => Promise<void>;
   /** Exit the application */
   exit?: () => void;
   /** Set output style */
@@ -46,6 +46,8 @@ export interface SlashContext {
   setActiveRole?: (role: string | undefined) => void;
   /** BrainstormRouter gateway client for /recommend, /stats, /compare */
   gateway?: any;
+  /** Get the context window size of the current model */
+  getContextWindow?: () => number;
 }
 
 interface SlashCommand {
@@ -222,11 +224,8 @@ const commands: SlashCommand[] = [
     usage: "/compact [focus instruction]",
     execute: async (args, ctx) => {
       if (!ctx.compact) return "Compaction not available.";
-      await ctx.compact();
-      if (args) {
-        return `Context compacted (focus: ${args})`;
-      }
-      return "Context compacted.";
+      await ctx.compact(args || undefined);
+      return args ? `Context compacted (focus: ${args})` : "Context compacted.";
     },
   },
   {
@@ -381,12 +380,11 @@ commands.push({
   execute: (_args, ctx) => {
     const tokens = ctx.getTokenCount?.() ?? { input: 0, output: 0 };
     const total = tokens.input + tokens.output;
-    const limit = 128000; // Default context window
+    const limit = ctx.getContextWindow?.() ?? 128000;
     const percent = Math.round((total / limit) * 100);
     const barWidth = 20;
     const filled = Math.round((percent / 100) * barWidth);
     const bar = "█".repeat(filled) + "░".repeat(barWidth - filled);
-    const color = percent >= 80 ? "!!" : percent >= 60 ? "!" : "";
 
     const lines = [
       "Context Window Usage",
@@ -405,17 +403,6 @@ commands.push({
           : "  Context usage is healthy.",
     ];
     return lines.join("\n");
-  },
-});
-
-commands.push({
-  name: "undo",
-  aliases: [],
-  description: "Remove the last user message and response",
-  usage: "/undo",
-  execute: (_args, ctx) => {
-    // This would need clearHistory to support partial removal
-    return "Undo: use /clear to reset or scroll up to review history.";
   },
 });
 
