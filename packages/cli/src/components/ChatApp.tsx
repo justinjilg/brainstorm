@@ -130,9 +130,24 @@ export function ChatApp({
         setMessages([]);
         setStreamingText(undefined);
         break;
-      case "cycle-mode":
-        // Mode cycling would be wired when mode state is lifted to this level
+      case "cycle-mode": {
+        const modes = ["auto", "confirm", "plan"] as const;
+        const current = slashCallbacks?.getMode?.() ?? "confirm";
+        const idx = modes.indexOf(current as any);
+        const next = modes[(idx + 1) % modes.length];
+        slashCallbacks?.setMode?.(next);
+        // Show mode change as routing message
+        const labels: Record<string, string> = {
+          auto: "auto (all tools allowed)",
+          confirm: "confirm (ask before writes)",
+          plan: "plan (read-only)",
+        };
+        setMessages((prev) => [
+          ...prev,
+          { role: "routing", content: `Mode: ${labels[next] ?? next}` },
+        ]);
         break;
+      }
     }
   });
 
@@ -372,16 +387,39 @@ export function ChatApp({
               setSessionCost(event.totalCost);
               if (event.totalTokens) setTokenCount(event.totalTokens);
               break;
-            case "error":
+            case "error": {
+              // Categorize error for better UX
+              const msg = event.error.message ?? "";
+              const category =
+                msg.includes("fetch") || msg.includes("ECONNREFUSED")
+                  ? "NETWORK"
+                  : msg.includes("Budget") || msg.includes("budget")
+                    ? "BUDGET"
+                    : msg.includes("Unauthorized") || msg.includes("401")
+                      ? "AUTH"
+                      : msg.includes("No models")
+                        ? "MODEL"
+                        : "ERROR";
+              const hint =
+                category === "NETWORK"
+                  ? "\nCheck your internet connection."
+                  : category === "BUDGET"
+                    ? "\nRun /budget to check. Adjust in config.toml."
+                    : category === "AUTH"
+                      ? "\nRun /vault list to check API keys."
+                      : category === "MODEL"
+                        ? "\nRun /model to switch or check available models."
+                        : "";
               setMessages((prev) => [
                 ...prev,
                 {
-                  role: "assistant",
-                  content: `Error: ${event.error.message}`,
+                  role: "error" as any,
+                  content: `[${category}] ${msg}${hint}`,
                   model,
                 },
               ]);
               break;
+            }
           }
         }
       } catch (err: any) {
