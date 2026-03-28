@@ -1538,6 +1538,206 @@ projectsCmd
     }
   });
 
+// ── Schedule Command ──────────────────────────────────────────────
+
+const scheduleCmd = program
+  .command("schedule")
+  .description("Manage scheduled tasks");
+
+scheduleCmd
+  .command("list")
+  .option("-p, --project <name>", "Filter by project")
+  .description("List scheduled tasks")
+  .action(async (opts: { project?: string }) => {
+    const { ScheduledTaskRepository } = await import("@brainstorm/scheduler");
+    const { ProjectManager } = await import("@brainstorm/projects");
+    const db = getDb();
+    const taskRepo = new ScheduledTaskRepository(db);
+
+    let projectId: string | undefined;
+    if (opts.project) {
+      const pm = new ProjectManager(db);
+      const p = pm.projects.getByName(opts.project);
+      if (!p) {
+        console.error(`  Project "${opts.project}" not found.`);
+        return;
+      }
+      projectId = p.id;
+    }
+
+    const tasks = taskRepo.list(projectId, "active");
+    console.log("\n  Scheduled Tasks:\n");
+    if (tasks.length === 0) {
+      console.log(
+        '    No tasks. Add one: storm schedule add "<prompt>" --project <name>\n',
+      );
+      return;
+    }
+    for (const t of tasks) {
+      const cron = t.cronExpression || "one-shot";
+      const mutations = t.allowMutations ? "read+write" : "read-only";
+      const budget = t.budgetLimit
+        ? `$${t.budgetLimit.toFixed(2)}`
+        : "no limit";
+      console.log(
+        `    ${t.name.padEnd(25)} ${cron.padEnd(18)} ${mutations.padEnd(12)} ${budget}`,
+      );
+    }
+    console.log();
+  });
+
+scheduleCmd
+  .command("add")
+  .argument("<prompt>", "Task instruction")
+  .requiredOption("-p, --project <name>", "Project name")
+  .option("-n, --name <name>", "Task name (default: first 30 chars of prompt)")
+  .option("--cron <expression>", "Cron schedule (e.g. '0 9 * * *')")
+  .option("--budget <amount>", "Budget limit per run in dollars", "0.50")
+  .option("--max-turns <n>", "Maximum turns per run", "20")
+  .option("--allow-mutations", "Allow file writes and shell commands")
+  .option("--model <id>", "Model override for this task")
+  .description("Add a scheduled task")
+  .action(async (prompt: string, opts: any) => {
+    const { ScheduledTaskRepository, validateCron, validateTaskSafety } =
+      await import("@brainstorm/scheduler");
+    const { ProjectManager } = await import("@brainstorm/projects");
+    const db = getDb();
+    const pm = new ProjectManager(db);
+    const project = pm.projects.getByName(opts.project);
+    if (!project) {
+      console.error(`  Project "${opts.project}" not found.`);
+      return;
+    }
+
+    if (opts.cron) {
+      const err = validateCron(opts.cron);
+      if (err) {
+        console.error(`  Invalid cron: ${err}`);
+        return;
+      }
+    }
+
+    const taskRepo = new ScheduledTaskRepository(db);
+    const task = taskRepo.create({
+      projectId: project.id,
+      name: opts.name || prompt.slice(0, 30),
+      prompt,
+      cronExpression: opts.cron,
+      budgetLimit: parseFloat(opts.budget),
+      maxTurns: parseInt(opts.maxTurns),
+      allowMutations: opts.allowMutations ?? false,
+      modelId: opts.model,
+    });
+
+    const warnings = validateTaskSafety(task);
+    console.log(`\n  ✓ Created task "${task.name}" (${task.id.slice(0, 8)})`);
+    if (task.cronExpression) {
+      const { describeCron } = await import("@brainstorm/scheduler");
+      console.log(`    Schedule: ${describeCron(task.cronExpression)}`);
+    }
+    if (warnings.length > 0) {
+      console.log("    Warnings:");
+      for (const w of warnings) console.log(`      ⚠ ${w}`);
+    }
+    console.log();
+  });
+
+scheduleCmd
+  .command("run")
+  .option("--task-id <id>", "Run a specific task")
+  .option("--dry-run", "Show what would run without executing")
+  .description("Trigger due tasks")
+  .action(async (opts: { taskId?: string; dryRun?: boolean }) => {
+    const { TriggerRunner } = await import("@brainstorm/scheduler");
+    const db = getDb();
+    const runner = new TriggerRunner(db);
+    const result = await runner.runDueTasks(opts);
+
+    console.log(`\n  Checked: ${result.tasksChecked} tasks`);
+    console.log(`  Run:     ${result.tasksRun}`);
+    if (result.tasksFailed > 0) console.log(`  Failed:  ${result.tasksFailed}`);
+    if (result.tasksSkipped > 0)
+      console.log(`  Skipped: ${result.tasksSkipped} (concurrency limit)`);
+
+    for (const r of result.runs) {
+      const icon =
+        r.status === "completed" ? "✓" : r.status === "failed" ? "✗" : "○";
+      console.log(
+        `    ${icon} ${r.taskName} → ${r.status}${r.error ? ` (${r.error})` : ""}`,
+      );
+    }
+    console.log();
+  });
+
+scheduleCmd
+  .command("history")
+  .option("--task-id <id>", "Filter by task")
+  .option("-n, --limit <count>", "Number of runs to show", "10")
+  .description("Show task run history")
+  .action(async (opts: { taskId?: string; limit: string }) => {
+    const { TaskRunRepository, ScheduledTaskRepository } =
+      await import("@brainstorm/scheduler");
+    const db = getDb();
+    const runRepo = new TaskRunRepository(db);
+    const taskRepo = new ScheduledTaskRepository(db);
+
+    const runs = opts.taskId
+      ? runRepo.listByTask(opts.taskId, parseInt(opts.limit))
+      : runRepo.listRecent(parseInt(opts.limit));
+
+    console.log("\n  Task Run History:\n");
+    if (runs.length === 0) {
+      console.log("    No runs yet.\n");
+      return;
+    }
+    for (const r of runs) {
+      const task = taskRepo.getById(r.taskId);
+      const icon =
+        r.status === "completed" ? "✓" : r.status === "failed" ? "✗" : "●";
+      const date = new Date(r.createdAt * 1000).toLocaleString();
+      console.log(
+        `    ${icon} ${(task?.name ?? r.taskId.slice(0, 8)).padEnd(22)} $${r.cost.toFixed(4).padEnd(10)} ${r.status.padEnd(16)} ${date}`,
+      );
+    }
+    console.log();
+  });
+
+scheduleCmd
+  .command("pause")
+  .argument("<task-id>", "Task ID to pause")
+  .description("Pause a scheduled task")
+  .action(async (taskId: string) => {
+    const { ScheduledTaskRepository } = await import("@brainstorm/scheduler");
+    const db = getDb();
+    const repo = new ScheduledTaskRepository(db);
+    repo.updateStatus(taskId, "paused");
+    console.log(`  ✓ Paused task ${taskId.slice(0, 8)}\n`);
+  });
+
+scheduleCmd
+  .command("resume")
+  .argument("<task-id>", "Task ID to resume")
+  .description("Resume a paused task")
+  .action(async (taskId: string) => {
+    const { ScheduledTaskRepository } = await import("@brainstorm/scheduler");
+    const db = getDb();
+    const repo = new ScheduledTaskRepository(db);
+    repo.updateStatus(taskId, "active");
+    console.log(`  ✓ Resumed task ${taskId.slice(0, 8)}\n`);
+  });
+
+scheduleCmd
+  .command("delete")
+  .argument("<task-id>", "Task ID to delete")
+  .description("Delete a scheduled task")
+  .action(async (taskId: string) => {
+    const { ScheduledTaskRepository } = await import("@brainstorm/scheduler");
+    const db = getDb();
+    const repo = new ScheduledTaskRepository(db);
+    repo.delete(taskId);
+    console.log(`  ✓ Deleted task ${taskId.slice(0, 8)}\n`);
+  });
+
 // ── Sessions Command ───────────────────────────────────────────────
 
 program
