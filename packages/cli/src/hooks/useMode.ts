@@ -5,9 +5,15 @@
 
 import { useState, useCallback } from "react";
 
-export type TUIMode = "chat" | "dashboard" | "models" | "config";
+export type TUIMode = "chat" | "dashboard" | "models" | "config" | "planning";
 
-const MODE_ORDER: TUIMode[] = ["chat", "dashboard", "models", "config"];
+const MODE_ORDER: TUIMode[] = [
+  "chat",
+  "dashboard",
+  "models",
+  "config",
+  "planning",
+];
 
 export const MODE_LABELS: Record<
   TUIMode,
@@ -17,6 +23,7 @@ export const MODE_LABELS: Record<
   dashboard: { label: "Dashboard", key: "2", color: "blue" },
   models: { label: "Models", key: "3", color: "yellow" },
   config: { label: "Config", key: "4", color: "magenta" },
+  planning: { label: "Planning", key: "5", color: "cyan" },
 };
 
 export function useMode(initial: TUIMode = "chat") {

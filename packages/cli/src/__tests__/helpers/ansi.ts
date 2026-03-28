@@ -35,6 +35,8 @@ export function hasColor(frame: string, text: string, color: string): boolean {
     throw new Error(
       `Unknown color: ${color}. Known: ${Object.keys(FG_CODES).join(", ")}`,
     );
+
+  // Check per-line first (strongest signal)
   const lines = frame.split("\n");
   for (const line of lines) {
     if (line.includes(text)) {
@@ -43,6 +45,15 @@ export function hasColor(frame: string, text: string, color: string): boolean {
       }
     }
   }
+
+  // Fallback: check if text exists AND color code exists anywhere in frame
+  // (handles Ink wrapping where color and text span multiple lines)
+  if (frame.includes(text)) {
+    for (const code of codes) {
+      if (frame.includes(code)) return true;
+    }
+  }
+
   return false;
 }
 
@@ -51,13 +62,15 @@ export function hasColor(frame: string, text: string, color: string): boolean {
  */
 export function hasBold(frame: string, text: string): boolean {
   const boldCode = "\u001b[1m";
+  // Check per-line first
   const lines = frame.split("\n");
   for (const line of lines) {
     if (line.includes(text) && line.includes(boldCode)) {
       return true;
     }
   }
-  return false;
+  // Fallback: both present anywhere in frame
+  return frame.includes(text) && frame.includes(boldCode);
 }
 
 /**

@@ -15,6 +15,7 @@ import { ChatApp } from "./ChatApp.js";
 import { DashboardMode } from "./modes/DashboardMode.js";
 import { ModelsMode } from "./modes/ModelsMode.js";
 import { ConfigMode } from "./modes/ConfigMode.js";
+import { PlanningMode } from "./modes/PlanningMode.js";
 import { ShortcutOverlay } from "./ShortcutOverlay.js";
 import type { AgentEvent, AgentTask } from "@brainstorm/shared";
 
@@ -313,6 +314,8 @@ export function App(props: AppProps) {
           memoryInfo={props.memoryInfo}
         />
       )}
+
+      {mode === "planning" && <PlanningMode />}
 
       <KeyHint mode={mode} isProcessing={isProcessing} />
 
