@@ -1,6 +1,12 @@
 export { AgentRepository } from "./repository.js";
 export { AgentManager } from "./manager.js";
 export {
+  loadAgentFiles,
+  parseAgentFile,
+  findAgentFile,
+  type FileAgent,
+} from "./file-loader.js";
+export {
   implementationSpec,
   codeChanges,
   reviewResult,

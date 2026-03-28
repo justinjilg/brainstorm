@@ -23,6 +23,7 @@ export { trajectoryReductionMiddleware } from "./builtin/trajectory-reduction.js
 export { autoLintMiddleware } from "./builtin/auto-lint.js";
 export { createMemoryExtractionMiddleware } from "./builtin/memory-extract.js";
 export { createProactiveCompactionMiddleware } from "./builtin/proactive-compaction.js";
+export { createSecurityScanMiddleware } from "./builtin/security-scan.js";
 
 /**
  * Create a default middleware pipeline with all built-in middleware.
@@ -39,6 +40,7 @@ import { trajectoryReductionMiddleware } from "./builtin/trajectory-reduction.js
 import { autoLintMiddleware } from "./builtin/auto-lint.js";
 import { createMemoryExtractionMiddleware } from "./builtin/memory-extract.js";
 import { createProactiveCompactionMiddleware } from "./builtin/proactive-compaction.js";
+import { createSecurityScanMiddleware } from "./builtin/security-scan.js";
 
 export function createDefaultMiddlewarePipeline(
   projectPath?: string,
@@ -54,6 +56,7 @@ export function createDefaultMiddlewarePipeline(
   pipeline.use(trajectoryReductionMiddleware);
   pipeline.use(autoLintMiddleware);
   pipeline.use(createProactiveCompactionMiddleware(contextWindow));
+  pipeline.use(createSecurityScanMiddleware());
   if (projectPath) {
     pipeline.use(createMemoryExtractionMiddleware(projectPath));
   }
