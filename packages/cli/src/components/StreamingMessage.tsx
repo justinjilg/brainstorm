@@ -21,7 +21,7 @@ interface StreamingMessageProps {
   model?: string;
 }
 
-export function StreamingMessage({
+export const StreamingMessage = React.memo(function StreamingMessage({
   content,
   isStreaming,
   phase,
@@ -50,9 +50,18 @@ export function StreamingMessage({
     // Truncate to last ~2000 chars for rendering performance
     const MAX_STREAM_RENDER = 2000;
     const truncated = content.length > MAX_STREAM_RENDER;
-    const visibleContent = truncated
+    let visibleContent = truncated
       ? content.slice(-MAX_STREAM_RENDER)
       : content;
+
+    // Ensure no unclosed code blocks (causes markdown parser hangs)
+    if (truncated) {
+      const backtickCount = (visibleContent.match(/```/g) || []).length;
+      if (backtickCount % 2 === 1) {
+        const lastOpen = visibleContent.lastIndexOf("```");
+        if (lastOpen > 100) visibleContent = visibleContent.slice(0, lastOpen);
+      }
+    }
 
     return (
       <Box flexDirection="column" marginBottom={1}>
@@ -82,4 +91,4 @@ export function StreamingMessage({
   }
 
   return null;
-}
+});

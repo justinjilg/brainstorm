@@ -162,12 +162,12 @@ export function App(props: AppProps) {
 
   // Wrap onSendMessage to capture cost/token updates
   function wrappedSendMessage(text: string): AsyncGenerator<AgentEvent> {
-    setIsProcessing(true);
     const gen = props.onSendMessage(text);
     let lastRequestId: string | undefined;
     let lastModelUsed: string | undefined;
 
     return (async function* () {
+      setIsProcessing(true);
       try {
         for await (const event of gen) {
           // Capture shared state from events
