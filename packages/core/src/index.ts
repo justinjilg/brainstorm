@@ -77,6 +77,7 @@ export {
   type PhaseTrajectory,
   type PipelineOutcome,
 } from "./plan/trajectory-capture.js";
+export { createPipelineDispatcher } from "./plan/pipeline-dispatcher.js";
 export {
   readMultimodalFile,
   isImageFile,
