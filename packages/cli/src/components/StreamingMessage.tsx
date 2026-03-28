@@ -59,7 +59,15 @@ export const StreamingMessage = React.memo(function StreamingMessage({
       const backtickCount = (visibleContent.match(/```/g) || []).length;
       if (backtickCount % 2 === 1) {
         const lastOpen = visibleContent.lastIndexOf("```");
-        if (lastOpen > 100) visibleContent = visibleContent.slice(0, lastOpen);
+        if (lastOpen >= 0) {
+          // Trim at the unclosed fence, or append a closing one if trimming
+          // would remove too much content
+          if (lastOpen > 50) {
+            visibleContent = visibleContent.slice(0, lastOpen);
+          } else {
+            visibleContent += "\n```";
+          }
+        }
       }
     }
 
