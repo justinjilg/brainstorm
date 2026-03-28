@@ -1,12 +1,12 @@
-import { z } from 'zod';
-import { defineTool } from '../base.js';
+import { z } from "zod";
+import { defineTool } from "../base.js";
 
 /**
- * Ask-User Tool — pauses execution and asks the user a question.
+ * ask_user tool — present interactive choices to the user.
  *
- * The tool emits a 'brainstorm:ask-user' event on process. The CLI
- * listens for this event, displays the question, waits for user input,
- * and calls the resolver to resume execution.
+ * When called, emits an event for the TUI to render a SelectPrompt.
+ * The user's selection is returned as the tool result. Supports both
+ * simple string options and rich options with descriptions.
  */
 
 let pendingResolver: ((answer: string) => void) | null = null;
@@ -26,20 +26,41 @@ export function hasPendingQuestion(): boolean {
 }
 
 export const askUserTool = defineTool({
-  name: 'ask_user',
-  description: 'Pause and ask the user a question. Use for design decisions with multiple valid approaches, not routine confirmations. Returns { answer: string }.',
-  permission: 'auto',
+  name: "ask_user",
+  description:
+    "Ask the user a question with selectable options. Use when you need to clarify requirements, " +
+    "confirm a direction, or let the user choose between approaches. Present 2-5 clear options. " +
+    "Mark one as recommended if you have a preference. The user sees an interactive selector.",
+  permission: "auto",
   inputSchema: z.object({
-    question: z.string().describe('The question to ask the user'),
-    options: z.array(z.string()).optional().describe('Optional choices (user can also type free text)'),
+    question: z.string().describe("The question to ask the user"),
+    options: z
+      .array(
+        z.object({
+          label: z
+            .string()
+            .describe("Short label for the option (shown in selector)"),
+          description: z
+            .string()
+            .optional()
+            .describe("Longer description (shown when option is highlighted)"),
+          recommended: z
+            .boolean()
+            .optional()
+            .describe("Whether this is the recommended option"),
+        }),
+      )
+      .min(2)
+      .max(6)
+      .describe("Options for the user to choose from"),
   }),
   async execute({ question, options }) {
-    return new Promise<{ answer: string }>((resolve) => {
+    return new Promise<{ selected: string }>((resolve) => {
       pendingResolver = (answer) => {
-        resolve({ answer });
+        resolve({ selected: answer });
       };
-      // Emit event for CLI to display and handle
-      process.emit('brainstorm:ask-user' as any, { question, options } as any);
+      // Emit event for CLI to display SelectPrompt
+      process.emit("brainstorm:ask-user" as any, { question, options } as any);
     });
   },
 });
