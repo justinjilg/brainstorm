@@ -15,6 +15,7 @@ import { ChatApp } from "./ChatApp.js";
 import { DashboardMode } from "./modes/DashboardMode.js";
 import { ModelsMode } from "./modes/ModelsMode.js";
 import { ConfigMode } from "./modes/ConfigMode.js";
+import { ShortcutOverlay } from "./ShortcutOverlay.js";
 import type { AgentEvent, AgentTask } from "@brainstorm/shared";
 
 interface AppProps {
@@ -84,6 +85,7 @@ export function App(props: AppProps) {
   const { data: brData, refresh: refreshBR } = useBRData(props.gateway ?? null);
   const [lastCtrlD, setLastCtrlD] = useState(0);
   const [guardianStatus, setGuardianStatus] = useState<string | undefined>();
+  const [showShortcuts, setShowShortcuts] = useState(false);
 
   // Global key handler for mode switching
   //
@@ -106,6 +108,12 @@ export function App(props: AppProps) {
         // In any other mode: Escape returns to chat
         setMode("chat");
       }
+      return;
+    }
+
+    // ? shows shortcut overlay (from any non-chat mode)
+    if (input === "?" && mode !== "chat") {
+      setShowShortcuts(true);
       return;
     }
 
@@ -307,6 +315,11 @@ export function App(props: AppProps) {
       )}
 
       <KeyHint mode={mode} isProcessing={isProcessing} />
+
+      {/* Shortcut overlay */}
+      {showShortcuts && (
+        <ShortcutOverlay onDismiss={() => setShowShortcuts(false)} />
+      )}
     </Box>
   );
 }
