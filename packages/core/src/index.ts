@@ -61,6 +61,15 @@ export type {
   PlanNodeStatus,
 } from "./plan/types.js";
 export {
+  runOrchestrationPipeline,
+  type PipelineEvent,
+  type PipelineOptions,
+  type PipelinePhase,
+  type PhaseResult,
+  type PhaseDispatcher,
+  type ReviewFinding,
+} from "./plan/orchestration-pipeline.js";
+export {
   readMultimodalFile,
   isImageFile,
   isPdfFile,

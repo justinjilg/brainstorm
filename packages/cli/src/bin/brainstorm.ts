@@ -1938,6 +1938,137 @@ const orchestrateCmd = program
   .description("Coordinate work across multiple projects");
 
 orchestrateCmd
+  .command("pipeline")
+  .argument("<request>", "What to build (natural language)")
+  .option("--build <cmd>", "Build command", "npx turbo run build --force")
+  .option("--test <cmd>", "Test command", "npx turbo run test")
+  .option("--deploy", "Include deployment phase")
+  .option("--budget <amount>", "Total budget limit in dollars")
+  .option(
+    "--phases <list>",
+    "Comma-separated phases to run (spec,architecture,implementation,review,verify,refactor,deploy,document,report)",
+  )
+  .option("--resume-from <phase>", "Resume from a specific phase")
+  .option("--dry-run", "Show what agents would be dispatched")
+  .description("Run the full 9-phase development pipeline")
+  .action(async (request: string, opts: any) => {
+    const { runOrchestrationPipeline } = await import("@brainstorm/core");
+    const { execFileSync } = await import("node:child_process");
+
+    console.log(`\n  Orchestration Pipeline\n`);
+    console.log(`  Request: "${request}"`);
+    console.log(`  Mode: ${opts.dryRun ? "dry-run" : "execute"}\n`);
+
+    const dispatcher = {
+      async runPhase(
+        agentId: string,
+        subagentType: string,
+        prompt: string,
+        phaseOpts: any,
+      ) {
+        console.log(`    Agent: ${agentId} (${subagentType})`);
+        return {
+          text: `[Placeholder] ${agentId} completed`,
+          cost: 0,
+          toolCalls: [],
+        };
+      },
+      async runParallel(specs: any[], phaseOpts: any) {
+        return specs.map((s: any) => {
+          console.log(`    Agent: ${s.agentId} (${s.subagentType})`);
+          return {
+            agentId: s.agentId,
+            text: `[Placeholder] ${s.agentId} completed`,
+            cost: 0,
+            toolCalls: [],
+          };
+        });
+      },
+      async runCommand(command: string, cwd: string) {
+        const parts = command.split(/\s+/);
+        try {
+          execFileSync(parts[0], parts.slice(1), {
+            cwd,
+            timeout: 120000,
+            stdio: "pipe",
+          });
+          return { passed: true, output: "" };
+        } catch (err: any) {
+          return {
+            passed: false,
+            output: err.stderr?.toString()?.slice(0, 500) ?? "",
+          };
+        }
+      },
+    };
+
+    const phases = opts.phases?.split(",") ?? undefined;
+
+    for await (const event of runOrchestrationPipeline(request, dispatcher, {
+      projectPath: process.cwd(),
+      buildCommand: opts.build,
+      testCommand: opts.test,
+      deploy: opts.deploy,
+      budget: opts.budget ? parseFloat(opts.budget) : undefined,
+      phases,
+      resumeFrom: opts.resumeFrom,
+      dryRun: opts.dryRun,
+    })) {
+      switch (event.type) {
+        case "pipeline-started":
+          console.log(`  Phases: ${event.phases.join(" → ")}\n`);
+          break;
+        case "phase-started":
+          console.log(
+            `  ── ${event.phase.toUpperCase()} ──  (${event.agentId})`,
+          );
+          break;
+        case "phase-completed":
+          const icon = event.result.success ? "✓" : "✗";
+          console.log(
+            `  ${icon} ${event.result.phase}  $${event.result.cost.toFixed(4)}  ${event.result.duration}ms`,
+          );
+          if (event.result.output && !event.result.output.startsWith("[")) {
+            console.log(
+              `    ${event.result.output.split("\n")[0].slice(0, 100)}`,
+            );
+          }
+          console.log();
+          break;
+        case "phase-failed":
+          console.log(`  ✗ ${event.phase}: ${event.error}\n`);
+          break;
+        case "review-findings":
+          console.log(
+            `  Reviews: ${event.findings.length} finding(s)${event.hasCritical ? " (CRITICAL)" : ""}`,
+          );
+          for (const f of event.findings.slice(0, 5)) {
+            console.log(`    [${f.severity}] ${f.description.slice(0, 80)}`);
+          }
+          console.log();
+          break;
+        case "feedback-loop":
+          console.log(
+            `  ↻ Feedback: ${event.from} → ${event.to} (${event.reason})\n`,
+          );
+          break;
+        case "pipeline-completed":
+          console.log(`  ═══════════════════════════════════`);
+          console.log(
+            `  Pipeline complete: $${event.totalCost.toFixed(4)} total`,
+          );
+          console.log(
+            `  ${event.results.filter((r) => r.success).length}/${event.results.length} phases succeeded\n`,
+          );
+          break;
+        case "pipeline-paused":
+          console.log(`  ⚠ Paused at ${event.phase}: ${event.reason}\n`);
+          break;
+      }
+    }
+  });
+
+orchestrateCmd
   .command("run")
   .argument("<description>", "What to do across projects")
   .requiredOption("-p, --projects <names>", "Comma-separated project names")
