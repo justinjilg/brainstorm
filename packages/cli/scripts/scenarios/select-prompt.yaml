@@ -1,0 +1,23 @@
+# SelectPrompt interaction test
+# Verifies: arrow navigation, option display, selection
+name: SelectPrompt interaction
+width: 120
+height: 40
+steps:
+  - wait: 2000 # Wait for initial render
+  - type: "/architect" # Type a role command that triggers SelectPrompt
+  - key: enter
+  - wait: 1000
+  - capture: "01-prompt-shown"
+  - key: down # Navigate down
+  - wait: 200
+  - capture: "02-cursor-moved"
+  - key: down # Navigate down again
+  - wait: 200
+  - capture: "03-cursor-at-third"
+  - key: up # Navigate back up
+  - wait: 200
+  - capture: "04-cursor-back"
+  - key: enter # Select
+  - wait: 500
+  - capture: "05-selected"

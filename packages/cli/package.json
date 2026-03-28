@@ -40,7 +40,12 @@
   },
   "devDependencies": {
     "@types/react": "^18",
+    "@xterm/headless": "^5.5.0",
+    "ink-testing-library": "^4.0.0",
+    "node-pty": "^1.1.0",
+    "strip-ansi": "^7.2.0",
     "tsup": "^8",
-    "typescript": "^5.7"
+    "typescript": "^5.7",
+    "yaml": "^2.8.3"
   }
 }
