@@ -1952,68 +1952,114 @@ orchestrateCmd
   .option("--dry-run", "Show what agents would be dispatched")
   .description("Run the full 9-phase development pipeline")
   .action(async (request: string, opts: any) => {
-    const { runOrchestrationPipeline } = await import("@brainstorm/core");
-    const { execFileSync } = await import("node:child_process");
+    const { runOrchestrationPipeline, createPipelineDispatcher } =
+      await import("@brainstorm/core");
 
     console.log(`\n  Orchestration Pipeline\n`);
     console.log(`  Request: "${request}"`);
     console.log(`  Mode: ${opts.dryRun ? "dry-run" : "execute"}\n`);
 
-    const dispatcher = {
-      async runPhase(
-        agentId: string,
-        subagentType: string,
-        prompt: string,
-        phaseOpts: any,
-      ) {
-        console.log(`    Agent: ${agentId} (${subagentType})`);
-        return {
-          text: `[Placeholder] ${agentId} completed`,
-          cost: 0,
-          toolCalls: [],
-        };
-      },
-      async runParallel(specs: any[], phaseOpts: any) {
-        return specs.map((s: any) => {
-          console.log(`    Agent: ${s.agentId} (${s.subagentType})`);
-          return {
-            agentId: s.agentId,
-            text: `[Placeholder] ${s.agentId} completed`,
-            cost: 0,
-            toolCalls: [],
+    // Set up real runtime — same as chat/workflow commands
+    const config = loadConfig();
+    const db = getDb();
+    const resolvedKeys = await resolveProviderKeys();
+    const registry = await createProviderRegistry(config, resolvedKeys);
+    const costTracker = new CostTracker(db, config.budget);
+    const projectPath = process.cwd();
+    const tools = createDefaultToolRegistry();
+    const { frontmatter } = buildSystemPrompt(projectPath);
+    const router = new BrainstormRouter(
+      config,
+      registry,
+      costTracker,
+      frontmatter,
+    );
+
+    // Create real dispatcher — wired to spawnSubagent() with agent.md definitions
+    const dispatcher = createPipelineDispatcher({
+      config,
+      registry,
+      router,
+      costTracker,
+      tools,
+      projectPath,
+    });
+
+    // Fallback: if no provider keys, use placeholder
+    const hasProviders =
+      resolvedKeys.get("ANTHROPIC_API_KEY") !== null ||
+      resolvedKeys.get("OPENAI_API_KEY") !== null ||
+      resolvedKeys.get("BRAINSTORM_API_KEY") !== null;
+    if (!hasProviders && !opts.dryRun) {
+      console.log(
+        "  ⚠ No model providers configured. Using placeholder dispatcher.",
+      );
+      console.log("  Set API keys via: storm vault add ANTHROPIC_API_KEY\n");
+    }
+
+    const activeDispatcher =
+      hasProviders || opts.dryRun
+        ? dispatcher
+        : {
+            async runPhase(
+              agentId: string,
+              subagentType: string,
+              prompt: string,
+              phaseOpts: any,
+            ) {
+              console.log(`    Agent: ${agentId} (${subagentType})`);
+              return {
+                text: `[No providers] ${agentId} would execute`,
+                cost: 0,
+                toolCalls: [],
+              };
+            },
+            async runParallel(specs: any[], phaseOpts: any) {
+              return specs.map((s: any) => {
+                console.log(`    Agent: ${s.agentId} (${s.subagentType})`);
+                return {
+                  agentId: s.agentId,
+                  text: `[No providers] ${s.agentId} would execute`,
+                  cost: 0,
+                  toolCalls: [],
+                };
+              });
+            },
+            async runCommand(command: string, cwd: string) {
+              const { execFileSync } = await import("node:child_process");
+              const parts = command.split(/\s+/);
+              try {
+                execFileSync(parts[0], parts.slice(1), {
+                  cwd,
+                  timeout: 120000,
+                  stdio: "pipe",
+                });
+                return { passed: true, output: "" };
+              } catch (err: any) {
+                return {
+                  passed: false,
+                  output: err.stderr?.toString()?.slice(0, 500) ?? "",
+                };
+              }
+            },
           };
-        });
-      },
-      async runCommand(command: string, cwd: string) {
-        const parts = command.split(/\s+/);
-        try {
-          execFileSync(parts[0], parts.slice(1), {
-            cwd,
-            timeout: 120000,
-            stdio: "pipe",
-          });
-          return { passed: true, output: "" };
-        } catch (err: any) {
-          return {
-            passed: false,
-            output: err.stderr?.toString()?.slice(0, 500) ?? "",
-          };
-        }
-      },
-    };
 
     const phases = opts.phases?.split(",") ?? undefined;
 
-    for await (const event of runOrchestrationPipeline(request, dispatcher, {
-      projectPath: process.cwd(),
-      buildCommand: opts.build,
-      testCommand: opts.test,
-      deploy: opts.deploy,
-      budget: opts.budget ? parseFloat(opts.budget) : undefined,
-      phases,
-      resumeFrom: opts.resumeFrom,
-      dryRun: opts.dryRun,
-    })) {
+    for await (const event of runOrchestrationPipeline(
+      request,
+      activeDispatcher,
+      {
+        projectPath,
+        buildCommand: opts.build,
+        testCommand: opts.test,
+        deploy: opts.deploy,
+        budget: opts.budget ? parseFloat(opts.budget) : undefined,
+        phases,
+        resumeFrom: opts.resumeFrom,
+        dryRun: opts.dryRun,
+      },
+    )) {
       switch (event.type) {
         case "pipeline-started":
           console.log(`  Phases: ${event.phases.join(" → ")}\n`);
