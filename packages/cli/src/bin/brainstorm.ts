@@ -1738,6 +1738,191 @@ scheduleCmd
     console.log(`  ✓ Deleted task ${taskId.slice(0, 8)}\n`);
   });
 
+// ── Plan Command ──────────────────────────────────────────────────
+
+const planCmd = program
+  .command("plan")
+  .description("Execute and manage structured plans");
+
+planCmd
+  .command("execute")
+  .argument("<path>", "Path to .plan.md file")
+  .option("--auto", "Run autonomously (no pauses)")
+  .option("--dry-run", "Show dispatch plan without executing")
+  .option("--budget <amount>", "Total budget limit in dollars")
+  .option("--task-budget <amount>", "Per-task budget limit", "0.50")
+  .option("--retries <n>", "Max retries per task", "2")
+  .description("Execute a plan file task-by-task using subagents")
+  .action(async (path: string, opts: any) => {
+    const { executePlan } = await import("@brainstorm/core");
+    const { resolve } = await import("node:path");
+    const { execFileSync } = await import("node:child_process");
+
+    const planPath = resolve(path);
+    const mode = opts.dryRun
+      ? "dry-run"
+      : opts.auto
+        ? "autonomous"
+        : "interactive";
+
+    console.log(`\n  Plan Executor (${mode} mode)\n`);
+
+    const dispatcher = {
+      async execute(prompt: string, execOpts: any) {
+        console.log(
+          `    Dispatching: ${execOpts.subagentType}/${execOpts.modelHint}`,
+        );
+        return {
+          text: `[Placeholder] Completed via ${execOpts.subagentType} subagent`,
+          cost: 0,
+          modelUsed: execOpts.modelHint,
+          toolCalls: [],
+          budgetExceeded: false,
+        };
+      },
+      async checkBuild(command: string, cwd: string) {
+        const parts = command.split(/\s+/);
+        try {
+          execFileSync(parts[0], parts.slice(1), {
+            cwd,
+            timeout: 60000,
+            stdio: "pipe",
+          });
+          return { passed: true, output: "" };
+        } catch (err: any) {
+          return {
+            passed: false,
+            output: err.stderr?.toString()?.slice(0, 500) ?? "",
+          };
+        }
+      },
+    };
+
+    try {
+      for await (const event of executePlan(planPath, dispatcher, {
+        projectPath: process.cwd(),
+        buildCommand: "npx turbo run build --force",
+        defaultBudgetPerTask: parseFloat(opts.taskBudget),
+        planBudgetLimit: opts.budget ? parseFloat(opts.budget) : undefined,
+        mode,
+        maxRetries: parseInt(opts.retries),
+        compactBetweenPhases: true,
+      })) {
+        switch (event.type) {
+          case "plan-started":
+            console.log(`  Plan: ${event.plan.name}`);
+            console.log(`  Tasks: ${event.totalTasks} pending\n`);
+            break;
+          case "phase-started":
+            console.log(`  ── ${event.phase.name} ──`);
+            break;
+          case "sprint-started":
+            console.log(`    ${event.sprint.name}`);
+            break;
+          case "task-started":
+            console.log(
+              `    ● ${event.task.description.slice(0, 60)} [${event.subagentType}/${event.model}]`,
+            );
+            break;
+          case "task-completed":
+            console.log(
+              `    ✓ ${event.task.description.slice(0, 60)}  $${event.cost.toFixed(4)}`,
+            );
+            break;
+          case "task-failed":
+            console.log(
+              `    ✗ ${event.task.description.slice(0, 60)}  ${event.reason}`,
+            );
+            break;
+          case "task-retrying":
+            console.log(`    ↻ Retry #${event.attempt} with ${event.model}`);
+            break;
+          case "task-budget-exceeded":
+            console.log(`    $ Budget exceeded: $${event.cost.toFixed(4)}`);
+            break;
+          case "build-check":
+            console.log(
+              `    ${event.passed ? "✓" : "✗"} Build ${event.passed ? "passed" : "FAILED"}`,
+            );
+            break;
+          case "phase-completed":
+            console.log(
+              `  ✓ ${event.phase.name} complete  $${event.cost.toFixed(4)}\n`,
+            );
+            break;
+          case "plan-completed":
+            console.log(`  ═══════════════════════════════`);
+            console.log(
+              `  Plan complete: $${event.totalCost.toFixed(4)} total\n`,
+            );
+            break;
+          case "plan-paused":
+            console.log(`\n  ⚠ Paused: ${event.reason}\n`);
+            break;
+          case "skill-activated":
+            console.log(`    ✦ Skill: ${event.skillName}`);
+            break;
+          case "dry-run-task": {
+            const d = event.dispatch;
+            console.log(
+              `    ○ ${event.task.description.slice(0, 45).padEnd(47)} ${d.subagentType.padEnd(10)} ${d.modelHint.padEnd(10)} ~$${event.estimatedCost.toFixed(2)}`,
+            );
+            break;
+          }
+          case "dry-run-summary":
+            console.log(
+              `\n  Summary: ${event.totalTasks} tasks, ~$${event.estimatedCost.toFixed(2)} estimated`,
+            );
+            console.log(
+              `  By type: ${Object.entries(event.tasksByType)
+                .map(([k, v]) => `${k}:${v}`)
+                .join(", ")}\n`,
+            );
+            break;
+        }
+      }
+    } catch (err) {
+      console.error(
+        `\n  ✗ ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+    }
+  });
+
+planCmd
+  .command("parse")
+  .argument("<path>", "Path to .plan.md file")
+  .description("Parse and display a plan file structure")
+  .action(async (path: string) => {
+    const { parsePlanFile } = await import("@brainstorm/core");
+    const { resolve } = await import("node:path");
+    const plan = parsePlanFile(resolve(path));
+
+    console.log(`\n  ${plan.name} (${plan.status})`);
+    console.log(`  ${plan.completedTasks}/${plan.totalTasks} tasks complete\n`);
+
+    for (const phase of plan.phases) {
+      const icon =
+        phase.status === "completed"
+          ? "✓"
+          : phase.status === "in_progress"
+            ? "◐"
+            : "○";
+      console.log(
+        `  ${icon} ${phase.name}  ${phase.completedCount}/${phase.taskCount}`,
+      );
+      for (const sprint of phase.sprints) {
+        console.log(`    ${sprint.name}`);
+        for (const task of sprint.tasks) {
+          const tIcon = task.status === "completed" ? "✓" : "○";
+          const cost = task.cost ? `$${task.cost.toFixed(2)}` : "";
+          const skill = task.assignedSkill ? `[${task.assignedSkill}]` : "";
+          console.log(`      ${tIcon} ${task.description} ${skill} ${cost}`);
+        }
+      }
+    }
+    console.log();
+  });
+
 // ── Orchestrate Command ───────────────────────────────────────────
 
 const orchestrateCmd = program
