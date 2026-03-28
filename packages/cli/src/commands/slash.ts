@@ -423,6 +423,64 @@ const commands: SlashCommand[] = [
       return `Unknown action "${action}". Usage: /schedule [list|history]`;
     },
   },
+  {
+    name: "orchestrate",
+    aliases: ["orch"],
+    description: "Coordinate work across multiple projects",
+    usage: '/orchestrate "<description>" [project1,project2,...]',
+    execute: async (args) => {
+      const { OrchestrationEngine } = await import("@brainstorm/orchestrator");
+      const { ProjectManager } = await import("@brainstorm/projects");
+      const { getDb } = await import("@brainstorm/db");
+      const db = getDb();
+      const engine = new OrchestrationEngine(db);
+      const pm = new ProjectManager(db);
+
+      if (!args.trim()) {
+        // Show recent runs
+        const runs = engine.listRecent(5);
+        if (runs.length === 0) {
+          return 'No orchestrations yet. Usage: /orchestrate "do something" project1,project2';
+        }
+        const lines = runs.map((r) => {
+          const icon =
+            r.status === "completed" ? "✓" : r.status === "failed" ? "✗" : "●";
+          return `  ${icon} ${r.name.slice(0, 50)} — ${r.status} ($${r.totalCost.toFixed(4)})`;
+        });
+        return `Recent orchestrations:\n${lines.join("\n")}`;
+      }
+
+      // Parse: "description" project1,project2
+      const match =
+        args.match(/^"([^"]+)"\s+(.+)$/) ?? args.match(/^(.+?)\s+([\w,-]+)$/);
+      if (!match) {
+        return 'Usage: /orchestrate "description" project1,project2';
+      }
+
+      const description = match[1];
+      const projectNames = match[2].split(",").map((s: string) => s.trim());
+
+      const lines: string[] = [
+        `Orchestrating: "${description}"`,
+        `Projects: ${projectNames.join(", ")}`,
+        "",
+      ];
+
+      for await (const event of engine.run({ description, projectNames })) {
+        if (event.type === "task-started") {
+          lines.push(`● ${event.project.name} — starting...`);
+        } else if (event.type === "task-completed") {
+          lines.push(`✓ ${event.project.name} — $${event.cost.toFixed(4)}`);
+        } else if (event.type === "task-failed") {
+          lines.push(`✗ ${event.project.name} — ${event.error}`);
+        } else if (event.type === "orchestration-completed") {
+          lines.push("", `Complete: $${event.run.totalCost.toFixed(4)} total`);
+        }
+      }
+
+      return lines.join("\n");
+    },
+  },
 ];
 
 // ── Role Commands ─────────────────────────────────────────────────────
