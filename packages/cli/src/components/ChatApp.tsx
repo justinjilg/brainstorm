@@ -175,6 +175,7 @@ export function ChatApp({
       getOutputStyle: slashCallbacks?.getOutputStyle,
       getBudget: slashCallbacks?.getBudget,
       compact: slashCallbacks?.compact,
+      getContextWindow: slashCallbacks?.getContextWindow,
       dream: slashCallbacks?.dream,
       vault: slashCallbacks?.vault,
       rebuildSystemPrompt: slashCallbacks?.rebuildSystemPrompt,
