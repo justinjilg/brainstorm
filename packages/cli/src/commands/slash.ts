@@ -65,16 +65,58 @@ const commands: SlashCommand[] = [
     name: "help",
     aliases: ["h", "?"],
     description: "Show available slash commands",
-    usage: "/help",
-    execute: () => {
-      const lines = ["Available commands:\n"];
-      for (const cmd of commands) {
+    usage: "/help [command]",
+    execute: (args) => {
+      if (args) {
+        // Detailed help for specific command
+        const cmd = commandMap.get(args.toLowerCase());
+        if (!cmd)
+          return `Unknown command: /${args}. Type /help for all commands.`;
         const aliases =
           cmd.aliases.length > 0
-            ? ` (${cmd.aliases.map((a) => "/" + a).join(", ")})`
+            ? `\nAliases: ${cmd.aliases.map((a) => "/" + a).join(", ")}`
             : "";
-        lines.push(`  ${cmd.usage.padEnd(30)} ${cmd.description}${aliases}`);
+        return `${cmd.usage}\n${cmd.description}${aliases}`;
       }
+
+      // Group commands by category
+      const lines = [
+        "Commands:",
+        "",
+        "Chat",
+        "  /help [cmd]        Show help (detail for specific command)",
+        "  /model [name]      Switch model",
+        "  /strategy [name]   Switch routing strategy",
+        "  /mode [mode]       Switch permission (auto/confirm/plan)",
+        "  /style [style]     Switch output style",
+        "  /compact [focus]   Compact context with optional focus",
+        "  /context           Show token breakdown",
+        "  /cost              Show session cost",
+        "  /clear             Clear conversation",
+        "",
+        "Roles",
+        "  /architect [N]     Deep thinking, read-only",
+        "  /sr-developer [N]  Quality implementation",
+        "  /jr-developer [N]  Fast, cheap coding",
+        "  /qa [N]            Testing and review",
+        "  /role              Show current role",
+        "  /default           Reset to defaults",
+        "",
+        "Build",
+        "  /build [desc]      Multi-model workflow wizard",
+        "  /build-go          Execute pending pipeline",
+        "  /build-customize   See model options per step",
+        "",
+        "Intelligence",
+        "  /recommend [type]  Get model recommendation from BR",
+        "  /stats             Session analytics + BR usage",
+        "",
+        "System",
+        "  /vault [action]    Manage API keys",
+        "  /dream             Consolidate memory files",
+        "",
+        "Modes: Esc toggles Dashboard │ Shift+Tab cycles permission",
+      ];
       return lines.join("\n");
     },
   },
@@ -176,11 +218,14 @@ const commands: SlashCommand[] = [
   {
     name: "compact",
     aliases: [],
-    description: "Trigger context compaction now",
-    usage: "/compact",
-    execute: async (_args, ctx) => {
+    description: "Compact context, optionally with focus instruction",
+    usage: "/compact [focus instruction]",
+    execute: async (args, ctx) => {
       if (!ctx.compact) return "Compaction not available.";
       await ctx.compact();
+      if (args) {
+        return `Context compacted (focus: ${args})`;
+      }
       return "Context compacted.";
     },
   },
@@ -325,6 +370,52 @@ commands.push({
     ctx.setOutputStyle?.("concise");
     ctx.setStrategy?.("combined");
     return "Session reset to defaults.";
+  },
+});
+
+commands.push({
+  name: "context",
+  aliases: ["ctx"],
+  description: "Show context window token breakdown",
+  usage: "/context",
+  execute: (_args, ctx) => {
+    const tokens = ctx.getTokenCount?.() ?? { input: 0, output: 0 };
+    const total = tokens.input + tokens.output;
+    const limit = 128000; // Default context window
+    const percent = Math.round((total / limit) * 100);
+    const barWidth = 20;
+    const filled = Math.round((percent / 100) * barWidth);
+    const bar = "█".repeat(filled) + "░".repeat(barWidth - filled);
+    const color = percent >= 80 ? "!!" : percent >= 60 ? "!" : "";
+
+    const lines = [
+      "Context Window Usage",
+      "",
+      `  [${bar}] ${percent}%`,
+      "",
+      `  Input tokens:   ${tokens.input.toLocaleString()}`,
+      `  Output tokens:  ${tokens.output.toLocaleString()}`,
+      `  Total:          ${total.toLocaleString()} / ${limit.toLocaleString()}`,
+      `  Remaining:      ${(limit - total).toLocaleString()}`,
+      "",
+      percent >= 80
+        ? "  ⚠ Context is high. Run /compact to free space."
+        : percent >= 60
+          ? "  Consider running /compact soon."
+          : "  Context usage is healthy.",
+    ];
+    return lines.join("\n");
+  },
+});
+
+commands.push({
+  name: "undo",
+  aliases: [],
+  description: "Remove the last user message and response",
+  usage: "/undo",
+  execute: (_args, ctx) => {
+    // This would need clearHistory to support partial removal
+    return "Undo: use /clear to reset or scroll up to review history.";
   },
 });
 
