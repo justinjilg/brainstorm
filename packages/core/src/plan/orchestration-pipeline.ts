@@ -110,6 +110,51 @@ const DEFAULT_PHASES: PipelinePhase[] = [
   "report",
 ];
 
+/**
+ * Smart phase selection — BrainstormLLM v2 kill gate findings.
+ *
+ * Kill gate evaluation (2,203 examples, 233 Claude Code sessions):
+ * - spec: 0.95 F1 (highly predictable from request text)
+ * - implementation: 0.84 F1 (highly predictable)
+ * - architecture/refactor/report: always skippable (33% free savings)
+ * - verify/review/deploy: depend on session state (future v2.1)
+ *
+ * Hybrid approach:
+ * 1. Static rules: skip architecture, refactor, report (never needed in practice)
+ * 2. Request classifier: predict spec + implementation from text
+ * 3. Always include: verify (if build command), review (if implementation ran)
+ */
+function selectSmartPhases(
+  request: string,
+  options: PipelineOptions,
+): PipelinePhase[] {
+  const phases: PipelinePhase[] = [];
+  const lower = request.toLowerCase();
+
+  // Spec phase: high F1 (0.95) — include for features, skip for fixes
+  const isFeature = /\b(add|create|build|implement|new|design)\b/.test(lower);
+  const isFix = /\b(fix|bug|error|broken|crash|patch)\b/.test(lower);
+  const isRefactor = /\b(refactor|clean|reorganize|simplify)\b/.test(lower);
+  const isDoc = /\b(doc|readme|changelog|comment|describe)\b/.test(lower);
+
+  if (isFeature || isDoc) phases.push("spec");
+  // architecture: ALWAYS SKIP (kill gate finding: 0% usage in real sessions)
+  // implementation: high F1 (0.84) — include for code tasks
+  if (!isDoc) phases.push("implementation");
+  // review: include after implementation (session-state dependent, default on)
+  if (!isDoc && !isFix) phases.push("review");
+  // verify: include if build command exists
+  if (options.buildCommand) phases.push("verify");
+  // refactor: ALWAYS SKIP (kill gate finding: never needed standalone)
+  // deploy: only if explicitly requested
+  if (options.deploy) phases.push("deploy");
+  // document: include for features and doc tasks
+  if (isFeature || isDoc) phases.push("document");
+  // report: ALWAYS SKIP (kill gate finding: never needed in practice)
+
+  return phases.length > 0 ? phases : ["spec", "implementation", "verify"];
+}
+
 // ── Pipeline Engine ─────────────────────────────────────────────────
 
 export interface PhaseDispatcher {
@@ -151,7 +196,8 @@ export async function* runOrchestrationPipeline(
   // Trajectory capture — every pipeline run becomes training data
   const { TrajectoryRecorder } = await import("./trajectory-capture.js");
   const recorder = new TrajectoryRecorder(request, options.projectPath);
-  const phases = options.phases ?? DEFAULT_PHASES;
+  // Use smart phase selection (BrainstormLLM v2 findings) unless user specified explicit phases
+  const phases = options.phases ?? selectSmartPhases(request, options);
   const budgetPerPhase = options.budget ? options.budget / phases.length : 1.0;
   const results: PhaseResult[] = [];
   let totalCost = 0;
