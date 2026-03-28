@@ -110,13 +110,22 @@ interface ToolCallListProps {
 export function ToolCallList({ tools }: ToolCallListProps) {
   if (tools.length === 0) return null;
 
-  // Show running tools, plus last 3 completed
   const running = tools.filter((t) => t.status === "running");
-  const completed = tools.filter((t) => t.status !== "running").slice(-3);
-  const visible = [...completed, ...running];
+  const completed = tools.filter((t) => t.status !== "running");
+  const hiddenCount = Math.max(0, completed.length - 2);
+  const recentCompleted = completed.slice(-2);
+  const visible = [...recentCompleted, ...running];
 
   return (
     <Box flexDirection="column" paddingX={1}>
+      {hiddenCount > 0 && (
+        <Box paddingLeft={2}>
+          <Text color="gray">
+            {hiddenCount} earlier tool call{hiddenCount > 1 ? "s" : ""}{" "}
+            completed
+          </Text>
+        </Box>
+      )}
       {visible.map((tool) => (
         <ToolCallDisplay key={tool.id} tool={tool} />
       ))}
