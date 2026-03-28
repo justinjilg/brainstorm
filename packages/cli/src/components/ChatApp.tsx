@@ -82,7 +82,30 @@ export function ChatApp({
     options: SelectOption[];
   } | null>(null);
   const [showAutocomplete, setShowAutocomplete] = useState(false);
+
+  // Inline prompt queue — any command/tool can push interactive prompts
+  // Each prompt shows a SelectPrompt. User picks, callback fires, next prompt shows.
+  const [promptQueue, setPromptQueue] = useState<
+    Array<{
+      question: string;
+      options: SelectOption[];
+      resolve: (value: string) => void;
+    }>
+  >([]);
   const [history] = useState(() => new InputHistory());
+
+  /**
+   * Push an inline prompt and wait for the user's selection.
+   * Used by slash commands, tools, and any interactive flow.
+   */
+  const pushPrompt = useCallback(
+    (question: string, options: SelectOption[]): Promise<string> => {
+      return new Promise<string>((resolve) => {
+        setPromptQueue((prev) => [...prev, { question, options, resolve }]);
+      });
+    },
+    [],
+  );
 
   // Build slash command autocomplete items once
   const slashItems = useMemo<AutocompleteItem[]>(() => {
@@ -214,6 +237,7 @@ export function ChatApp({
       getBudget: slashCallbacks?.getBudget,
       compact: slashCallbacks?.compact,
       getContextWindow: slashCallbacks?.getContextWindow,
+      prompt: pushPrompt,
       dream: slashCallbacks?.dream,
       vault: slashCallbacks?.vault,
       rebuildSystemPrompt: slashCallbacks?.rebuildSystemPrompt,
@@ -558,6 +582,27 @@ export function ChatApp({
             const { resolveAskUser } = await import("@brainstorm/tools");
             resolveAskUser(askUserPrompt.options[0]?.value ?? "");
             setAskUserPrompt(null);
+          }}
+        />
+      )}
+      {/* Inline prompt queue (from slash commands, /build, etc.) */}
+      {promptQueue.length > 0 && !askUserPrompt && (
+        <SelectPrompt
+          message={promptQueue[0].question}
+          options={promptQueue[0].options}
+          onSelect={(value) => {
+            const current = promptQueue[0];
+            setPromptQueue((prev) => prev.slice(1));
+            setMessages((prev) => [
+              ...prev,
+              { role: "routing", content: `→ ${value}` },
+            ]);
+            current.resolve(value);
+          }}
+          onCancel={() => {
+            const current = promptQueue[0];
+            setPromptQueue([]);
+            current.resolve(current.options[0]?.value ?? "");
           }}
         />
       )}
