@@ -17,14 +17,29 @@ peer10 / eventflow (apps) → Additional workloads for training diversity
 ## The Dependency Chain
 
 ```
-Step 1: brainstorm        → Pipeline dispatcher wired to real subagents (DONE)
-Step 2: brainstormrouter  → Accepts orchestration trajectories via API
-Step 3: brainstorm        → Pushes trajectories to BR after each pipeline run
-Step 4: hawktalk + apps   → Run through the pipeline, generating trajectories
-Step 5: brainstormLLM     → Trains on accumulated trajectories
-Step 6: brainstormrouter  → Serves trained model via ONNX inference
-Step 7: brainstorm        → Uses model predictions for phase planning
+Step 0: brainstorm        → Wire pipeline dispatcher to REAL spawnSubagent() with runtime deps
+                             (createPipelineDispatcher exists but CLI command still uses placeholder)
+Step 1: brainstormrouter  → Accepts orchestration trajectories via API
+Step 2: brainstorm        → Pushes trajectories to BR after each pipeline run
+Step 3: hawktalk + apps   → Run through the pipeline, generating REAL trajectories
+Step 4: brainstormLLM     → Trains on accumulated trajectories (local JSONL, NOT BR API)
+Step 5: brainstormrouter  → Serves trained model via ONNX inference
+Step 6: brainstorm        → Uses model predictions for phase planning
 ```
+
+## Kill Gates (must pass before proceeding to next stage)
+
+| Gate   | Metric               | Threshold                                                | Checked At                |
+| ------ | -------------------- | -------------------------------------------------------- | ------------------------- |
+| **G1** | Trajectory quality   | ≥80% of trajectories have build_passed=true              | Before training (Stage 4) |
+| **G2** | Trajectory diversity | ≥3 distinct task types, ≥3 distinct projects             | Before training (Stage 4) |
+| **G3** | Trajectory volume    | ≥500 trajectories with real costs and tool calls         | Before training (Stage 4) |
+| **G4** | Model quality-match  | Orchestrator matches naive-full-pipeline build pass rate | After training            |
+| **G5** | Cost reduction       | ≥30% lower cost than naive-full-pipeline at same quality | After training            |
+| **G6** | Phase-skip accuracy  | Phase-skip predictions agree with human judgment ≥70%    | After training            |
+
+If G1-G3 fail → generate more/better trajectories before training.
+If G4-G6 fail → improve training data quality, adjust labels, retrain.
 
 ## How to Coordinate
 
@@ -192,25 +207,27 @@ BR API spec is at:
 
 Current status:
 - Brainstorm CLI: pipeline + agents + trajectory capture DONE
+- Brainstorm CLI: Step 0 PENDING — CLI command still uses placeholder dispatcher
 - BrainstormRouter: needs trajectory storage endpoint
-- BrainstormLLM: needs orchestration training pipeline
+- BrainstormLLM: needs orchestration training pipeline (reads LOCAL JSONL, not BR API)
 - Trajectory count: [check ~/.brainstorm/trajectories/orchestration/]
 ```
 
 ## Status Tracking
 
-| Project          | What                             | Status   | Blocks            |
-| ---------------- | -------------------------------- | -------- | ----------------- |
-| brainstorm       | Pipeline dispatcher (real)       | **DONE** | —                 |
-| brainstorm       | Trajectory capture               | **DONE** | —                 |
-| brainstorm       | 11 role agents                   | **DONE** | —                 |
-| brainstorm       | BR trajectory push               | TODO     | BR endpoint       |
-| brainstormrouter | Trajectory storage endpoint      | TODO     | —                 |
-| brainstormrouter | Orchestration inference endpoint | TODO     | Trained model     |
-| hawktalk         | Generate 50+ trajectories        | TODO     | Real dispatcher   |
-| peer10           | Generate 50+ trajectories        | TODO     | Real dispatcher   |
-| brainstormLLM    | prepare_orchestration.py         | TODO     | 100+ trajectories |
-| brainstormLLM    | train_orchestrator.py            | TODO     | Training data     |
-| brainstormLLM    | ONNX export                      | TODO     | Trained model     |
-| brainstormrouter | Deploy ONNX model                | TODO     | ONNX export       |
-| brainstorm       | Use model for phase planning     | TODO     | Deployed model    |
+| Project          | What                                   | Status   | Blocks            |
+| ---------------- | -------------------------------------- | -------- | ----------------- |
+| brainstorm       | Pipeline dispatcher (factory)          | **DONE** | —                 |
+| brainstorm       | CLI wired to real dispatcher           | **TODO** | Runtime deps      |
+| brainstorm       | Trajectory capture                     | **DONE** | —                 |
+| brainstorm       | 11 role agents                         | **DONE** | —                 |
+| brainstorm       | BR trajectory push                     | TODO     | BR endpoint       |
+| brainstormrouter | Trajectory storage endpoint            | TODO     | —                 |
+| brainstormrouter | Orchestration inference endpoint       | TODO     | Trained model     |
+| hawktalk         | Generate 50+ trajectories              | TODO     | Real dispatcher   |
+| peer10           | Generate 50+ trajectories              | TODO     | Real dispatcher   |
+| brainstormLLM    | prepare_orchestration.py (LOCAL JSONL) | TODO     | 100+ trajectories |
+| brainstormLLM    | train_orchestrator.py                  | TODO     | Training data     |
+| brainstormLLM    | ONNX export                            | TODO     | Trained model     |
+| brainstormrouter | Deploy ONNX model                      | TODO     | ONNX export       |
+| brainstorm       | Use model for phase planning           | TODO     | Deployed model    |
