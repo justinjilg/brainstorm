@@ -129,6 +129,10 @@ export {
   brMemoryStoreTool,
   brHealthTool,
 } from "./builtin/br-intelligence.js";
+export {
+  createMemoryTools,
+  type MemoryBackend,
+} from "./builtin/memory-tools.js";
 
 import { ToolRegistry } from "./registry.js";
 import { fileReadTool } from "./builtin/file-read.js";
