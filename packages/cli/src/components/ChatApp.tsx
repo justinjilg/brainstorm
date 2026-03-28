@@ -1,4 +1,10 @@
-import React, { useState, useCallback, useMemo, useEffect } from "react";
+import React, {
+  useState,
+  useCallback,
+  useMemo,
+  useEffect,
+  useRef,
+} from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import TextInput from "ink-text-input";
 import { StatusBar } from "./StatusBar.js";
@@ -93,6 +99,8 @@ export function ChatApp({
     }>
   >([]);
   const [history] = useState(() => new InputHistory());
+  const abortTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toolIdCounter = useRef(0);
 
   /**
    * Push an inline prompt and wait for the user's selection.
@@ -173,12 +181,15 @@ export function ChatApp({
       case "abort":
         if (isProcessing) {
           onAbort?.();
-          // Safety: force-reset processing state after abort
-          setTimeout(() => {
+          // Clear any previous abort timeout to prevent accumulation
+          if (abortTimeoutRef.current) clearTimeout(abortTimeoutRef.current);
+          // Safety fallback: force-reset if generator doesn't complete in 5s
+          abortTimeoutRef.current = setTimeout(() => {
             setIsProcessing(false);
             setStreamingText(undefined);
             setThinkingPhase(undefined);
-          }, 2000);
+            abortTimeoutRef.current = null;
+          }, 5000);
         }
         break;
       case "exit":
@@ -338,7 +349,7 @@ export function ChatApp({
               setActiveTools((prev) => [
                 ...prev,
                 {
-                  id: `tc-${Date.now()}-${event.toolName}`,
+                  id: `tc-${++toolIdCounter.current}-${event.toolName}`,
                   toolName: event.toolName,
                   args: (event.args ?? {}) as Record<string, unknown>,
                   status: "running",
