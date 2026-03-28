@@ -5,7 +5,7 @@
  * Mode 1 (Chat) delegates to ChatApp. Other modes are dashboard views.
  */
 
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { Box, useApp, useInput } from "ink";
 import { useMode, type TUIMode } from "../hooks/useMode.js";
 import { useBRData } from "../hooks/useBRData.js";
@@ -87,6 +87,7 @@ export function App(props: AppProps) {
   const [lastCtrlD, setLastCtrlD] = useState(0);
   const [guardianStatus, setGuardianStatus] = useState<string | undefined>();
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const abortTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Global key handler for mode switching
   //
@@ -99,9 +100,11 @@ export function App(props: AppProps) {
         // In chat: Escape while processing aborts; while idle opens dashboard
         if (isProcessing) {
           props.onAbort?.();
-          setTimeout(() => {
+          if (abortTimeoutRef.current) clearTimeout(abortTimeoutRef.current);
+          abortTimeoutRef.current = setTimeout(() => {
             setIsProcessing(false);
-          }, 2000);
+            abortTimeoutRef.current = null;
+          }, 5000);
         } else {
           setMode("dashboard");
         }
@@ -162,12 +165,12 @@ export function App(props: AppProps) {
 
   // Wrap onSendMessage to capture cost/token updates
   function wrappedSendMessage(text: string): AsyncGenerator<AgentEvent> {
-    setIsProcessing(true);
     const gen = props.onSendMessage(text);
     let lastRequestId: string | undefined;
     let lastModelUsed: string | undefined;
 
     return (async function* () {
+      setIsProcessing(true);
       try {
         for await (const event of gen) {
           // Capture shared state from events
