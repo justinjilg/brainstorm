@@ -70,6 +70,14 @@ export {
   type ReviewFinding,
 } from "./plan/orchestration-pipeline.js";
 export {
+  TrajectoryRecorder as OrchestrationTrajectoryRecorder,
+  trajectoryToSFTExamples,
+  sftExamplesToJSONL,
+  type OrchestrationTrajectory,
+  type PhaseTrajectory,
+  type PipelineOutcome,
+} from "./plan/trajectory-capture.js";
+export {
   readMultimodalFile,
   isImageFile,
   isPdfFile,
