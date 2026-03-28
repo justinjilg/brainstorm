@@ -6,7 +6,11 @@
  * /sr-developer codes with quality models, /jr-developer codes fast and cheap.
  */
 
-import type { OutputStyle } from "@brainstorm/core";
+import {
+  type OutputStyle,
+  getPersona,
+  composePersonaPrompt,
+} from "@brainstorm/core";
 
 export type RoleId =
   | "architect"
@@ -29,7 +33,10 @@ export interface RoleDefinition {
   color: string;
   description: string;
   modelChoices: ModelChoice[];
+  /** Static system prompt (fallback if no persona found) */
   systemPrompt: string;
+  /** Persona ID for expert playbook (overrides systemPrompt when available) */
+  personaId?: string;
   outputStyle: OutputStyle;
   permissionMode: "auto" | "confirm" | "plan";
   routingStrategy: string;
@@ -141,6 +148,7 @@ export const ROLES: Record<RoleId, RoleDefinition> = {
       },
     ],
     systemPrompt: ARCHITECT_PROMPT,
+    personaId: "architect",
     outputStyle: "detailed",
     permissionMode: "plan",
     routingStrategy: "quality-first",
@@ -166,6 +174,7 @@ export const ROLES: Record<RoleId, RoleDefinition> = {
       },
     ],
     systemPrompt: PM_PROMPT,
+    personaId: "product-manager",
     outputStyle: "detailed",
     permissionMode: "plan",
     routingStrategy: "quality-first",
@@ -196,6 +205,7 @@ export const ROLES: Record<RoleId, RoleDefinition> = {
       },
     ],
     systemPrompt: SR_DEV_PROMPT,
+    personaId: "sr-developer",
     outputStyle: "concise",
     permissionMode: "confirm",
     routingStrategy: "quality-first",
@@ -230,6 +240,7 @@ export const ROLES: Record<RoleId, RoleDefinition> = {
       },
     ],
     systemPrompt: JR_DEV_PROMPT,
+    personaId: "jr-developer",
     outputStyle: "concise",
     permissionMode: "confirm",
     routingStrategy: "cost-first",
@@ -260,11 +271,32 @@ export const ROLES: Record<RoleId, RoleDefinition> = {
       },
     ],
     systemPrompt: QA_PROMPT,
+    personaId: "qa",
     outputStyle: "detailed",
     permissionMode: "plan",
     routingStrategy: "quality-first",
   },
 };
+
+/**
+ * Get the system prompt for a role, composed from expert persona when available.
+ * Falls back to the static systemPrompt if no persona is registered.
+ */
+export function getRolePrompt(roleId: RoleId, modelId?: string): string {
+  const role = ROLES[roleId];
+  if (!role) return "";
+
+  // Try persona-based composition (model-tuned expert playbook)
+  if (role.personaId) {
+    const persona = getPersona(role.personaId);
+    if (persona) {
+      return composePersonaPrompt(persona, modelId);
+    }
+  }
+
+  // Fallback to static prompt
+  return role.systemPrompt;
+}
 
 /**
  * Format the model selection menu for a role.
