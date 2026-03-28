@@ -43,6 +43,23 @@ export {
 export { MemoryManager, type MemoryEntry } from "./memory/manager.js";
 export { DREAM_SYSTEM_PROMPT, buildDreamPrompt } from "./memory/dream.js";
 export { getPlanModeTools, getPlanModePrompt } from "./plan/mode.js";
+export { executePlan, type SubagentDispatcher } from "./plan/executor.js";
+export {
+  parsePlanFile,
+  parsePlanContent,
+  updateTaskInFile,
+} from "./plan/parser.js";
+export { classifyPlanTask, estimateTaskCost } from "./plan/classifier.js";
+export type {
+  PlanFile,
+  PlanPhase,
+  PlanSprint,
+  PlanTask,
+  PlanEvent,
+  PlanExecutorOptions,
+  TaskDispatch,
+  PlanNodeStatus,
+} from "./plan/types.js";
 export {
   readMultimodalFile,
   isImageFile,
