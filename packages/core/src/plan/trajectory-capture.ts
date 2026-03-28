@@ -216,12 +216,45 @@ export class TrajectoryRecorder {
       feedbackLoops: this.feedbackLoops,
     };
 
-    // Write to local JSONL
+    // Write to local JSONL (source of truth)
     const filename = `${new Date().toISOString().slice(0, 10)}.jsonl`;
     const filepath = join(TRAJECTORY_DIR, filename);
     appendFileSync(filepath, JSON.stringify(trajectory) + "\n", "utf-8");
 
+    // Push to BrainstormRouter (fire-and-forget, local is source of truth)
+    this.pushToBR(trajectory).catch(() => {
+      // Silent failure — local JSONL is the primary store
+    });
+
     return trajectory;
+  }
+
+  /** Push trajectory to BrainstormRouter's trajectory endpoint. */
+  private async pushToBR(trajectory: OrchestrationTrajectory): Promise<void> {
+    const apiKey =
+      process.env.BRAINSTORM_API_KEY ?? process.env.BRAINSTORM_ADMIN_KEY;
+    if (!apiKey) return; // No key = skip push silently
+
+    const res = await fetch(
+      "https://api.brainstormrouter.com/v1/agent/trajectories",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(trajectory),
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
+
+    if (!res.ok) {
+      // Log but don't throw — local JSONL is the real store
+      const body = await res.text().catch(() => "");
+      console.error(
+        `[trajectory] BR push failed: ${res.status} ${body.slice(0, 200)}`,
+      );
+    }
   }
 
   /** Get the trajectory ID (for linking to BR API). */
