@@ -8,27 +8,28 @@ Claude is the primary technical decision-maker for this project. As the AI being
 
 ## Project
 
-Brainstorm — an open-source, CLI-first AI coding assistant with intelligent model routing (BrainstormRouter). Routes tasks to the optimal model (cloud or local) based on task complexity, cost, and user-defined rules. Open-core model: free CLI + BrainstormRouter SaaS for intelligent cloud routing.
+Brainstorm — an open-source, CLI-first AI coding assistant with intelligent model routing (BrainstormRouter) and a 4-mode terminal dashboard. Routes tasks to the optimal model across 10+ models and 8 providers. Open-core model: free CLI + BrainstormRouter SaaS for intelligent cloud routing.
 
 ## Architecture
 
-Turborepo monorepo with 15 TypeScript packages:
+Turborepo monorepo with 16 TypeScript packages:
 
 - `packages/shared` — Types (TaskProfile, ModelEntry, AgentProfile, WorkflowEvent, etc.), errors, pino logger
 - `packages/config` — Zod schemas, TOML config loader, layered config (defaults → global → project → env), BRAINSTORM.md parser
-- `packages/db` — better-sqlite3 persistence (sessions, messages, cost_records, agent_profiles, workflow_runs), auto-migrations
-- `packages/providers` — AI Gateway + BrainstormRouter SaaS (cloud) + Ollama/LM Studio/llama.cpp (local), auto-discovery with caching
-- `packages/router` — BrainstormRouter: heuristic task classifier, 4 routing strategies, CostTracker, fallback chain
-- `packages/tools` — 20 built-in tools (filesystem 8, shell 3, git 4, web 2, tasks 3) with permission levels + checkpoint system
-- `packages/core` — Agentic loop, SessionManager, PermissionManager, context compaction, @-mentions, skills, memory, plan mode, multimodal, security (path guard, credential scanner, .brainstormignore)
-- `packages/agents` — Agent profiles, NL parser, role prompts, Zod output schemas, TOML+SQLite merge
-- `packages/workflow` — Workflow engine state machine, context filtering, confidence/escalation, 4 preset workflows
+- `packages/db` — better-sqlite3 persistence (sessions, messages, cost_records, agent_profiles, workflow_runs, audit_log, code_embeddings), auto-migrations
+- `packages/providers` — Cloud (Anthropic, OpenAI, Google, DeepSeek, Moonshot + BrainstormRouter SaaS) + local (Ollama, LM Studio, llama.cpp), auto-discovery with caching
+- `packages/router` — BrainstormRouter: heuristic task classifier, 6 routing strategies (quality, cost, combined, capability, learned/Thompson, rule-based), CostTracker with forecast, fallback chain
+- `packages/tools` — 42+ built-in tools (filesystem 8, shell 3, git 6, GitHub 2, web 2, tasks 3, agents 6, planning 1, transactions 3, BR intelligence 8) with permission levels + checkpoint system + Docker sandbox
+- `packages/core` — Agentic loop, SessionManager, PermissionManager, context compaction, @-mentions, skills with temporal template vars, memory (4 types + auto-extraction middleware), plan mode, semantic code search (TF-IDF), git history indexing, style learning (code + prose), proactive compaction, 10 middleware pipeline
+- `packages/agents` — Agent profiles, NL parser, role prompts, Zod output schemas, TOML+SQLite merge, 7 subagent types (explore, plan, code, review, general, decompose, external)
+- `packages/workflow` — Workflow engine state machine, context filtering, confidence/escalation, 4 preset workflows, artifact persistence to disk with manifests
 - `packages/hooks` — HookManager for lifecycle automation (PreToolUse, PostToolUse, SessionStart, etc.)
-- `packages/mcp` — MCP client for external tool integration (SSE/HTTP transports)
-- `packages/eval` — Capability probes, eval runner, scorer, scorecard, JSONL result storage
-- `packages/gateway` — Typed BrainstormRouter API client, header parsing, cost reconciliation
-- `packages/vault` — Encrypted key manager (AES-256-GCM + Argon2id), 1Password bridge, env var fallback
-- `packages/cli` — Commander subcommands (chat, run, models, config, budget, agent, workflow, sessions), Ink TUI
+- `packages/mcp` — MCP client with OAuth (client_credentials), tool normalization, SSE/HTTP/stdio transports
+- `packages/eval` — Capability probes (7 dimensions), eval runner, scorer, scorecard, JSONL result storage
+- `packages/gateway` — Typed BrainstormRouter API client, intelligence API (recommendations, ensemble ranking, cost forecast, community patterns), header parsing, cost reconciliation
+- `packages/vault` — Encrypted key manager (AES-256-GCM + Argon2id), 1Password bridge (Dev Keys vault, item name mapping), env var fallback
+- `packages/cli` — Commander subcommands + Ink TUI (React for terminal), 4 modes (Chat/Dashboard/Models/Config), 20+ components, SelectPrompt, Autocomplete, role system, build wizard
+- `packages/plugin-sdk` — SDK for building Brainstorm plugins
 
 ## Build & Run
 
@@ -37,24 +38,65 @@ npm install                      # Install all workspace deps
 npx turbo run build              # Build all packages (respects dependency graph)
 npx turbo run build --force      # Rebuild all (ignore cache)
 npx turbo run build --filter=@brainstorm/router  # Build single package + deps
-npx turbo run test               # Run all tests (vitest)
+npx turbo run test               # Run all tests (vitest, 90 tests)
 
 # CLI commands
-node packages/cli/dist/brainstorm.js models    # List models (auto-discovers local)
+node packages/cli/dist/brainstorm.js chat      # Interactive chat (default)
+node packages/cli/dist/brainstorm.js models    # List models
 node packages/cli/dist/brainstorm.js config    # Show config
 node packages/cli/dist/brainstorm.js budget    # Show cost tracking
 node packages/cli/dist/brainstorm.js run "prompt"  # Non-interactive single prompt
-node packages/cli/dist/brainstorm.js chat      # Interactive chat (default)
 ```
 
 ## Key Conventions
 
 - All packages use ESM (`"type": "module"`) with tsup bundling
 - AI SDK v6 patterns: `streamText`, `tool()` with `inputSchema` (Zod), `stopWhen: stepCountIs(N)`
-  - v6 field names: `usage.inputTokens`/`outputTokens` (not promptTokens), `text-delta.delta` (not textDelta), `tool-call.input` (not args), `tool-result.output` (not result)
+  - v6 field names: `usage.inputTokens`/`outputTokens`, `text-delta.delta`, `tool-call.input`, `tool-result.output`
 - Config in TOML (`~/.brainstorm/config.toml` global, `./brainstorm.toml` per-project)
-- Project context in `BRAINSTORM.md` (like CLAUDE.md but for the end user's projects)
+- Project context in `BRAINSTORM.md` (hierarchical: global → root → subdirectory)
 - CLI entry: `packages/cli/src/bin/brainstorm.ts` — commands: `brainstorm` (alias: `storm`)
 - Inter-package imports use `.js` extensions (ESM resolution)
 - Database at `~/.brainstorm/brainstorm.db` (SQLite with WAL mode)
 - Local models discovered by probing localhost:11434 (Ollama), :1234 (LM Studio), :8080 (llama.cpp)
+- 1Password integration: vault "Dev Keys", item names mapped in `packages/vault/src/backends/op-cli.ts`
+- Vault key resolver chain: local vault → 1Password → environment variables
+- Always use latest model names: Opus 4.6, Sonnet 4.6, GPT-5.4, Gemini 3.1 Pro/Flash, Kimi K2.5
+
+## TUI Architecture
+
+4-mode Ink TUI switchable with Esc and number keys:
+
+- **App.tsx** — Top-level mode switcher, captures routing/tool/cost events from agent stream
+- **ChatApp.tsx** — Always mounted (display:none when hidden), handles all 23 AgentEvent types
+- **ModeBar.tsx** — Tab indicators with role/model/cost/guardian status
+- **MessageList.tsx** — Scrollable with React.memo, role-based styling (blue user, green assistant, red error)
+- **StreamingMessage.tsx** — ink-spinner with phase labels, markdown rendering with ▌ cursor
+- **ToolCallDisplay.tsx** — Spinner while running, ✓/✗ on complete, tool-specific arg summaries
+- **SelectPrompt.tsx** — Interactive selection (arrow keys, Enter, Esc, multi-select with Space)
+- **Autocomplete.tsx** — Filtered dropdown for / commands
+- **ShortcutOverlay.tsx** — Full-screen keyboard reference on ?
+- **DashboardMode.tsx** — Session stats, routing log, tool health, BR leaderboard/waste/audit
+- **ModelsMode.tsx** — Interactive model list with detail panel and gauges
+- **ConfigMode.tsx** — Active config, vault status, memory counts, quick reference
+
+## Slash Command System
+
+Commands registered in `packages/cli/src/commands/slash.ts`. Each has:
+
+- `name`, `aliases`, `description`, `usage`
+- `execute(args, ctx, invokedAs)` returning a string or Promise<string>
+
+SlashContext provides callbacks: setModel, setStrategy, setMode, setOutputStyle, compact, dream, vault, rebuildSystemPrompt, gateway, getContextWindow, undoLastTurn, getActiveRole, setActiveRole.
+
+Role commands generated from `packages/cli/src/commands/roles.ts` — 5 roles with curated model lists.
+Build wizard in `packages/cli/src/commands/build-wizard.ts` — state machine with cost estimation.
+
+## Testing
+
+90 tests across 2 packages:
+
+- `packages/core` — 67 tests (middleware pipeline, semantic search, skills loader, loop detection, compaction)
+- `packages/tools` — 23 tests (sandbox, Docker integration, file operations)
+
+Other packages have test scripts but no test files yet (vitest exits with code 1).
