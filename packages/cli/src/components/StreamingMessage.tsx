@@ -45,8 +45,15 @@ export function StreamingMessage({
     );
   }
 
-  // Content is streaming — render markdown with cursor
+  // Content is streaming — render only the tail to prevent Ink buffer overflow
   if (content && isStreaming) {
+    // Truncate to last ~2000 chars for rendering performance
+    const MAX_STREAM_RENDER = 2000;
+    const truncated = content.length > MAX_STREAM_RENDER;
+    const visibleContent = truncated
+      ? content.slice(-MAX_STREAM_RENDER)
+      : content;
+
     return (
       <Box flexDirection="column" marginBottom={1}>
         <Box>
@@ -58,9 +65,14 @@ export function StreamingMessage({
               [{model}]{" "}
             </Text>
           )}
+          {truncated && (
+            <Text color="gray" dimColor>
+              ({content.length} chars, showing tail)
+            </Text>
+          )}
         </Box>
         <Box paddingLeft={0}>
-          <MarkdownRenderer content={content} />
+          <MarkdownRenderer content={visibleContent} />
           <Text color="cyan" bold>
             {"▌"}
           </Text>
