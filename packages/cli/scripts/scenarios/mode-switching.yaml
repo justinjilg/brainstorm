@@ -1,0 +1,20 @@
+# Mode switching round-trip test
+# Verifies: mode transitions, state preservation, correct content per mode
+name: Mode switching round-trip
+width: 120
+height: 40
+steps:
+  - wait: 2000 # Wait for initial render + provider discovery
+  - capture: "01-initial-chat"
+  - key: escape # Chat → Dashboard
+  - wait: 500
+  - capture: "02-dashboard"
+  - key: "3" # Dashboard → Models (key 3)
+  - wait: 500
+  - capture: "03-models"
+  - key: "4" # Models → Config (key 4)
+  - wait: 500
+  - capture: "04-config"
+  - key: escape # Config → Chat (Escape returns to chat)
+  - wait: 500
+  - capture: "05-back-to-chat"

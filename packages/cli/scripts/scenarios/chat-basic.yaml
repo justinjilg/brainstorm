@@ -1,0 +1,16 @@
+# Basic chat interaction test
+# Verifies: text input, message display, slash commands
+name: Basic chat interaction
+width: 120
+height: 40
+steps:
+  - wait: 2000 # Wait for initial render
+  - capture: "01-empty-chat"
+  - type: "/help" # Type a slash command
+  - key: enter
+  - wait: 1000
+  - capture: "02-help-output"
+  - type: "/models" # List models
+  - key: enter
+  - wait: 1000
+  - capture: "03-models-output"
