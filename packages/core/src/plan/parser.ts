@@ -10,7 +10,7 @@
  * Also supports write-back: toggles [x] checkboxes and appends cost metadata.
  */
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { basename } from "node:path";
 import type {
   PlanFile,
@@ -26,6 +26,9 @@ import type {
  * Parse a .plan.md file into a PlanFile tree.
  */
 export function parsePlanFile(filePath: string): PlanFile {
+  if (!existsSync(filePath)) {
+    throw new Error(`Plan file not found: ${filePath}`);
+  }
   const content = readFileSync(filePath, "utf-8");
   return parsePlanContent(content, filePath);
 }

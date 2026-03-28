@@ -1895,7 +1895,15 @@ planCmd
   .action(async (path: string) => {
     const { parsePlanFile } = await import("@brainstorm/core");
     const { resolve } = await import("node:path");
-    const plan = parsePlanFile(resolve(path));
+    let plan;
+    try {
+      plan = parsePlanFile(resolve(path));
+    } catch (err) {
+      console.error(
+        `\n  ✗ ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      return;
+    }
 
     console.log(`\n  ${plan.name} (${plan.status})`);
     console.log(`  ${plan.completedTasks}/${plan.totalTasks} tasks complete\n`);
