@@ -182,6 +182,21 @@ export function buildSystemPrompt(
     parts.push(`\n## Recent Commits\n\n${commitContext}`);
   }
 
+  // Current date/time for temporal awareness
+  const now = new Date();
+  const days = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+  ];
+  parts.push(
+    `\n## Current Date\n\nToday is ${now.toISOString().split("T")[0]} (${days[now.getDay()]}). Time: ${now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", timeZoneName: "short" })}.`,
+  );
+
   return { prompt: parts.join("\n"), frontmatter };
 }
 
