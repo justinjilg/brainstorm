@@ -48,6 +48,16 @@ export interface SlashContext {
   gateway?: any;
   /** Get the context window size of the current model */
   getContextWindow?: () => number;
+  /** Push an inline interactive prompt (SelectPrompt). Returns user's selection. */
+  prompt?: (
+    question: string,
+    options: Array<{
+      label: string;
+      value: string;
+      description?: string;
+      recommended?: boolean;
+    }>,
+  ) => Promise<string>;
   /** Remove last user message + assistant response */
   undoLastTurn?: () => number;
 }
@@ -299,20 +309,30 @@ function createRoleCommand(roleId: RoleId): SlashCommand {
     aliases: [],
     description: role.description,
     usage: `/${roleId} [model-number]`,
-    execute: (args, ctx) => {
-      const modelIdx = args ? parseInt(args, 10) : 0;
-      if (
-        args &&
-        (isNaN(modelIdx) || modelIdx < 1 || modelIdx > role.modelChoices.length)
-      ) {
-        return formatModelMenu(roleId);
-      }
-      if (!args) {
+    execute: async (args, ctx) => {
+      let modelId: string;
+
+      if (args) {
+        // Direct: /architect 2
+        modelId = getModelForRole(roleId, parseInt(args, 10));
+      } else if (ctx.prompt) {
+        // Interactive: show inline SelectPrompt
+        const selected = await ctx.prompt(
+          `${role.icon} ${role.displayName} — pick model`,
+          role.modelChoices.map((m) => ({
+            label: m.label,
+            value: m.modelId,
+            description: `${m.cost} per 1M tokens`,
+            recommended: m.default,
+          })),
+        );
+        modelId = selected;
+      } else {
+        // Fallback: show text menu
         return formatModelMenu(roleId);
       }
 
-      // Apply role atomically: model, style, mode, strategy, system prompt
-      const modelId = getModelForRole(roleId, modelIdx);
+      // Apply role atomically
       ctx.setModel?.(modelId);
       ctx.setOutputStyle?.(role.outputStyle);
       ctx.setMode?.(role.permissionMode);
@@ -532,13 +552,7 @@ commands.push({
   usage: "/build [description]",
   execute: async (args, ctx) => {
     if (!args) {
-      return [
-        "Build Wizard",
-        "",
-        "/build add OAuth login",
-        "/build fix the auth bug",
-        "/build review the routing code",
-      ].join("\n");
+      return "Usage: /build <what you want to build>\nExample: /build add OAuth login";
     }
 
     // Process description and build the pipeline
@@ -546,23 +560,54 @@ commands.push({
     state = processDescription(state, args);
 
     if (!state.workflow) {
-      return `Could not detect workflow type for: "${args}". Try a clearer description.`;
+      return `Could not detect workflow type for: "${args}"`;
     }
 
-    // Show the pipeline and return it as the wizard output
-    const pipeline = formatPipeline(state);
-    const lines = [
-      pipeline,
-      "",
-      "/build-go to run",
-      "/build-set 1 2 to change step 1",
-      "/build-customize for all options",
-    ];
+    // If prompt() is available, use interactive inline selection
+    if (ctx.prompt) {
+      // Step 1: Confirm workflow type
+      const action = await ctx.prompt(
+        `Detected: ${state.detectedPreset} (${state.assignments.length} steps)`,
+        [
+          {
+            label: "Go with defaults",
+            value: "defaults",
+            description: formatPipeline(state),
+            recommended: true,
+          },
+          { label: "Customize models", value: "customize" },
+          { label: "Cancel", value: "cancel" },
+        ],
+      );
 
-    // Store wizard state in a module-level cache for /build-go
+      if (action === "cancel") return "Build cancelled.";
+
+      if (action === "customize") {
+        // Step 2: For each pipeline step, let user pick model
+        for (let i = 0; i < state.assignments.length; i++) {
+          const a = state.assignments[i];
+          const choices = getModelChoicesForStep(a.stepRole);
+          const selected = await ctx.prompt(
+            `Step ${i + 1}: ${a.stepRole}`,
+            choices.map((m) => ({
+              label: m.label,
+              value: m.modelId,
+              description: `${m.cost} per 1M tokens`,
+              recommended: m.modelId === a.modelId,
+            })),
+          );
+          const choice = choices.find((m) => m.modelId === selected);
+          if (choice) state = updateAssignment(state, i, choice);
+        }
+      }
+
+      // Show final pipeline
+      return `${formatPipeline(state)}\n\nReady to execute. Use /build-go to start.`;
+    }
+
+    // Fallback: text-based menu (no prompt() available)
     _pendingWizard = state;
-
-    return lines.join("\n");
+    return `${formatPipeline(state)}\n\n/build-go to run │ /build-customize for options`;
   },
 });
 
