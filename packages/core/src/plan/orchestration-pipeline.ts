@@ -141,12 +141,16 @@ export interface PhaseDispatcher {
  *
  * Each phase dispatches to a role agent via the PhaseDispatcher.
  * BrainstormRouter handles model selection automatically.
+ * Every run is captured as a trajectory for BrainstormLLM v2 training.
  */
 export async function* runOrchestrationPipeline(
   request: string,
   dispatcher: PhaseDispatcher,
   options: PipelineOptions,
 ): AsyncGenerator<PipelineEvent> {
+  // Trajectory capture — every pipeline run becomes training data
+  const { TrajectoryRecorder } = await import("./trajectory-capture.js");
+  const recorder = new TrajectoryRecorder(request, options.projectPath);
   const phases = options.phases ?? DEFAULT_PHASES;
   const budgetPerPhase = options.budget ? options.budget / phases.length : 1.0;
   const results: PhaseResult[] = [];
@@ -158,7 +162,13 @@ export async function* runOrchestrationPipeline(
   // Skip phases before resumeFrom
   let skipping = !!options.resumeFrom;
 
-  yield { type: "pipeline-started", request, phases };
+  // Helper: yield event AND record to trajectory
+  function record(event: PipelineEvent) {
+    recorder.recordEvent(event);
+    return event;
+  }
+
+  yield record({ type: "pipeline-started", request, phases });
 
   for (const phase of phases) {
     if (skipping) {
@@ -168,11 +178,12 @@ export async function* runOrchestrationPipeline(
 
     // Budget guard
     if (options.budget && totalCost >= options.budget) {
-      yield {
+      yield record({
         type: "pipeline-paused",
         phase,
         reason: `Budget exhausted: $${totalCost.toFixed(2)}`,
-      };
+      });
+      recorder.finalize();
       break;
     }
 
@@ -182,7 +193,7 @@ export async function* runOrchestrationPipeline(
     const config = PHASE_CONFIG[phase];
     const startTime = Date.now();
 
-    yield { type: "phase-started", phase, agentId: config.agentId };
+    yield record({ type: "phase-started", phase, agentId: config.agentId });
 
     if (options.dryRun) {
       const result: PhaseResult = {
@@ -195,7 +206,7 @@ export async function* runOrchestrationPipeline(
         success: true,
       };
       results.push(result);
-      yield { type: "phase-completed", result };
+      yield record({ type: "phase-completed", result });
       continue;
     }
 
@@ -243,15 +254,15 @@ export async function* runOrchestrationPipeline(
         if (phase === "review") {
           const findings = parseReviewFindings(combinedOutput);
           const hasCritical = findings.some((f) => f.severity === "critical");
-          yield { type: "review-findings", findings, hasCritical };
+          yield record({ type: "review-findings", findings, hasCritical });
 
           if (hasCritical) {
-            yield {
+            yield record({
               type: "feedback-loop",
               from: "review",
               to: "implementation",
               reason: `${findings.filter((f) => f.severity === "critical").length} critical finding(s)`,
-            };
+            });
             // TODO: Loop back to implementation with findings as context
           }
         }
@@ -281,12 +292,12 @@ export async function* runOrchestrationPipeline(
         };
 
         if (!result.success) {
-          yield {
+          yield record({
             type: "feedback-loop",
             from: "verify",
             to: "implementation",
             reason: "Build or tests failed",
-          };
+          });
         }
       } else {
         // Standard single-agent phase
@@ -315,10 +326,10 @@ export async function* runOrchestrationPipeline(
 
       totalCost += result.cost;
       results.push(result);
-      yield { type: "phase-completed", result };
+      yield record({ type: "phase-completed", result });
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
-      yield { type: "phase-failed", phase, error };
+      yield record({ type: "phase-failed", phase, error });
       results.push({
         phase,
         agentId: config.agentId,
@@ -332,7 +343,16 @@ export async function* runOrchestrationPipeline(
     }
   }
 
-  yield { type: "pipeline-completed", results, totalCost };
+  yield record({ type: "pipeline-completed", results, totalCost });
+
+  // Finalize trajectory — persists to disk as training data for BrainstormLLM v2
+  const trajectory = recorder.finalize();
+  // Log trajectory ID for linking to BR API
+  if (trajectory.phases.length > 0) {
+    console.error(
+      `[trajectory] ${trajectory.id} — ${trajectory.phases.length} phases, $${trajectory.totalCost.toFixed(4)}, ${trajectory.totalDuration}ms`,
+    );
+  }
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
