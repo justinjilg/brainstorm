@@ -1738,6 +1738,163 @@ scheduleCmd
     console.log(`  ✓ Deleted task ${taskId.slice(0, 8)}\n`);
   });
 
+// ── Orchestrate Command ───────────────────────────────────────────
+
+const orchestrateCmd = program
+  .command("orchestrate")
+  .description("Coordinate work across multiple projects");
+
+orchestrateCmd
+  .command("run")
+  .argument("<description>", "What to do across projects")
+  .requiredOption("-p, --projects <names>", "Comma-separated project names")
+  .option("--budget <amount>", "Total budget limit in dollars")
+  .option("--type <type>", "Subagent type (explore, code, review)", "code")
+  .description("Run a cross-project orchestration")
+  .action(
+    async (
+      description: string,
+      opts: { projects: string; budget?: string; type: string },
+    ) => {
+      const { OrchestrationEngine, formatAggregatedResults, aggregateResults } =
+        await import("@brainstorm/orchestrator");
+      const { ProjectManager } = await import("@brainstorm/projects");
+      const db = getDb();
+      const engine = new OrchestrationEngine(db);
+      const pm = new ProjectManager(db);
+
+      const projectNames = opts.projects
+        .split(",")
+        .map((s: string) => s.trim());
+
+      console.log(
+        `\n  Orchestrating across ${projectNames.length} projects...`,
+      );
+      console.log(`  "${description}"\n`);
+
+      try {
+        for await (const event of engine.run({
+          description,
+          projectNames,
+          budgetLimit: opts.budget ? parseFloat(opts.budget) : undefined,
+          subagentType: opts.type,
+        })) {
+          switch (event.type) {
+            case "plan-ready":
+              console.log(`  Plan: ${event.tasks.length} tasks created`);
+              break;
+            case "task-started":
+              console.log(`  ● ${event.project.name} — starting...`);
+              break;
+            case "task-completed":
+              console.log(
+                `  ✓ ${event.project.name} — $${event.cost.toFixed(4)}`,
+              );
+              if (event.summary)
+                console.log(`    ${event.summary.slice(0, 120)}`);
+              break;
+            case "task-failed":
+              console.log(`  ✗ ${event.project.name} — ${event.error}`);
+              break;
+            case "orchestration-completed": {
+              const projectMap = new Map<string, string>();
+              for (const name of projectNames) {
+                const p = pm.projects.getByName(name);
+                if (p) projectMap.set(p.id, p.name);
+              }
+              const tasks = event.results.map((r, i) => ({
+                ...event.run,
+                projectId: projectMap.get(r.projectName) ?? r.projectName,
+              }));
+              console.log(`\n  ── Complete ──`);
+              console.log(`  Total cost: $${event.run.totalCost.toFixed(4)}`);
+              console.log(
+                `  ${event.results.filter((r) => !r.summary.startsWith("FAILED")).length}/${event.results.length} succeeded\n`,
+              );
+              break;
+            }
+          }
+        }
+      } catch (err) {
+        console.error(
+          `\n  ✗ ${err instanceof Error ? err.message : String(err)}\n`,
+        );
+      }
+    },
+  );
+
+orchestrateCmd
+  .command("history")
+  .option("-n, --limit <count>", "Number of runs to show", "10")
+  .description("Show recent orchestration runs")
+  .action(async (opts: { limit: string }) => {
+    const { OrchestrationEngine } = await import("@brainstorm/orchestrator");
+    const db = getDb();
+    const engine = new OrchestrationEngine(db);
+    const runs = engine.listRecent(parseInt(opts.limit));
+
+    console.log("\n  Orchestration History:\n");
+    if (runs.length === 0) {
+      console.log("    No orchestration runs yet.\n");
+      return;
+    }
+    for (const r of runs) {
+      const icon =
+        r.status === "completed"
+          ? "✓"
+          : r.status === "failed"
+            ? "✗"
+            : r.status === "cancelled"
+              ? "○"
+              : "●";
+      const date = new Date(r.createdAt * 1000).toLocaleString();
+      console.log(
+        `    ${icon} ${r.name.slice(0, 40).padEnd(42)} $${r.totalCost.toFixed(4).padEnd(10)} ${r.status.padEnd(12)} ${date}`,
+      );
+    }
+    console.log();
+  });
+
+orchestrateCmd
+  .command("status")
+  .argument("<run-id>", "Orchestration run ID")
+  .description("Show status of an orchestration run")
+  .action(async (runId: string) => {
+    const { OrchestrationEngine } = await import("@brainstorm/orchestrator");
+    const { ProjectManager } = await import("@brainstorm/projects");
+    const db = getDb();
+    const engine = new OrchestrationEngine(db);
+    const pm = new ProjectManager(db);
+    const detail = engine.getRunWithTasks(runId);
+    if (!detail) {
+      console.error(`  Run "${runId}" not found.\n`);
+      return;
+    }
+
+    console.log(`\n  ── ${detail.run.name} ──`);
+    console.log(`  Status: ${detail.run.status}`);
+    console.log(`  Cost:   $${detail.run.totalCost.toFixed(4)}`);
+    console.log(`  Tasks:  ${detail.tasks.length}\n`);
+
+    for (const t of detail.tasks) {
+      const project = pm.projects.getById(t.projectId);
+      const icon =
+        t.status === "completed"
+          ? "✓"
+          : t.status === "failed"
+            ? "✗"
+            : t.status === "skipped"
+              ? "○"
+              : "●";
+      console.log(
+        `    ${icon} ${(project?.name ?? t.projectId.slice(0, 8)).padEnd(25)} ${t.status.padEnd(12)} $${t.cost.toFixed(4)}`,
+      );
+      if (t.resultSummary)
+        console.log(`      ${t.resultSummary.slice(0, 100)}`);
+    }
+    console.log();
+  });
+
 // ── Sessions Command ───────────────────────────────────────────────
 
 program
