@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo, useEffect } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import TextInput from "ink-text-input";
 import { StatusBar } from "./StatusBar.js";
@@ -6,6 +6,7 @@ import { MessageList, type ChatMessage } from "./MessageList.js";
 import { TaskList } from "./TaskList.js";
 import { StreamingMessage } from "./StreamingMessage.js";
 import { ToolCallList, type ToolCallState } from "./ToolCallDisplay.js";
+import { SelectPrompt, type SelectOption } from "./SelectPrompt.js";
 import {
   isSlashCommand,
   executeSlashCommand,
@@ -74,7 +75,32 @@ export function ChatApp({
   );
   const [activeTools, setActiveTools] = useState<ToolCallState[]>([]);
   const [scrollOffset, setScrollOffset] = useState(0);
+  const [askUserPrompt, setAskUserPrompt] = useState<{
+    question: string;
+    options: SelectOption[];
+  } | null>(null);
   const [history] = useState(() => new InputHistory());
+
+  // Listen for ask_user tool events
+  useEffect(() => {
+    const handler = (data: any) => {
+      if (data?.question && data?.options) {
+        setAskUserPrompt({
+          question: data.question,
+          options: data.options.map((o: any) => ({
+            label: o.label ?? o,
+            value: o.label ?? o,
+            description: o.description,
+            recommended: o.recommended,
+          })),
+        });
+      }
+    };
+    process.on("brainstorm:ask-user" as any, handler);
+    return () => {
+      process.removeListener("brainstorm:ask-user" as any, handler);
+    };
+  }, []);
 
   // Keybinding handler + input history navigation + scrolling
   useInput((inputChar, key) => {
@@ -473,6 +499,27 @@ export function ChatApp({
       )}
       <ToolCallList tools={activeTools} />
       {tasks.length > 0 && <TaskList tasks={tasks} />}
+      {/* Interactive selection prompt (from ask_user tool) */}
+      {askUserPrompt && (
+        <SelectPrompt
+          message={askUserPrompt.question}
+          options={askUserPrompt.options}
+          onSelect={async (value) => {
+            const { resolveAskUser } = await import("@brainstorm/tools");
+            resolveAskUser(value);
+            setAskUserPrompt(null);
+            setMessages((prev) => [
+              ...prev,
+              { role: "routing", content: `Selected: ${value}` },
+            ]);
+          }}
+          onCancel={async () => {
+            const { resolveAskUser } = await import("@brainstorm/tools");
+            resolveAskUser(askUserPrompt.options[0]?.value ?? "");
+            setAskUserPrompt(null);
+          }}
+        />
+      )}
       <Box flexDirection="column">
         <Box
           borderStyle="single"
