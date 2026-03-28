@@ -7,6 +7,8 @@ import { TaskList } from "./TaskList.js";
 import { StreamingMessage } from "./StreamingMessage.js";
 import { ToolCallList, type ToolCallState } from "./ToolCallDisplay.js";
 import { SelectPrompt, type SelectOption } from "./SelectPrompt.js";
+import { Autocomplete, type AutocompleteItem } from "./Autocomplete.js";
+import { getSlashCommands } from "../commands/slash.js";
 import {
   isSlashCommand,
   executeSlashCommand,
@@ -79,7 +81,17 @@ export function ChatApp({
     question: string;
     options: SelectOption[];
   } | null>(null);
+  const [showAutocomplete, setShowAutocomplete] = useState(false);
   const [history] = useState(() => new InputHistory());
+
+  // Build slash command autocomplete items once
+  const slashItems = useMemo<AutocompleteItem[]>(() => {
+    return getSlashCommands().map((cmd) => ({
+      label: cmd.name,
+      description: cmd.description,
+      prefix: "/",
+    }));
+  }, []);
 
   // Listen for ask_user tool events
   useEffect(() => {
@@ -499,6 +511,19 @@ export function ChatApp({
       )}
       <ToolCallList tools={activeTools} />
       {tasks.length > 0 && <TaskList tasks={tasks} />}
+      {/* Slash command autocomplete */}
+      {showAutocomplete && !isProcessing && !askUserPrompt && (
+        <Autocomplete
+          query={input.slice(1)}
+          items={slashItems}
+          onAccept={(label) => {
+            setInput(`/${label} `);
+            setShowAutocomplete(false);
+          }}
+          onDismiss={() => setShowAutocomplete(false)}
+        />
+      )}
+
       {/* Interactive selection prompt (from ask_user tool) */}
       {askUserPrompt && (
         <SelectPrompt
@@ -531,9 +556,22 @@ export function ChatApp({
           </Text>
           <TextInput
             value={input}
-            onChange={setInput}
-            onSubmit={handleSubmit}
-            placeholder={isProcessing ? "Thinking..." : "Type a message..."}
+            onChange={(val) => {
+              setInput(val);
+              // Show autocomplete when typing a slash command
+              setShowAutocomplete(
+                val.startsWith("/") && val.length > 1 && !val.includes(" "),
+              );
+            }}
+            onSubmit={(val) => {
+              setShowAutocomplete(false);
+              handleSubmit(val);
+            }}
+            placeholder={
+              isProcessing
+                ? "Thinking..."
+                : "Type a message... (/ for commands)"
+            }
           />
         </Box>
         <Box paddingX={2}>
