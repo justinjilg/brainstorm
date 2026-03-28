@@ -3,7 +3,7 @@ import { Box, Text } from "ink";
 import { MarkdownRenderer } from "./MarkdownRenderer.js";
 
 export interface ChatMessage {
-  role: "user" | "assistant" | "system" | "routing" | "reasoning";
+  role: "user" | "assistant" | "system" | "routing" | "reasoning" | "error";
   content: string;
   model?: string;
   cost?: number;
@@ -154,6 +154,26 @@ const MessageBubble = React.memo(function MessageBubble({
         </Box>
       );
     }
+
+    case "error":
+      return (
+        <Box
+          flexDirection="column"
+          marginBottom={1}
+          borderStyle="single"
+          borderColor="red"
+          borderLeft
+          borderRight={false}
+          borderTop={false}
+          borderBottom={false}
+          paddingLeft={1}
+        >
+          <Text color="red" bold>
+            error{" "}
+          </Text>
+          <Text>{message.content}</Text>
+        </Box>
+      );
 
     default:
       return null;
