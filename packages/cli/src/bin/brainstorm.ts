@@ -1959,10 +1959,17 @@ orchestrateCmd
     console.log(`  Request: "${request}"`);
     console.log(`  Mode: ${opts.dryRun ? "dry-run" : "execute"}\n`);
 
-    // Set up real runtime — same as chat/workflow commands
+    // Set up real runtime — env vars only (no vault prompt for non-interactive pipeline)
     const config = loadConfig();
     const db = getDb();
-    const resolvedKeys = await resolveProviderKeys();
+    const envKeys = new Map<string, string>();
+    for (const name of PROVIDER_KEY_NAMES) {
+      const val = process.env[name];
+      if (val) envKeys.set(name, val);
+    }
+    const resolvedKeys: ResolvedKeys = {
+      get: (name: string) => envKeys.get(name) ?? null,
+    };
     const registry = await createProviderRegistry(config, resolvedKeys);
     const costTracker = new CostTracker(db, config.budget);
     const projectPath = process.cwd();
@@ -1986,10 +1993,9 @@ orchestrateCmd
     });
 
     // Fallback: if no provider keys, use placeholder
-    const hasProviders =
-      resolvedKeys.get("ANTHROPIC_API_KEY") !== null ||
-      resolvedKeys.get("OPENAI_API_KEY") !== null ||
-      resolvedKeys.get("BRAINSTORM_API_KEY") !== null;
+    const hasProviders = PROVIDER_KEY_NAMES.some(
+      (k) => resolvedKeys.get(k) !== null,
+    );
     if (!hasProviders && !opts.dryRun) {
       console.log(
         "  ⚠ No model providers configured. Using placeholder dispatcher.",
