@@ -16,9 +16,10 @@
  */
 
 import { mkdirSync, appendFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
+import { redactCredentials } from "../security/secret-scanner.js";
 import type {
   PipelineEvent,
   PipelinePhase,
@@ -207,8 +208,8 @@ export class TrajectoryRecorder {
     const trajectory: OrchestrationTrajectory = {
       id: this.id,
       timestamp: new Date().toISOString(),
-      request: this.request,
-      projectPath: this.projectPath,
+      request: redactCredentials(this.request),
+      projectPath: basename(this.projectPath), // strip full path — only project name
       phases: this.phases,
       outcome: this.outcome,
       totalCost: this.phases.reduce((sum, p) => sum + p.cost, 0),

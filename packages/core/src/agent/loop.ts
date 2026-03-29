@@ -232,7 +232,10 @@ export async function* runAgentLoop(
       toolNames: [],
       metadata: {},
     };
-    options.middleware.runBeforeAgent(mwState);
+    const mwResult = options.middleware.runBeforeAgent(mwState);
+    if (mwResult.systemPrompt !== systemPrompt) {
+      systemPrompt = mwResult.systemPrompt;
+    }
   }
 
   // Phase: classifying
