@@ -10,44 +10,44 @@
 
 /** Tools that are safe to execute in parallel (read-only, no side effects). */
 const PARALLEL_SAFE = new Set([
-  'file_read',
-  'grep',
-  'glob',
-  'list_dir',
-  'git_status',
-  'git_diff',
-  'git_log',
-  'br_status',
-  'br_budget',
-  'br_leaderboard',
-  'br_insights',
-  'br_models',
-  'br_memory_search',
-  'br_health',
-  'scratchpad_read',
-  'cost_estimate',
-  'plan_preview',
+  "file_read",
+  "grep",
+  "glob",
+  "list_dir",
+  "git_status",
+  "git_diff",
+  "git_log",
+  "br_status",
+  "br_budget",
+  "br_leaderboard",
+  "br_insights",
+  "br_models",
+  "br_memory_search",
+  "br_health",
+  "scratchpad_read",
+  "cost_estimate",
+  "plan_preview",
 ]);
 
 /** Tools that must execute sequentially (have side effects). */
 const SEQUENTIAL_REQUIRED = new Set([
-  'file_write',
-  'file_edit',
-  'multi_edit',
-  'batch_edit',
-  'shell',
-  'git_commit',
-  'git_branch',
-  'git_stash',
-  'gh_pr',
-  'gh_issue',
-  'process_spawn',
-  'process_kill',
-  'scratchpad_write',
-  'br_memory_store',
-  'undo_last_write',
-  'set_routing_hint',
-  'ask_user',
+  "file_write",
+  "file_edit",
+  "multi_edit",
+  "batch_edit",
+  "shell",
+  "git_commit",
+  "git_branch",
+  "git_stash",
+  "gh_pr",
+  "gh_issue",
+  "process_spawn",
+  "process_kill",
+  "scratchpad_write",
+  "br_memory_store",
+  "undo_last_write",
+  "set_routing_hint",
+  "ask_user",
 ]);
 
 /** Check if a tool is safe to execute in parallel with other parallel-safe tools. */
@@ -88,13 +88,21 @@ export async function executeWithParallelism<T>(
   const parallelCalls = calls.filter((c) => parallel.includes(c.name));
   if (parallelCalls.length > 1) {
     const settled = await Promise.allSettled(
-      parallelCalls.map(async (c) => ({ name: c.name, result: await c.execute() })),
+      parallelCalls.map(async (c) => ({
+        name: c.name,
+        result: await c.execute(),
+      })),
     );
-    for (const s of settled) {
-      if (s.status === 'fulfilled') {
+    for (let i = 0; i < settled.length; i++) {
+      const s = settled[i];
+      if (s.status === "fulfilled") {
         results.push(s.value);
       } else {
-        results.push({ name: 'unknown', result: null as T, error: s.reason?.message ?? 'Failed' });
+        results.push({
+          name: parallelCalls[i].name,
+          result: null as T,
+          error: s.reason?.message ?? "Failed",
+        });
       }
     }
   } else {
