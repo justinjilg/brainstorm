@@ -1,4 +1,4 @@
-# @brainstorm/gateway
+# @brainst0rm/gateway
 
 Typed client for the BrainstormRouter SaaS API.
 

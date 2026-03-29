@@ -1,4 +1,4 @@
-# @brainstorm/vault
+# @brainst0rm/vault
 
 Encrypted API key storage with AES-256-GCM + Argon2id key derivation.
 

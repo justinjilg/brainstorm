@@ -60,7 +60,7 @@ cli → core → router → providers → config → shared
 ```bash
 npx turbo run build              # Build all packages (cached)
 npx turbo run build --force      # Rebuild everything
-npx turbo run build --filter=@brainstorm/cli  # Build one package + deps
+npx turbo run build --filter=@brainst0rm/cli  # Build one package + deps
 npx turbo run typecheck          # Type check all packages
 ```
 
@@ -68,7 +68,7 @@ npx turbo run typecheck          # Type check all packages
 
 ```bash
 npx turbo run test               # Run all tests
-npx turbo run test --filter=@brainstorm/core   # Test one package
+npx turbo run test --filter=@brainst0rm/core   # Test one package
 
 # Run the CLI locally
 node packages/cli/dist/brainstorm.js chat
@@ -105,7 +105,7 @@ export const myTool = defineTool({
 ```
 
 2. Register in `packages/tools/src/index.ts`
-3. Build and test: `npx turbo run build --filter=@brainstorm/tools`
+3. Build and test: `npx turbo run build --filter=@brainst0rm/tools`
 
 ## Adding an Agent
 

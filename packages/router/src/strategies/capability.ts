@@ -1,11 +1,19 @@
-import type { TaskProfile, ModelEntry, RoutingContext, RoutingDecision, CapabilityScores } from '@brainstorm/shared';
-import type { RoutingStrategy } from './types.js';
+import type {
+  TaskProfile,
+  ModelEntry,
+  RoutingContext,
+  RoutingDecision,
+  CapabilityScores,
+} from "@brainst0rm/shared";
+import type { RoutingStrategy } from "./types.js";
 
 /**
  * Map task properties to the capability dimensions that matter most.
  * Returns weights for each dimension (0 = irrelevant, 1 = critical).
  */
-function getRequiredCapabilities(task: TaskProfile): Partial<Record<keyof CapabilityScores, number>> {
+function getRequiredCapabilities(
+  task: TaskProfile,
+): Partial<Record<keyof CapabilityScores, number>> {
   const caps: Partial<Record<keyof CapabilityScores, number>> = {};
 
   // Tool-heavy tasks need tool selection and sequencing
@@ -21,23 +29,30 @@ function getRequiredCapabilities(task: TaskProfile): Partial<Record<keyof Capabi
   }
 
   // Code tasks need code generation
-  if (['code-generation', 'refactoring', 'multi-file-edit', 'simple-edit'].includes(task.type)) {
+  if (
+    [
+      "code-generation",
+      "refactoring",
+      "multi-file-edit",
+      "simple-edit",
+    ].includes(task.type)
+  ) {
     caps.codeGeneration = 1.0;
   }
 
   // Complex tasks need instruction following
-  if (['complex', 'expert'].includes(task.complexity)) {
+  if (["complex", "expert"].includes(task.complexity)) {
     caps.instructionFollowing = 0.8;
     caps.multiStepReasoning = Math.max(caps.multiStepReasoning ?? 0, 0.8);
   }
 
   // Analysis/explanation need context utilization
-  if (['analysis', 'explanation', 'debugging'].includes(task.type)) {
+  if (["analysis", "explanation", "debugging"].includes(task.type)) {
     caps.contextUtilization = 0.8;
   }
 
   // Search tasks primarily need context
-  if (task.type === 'search') {
+  if (task.type === "search") {
     caps.contextUtilization = 1.0;
     caps.toolSelection = 0.8;
   }
@@ -49,7 +64,10 @@ function getRequiredCapabilities(task: TaskProfile): Partial<Record<keyof Capabi
  * Score a model against required capabilities.
  * Returns a weighted sum of the model's capability scores for relevant dimensions.
  */
-function scoreModel(model: ModelEntry, requirements: Partial<Record<keyof CapabilityScores, number>>): number {
+function scoreModel(
+  model: ModelEntry,
+  requirements: Partial<Record<keyof CapabilityScores, number>>,
+): number {
   const scores = model.capabilities.capabilityScores;
 
   // Models without eval data: derive score from qualityTier (1=best → 0.9, 2 → 0.7, 3 → 0.5)
@@ -88,17 +106,23 @@ function estimateCost(model: ModelEntry, task: TaskProfile): number {
  * budget constraints. Cost is used as a tiebreaker, not a primary factor.
  */
 export const capabilityStrategy: RoutingStrategy = {
-  name: 'capability',
+  name: "capability",
 
-  select(task: TaskProfile, candidates: ModelEntry[], context: RoutingContext): RoutingDecision | null {
-    let available = candidates.filter((m) => m.status === 'available');
+  select(
+    task: TaskProfile,
+    candidates: ModelEntry[],
+    context: RoutingContext,
+  ): RoutingDecision | null {
+    let available = candidates.filter((m) => m.status === "available");
     if (available.length === 0) return null;
 
     // Prefer explicit models over brainstormrouter/auto.
     // Auto is a black box — we can't predict or control what model it picks.
     // Keep auto only as a last resort when no explicit models are available.
     if (available.length > 1) {
-      const explicit = available.filter((m) => m.id !== 'brainstormrouter/auto');
+      const explicit = available.filter(
+        (m) => m.id !== "brainstormrouter/auto",
+      );
       if (explicit.length > 0) available = explicit;
     }
 
@@ -121,14 +145,14 @@ export const capabilityStrategy: RoutingStrategy = {
     const best = scored[0];
     const fallbacks = scored.slice(1, 4).map((s) => s.model);
 
-    const reqDims = Object.keys(requirements).join(', ');
+    const reqDims = Object.keys(requirements).join(", ");
 
     return {
       model: best.model,
       fallbacks,
       reason: `Capability-aware: ${best.model.name} scored ${(best.capabilityScore * 100).toFixed(0)}% on [${reqDims}]`,
       estimatedCost: best.cost,
-      strategy: 'capability',
+      strategy: "capability",
     };
   },
 };

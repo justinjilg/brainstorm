@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import type { PermissionMode } from "@brainstorm/shared";
+import type { PermissionMode } from "@brainst0rm/shared";
 
 interface StatusBarProps {
   strategy: string;

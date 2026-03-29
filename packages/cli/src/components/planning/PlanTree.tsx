@@ -13,7 +13,7 @@ import type {
   PlanSprint,
   PlanTask,
   PlanNodeStatus,
-} from "@brainstorm/core";
+} from "@brainst0rm/core";
 
 function statusIcon(status: PlanNodeStatus): string {
   switch (status) {

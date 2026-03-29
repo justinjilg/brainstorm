@@ -1,11 +1,11 @@
-import { z } from 'zod';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { createLogger } from '@brainstorm/shared';
-import { defineTool } from '../base.js';
+import { z } from "zod";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { createLogger } from "@brainst0rm/shared";
+import { defineTool } from "../base.js";
 
 const execFileAsync = promisify(execFile);
-const log = createLogger('git-commit');
+const log = createLogger("git-commit");
 
 /**
  * Smart git commit tool with two modes:
@@ -21,22 +21,24 @@ const log = createLogger('git-commit');
  * optional Co-Authored-By attribution.
  */
 export const gitCommitTool = defineTool({
-  name: 'git_commit',
+  name: "git_commit",
   description:
-    'Stage specific files and create a git commit. Two modes: (1) Omit `message` to get context for writing a good commit message (status, diff summary, recent commits). (2) Provide `message` to commit directly. Always scans for credentials before committing. Never stages all files — explicit paths required.',
-  permission: 'confirm',
+    "Stage specific files and create a git commit. Two modes: (1) Omit `message` to get context for writing a good commit message (status, diff summary, recent commits). (2) Provide `message` to commit directly. Always scans for credentials before committing. Never stages all files — explicit paths required.",
+  permission: "confirm",
   inputSchema: z.object({
     message: z
       .string()
       .optional()
       .describe(
-        'Commit message (what + why). Omit to get context for generating a message. When provided, should summarize the change and explain motivation.',
+        "Commit message (what + why). Omit to get context for generating a message. When provided, should summarize the change and explain motivation.",
       ),
     files: z
       .array(z.string())
       .min(1)
-      .describe('Files to stage — explicit paths required (no wildcards, no "all")'),
-    cwd: z.string().optional().describe('Working directory'),
+      .describe(
+        'Files to stage — explicit paths required (no wildcards, no "all")',
+      ),
+    cwd: z.string().optional().describe("Working directory"),
     coAuthors: z
       .array(z.string())
       .optional()
@@ -47,18 +49,27 @@ export const gitCommitTool = defineTool({
 
     try {
       // Stage specific files only (never git add -A)
-      await execFileAsync('git', ['add', ...files], opts);
+      await execFileAsync("git", ["add", ...files], opts);
 
       // Scan staged diff for credentials before committing
-      const { stdout: diff } = await execFileAsync('git', ['diff', '--cached', '--unified=0'], opts);
+      const { stdout: diff } = await execFileAsync(
+        "git",
+        ["diff", "--cached", "--unified=0"],
+        opts,
+      );
       const credentialHits = scanDiffForCredentials(diff);
       if (credentialHits.length > 0) {
         // Unstage and abort
-        await execFileAsync('git', ['reset', 'HEAD', ...files], opts).catch((e) => {
-          log.warn({ err: e }, 'Failed to unstage files after credential detection');
-        });
+        await execFileAsync("git", ["reset", "HEAD", ...files], opts).catch(
+          (e) => {
+            log.warn(
+              { err: e },
+              "Failed to unstage files after credential detection",
+            );
+          },
+        );
         return {
-          error: `Credential detected in staged changes — commit blocked.\n${credentialHits.map((h) => `  ${h.file}: ${h.pattern} (${h.preview})`).join('\n')}\n\nRemove the credential before committing.`,
+          error: `Credential detected in staged changes — commit blocked.\n${credentialHits.map((h) => `  ${h.file}: ${h.pattern} (${h.preview})`).join("\n")}\n\nRemove the credential before committing.`,
         };
       }
 
@@ -69,7 +80,7 @@ export const gitCommitTool = defineTool({
           needsMessage: true,
           context,
           stagedFiles: files,
-          hint: 'Use this context to write a commit message (what + why), then call git_commit again with the message.',
+          hint: "Use this context to write a commit message (what + why), then call git_commit again with the message.",
         };
       }
 
@@ -77,7 +88,11 @@ export const gitCommitTool = defineTool({
       const fullMessage = buildCommitMessage(message, coAuthors);
 
       // Commit
-      const { stdout } = await execFileAsync('git', ['commit', '-m', fullMessage], opts);
+      const { stdout } = await execFileAsync(
+        "git",
+        ["commit", "-m", fullMessage],
+        opts,
+      );
       return { success: true, output: stdout.trim() };
     } catch (err: any) {
       return { error: err.stderr || err.message };
@@ -92,21 +107,37 @@ export const gitCommitTool = defineTool({
  * - git diff --cached (actual changes, truncated for large diffs)
  * - git log --oneline -5 (recent commit style reference)
  */
-async function gatherCommitContext(
-  opts: { cwd: string },
-): Promise<{ status: string; diffStat: string; diffPreview: string; recentCommits: string }> {
+async function gatherCommitContext(opts: {
+  cwd: string;
+}): Promise<{
+  status: string;
+  diffStat: string;
+  diffPreview: string;
+  recentCommits: string;
+}> {
   const MAX_DIFF_CHARS = 8000;
 
-  const [statusResult, diffStatResult, diffResult, logResult] = await Promise.all([
-    execFileAsync('git', ['status', '--short'], opts).catch(() => ({ stdout: '' })),
-    execFileAsync('git', ['diff', '--cached', '--stat'], opts).catch(() => ({ stdout: '' })),
-    execFileAsync('git', ['diff', '--cached'], opts).catch(() => ({ stdout: '' })),
-    execFileAsync('git', ['log', '--oneline', '-5'], opts).catch(() => ({ stdout: '' })),
-  ]);
+  const [statusResult, diffStatResult, diffResult, logResult] =
+    await Promise.all([
+      execFileAsync("git", ["status", "--short"], opts).catch(() => ({
+        stdout: "",
+      })),
+      execFileAsync("git", ["diff", "--cached", "--stat"], opts).catch(() => ({
+        stdout: "",
+      })),
+      execFileAsync("git", ["diff", "--cached"], opts).catch(() => ({
+        stdout: "",
+      })),
+      execFileAsync("git", ["log", "--oneline", "-5"], opts).catch(() => ({
+        stdout: "",
+      })),
+    ]);
 
   let diffPreview = diffResult.stdout;
   if (diffPreview.length > MAX_DIFF_CHARS) {
-    diffPreview = diffPreview.slice(0, MAX_DIFF_CHARS) + `\n\n... truncated (${diffPreview.length} total chars)`;
+    diffPreview =
+      diffPreview.slice(0, MAX_DIFF_CHARS) +
+      `\n\n... truncated (${diffPreview.length} total chars)`;
   }
 
   return {
@@ -123,7 +154,9 @@ async function gatherCommitContext(
 function buildCommitMessage(message: string, coAuthors?: string[]): string {
   if (!coAuthors || coAuthors.length === 0) return message;
 
-  const trailers = coAuthors.map((author) => `Co-Authored-By: ${author}`).join('\n');
+  const trailers = coAuthors
+    .map((author) => `Co-Authored-By: ${author}`)
+    .join("\n");
   return `${message}\n\n${trailers}`;
 }
 
@@ -136,34 +169,41 @@ interface CredentialHit {
 }
 
 const CREDENTIAL_PATTERNS: Array<{ name: string; pattern: RegExp }> = [
-  { name: 'AWS Access Key', pattern: /AKIA[0-9A-Z]{16}/ },
-  { name: 'GitHub Token', pattern: /gh[ps]_[A-Za-z0-9_]{36,}/ },
-  { name: 'OpenAI/Anthropic Key', pattern: /sk-(?:ant-)?[A-Za-z0-9-]{20,}/ },
-  { name: 'Stripe Key', pattern: /(?:sk|pk)_(?:live|test)_[A-Za-z0-9]{20,}/ },
-  { name: 'PEM Private Key', pattern: /-----BEGIN (?:RSA |EC )?PRIVATE KEY-----/ },
-  { name: 'BR API Key', pattern: /br_(?:live|test)_[A-Za-z0-9]{20,}/ },
-  { name: 'Generic Secret', pattern: /(?:password|token|api_key|apikey|secret)\s*[:=]\s*['"]([^'"]{8,})['"]/i },
+  { name: "AWS Access Key", pattern: /AKIA[0-9A-Z]{16}/ },
+  { name: "GitHub Token", pattern: /gh[ps]_[A-Za-z0-9_]{36,}/ },
+  { name: "OpenAI/Anthropic Key", pattern: /sk-(?:ant-)?[A-Za-z0-9-]{20,}/ },
+  { name: "Stripe Key", pattern: /(?:sk|pk)_(?:live|test)_[A-Za-z0-9]{20,}/ },
+  {
+    name: "PEM Private Key",
+    pattern: /-----BEGIN (?:RSA |EC )?PRIVATE KEY-----/,
+  },
+  { name: "BR API Key", pattern: /br_(?:live|test)_[A-Za-z0-9]{20,}/ },
+  {
+    name: "Generic Secret",
+    pattern:
+      /(?:password|token|api_key|apikey|secret)\s*[:=]\s*['"]([^'"]{8,})['"]/i,
+  },
 ];
 
 function scanDiffForCredentials(diff: string): CredentialHit[] {
   const hits: CredentialHit[] = [];
-  let currentFile = '';
+  let currentFile = "";
 
-  for (const line of diff.split('\n')) {
-    if (line.startsWith('diff --git')) {
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("diff --git")) {
       const match = line.match(/b\/(.+)$/);
-      currentFile = match?.[1] ?? '';
+      currentFile = match?.[1] ?? "";
       continue;
     }
     // Only scan added lines (not removed)
-    if (!line.startsWith('+') || line.startsWith('+++')) continue;
+    if (!line.startsWith("+") || line.startsWith("+++")) continue;
 
     for (const { name, pattern } of CREDENTIAL_PATTERNS) {
       if (pattern.test(line)) {
         hits.push({
           file: currentFile,
           pattern: name,
-          preview: line.slice(1, 60) + (line.length > 60 ? '...' : ''),
+          preview: line.slice(1, 60) + (line.length > 60 ? "..." : ""),
         });
       }
     }

@@ -41,7 +41,7 @@ Turborepo monorepo with 20 TypeScript packages:
 npm install                      # Install all workspace deps
 npx turbo run build              # Build all packages (respects dependency graph)
 npx turbo run build --force      # Rebuild all (ignore cache)
-npx turbo run build --filter=@brainstorm/router  # Build single package + deps
+npx turbo run build --filter=@brainst0rm/router  # Build single package + deps
 npx turbo run test               # Run all tests (vitest, 90 tests)
 
 # CLI commands

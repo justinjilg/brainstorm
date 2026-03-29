@@ -1,5 +1,5 @@
 import { tool } from "ai";
-import type { ToolPermission } from "@brainstorm/shared";
+import type { ToolPermission } from "@brainst0rm/shared";
 import type { BrainstormToolDef } from "./base.js";
 import { getToolHealthTracker } from "./tool-health.js";
 

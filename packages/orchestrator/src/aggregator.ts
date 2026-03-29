@@ -2,7 +2,7 @@
  * Aggregator — formats orchestration results into a unified summary.
  */
 
-import type { OrchestrationRun, OrchestrationTask } from "@brainstorm/shared";
+import type { OrchestrationRun, OrchestrationTask } from "@brainst0rm/shared";
 
 export interface AggregatedResult {
   summary: string;

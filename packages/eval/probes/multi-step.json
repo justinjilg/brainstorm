@@ -13,7 +13,7 @@
   {
     "id": "multi-step-02",
     "capability": "multi-step",
-    "prompt": "List all packages in the monorepo, then for each package read its package.json and tell me which packages depend on @brainstorm/shared",
+    "prompt": "List all packages in the monorepo, then for each package read its package.json and tell me which packages depend on @brainst0rm/shared",
     "verify": {
       "tool_calls_include": ["glob", "file_read"],
       "answer_contains": ["shared"],
@@ -90,7 +90,7 @@
   {
     "id": "multi-step-09",
     "capability": "multi-step",
-    "prompt": "Map the dependency graph of packages: for each of the 13 packages, list what other @brainstorm/* packages it depends on",
+    "prompt": "Map the dependency graph of packages: for each of the 13 packages, list what other @brainst0rm/* packages it depends on",
     "verify": {
       "tool_calls_include": ["glob", "file_read"],
       "answer_contains": ["shared", "config"],

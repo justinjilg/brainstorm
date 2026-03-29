@@ -1,4 +1,4 @@
-# @brainstorm/mcp
+# @brainst0rm/mcp
 
 MCP (Model Context Protocol) client for external tool integration.
 

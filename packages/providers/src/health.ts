@@ -1,4 +1,4 @@
-import type { ModelEntry } from '@brainstorm/shared';
+import type { ModelEntry } from "@brainst0rm/shared";
 
 export async function checkProviderHealth(
   baseUrl: string,
@@ -15,16 +15,16 @@ export async function checkProviderHealth(
 }
 
 export function markDegraded(model: ModelEntry): void {
-  model.status = 'degraded';
+  model.status = "degraded";
   model.lastHealthCheck = Date.now();
 }
 
 export function markUnavailable(model: ModelEntry): void {
-  model.status = 'unavailable';
+  model.status = "unavailable";
   model.lastHealthCheck = Date.now();
 }
 
 export function markAvailable(model: ModelEntry): void {
-  model.status = 'available';
+  model.status = "available";
   model.lastHealthCheck = Date.now();
 }

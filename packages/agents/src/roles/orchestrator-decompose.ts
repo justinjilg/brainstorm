@@ -1,4 +1,8 @@
-import type { WorkflowDefinition, WorkflowStepDef, AgentRole } from '@brainstorm/shared';
+import type {
+  WorkflowDefinition,
+  WorkflowStepDef,
+  AgentRole,
+} from "@brainst0rm/shared";
 
 /**
  * Subtask definition produced by the orchestrator's decomposition.
@@ -8,8 +12,14 @@ import type { WorkflowDefinition, WorkflowStepDef, AgentRole } from '@brainstorm
 export interface Subtask {
   id: string;
   description: string;
-  requiredCapabilities: Array<'tool-calling' | 'reasoning' | 'code-generation' | 'large-context' | 'vision'>;
-  complexity: 'trivial' | 'simple' | 'moderate' | 'complex';
+  requiredCapabilities: Array<
+    | "tool-calling"
+    | "reasoning"
+    | "code-generation"
+    | "large-context"
+    | "vision"
+  >;
+  complexity: "trivial" | "simple" | "moderate" | "complex";
   dependsOn: string[];
   estimatedTokens?: number;
 }
@@ -68,11 +78,12 @@ Guidelines:
 /**
  * Map capability requirements to agent roles.
  */
-function capabilitiesToRole(caps: Subtask['requiredCapabilities']): AgentRole {
-  if (caps.includes('code-generation')) return 'coder';
-  if (caps.includes('reasoning')) return 'architect';
-  if (caps.includes('large-context') || caps.includes('tool-calling')) return 'analyst';
-  return 'coder';
+function capabilitiesToRole(caps: Subtask["requiredCapabilities"]): AgentRole {
+  if (caps.includes("code-generation")) return "coder";
+  if (caps.includes("reasoning")) return "architect";
+  if (caps.includes("large-context") || caps.includes("tool-calling"))
+    return "analyst";
+  return "coder";
 }
 
 /**
@@ -89,20 +100,22 @@ export function decompositionToWorkflow(
     description: subtask.description,
     inputArtifacts: subtask.dependsOn,
     outputArtifact: subtask.id,
-    isReviewStep: index === result.subtasks.length - 1 && subtask.description.toLowerCase().includes('review'),
+    isReviewStep:
+      index === result.subtasks.length - 1 &&
+      subtask.description.toLowerCase().includes("review"),
   }));
 
   // Add a review step if the last step isn't already a review
   const lastStep = steps[steps.length - 1];
   if (!lastStep?.isReviewStep) {
     steps.push({
-      id: 'final-review',
-      agentRole: 'reviewer',
-      description: 'Review the completed work for correctness and quality',
-      inputArtifacts: [lastStep?.id ?? ''].filter(Boolean),
-      outputArtifact: 'final-review',
+      id: "final-review",
+      agentRole: "reviewer",
+      description: "Review the completed work for correctness and quality",
+      inputArtifacts: [lastStep?.id ?? ""].filter(Boolean),
+      outputArtifact: "final-review",
       isReviewStep: true,
-      loopBackTo: steps.find((s) => s.agentRole === 'coder')?.id,
+      loopBackTo: steps.find((s) => s.agentRole === "coder")?.id,
     });
   }
 
@@ -111,7 +124,7 @@ export function decompositionToWorkflow(
     name: `Decomposed: ${originalTask.slice(0, 60)}`,
     description: result.summary,
     steps,
-    communicationMode: 'handoff',
+    communicationMode: "handoff",
     maxIterations: 3,
   };
 }

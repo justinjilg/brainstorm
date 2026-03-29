@@ -5,7 +5,7 @@ import type {
   Message,
   CostRecord,
   TaskType,
-} from "@brainstorm/shared";
+} from "@brainst0rm/shared";
 
 // ── Sessions ─────────────────────────────────────────────────────────
 

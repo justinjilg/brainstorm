@@ -11,7 +11,7 @@ import type {
   ModelEntry,
   RoutingContext,
   RoutingDecision,
-} from "@brainstorm/shared";
+} from "@brainst0rm/shared";
 import type { RoutingStrategy } from "./types.js";
 
 interface ModelStats {

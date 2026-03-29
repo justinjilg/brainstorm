@@ -1,4 +1,4 @@
-# @brainstorm/providers
+# @brainst0rm/providers
 
 AI provider discovery and AI SDK language model creation.
 
@@ -15,8 +15,8 @@ AI provider discovery and AI SDK language model creation.
 ## Usage
 
 ```typescript
-import { ProviderRegistry } from '@brainstorm/providers';
+import { ProviderRegistry } from "@brainst0rm/providers";
 
 const registry = new ProviderRegistry(config);
-const model = registry.createLanguageModel('claude-sonnet-4.5');
+const model = registry.createLanguageModel("claude-sonnet-4.5");
 ```

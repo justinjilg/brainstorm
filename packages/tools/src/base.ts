@@ -1,6 +1,6 @@
-import { tool, type ToolSet } from 'ai';
-import { z } from 'zod';
-import type { ToolPermission } from '@brainstorm/shared';
+import { tool, type ToolSet } from "ai";
+import { z } from "zod";
+import type { ToolPermission } from "@brainst0rm/shared";
 
 export interface BrainstormToolDef<TOutput = unknown> {
   name: string;

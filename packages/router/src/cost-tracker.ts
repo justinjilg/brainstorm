@@ -1,7 +1,7 @@
-import type { CostRecord, TaskType, BudgetState } from "@brainstorm/shared";
-import type { BudgetConfig } from "@brainstorm/config";
-import { BudgetExceededError, createLogger } from "@brainstorm/shared";
-import { CostRepository } from "@brainstorm/db";
+import type { CostRecord, TaskType, BudgetState } from "@brainst0rm/shared";
+import type { BudgetConfig } from "@brainst0rm/config";
+import { BudgetExceededError, createLogger } from "@brainst0rm/shared";
+import { CostRepository } from "@brainst0rm/db";
 
 const log = createLogger("cost-tracker");
 

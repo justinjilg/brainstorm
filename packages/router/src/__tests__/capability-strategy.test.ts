@@ -5,7 +5,7 @@ import type {
   ModelEntry,
   RoutingContext,
   BudgetState,
-} from "@brainstorm/shared";
+} from "@brainst0rm/shared";
 
 function makeModel(
   id: string,

@@ -1,6 +1,6 @@
 {
-  "name": "@brainstorm/core",
-  "version": "0.12.1",
+  "name": "@brainst0rm/core",
+  "version": "0.13.0",
   "type": "module",
   "exports": {
     ".": {
@@ -15,14 +15,14 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brainstorm/agents": "0.12.1",
-    "@brainstorm/config": "0.12.1",
-    "@brainstorm/db": "0.12.1",
-    "@brainstorm/gateway": "0.12.1",
-    "@brainstorm/providers": "0.12.1",
-    "@brainstorm/router": "0.12.1",
-    "@brainstorm/shared": "0.12.1",
-    "@brainstorm/tools": "0.12.1",
+    "@brainst0rm/agents": "0.13.0",
+    "@brainst0rm/config": "0.13.0",
+    "@brainst0rm/db": "0.13.0",
+    "@brainst0rm/gateway": "0.13.0",
+    "@brainst0rm/providers": "0.13.0",
+    "@brainst0rm/router": "0.13.0",
+    "@brainst0rm/shared": "0.13.0",
+    "@brainst0rm/tools": "0.13.0",
     "ai": "^6",
     "pdf-parse": "^2.4.5"
   },

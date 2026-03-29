@@ -1,7 +1,7 @@
 /**
- * @brainstorm/docgen — Documentation generator for analyzed codebases.
+ * @brainst0rm/docgen — Documentation generator for analyzed codebases.
  *
- * Consumes ProjectAnalysis from @brainstorm/ingest and produces:
+ * Consumes ProjectAnalysis from @brainst0rm/ingest and produces:
  * - Architecture document (overview, stack, component diagram, hotspots)
  * - Module documents (per-cluster: files, exports, dependencies, complexity)
  * - API reference (endpoints grouped by prefix, sequence diagrams)
@@ -19,7 +19,7 @@ export { generateAPIDoc, type APIDoc } from "./api-reference.js";
 
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import type { ProjectAnalysis } from "@brainstorm/ingest";
+import type { ProjectAnalysis } from "@brainst0rm/ingest";
 import { generateArchitectureDoc } from "./architecture.js";
 import { generateModuleDocs } from "./modules.js";
 import { generateAPIDoc } from "./api-reference.js";
@@ -35,7 +35,7 @@ export interface DocgenResult {
 /**
  * Generate all documentation and write to disk.
  *
- * @param analysis - ProjectAnalysis from @brainstorm/ingest
+ * @param analysis - ProjectAnalysis from @brainst0rm/ingest
  * @param outputDir - Directory to write docs to (default: docs/generated)
  */
 export function generateAllDocs(

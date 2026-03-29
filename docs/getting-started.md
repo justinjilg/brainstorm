@@ -5,7 +5,7 @@ Get up and running with Brainstorm in 5 minutes.
 ## Install
 
 ```bash
-npm install -g @brainstorm/cli
+npm install -g @brainst0rm/cli
 ```
 
 ## Configure
@@ -70,6 +70,7 @@ test_command: npm test
 This is a Next.js app with Drizzle ORM.
 
 ## Conventions
+
 - Components go in src/components/
 - Use server components by default
 - Tests use vitest
@@ -81,14 +82,14 @@ Brainstorm reads this file automatically and uses it to make better decisions.
 
 In chat mode, use slash commands:
 
-| Command | Action |
-|---------|--------|
-| `/model` | Switch models |
-| `/fast` | Toggle fast mode |
-| `/compact` | Compress context window |
-| `/clear` | Reset conversation |
-| `/help` | Show all commands |
-| `/dream` | Consolidate session memories |
+| Command    | Action                       |
+| ---------- | ---------------------------- |
+| `/model`   | Switch models                |
+| `/fast`    | Toggle fast mode             |
+| `/compact` | Compress context window      |
+| `/clear`   | Reset conversation           |
+| `/help`    | Show all commands            |
+| `/dream`   | Consolidate session memories |
 
 ## Check Your Setup
 

@@ -14,7 +14,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import type { Artifact, WorkflowRun } from "@brainstorm/shared";
+import type { Artifact, WorkflowRun } from "@brainst0rm/shared";
 
 const ARTIFACTS_BASE = join(homedir(), ".brainstorm", "artifacts");
 

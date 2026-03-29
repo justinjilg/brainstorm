@@ -8,16 +8,16 @@ import type {
   Artifact,
   AgentProfile,
   StepStatus,
-} from "@brainstorm/shared";
-import type { BrainstormConfig } from "@brainstorm/config";
-import type { ProviderRegistry } from "@brainstorm/providers";
-import { BrainstormRouter, CostTracker } from "@brainstorm/router";
+} from "@brainst0rm/shared";
+import type { BrainstormConfig } from "@brainst0rm/config";
+import type { ProviderRegistry } from "@brainst0rm/providers";
+import { BrainstormRouter, CostTracker } from "@brainst0rm/router";
 import {
   createDefaultToolRegistry,
   type ToolRegistry,
-} from "@brainstorm/tools";
-import { runAgentLoop, buildSystemPrompt } from "@brainstorm/core";
-import { AgentManager, buildAgentSystemPrompt } from "@brainstorm/agents";
+} from "@brainst0rm/tools";
+import { runAgentLoop, buildSystemPrompt } from "@brainst0rm/core";
+import { AgentManager, buildAgentSystemPrompt } from "@brainst0rm/agents";
 import { buildStepContext } from "./context-filter.js";
 import {
   extractConfidence,

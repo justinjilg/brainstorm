@@ -9,7 +9,7 @@
  * like "refactoring in a Next.js project typically costs $0.08 with Sonnet."
  */
 
-import type { TaskProfile, ModelEntry, Complexity } from '@brainstorm/shared';
+import type { TaskProfile, ModelEntry, Complexity } from "@brainst0rm/shared";
 
 export interface CostPrediction {
   /** Best estimate for the task. */
@@ -33,7 +33,10 @@ export interface CostTier {
 }
 
 /** Average tokens per task complexity (heuristic from typical coding tasks). */
-const COMPLEXITY_TOKENS: Record<Complexity, { input: number; output: number; turns: number }> = {
+const COMPLEXITY_TOKENS: Record<
+  Complexity,
+  { input: number; output: number; turns: number }
+> = {
   trivial: { input: 500, output: 200, turns: 1 },
   simple: { input: 2000, output: 800, turns: 2 },
   moderate: { input: 8000, output: 3000, turns: 4 },
@@ -57,31 +60,30 @@ export function predictTaskCost(
   const totalOutput = tokenEstimate.output * tokenEstimate.turns;
 
   // Find representative models for each tier
-  const qualityModel = findModelByTier(models, 'quality');
-  const balancedModel = findModelByTier(models, 'balanced');
-  const cheapModel = findModelByTier(models, 'cheap');
+  const qualityModel = findModelByTier(models, "quality");
+  const balancedModel = findModelByTier(models, "balanced");
+  const cheapModel = findModelByTier(models, "cheap");
 
   const tiers: CostTier[] = [];
 
   if (qualityModel) {
-    tiers.push(buildTier('Quality', qualityModel, totalInput, totalOutput));
+    tiers.push(buildTier("Quality", qualityModel, totalInput, totalOutput));
   }
   if (balancedModel) {
-    tiers.push(buildTier('Balanced', balancedModel, totalInput, totalOutput));
+    tiers.push(buildTier("Balanced", balancedModel, totalInput, totalOutput));
   }
   if (cheapModel) {
-    tiers.push(buildTier('Budget', cheapModel, totalInput, totalOutput));
+    tiers.push(buildTier("Budget", cheapModel, totalInput, totalOutput));
   }
 
   // Best estimate uses balanced model (or quality if no balanced)
-  const primary = tiers.find((t) => t.label === 'Balanced') ?? tiers[0];
+  const primary = tiers.find((t) => t.label === "Balanced") ?? tiers[0];
   const estimated = primary?.estimatedCost ?? 0;
 
   // Range: cheapest to most expensive tier
   const costs = tiers.map((t) => t.estimatedCost).filter((c) => c > 0);
-  const range: [number, number] = costs.length > 0
-    ? [Math.min(...costs), Math.max(...costs)]
-    : [0, 0];
+  const range: [number, number] =
+    costs.length > 0 ? [Math.min(...costs), Math.max(...costs)] : [0, 0];
 
   return {
     estimated,
@@ -96,18 +98,29 @@ export function predictTaskCost(
  * Format a cost prediction for display.
  */
 export function formatCostPrediction(prediction: CostPrediction): string {
-  if (prediction.tiers.length === 0) return 'Cost estimate unavailable.';
+  if (prediction.tiers.length === 0) return "Cost estimate unavailable.";
 
-  const lines = [`Est. cost (${prediction.complexity} ${prediction.taskType}):`];
+  const lines = [
+    `Est. cost (${prediction.complexity} ${prediction.taskType}):`,
+  ];
   for (const tier of prediction.tiers) {
-    lines.push(`  ${tier.label}: $${tier.estimatedCost.toFixed(3)} (${tier.model})`);
+    lines.push(
+      `  ${tier.label}: $${tier.estimatedCost.toFixed(3)} (${tier.model})`,
+    );
   }
-  return lines.join('\n');
+  return lines.join("\n");
 }
 
-function buildTier(label: string, model: ModelEntry, inputTokens: number, outputTokens: number): CostTier {
-  const inputCost = (inputTokens / 1_000_000) * (model.pricing?.inputPer1MTokens ?? 0);
-  const outputCost = (outputTokens / 1_000_000) * (model.pricing?.outputPer1MTokens ?? 0);
+function buildTier(
+  label: string,
+  model: ModelEntry,
+  inputTokens: number,
+  outputTokens: number,
+): CostTier {
+  const inputCost =
+    (inputTokens / 1_000_000) * (model.pricing?.inputPer1MTokens ?? 0);
+  const outputCost =
+    (outputTokens / 1_000_000) * (model.pricing?.outputPer1MTokens ?? 0);
 
   return {
     label,
@@ -118,22 +131,29 @@ function buildTier(label: string, model: ModelEntry, inputTokens: number, output
   };
 }
 
-function findModelByTier(models: ModelEntry[], tier: 'quality' | 'balanced' | 'cheap'): ModelEntry | undefined {
+function findModelByTier(
+  models: ModelEntry[],
+  tier: "quality" | "balanced" | "cheap",
+): ModelEntry | undefined {
   // Sort by output price
   const sorted = [...models]
     .filter((m) => m.pricing?.outputPer1MTokens)
-    .sort((a, b) => (a.pricing?.outputPer1MTokens ?? 0) - (b.pricing?.outputPer1MTokens ?? 0));
+    .sort(
+      (a, b) =>
+        (a.pricing?.outputPer1MTokens ?? 0) -
+        (b.pricing?.outputPer1MTokens ?? 0),
+    );
 
   if (sorted.length === 0) return undefined;
 
-  if (tier === 'cheap') return sorted[0];
-  if (tier === 'quality') return sorted[sorted.length - 1];
+  if (tier === "cheap") return sorted[0];
+  if (tier === "quality") return sorted[sorted.length - 1];
   // Balanced: middle of the pack
   return sorted[Math.floor(sorted.length / 2)];
 }
 
 function estimateLatency(model: ModelEntry, totalTokens: number): number {
   // Rough estimate: 50 tokens/sec for cloud, 20 tokens/sec for local
-  const tokensPerSec = model.provider === 'local' ? 20 : 50;
+  const tokensPerSec = model.provider === "local" ? 20 : 50;
   return Math.round((totalTokens / tokensPerSec) * 1000);
 }

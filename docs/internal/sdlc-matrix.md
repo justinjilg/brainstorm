@@ -783,7 +783,7 @@ The forensic verifier extracts claims from artifacts using pattern matching:
 1. **File references**: `path/to/file.ts`, `path/to/file.ts:42`
 2. **Function/class names**: "The `verifyToken()` function in auth.ts"
 3. **API endpoints**: "GET /api/users", "POST /v1/chat/completions"
-4. **Package dependencies**: "@brainstorm/router@0.12.1"
+4. **Package dependencies**: "@brainst0rm/router@0.12.1"
 5. **Database schemas**: "The `users` table has a `role` column"
 6. **Configuration values**: "The `maxSteps` config defaults to 10"
 

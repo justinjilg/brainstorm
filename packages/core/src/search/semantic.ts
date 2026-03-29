@@ -8,7 +8,7 @@
 
 import { readFileSync } from "node:fs";
 import { join, extname } from "node:path";
-import { getDb } from "@brainstorm/db";
+import { getDb } from "@brainst0rm/db";
 import { buildRepoMap, type RepoMapEntry } from "../agent/repo-map.js";
 
 export interface SearchResult {

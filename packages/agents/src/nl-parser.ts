@@ -1,4 +1,4 @@
-import type { AgentRole } from "@brainstorm/shared";
+import type { AgentRole } from "@brainst0rm/shared";
 
 /** Parsed agent creation intent from natural language. */
 export interface AgentCreationIntent {

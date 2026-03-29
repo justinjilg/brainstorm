@@ -1,4 +1,4 @@
-# @brainstorm/core
+# @brainst0rm/core
 
 The brain of Brainstorm — agent loop, session management, and intelligence features.
 
@@ -23,7 +23,7 @@ The brain of Brainstorm — agent loop, session management, and intelligence fea
 ## Usage
 
 ```typescript
-import { runAgentLoop } from '@brainstorm/core';
+import { runAgentLoop } from "@brainst0rm/core";
 
 for await (const event of runAgentLoop(options)) {
   // Handle: text, tool-call, tool-result, compaction-warning, loop-warning

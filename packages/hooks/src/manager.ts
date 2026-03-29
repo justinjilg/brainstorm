@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { createLogger } from "@brainstorm/shared";
+import { createLogger } from "@brainst0rm/shared";
 import type { HookDefinition, HookEvent, HookResult } from "./types.js";
 
 const execFileAsync = promisify(execFile);

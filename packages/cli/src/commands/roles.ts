@@ -10,7 +10,7 @@ import {
   type OutputStyle,
   getPersona,
   composePersonaPrompt,
-} from "@brainstorm/core";
+} from "@brainst0rm/core";
 
 export type RoleId =
   | "architect"

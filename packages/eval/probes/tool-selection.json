@@ -52,7 +52,7 @@
   {
     "id": "tool-select-06",
     "capability": "tool-selection",
-    "prompt": "Find all files that import from '@brainstorm/router'",
+    "prompt": "Find all files that import from '@brainst0rm/router'",
     "verify": {
       "tool_calls_include": ["grep"],
       "max_steps": 5

@@ -1,9 +1,9 @@
 import { streamText, stepCountIs } from "ai";
 import type { ConversationMessage } from "../session/manager.js";
-import type { BrainstormConfig } from "@brainstorm/config";
-import type { ProviderRegistry } from "@brainstorm/providers";
-import { BrainstormRouter, CostTracker } from "@brainstorm/router";
-import type { ToolRegistry, PermissionCheckFn } from "@brainstorm/tools";
+import type { BrainstormConfig } from "@brainst0rm/config";
+import type { ProviderRegistry } from "@brainst0rm/providers";
+import { BrainstormRouter, CostTracker } from "@brainst0rm/router";
+import type { ToolRegistry, PermissionCheckFn } from "@brainst0rm/tools";
 import {
   setTaskEventHandler,
   clearTasks,
@@ -12,20 +12,20 @@ import {
   setToolOutputHandler,
   getTierForComplexity,
   getToolsForTier,
-} from "@brainstorm/tools";
+} from "@brainst0rm/tools";
 import {
   createLogger,
   type AgentEvent,
   type GatewayFeedbackData,
   type ModelEntry,
   type TurnContext,
-} from "@brainstorm/shared";
+} from "@brainst0rm/shared";
 import type { BuildStateTracker } from "./build-state.js";
 import { LoopDetector } from "./loop-detector.js";
-import { serializeRoutingMetadata } from "@brainstorm/shared";
+import { serializeRoutingMetadata } from "@brainst0rm/shared";
 import { createStreamFilter } from "./response-filter.js";
 import { normalizeInsightMarkers } from "./insights.js";
-import { parseGatewayHeaders } from "@brainstorm/gateway";
+import { parseGatewayHeaders } from "@brainst0rm/gateway";
 import type { MiddlewarePipeline } from "../middleware/pipeline.js";
 import { TrajectoryRecorder } from "../session/trajectory.js";
 import { predictTaskCost } from "./cost-predictor.js";

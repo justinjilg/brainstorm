@@ -7,8 +7,8 @@
  */
 
 import { ROLES, type RoleId, type ModelChoice } from "./roles.js";
-import { autoSelectPreset, getPresetWorkflow } from "@brainstorm/workflow";
-import type { WorkflowDefinition, WorkflowStepDef } from "@brainstorm/shared";
+import { autoSelectPreset, getPresetWorkflow } from "@brainst0rm/workflow";
+import type { WorkflowDefinition, WorkflowStepDef } from "@brainst0rm/shared";
 
 // ── Types ────────────────────────────────────────────────────────────
 

@@ -4,7 +4,7 @@
 
 import type Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
-import type { Project, ProjectMemoryEntry } from "@brainstorm/shared";
+import type { Project, ProjectMemoryEntry } from "@brainst0rm/shared";
 
 function rowToProject(row: any): Project {
   return {

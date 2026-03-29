@@ -9,7 +9,7 @@
  * the CLI can pass these docs as context to an agent.
  */
 
-import type { ProjectAnalysis } from "@brainstorm/ingest";
+import type { ProjectAnalysis } from "@brainst0rm/ingest";
 
 export interface ArchitectureDoc {
   markdown: string;

@@ -9,8 +9,8 @@
 import React, { useState, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
 import { PlanTree } from "../planning/PlanTree.js";
-import type { PlanFile, PlanPhase, PlanTask } from "@brainstorm/core";
-import { parsePlanContent } from "@brainstorm/core";
+import type { PlanFile, PlanPhase, PlanTask } from "@brainst0rm/core";
+import { parsePlanContent } from "@brainst0rm/core";
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 

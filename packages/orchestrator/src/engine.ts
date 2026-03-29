@@ -15,12 +15,12 @@ import type {
   OrchestrationRun,
   OrchestrationTask,
   Project,
-} from "@brainstorm/shared";
+} from "@brainst0rm/shared";
 import {
   OrchestrationRunRepository,
   OrchestrationTaskRepository,
 } from "./repository.js";
-import { ProjectRepository } from "@brainstorm/projects";
+import { ProjectRepository } from "@brainst0rm/projects";
 
 // ── Event Types ─────────────────────────────────────────────────────
 

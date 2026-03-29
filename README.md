@@ -12,11 +12,13 @@
 </p>
 
 <p align="center">
+  <a href="https://www.npmjs.com/package/@brainst0rm/cli"><img src="https://img.shields.io/npm/v/@brainst0rm/cli.svg?color=d97706" alt="npm version" /></a>&nbsp;
+  <a href="https://www.npmjs.com/package/@brainst0rm/cli"><img src="https://img.shields.io/npm/dm/@brainst0rm/cli.svg?color=d97706" alt="npm downloads" /></a>&nbsp;
   <a href="https://github.com/justinjilg/brainstorm/actions/workflows/ci.yml"><img src="https://github.com/justinjilg/brainstorm/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>&nbsp;
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" /></a>&nbsp;
   <img src="https://img.shields.io/badge/models-10+-d97706.svg" alt="Models" />&nbsp;
   <img src="https://img.shields.io/badge/tools-42+-d97706.svg" alt="Tools" />&nbsp;
-  <img src="https://img.shields.io/badge/packages-20-d97706.svg" alt="Packages" />
+  <img src="https://img.shields.io/badge/packages-23-d97706.svg" alt="Packages" />
 </p>
 
 <p align="center">
@@ -29,10 +31,42 @@
 
 ---
 
+## Quickstart
+
 ```bash
-npm install -g @brainstorm/cli
+npm install -g @brainst0rm/cli
 storm chat
 ```
+
+That's it. Brainstorm auto-discovers your API keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`) and local models (Ollama, LM Studio, llama.cpp). No configuration required.
+
+## Why Brainstorm?
+
+Every AI coding tool locks you into one model. Brainstorm routes each task to the best model for the job:
+
+- **Architecture review?** Routed to Opus 4.6 — highest reasoning quality.
+- **Implement a function?** Routed to Sonnet 4.6 — fast, capable, 5x cheaper.
+- **Fix a typo?** Routed to Haiku 4.5 — instant, 19x cheaper.
+- **Hit your budget?** Falls back to DeepSeek V3 or your local Ollama models — $0.
+
+The router learns from outcomes via Thompson sampling. After a few sessions, it knows which models perform best for _your_ codebase and _your_ task types. The result: better code at lower cost, automatically.
+
+### How it compares
+
+|                         | Brainstorm | Claude Code | Cursor | Aider | Codex CLI |
+| ----------------------- | :--------: | :---------: | :----: | :---: | :-------: |
+| Multi-model routing     |     ✓      |             |        |   ~   |           |
+| Thompson sampling       |     ✓      |             |        |       |           |
+| Local model support     |     ✓      |             |        |   ✓   |           |
+| Cost tracking + budgets |     ✓      |             |        |       |           |
+| Encrypted vault         |     ✓      |             |        |       |           |
+| 9-phase orchestration   |     ✓      |             |        |       |           |
+| Plugin SDK              |     ✓      |      ✓      |   ~    |       |           |
+| Terminal dashboard      |     ✓      |             |        |       |           |
+| Open source             |     ✓      |             |        |   ✓   |     ✓     |
+| IDE integration         |     ✓      |      ✓      |   ✓    |   ~   |           |
+
+<sub>~ = partial support. Comparison as of March 2026. We use these tools daily and respect them all.</sub>
 
 ## What It Does
 
@@ -50,17 +84,17 @@ storm chat
 
 ## Architecture
 
-20 TypeScript packages in a Turborepo monorepo:
+23 TypeScript packages in a Turborepo monorepo:
 
 ```
 cli ─────── core ─── router ─── providers ─── config ─── shared
               │        │
-              ├── tools (42+)        ├── agents (11 roles, 7 subagent types)
+              ├── tools (42+)        ├── agents (11 roles, 8 subagent types)
               ├── workflow (4 presets)├── orchestrator (9-phase pipeline)
               ├── hooks (10 events)  ├── projects + scheduler
               ├── mcp (OAuth, SSE)   ├── eval (7 capability dimensions)
               ├── gateway (BR API)   ├── vault (AES-256-GCM)
-              └── db (SQLite/WAL)    └── plugin-sdk
+              └── db (SQLite/WAL)    └── plugin-sdk + sdk + docgen + ingest
 ```
 
 ## Models
@@ -152,8 +186,8 @@ storm intelligence
 ```bash
 git clone https://github.com/justinjilg/brainstorm.git
 cd brainstorm && npm install
-npx turbo run build          # Build all 20 packages
-npx turbo run test           # Run tests
+npx turbo run build          # Build all 23 packages
+npx turbo run test           # Run tests (90 tests)
 node packages/cli/dist/brainstorm.js chat
 ```
 

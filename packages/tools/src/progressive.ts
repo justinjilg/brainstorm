@@ -12,66 +12,102 @@
  * If the model requests a tool not in the current tier, escalate automatically.
  */
 
-import type { Complexity } from '@brainstorm/shared';
+import type { Complexity } from "@brainst0rm/shared";
 
-export type ToolTier = 'minimal' | 'standard' | 'full';
+export type ToolTier = "minimal" | "standard" | "full";
 
 /** Tools included in each tier. */
 const TIER_TOOLS: Record<ToolTier, string[]> = {
-  minimal: [
-    'file_read',
-    'file_write',
-    'file_edit',
-    'shell',
-    'glob',
-  ],
+  minimal: ["file_read", "file_write", "file_edit", "shell", "glob"],
   standard: [
     // All minimal tools
-    'file_read', 'file_write', 'file_edit', 'shell', 'glob',
+    "file_read",
+    "file_write",
+    "file_edit",
+    "shell",
+    "glob",
     // Git
-    'git_status', 'git_diff', 'git_log', 'git_commit', 'git_branch', 'git_stash',
+    "git_status",
+    "git_diff",
+    "git_log",
+    "git_commit",
+    "git_branch",
+    "git_stash",
     // Search
-    'grep', 'list_dir',
+    "grep",
+    "list_dir",
     // Multi-file
-    'multi_edit',
+    "multi_edit",
     // Tasks
-    'task_create', 'task_update', 'task_list',
+    "task_create",
+    "task_update",
+    "task_list",
     // Agent
-    'scratchpad_write', 'scratchpad_read', 'ask_user',
+    "scratchpad_write",
+    "scratchpad_read",
+    "ask_user",
   ],
   full: [
     // All standard tools
-    'file_read', 'file_write', 'file_edit', 'shell', 'glob',
-    'git_status', 'git_diff', 'git_log', 'git_commit', 'git_branch', 'git_stash',
-    'grep', 'list_dir', 'multi_edit',
-    'task_create', 'task_update', 'task_list',
-    'scratchpad_write', 'scratchpad_read', 'ask_user',
+    "file_read",
+    "file_write",
+    "file_edit",
+    "shell",
+    "glob",
+    "git_status",
+    "git_diff",
+    "git_log",
+    "git_commit",
+    "git_branch",
+    "git_stash",
+    "grep",
+    "list_dir",
+    "multi_edit",
+    "task_create",
+    "task_update",
+    "task_list",
+    "scratchpad_write",
+    "scratchpad_read",
+    "ask_user",
     // Batch ops
-    'batch_edit',
+    "batch_edit",
     // GitHub
-    'gh_pr', 'gh_issue',
+    "gh_pr",
+    "gh_issue",
     // Web
-    'web_fetch', 'web_search',
+    "web_fetch",
+    "web_search",
     // Process management
-    'process_spawn', 'process_kill',
+    "process_spawn",
+    "process_kill",
     // Undo + Transactions
-    'undo_last_write',
-    'begin_transaction', 'commit_transaction', 'rollback_transaction',
+    "undo_last_write",
+    "begin_transaction",
+    "commit_transaction",
+    "rollback_transaction",
     // Routing + Cost
-    'set_routing_hint', 'cost_estimate', 'plan_preview',
+    "set_routing_hint",
+    "cost_estimate",
+    "plan_preview",
     // BrainstormRouter intelligence
-    'br_status', 'br_budget', 'br_leaderboard', 'br_insights',
-    'br_models', 'br_memory_search', 'br_memory_store', 'br_health',
+    "br_status",
+    "br_budget",
+    "br_leaderboard",
+    "br_insights",
+    "br_models",
+    "br_memory_search",
+    "br_memory_store",
+    "br_health",
   ],
 };
 
 /** Map task complexity to initial tool tier. */
 const COMPLEXITY_TO_TIER: Record<Complexity, ToolTier> = {
-  trivial: 'minimal',
-  simple: 'minimal',
-  moderate: 'standard',
-  complex: 'full',
-  expert: 'full',
+  trivial: "minimal",
+  simple: "minimal",
+  moderate: "standard",
+  complex: "full",
+  expert: "full",
 };
 
 /** Get the tool tier for a given task complexity. */
@@ -91,21 +127,24 @@ export function isToolInTier(toolName: string, tier: ToolTier): boolean {
 
 /** Get the next tier up (for escalation). Returns null if already at full. */
 export function escalateTier(current: ToolTier): ToolTier | null {
-  if (current === 'minimal') return 'standard';
-  if (current === 'standard') return 'full';
+  if (current === "minimal") return "standard";
+  if (current === "standard") return "full";
   return null;
 }
 
 /** Get tier that contains a specific tool (for escalation targeting). */
 export function getTierForTool(toolName: string): ToolTier | null {
-  if (TIER_TOOLS.minimal.includes(toolName)) return 'minimal';
-  if (TIER_TOOLS.standard.includes(toolName)) return 'standard';
-  if (TIER_TOOLS.full.includes(toolName)) return 'full';
+  if (TIER_TOOLS.minimal.includes(toolName)) return "minimal";
+  if (TIER_TOOLS.standard.includes(toolName)) return "standard";
+  if (TIER_TOOLS.full.includes(toolName)) return "full";
   return null; // Unknown tool (plugin or MCP)
 }
 
 /** Get token estimate saved by using a lower tier. */
-export function estimateTokenSavings(currentTier: ToolTier): { toolsOmitted: number; estimatedTokensSaved: number } {
+export function estimateTokenSavings(currentTier: ToolTier): {
+  toolsOmitted: number;
+  estimatedTokensSaved: number;
+} {
   const fullCount = TIER_TOOLS.full.length;
   const currentCount = TIER_TOOLS[currentTier].length;
   const omitted = fullCount - currentCount;

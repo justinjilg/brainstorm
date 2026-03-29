@@ -2,7 +2,7 @@ import { readFileSync, existsSync, watch, type FSWatcher } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import TOML from "@iarna/toml";
-import { createLogger } from "@brainstorm/shared";
+import { createLogger } from "@brainst0rm/shared";
 import { brainstormConfigSchema, type BrainstormConfig } from "./schema.js";
 
 const log = createLogger("config");

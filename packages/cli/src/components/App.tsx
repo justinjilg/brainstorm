@@ -17,7 +17,7 @@ import { ModelsMode } from "./modes/ModelsMode.js";
 import { ConfigMode } from "./modes/ConfigMode.js";
 import { PlanningMode } from "./modes/PlanningMode.js";
 import { ShortcutOverlay } from "./ShortcutOverlay.js";
-import type { AgentEvent, AgentTask } from "@brainstorm/shared";
+import type { AgentEvent, AgentTask } from "@brainst0rm/shared";
 
 interface AppProps {
   // Chat mode props (passed through to ChatApp)

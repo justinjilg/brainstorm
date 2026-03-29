@@ -18,7 +18,7 @@
  *   GET  /v1/community/patterns     — Get community tool preferences
  */
 
-import { createLogger } from "@brainstorm/shared";
+import { createLogger } from "@brainst0rm/shared";
 import { gatewayRequest } from "./http.js";
 
 const log = createLogger("intelligence-api");

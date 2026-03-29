@@ -26,23 +26,23 @@ jobs:
         run: npx turbo run build
 
       - name: Run tests
-        run: npx turbo run test --filter=@brainstorm/core --filter=@brainstorm/tools
+        run: npx turbo run test --filter=@brainst0rm/core --filter=@brainst0rm/tools
 
       # All inputs are hardcoded package names — no untrusted user input in run commands
       - name: Publish packages (dependency order)
         run: |
-          npm publish --workspace=@brainstorm/shared --provenance --access public || true
+          npm publish --workspace=@brainst0rm/shared --provenance --access public || true
           for pkg in config db providers; do
-            npm publish --workspace=@brainstorm/$pkg --provenance --access public || true
+            npm publish --workspace=@brainst0rm/$pkg --provenance --access public || true
           done
           for pkg in router tools vault agents hooks mcp eval ingest gateway; do
-            npm publish --workspace=@brainstorm/$pkg --provenance --access public || true
+            npm publish --workspace=@brainst0rm/$pkg --provenance --access public || true
           done
           for pkg in core workflow orchestrator projects scheduler plugin-sdk docgen; do
-            npm publish --workspace=@brainstorm/$pkg --provenance --access public || true
+            npm publish --workspace=@brainst0rm/$pkg --provenance --access public || true
           done
           for pkg in sdk vscode cli; do
-            npm publish --workspace=@brainstorm/$pkg --provenance --access public || true
+            npm publish --workspace=@brainst0rm/$pkg --provenance --access public || true
           done
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

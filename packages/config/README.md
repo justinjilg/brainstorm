@@ -1,4 +1,4 @@
-# @brainstorm/config
+# @brainst0rm/config
 
 Layered configuration with Zod validation. Loads and merges config from defaults, global TOML, project TOML, and environment variables.
 

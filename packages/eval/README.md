@@ -1,4 +1,4 @@
-# @brainstorm/eval
+# @brainst0rm/eval
 
 Capability evaluation system — probes, runner, scorer, and scorecard.
 

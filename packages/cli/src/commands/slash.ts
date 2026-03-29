@@ -299,8 +299,8 @@ const commands: SlashCommand[] = [
     description: "Manage projects — switch, list, show dashboard",
     usage: "/project [name|list|register|show <name>]",
     execute: async (args, ctx) => {
-      const { ProjectManager } = await import("@brainstorm/projects");
-      const { getDb } = await import("@brainstorm/db");
+      const { ProjectManager } = await import("@brainst0rm/projects");
+      const { getDb } = await import("@brainst0rm/db");
       const db = getDb();
       const pm = new ProjectManager(db);
 
@@ -377,7 +377,7 @@ const commands: SlashCommand[] = [
 
       if (action === "list" || !action) {
         // Lazy-load scheduler
-        const { getDb } = await import("@brainstorm/db");
+        const { getDb } = await import("@brainst0rm/db");
         const db = getDb();
         const tasks = db
           .prepare(
@@ -398,7 +398,7 @@ const commands: SlashCommand[] = [
       }
 
       if (action === "history") {
-        const { getDb } = await import("@brainstorm/db");
+        const { getDb } = await import("@brainst0rm/db");
         const db = getDb();
         const runs = db
           .prepare(
@@ -431,9 +431,9 @@ const commands: SlashCommand[] = [
     description: "Coordinate work across multiple projects",
     usage: '/orchestrate "<description>" [project1,project2,...]',
     execute: async (args) => {
-      const { OrchestrationEngine } = await import("@brainstorm/orchestrator");
-      const { ProjectManager } = await import("@brainstorm/projects");
-      const { getDb } = await import("@brainstorm/db");
+      const { OrchestrationEngine } = await import("@brainst0rm/orchestrator");
+      const { ProjectManager } = await import("@brainst0rm/projects");
+      const { getDb } = await import("@brainst0rm/db");
       const db = getDb();
       const engine = new OrchestrationEngine(db);
       const pm = new ProjectManager(db);
@@ -490,7 +490,7 @@ const commands: SlashCommand[] = [
     usage: "/intelligence [--json]",
     execute: async (args, _ctx) => {
       const { createGatewayClient, createIntelligenceClient } =
-        await import("@brainstorm/gateway");
+        await import("@brainst0rm/gateway");
       const gw = createGatewayClient();
       if (!gw) return "No BRAINSTORM_API_KEY set.";
 
@@ -1135,7 +1135,7 @@ commands.push({
   execute: async (args, ctx) => {
     if (!ctx.gateway) return "No BrainstormRouter API key configured.";
     try {
-      const { IntelligenceAPIClient } = await import("@brainstorm/gateway");
+      const { IntelligenceAPIClient } = await import("@brainst0rm/gateway");
       const key =
         process.env._BR_RESOLVED_KEY ?? process.env.BRAINSTORM_API_KEY;
       if (!key) return "No BR API key available.";
@@ -1300,7 +1300,7 @@ commands.push({
   usage: "/recipe [list|run <name>|init]",
   execute: async (args, ctx) => {
     const { listRecipes, loadRecipe, initRecipeDir } =
-      await import("@brainstorm/workflow");
+      await import("@brainst0rm/workflow");
     const cwd = process.cwd();
     const parts = args.trim().split(/\s+/);
     const subcommand = parts[0]?.toLowerCase() ?? "list";

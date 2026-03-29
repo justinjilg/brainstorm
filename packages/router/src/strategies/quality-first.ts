@@ -1,11 +1,20 @@
-import type { TaskProfile, ModelEntry, RoutingContext, RoutingDecision } from '@brainstorm/shared';
-import type { RoutingStrategy } from './types.js';
+import type {
+  TaskProfile,
+  ModelEntry,
+  RoutingContext,
+  RoutingDecision,
+} from "@brainst0rm/shared";
+import type { RoutingStrategy } from "./types.js";
 
 export const qualityFirstStrategy: RoutingStrategy = {
-  name: 'quality-first',
+  name: "quality-first",
 
-  select(task: TaskProfile, candidates: ModelEntry[], context: RoutingContext): RoutingDecision | null {
-    let available = candidates.filter((m) => m.status === 'available');
+  select(
+    task: TaskProfile,
+    candidates: ModelEntry[],
+    context: RoutingContext,
+  ): RoutingDecision | null {
+    let available = candidates.filter((m) => m.status === "available");
     if (available.length === 0) return null;
 
     // Prefer explicit models over brainstormrouter/auto.
@@ -13,7 +22,9 @@ export const qualityFirstStrategy: RoutingStrategy = {
     // user is paying for a key that gives access to specific quality models.
     // Keep auto only as a last resort.
     if (available.length > 1) {
-      const explicit = available.filter((m) => m.id !== 'brainstormrouter/auto');
+      const explicit = available.filter(
+        (m) => m.id !== "brainstormrouter/auto",
+      );
       if (explicit.length > 0) available = explicit;
     }
 
@@ -28,8 +39,16 @@ export const qualityFirstStrategy: RoutingStrategy = {
     // Filter out models that would exceed budget
     const withinBudget = sorted.filter((m) => {
       const cost = estimateCost(m, task);
-      if (context.budget.sessionLimit && context.budget.sessionUsed + cost > context.budget.sessionLimit) return false;
-      if (context.budget.dailyLimit && context.budget.dailyUsed + cost > context.budget.dailyLimit) return false;
+      if (
+        context.budget.sessionLimit &&
+        context.budget.sessionUsed + cost > context.budget.sessionLimit
+      )
+        return false;
+      if (
+        context.budget.dailyLimit &&
+        context.budget.dailyUsed + cost > context.budget.dailyLimit
+      )
+        return false;
       return true;
     });
 
@@ -42,7 +61,7 @@ export const qualityFirstStrategy: RoutingStrategy = {
       fallbacks,
       reason: `Quality-first: best model (${selected.name}, tier ${selected.capabilities.qualityTier}) for ${task.type}`,
       estimatedCost: estimateCost(selected, task),
-      strategy: 'quality-first',
+      strategy: "quality-first",
     };
   },
 };

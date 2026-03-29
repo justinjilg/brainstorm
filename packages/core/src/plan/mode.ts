@@ -1,4 +1,4 @@
-import type { ToolRegistry } from '@brainstorm/tools';
+import type { ToolRegistry } from "@brainst0rm/tools";
 
 /**
  * Plan Mode — read-only exploration before execution.
@@ -12,8 +12,15 @@ import type { ToolRegistry } from '@brainstorm/tools';
  */
 
 const READ_ONLY_TOOLS = new Set([
-  'file_read', 'glob', 'grep', 'git_status', 'git_diff', 'git_log',
-  'web_fetch', 'web_search', 'notebook_read',
+  "file_read",
+  "glob",
+  "grep",
+  "git_status",
+  "git_diff",
+  "git_log",
+  "web_fetch",
+  "web_search",
+  "notebook_read",
 ]);
 
 /**
@@ -24,7 +31,7 @@ export function getPlanModeTools(registry: ToolRegistry): Record<string, any> {
   const result: Record<string, any> = {};
 
   for (const tool of allTools) {
-    if (READ_ONLY_TOOLS.has(tool.name) || tool.permission === 'auto') {
+    if (READ_ONLY_TOOLS.has(tool.name) || tool.permission === "auto") {
       result[tool.name] = tool.toAISDKTool();
     }
   }

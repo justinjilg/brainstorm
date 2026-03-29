@@ -1,4 +1,4 @@
-import type { ModelEntry } from "@brainstorm/shared";
+import type { ModelEntry } from "@brainst0rm/shared";
 
 // Built-in cloud model registry — pricing and capabilities for major models
 // These are accessed through AI Gateway using "provider/model" format

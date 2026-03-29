@@ -1,12 +1,12 @@
 /**
- * @brainstorm/sdk — Programmatic API for Brainstorm.
+ * @brainst0rm/sdk — Programmatic API for Brainstorm.
  *
  * Use this SDK to integrate Brainstorm's intelligent model routing,
  * task classification, codebase analysis, and agent execution
  * into CI/CD pipelines, scripts, and other tools.
  *
  * ```ts
- * import { Brainstorm } from '@brainstorm/sdk';
+ * import { Brainstorm } from '@brainst0rm/sdk';
  *
  * const bs = new Brainstorm({ projectPath: '.' });
  * const result = await bs.run('fix the failing test in auth.ts');
@@ -14,22 +14,22 @@
  * ```
  */
 
-import { loadConfig, type BrainstormConfig } from "@brainstorm/config";
-import { getDb, closeDb } from "@brainstorm/db";
+import { loadConfig, type BrainstormConfig } from "@brainst0rm/config";
+import { getDb, closeDb } from "@brainst0rm/db";
 import {
   createProviderRegistry,
   type ResolvedKeys,
-} from "@brainstorm/providers";
-import { BrainstormRouter, CostTracker } from "@brainstorm/router";
+} from "@brainst0rm/providers";
+import { BrainstormRouter, CostTracker } from "@brainst0rm/router";
 import {
   runAgentLoop,
   buildSystemPrompt,
   SessionManager,
-} from "@brainstorm/core";
-import type { AgentEvent } from "@brainstorm/shared";
-import { createDefaultToolRegistry } from "@brainstorm/tools";
-import { analyzeProject, type ProjectAnalysis } from "@brainstorm/ingest";
-import { generateAllDocs, type DocgenResult } from "@brainstorm/docgen";
+} from "@brainst0rm/core";
+import type { AgentEvent } from "@brainst0rm/shared";
+import { createDefaultToolRegistry } from "@brainst0rm/tools";
+import { analyzeProject, type ProjectAnalysis } from "@brainst0rm/ingest";
+import { generateAllDocs, type DocgenResult } from "@brainst0rm/docgen";
 
 export interface BrainstormOptions {
   /** Path to the project directory (default: cwd). */
@@ -211,7 +211,7 @@ export class Brainstorm {
 }
 
 // Re-export key types for SDK consumers
-export type { ProjectAnalysis } from "@brainstorm/ingest";
-export type { DocgenResult } from "@brainstorm/docgen";
-export type { AgentEvent } from "@brainstorm/shared";
-export type { BrainstormConfig } from "@brainstorm/config";
+export type { ProjectAnalysis } from "@brainst0rm/ingest";
+export type { DocgenResult } from "@brainst0rm/docgen";
+export type { AgentEvent } from "@brainst0rm/shared";
+export type { BrainstormConfig } from "@brainst0rm/config";

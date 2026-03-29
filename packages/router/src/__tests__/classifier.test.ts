@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { classifyTask } from "../classifier";
-import type { TaskType } from "@brainstorm/shared";
+import type { TaskType } from "@brainst0rm/shared";
 
 describe("classifyTask", () => {
   describe("code-generation tasks", () => {

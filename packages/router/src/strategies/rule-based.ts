@@ -1,39 +1,57 @@
-import type { TaskProfile, ModelEntry, RoutingContext, RoutingDecision } from '@brainstorm/shared';
-import type { RoutingRule } from '@brainstorm/config';
-import type { RoutingStrategy } from './types.js';
+import type {
+  TaskProfile,
+  ModelEntry,
+  RoutingContext,
+  RoutingDecision,
+} from "@brainst0rm/shared";
+import type { RoutingRule } from "@brainst0rm/config";
+import type { RoutingStrategy } from "./types.js";
 
 export function createRuleBasedStrategy(rules: RoutingRule[]): RoutingStrategy {
   return {
-    name: 'rule-based',
+    name: "rule-based",
 
-    select(task: TaskProfile, candidates: ModelEntry[], _context: RoutingContext): RoutingDecision | null {
+    select(
+      task: TaskProfile,
+      candidates: ModelEntry[],
+      _context: RoutingContext,
+    ): RoutingDecision | null {
       for (const rule of rules) {
         if (!matchesRule(rule, task)) continue;
 
         if (rule.model) {
-          const model = candidates.find((m) => m.id === rule.model && m.status === 'available');
+          const model = candidates.find(
+            (m) => m.id === rule.model && m.status === "available",
+          );
           if (model) {
             return {
               model,
-              fallbacks: candidates.filter((m) => m.id !== model.id && m.status === 'available').slice(0, 3),
+              fallbacks: candidates
+                .filter((m) => m.id !== model.id && m.status === "available")
+                .slice(0, 3),
               reason: `Rule matched: ${JSON.stringify(rule.match)} → ${model.name}`,
               estimatedCost: estimateCost(model, task),
-              strategy: 'rule-based',
+              strategy: "rule-based",
             };
           }
         }
 
         if (rule.preferProvider) {
           const providerModels = candidates
-            .filter((m) => m.provider === rule.preferProvider && m.status === 'available')
-            .sort((a, b) => a.capabilities.qualityTier - b.capabilities.qualityTier);
+            .filter(
+              (m) =>
+                m.provider === rule.preferProvider && m.status === "available",
+            )
+            .sort(
+              (a, b) => a.capabilities.qualityTier - b.capabilities.qualityTier,
+            );
           if (providerModels.length > 0) {
             return {
               model: providerModels[0],
               fallbacks: providerModels.slice(1, 4),
               reason: `Rule matched: prefer provider ${rule.preferProvider} → ${providerModels[0].name}`,
               estimatedCost: estimateCost(providerModels[0], task),
-              strategy: 'rule-based',
+              strategy: "rule-based",
             };
           }
         }
