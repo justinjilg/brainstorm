@@ -4,14 +4,17 @@ export class BrainstormError extends Error {
     public readonly code: string,
   ) {
     super(message);
-    this.name = 'BrainstormError';
+    this.name = "BrainstormError";
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, this.constructor);
+    }
   }
 }
 
 export class ConfigError extends BrainstormError {
   constructor(message: string) {
-    super(message, 'CONFIG_ERROR');
-    this.name = 'ConfigError';
+    super(message, "CONFIG_ERROR");
+    this.name = "ConfigError";
   }
 }
 
@@ -20,15 +23,15 @@ export class ProviderError extends BrainstormError {
     message: string,
     public readonly provider: string,
   ) {
-    super(message, 'PROVIDER_ERROR');
-    this.name = 'ProviderError';
+    super(message, "PROVIDER_ERROR");
+    this.name = "ProviderError";
   }
 }
 
 export class RoutingError extends BrainstormError {
   constructor(message: string) {
-    super(message, 'ROUTING_ERROR');
-    this.name = 'RoutingError';
+    super(message, "ROUTING_ERROR");
+    this.name = "RoutingError";
   }
 }
 
@@ -38,14 +41,17 @@ export class BudgetExceededError extends BrainstormError {
     public readonly used: number,
     public readonly max: number,
   ) {
-    super(`Budget exceeded: ${limit} — used $${used.toFixed(4)} of $${max.toFixed(2)}`, 'BUDGET_EXCEEDED');
-    this.name = 'BudgetExceededError';
+    super(
+      `Budget exceeded: ${limit} — used $${used.toFixed(4)} of $${max.toFixed(2)}`,
+      "BUDGET_EXCEEDED",
+    );
+    this.name = "BudgetExceededError";
   }
 }
 
 export class ToolPermissionDenied extends BrainstormError {
   constructor(public readonly toolName: string) {
-    super(`Permission denied for tool: ${toolName}`, 'TOOL_PERMISSION_DENIED');
-    this.name = 'ToolPermissionDenied';
+    super(`Permission denied for tool: ${toolName}`, "TOOL_PERMISSION_DENIED");
+    this.name = "ToolPermissionDenied";
   }
 }

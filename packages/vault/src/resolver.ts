@@ -1,6 +1,6 @@
-import type { BrainstormVault } from './vault.js';
-import { opRead, isOpAvailable } from './backends/op-cli.js';
-import { envRead } from './backends/env.js';
+import type { BrainstormVault } from "./vault.js";
+import { opRead, isOpAvailable } from "./backends/op-cli.js";
+import { envRead } from "./backends/env.js";
 
 export type PasswordPrompt = () => Promise<string>;
 
@@ -12,8 +12,6 @@ export type PasswordPrompt = () => Promise<string>;
 export class KeyResolver {
   private vault: BrainstormVault | null;
   private promptPassword: PasswordPrompt | null;
-  private unlockSucceeded = false;
-
   constructor(vault: BrainstormVault | null, promptPassword?: PasswordPrompt) {
     this.vault = vault;
     this.promptPassword = promptPassword ?? null;
@@ -28,11 +26,10 @@ export class KeyResolver {
   async get(name: string): Promise<string | null> {
     // 1. Vault — lazy unlock (re-prompts if previous attempt failed)
     if (this.vault?.exists()) {
-      if (!this.vault.isOpen() && !this.unlockSucceeded && this.promptPassword) {
+      if (!this.vault.isOpen() && this.promptPassword) {
         try {
           const password = await this.promptPassword();
           this.vault.open(password);
-          this.unlockSucceeded = true;
         } catch {
           // Wrong password or user cancelled — fall through to other backends this time
           // Will re-prompt on the next get() call
@@ -59,10 +56,10 @@ export class KeyResolver {
     const value = await this.get(name);
     if (!value) {
       const sources: string[] = [];
-      if (this.vault?.exists()) sources.push('vault');
-      if (isOpAvailable()) sources.push('1Password');
-      sources.push('environment');
-      throw new Error(`Key "${name}" not found in ${sources.join(', ')}`);
+      if (this.vault?.exists()) sources.push("vault");
+      if (isOpAvailable()) sources.push("1Password");
+      sources.push("environment");
+      throw new Error(`Key "${name}" not found in ${sources.join(", ")}`);
     }
     return value;
   }
@@ -70,15 +67,15 @@ export class KeyResolver {
   /** Report which backends are available. */
   status(): { vault: string; op: string; env: string } {
     const vaultStatus = !this.vault?.exists()
-      ? 'not initialized'
+      ? "not initialized"
       : this.vault.isOpen()
         ? `unlocked (${this.vault.list().length} keys)`
-        : 'locked';
+        : "locked";
 
     return {
       vault: vaultStatus,
-      op: isOpAvailable() ? 'available' : 'not available',
-      env: 'always available',
+      op: isOpAvailable() ? "available" : "not available",
+      env: "always available",
     };
   }
 }
