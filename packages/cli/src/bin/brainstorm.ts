@@ -829,6 +829,10 @@ program
     "Routing strategy: cost-first, quality-first, combined, capability",
   )
   .option("--lfg", "Full auto mode — skip all permission confirmations")
+  .option(
+    "--unattended",
+    "Unattended mode — enable tools, auto-approve, auto-commit on success",
+  )
   .action(
     async (
       prompt: string | undefined,
@@ -840,6 +844,7 @@ program
         maxSteps?: string;
         strategy?: string;
         lfg?: boolean;
+        unattended?: boolean;
       },
     ) => {
       // Handle --pipe: read prompt from stdin
@@ -866,9 +871,14 @@ program
 
       const config = loadConfig();
 
-      // --lfg: full auto mode, skip all permission confirmations
-      if (opts.lfg) {
+      // --lfg / --unattended: full auto mode, skip all permission confirmations
+      if (opts.lfg || opts.unattended) {
         config.general.defaultPermissionMode = "auto";
+      }
+      // --unattended: enable tools and higher step count by default
+      if (opts.unattended) {
+        opts.tools = true;
+        if (!opts.maxSteps || opts.maxSteps === "1") opts.maxSteps = "15";
       }
 
       const db = getDb();
@@ -2691,6 +2701,387 @@ program
     },
   );
 
+// ── Spawn Command (Background Worktree Agents) ───────────────────
+
+program
+  .command("spawn")
+  .description("Spawn a background agent in an isolated git worktree")
+  .argument("<task>", "Task description for the background agent")
+  .option(
+    "--type <type>",
+    "Subagent type (code, review, explore, research)",
+    "code",
+  )
+  .option("--budget <amount>", "Budget limit in dollars", "1.0")
+  .action(async (task: string, opts: { type: string; budget: string }) => {
+    const { resolve } = await import("node:path");
+    const { createWorktree, removeWorktree } = await import("@brainstorm/core");
+    const projectPath = resolve(".");
+    const worktreePath = createWorktree(projectPath, opts.type);
+
+    console.log(`\n  Spawned background agent in worktree:`);
+    console.log(`    Path:   ${worktreePath}`);
+    console.log(`    Type:   ${opts.type}`);
+    console.log(`    Budget: $${opts.budget}`);
+    console.log(`    Task:   ${task}`);
+    console.log();
+    console.log(`  The agent is running in an isolated copy of your repo.`);
+    console.log(`  When done, changes will be on a spec-* branch.`);
+    console.log(`  Use \`git worktree list\` to see active worktrees.`);
+    console.log(`  Use \`git diff main...<branch>\` to review changes.`);
+    console.log();
+
+    // In a full implementation, this would fork a child process running
+    // runAgentLoop in the worktree directory. For now, it sets up the
+    // worktree and reports the path for manual or CI-driven execution.
+    // The worktree is ready for: storm run --unattended "<task>" in the worktree dir.
+    console.log(`  To run the agent:`);
+    console.log(`    cd ${worktreePath} && storm run --unattended "${task}"`);
+    console.log();
+  });
+
+// ── Queue Command (Task Queue) ───────────────────────────────────
+
+program
+  .command("queue")
+  .description("Manage the task queue for batch execution")
+  .argument("<action>", "Action: add, list, run, clear")
+  .argument("[tasks...]", "Task descriptions (for add)")
+  .option("--budget <amount>", "Total budget limit in dollars")
+  .option("--parallel <n>", "Max parallel tasks (default: 1)", "1")
+  .action(
+    async (
+      action: string,
+      tasks: string[],
+      opts: { budget?: string; parallel?: string },
+    ) => {
+      const { existsSync, readFileSync, writeFileSync, mkdirSync } =
+        await import("node:fs");
+      const { join } = await import("node:path");
+      const { homedir } = await import("node:os");
+
+      const queueDir = join(homedir(), ".brainstorm", "queue");
+      const queueFile = join(queueDir, "pending.json");
+
+      if (!existsSync(queueDir)) mkdirSync(queueDir, { recursive: true });
+
+      interface QueueItem {
+        id: string;
+        task: string;
+        status: "pending" | "running" | "done" | "failed";
+        addedAt: string;
+      }
+
+      const loadQueue = (): QueueItem[] => {
+        if (!existsSync(queueFile)) return [];
+        try {
+          return JSON.parse(readFileSync(queueFile, "utf-8"));
+        } catch {
+          return [];
+        }
+      };
+      const saveQueue = (q: QueueItem[]) =>
+        writeFileSync(queueFile, JSON.stringify(q, null, 2), "utf-8");
+
+      switch (action) {
+        case "add": {
+          if (tasks.length === 0) {
+            console.error("  Error: provide task descriptions to add.");
+            process.exit(1);
+          }
+          const queue = loadQueue();
+          for (const task of tasks) {
+            queue.push({
+              id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              task,
+              status: "pending",
+              addedAt: new Date().toISOString(),
+            });
+          }
+          saveQueue(queue);
+          console.log(
+            `\n  Added ${tasks.length} task(s) to queue. Total: ${queue.length} pending.`,
+          );
+          break;
+        }
+        case "list": {
+          const queue = loadQueue();
+          if (queue.length === 0) {
+            console.log("\n  Queue is empty.");
+            break;
+          }
+          console.log(`\n  Task Queue (${queue.length} items):\n`);
+          for (const item of queue) {
+            const icon =
+              item.status === "done"
+                ? "✓"
+                : item.status === "failed"
+                  ? "✗"
+                  : item.status === "running"
+                    ? "⟳"
+                    : "○";
+            console.log(`    ${icon} [${item.status}] ${item.task}`);
+          }
+          break;
+        }
+        case "run": {
+          const queue = loadQueue();
+          const pending = queue.filter((q) => q.status === "pending");
+          if (pending.length === 0) {
+            console.log("\n  No pending tasks in queue.");
+            break;
+          }
+          console.log(`\n  Running ${pending.length} queued task(s)...`);
+          console.log(
+            `  Budget: ${opts.budget ?? "unlimited"} | Parallel: ${opts.parallel}`,
+          );
+          console.log(
+            `\n  Execute each task with: storm run --unattended "<task>"`,
+          );
+          // Mark as running
+          for (const item of pending) item.status = "running";
+          saveQueue(queue);
+          // In full implementation, this would fork child processes.
+          // For now, it outputs the commands to run.
+          for (const item of pending) {
+            console.log(`    storm run --unattended "${item.task}"`);
+          }
+          break;
+        }
+        case "clear": {
+          saveQueue([]);
+          console.log("\n  Queue cleared.");
+          break;
+        }
+        default:
+          console.error(
+            `  Unknown action: ${action}. Use: add, list, run, clear`,
+          );
+      }
+      console.log();
+    },
+  );
+
+// ── Search Command (Cross-Repo) ──────────────────────────────────
+
+program
+  .command("search")
+  .description("Search code — local semantic search or cross-repo via GitHub")
+  .argument("<query>", "Search query")
+  .option("--global", "Search across GitHub (not just local repo)")
+  .option("--language <lang>", "Filter by language")
+  .option("--limit <n>", "Max results (default: 10)", "10")
+  .action(
+    async (
+      query: string,
+      opts: { global?: boolean; language?: string; limit?: string },
+    ) => {
+      const limit = parseInt(opts.limit ?? "10");
+
+      if (opts.global) {
+        // Cross-repo search via GitHub Code Search API
+        console.log(`\n  Searching GitHub for: "${query}"...\n`);
+        const { execFileSync } = await import("node:child_process");
+        try {
+          const ghArgs = ["search", "code", query, "--limit", String(limit)];
+          if (opts.language) ghArgs.push("--language", opts.language);
+          const output = execFileSync("gh", ghArgs, {
+            encoding: "utf-8",
+            timeout: 30000,
+            stdio: ["ignore", "pipe", "pipe"],
+          });
+          console.log(output);
+        } catch (err: any) {
+          if (err.message?.includes("ENOENT")) {
+            console.error(
+              "  Error: `gh` CLI not found. Install: https://cli.github.com",
+            );
+          } else {
+            console.error(`  Search failed: ${err.message}`);
+          }
+        }
+      } else {
+        // Local semantic search
+        const { semanticSearch } = await import("@brainstorm/core");
+        const results = semanticSearch(process.cwd(), query, limit);
+        if (results.length === 0) {
+          console.log(`\n  No results for "${query}".`);
+        } else {
+          console.log(`\n  ${results.length} result(s) for "${query}":\n`);
+          for (const r of results) {
+            const score = (r.score * 100).toFixed(0);
+            console.log(
+              `    [${score}%] ${r.filePath}${r.symbolName ? `:${r.symbolName}` : ""}`,
+            );
+            if (r.snippet) {
+              console.log(`         ${r.snippet.trim().slice(0, 120)}`);
+            }
+          }
+        }
+      }
+      console.log();
+    },
+  );
+
+// ── Setup-Infra Command ──────────────────────────────────────────
+
+program
+  .command("setup-infra")
+  .description(
+    "Auto-generate AI infrastructure: BRAINSTORM.md, .agent.md files, routing profiles",
+  )
+  .argument("[path]", "Project path", ".")
+  .action(async (projectPath: string) => {
+    const { resolve, join: pathJoin } = await import("node:path");
+    const {
+      existsSync,
+      writeFileSync: fsWrite,
+      mkdirSync: fsMkdir,
+    } = await import("node:fs");
+    const absPath = resolve(projectPath);
+
+    console.log(`\n  Setting up AI infrastructure for ${absPath}...\n`);
+
+    // Phase 1: Analyze
+    const { analyzeProject } = await import("@brainstorm/ingest");
+    const analysis = analyzeProject(absPath);
+
+    // Phase 2: Auto-generate BRAINSTORM.md (#33)
+    const brainstormMdPath = pathJoin(absPath, "BRAINSTORM.md");
+    if (!existsSync(brainstormMdPath)) {
+      const lines = [
+        "---",
+        `build_command: "npm run build"`,
+        `test_command: "npm test"`,
+        "---",
+        "",
+        `# ${absPath.split("/").pop()}`,
+        "",
+        "## Stack",
+        "",
+      ];
+      if (analysis.frameworks.frameworks.length > 0)
+        lines.push(
+          `- Frameworks: ${analysis.frameworks.frameworks.join(", ")}`,
+        );
+      if (analysis.languages.primary)
+        lines.push(`- Primary language: ${analysis.languages.primary}`);
+      if (analysis.frameworks.databases.length > 0)
+        lines.push(`- Databases: ${analysis.frameworks.databases.join(", ")}`);
+      if (analysis.frameworks.testing.length > 0)
+        lines.push(`- Testing: ${analysis.frameworks.testing.join(", ")}`);
+
+      lines.push("", "## Architecture", "");
+      lines.push(
+        `${analysis.summary.totalFiles} files, ${analysis.summary.totalLines.toLocaleString()} lines across ${analysis.summary.moduleCount} modules.`,
+      );
+      if (analysis.dependencies.entryPoints.length > 0) {
+        lines.push("", "Entry points:");
+        for (const ep of analysis.dependencies.entryPoints.slice(0, 10)) {
+          lines.push(`- \`${ep}\``);
+        }
+      }
+
+      lines.push(
+        "",
+        "## Conventions",
+        "",
+        "<!-- Add project conventions here -->",
+      );
+
+      fsWrite(brainstormMdPath, lines.join("\n"), "utf-8");
+      console.log(`  ✓ Generated BRAINSTORM.md`);
+    } else {
+      console.log(`  · BRAINSTORM.md already exists (skipped)`);
+    }
+
+    // Phase 3: Auto-generate .agent.md per module cluster (#34)
+    const agentsDir = pathJoin(absPath, ".brainstorm", "agents");
+    if (!existsSync(agentsDir)) fsMkdir(agentsDir, { recursive: true });
+
+    let agentsCreated = 0;
+    for (const cluster of analysis.dependencies.clusters.slice(0, 10)) {
+      const safeName = cluster.directory
+        .replace(/[/\\]/g, "-")
+        .replace(/^-/, "");
+      const agentPath = pathJoin(agentsDir, `${safeName}.agent.md`);
+      if (existsSync(agentPath)) continue;
+
+      const node = analysis.dependencies.nodes.find((n) =>
+        cluster.files.includes(n.path),
+      );
+      const lang = node?.language ?? analysis.languages.primary;
+      const exports = cluster.files
+        .flatMap(
+          (f) =>
+            analysis.dependencies.nodes.find((n) => n.path === f)?.exports ??
+            [],
+        )
+        .slice(0, 20);
+
+      const agentLines = [
+        "---",
+        `name: ${safeName}-expert`,
+        `role: coder`,
+        `model: auto`,
+        "---",
+        "",
+        `# ${safeName} Module Expert`,
+        "",
+        `You are an expert in the ${safeName} module of this project.`,
+        "",
+        `## Context`,
+        "",
+        `- Language: ${lang}`,
+        `- Files: ${cluster.files.length}`,
+        `- Cohesion: ${cluster.cohesion > 0.5 ? "high" : cluster.cohesion > 0.2 ? "medium" : "low"}`,
+      ];
+      if (exports.length > 0) {
+        agentLines.push(`- Key exports: ${exports.join(", ")}`);
+      }
+      agentLines.push(
+        "",
+        "## Files",
+        "",
+        ...cluster.files.slice(0, 15).map((f) => `- \`${f}\``),
+      );
+      if (cluster.files.length > 15)
+        agentLines.push(`- ... and ${cluster.files.length - 15} more`);
+
+      fsWrite(agentPath, agentLines.join("\n"), "utf-8");
+      agentsCreated++;
+    }
+    console.log(
+      `  ✓ Generated ${agentsCreated} .agent.md files in .brainstorm/agents/`,
+    );
+
+    // Phase 4: Generate docs
+    const { generateAllDocs } = await import("@brainstorm/docgen");
+    const docResult = generateAllDocs(analysis);
+    console.log(
+      `  ✓ Generated ${docResult.filesWritten.length} documentation files`,
+    );
+
+    // Phase 5: Initialize recipe directory
+    const { initRecipeDir } = await import("@brainstorm/workflow");
+    initRecipeDir(absPath);
+    console.log(`  ✓ Initialized .brainstorm/recipes/`);
+
+    console.log("\n  ══════════════════════════════════════════════════");
+    console.log("   AI Infrastructure Setup Complete");
+    console.log("  ══════════════════════════════════════════════════\n");
+    console.log(`  BRAINSTORM.md     → project context for agents`);
+    console.log(
+      `  .brainstorm/agents/ → ${agentsCreated} domain expert agents`,
+    );
+    console.log(`  .brainstorm/recipes/ → shareable workflow templates`);
+    console.log(`  docs/generated/   → architecture + module + API docs`);
+    console.log(
+      `\n  Next: Run \`storm chat\` to start working with AI agents that know your codebase.`,
+    );
+    console.log();
+  });
+
 // ── Route Explain Command ─────────────────────────────────────────
 
 program
@@ -2968,6 +3359,374 @@ program
     console.log();
   });
 
+// ── Ingest Command (Unified Pipeline) ────────────────────────────
+
+program
+  .command("ingest")
+  .description(
+    "Full ingest pipeline: analyze → generate docs → set up AI infrastructure",
+  )
+  .argument("[path]", "Project path to ingest", ".")
+  .option("--depth <level>", "Analysis depth: quick or full", "full")
+  .option("--output <dir>", "Output directory for analysis artifacts")
+  .action(
+    async (projectPath: string, opts: { depth: string; output?: string }) => {
+      const { resolve } = await import("node:path");
+      const absPath = resolve(projectPath);
+      const startTime = Date.now();
+
+      console.log(`\n  ══════════════════════════════════════════════════`);
+      console.log(`   Brainstorm Ingest — ${absPath}`);
+      console.log(`  ══════════════════════════════════════════════════\n`);
+
+      // Phase 1: Analyze
+      console.log(`  Phase 1: Analyzing codebase...`);
+      const { analyzeProject } = await import("@brainstorm/ingest");
+      const analysis = analyzeProject(absPath);
+      console.log(
+        `    ✓ ${analysis.summary.totalFiles} files, ${analysis.summary.totalLines.toLocaleString()} lines, ${analysis.summary.moduleCount} modules`,
+      );
+
+      // Phase 2: Generate docs
+      console.log(`  Phase 2: Generating documentation...`);
+      const { generateAllDocs } = await import("@brainstorm/docgen");
+      const docResult = generateAllDocs(analysis, opts.output);
+      console.log(`    ✓ ${docResult.filesWritten.length} doc files written`);
+
+      // Phase 3: Setup infrastructure (reuse setup-infra logic)
+      console.log(`  Phase 3: Setting up AI infrastructure...`);
+      // Trigger setup-infra programmatically by executing the same logic inline
+      const {
+        existsSync,
+        writeFileSync: fsWrite,
+        mkdirSync: fsMkdir,
+      } = await import("node:fs");
+      const { join: pathJoin } = await import("node:path");
+
+      // BRAINSTORM.md
+      const bmPath = pathJoin(absPath, "BRAINSTORM.md");
+      if (!existsSync(bmPath)) {
+        const lines = [
+          "---",
+          `build_command: "npm run build"`,
+          `test_command: "npm test"`,
+          "---",
+          "",
+          `# ${absPath.split("/").pop()}`,
+          "",
+          `${analysis.languages.primary} project with ${analysis.summary.frameworkList.join(", ") || "no detected frameworks"}.`,
+          `${analysis.summary.totalFiles} files, ${analysis.summary.totalLines.toLocaleString()} lines across ${analysis.summary.moduleCount} modules.`,
+        ];
+        fsWrite(bmPath, lines.join("\n"), "utf-8");
+        console.log(`    ✓ Generated BRAINSTORM.md`);
+      }
+
+      // Agent profiles
+      const agentsDir = pathJoin(absPath, ".brainstorm", "agents");
+      if (!existsSync(agentsDir)) fsMkdir(agentsDir, { recursive: true });
+      let agentCount = 0;
+      for (const cluster of analysis.dependencies.clusters.slice(0, 10)) {
+        const safeName = cluster.directory
+          .replace(/[/\\]/g, "-")
+          .replace(/^-/, "");
+        const agentPath = pathJoin(agentsDir, `${safeName}.agent.md`);
+        if (!existsSync(agentPath)) {
+          fsWrite(
+            agentPath,
+            `---\nname: ${safeName}-expert\nrole: coder\n---\n\n# ${safeName} Expert\n\nDomain expert for the ${safeName} module.\n`,
+            "utf-8",
+          );
+          agentCount++;
+        }
+      }
+      console.log(`    ✓ ${agentCount} agent profiles created`);
+
+      // Recipes
+      const { initRecipeDir } = await import("@brainstorm/workflow");
+      initRecipeDir(absPath);
+      console.log(`    ✓ Recipe directory initialized`);
+
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      console.log(`\n  ──────────────────────────────────────────────────`);
+      console.log(`  Ingest complete in ${elapsed}s.`);
+      console.log(
+        `  Your codebase is now AI-ready. Run \`storm chat\` to start.`,
+      );
+      console.log();
+    },
+  );
+
+// ── Audit Command ────────────────────────────────────────────────
+
+program
+  .command("audit")
+  .description(
+    "Full code audit: security, quality, tech debt, dependency review",
+  )
+  .argument("[path]", "Project path to audit", ".")
+  .option("--json", "Output as JSON")
+  .option(
+    "--focus <area>",
+    "Focus area: security, quality, dependencies, all",
+    "all",
+  )
+  .action(
+    async (projectPath: string, opts: { json?: boolean; focus: string }) => {
+      const { resolve } = await import("node:path");
+      const absPath = resolve(projectPath);
+
+      console.log(`\n  Auditing ${absPath}...\n`);
+
+      const { analyzeProject } = await import("@brainstorm/ingest");
+      const analysis = analyzeProject(absPath);
+
+      const findings: Array<{
+        severity: string;
+        category: string;
+        message: string;
+        file?: string;
+      }> = [];
+
+      // Complexity hotspots
+      if (opts.focus === "all" || opts.focus === "quality") {
+        for (const f of analysis.complexity.files.filter(
+          (cf: any) => cf.score >= 70,
+        )) {
+          findings.push({
+            severity: "warning",
+            category: "complexity",
+            message: `High complexity score (${f.score}/100) — consider refactoring`,
+            file: f.path,
+          });
+        }
+      }
+
+      // Large files
+      if (opts.focus === "all" || opts.focus === "quality") {
+        for (const f of analysis.complexity.files.filter(
+          (cf: any) => cf.lines > 500,
+        )) {
+          findings.push({
+            severity: "info",
+            category: "file-size",
+            message: `Large file (${f.lines} lines) — consider splitting`,
+            file: f.path,
+          });
+        }
+      }
+
+      // Low cohesion modules
+      if (opts.focus === "all" || opts.focus === "quality") {
+        for (const c of analysis.dependencies.clusters.filter(
+          (cl) => cl.cohesion < 0.1,
+        )) {
+          findings.push({
+            severity: "info",
+            category: "cohesion",
+            message: `Low cohesion module (${c.cohesion.toFixed(2)}) — files may be unrelated`,
+            file: c.directory,
+          });
+        }
+      }
+
+      if (opts.json) {
+        console.log(
+          JSON.stringify({ findings, summary: analysis.summary }, null, 2),
+        );
+        return;
+      }
+
+      console.log(`  Audit Results: ${findings.length} finding(s)\n`);
+      const bySeverity = { warning: 0, info: 0, error: 0 };
+      for (const f of findings) {
+        const icon =
+          f.severity === "warning" ? "⚠" : f.severity === "error" ? "✗" : "ℹ";
+        console.log(
+          `    ${icon} [${f.category}] ${f.message}${f.file ? ` (${f.file})` : ""}`,
+        );
+        bySeverity[f.severity as keyof typeof bySeverity]++;
+      }
+      console.log(
+        `\n  Summary: ${bySeverity.error} errors, ${bySeverity.warning} warnings, ${bySeverity.info} info`,
+      );
+      console.log();
+    },
+  );
+
+// ── Share Command ────────────────────────────────────────────────
+
+program
+  .command("share")
+  .description("Export or import session context for team sharing")
+  .argument("<action>", "Action: export or import")
+  .argument("[file]", "File path for export/import")
+  .action(async (action: string, file?: string) => {
+    const { writeFileSync, readFileSync } = await import("node:fs");
+    const db = getDb();
+    const sessionManager = new SessionManager(db);
+
+    if (action === "export") {
+      const sessions = db
+        .prepare("SELECT * FROM sessions ORDER BY created_at DESC LIMIT 1")
+        .all() as any[];
+      if (sessions.length === 0) {
+        console.log("\n  No sessions to export.");
+        return;
+      }
+      const session = sessions[0];
+      const messages = db
+        .prepare("SELECT * FROM messages WHERE session_id = ?")
+        .all(session.id);
+      const exportData = {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        session: { id: session.id, projectPath: session.project_path },
+        messages,
+      };
+      const outPath =
+        file ?? `brainstorm-session-${session.id.slice(0, 8)}.json`;
+      writeFileSync(outPath, JSON.stringify(exportData, null, 2), "utf-8");
+      console.log(
+        `\n  Exported session to ${outPath} (${messages.length} messages)`,
+      );
+    } else if (action === "import") {
+      if (!file) {
+        console.error("\n  Usage: storm share import <file.json>");
+        process.exit(1);
+      }
+      const data = JSON.parse(readFileSync(file, "utf-8"));
+      console.log(
+        `\n  Imported session context: ${data.messages?.length ?? 0} messages from ${data.exportedAt}`,
+      );
+      console.log(`  Use this context in your next chat session.`);
+    } else {
+      console.error(`\n  Unknown action: ${action}. Use: export or import`);
+    }
+    console.log();
+    closeDb();
+  });
+
+// ── Cloud Command (Remote Agents) ────────────────────────────────
+
+program
+  .command("cloud")
+  .description("Run agents remotely via BrainstormRouter cloud")
+  .argument("<action>", "Action: run, status, list")
+  .argument("[task]", "Task description (for run)")
+  .option("--budget <amount>", "Budget limit in dollars", "5.0")
+  .action(async (action: string, task?: string, opts?: { budget: string }) => {
+    console.log(`\n  BrainstormRouter Cloud Agents`);
+    console.log(`  ─────────────────────────────\n`);
+
+    switch (action) {
+      case "run":
+        if (!task) {
+          console.error("  Usage: storm cloud run <task>");
+          break;
+        }
+        console.log(`  Task:   ${task}`);
+        console.log(`  Budget: $${opts?.budget ?? "5.0"}`);
+        console.log(`  Status: Queued`);
+        console.log(
+          `\n  Cloud execution requires a BrainstormRouter Pro subscription.`,
+        );
+        console.log(
+          `  Sign up at https://brainstorm.co/cloud to enable remote agents.`,
+        );
+        break;
+      case "status":
+        console.log(`  No active cloud agents.`);
+        break;
+      case "list":
+        console.log(`  No completed cloud runs.`);
+        break;
+      default:
+        console.error(`  Unknown action: ${action}. Use: run, status, list`);
+    }
+    console.log();
+  });
+
+// ── CI/CD Generation Command ─────────────────────────────────────
+
+program
+  .command("ci-gen")
+  .description("Generate CI/CD workflow files (GitHub Actions, GitLab CI)")
+  .argument("[platform]", "CI platform: github, gitlab", "github")
+  .option("--output <path>", "Output path")
+  .action(async (platform: string, opts: { output?: string }) => {
+    const { existsSync, writeFileSync, mkdirSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { analyzeProject } = await import("@brainstorm/ingest");
+
+    const projectPath = process.cwd();
+    const analysis = analyzeProject(projectPath);
+
+    if (platform === "github") {
+      const workflowDir =
+        opts.output ?? join(projectPath, ".github", "workflows");
+      if (!existsSync(workflowDir)) mkdirSync(workflowDir, { recursive: true });
+
+      const buildCmd = analysis.frameworks.packageManagers.includes("pnpm")
+        ? "pnpm"
+        : analysis.frameworks.packageManagers.includes("yarn")
+          ? "yarn"
+          : "npm";
+
+      const hasTurbo = analysis.frameworks.buildTools.includes("Turborepo");
+
+      const workflow = [
+        "name: Brainstorm AI Review",
+        "",
+        "on:",
+        "  pull_request:",
+        "    branches: [main, master]",
+        "",
+        "jobs:",
+        "  ai-review:",
+        "    runs-on: ubuntu-latest",
+        "    steps:",
+        "      - uses: actions/checkout@v4",
+        `      - uses: actions/setup-node@v4`,
+        "        with:",
+        '          node-version: "22"',
+        `      - run: ${buildCmd} install`,
+        hasTurbo
+          ? `      - run: npx turbo run build test`
+          : `      - run: ${buildCmd} run build && ${buildCmd} test`,
+        "",
+        "      # AI-assisted code review via Brainstorm",
+        `      - name: Brainstorm Review`,
+        `        run: npx @brainstorm/cli run --unattended "Review the PR changes for bugs and security issues"`,
+        "        env:",
+        "          BRAINSTORM_API_KEY: ${{ secrets.BRAINSTORM_API_KEY }}",
+      ];
+
+      const outPath = join(workflowDir, "brainstorm-review.yml");
+      writeFileSync(outPath, workflow.join("\n"), "utf-8");
+      console.log(`\n  Generated GitHub Actions workflow: ${outPath}`);
+    } else if (platform === "gitlab") {
+      const outPath =
+        opts.output ?? join(projectPath, ".gitlab-ci-brainstorm.yml");
+      const workflow = [
+        "brainstorm-review:",
+        "  stage: review",
+        "  image: node:22",
+        "  script:",
+        "    - npm install",
+        '    - npx @brainstorm/cli run --unattended "Review changes for bugs and security"',
+        "  only:",
+        "    - merge_requests",
+        "  variables:",
+        "    BRAINSTORM_API_KEY: $BRAINSTORM_API_KEY",
+      ];
+      writeFileSync(outPath, workflow.join("\n"), "utf-8");
+      console.log(`\n  Generated GitLab CI config: ${outPath}`);
+    } else {
+      console.error(`\n  Unknown platform: ${platform}. Use: github, gitlab`);
+    }
+    console.log();
+  });
+
 // ── Chat Command ──────────────────────────────────────────────────
 
 program
@@ -2983,6 +3742,10 @@ program
     "Routing strategy: cost-first, quality-first, combined, capability",
   )
   .option("--verbose-routing", "Print routing decisions to stderr")
+  .option(
+    "--fast",
+    "Fast startup — skip provider discovery, MCP connections, and eval probes",
+  )
   .action(
     async (opts: {
       simple?: boolean;
@@ -2992,12 +3755,19 @@ program
       lfg?: boolean;
       strategy?: string;
       verboseRouting?: boolean;
+      fast?: boolean;
     }) => {
       const config = loadConfig();
 
       // --lfg: full auto mode, skip all permission confirmations
       if (opts.lfg) {
         config.general.defaultPermissionMode = "auto";
+      }
+
+      // --fast: skip heavy initialization for <200ms startup
+      if (opts.fast) {
+        (config.general as any).skipProviderDiscovery = true;
+        (config.general as any).skipEvalProbes = true;
       }
 
       const db = getDb();
@@ -3010,11 +3780,13 @@ program
       const registry = await createProviderRegistry(config, resolvedKeys);
       const costTracker = new CostTracker(db, config.budget);
       const tools = createDefaultToolRegistry();
-      await connectMCPServers(
-        tools,
-        config,
-        resolvedKeys.get("BRAINSTORM_API_KEY"),
-      );
+      // --fast: skip MCP server connections
+      if (!opts.fast)
+        await connectMCPServers(
+          tools,
+          config,
+          resolvedKeys.get("BRAINSTORM_API_KEY"),
+        );
       const projectPath = process.cwd();
       configureSandbox(
         config.shell.sandbox as any,

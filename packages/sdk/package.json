@@ -1,0 +1,46 @@
+{
+  "name": "@brainstorm/sdk",
+  "version": "0.12.1",
+  "type": "module",
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@brainstorm/shared": "0.12.1",
+    "@brainstorm/config": "0.12.1",
+    "@brainstorm/core": "0.12.1",
+    "@brainstorm/router": "0.12.1",
+    "@brainstorm/providers": "0.12.1",
+    "@brainstorm/tools": "0.12.1",
+    "@brainstorm/db": "0.12.1",
+    "@brainstorm/ingest": "0.12.1",
+    "@brainstorm/docgen": "0.12.1"
+  },
+  "devDependencies": {
+    "tsup": "^8",
+    "typescript": "^5.7"
+  },
+  "description": "Programmatic SDK for Brainstorm — run agents, classify tasks, route models from code",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/justinjilg/brainstorm.git",
+    "directory": "packages/sdk"
+  },
+  "homepage": "https://brainstorm.co",
+  "keywords": [
+    "ai",
+    "coding-assistant",
+    "llm",
+    "multi-model",
+    "routing",
+    "sdk",
+    "brainstorm"
+  ],
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts"
+}
