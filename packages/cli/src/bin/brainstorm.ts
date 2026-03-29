@@ -1198,7 +1198,12 @@ function printResumeSummary(
 function promptPassword(prompt: string): Promise<string> {
   // Non-interactive: use env var if set (for CI/CD and scripting)
   const envPassword = process.env.BRAINSTORM_VAULT_PASSWORD;
-  if (envPassword) return Promise.resolve(envPassword);
+  if (envPassword) {
+    console.error(
+      "  [vault] Using BRAINSTORM_VAULT_PASSWORD from environment (no prompt)",
+    );
+    return Promise.resolve(envPassword);
+  }
 
   return new Promise((resolve, reject) => {
     process.stderr.write(prompt);
@@ -1319,14 +1324,21 @@ vaultCmd
 
 vaultCmd
   .command("get <name>")
-  .description("Show a key value")
-  .action(async (name: string) => {
+  .description("Show a key value (masked by default)")
+  .option("--reveal", "Show the full unmasked value")
+  .action(async (name: string, opts: { reveal?: boolean }) => {
     const vault = new BrainstormVault(VAULT_PATH);
     const password = await promptPassword("  Master password: ");
     vault.open(password);
     const value = vault.get(name);
     if (value) {
-      console.log(value);
+      if (opts.reveal) {
+        console.log(value);
+      } else {
+        const masked =
+          value.slice(0, 8) + "*".repeat(Math.max(0, value.length - 8));
+        console.log(masked);
+      }
     } else {
       console.error(`  Key "${name}" not found in vault.`);
       process.exit(1);
