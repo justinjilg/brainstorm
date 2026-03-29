@@ -153,6 +153,8 @@ export const SUBAGENT_TYPE_NAMES: SubagentType[] = [
   "code",
   "review",
   "general",
+  "decompose",
+  "external",
 ];
 
 // ── Subagent Execution ──────────────────────────────────────────────
