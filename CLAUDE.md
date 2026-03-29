@@ -12,7 +12,7 @@ Brainstorm — an open-source, CLI-first AI coding assistant with intelligent mo
 
 ## Architecture
 
-Turborepo monorepo with 16 TypeScript packages:
+Turborepo monorepo with 20 TypeScript packages:
 
 - `packages/shared` — Types (TaskProfile, ModelEntry, AgentProfile, WorkflowEvent, etc.), errors, pino logger
 - `packages/config` — Zod schemas, TOML config loader, layered config (defaults → global → project → env), BRAINSTORM.md parser
@@ -28,8 +28,12 @@ Turborepo monorepo with 16 TypeScript packages:
 - `packages/eval` — Capability probes (7 dimensions), eval runner, scorer, scorecard, JSONL result storage
 - `packages/gateway` — Typed BrainstormRouter API client, intelligence API (recommendations, ensemble ranking, cost forecast, community patterns), header parsing, cost reconciliation
 - `packages/vault` — Encrypted key manager (AES-256-GCM + Argon2id), 1Password bridge (Dev Keys vault, item name mapping), env var fallback
-- `packages/cli` — Commander subcommands + Ink TUI (React for terminal), 4 modes (Chat/Dashboard/Models/Config), 20+ components, SelectPrompt, Autocomplete, role system, build wizard
+- `packages/cli` — Commander subcommands + Ink TUI (React for terminal), 5 modes (Chat/Dashboard/Models/Config/Planning), 20+ components, SelectPrompt, Autocomplete, role system, build wizard
 - `packages/plugin-sdk` — SDK for building Brainstorm plugins
+- `packages/projects` — Project registry, context builder, budgets
+- `packages/scheduler` — Cron-based task scheduling with safety layer
+- `packages/orchestrator` — 9-phase pipeline engine, trajectory capture for BrainstormLLM v2
+- `packages/vscode` — VS Code extension integration
 
 ## Build & Run
 
