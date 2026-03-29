@@ -50,4 +50,24 @@ export const BUILTIN_MCP_SERVERS: BuiltinMCPServer[] = [
     description: "Advanced filesystem operations beyond built-in tools",
     enabled: true,
   },
+  {
+    name: "slack",
+    transport: "stdio",
+    command: "npx",
+    args: ["@anthropic/mcp-slack"],
+    npmPackage: "@anthropic/mcp-slack",
+    description:
+      "Slack API — send messages, read channels, search history, manage threads",
+    enabled: true,
+  },
+  {
+    name: "linear",
+    transport: "stdio",
+    command: "npx",
+    args: ["mcp-linear"],
+    npmPackage: "mcp-linear",
+    description:
+      "Linear API — create/update issues, manage projects, track cycles and milestones",
+    enabled: true,
+  },
 ];

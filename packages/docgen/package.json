@@ -1,0 +1,37 @@
+{
+  "name": "@brainstorm/docgen",
+  "version": "0.12.1",
+  "type": "module",
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@brainstorm/shared": "0.12.1",
+    "@brainstorm/ingest": "0.12.1"
+  },
+  "devDependencies": {
+    "tsup": "^8",
+    "typescript": "^5.7"
+  },
+  "description": "Documentation generator — architecture docs, module docs, API reference, Mermaid diagrams",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/justinjilg/brainstorm.git",
+    "directory": "packages/docgen"
+  },
+  "homepage": "https://brainstorm.co",
+  "keywords": [
+    "ai",
+    "coding-assistant",
+    "llm",
+    "documentation",
+    "brainstorm"
+  ],
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts"
+}

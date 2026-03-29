@@ -2642,6 +2642,55 @@ program
     console.log();
   });
 
+// ── Docgen Command ────────────────────────────────────────────────
+
+program
+  .command("docgen")
+  .description(
+    "Generate documentation — architecture docs, module docs, API reference",
+  )
+  .argument("[path]", "Project path to document", ".")
+  .option("--output <dir>", "Output directory (default: docs/generated)")
+  .option("--json", "Output file list as JSON")
+  .action(
+    async (projectPath: string, opts: { output?: string; json?: boolean }) => {
+      const { resolve } = await import("node:path");
+      const absPath = resolve(projectPath);
+
+      console.log(`\n  Analyzing ${absPath}...`);
+      const { analyzeProject } = await import("@brainstorm/ingest");
+      const analysis = analyzeProject(absPath);
+
+      console.log(`  Generating documentation...\n`);
+      const { generateAllDocs } = await import("@brainstorm/docgen");
+      const result = generateAllDocs(analysis, opts.output);
+
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+
+      console.log("  ══════════════════════════════════════════════════");
+      console.log("   Documentation Generated");
+      console.log("  ══════════════════════════════════════════════════\n");
+      console.log(`  Output: ${result.outputDir}`);
+      console.log(`  Files written: ${result.filesWritten.length}`);
+      console.log("");
+      console.log(`  Architecture:  ${result.architectureDoc}`);
+      console.log(`  Modules:       ${result.moduleDocs} module docs`);
+      if (result.apiDoc) {
+        console.log(`  API Reference: ${result.apiDoc}`);
+      } else {
+        console.log(`  API Reference: (no endpoints detected)`);
+      }
+      console.log("\n  ──────────────────────────────────────────────────");
+      console.log(
+        `  Tip: Use these docs as context for AI agents with @docs/generated/ARCHITECTURE.md`,
+      );
+      console.log();
+    },
+  );
+
 // ── Route Explain Command ─────────────────────────────────────────
 
 program

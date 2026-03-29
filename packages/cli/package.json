@@ -38,6 +38,8 @@
     "@brainstorm/config": "0.12.1",
     "@brainstorm/core": "0.12.1",
     "@brainstorm/db": "0.12.1",
+    "@brainstorm/docgen": "0.12.1",
+    "@brainstorm/ingest": "0.12.1",
     "@brainstorm/eval": "0.12.1",
     "@brainstorm/gateway": "0.12.1",
     "@brainstorm/mcp": "0.12.1",

@@ -1222,6 +1222,123 @@ commands.push({
   },
 });
 
+// ── Architect-Edit: dual-model pattern ────────────────────────────────
+// Opus plans the change, Sonnet applies it. Two routing decisions per task.
+
+commands.push({
+  name: "architect-edit",
+  aliases: ["ae", "dual"],
+  description:
+    "Dual-model mode: reasoning model plans, fast model applies (Aider-style)",
+  usage: "/architect-edit [task description]",
+  execute: async (args, ctx) => {
+    if (!args.trim()) {
+      return "Usage: /architect-edit <task description>\n\nA reasoning model (Opus/GPT-5.4) will plan the change, then a fast model (Sonnet/GPT-4.1) will apply it.";
+    }
+
+    // Phase 1: Switch to architect role for planning
+    const { ROLES, getRolePrompt } = await import("./roles.js");
+    const architect = ROLES.architect;
+    const planModel =
+      architect.modelChoices[0]?.models[0] ?? "anthropic/claude-opus-4.6";
+
+    ctx.setModel?.(planModel);
+    ctx.setMode?.("plan");
+    ctx.rebuildSystemPrompt?.(
+      getRolePrompt("architect", planModel) +
+        "\n\n## Architect-Edit Mode\n\n" +
+        "You are in Phase 1 (PLAN). Your job is to analyze the codebase and produce a detailed, " +
+        "actionable implementation plan. Do NOT make any changes — only read files and produce the plan. " +
+        "Include specific file paths, function names, and code snippets. " +
+        "After you present the plan, the user will approve it and a fast coding model will execute it.\n\n" +
+        `Task: ${args.trim()}`,
+    );
+
+    return [
+      `🏗️ Architect-Edit mode activated`,
+      ``,
+      `  Phase 1 (PLAN): ${planModel}`,
+      `  Phase 2 (EDIT): will auto-switch to fast model after approval`,
+      ``,
+      `Describe your changes and the architect will plan them.`,
+      `After approving the plan, type /ae-apply to switch to the coding model.`,
+    ].join("\n");
+  },
+});
+
+commands.push({
+  name: "ae-apply",
+  aliases: ["apply"],
+  description: "Switch from architect plan phase to coding apply phase",
+  usage: "/ae-apply",
+  execute: async (_args, ctx) => {
+    // Phase 2: Switch to fast coding model
+    const { ROLES } = await import("./roles.js");
+    const dev = ROLES["sr-developer"];
+    const codeModel =
+      dev.modelChoices[0]?.models[0] ?? "anthropic/claude-sonnet-4.6";
+
+    ctx.setModel?.(codeModel);
+    ctx.setMode?.("auto");
+    ctx.rebuildSystemPrompt?.();
+
+    return [
+      `⚡ Switched to coding model: ${codeModel}`,
+      ``,
+      `The plan from the architect is in your conversation history.`,
+      `Now implement it. Auto-verify after each edit.`,
+    ].join("\n");
+  },
+});
+
+// ── Recipe commands ──────────────────────────────────────────────────
+
+commands.push({
+  name: "recipe",
+  aliases: ["recipes"],
+  description: "List, run, or init shareable YAML workflow recipes",
+  usage: "/recipe [list|run <name>|init]",
+  execute: async (args, ctx) => {
+    const { listRecipes, loadRecipe, initRecipeDir } =
+      await import("@brainstorm/workflow");
+    const cwd = process.cwd();
+    const parts = args.trim().split(/\s+/);
+    const subcommand = parts[0]?.toLowerCase() ?? "list";
+
+    if (subcommand === "init") {
+      const dir = initRecipeDir(cwd);
+      return `Recipe directory initialized: ${dir}\nAn example recipe was created. Edit it or add new .yaml files.`;
+    }
+
+    if (subcommand === "run") {
+      const name = parts[1];
+      if (!name) return "Usage: /recipe run <name>";
+      const recipe = loadRecipe(cwd, name);
+      if (!recipe)
+        return `Recipe '${name}' not found. Run /recipe list to see available recipes.`;
+      return [
+        `Recipe loaded: ${recipe.name}`,
+        `  ${recipe.description}`,
+        `  Steps: ${recipe.steps.map((s: any) => s.id).join(" → ")}`,
+        `  Max iterations: ${recipe.maxIterations}`,
+        ``,
+        `To execute, describe the task and the workflow engine will use this recipe.`,
+      ].join("\n");
+    }
+
+    // Default: list
+    const recipes = listRecipes(cwd);
+    if (recipes.length === 0) {
+      return "No recipes found. Run /recipe init to create the recipe directory with an example.";
+    }
+    const lines = recipes.map(
+      (r: any) =>
+        `  ${r.id.padEnd(20)} ${r.name} (${r.source}) — ${r.description}`,
+    );
+    return `Available recipes:\n${lines.join("\n")}\n\nUsage: /recipe run <name>`;
+  },
+});
+
 // Build lookup map: command name and aliases → handler
 const commandMap = new Map<string, SlashCommand>();
 for (const cmd of commands) {
