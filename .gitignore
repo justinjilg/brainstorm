@@ -17,3 +17,6 @@ tests/dogfood/output/
 npm-debug.log*
 .brainstorm/vault.enc
 .brainstorm/*.enc
+
+# Marketing site (separate project, lives elsewhere)
+apps/
