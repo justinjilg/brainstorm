@@ -2,7 +2,6 @@
   "name": "@brainstorm/cli",
   "version": "0.12.1",
   "description": "Open-source AI coding assistant with intelligent multi-model routing",
-  "private": true,
   "type": "module",
   "license": "Apache-2.0",
   "repository": {
@@ -14,13 +13,12 @@
   "keywords": [
     "ai",
     "coding-assistant",
-    "cli",
+    "llm",
     "multi-model",
     "routing",
-    "llm",
     "agent",
     "developer-tools",
-    "tui"
+    "brainstorm"
   ],
   "files": [
     "dist"
@@ -36,19 +34,19 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brainstorm/agents": "*",
-    "@brainstorm/config": "*",
-    "@brainstorm/core": "*",
-    "@brainstorm/db": "*",
-    "@brainstorm/eval": "*",
-    "@brainstorm/gateway": "*",
-    "@brainstorm/mcp": "*",
-    "@brainstorm/providers": "*",
-    "@brainstorm/router": "*",
-    "@brainstorm/shared": "*",
-    "@brainstorm/tools": "*",
-    "@brainstorm/vault": "*",
-    "@brainstorm/workflow": "*",
+    "@brainstorm/agents": "0.12.1",
+    "@brainstorm/config": "0.12.1",
+    "@brainstorm/core": "0.12.1",
+    "@brainstorm/db": "0.12.1",
+    "@brainstorm/eval": "0.12.1",
+    "@brainstorm/gateway": "0.12.1",
+    "@brainstorm/mcp": "0.12.1",
+    "@brainstorm/providers": "0.12.1",
+    "@brainstorm/router": "0.12.1",
+    "@brainstorm/shared": "0.12.1",
+    "@brainstorm/tools": "0.12.1",
+    "@brainstorm/vault": "0.12.1",
+    "@brainstorm/workflow": "0.12.1",
     "chalk": "^5",
     "cli-highlight": "^2.1.11",
     "commander": "^13",

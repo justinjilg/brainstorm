@@ -2,8 +2,7 @@
   "name": "@brainstorm/vscode",
   "displayName": "Brainstorm AI",
   "description": "AI coding assistant with intelligent model routing",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.12.1",
   "type": "module",
   "publisher": "brainstorm",
   "engines": {
@@ -53,11 +52,31 @@
     "package": "vsce package"
   },
   "dependencies": {
-    "@brainstorm/shared": "*"
+    "@brainstorm/shared": "0.12.1"
   },
   "devDependencies": {
     "@types/vscode": "^1.90.0",
     "tsup": "^8",
     "typescript": "^5.7"
-  }
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/justinjilg/brainstorm.git",
+    "directory": "packages/vscode"
+  },
+  "homepage": "https://brainstorm.co",
+  "keywords": [
+    "ai",
+    "coding-assistant",
+    "llm",
+    "multi-model",
+    "routing",
+    "agent",
+    "developer-tools",
+    "brainstorm"
+  ],
+  "files": [
+    "dist"
+  ]
 }

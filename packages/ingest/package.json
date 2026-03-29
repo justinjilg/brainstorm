@@ -1,17 +1,39 @@
 {
   "name": "@brainstorm/ingest",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.12.1",
   "type": "module",
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@brainstorm/shared": "*"
+    "@brainstorm/shared": "0.12.1"
   },
   "devDependencies": {
     "tsup": "^8",
     "typescript": "^5.7"
-  }
+  },
+  "description": "Deterministic codebase analysis — languages, frameworks, dependencies, complexity",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/justinjilg/brainstorm.git",
+    "directory": "packages/ingest"
+  },
+  "homepage": "https://brainstorm.co",
+  "keywords": [
+    "ai",
+    "coding-assistant",
+    "llm",
+    "multi-model",
+    "routing",
+    "agent",
+    "developer-tools",
+    "brainstorm"
+  ],
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts"
 }

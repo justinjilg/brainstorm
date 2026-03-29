@@ -1,7 +1,6 @@
 {
   "name": "@brainstorm/providers",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.12.1",
   "type": "module",
   "exports": {
     ".": {
@@ -16,8 +15,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brainstorm/shared": "*",
-    "@brainstorm/config": "*",
+    "@brainstorm/shared": "0.12.1",
+    "@brainstorm/config": "0.12.1",
     "ai": "^6",
     "@ai-sdk/openai-compatible": "^1",
     "@ai-sdk/anthropic": "^3",
@@ -27,5 +26,28 @@
   "devDependencies": {
     "tsup": "^8",
     "typescript": "^5.7"
-  }
+  },
+  "description": "Cloud and local LLM provider discovery and management",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/justinjilg/brainstorm.git",
+    "directory": "packages/providers"
+  },
+  "homepage": "https://brainstorm.co",
+  "keywords": [
+    "ai",
+    "coding-assistant",
+    "llm",
+    "multi-model",
+    "routing",
+    "agent",
+    "developer-tools",
+    "brainstorm"
+  ],
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts"
 }
