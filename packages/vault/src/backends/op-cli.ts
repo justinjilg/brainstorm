@@ -38,6 +38,7 @@ export function isOpAvailable(): boolean {
 
 /** TTL cache for op read results — avoids shelling out on every call. */
 const OP_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const OP_FAILURE_TTL_MS = 60 * 1000; // 60 seconds for failed lookups (self-heal from transient errors)
 const opCache = new Map<string, { value: string | null; fetchedAt: number }>();
 
 /**
@@ -52,8 +53,9 @@ export function opRead(keyName: string, vaultName?: string): string | null {
 
   const cacheKey = `${vaultName ?? "_default"}:${keyName}`;
   const cached = opCache.get(cacheKey);
-  if (cached && Date.now() - cached.fetchedAt < OP_CACHE_TTL_MS) {
-    return cached.value;
+  if (cached) {
+    const ttl = cached.value === null ? OP_FAILURE_TTL_MS : OP_CACHE_TTL_MS;
+    if (Date.now() - cached.fetchedAt < ttl) return cached.value;
   }
 
   try {

@@ -81,7 +81,12 @@ export class BrainstormVault {
     const tag = Buffer.from(vaultFile.tag, "base64");
 
     const plaintext = decrypt(key, nonce, ciphertext, tag);
-    const payload: VaultPayload = JSON.parse(plaintext.toString("utf-8"));
+    let payload: VaultPayload;
+    try {
+      payload = JSON.parse(plaintext.toString("utf-8"));
+    } finally {
+      plaintext.fill(0); // zero decrypted key ring from memory
+    }
 
     this.derivedKey = key;
     this.cachedSalt = salt;
@@ -217,7 +222,13 @@ export class BrainstormVault {
     payload: VaultPayload,
   ): void {
     const plaintext = Buffer.from(JSON.stringify(payload), "utf-8");
-    const { nonce, ciphertext, tag } = encrypt(key, plaintext);
+    let encrypted: ReturnType<typeof encrypt>;
+    try {
+      encrypted = encrypt(key, plaintext);
+    } finally {
+      plaintext.fill(0); // zero plaintext key ring from memory immediately
+    }
+    const { nonce, ciphertext, tag } = encrypted;
 
     const vaultFile: VaultFile = {
       version: 1,
