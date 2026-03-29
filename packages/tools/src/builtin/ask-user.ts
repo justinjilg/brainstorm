@@ -55,6 +55,11 @@ export const askUserTool = defineTool({
       .describe("Options for the user to choose from"),
   }),
   async execute({ question, options }) {
+    if (pendingResolver) {
+      return {
+        error: "Another question is already pending. Resolve it first.",
+      };
+    }
     return new Promise<{ selected: string }>((resolve) => {
       pendingResolver = (answer) => {
         resolve({ selected: answer });
