@@ -1,8 +1,30 @@
 {
   "name": "@brainstorm/cli",
-  "version": "0.1.0",
+  "version": "0.12.1",
+  "description": "Open-source AI coding assistant with intelligent multi-model routing",
   "private": true,
   "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/justinjilg/brainstorm.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://brainstorm.co",
+  "keywords": [
+    "ai",
+    "coding-assistant",
+    "cli",
+    "multi-model",
+    "routing",
+    "llm",
+    "agent",
+    "developer-tools",
+    "tui"
+  ],
+  "files": [
+    "dist"
+  ],
   "bin": {
     "brainstorm": "./dist/brainstorm.js",
     "storm": "./dist/brainstorm.js"
