@@ -262,13 +262,6 @@ export class MemoryManager {
     writeFileSync(this.indexPath, lines.join("\n") + "\n", "utf-8");
   }
 
-  private updateIndex(): void {
-    const lines = this.list().map(
-      (m) => `- [${m.name}](${m.id}.md) — ${m.description}`,
-    );
-    writeFileSync(this.indexPath, lines.join("\n") + "\n", "utf-8");
-  }
-
   /** Backup a corrupt memory file instead of deleting it. */
   private backupCorruptFile(filePath: string, filename: string): void {
     try {
