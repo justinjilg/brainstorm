@@ -179,6 +179,100 @@ program
     },
   );
 
+// ── SWE-bench Eval Command ────────────────────────────────────────
+
+program
+  .command("eval-swe-bench")
+  .description(
+    "Run SWE-bench evaluation: apply agent to instances, score with Docker",
+  )
+  .requiredOption(
+    "--instances <path>",
+    "Path to SWE-bench instances.jsonl file",
+  )
+  .option("--model <id>", "Target model (default: let router decide)")
+  .option("--limit <n>", "Max instances to evaluate", "10")
+  .option("--concurrency <n>", "Parallel evaluations", "2")
+  .option("--json", "Output results as JSON")
+  .action(
+    async (opts: {
+      instances: string;
+      model?: string;
+      limit: string;
+      concurrency: string;
+      json?: boolean;
+    }) => {
+      const { loadInstances, runSWEBench, scorePatch, generateScorecard } =
+        await import("@brainstorm/eval");
+
+      const limit = parseInt(opts.limit);
+      const concurrency = parseInt(opts.concurrency);
+
+      console.log(`\n  SWE-bench Evaluation`);
+      console.log(`  ─────────────────────\n`);
+      console.log(`  Instances: ${opts.instances}`);
+      console.log(`  Limit: ${limit}`);
+      console.log(`  Model: ${opts.model ?? "auto (router decides)"}`);
+      console.log(`  Concurrency: ${concurrency}\n`);
+
+      // Load instances
+      const instances = loadInstances(opts.instances, limit);
+      console.log(`  Loaded ${instances.length} instances.\n`);
+
+      if (instances.length === 0) {
+        console.error("  No instances found in file.");
+        process.exit(1);
+      }
+
+      // Run agent on each instance
+      console.log(`  Running agent on instances...`);
+      const patches = await runSWEBench(
+        instances,
+        async (instance: any) => {
+          // Use Brainstorm to generate a patch for each instance
+          const startTime = Date.now();
+          // Placeholder: in full implementation, this spawns a storm run --unattended
+          // with the issue description as the prompt, in a Docker container at baseCommit
+          return {
+            instanceId: instance.instanceId,
+            patch: "",
+            model: opts.model ?? "auto",
+            strategy: "quality-first",
+            cost: 0,
+            latencyMs: Date.now() - startTime,
+            success: false,
+          };
+        },
+        concurrency,
+      );
+
+      // Score patches
+      console.log(`  Scoring ${patches.length} patches...`);
+      const scores = patches.map((patch: any, i: number) =>
+        scorePatch(instances[i], patch),
+      );
+      const scorecard = generateScorecard(patches, scores);
+
+      if (opts.json) {
+        console.log(JSON.stringify(scorecard, null, 2));
+        return;
+      }
+
+      console.log(`\n  ══════════════════════════════════════════════════`);
+      console.log(`   SWE-bench Results`);
+      console.log(`  ══════════════════════════════════════════════════\n`);
+      console.log(`  Total:     ${scorecard.total}`);
+      console.log(
+        `  Passed:    ${scorecard.passed} (${(scorecard.passRate * 100).toFixed(1)}%)`,
+      );
+      console.log(`  Failed:    ${scorecard.failed}`);
+      console.log(`  Errored:   ${scorecard.errored}`);
+      console.log(`  Cost:      $${scorecard.totalCost.toFixed(4)}`);
+      console.log(`  Avg Lat:   ${scorecard.avgLatencyMs}ms`);
+      console.log();
+    },
+  );
+
 // ── Router Commands (BrainstormRouter Gateway) ───────────────────
 
 const routerCmd = program
@@ -3724,6 +3818,87 @@ program
     } else {
       console.error(`\n  Unknown platform: ${platform}. Use: github, gitlab`);
     }
+    console.log();
+  });
+
+// ── Start Command (One-Command Onboarding) ───────────────────────
+
+program
+  .command("start")
+  .description(
+    "One-command setup: detect project, connect to community tier, start chatting",
+  )
+  .action(async () => {
+    const { resolve } = await import("node:path");
+    const { existsSync } = await import("node:fs");
+    const projectPath = resolve(".");
+
+    console.log(`\n  ══════════════════════════════════════════════════`);
+    console.log(`   brainstorm start`);
+    console.log(`  ══════════════════════════════════════════════════\n`);
+
+    // Step 1: Check if already initialized
+    const hasBrainstormMd =
+      existsSync(resolve("BRAINSTORM.md")) || existsSync(resolve("STORM.md"));
+    const hasConfig = existsSync(resolve("brainstorm.toml"));
+
+    if (!hasBrainstormMd && !hasConfig) {
+      console.log(`  Step 1: Initializing project...`);
+      // Run init with defaults
+      const { execFileSync } = await import("node:child_process");
+      try {
+        execFileSync(process.execPath, [process.argv[1], "init", "--yes"], {
+          cwd: projectPath,
+          stdio: "inherit",
+        });
+      } catch {
+        // init may not exist as standalone — generate minimal config
+        const { writeFileSync } = await import("node:fs");
+        writeFileSync(
+          resolve("BRAINSTORM.md"),
+          `# ${projectPath.split("/").pop()}\n\nProject initialized by \`storm start\`.\n`,
+          "utf-8",
+        );
+        console.log(`    ✓ Generated BRAINSTORM.md`);
+      }
+    } else {
+      console.log(`  Step 1: Project already initialized ✓`);
+    }
+
+    // Step 2: Check API key / community tier
+    const brKey = process.env.BRAINSTORM_API_KEY;
+    if (brKey) {
+      console.log(`  Step 2: BrainstormRouter API key detected ✓`);
+    } else {
+      console.log(`  Step 2: Using free community tier`);
+      console.log(`    → 10 requests/min · $5/month cap · 362 models`);
+      console.log(`    → Upgrade: https://brainstormrouter.com/dashboard`);
+    }
+
+    // Step 3: Quick health check
+    console.log(`  Step 3: Checking connectivity...`);
+    try {
+      const resp = await fetch("https://api.brainstormrouter.com/health", {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (resp.ok) {
+        console.log(`    ✓ BrainstormRouter reachable`);
+      } else {
+        console.log(
+          `    ⚠ BrainstormRouter returned ${resp.status} (will work offline with local models)`,
+        );
+      }
+    } catch {
+      console.log(
+        `    ⚠ BrainstormRouter unreachable (will work offline with local models)`,
+      );
+    }
+
+    console.log(`\n  ──────────────────────────────────────────────────`);
+    console.log(`  Ready! Run one of:`);
+    console.log(`    storm chat            Interactive session`);
+    console.log(`    storm ingest          Analyze this codebase`);
+    console.log(`    storm run "prompt"    Single-shot execution`);
     console.log();
   });
 
