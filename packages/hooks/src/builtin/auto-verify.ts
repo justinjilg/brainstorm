@@ -111,12 +111,14 @@ export async function runVerify(projectPath: string): Promise<VerifyResult> {
   const linter = detectLinter(projectPath);
   if (linter) {
     try {
-      const cmd =
-        linter === "biome"
-          ? ["npx", ["biome", "check", "."]]
-          : linter === "eslint"
-            ? ["npx", ["eslint", "."]]
-            : ["npx", ["prettier", "--check", "."]];
+      const lintCmds: Record<string, [string, string[]]> = {
+        biome: ["npx", ["biome", "check", "."]],
+        eslint: ["npx", ["eslint", "."]],
+        prettier: ["npx", ["prettier", "--check", "."]],
+        "golangci-lint": ["golangci-lint", ["run", "./..."]],
+        "go-vet": ["go", ["vet", "./..."]],
+      };
+      const cmd = lintCmds[linter] ?? ["npx", ["prettier", "--check", "."]];
       await execFileAsync(cmd[0] as string, cmd[1] as string[], {
         cwd: projectPath,
         timeout: 30000,
