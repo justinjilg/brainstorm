@@ -9,8 +9,11 @@ import type {
   MiddlewareToolCall,
   MiddlewareToolResult,
   MiddlewareBlock,
-} from './types.js';
-import { isBlocked } from './types.js';
+} from "./types.js";
+import { isBlocked } from "./types.js";
+
+/** Middleware that cannot be removed via remove(). */
+const PROTECTED_MIDDLEWARE = new Set(["security-scan", "subagent-limit"]);
 
 export class MiddlewarePipeline {
   private middleware: AgentMiddleware[] = [];
@@ -20,8 +23,11 @@ export class MiddlewarePipeline {
     this.middleware.push(mw);
   }
 
-  /** Remove middleware by name. */
+  /** Remove middleware by name. Protected middleware (security-scan, subagent-limit) cannot be removed. */
   remove(name: string): void {
+    if (PROTECTED_MIDDLEWARE.has(name)) {
+      throw new Error(`Cannot remove protected middleware: ${name}`);
+    }
     this.middleware = this.middleware.filter((mw) => mw.name !== name);
   }
 
@@ -55,7 +61,9 @@ export class MiddlewarePipeline {
   }
 
   /** Run wrapToolCall hooks. Returns modified call or block signal. */
-  runWrapToolCall(call: MiddlewareToolCall): MiddlewareToolCall | MiddlewareBlock {
+  runWrapToolCall(
+    call: MiddlewareToolCall,
+  ): MiddlewareToolCall | MiddlewareBlock {
     let current: MiddlewareToolCall = call;
     for (const mw of this.middleware) {
       if (mw.wrapToolCall) {

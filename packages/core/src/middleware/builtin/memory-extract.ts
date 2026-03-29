@@ -62,9 +62,6 @@ const SKIP_PATTERNS = [
   /^\s*[-*]\s+\*\*/m, // Markdown list with bold (likely tool output)
 ];
 
-// Deduplicate: skip facts we've already extracted this session
-const extractedThisSession = new Set<string>();
-
 /**
  * Create memory extraction middleware.
  * Scans assistant responses for extractable facts via regex heuristics (no LLM call).
@@ -72,6 +69,8 @@ const extractedThisSession = new Set<string>();
 export function createMemoryExtractionMiddleware(
   projectPath: string,
 ): AgentMiddleware {
+  // Per-instance dedup set — cleared when a new middleware instance is created (new session)
+  const extractedThisSession = new Set<string>();
   let manager: MemoryManager | null = null;
 
   const getManager = (): MemoryManager => {
