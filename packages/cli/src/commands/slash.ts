@@ -1240,7 +1240,7 @@ commands.push({
     const { ROLES, getRolePrompt } = await import("./roles.js");
     const architect = ROLES.architect;
     const planModel =
-      architect.modelChoices[0]?.models[0] ?? "anthropic/claude-opus-4.6";
+      architect.modelChoices[0]?.modelId ?? "anthropic/claude-opus-4.6";
 
     ctx.setModel?.(planModel);
     ctx.setMode?.("plan");
@@ -1276,7 +1276,7 @@ commands.push({
     const { ROLES } = await import("./roles.js");
     const dev = ROLES["sr-developer"];
     const codeModel =
-      dev.modelChoices[0]?.models[0] ?? "anthropic/claude-sonnet-4.6";
+      dev.modelChoices[0]?.modelId ?? "anthropic/claude-sonnet-4.6";
 
     ctx.setModel?.(codeModel);
     ctx.setMode?.("auto");
