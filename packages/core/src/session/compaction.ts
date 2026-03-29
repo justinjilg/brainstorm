@@ -1,6 +1,6 @@
 import { streamText } from "ai";
 import type { ConversationMessage } from "./manager.js";
-import { formatScratchpadContext } from "@brainstorm/tools";
+import { formatScratchpadContext } from "@brainst0rm/tools";
 import { reduceTrajectory } from "./trajectory-reducer.js";
 
 // ── Compaction Gate ──────────────────────────────────────────────

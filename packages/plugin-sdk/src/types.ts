@@ -1,5 +1,5 @@
-import type { z } from 'zod';
-import type { ToolPermission } from '@brainstorm/shared';
+import type { z } from "zod";
+import type { ToolPermission } from "@brainst0rm/shared";
 
 /**
  * Plugin tool definition — same shape as Brainstorm's built-in tools.
@@ -28,15 +28,15 @@ export interface PluginHookDef {
 }
 
 export type PluginHookEvent =
-  | 'PreToolUse'
-  | 'PostToolUse'
-  | 'SessionStart'
-  | 'SessionEnd'
-  | 'Stop'
-  | 'PreCompact'
-  | 'PreCommit'
-  | 'SubagentStart'
-  | 'SubagentStop';
+  | "PreToolUse"
+  | "PostToolUse"
+  | "SessionStart"
+  | "SessionEnd"
+  | "Stop"
+  | "PreCompact"
+  | "PreCommit"
+  | "SubagentStart"
+  | "SubagentStop";
 
 /**
  * Plugin skill definition — reusable instruction bundles.
@@ -49,7 +49,7 @@ export interface PluginSkillDef {
   /** Restrict which tools this skill can use. */
   tools?: string[];
   /** Routing preference when this skill is active. */
-  modelPreference?: 'cheap' | 'quality' | 'fast' | 'auto';
+  modelPreference?: "cheap" | "quality" | "fast" | "auto";
   /** Max agentic steps for this skill. */
   maxSteps?: number;
   /** Content/instructions for the skill (markdown). */

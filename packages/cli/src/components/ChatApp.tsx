@@ -26,7 +26,7 @@ import type {
   AgentEvent,
   AgentTask,
   RoutingDecision,
-} from "@brainstorm/shared";
+} from "@brainst0rm/shared";
 
 interface ChatAppProps {
   strategy: string;
@@ -583,7 +583,7 @@ export function ChatApp({
           message={askUserPrompt.question}
           options={askUserPrompt.options}
           onSelect={async (value) => {
-            const { resolveAskUser } = await import("@brainstorm/tools");
+            const { resolveAskUser } = await import("@brainst0rm/tools");
             resolveAskUser(value);
             setAskUserPrompt(null);
             setMessages((prev) => [
@@ -592,7 +592,7 @@ export function ChatApp({
             ]);
           }}
           onCancel={async () => {
-            const { resolveAskUser } = await import("@brainstorm/tools");
+            const { resolveAskUser } = await import("@brainst0rm/tools");
             resolveAskUser(askUserPrompt.options[0]?.value ?? "");
             setAskUserPrompt(null);
           }}

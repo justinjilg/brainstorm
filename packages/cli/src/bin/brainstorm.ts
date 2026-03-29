@@ -1,17 +1,17 @@
 import { Command } from "commander";
-import { loadConfig } from "@brainstorm/config";
-import { getDb, closeDb, CostRepository } from "@brainstorm/db";
+import { loadConfig } from "@brainst0rm/config";
+import { getDb, closeDb, CostRepository } from "@brainst0rm/db";
 import {
   createProviderRegistry,
   getBrainstormApiKey,
   isCommunityKey,
-} from "@brainstorm/providers";
-import { BrainstormRouter, CostTracker } from "@brainstorm/router";
+} from "@brainst0rm/providers";
+import { BrainstormRouter, CostTracker } from "@brainst0rm/router";
 import {
   createDefaultToolRegistry,
   configureSandbox,
   stopDockerSandbox,
-} from "@brainstorm/tools";
+} from "@brainst0rm/tools";
 import {
   runAgentLoop,
   buildSystemPrompt,
@@ -23,30 +23,30 @@ import {
   spawnParallel,
   createDefaultMiddlewarePipeline,
   type CompactionCallbacks,
-} from "@brainstorm/core";
-import type { OutputStyle } from "@brainstorm/core";
-import { AgentManager, parseAgentNL } from "@brainstorm/agents";
+} from "@brainst0rm/core";
+import type { OutputStyle } from "@brainst0rm/core";
+import { AgentManager, parseAgentNL } from "@brainst0rm/agents";
 import { ROLES, type RoleId } from "../commands/roles.js";
 import {
   runWorkflow,
   getPresetWorkflow,
   autoSelectPreset,
   PRESET_WORKFLOWS,
-} from "@brainstorm/workflow";
+} from "@brainst0rm/workflow";
 import { renderMarkdownToString } from "../components/MarkdownRenderer.js";
 import { runInit } from "../init/index.js";
-import { runEvalCli, runProbe } from "@brainstorm/eval";
+import { runEvalCli, runProbe } from "@brainst0rm/eval";
 import {
   createGatewayClient,
   createIntelligenceClient,
   formatGatewayFeedback,
-} from "@brainstorm/gateway";
-import { MCPClientManager } from "@brainstorm/mcp";
-import { BrainstormVault, KeyResolver } from "@brainstorm/vault";
+} from "@brainst0rm/gateway";
+import { MCPClientManager } from "@brainst0rm/mcp";
+import { BrainstormVault, KeyResolver } from "@brainst0rm/vault";
 import { createInterface } from "node:readline";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { ResolvedKeys } from "@brainstorm/providers";
+import type { ResolvedKeys } from "@brainst0rm/providers";
 
 /** Known API key names that providers need at startup. */
 const PROVIDER_KEY_NAMES = [
@@ -221,7 +221,7 @@ program
       json?: boolean;
     }) => {
       const { loadInstances, runSWEBench, scorePatch, generateScorecard } =
-        await import("@brainstorm/eval");
+        await import("@brainst0rm/eval");
 
       const limit = parseInt(opts.limit);
       const concurrency = parseInt(opts.concurrency);
@@ -1710,7 +1710,7 @@ projectsCmd
   .description("List all registered projects")
   .option("--all", "Include inactive projects")
   .action(async (opts: { all?: boolean }) => {
-    const { ProjectManager } = await import("@brainstorm/projects");
+    const { ProjectManager } = await import("@brainst0rm/projects");
     const db = getDb();
     const pm = new ProjectManager(db);
     const projects = pm.projects.list(opts.all);
@@ -1747,7 +1747,7 @@ projectsCmd
       path: string,
       opts: { name?: string; budgetDaily?: string; budgetMonthly?: string },
     ) => {
-      const { ProjectManager } = await import("@brainstorm/projects");
+      const { ProjectManager } = await import("@brainst0rm/projects");
       const db = getDb();
       const pm = new ProjectManager(db);
       try {
@@ -1773,7 +1773,7 @@ projectsCmd
   .argument("<name>", "Project name to switch to")
   .description("Set the active project for this session")
   .action(async (name: string) => {
-    const { ProjectManager } = await import("@brainstorm/projects");
+    const { ProjectManager } = await import("@brainst0rm/projects");
     const db = getDb();
     const pm = new ProjectManager(db);
     try {
@@ -1791,7 +1791,7 @@ projectsCmd
   .argument("<name>", "Project name")
   .description("Show project dashboard")
   .action(async (name: string) => {
-    const { ProjectManager } = await import("@brainstorm/projects");
+    const { ProjectManager } = await import("@brainst0rm/projects");
     const db = getDb();
     const pm = new ProjectManager(db);
     const project = pm.projects.getByName(name);
@@ -1832,7 +1832,7 @@ projectsCmd
   .argument("[dir]", "Parent directory to scan", join(homedir(), "Projects"))
   .description("Scan a directory and register all project subdirectories")
   .action(async (dir: string) => {
-    const { ProjectManager } = await import("@brainstorm/projects");
+    const { ProjectManager } = await import("@brainst0rm/projects");
     const db = getDb();
     const pm = new ProjectManager(db);
     const registered = pm.import(dir);
@@ -1858,8 +1858,8 @@ scheduleCmd
   .option("-p, --project <name>", "Filter by project")
   .description("List scheduled tasks")
   .action(async (opts: { project?: string }) => {
-    const { ScheduledTaskRepository } = await import("@brainstorm/scheduler");
-    const { ProjectManager } = await import("@brainstorm/projects");
+    const { ScheduledTaskRepository } = await import("@brainst0rm/scheduler");
+    const { ProjectManager } = await import("@brainst0rm/projects");
     const db = getDb();
     const taskRepo = new ScheduledTaskRepository(db);
 
@@ -1908,8 +1908,8 @@ scheduleCmd
   .description("Add a scheduled task")
   .action(async (prompt: string, opts: any) => {
     const { ScheduledTaskRepository, validateCron, validateTaskSafety } =
-      await import("@brainstorm/scheduler");
-    const { ProjectManager } = await import("@brainstorm/projects");
+      await import("@brainst0rm/scheduler");
+    const { ProjectManager } = await import("@brainst0rm/projects");
     const db = getDb();
     const pm = new ProjectManager(db);
     const project = pm.projects.getByName(opts.project);
@@ -1941,7 +1941,7 @@ scheduleCmd
     const warnings = validateTaskSafety(task);
     console.log(`\n  ✓ Created task "${task.name}" (${task.id.slice(0, 8)})`);
     if (task.cronExpression) {
-      const { describeCron } = await import("@brainstorm/scheduler");
+      const { describeCron } = await import("@brainst0rm/scheduler");
       console.log(`    Schedule: ${describeCron(task.cronExpression)}`);
     }
     if (warnings.length > 0) {
@@ -1957,7 +1957,7 @@ scheduleCmd
   .option("--dry-run", "Show what would run without executing")
   .description("Trigger due tasks")
   .action(async (opts: { taskId?: string; dryRun?: boolean }) => {
-    const { TriggerRunner } = await import("@brainstorm/scheduler");
+    const { TriggerRunner } = await import("@brainst0rm/scheduler");
     const db = getDb();
     const runner = new TriggerRunner(db);
     const result = await runner.runDueTasks(opts);
@@ -1985,7 +1985,7 @@ scheduleCmd
   .description("Show task run history")
   .action(async (opts: { taskId?: string; limit: string }) => {
     const { TaskRunRepository, ScheduledTaskRepository } =
-      await import("@brainstorm/scheduler");
+      await import("@brainst0rm/scheduler");
     const db = getDb();
     const runRepo = new TaskRunRepository(db);
     const taskRepo = new ScheduledTaskRepository(db);
@@ -2016,7 +2016,7 @@ scheduleCmd
   .argument("<task-id>", "Task ID to pause")
   .description("Pause a scheduled task")
   .action(async (taskId: string) => {
-    const { ScheduledTaskRepository } = await import("@brainstorm/scheduler");
+    const { ScheduledTaskRepository } = await import("@brainst0rm/scheduler");
     const db = getDb();
     const repo = new ScheduledTaskRepository(db);
     repo.updateStatus(taskId, "paused");
@@ -2028,7 +2028,7 @@ scheduleCmd
   .argument("<task-id>", "Task ID to resume")
   .description("Resume a paused task")
   .action(async (taskId: string) => {
-    const { ScheduledTaskRepository } = await import("@brainstorm/scheduler");
+    const { ScheduledTaskRepository } = await import("@brainst0rm/scheduler");
     const db = getDb();
     const repo = new ScheduledTaskRepository(db);
     repo.updateStatus(taskId, "active");
@@ -2040,7 +2040,7 @@ scheduleCmd
   .argument("<task-id>", "Task ID to delete")
   .description("Delete a scheduled task")
   .action(async (taskId: string) => {
-    const { ScheduledTaskRepository } = await import("@brainstorm/scheduler");
+    const { ScheduledTaskRepository } = await import("@brainst0rm/scheduler");
     const db = getDb();
     const repo = new ScheduledTaskRepository(db);
     repo.delete(taskId);
@@ -2063,7 +2063,7 @@ planCmd
   .option("--retries <n>", "Max retries per task", "2")
   .description("Execute a plan file task-by-task using subagents")
   .action(async (path: string, opts: any) => {
-    const { executePlan } = await import("@brainstorm/core");
+    const { executePlan } = await import("@brainst0rm/core");
     const { resolve } = await import("node:path");
     const { execFileSync } = await import("node:child_process");
 
@@ -2202,7 +2202,7 @@ planCmd
   .argument("<path>", "Path to .plan.md file")
   .description("Parse and display a plan file structure")
   .action(async (path: string) => {
-    const { parsePlanFile } = await import("@brainstorm/core");
+    const { parsePlanFile } = await import("@brainst0rm/core");
     const { resolve } = await import("node:path");
     let plan;
     try {
@@ -2262,7 +2262,7 @@ orchestrateCmd
   .description("Run the full 9-phase development pipeline")
   .action(async (request: string, opts: any) => {
     const { runOrchestrationPipeline, createPipelineDispatcher } =
-      await import("@brainstorm/core");
+      await import("@brainst0rm/core");
 
     console.log(`\n  Orchestration Pipeline\n`);
     console.log(`  Request: "${request}"`);
@@ -2442,8 +2442,8 @@ orchestrateCmd
       opts: { projects: string; budget?: string; type: string },
     ) => {
       const { OrchestrationEngine, formatAggregatedResults, aggregateResults } =
-        await import("@brainstorm/orchestrator");
-      const { ProjectManager } = await import("@brainstorm/projects");
+        await import("@brainst0rm/orchestrator");
+      const { ProjectManager } = await import("@brainst0rm/projects");
       const db = getDb();
       const engine = new OrchestrationEngine(db);
       const pm = new ProjectManager(db);
@@ -2513,7 +2513,7 @@ orchestrateCmd
   .option("-n, --limit <count>", "Number of runs to show", "10")
   .description("Show recent orchestration runs")
   .action(async (opts: { limit: string }) => {
-    const { OrchestrationEngine } = await import("@brainstorm/orchestrator");
+    const { OrchestrationEngine } = await import("@brainst0rm/orchestrator");
     const db = getDb();
     const engine = new OrchestrationEngine(db);
     const runs = engine.listRecent(parseInt(opts.limit));
@@ -2545,8 +2545,8 @@ orchestrateCmd
   .argument("<run-id>", "Orchestration run ID")
   .description("Show status of an orchestration run")
   .action(async (runId: string) => {
-    const { OrchestrationEngine } = await import("@brainstorm/orchestrator");
-    const { ProjectManager } = await import("@brainstorm/projects");
+    const { OrchestrationEngine } = await import("@brainst0rm/orchestrator");
+    const { ProjectManager } = await import("@brainst0rm/projects");
     const db = getDb();
     const engine = new OrchestrationEngine(db);
     const pm = new ProjectManager(db);
@@ -2849,7 +2849,7 @@ program
     console.log(`\n  Analyzing ${absPath}...\n`);
     const startTime = Date.now();
 
-    const { analyzeProject } = await import("@brainstorm/ingest");
+    const { analyzeProject } = await import("@brainst0rm/ingest");
     const analysis = analyzeProject(absPath);
     const elapsed = Date.now() - startTime;
 
@@ -2953,11 +2953,11 @@ program
       const absPath = resolve(projectPath);
 
       console.log(`\n  Analyzing ${absPath}...`);
-      const { analyzeProject } = await import("@brainstorm/ingest");
+      const { analyzeProject } = await import("@brainst0rm/ingest");
       const analysis = analyzeProject(absPath);
 
       console.log(`  Generating documentation...\n`);
-      const { generateAllDocs } = await import("@brainstorm/docgen");
+      const { generateAllDocs } = await import("@brainst0rm/docgen");
       const result = generateAllDocs(analysis, opts.output);
 
       if (opts.json) {
@@ -3000,7 +3000,7 @@ program
   .option("--budget <amount>", "Budget limit in dollars", "1.0")
   .action(async (task: string, opts: { type: string; budget: string }) => {
     const { resolve } = await import("node:path");
-    const { createWorktree, removeWorktree } = await import("@brainstorm/core");
+    const { createWorktree, removeWorktree } = await import("@brainst0rm/core");
     const projectPath = resolve(".");
     const worktreePath = createWorktree(projectPath, opts.type);
 
@@ -3267,7 +3267,7 @@ program
         }
       } else {
         // Local semantic search
-        const { semanticSearch } = await import("@brainstorm/core");
+        const { semanticSearch } = await import("@brainst0rm/core");
         const results = semanticSearch(process.cwd(), query, limit);
         if (results.length === 0) {
           console.log(`\n  No results for "${query}".`);
@@ -3308,7 +3308,7 @@ program
     console.log(`\n  Setting up AI infrastructure for ${absPath}...\n`);
 
     // Phase 1: Analyze
-    const { analyzeProject } = await import("@brainstorm/ingest");
+    const { analyzeProject } = await import("@brainst0rm/ingest");
     const analysis = analyzeProject(absPath);
 
     // Phase 2: Auto-generate BRAINSTORM.md (#33)
@@ -3421,14 +3421,14 @@ program
     );
 
     // Phase 4: Generate docs
-    const { generateAllDocs } = await import("@brainstorm/docgen");
+    const { generateAllDocs } = await import("@brainst0rm/docgen");
     const docResult = generateAllDocs(analysis);
     console.log(
       `  ✓ Generated ${docResult.filesWritten.length} documentation files`,
     );
 
     // Phase 5: Initialize recipe directory
-    const { initRecipeDir } = await import("@brainstorm/workflow");
+    const { initRecipeDir } = await import("@brainst0rm/workflow");
     initRecipeDir(absPath);
     console.log(`  ✓ Initialized .brainstorm/recipes/`);
 
@@ -3455,7 +3455,7 @@ program
   .argument("[task]", "Task description to classify")
   .option("--json", "Output as JSON")
   .action(async (task: string | undefined, opts: { json?: boolean }) => {
-    const { classifyTask } = await import("@brainstorm/router");
+    const { classifyTask } = await import("@brainst0rm/router");
 
     const taskText = task ?? "write a function that validates email addresses";
     const profile = classifyTask(taskText);
@@ -3581,7 +3581,7 @@ program
   .argument("[action]", "Action: list, search, forget", "list")
   .argument("[query]", "Search query or memory key to forget")
   .action(async (action: string, query?: string) => {
-    const { MemoryManager } = await import("@brainstorm/core");
+    const { MemoryManager } = await import("@brainst0rm/core");
     const homePath = join(homedir(), ".brainstorm", "memory");
     const memory = new MemoryManager(homePath);
 
@@ -3746,7 +3746,7 @@ program
 
       // Phase 1: Analyze
       console.log(`  Phase 1: Analyzing codebase...`);
-      const { analyzeProject } = await import("@brainstorm/ingest");
+      const { analyzeProject } = await import("@brainst0rm/ingest");
       const analysis = analyzeProject(absPath);
       console.log(
         `    ✓ ${analysis.summary.totalFiles} files, ${analysis.summary.totalLines.toLocaleString()} lines, ${analysis.summary.moduleCount} modules`,
@@ -3754,7 +3754,7 @@ program
 
       // Phase 2: Generate docs
       console.log(`  Phase 2: Generating documentation...`);
-      const { generateAllDocs } = await import("@brainstorm/docgen");
+      const { generateAllDocs } = await import("@brainst0rm/docgen");
       const docResult = generateAllDocs(analysis, opts.output);
       console.log(`    ✓ ${docResult.filesWritten.length} doc files written`);
 
@@ -3807,7 +3807,7 @@ program
       console.log(`    ✓ ${agentCount} agent profiles created`);
 
       // Recipes
-      const { initRecipeDir } = await import("@brainstorm/workflow");
+      const { initRecipeDir } = await import("@brainst0rm/workflow");
       initRecipeDir(absPath);
       console.log(`    ✓ Recipe directory initialized`);
 
@@ -3842,7 +3842,7 @@ program
 
       console.log(`\n  Auditing ${absPath}...\n`);
 
-      const { analyzeProject } = await import("@brainstorm/ingest");
+      const { analyzeProject } = await import("@brainst0rm/ingest");
       const analysis = analyzeProject(absPath);
 
       const findings: Array<{
@@ -4021,7 +4021,7 @@ program
   .action(async (platform: string, opts: { output?: string }) => {
     const { existsSync, writeFileSync, mkdirSync } = await import("node:fs");
     const { join } = await import("node:path");
-    const { analyzeProject } = await import("@brainstorm/ingest");
+    const { analyzeProject } = await import("@brainst0rm/ingest");
 
     const projectPath = process.cwd();
     const analysis = analyzeProject(projectPath);
@@ -4061,7 +4061,7 @@ program
         "",
         "      # AI-assisted code review via Brainstorm",
         `      - name: Brainstorm Review`,
-        `        run: npx @brainstorm/cli run --unattended "Review the PR changes for bugs and security issues"`,
+        `        run: npx @brainst0rm/cli run --unattended "Review the PR changes for bugs and security issues"`,
         "        env:",
         "          BRAINSTORM_API_KEY: ${{ secrets.BRAINSTORM_API_KEY }}",
       ];
@@ -4078,7 +4078,7 @@ program
         "  image: node:22",
         "  script:",
         "    - npm install",
-        '    - npx @brainstorm/cli run --unattended "Review changes for bugs and security"',
+        '    - npx @brainst0rm/cli run --unattended "Review changes for bugs and security"',
         "  only:",
         "    - merge_requests",
         "  variables:",
@@ -4670,7 +4670,7 @@ program
           },
           memoryInfo: await (async () => {
             try {
-              const { MemoryManager } = await import("@brainstorm/core");
+              const { MemoryManager } = await import("@brainst0rm/core");
               const mem = new MemoryManager(projectPath);
               const entries = mem.list();
               const types: Record<string, number> = {};
@@ -4738,7 +4738,7 @@ program
             },
             dream: async () => {
               const { MemoryManager, DREAM_SYSTEM_PROMPT, buildDreamPrompt } =
-                await import("@brainstorm/core");
+                await import("@brainst0rm/core");
               const memory = new MemoryManager(projectPath);
               const rawFiles = memory.getRawFiles();
               if (rawFiles.length === 0)

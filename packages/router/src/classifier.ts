@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import type { TaskProfile, TaskType, Complexity } from "@brainstorm/shared";
-import type { StormFrontmatter } from "@brainstorm/config";
+import type { TaskProfile, TaskType, Complexity } from "@brainst0rm/shared";
+import type { StormFrontmatter } from "@brainst0rm/config";
 
 /** Routing hints from STORM.md frontmatter. */
 export type ProjectHints = StormFrontmatter["routing"];

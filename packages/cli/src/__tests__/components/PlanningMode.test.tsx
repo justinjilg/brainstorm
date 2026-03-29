@@ -11,7 +11,7 @@ import { describe, it, expect, vi } from "vitest";
 import { PlanTree } from "../../components/planning/PlanTree.js";
 import { KEYS, press } from "../helpers/keys.js";
 import { plain, containsText, hasColor } from "../helpers/ansi.js";
-import type { PlanFile } from "@brainstorm/core";
+import type { PlanFile } from "@brainst0rm/core";
 
 // ── Test Data ───────────────────────────────────────────────────────
 

@@ -1,4 +1,4 @@
-import type { ToolPermission } from "@brainstorm/shared";
+import type { ToolPermission } from "@brainst0rm/shared";
 import {
   readFileSync,
   writeFileSync,

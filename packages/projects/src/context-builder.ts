@@ -5,7 +5,7 @@
  * This is the Brainstorm equivalent of claude.ai's Project Instructions.
  */
 
-import type { Project, ProjectMemoryEntry } from "@brainstorm/shared";
+import type { Project, ProjectMemoryEntry } from "@brainst0rm/shared";
 import { existsSync, readFileSync } from "node:fs";
 
 /**

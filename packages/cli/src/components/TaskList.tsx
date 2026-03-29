@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import type { AgentTask } from "@brainstorm/shared";
+import type { AgentTask } from "@brainst0rm/shared";
 
 const STATUS_ICONS: Record<string, { icon: string; color: string }> = {
   pending: { icon: "○", color: "gray" },

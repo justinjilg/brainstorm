@@ -9,7 +9,7 @@ import type {
   OrchestrationStatus,
   OrchestrationTask,
   OrchTaskStatus,
-} from "@brainstorm/shared";
+} from "@brainst0rm/shared";
 
 function rowToRun(row: any): OrchestrationRun {
   return {

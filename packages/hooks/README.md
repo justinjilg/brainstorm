@@ -1,4 +1,4 @@
-# @brainstorm/hooks
+# @brainst0rm/hooks
 
 Lifecycle hook system for automation. Hooks fire on events and can run shell commands with variable expansion.
 
@@ -19,8 +19,11 @@ PreToolUse, PostToolUse, SessionStart, SessionEnd, UserPromptSubmit, PreCompact,
 ## Usage
 
 ```typescript
-import { HookManager } from '@brainstorm/hooks';
+import { HookManager } from "@brainst0rm/hooks";
 
 const hooks = new HookManager();
-hooks.register('PostToolUse', { command: 'eslint --fix $FILE', match: 'file_write' });
+hooks.register("PostToolUse", {
+  command: "eslint --fix $FILE",
+  match: "file_write",
+});
 ```

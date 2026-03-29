@@ -857,7 +857,7 @@ Extension system in `packages/plugin-sdk/src/`. Plugins can provide tools, hooks
 import {
   defineBrainstormPlugin,
   definePluginTool,
-} from "@brainstorm/plugin-sdk";
+} from "@brainst0rm/plugin-sdk";
 import { z } from "zod";
 
 export default defineBrainstormPlugin({

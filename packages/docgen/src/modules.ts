@@ -6,8 +6,8 @@
  * complexity metrics, and testing status.
  */
 
-import type { ProjectAnalysis } from "@brainstorm/ingest";
-import type { ModuleCluster } from "@brainstorm/ingest";
+import type { ProjectAnalysis } from "@brainst0rm/ingest";
+import type { ModuleCluster } from "@brainst0rm/ingest";
 
 export interface ModuleDoc {
   name: string;

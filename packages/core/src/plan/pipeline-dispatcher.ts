@@ -14,7 +14,7 @@ import {
   type SubagentOptions,
   type SubagentType,
 } from "../agent/subagent.js";
-import { findAgentFile } from "@brainstorm/agents";
+import { findAgentFile } from "@brainst0rm/agents";
 import { execFileSync } from "node:child_process";
 
 /**

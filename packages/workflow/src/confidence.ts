@@ -1,4 +1,4 @@
-import type { Artifact, WorkflowStepDef, ModelEntry } from "@brainstorm/shared";
+import type { Artifact, WorkflowStepDef, ModelEntry } from "@brainst0rm/shared";
 
 export type EscalationAction = "continue" | "retry" | "pause";
 

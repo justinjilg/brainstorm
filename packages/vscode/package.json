@@ -1,8 +1,8 @@
 {
-  "name": "@brainstorm/vscode",
+  "name": "@brainst0rm/vscode",
   "displayName": "Brainstorm AI",
   "description": "AI coding assistant with intelligent model routing",
-  "version": "0.12.1",
+  "version": "0.13.0",
   "type": "module",
   "publisher": "brainstorm",
   "engines": {
@@ -52,7 +52,7 @@
     "package": "vsce package"
   },
   "dependencies": {
-    "@brainstorm/shared": "0.12.1"
+    "@brainst0rm/shared": "0.13.0"
   },
   "devDependencies": {
     "@types/vscode": "^1.90.0",

@@ -1,5 +1,5 @@
-import type { AgentProfile } from '@brainstorm/shared';
-import { OUTPUT_SCHEMAS } from './schemas.js';
+import type { AgentProfile } from "@brainst0rm/shared";
+import { OUTPUT_SCHEMAS } from "./schemas.js";
 
 const ROLE_PROMPTS: Record<string, string> = {
   architect: `You are a software architect. Your job is to analyze requirements and produce a detailed implementation plan. Think about file structure, interfaces, data flow, and edge cases before any code is written. Be thorough but practical.`,
@@ -16,13 +16,21 @@ const ROLE_PROMPTS: Record<string, string> = {
 };
 
 // Re-export decomposition utilities for external use
-export { DECOMPOSITION_PROMPT, decompositionToWorkflow, type Subtask, type DecompositionResult } from './roles/orchestrator-decompose.js';
+export {
+  DECOMPOSITION_PROMPT,
+  decompositionToWorkflow,
+  type Subtask,
+  type DecompositionResult,
+} from "./roles/orchestrator-decompose.js";
 
-export function buildAgentSystemPrompt(agent: AgentProfile, stepDescription?: string): string {
+export function buildAgentSystemPrompt(
+  agent: AgentProfile,
+  stepDescription?: string,
+): string {
   const parts: string[] = [];
 
   // Role-specific base prompt
-  const rolePrompt = ROLE_PROMPTS[agent.role] ?? '';
+  const rolePrompt = ROLE_PROMPTS[agent.role] ?? "";
   if (agent.systemPrompt) {
     parts.push(agent.systemPrompt);
   } else if (rolePrompt) {
@@ -50,27 +58,31 @@ export function buildAgentSystemPrompt(agent: AgentProfile, stepDescription?: st
         if (shape) {
           const fields = Object.keys(shape).map((k) => {
             const field = shape[k];
-            const desc = field?._def?.description ?? field?.description ?? '';
+            const desc = field?._def?.description ?? field?.description ?? "";
             return `  - ${k}: ${desc}`;
           });
-          schemaDesc = `Required JSON fields:\n${fields.join('\n')}`;
+          schemaDesc = `Required JSON fields:\n${fields.join("\n")}`;
         } else {
           schemaDesc = `Schema: ${agent.outputFormat}`;
         }
       } catch {
         schemaDesc = `Schema: ${agent.outputFormat}`;
       }
-      parts.push(`\nYou MUST respond with valid JSON matching this structure. Include a "confidence" field (0.0 to 1.0) rating how confident you are in your output.\n\n${schemaDesc}`);
+      parts.push(
+        `\nYou MUST respond with valid JSON matching this structure. Include a "confidence" field (0.0 to 1.0) rating how confident you are in your output.\n\n${schemaDesc}`,
+      );
     }
   }
 
   // Guardrails
   if (agent.guardrails.pii) {
-    parts.push(`\nIMPORTANT: Do NOT include any personally identifiable information (PII) in your output — no names, emails, phone numbers, addresses, or similar data. Use placeholders instead.`);
+    parts.push(
+      `\nIMPORTANT: Do NOT include any personally identifiable information (PII) in your output — no names, emails, phone numbers, addresses, or similar data. Use placeholders instead.`,
+    );
   }
   if (agent.guardrails.topicRestriction) {
     parts.push(`\nTopic restriction: ${agent.guardrails.topicRestriction}`);
   }
 
-  return parts.join('\n');
+  return parts.join("\n");
 }

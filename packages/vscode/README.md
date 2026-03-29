@@ -1,4 +1,4 @@
-# @brainstorm/vscode
+# @brainst0rm/vscode
 
 VS Code extension for Brainstorm AI. Registers as a chat participant (`@brainstorm`) in VS Code's chat panel.
 

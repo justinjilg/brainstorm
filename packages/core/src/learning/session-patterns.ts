@@ -10,7 +10,7 @@
  * Loaded on session start, updated during session, decayed over 30 days.
  */
 
-import type { PatternRepository, SessionPattern } from '@brainstorm/db';
+import type { PatternRepository, SessionPattern } from "@brainst0rm/db";
 
 export class SessionPatternLearner {
   constructor(
@@ -22,9 +22,9 @@ export class SessionPatternLearner {
   recordToolResult(toolName: string, success: boolean): void {
     this.repo.record(
       this.projectPath,
-      'tool_success',
+      "tool_success",
       toolName,
-      success ? 'reliable' : 'unreliable',
+      success ? "reliable" : "unreliable",
       success ? 0.6 : 0.4,
     );
   }
@@ -32,11 +32,12 @@ export class SessionPatternLearner {
   /** Record a shell command timing. */
   recordCommandTiming(command: string, durationMs: number): void {
     // Normalize command to a key (first 2 words)
-    const key = command.split(/\s+/).slice(0, 3).join(' ').slice(0, 50);
-    const category = durationMs > 30000 ? 'slow' : durationMs > 5000 ? 'moderate' : 'fast';
+    const key = command.split(/\s+/).slice(0, 3).join(" ").slice(0, 50);
+    const category =
+      durationMs > 30000 ? "slow" : durationMs > 5000 ? "moderate" : "fast";
     this.repo.record(
       this.projectPath,
-      'command_timing',
+      "command_timing",
       key,
       `${category} (~${Math.round(durationMs / 1000)}s)`,
     );
@@ -44,12 +45,12 @@ export class SessionPatternLearner {
 
   /** Record a user preference signal. */
   recordUserPreference(key: string, value: string): void {
-    this.repo.record(this.projectPath, 'user_preference', key, value);
+    this.repo.record(this.projectPath, "user_preference", key, value);
   }
 
   /** Record which model was successful for a task type. */
   recordModelChoice(taskType: string, modelId: string): void {
-    this.repo.record(this.projectPath, 'model_choice', taskType, modelId);
+    this.repo.record(this.projectPath, "model_choice", taskType, modelId);
   }
 
   /** Get all patterns for the current project. */

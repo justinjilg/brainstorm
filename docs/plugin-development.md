@@ -7,7 +7,7 @@ Build custom plugins to extend Brainstorm with new tools, hooks, and skills.
 ```bash
 mkdir my-brainstorm-plugin && cd my-brainstorm-plugin
 npm init -y
-npm install @brainstorm/plugin-sdk @brainstorm/shared zod tsup typescript
+npm install @brainst0rm/plugin-sdk @brainst0rm/shared zod tsup typescript
 ```
 
 ## Plugin Structure
@@ -39,32 +39,35 @@ my-brainstorm-plugin/
 ### src/index.ts
 
 ```typescript
-import { defineBrainstormPlugin, definePluginTool } from '@brainstorm/plugin-sdk';
-import { z } from 'zod';
+import {
+  defineBrainstormPlugin,
+  definePluginTool,
+} from "@brainst0rm/plugin-sdk";
+import { z } from "zod";
 
 export default defineBrainstormPlugin({
-  name: 'docker',
-  description: 'Docker integration for Brainstorm',
-  version: '1.0.0',
+  name: "docker",
+  description: "Docker integration for Brainstorm",
+  version: "1.0.0",
 
   tools: [
     definePluginTool({
-      name: 'docker_build',
-      description: 'Build a Docker image from a Dockerfile',
-      permission: 'confirm',
+      name: "docker_build",
+      description: "Build a Docker image from a Dockerfile",
+      permission: "confirm",
       inputSchema: z.object({
-        tag: z.string().describe('Image tag (e.g., myapp:latest)'),
-        dockerfile: z.string().optional().describe('Path to Dockerfile'),
-        context: z.string().optional().describe('Build context directory'),
+        tag: z.string().describe("Image tag (e.g., myapp:latest)"),
+        dockerfile: z.string().optional().describe("Path to Dockerfile"),
+        context: z.string().optional().describe("Build context directory"),
       }),
       async execute({ tag, dockerfile, context }) {
-        const { execFileSync } = await import('node:child_process');
-        const args = ['build', '-t', tag];
-        if (dockerfile) args.push('-f', dockerfile);
-        args.push(context ?? '.');
+        const { execFileSync } = await import("node:child_process");
+        const args = ["build", "-t", tag];
+        if (dockerfile) args.push("-f", dockerfile);
+        args.push(context ?? ".");
 
         try {
-          const output = execFileSync('docker', args, { encoding: 'utf-8' });
+          const output = execFileSync("docker", args, { encoding: "utf-8" });
           return { ok: true, data: { tag, output: output.slice(-500) } };
         } catch (err: any) {
           return { ok: false, error: err.message };
@@ -73,16 +76,20 @@ export default defineBrainstormPlugin({
     }),
 
     definePluginTool({
-      name: 'docker_ps',
-      description: 'List running Docker containers',
-      permission: 'auto',
+      name: "docker_ps",
+      description: "List running Docker containers",
+      permission: "auto",
       inputSchema: z.object({}),
       async execute() {
-        const { execFileSync } = await import('node:child_process');
+        const { execFileSync } = await import("node:child_process");
         try {
-          const output = execFileSync('docker', ['ps', '--format', 'table {{.Names}}\t{{.Image}}\t{{.Status}}'], {
-            encoding: 'utf-8',
-          });
+          const output = execFileSync(
+            "docker",
+            ["ps", "--format", "table {{.Names}}\t{{.Image}}\t{{.Status}}"],
+            {
+              encoding: "utf-8",
+            },
+          );
           return { ok: true, data: { containers: output } };
         } catch (err: any) {
           return { ok: false, error: err.message };
@@ -93,18 +100,19 @@ export default defineBrainstormPlugin({
 
   hooks: [
     {
-      event: 'SessionStart',
-      command: 'docker info > /dev/null 2>&1 || echo "WARNING: Docker daemon is not running"',
-      description: 'Check Docker daemon availability on session start',
+      event: "SessionStart",
+      command:
+        'docker info > /dev/null 2>&1 || echo "WARNING: Docker daemon is not running"',
+      description: "Check Docker daemon availability on session start",
     },
   ],
 
   skills: [
     {
-      name: 'containerize',
-      description: 'Containerize the current project with Docker',
-      tools: ['docker_build', 'file_write', 'file_read', 'shell'],
-      modelPreference: 'quality',
+      name: "containerize",
+      description: "Containerize the current project with Docker",
+      tools: ["docker_build", "file_write", "file_read", "shell"],
+      modelPreference: "quality",
       content: `Create a production-ready Dockerfile for this project.
         1. Analyze the project structure and dependencies
         2. Write an optimized multi-stage Dockerfile
@@ -114,11 +122,11 @@ export default defineBrainstormPlugin({
 
   async onLoad() {
     // Validate Docker is installed
-    const { execFileSync } = await import('node:child_process');
+    const { execFileSync } = await import("node:child_process");
     try {
-      execFileSync('docker', ['--version'], { encoding: 'utf-8' });
+      execFileSync("docker", ["--version"], { encoding: "utf-8" });
     } catch {
-      console.warn('Docker not found. docker_build tool will not work.');
+      console.warn("Docker not found. docker_build tool will not work.");
     }
   },
 });
@@ -166,6 +174,7 @@ Available events: PreToolUse, PostToolUse, SessionStart, SessionEnd, Stop, PreCo
 ### Skills
 
 Skills are reusable instruction bundles that combine:
+
 - A prompt/instructions (the `content` field)
 - Tool restrictions (only allow specific tools)
 - Model preference (cheap, quality, fast, auto)

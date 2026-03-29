@@ -91,8 +91,8 @@ These are table-stakes features where Brainstorm's absence is a dealbreaker for 
 
 **1.3 npm Publish** (1 day)
 
-- Publish `@brainstorm/cli` to npm
-- Enable `npx brainstorm` and `npm install -g @brainstorm/cli`
+- Publish `@brainst0rm/cli` to npm
+- Enable `npx brainstorm` and `npm install -g @brainst0rm/cli`
 - _Why:_ Can't compete without distribution. Zero-friction install is table stakes.
 
 ### Phase 2: Exploit Unique Advantages (Q2-Q3 2026)
@@ -123,7 +123,7 @@ Double down on what only Brainstorm does.
 
 **3.1 VS Code Extension** (4 weeks)
 
-- Ship `@brainstorm/vscode` — chat sidebar, inline edit, model selection palette
+- Ship `@brainst0rm/vscode` — chat sidebar, inline edit, model selection palette
 - Keep CLI as primary, VS Code as companion (not replacement)
 - _Why:_ 60%+ of developers use VS Code. CLI-only limits TAM.
 

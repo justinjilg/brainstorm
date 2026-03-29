@@ -1,6 +1,6 @@
 {
-  "name": "@brainstorm/scheduler",
-  "version": "0.12.1",
+  "name": "@brainst0rm/scheduler",
+  "version": "0.13.0",
   "type": "module",
   "exports": {
     ".": {
@@ -15,9 +15,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brainstorm/shared": "0.12.1",
-    "@brainstorm/db": "0.12.1",
-    "@brainstorm/projects": "0.12.1",
+    "@brainst0rm/shared": "0.13.0",
+    "@brainst0rm/db": "0.13.0",
+    "@brainst0rm/projects": "0.13.0",
     "cron-parser": "^5"
   },
   "devDependencies": {

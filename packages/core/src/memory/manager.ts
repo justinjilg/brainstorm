@@ -10,8 +10,8 @@ import {
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { createHash } from "node:crypto";
-import { createLogger } from "@brainstorm/shared";
-import type { BrainstormGateway } from "@brainstorm/gateway";
+import { createLogger } from "@brainst0rm/shared";
+import type { BrainstormGateway } from "@brainst0rm/gateway";
 
 const log = createLogger("memory");
 

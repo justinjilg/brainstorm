@@ -19,7 +19,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, basename } from "node:path";
 import { homedir } from "node:os";
-import type { AgentProfile, AgentRole } from "@brainstorm/shared";
+import type { AgentProfile, AgentRole } from "@brainst0rm/shared";
 
 export interface FileAgent {
   id: string;

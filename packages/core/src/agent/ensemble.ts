@@ -11,7 +11,7 @@
  * Inspired by ByteDance Trae Agent's generation-pruning-selection pipeline.
  */
 
-import type { ModelEntry, Complexity } from '@brainstorm/shared';
+import type { ModelEntry, Complexity } from "@brainst0rm/shared";
 
 export interface EnsembleCandidate {
   model: string;
@@ -29,15 +29,18 @@ export interface EnsembleResult {
   earlyTermination: boolean;
 }
 
-export type EnsembleStrategy = 'shortest' | 'vote' | 'first-pass';
+export type EnsembleStrategy = "shortest" | "vote" | "first-pass";
 
 /** Complexity threshold for triggering ensemble generation. */
-const ENSEMBLE_COMPLEXITIES: Set<Complexity> = new Set(['complex', 'expert']);
+const ENSEMBLE_COMPLEXITIES: Set<Complexity> = new Set(["complex", "expert"]);
 
 /**
  * Check if a task should use ensemble generation.
  */
-export function shouldUseEnsemble(complexity: Complexity, ensembleEnabled: boolean): boolean {
+export function shouldUseEnsemble(
+  complexity: Complexity,
+  ensembleEnabled: boolean,
+): boolean {
   return ensembleEnabled && ENSEMBLE_COMPLEXITIES.has(complexity);
 }
 
@@ -45,7 +48,10 @@ export function shouldUseEnsemble(complexity: Complexity, ensembleEnabled: boole
  * Prune duplicate results by token-level similarity.
  * Uses Jaccard similarity on word tokens.
  */
-export function pruneResults(candidates: EnsembleCandidate[], similarityThreshold = 0.85): EnsembleCandidate[] {
+export function pruneResults(
+  candidates: EnsembleCandidate[],
+  similarityThreshold = 0.85,
+): EnsembleCandidate[] {
   if (candidates.length <= 1) return candidates;
 
   const unique: EnsembleCandidate[] = [candidates[0]];
@@ -53,7 +59,8 @@ export function pruneResults(candidates: EnsembleCandidate[], similarityThreshol
   for (let i = 1; i < candidates.length; i++) {
     const candidate = candidates[i];
     const isDuplicate = unique.some(
-      (existing) => jaccardSimilarity(existing.text, candidate.text) >= similarityThreshold,
+      (existing) =>
+        jaccardSimilarity(existing.text, candidate.text) >= similarityThreshold,
     );
     if (!isDuplicate) {
       unique.push(candidate);
@@ -68,10 +75,10 @@ export function pruneResults(candidates: EnsembleCandidate[], similarityThreshol
  */
 export function selectWinner(
   candidates: EnsembleCandidate[],
-  strategy: EnsembleStrategy = 'shortest',
+  strategy: EnsembleStrategy = "shortest",
 ): EnsembleResult {
   if (candidates.length === 0) {
-    throw new Error('No candidates to select from.');
+    throw new Error("No candidates to select from.");
   }
 
   if (candidates.length === 1) {
@@ -79,7 +86,7 @@ export function selectWinner(
       winner: candidates[0],
       candidates,
       strategy,
-      reason: 'Only one candidate after pruning.',
+      reason: "Only one candidate after pruning.",
       earlyTermination: true,
     };
   }
@@ -88,23 +95,27 @@ export function selectWinner(
   let reason: string;
 
   switch (strategy) {
-    case 'shortest':
+    case "shortest":
       // Prefer the shortest response (simpler = more likely correct for coding)
-      winner = candidates.reduce((a, b) => (a.tokenCount <= b.tokenCount ? a : b));
-      reason = `Shortest response: ${winner.model} (${winner.tokenCount} tokens vs ${candidates.map((c) => c.tokenCount).join(', ')})`;
+      winner = candidates.reduce((a, b) =>
+        a.tokenCount <= b.tokenCount ? a : b,
+      );
+      reason = `Shortest response: ${winner.model} (${winner.tokenCount} tokens vs ${candidates.map((c) => c.tokenCount).join(", ")})`;
       break;
 
-    case 'first-pass':
+    case "first-pass":
       // First candidate wins (fastest model)
       winner = candidates[0];
       reason = `First response: ${winner.model} (${winner.latencyMs}ms)`;
       break;
 
-    case 'vote':
+    case "vote":
     default:
       // For voting, we'd need an LLM call — fall back to shortest for now
       // Full voting implementation would call a cheap model to judge
-      winner = candidates.reduce((a, b) => (a.tokenCount <= b.tokenCount ? a : b));
+      winner = candidates.reduce((a, b) =>
+        a.tokenCount <= b.tokenCount ? a : b,
+      );
       reason = `Vote fallback (shortest): ${winner.model}`;
       break;
   }
@@ -138,9 +149,9 @@ export function checkEarlyTermination(
 export function formatEnsembleResult(result: EnsembleResult): string {
   const candidateList = result.candidates
     .map((c) => `${c.model}(${c.tokenCount}tok, $${c.cost.toFixed(3)})`)
-    .join(', ');
+    .join(", ");
 
-  return `[Ensemble: ${result.candidates.length} candidates (${candidateList}). Winner: ${result.winner.model}. ${result.reason}${result.earlyTermination ? ' (early termination)' : ''}]`;
+  return `[Ensemble: ${result.candidates.length} candidates (${candidateList}). Winner: ${result.winner.model}. ${result.reason}${result.earlyTermination ? " (early termination)" : ""}]`;
 }
 
 /**

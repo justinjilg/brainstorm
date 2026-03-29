@@ -1,5 +1,5 @@
-import type { BrainstormConfig } from "@brainstorm/config";
-import type { ModelEntry, CapabilityScores } from "@brainstorm/shared";
+import type { BrainstormConfig } from "@brainst0rm/config";
+import type { ModelEntry, CapabilityScores } from "@brainst0rm/shared";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -243,7 +243,7 @@ export async function createProviderRegistry(
 
 /**
  * Load eval-derived capability scores from ~/.brainstorm/eval/capability-scores.json.
- * These are written by `brainstorm eval` via @brainstorm/eval's exportCapabilityScores().
+ * These are written by `brainstorm eval` via @brainst0rm/eval's exportCapabilityScores().
  * Reading directly avoids a circular dependency (eval → providers → eval).
  */
 const CACHE_PATH = join(homedir(), ".brainstorm", ".providers.cache.json");

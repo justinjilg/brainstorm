@@ -193,7 +193,7 @@ Brainstorm occupies a unique position as the **only tool offering intelligent mu
 | ---------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
 | **Distribution & community** | **Critical**    | ~0 external adoption vs Codex CLI 67K stars, Cursor 1M+ devs, Copilot 100M+ users                                  | npm publish, SWE-bench results, developer content              |
 | **Model quality access**     | **Critical**    | Routes to Opus 4.6 but adds complexity. When Opus is available directly via Claude Code, routing must prove value. | Publish cost savings data, multi-provider advantage            |
-| **IDE integration**          | **Significant** | CLI/TUI only. 9 of 14 competitors have native IDE. VS Code extension exists but minimal.                           | Ship @brainstorm/vscode with chat sidebar, inline edits        |
+| **IDE integration**          | **Significant** | CLI/TUI only. 9 of 14 competitors have native IDE. VS Code extension exists but minimal.                           | Ship @brainst0rm/vscode with chat sidebar, inline edits        |
 | **Cloud agents at scale**    | **Moderate**    | Local worktree only. Cursor runs 8-20 cloud agents. Codex has isolated sandbox.                                    | storm cloud via BrainstormRouter (Sprint 5 planned)            |
 | **Enterprise features**      | **Moderate**    | No SSO, audit logs, team management. Q has HIPAA, Augment has ISO 42001.                                           | BrainstormRouter already has evidence ledger — need team layer |
 | **Published benchmarks**     | **Moderate**    | No SWE-bench scores. OpenHands publishes 72%, Claude Code 80.9%.                                                   | Run SWE-bench Verified, publish results                        |
@@ -228,7 +228,7 @@ Brainstorm occupies a unique position as the **only tool offering intelligent mu
 Based on this analysis, the highest-impact actions to close competitive gaps:
 
 1. **Publish SWE-bench Verified scores** — credibility in this market requires benchmark results
-2. **Simplify onboarding to one command** — `npm install -g @brainstorm/cli && storm init` should be all a developer needs
+2. **Simplify onboarding to one command** — `npm install -g @brainst0rm/cli && storm init` should be all a developer needs
 3. **Ship VS Code extension** — unlock the 80%+ of developers who never leave their IDE
 4. **Publish cost savings data** — prove that routing to cheaper models for simple tasks saves 40-60% vs single-model
 5. **BrainstormRouter free tier as default** — remove the BYOK key management friction

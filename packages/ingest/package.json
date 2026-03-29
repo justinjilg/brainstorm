@@ -1,13 +1,13 @@
 {
-  "name": "@brainstorm/ingest",
-  "version": "0.12.1",
+  "name": "@brainst0rm/ingest",
+  "version": "0.13.0",
   "type": "module",
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@brainstorm/shared": "0.12.1"
+    "@brainst0rm/shared": "0.13.0"
   },
   "devDependencies": {
     "tsup": "^8",

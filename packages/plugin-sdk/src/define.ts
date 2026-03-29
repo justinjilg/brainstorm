@@ -1,13 +1,18 @@
-import { z } from 'zod';
-import type { ToolPermission } from '@brainstorm/shared';
-import type { BrainstormPlugin, PluginToolDef, PluginHookDef, PluginSkillDef } from './types.js';
+import { z } from "zod";
+import type { ToolPermission } from "@brainst0rm/shared";
+import type {
+  BrainstormPlugin,
+  PluginToolDef,
+  PluginHookDef,
+  PluginSkillDef,
+} from "./types.js";
 
 /**
  * Define a Brainstorm plugin.
  *
  * @example
  * ```typescript
- * import { defineBrainstormPlugin, definePluginTool } from '@brainstorm/plugin-sdk';
+ * import { defineBrainstormPlugin, definePluginTool } from '@brainst0rm/plugin-sdk';
  * import { z } from 'zod';
  *
  * export default defineBrainstormPlugin({
@@ -39,7 +44,9 @@ import type { BrainstormPlugin, PluginToolDef, PluginHookDef, PluginSkillDef } f
  * });
  * ```
  */
-export function defineBrainstormPlugin(config: BrainstormPlugin): BrainstormPlugin {
+export function defineBrainstormPlugin(
+  config: BrainstormPlugin,
+): BrainstormPlugin {
   validatePlugin(config);
   return config;
 }
@@ -77,7 +84,7 @@ export function definePluginSkill(config: PluginSkillDef): PluginSkillDef {
 function validatePlugin(plugin: BrainstormPlugin): void {
   if (!plugin.name || !/^[a-z][a-z0-9-]*$/.test(plugin.name)) {
     throw new Error(
-      `Plugin name "${plugin.name}" is invalid. Must be lowercase, start with a letter, and contain only letters, numbers, and hyphens.`
+      `Plugin name "${plugin.name}" is invalid. Must be lowercase, start with a letter, and contain only letters, numbers, and hyphens.`,
     );
   }
 
@@ -86,7 +93,9 @@ function validatePlugin(plugin: BrainstormPlugin): void {
   }
 
   if (!plugin.version || !/^\d+\.\d+\.\d+/.test(plugin.version)) {
-    throw new Error(`Plugin "${plugin.name}" has invalid version "${plugin.version}". Use semver (e.g., 1.0.0).`);
+    throw new Error(
+      `Plugin "${plugin.name}" has invalid version "${plugin.version}". Use semver (e.g., 1.0.0).`,
+    );
   }
 
   // Validate tool names are unique
@@ -94,7 +103,9 @@ function validatePlugin(plugin: BrainstormPlugin): void {
     const names = new Set<string>();
     for (const tool of plugin.tools) {
       if (names.has(tool.name)) {
-        throw new Error(`Plugin "${plugin.name}" has duplicate tool name "${tool.name}".`);
+        throw new Error(
+          `Plugin "${plugin.name}" has duplicate tool name "${tool.name}".`,
+        );
       }
       names.add(tool.name);
     }
@@ -105,7 +116,9 @@ function validatePlugin(plugin: BrainstormPlugin): void {
     const names = new Set<string>();
     for (const skill of plugin.skills) {
       if (names.has(skill.name)) {
-        throw new Error(`Plugin "${plugin.name}" has duplicate skill name "${skill.name}".`);
+        throw new Error(
+          `Plugin "${plugin.name}" has duplicate skill name "${skill.name}".`,
+        );
       }
       names.add(skill.name);
     }

@@ -1,4 +1,4 @@
-# @brainstorm/shared
+# @brainst0rm/shared
 
 Foundation types, errors, and logging shared across all Brainstorm packages.
 
@@ -16,5 +16,9 @@ Foundation types, errors, and logging shared across all Brainstorm packages.
 ## Usage
 
 ```typescript
-import { type TaskProfile, type ModelEntry, formatTurnContext } from '@brainstorm/shared';
+import {
+  type TaskProfile,
+  type ModelEntry,
+  formatTurnContext,
+} from "@brainst0rm/shared";
 ```

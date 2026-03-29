@@ -86,7 +86,7 @@ The agent classifies this as an ingest task and triggers a 6-phase pipeline:
 
 ### New Packages
 
-**`@brainstorm/ingest`** — Codebase analysis engine
+**`@brainst0rm/ingest`** — Codebase analysis engine
 
 - Language detection + parser integration (tree-sitter for AST analysis)
 - Dependency graph builder (imports, exports, call graphs)
@@ -98,7 +98,7 @@ The agent classifies this as an ingest task and triggers a 6-phase pipeline:
 - Complexity analyzer (cyclomatic complexity, cognitive complexity)
 - Test coverage mapper (which code is tested, which isn't)
 
-**`@brainstorm/docgen`** — Documentation generator
+**`@brainst0rm/docgen`** — Documentation generator
 
 - Architecture doc generator (LLM summarizes analysis.json into prose)
 - API doc generator (from endpoint map + schema extraction)
@@ -107,7 +107,7 @@ The agent classifies this as an ingest task and triggers a 6-phase pipeline:
 - Risk report generator (security + complexity + coverage analysis)
 - Diagram generator (Mermaid diagrams from dependency graphs)
 
-**`@brainstorm/infra`** — AI infrastructure configurator
+**`@brainst0rm/infra`** — AI infrastructure configurator
 
 - Auto-generate BRAINSTORM.md from analysis
 - Auto-generate .agent.md files per module
@@ -171,13 +171,13 @@ storm refresh                    # Re-run analysis on changed files
 | ---------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------ |
 | Rust-based (instant startup)       | Node.js startup ~500ms     | Add `--fast` mode that skips provider discovery + DB init on startup. Lazy-load heavy packages. Target <200ms cold start.            | 3      |
 | Zero-network sandbox default       | Network allowed by default | Change default sandbox from `restricted` to `restricted-no-network`. Opt-in network with `--network` flag.                           | 1      |
-| Python SDK for programmatic access | No programmatic SDK        | Ship `@brainstorm/sdk` — thin wrapper that exposes `runAgent()`, `classifyTask()`, `routeModel()` as a library. CLI imports from it. | 4      |
+| Python SDK for programmatic access | No programmatic SDK        | Ship `@brainst0rm/sdk` — thin wrapper that exposes `runAgent()`, `classifyTask()`, `routeModel()` as a library. CLI imports from it. | 4      |
 
 ### vs Cline/Roo Code (60K/23K stars)
 
 | Their Edge                                | Our Gap                         | Solution                                                                                                                                                            | Sprint |
 | ----------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| VS Code extension (IDE-native)            | CLI only                        | Ship `@brainstorm/vscode` — chat sidebar, inline edit suggestions, model selection palette. Keep CLI as primary.                                                    | 5      |
+| VS Code extension (IDE-native)            | CLI only                        | Ship `@brainst0rm/vscode` — chat sidebar, inline edit suggestions, model selection palette. Keep CLI as primary.                                                    | 5      |
 | Custom Modes (personas with scoped tools) | Roles exist but no tool scoping | Extend roles to include `allowedTools` and `blockedTools`. Already have permission system — just wire it to role definitions.                                       | 2      |
 | Plan/Act toggle                           | No explicit plan mode toggle    | Add `/plan` toggle: when active, agent describes changes before making them. User approves, then agent executes. Already have plan executor — add interactive mode. | 2      |
 
@@ -221,14 +221,14 @@ Every item shows its flywheel connection: how it generates data that makes the s
 
 | #   | Item                                                       | Closes Gap vs          | Flywheel Connection                                                                                           |
 | --- | ---------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------- |
-| 1   | npm publish `@brainstorm/cli`                              | All (distribution)     | More users → more routing data → better Thompson sampling                                                     |
+| 1   | npm publish `@brainst0rm/cli`                              | All (distribution)     | More users → more routing data → better Thompson sampling                                                     |
 | 2   | OS-level sandbox (Seatbelt + seccomp)                      | Claude Code, Codex CLI | Safer execution → users trust unattended mode → more trajectories                                             |
 | 3   | Default sandbox to restricted-no-network                   | Codex CLI              | Same as above                                                                                                 |
 | 4   | SWE-bench Verified benchmarking                            | OpenHands              | Benchmark runs = trajectories. Results identify routing weaknesses → targeted improvement                     |
 | 5   | `auto_verify` hook preset (lint+test after edits)          | Aider                  | Every verify result is a binary outcome signal → Thompson learns which models write code that compiles/passes |
 | 6   | `storm loop` command (scheduled prompt on interval)        | Claude Code `/loop`    | Continuous background execution = continuous trajectory generation                                            |
 | 7   | `storm memory` command (view/manage)                       | Claude Code            | Memory visibility → users curate better context → better agent performance → better outcomes                  |
-| 8   | `@brainstorm/ingest` skeleton + lang detection + dep graph | Swimm, nobody (unique) | Codebase analysis → project-specific routing profiles → routing decisions tuned from first interaction        |
+| 8   | `@brainst0rm/ingest` skeleton + lang detection + dep graph | Swimm, nobody (unique) | Codebase analysis → project-specific routing profiles → routing decisions tuned from first interaction        |
 
 ### Sprint 2 (2 weeks): Analysis Engine + Context Intelligence
 
@@ -266,7 +266,7 @@ Every item shows its flywheel connection: how it generates data that makes the s
 | 28  | Task queue (`storm queue add "t1" "t2" "t3"`)   | Stripe Minions (1300 PRs/wk) | Queue of N tasks = N parallel trajectories. This is the Stripe flywheel at scale                          |
 | 29  | `storm search --global` cross-repo search       | Amp/Sourcegraph              | Cross-repo context → agents make better decisions → better outcomes → routing improves                    |
 | 30  | `--fast` startup mode (<200ms)                  | Codex CLI                    | Faster startup → more casual usage → more sessions → more data                                            |
-| 31  | `@brainstorm/sdk` programmatic library          | Codex CLI Python SDK         | SDK enables CI/CD integration → unattended pipeline runs → continuous trajectory flow                     |
+| 31  | `@brainst0rm/sdk` programmatic library          | Codex CLI Python SDK         | SDK enables CI/CD integration → unattended pipeline runs → continuous trajectory flow                     |
 | 32  | `/voice` command (Whisper via BR)               | Claude Code voice            | Voice input → routing decision (Whisper model selection) → outcome tracking                               |
 | 33  | Auto-generate BRAINSTORM.md from analysis       | Nobody (unique)              | Generated context = pre-seeded routing profiles. Every project starts with good routing from day 1        |
 | 34  | Auto-generate .agent.md per module              | Nobody (unique)              | Domain agents = domain-specific trajectories. "auth-expert" agent generates auth-specific routing data    |
@@ -276,7 +276,7 @@ Every item shows its flywheel connection: how it generates data that makes the s
 
 | #   | Item                                                    | Closes Gap vs                     | Flywheel Connection                                                                            |
 | --- | ------------------------------------------------------- | --------------------------------- | ---------------------------------------------------------------------------------------------- |
-| 36  | `@brainstorm/vscode` extension                          | Cline, Cursor, Windsurf           | Same flywheel, new entry point. IDE users generate same trajectories + routing data            |
+| 36  | `@brainst0rm/vscode` extension                          | Cline, Cursor, Windsurf           | Same flywheel, new entry point. IDE users generate same trajectories + routing data            |
 | 37  | `storm cloud` remote agents via BR                      | OpenHands (1000s agents)          | Cloud agents = unlimited parallel trajectory generation. Pay-per-use = BR revenue              |
 | 38  | 5 more MCP servers (Jira, Notion, Datadog, AWS, Stripe) | Goose                             | More tool types → richer trajectories → BR learns model-tool affinity across more integrations |
 | 39  | `storm share` export/import session context             | Amp team threads                  | Shared sessions → team routing intelligence. N users learning = N× faster flywheel             |

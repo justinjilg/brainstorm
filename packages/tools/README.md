@@ -1,4 +1,4 @@
-# @brainstorm/tools
+# @brainst0rm/tools
 
 42 built-in tools with Zod input schemas, permission levels, and consistent `{ ok, data, error }` output.
 
@@ -21,16 +21,16 @@ See [docs/tools.md](../../docs/tools.md) for full reference.
 ## Adding a Tool
 
 ```typescript
-import { z } from 'zod';
-import { defineTool } from '../base.js';
+import { z } from "zod";
+import { defineTool } from "../base.js";
 
 export const myTool = defineTool({
-  name: 'my_tool',
-  description: 'What this tool does',
-  permission: 'confirm',
+  name: "my_tool",
+  description: "What this tool does",
+  permission: "confirm",
   inputSchema: z.object({ param: z.string() }),
   async execute({ param }) {
-    return { ok: true, data: { result: 'done' } };
+    return { ok: true, data: { result: "done" } };
   },
 });
 ```

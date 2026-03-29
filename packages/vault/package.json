@@ -1,6 +1,6 @@
 {
-  "name": "@brainstorm/vault",
-  "version": "0.12.1",
+  "name": "@brainst0rm/vault",
+  "version": "0.13.0",
   "type": "module",
   "exports": {
     ".": {

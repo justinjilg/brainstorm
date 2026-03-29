@@ -9,7 +9,7 @@ import type Database from "better-sqlite3";
 import { ScheduledTaskRepository, TaskRunRepository } from "./repository.js";
 import { isDue } from "./cron-parser.js";
 import { validateTaskSafety } from "./safety.js";
-import type { ScheduledTask, ScheduledTaskRun } from "@brainstorm/shared";
+import type { ScheduledTask, ScheduledTaskRun } from "@brainst0rm/shared";
 
 export interface TriggerResult {
   tasksChecked: number;

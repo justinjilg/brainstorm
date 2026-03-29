@@ -53,7 +53,7 @@
 - Expert Persona Engine with model-specific tuning
 - Agent memory tools (save, search, list, forget)
 - Security scan middleware (19 credential detection patterns)
-- 3 new packages: `@brainstorm/projects`, `@brainstorm/scheduler`, `@brainstorm/orchestrator`
+- 3 new packages: `@brainst0rm/projects`, `@brainst0rm/scheduler`, `@brainst0rm/orchestrator`
 - Fix: TUI stability (abort timeout race, tool ID collisions, streaming re-renders)
 
 ## [v11] — 2026-02-15 — Claude Code Parity

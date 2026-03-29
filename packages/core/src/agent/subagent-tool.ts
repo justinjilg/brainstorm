@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { defineTool, type BrainstormToolDef } from "@brainstorm/tools";
+import { defineTool, type BrainstormToolDef } from "@brainst0rm/tools";
 import {
   spawnSubagent,
   spawnParallel,
@@ -11,7 +11,7 @@ import {
 /**
  * Create the subagent tool with runtime context injected.
  *
- * This tool lives in @brainstorm/core (not @brainstorm/tools) because it
+ * This tool lives in @brainst0rm/core (not @brainst0rm/tools) because it
  * depends on the subagent execution engine, which would create a circular
  * dependency if placed in the tools package.
  *

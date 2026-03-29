@@ -4,10 +4,10 @@ import type {
   RoutingDecision,
   RoutingContext,
   StrategyName,
-} from "@brainstorm/shared";
-import { createLogger } from "@brainstorm/shared";
-import type { BrainstormConfig, StormFrontmatter } from "@brainstorm/config";
-import type { ProviderRegistry } from "@brainstorm/providers";
+} from "@brainst0rm/shared";
+import { createLogger } from "@brainst0rm/shared";
+import type { BrainstormConfig, StormFrontmatter } from "@brainst0rm/config";
+import type { ProviderRegistry } from "@brainst0rm/providers";
 import { classifyTask } from "./classifier.js";
 import { costFirstStrategy } from "./strategies/cost-first.js";
 import { qualityFirstStrategy } from "./strategies/quality-first.js";

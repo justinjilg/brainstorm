@@ -2,7 +2,7 @@ import {
   loadStormFile,
   loadHierarchicalStormFiles,
   type StormFrontmatter,
-} from "@brainstorm/config";
+} from "@brainst0rm/config";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";

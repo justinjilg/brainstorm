@@ -6,7 +6,7 @@
  * Includes a Mermaid sequence diagram for the most common request flows.
  */
 
-import type { ProjectAnalysis } from "@brainstorm/ingest";
+import type { ProjectAnalysis } from "@brainst0rm/ingest";
 
 export interface APIDoc {
   markdown: string;

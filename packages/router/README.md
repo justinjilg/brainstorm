@@ -1,4 +1,4 @@
-# @brainstorm/router
+# @brainst0rm/router
 
 Task classification and intelligent model routing with 5 strategies.
 
@@ -10,19 +10,19 @@ Task classification and intelligent model routing with 5 strategies.
 
 ## Strategies
 
-| Strategy | Use Case |
-|----------|---------|
+| Strategy        | Use Case                          |
+| --------------- | --------------------------------- |
 | `quality-first` | Best model for the task (default) |
-| `cost-first` | Cheapest viable model |
-| `combined` | Balance quality, cost, speed |
-| `capability` | Route by measured eval scores |
-| `rule-based` | Custom rules from config |
+| `cost-first`    | Cheapest viable model             |
+| `combined`      | Balance quality, cost, speed      |
+| `capability`    | Route by measured eval scores     |
+| `rule-based`    | Custom rules from config          |
 
 ## Usage
 
 ```typescript
-import { BrainstormRouter, classifyTask } from '@brainstorm/router';
+import { BrainstormRouter, classifyTask } from "@brainst0rm/router";
 
 const router = new BrainstormRouter(config, providers);
-const { model, strategy } = await router.route('Refactor this component');
+const { model, strategy } = await router.route("Refactor this component");
 ```

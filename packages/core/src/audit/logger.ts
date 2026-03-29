@@ -5,7 +5,7 @@
  * duration, model, and cost. Stored in SQLite audit_log table.
  */
 
-import { getDb } from "@brainstorm/db";
+import { getDb } from "@brainst0rm/db";
 import type {
   AgentMiddleware,
   MiddlewareToolResult,

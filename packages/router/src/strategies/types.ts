@@ -1,4 +1,10 @@
-import type { TaskProfile, ModelEntry, RoutingContext, RoutingDecision, StrategyName } from '@brainstorm/shared';
+import type {
+  TaskProfile,
+  ModelEntry,
+  RoutingContext,
+  RoutingDecision,
+  StrategyName,
+} from "@brainst0rm/shared";
 
 export interface RoutingStrategy {
   name: StrategyName;

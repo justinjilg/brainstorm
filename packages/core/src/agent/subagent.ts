@@ -1,13 +1,13 @@
 import { streamText, stepCountIs } from "ai";
-import type { BrainstormConfig } from "@brainstorm/config";
-import type { ProviderRegistry } from "@brainstorm/providers";
-import { BrainstormRouter, CostTracker } from "@brainstorm/router";
+import type { BrainstormConfig } from "@brainst0rm/config";
+import type { ProviderRegistry } from "@brainst0rm/providers";
+import { BrainstormRouter, CostTracker } from "@brainst0rm/router";
 import {
   type ToolRegistry,
   setDockerSandbox,
   DockerSandbox,
-} from "@brainstorm/tools";
-import { serializeRoutingMetadata } from "@brainstorm/shared";
+} from "@brainst0rm/tools";
+import { serializeRoutingMetadata } from "@brainst0rm/shared";
 
 // ── Subagent Types ──────────────────────────────────────────────────
 
@@ -178,7 +178,7 @@ export const SUBAGENT_TYPE_NAMES: SubagentType[] = [
 
 // ── Subagent Execution ──────────────────────────────────────────────
 
-/** Callback for subagent lifecycle hooks (injected to avoid circular deps with @brainstorm/hooks). */
+/** Callback for subagent lifecycle hooks (injected to avoid circular deps with @brainst0rm/hooks). */
 export type SubagentHookFn = (
   event: "SubagentStart" | "SubagentStop",
   context: {

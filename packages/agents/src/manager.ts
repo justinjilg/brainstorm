@@ -1,5 +1,5 @@
-import type { AgentProfile, AgentRole } from "@brainstorm/shared";
-import type { BrainstormConfig, AgentConfig } from "@brainstorm/config";
+import type { AgentProfile, AgentRole } from "@brainst0rm/shared";
+import type { BrainstormConfig, AgentConfig } from "@brainst0rm/config";
 import { AgentRepository } from "./repository.js";
 import { loadAgentFiles, type FileAgent } from "./file-loader.js";
 

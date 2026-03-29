@@ -50,7 +50,7 @@ import type {
   WorkflowStepDef,
   AgentRole,
   CommunicationMode,
-} from "@brainstorm/shared";
+} from "@brainst0rm/shared";
 
 export interface RecipeFile {
   name: string;

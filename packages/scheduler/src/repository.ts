@@ -11,7 +11,7 @@ import type {
   TaskRunStatus,
   ExecutionMode,
   TriggerType,
-} from "@brainstorm/shared";
+} from "@brainst0rm/shared";
 
 function rowToTask(row: any): ScheduledTask {
   return {

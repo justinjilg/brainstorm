@@ -8,7 +8,7 @@
 import type Database from "better-sqlite3";
 import { basename, resolve } from "node:path";
 import { existsSync, readdirSync, statSync, readFileSync } from "node:fs";
-import type { Project } from "@brainstorm/shared";
+import type { Project } from "@brainst0rm/shared";
 import { ProjectRepository, ProjectMemoryRepository } from "./repository.js";
 
 export interface ProjectDashboard {

@@ -1,28 +1,39 @@
-import type { TaskProfile, ModelEntry, RoutingContext, RoutingDecision, QualityTier } from '@brainstorm/shared';
-import type { RoutingStrategy } from './types.js';
+import type {
+  TaskProfile,
+  ModelEntry,
+  RoutingContext,
+  RoutingDecision,
+  QualityTier,
+} from "@brainst0rm/shared";
+import type { RoutingStrategy } from "./types.js";
 
 // Minimum quality tier required for each task type
 const MIN_QUALITY: Record<string, QualityTier> = {
-  'simple-edit': 5,
-  'code-generation': 3,
-  'refactoring': 3,
-  'debugging': 2,
-  'explanation': 4,
-  'conversation': 5,
-  'analysis': 2,
-  'search': 5,
-  'multi-file-edit': 2,
+  "simple-edit": 5,
+  "code-generation": 3,
+  refactoring: 3,
+  debugging: 2,
+  explanation: 4,
+  conversation: 5,
+  analysis: 2,
+  search: 5,
+  "multi-file-edit": 2,
 };
 
 export const costFirstStrategy: RoutingStrategy = {
-  name: 'cost-first',
+  name: "cost-first",
 
-  select(task: TaskProfile, candidates: ModelEntry[], context: RoutingContext): RoutingDecision | null {
+  select(
+    task: TaskProfile,
+    candidates: ModelEntry[],
+    context: RoutingContext,
+  ): RoutingDecision | null {
     const minQuality = MIN_QUALITY[task.type] ?? 3;
 
     // Filter to models that meet the quality threshold
     const eligible = candidates.filter(
-      (m) => m.status === 'available' && m.capabilities.qualityTier <= minQuality,
+      (m) =>
+        m.status === "available" && m.capabilities.qualityTier <= minQuality,
     );
     if (eligible.length === 0) return null;
 
@@ -41,7 +52,7 @@ export const costFirstStrategy: RoutingStrategy = {
       fallbacks,
       reason: `Cost-first: cheapest model (${selected.name}) meeting quality tier ${minQuality} for ${task.type}`,
       estimatedCost: estimateCost(selected, task),
-      strategy: 'cost-first',
+      strategy: "cost-first",
     };
   },
 };

@@ -1,4 +1,4 @@
-import type { ToolRegistry } from "@brainstorm/tools";
+import type { ToolRegistry } from "@brainst0rm/tools";
 
 /**
  * MCP Server configuration — matches .brainstorm/mcp.json format.

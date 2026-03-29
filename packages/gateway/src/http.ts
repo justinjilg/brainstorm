@@ -1,4 +1,4 @@
-import { createLogger } from "@brainstorm/shared";
+import { createLogger } from "@brainst0rm/shared";
 
 const log = createLogger("gateway");
 

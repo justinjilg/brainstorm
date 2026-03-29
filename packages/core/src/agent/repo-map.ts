@@ -480,7 +480,7 @@ export function generateRepoMap(projectPath: string, maxFiles = 20): string {
 
     // Import relationships (local imports only, skip node_modules)
     const localImports = entry.imports.filter(
-      (imp) => imp.startsWith(".") || imp.startsWith("@brainstorm/"),
+      (imp) => imp.startsWith(".") || imp.startsWith("@brainst0rm/"),
     );
     if (localImports.length > 0) {
       const importList =
