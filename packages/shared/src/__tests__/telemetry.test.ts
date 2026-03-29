@@ -2,26 +2,34 @@ import { describe, it, expect } from "vitest";
 import { serializeRoutingMetadata } from "../telemetry.js";
 import type { TaskProfile, RoutingDecision } from "../types.js";
 
-describe("serializeRoutingMetadata", () => {
-  const createMinimalTask = (): TaskProfile => ({
-    type: "code-generation",
-    complexity: "moderate",
-    requiresToolUse: true,
-    requiresReasoning: false,
-  });
+// These tests verify serialization behavior, not type correctness.
+// Partial objects are intentional — serializeRoutingMetadata only reads
+// the fields it serializes. Using wrapper to cast partials safely.
+const serialize = (task: any, decision: any) =>
+  serializeRoutingMetadata(task as TaskProfile, decision as RoutingDecision);
 
-  const createMinimalDecision = (): RoutingDecision => ({
-    model: { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet" },
-    strategy: "quality-first",
-    estimatedCost: 0.123456789,
-    reason: "Selected for quality",
-  });
+describe("serializeRoutingMetadata", () => {
+  const createMinimalTask = (): TaskProfile =>
+    ({
+      type: "code-generation",
+      complexity: "moderate",
+      requiresToolUse: true,
+      requiresReasoning: false,
+    }) as any;
+
+  const createMinimalDecision = (): RoutingDecision =>
+    ({
+      model: { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet" },
+      strategy: "quality-first",
+      estimatedCost: 0.123456789,
+      reason: "Selected for quality",
+    }) as any;
 
   it("returns valid JSON string", () => {
     const task = createMinimalTask();
     const decision = createMinimalDecision();
 
-    const result = serializeRoutingMetadata(task, decision);
+    const result = serialize(task, decision);
 
     expect(result).toBeDefined();
     expect(() => JSON.parse(result!)).not.toThrow();
@@ -31,7 +39,7 @@ describe("serializeRoutingMetadata", () => {
     const task = createMinimalTask();
     const decision = createMinimalDecision();
 
-    const result = serializeRoutingMetadata(task, decision);
+    const result = serialize(task, decision);
     const parsed = JSON.parse(result!);
 
     expect(parsed).toMatchObject({
@@ -49,14 +57,14 @@ describe("serializeRoutingMetadata", () => {
 
   it("strips non-ASCII characters from reason field", () => {
     const task = createMinimalTask();
-    const decision: RoutingDecision = {
+    const decision = {
       model: { id: "model-1", name: "Model 1" },
       strategy: "combined",
       estimatedCost: 0.01,
       reason: "Selected for 性能 and émojis 🚀",
     };
 
-    const result = serializeRoutingMetadata(task, decision);
+    const result = serialize(task, decision);
     const parsed = JSON.parse(result!);
 
     // Non-ASCII characters should be removed
@@ -67,7 +75,7 @@ describe("serializeRoutingMetadata", () => {
   });
 
   it("ensures only ASCII characters in output", () => {
-    const task: TaskProfile = {
+    const task = {
       type: "code-generation",
       complexity: "complex",
       requiresToolUse: true,
@@ -75,14 +83,14 @@ describe("serializeRoutingMetadata", () => {
       language: "TypeScript",
       domain: "web",
     };
-    const decision: RoutingDecision = {
+    const decision = {
       model: { id: "model-1", name: "Model 1" },
       strategy: "cost-first",
       estimatedCost: 0.5,
       reason: "Good choice 👍 for français",
     };
 
-    const result = serializeRoutingMetadata(task, decision);
+    const result = serialize(task, decision);
 
     // Verify all characters are in ASCII range (0x20-0x7E)
     expect(result).toBeDefined();
@@ -94,7 +102,7 @@ describe("serializeRoutingMetadata", () => {
   });
 
   it("respects max 10 key limit", () => {
-    const task: TaskProfile = {
+    const task = {
       type: "code-generation",
       complexity: "complex",
       requiresToolUse: true,
@@ -102,14 +110,14 @@ describe("serializeRoutingMetadata", () => {
       language: "TypeScript",
       domain: "backend",
     };
-    const decision: RoutingDecision = {
+    const decision = {
       model: { id: "model-1", name: "Model 1" },
       strategy: "combined",
       estimatedCost: 0.01,
       reason: "This is a good reason",
     };
 
-    const result = serializeRoutingMetadata(task, decision);
+    const result = serialize(task, decision);
     const parsed = JSON.parse(result!);
     const keyCount = Object.keys(parsed).length;
 
@@ -117,22 +125,22 @@ describe("serializeRoutingMetadata", () => {
   });
 
   it("prioritizes language over domain and reason for optional fields", () => {
-    const task: TaskProfile = {
+    const task = {
       type: "code-generation",
-      complexity: "medium",
+      complexity: "moderate",
       requiresToolUse: false,
       requiresReasoning: true,
       language: "Python",
       domain: "data-science",
     };
-    const decision: RoutingDecision = {
+    const decision = {
       model: { id: "model-1", name: "Model 1" },
       strategy: "quality-first",
       estimatedCost: 0.02,
       reason: "Best for this task",
     };
 
-    const result = serializeRoutingMetadata(task, decision);
+    const result = serialize(task, decision);
     const parsed = JSON.parse(result!);
 
     // Language should be included as the first optional field
@@ -143,21 +151,21 @@ describe("serializeRoutingMetadata", () => {
   });
 
   it("includes domain when language is not present", () => {
-    const task: TaskProfile = {
+    const task = {
       type: "analysis",
       complexity: "simple",
       requiresToolUse: false,
       requiresReasoning: false,
       domain: "finance",
     };
-    const decision: RoutingDecision = {
+    const decision = {
       model: { id: "model-2", name: "Model 2" },
       strategy: "cost-first",
       estimatedCost: 0.005,
       reason: "Cheapest option",
     };
 
-    const result = serializeRoutingMetadata(task, decision);
+    const result = serialize(task, decision);
     const parsed = JSON.parse(result!);
 
     expect(parsed.lang).toBeUndefined();
@@ -166,20 +174,20 @@ describe("serializeRoutingMetadata", () => {
   });
 
   it("includes reason when language and domain are not present", () => {
-    const task: TaskProfile = {
+    const task = {
       type: "conversation",
-      complexity: "medium",
+      complexity: "moderate",
       requiresToolUse: true,
       requiresReasoning: true,
     };
-    const decision: RoutingDecision = {
+    const decision = {
       model: { id: "model-3", name: "Model 3" },
       strategy: "combined",
       estimatedCost: 0.015,
       reason: "Balanced approach for general tasks",
     };
 
-    const result = serializeRoutingMetadata(task, decision);
+    const result = serialize(task, decision);
     const parsed = JSON.parse(result!);
 
     expect(parsed.lang).toBeUndefined();
@@ -190,14 +198,14 @@ describe("serializeRoutingMetadata", () => {
   it("truncates reason to 64 characters", () => {
     const task = createMinimalTask();
     const longReason = "A".repeat(100);
-    const decision: RoutingDecision = {
+    const decision = {
       model: { id: "model-1", name: "Model 1" },
       strategy: "quality-first",
       estimatedCost: 0.01,
       reason: longReason,
     };
 
-    const result = serializeRoutingMetadata(task, decision);
+    const result = serialize(task, decision);
     const parsed = JSON.parse(result!);
 
     expect(parsed.rs).toBeDefined();
@@ -209,7 +217,7 @@ describe("serializeRoutingMetadata", () => {
     const invalidTask = null as any;
     const decision = createMinimalDecision();
 
-    const result = serializeRoutingMetadata(invalidTask, decision);
+    const result = serialize(invalidTask, decision);
 
     expect(result).toBeUndefined();
   });
@@ -218,7 +226,7 @@ describe("serializeRoutingMetadata", () => {
     const task = createMinimalTask();
     const invalidDecision = null as any;
 
-    const result = serializeRoutingMetadata(task, invalidDecision);
+    const result = serialize(task, invalidDecision);
 
     expect(result).toBeUndefined();
   });
@@ -230,21 +238,21 @@ describe("serializeRoutingMetadata", () => {
       estimatedCost: 0.01,
     } as any;
 
-    const result = serializeRoutingMetadata(task, decision);
+    const result = serialize(task, decision);
 
     expect(result).toBeUndefined();
   });
 
   it("rounds estimated cost to 6 decimal places", () => {
     const task = createMinimalTask();
-    const decision: RoutingDecision = {
+    const decision = {
       model: { id: "model-1", name: "Model 1" },
       strategy: "cost-first",
       estimatedCost: 0.123456789123,
       reason: "Test cost rounding",
     };
 
-    const result = serializeRoutingMetadata(task, decision);
+    const result = serialize(task, decision);
     const parsed = JSON.parse(result!);
 
     expect(parsed.ec).toBe(0.123457);
@@ -252,7 +260,7 @@ describe("serializeRoutingMetadata", () => {
 
   it("drops optional fields when exceeding 512 byte limit", () => {
     // Create a scenario where adding optional fields pushes us over 512 bytes
-    const task: TaskProfile = {
+    const task = {
       type: "A".repeat(200),
       complexity: "B".repeat(200),
       requiresToolUse: true,
@@ -260,14 +268,14 @@ describe("serializeRoutingMetadata", () => {
       language: "TypeScript",
       domain: "backend",
     };
-    const decision: RoutingDecision = {
+    const decision = {
       model: { id: "C".repeat(200), name: "Model" },
       strategy: "quality-first",
       estimatedCost: 0.01,
       reason: "Some reason for this choice",
     };
 
-    const result = serializeRoutingMetadata(task, decision);
+    const result = serialize(task, decision);
 
     expect(result).toBeDefined();
 
@@ -285,14 +293,14 @@ describe("serializeRoutingMetadata", () => {
 
   it("handles zero estimated cost", () => {
     const task = createMinimalTask();
-    const decision: RoutingDecision = {
+    const decision = {
       model: { id: "free-model", name: "Free Model" },
       strategy: "cost-first",
       estimatedCost: 0,
       reason: "Free tier",
     };
 
-    const result = serializeRoutingMetadata(task, decision);
+    const result = serialize(task, decision);
     const parsed = JSON.parse(result!);
 
     expect(parsed.ec).toBe(0);
@@ -303,13 +311,13 @@ describe("serializeRoutingMetadata", () => {
 
     strategies.forEach((strategy) => {
       const task = createMinimalTask();
-      const decision: RoutingDecision = {
+      const decision = {
         model: { id: "model-1", name: "Model 1" },
         strategy,
         estimatedCost: 0.01,
       };
 
-      const result = serializeRoutingMetadata(task, decision);
+      const result = serialize(task, decision);
       const parsed = JSON.parse(result!);
 
       expect(parsed.st).toBe(strategy);

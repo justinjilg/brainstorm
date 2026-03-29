@@ -51,6 +51,8 @@ interface ChatAppProps {
     compact?: () => Promise<void>;
     dream?: () => Promise<string>;
     vault?: (action: string, args: string) => Promise<string>;
+    getContextWindow?: () => number;
+    gateway?: any;
   };
 }
 
