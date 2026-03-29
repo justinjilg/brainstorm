@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
-import { createLogger } from "@brainstorm/shared";
+import { gatewayRequest } from "./http.js";
+
 import type {
   GatewaySelf,
   GatewayDiscovery,
@@ -16,8 +17,6 @@ import type {
   MemoryEntry,
   GatewayAgentProfile,
 } from "./types.js";
-
-const log = createLogger("gateway");
 
 /**
  * BrainstormRouter gateway client.
@@ -228,55 +227,9 @@ export class BrainstormGateway {
     useAdmin = false,
   ): Promise<any> {
     const key = useAdmin && this.adminKey ? this.adminKey : this.apiKey;
-    const url = `${this.baseUrl}${path}`;
-
-    try {
-      const response = await fetch(url, {
-        method,
-        headers: {
-          Authorization: `Bearer ${key}`,
-          "X-CSRF-Token": this.csrfToken,
-          ...(body ? { "Content-Type": "application/json" } : {}),
-        },
-        ...(body ? { body: JSON.stringify(body) } : {}),
-        signal: AbortSignal.timeout(15_000),
-      });
-
-      // Parse body safely — handle non-JSON error responses (502, 504, HTML pages)
-      const text = await response.text();
-      let data: any;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        const preview = text.slice(0, 200).replace(/\n/g, " ");
-        const msg = `HTTP ${response.status}: non-JSON response (${preview})`;
-        log.warn({ method, path, status: response.status }, msg);
-        throw new Error(`Gateway ${method} ${path}: ${msg}`);
-      }
-
-      if (!response.ok) {
-        const msg = data?.error?.message ?? `HTTP ${response.status}`;
-        log.warn(
-          { method, path, status: response.status, error: msg },
-          "Gateway request failed",
-        );
-        throw new Error(`Gateway ${method} ${path}: ${msg}`);
-      }
-
-      return data;
-    } catch (error: any) {
-      if (error.message?.startsWith("Gateway ")) throw error;
-      if (error.name === "TimeoutError" || error.name === "AbortError") {
-        throw new Error(
-          `Gateway ${method} ${path}: request timed out after 15s`,
-        );
-      }
-      log.warn(
-        { method, path, errorMessage: error.message },
-        "Gateway request error",
-      );
-      throw new Error(`Gateway ${method} ${path}: ${error.message}`);
-    }
+    return gatewayRequest(this.baseUrl, key, method, path, body, "Gateway", {
+      "X-CSRF-Token": this.csrfToken,
+    });
   }
 }
 
