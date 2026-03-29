@@ -335,8 +335,8 @@ describe("scoreProbe", () => {
     });
   });
 
-  describe("unimplemented checks", () => {
-    it("should return placeholder for code_compiles", () => {
+  describe("code_compiles and files_modified", () => {
+    it("should check code_compiles against sandbox dir", () => {
       const probe = createProbe({
         code_compiles: true,
       });
@@ -345,14 +345,12 @@ describe("scoreProbe", () => {
 
       const checks = scoreProbe(probe, result);
       expect(checks).toHaveLength(1);
-      expect(checks[0]).toEqual({
-        check: "code_compiles",
-        passed: true,
-        detail: "Compilation check not yet implemented",
-      });
+      expect(checks[0].check).toBe("code_compiles");
+      // /tmp/sandbox doesn't exist in test, so no TS files found
+      expect(checks[0].passed).toBe(false);
     });
 
-    it("should return placeholder for files_modified", () => {
+    it("should check each file individually for files_modified", () => {
       const probe = createProbe({
         files_modified: ["src/main.ts", "package.json"],
       });
@@ -360,12 +358,10 @@ describe("scoreProbe", () => {
       const result = createResult({});
 
       const checks = scoreProbe(probe, result);
-      expect(checks).toHaveLength(1);
-      expect(checks[0]).toEqual({
-        check: "files_modified: src/main.ts, package.json",
-        passed: true,
-        detail: "File modification check not yet implemented",
-      });
+      // One check per file
+      expect(checks).toHaveLength(2);
+      expect(checks[0].check).toBe("files_modified: src/main.ts");
+      expect(checks[1].check).toBe("files_modified: package.json");
     });
   });
 });
