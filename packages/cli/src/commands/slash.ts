@@ -1011,7 +1011,10 @@ commands.push({
       const key =
         process.env._BR_RESOLVED_KEY ?? process.env.BRAINSTORM_API_KEY;
       if (!key) return "No BR API key available.";
-      const intel = new IntelligenceAPIClient(key);
+      const intel = new IntelligenceAPIClient(
+        "https://api.brainstormrouter.com",
+        key,
+      );
       const taskType = args || "code-generation";
       const recs = await intel.getRecommendations(taskType, "typescript");
       if (!recs || recs.length === 0)
