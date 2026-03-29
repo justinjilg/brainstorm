@@ -2537,6 +2537,172 @@ program
     console.log();
   });
 
+// ── Analyze Command ───────────────────────────────────────────────
+
+program
+  .command("analyze")
+  .description(
+    "Analyze a codebase — languages, frameworks, dependencies, complexity",
+  )
+  .argument("[path]", "Project path to analyze", ".")
+  .option("--json", "Output as JSON")
+  .action(async (projectPath: string, opts: { json?: boolean }) => {
+    const { resolve } = await import("node:path");
+    const absPath = resolve(projectPath);
+
+    console.log(`\n  Analyzing ${absPath}...\n`);
+    const startTime = Date.now();
+
+    const { analyzeProject } = await import("@brainstorm/ingest");
+    const analysis = analyzeProject(absPath);
+    const elapsed = Date.now() - startTime;
+
+    if (opts.json) {
+      console.log(JSON.stringify(analysis, null, 2));
+      return;
+    }
+
+    console.log("  ══════════════════════════════════════════════════");
+    console.log("   Codebase Analysis");
+    console.log("  ══════════════════════════════════════════════════\n");
+
+    console.log(
+      `  ${analysis.summary.totalFiles} files | ${analysis.summary.totalLines.toLocaleString()} lines | ${analysis.summary.primaryLanguage}`,
+    );
+    console.log(
+      `  ${analysis.summary.moduleCount} modules | avg complexity: ${analysis.summary.avgComplexity}/100 | ${elapsed}ms\n`,
+    );
+
+    // Languages
+    console.log("  Languages:");
+    for (const l of analysis.languages.languages.slice(0, 8)) {
+      const bar = "█".repeat(Math.max(1, Math.round(l.percentage / 5)));
+      console.log(
+        `    ${l.language.padEnd(15)} ${bar} ${l.percentage}% (${l.files} files, ${l.lines.toLocaleString()} lines)`,
+      );
+    }
+
+    // Frameworks
+    const hasStack =
+      analysis.frameworks.frameworks.length > 0 ||
+      analysis.frameworks.buildTools.length > 0;
+    if (hasStack) {
+      console.log("\n  Stack:");
+      if (analysis.frameworks.frameworks.length > 0)
+        console.log(
+          `    Frameworks:  ${analysis.frameworks.frameworks.join(", ")}`,
+        );
+      if (analysis.frameworks.buildTools.length > 0)
+        console.log(
+          `    Build:       ${analysis.frameworks.buildTools.join(", ")}`,
+        );
+      if (analysis.frameworks.databases.length > 0)
+        console.log(
+          `    Databases:   ${analysis.frameworks.databases.join(", ")}`,
+        );
+      if (analysis.frameworks.testing.length > 0)
+        console.log(
+          `    Testing:     ${analysis.frameworks.testing.join(", ")}`,
+        );
+      if (analysis.frameworks.deployment.length > 0)
+        console.log(
+          `    Deploy:      ${analysis.frameworks.deployment.join(", ")}`,
+        );
+      if (analysis.frameworks.ci.length > 0)
+        console.log(`    CI/CD:       ${analysis.frameworks.ci.join(", ")}`);
+    }
+
+    // Complexity hotspots
+    if (analysis.complexity.summary.hotspots.length > 0) {
+      console.log("\n  Complexity Hotspots (score > 70):");
+      for (const f of analysis.complexity.files
+        .filter((cf: any) => cf.score >= 70)
+        .slice(0, 8)) {
+        console.log(
+          `    ${f.path.padEnd(50)} score:${f.score} branches:${f.branchCount} nesting:${f.maxNesting}`,
+        );
+      }
+    }
+
+    // Module clusters
+    if (analysis.dependencies.clusters.length > 0) {
+      console.log("\n  Module Clusters (by size):");
+      for (const c of analysis.dependencies.clusters.slice(0, 8)) {
+        const cohesionLabel =
+          c.cohesion > 0.5 ? "high" : c.cohesion > 0.2 ? "med" : "low";
+        console.log(
+          `    ${c.directory.padEnd(40)} ${c.files.length} files  cohesion:${cohesionLabel}`,
+        );
+      }
+    }
+
+    console.log("\n  ──────────────────────────────────────────────────");
+    console.log(`  Run \`storm analyze --json\` for machine-readable output.`);
+    console.log();
+  });
+
+// ── Route Explain Command ─────────────────────────────────────────
+
+program
+  .command("route")
+  .description("Explain how Brainstorm classifies and routes a task")
+  .argument("[task]", "Task description to classify")
+  .option("--json", "Output as JSON")
+  .action(async (task: string | undefined, opts: { json?: boolean }) => {
+    const { classifyTask } = await import("@brainstorm/router");
+
+    const taskText = task ?? "write a function that validates email addresses";
+    const profile = classifyTask(taskText);
+
+    if (opts.json) {
+      console.log(JSON.stringify({ task: taskText, profile }, null, 2));
+      return;
+    }
+
+    console.log("\n  Route Explain");
+    console.log("  ══════════════════════════════════════════════════\n");
+    console.log(`  Task: "${taskText.slice(0, 80)}"`);
+    console.log();
+    console.log(`  Classification:`);
+    console.log(`    Type:       ${profile.type}`);
+    console.log(`    Complexity: ${profile.complexity}`);
+    console.log(`    Tools:      ${profile.requiresToolUse ? "yes" : "no"}`);
+    console.log(`    Reasoning:  ${profile.requiresReasoning ? "yes" : "no"}`);
+    if (profile.language) console.log(`    Language:   ${profile.language}`);
+    if (profile.domain) console.log(`    Domain:     ${profile.domain}`);
+    console.log(
+      `    Est tokens: ${profile.estimatedTokens.input}in / ${profile.estimatedTokens.output}out`,
+    );
+
+    console.log();
+    console.log(`  Routing Logic:`);
+    if (profile.type === "ingest")
+      console.log(`    → Ingest pipeline: analysis + docgen + infra setup`);
+    else if (profile.type === "audit")
+      console.log(`    → Full review pipeline: security + quality + tech debt`);
+    else if (profile.type === "migration")
+      console.log(`    → Migration pipeline: parallel agents per module`);
+    else if (profile.type === "documentation")
+      console.log(`    → Documentation pipeline: architecture + module docs`);
+    else if (profile.requiresReasoning)
+      console.log(
+        `    → Routes to frontier model (Opus/GPT-5.4) for reasoning`,
+      );
+    else if (
+      profile.complexity === "trivial" ||
+      profile.complexity === "simple"
+    )
+      console.log(
+        `    → Routes to fast/cheap model (Haiku/Flash) for simple tasks`,
+      );
+    else
+      console.log(
+        `    → Routes based on active strategy (quality/cost/combined)`,
+      );
+
+    console.log();
+  });
+
 // ── Loop Command ──────────────────────────────────────────────────
 
 program
