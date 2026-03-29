@@ -481,6 +481,79 @@ const commands: SlashCommand[] = [
       return lines.join("\n");
     },
   },
+  {
+    name: "intelligence",
+    aliases: ["intel"],
+    description: "Show what BrainstormRouter has learned",
+    usage: "/intelligence [--json]",
+    execute: async (args, _ctx) => {
+      const { createGatewayClient, createIntelligenceClient } =
+        await import("@brainstorm/gateway");
+      const gw = createGatewayClient();
+      if (!gw) return "No BRAINSTORM_API_KEY set.";
+
+      const intel = createIntelligenceClient();
+      const asJson = args.includes("--json");
+
+      const [leaderboard, usage, waste, forecast] = await Promise.all([
+        gw.getLeaderboard().catch(() => []),
+        gw.getUsageSummary("weekly").catch(() => null),
+        gw.getWasteInsights().catch(() => null),
+        gw.getForecast().catch(() => null),
+      ]);
+
+      if (asJson) {
+        return JSON.stringify({ leaderboard, usage, waste, forecast }, null, 2);
+      }
+
+      const lines: string[] = [];
+      lines.push("BrainstormRouter Intelligence Report");
+      lines.push("══════════════════════════════════════");
+
+      const ud = (usage as any)?.data?.[0];
+      const reqs = ud?.requestCount ?? 0;
+      lines.push(
+        `\nRequests: ${reqs.toLocaleString()} | Cost: $${(ud?.totalCostUsd ?? 0).toFixed(2)}`,
+      );
+
+      const real = leaderboard.filter(
+        (m: any) => m.id && !m.id.startsWith("cache/"),
+      );
+      if (real.length > 0) {
+        lines.push("\nTop Models:");
+        for (const m of real.slice(0, 5) as any[]) {
+          const name = m.model_id ?? m.id ?? "?";
+          const reward =
+            m.reward_score != null
+              ? (m.reward_score * 100).toFixed(0) + "%"
+              : "n/a";
+          lines.push(
+            `  ${name} — reward:${reward} (${m.sample_count ?? 0} samples)`,
+          );
+        }
+      }
+
+      const fc = (forecast as any)?.forecast;
+      if (fc) {
+        const trend =
+          fc.trend === "increasing"
+            ? "↑"
+            : fc.trend === "decreasing"
+              ? "↓"
+              : "→";
+        lines.push(
+          `\nForecast: $${(fc.avgDailySpendUsd ?? 0).toFixed(2)}/day ${trend}`,
+        );
+      }
+
+      const w = waste as any;
+      if (w?.estimatedWasteUsd > 0) {
+        lines.push(`\nRecoverable waste: $${w.estimatedWasteUsd.toFixed(4)}`);
+      }
+
+      return lines.join("\n");
+    },
+  },
 ];
 
 // ── Role Commands ─────────────────────────────────────────────────────
