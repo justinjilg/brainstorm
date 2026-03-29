@@ -113,6 +113,52 @@ const TASK_SIGNALS: Record<TaskType, string[]> = {
     "codebase",
     "multiple files",
   ],
+  ingest: [
+    "ingest",
+    "understand this codebase",
+    "analyze the project",
+    "set up ai",
+    "set up infrastructure",
+    "onboard",
+    "legacy",
+    "what is this project",
+    "map the codebase",
+    "learn this codebase",
+  ],
+  audit: [
+    "audit",
+    "review everything",
+    "full review",
+    "security review",
+    "code review the entire",
+    "tech debt",
+    "find all issues",
+    "quality check",
+    "health check",
+  ],
+  migration: [
+    "migrate",
+    "upgrade",
+    "convert",
+    "port",
+    "modernize",
+    "deprecated",
+    "move from",
+    "switch to",
+    "replace all uses of",
+    "update all",
+  ],
+  documentation: [
+    "document",
+    "write docs",
+    "generate documentation",
+    "readme",
+    "api docs",
+    "architecture doc",
+    "explain the system",
+    "onboarding guide",
+    "write a guide",
+  ],
 };
 
 const COMPLEXITY_SIGNALS: Record<
@@ -278,6 +324,10 @@ function estimateTokens(
     analysis: 800,
     search: 150,
     "multi-file-edit": 2000,
+    ingest: 5000,
+    audit: 3000,
+    migration: 2000,
+    documentation: 2000,
   };
 
   return {
@@ -294,14 +344,24 @@ function requiresTools(type: TaskType): boolean {
     "debugging",
     "search",
     "multi-file-edit",
+    "ingest",
+    "audit",
+    "migration",
+    "documentation",
   ].includes(type);
 }
 
 function requiresReasoning(type: TaskType, complexity: Complexity): boolean {
   if (["complex", "expert"].includes(complexity)) return true;
-  return ["debugging", "analysis", "refactoring", "multi-file-edit"].includes(
-    type,
-  );
+  return [
+    "debugging",
+    "analysis",
+    "refactoring",
+    "multi-file-edit",
+    "ingest",
+    "audit",
+    "migration",
+  ].includes(type);
 }
 
 function detectLanguage(lower: string): string | undefined {

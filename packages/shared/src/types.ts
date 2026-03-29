@@ -9,7 +9,11 @@ export type TaskType =
   | "conversation"
   | "analysis"
   | "search"
-  | "multi-file-edit";
+  | "multi-file-edit"
+  | "ingest"
+  | "audit"
+  | "migration"
+  | "documentation";
 
 export type Complexity =
   | "trivial"
