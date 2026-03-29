@@ -106,6 +106,8 @@ const commands: SlashCommand[] = [
         "  /compact [focus]   Compact context with optional focus",
         "  /context           Show token breakdown",
         "  /cost              Show session cost",
+        "  /plan              Toggle plan mode (describe before execute)",
+        "  /efficiency        Token usage and routing savings",
         "  /clear             Clear conversation",
         "",
         "Roles",
@@ -554,6 +556,60 @@ const commands: SlashCommand[] = [
       return lines.join("\n");
     },
   },
+  {
+    name: "plan",
+    aliases: [],
+    description: "Toggle plan mode — agent describes changes before executing",
+    usage: "/plan",
+    execute: async (_args, ctx) => {
+      const current = ctx.getMode?.() ?? "auto";
+      if (current === "plan") {
+        ctx.setMode?.("auto");
+        return "Plan mode OFF — agent will execute directly.";
+      }
+      ctx.setMode?.("plan");
+      return "Plan mode ON — agent will describe changes before executing. Approve to proceed.";
+    },
+  },
+  {
+    name: "efficiency",
+    aliases: ["eff"],
+    description: "Show token efficiency and cost savings from routing",
+    usage: "/efficiency",
+    execute: async (_args, ctx) => {
+      const tokens = ctx.getTokenCount?.() ?? { input: 0, output: 0 };
+      const cost = ctx.getSessionCost?.() ?? 0;
+      const totalTokens = tokens.input + tokens.output;
+
+      // Estimate what single-model costs would be
+      const opusCostPer1M = 75; // output price
+      const sonnetCostPer1M = 15;
+      const haikuCostPer1M = 4;
+
+      const opusCost = (totalTokens / 1_000_000) * opusCostPer1M;
+      const sonnetCost = (totalTokens / 1_000_000) * sonnetCostPer1M;
+      const haikuCost = (totalTokens / 1_000_000) * haikuCostPer1M;
+
+      const savings =
+        opusCost > 0 ? Math.round((1 - cost / opusCost) * 100) : 0;
+
+      const lines = [
+        "Token Efficiency Report",
+        "══════════════════════════════════════",
+        "",
+        `Tokens used: ${totalTokens.toLocaleString()} (${tokens.input.toLocaleString()} in / ${tokens.output.toLocaleString()} out)`,
+        `Actual cost:  $${cost.toFixed(4)} (with routing)`,
+        "",
+        "If you used a single model for everything:",
+        `  Opus only:   $${opusCost.toFixed(4)}`,
+        `  Sonnet only: $${sonnetCost.toFixed(4)}`,
+        `  Haiku only:  $${haikuCost.toFixed(4)}`,
+        "",
+        `Savings vs Opus: ${savings}%`,
+      ];
+      return lines.join("\n");
+    },
+  },
 ];
 
 // ── Role Commands ─────────────────────────────────────────────────────
@@ -981,6 +1037,78 @@ commands.push({
     const updated = _pendingWizard.assignments[stepIdx];
 
     return `${a.stepRole} → ${updated.modelLabel}\n\n${formatPipeline(_pendingWizard)}\n\n/build-go to run`;
+  },
+});
+
+// ── Plan & Efficiency Commands ────────────────────────────────────────
+
+commands.push({
+  name: "plan",
+  aliases: [],
+  description: "Toggle plan mode — agent describes changes before executing",
+  usage: "/plan",
+  execute: (_args, ctx) => {
+    const current = ctx.getMode?.() ?? "confirm";
+    if (current === "plan") {
+      ctx.setMode?.("confirm");
+      return "Plan mode OFF — agent will execute changes directly (with confirmation).";
+    }
+    ctx.setMode?.("plan");
+    return "Plan mode ON — agent will describe changes before executing. Approve to proceed.";
+  },
+});
+
+commands.push({
+  name: "efficiency",
+  aliases: ["eff"],
+  description: "Show token efficiency and routing savings",
+  usage: "/efficiency",
+  execute: (_args, ctx) => {
+    const tokens = ctx.getTokenCount?.() ?? { input: 0, output: 0 };
+    const cost = ctx.getSessionCost?.() ?? 0;
+    const totalTokens = tokens.input + tokens.output;
+
+    // Opus 4.6 pricing: $15/1M input, $75/1M output
+    const opusInputCost = (tokens.input / 1_000_000) * 15;
+    const opusOutputCost = (tokens.output / 1_000_000) * 75;
+    const opusCost = opusInputCost + opusOutputCost;
+
+    const savings = opusCost > 0 ? ((opusCost - cost) / opusCost) * 100 : 0;
+
+    const lines = [
+      "Token Efficiency Report",
+      "",
+      `  Input tokens:   ${tokens.input.toLocaleString()}`,
+      `  Output tokens:  ${tokens.output.toLocaleString()}`,
+      `  Total tokens:   ${totalTokens.toLocaleString()}`,
+      "",
+      `  Session cost:   $${cost.toFixed(4)}`,
+    ];
+
+    if (totalTokens > 0) {
+      lines.push(
+        `  Cost per 1K:    $${((cost / totalTokens) * 1000).toFixed(4)}`,
+      );
+    }
+
+    lines.push("");
+    lines.push(`  If you used Opus for everything: $${opusCost.toFixed(4)}`);
+    lines.push(`  With routing:                    $${cost.toFixed(4)}`);
+    lines.push(
+      `  Savings:                         ${savings > 0 ? savings.toFixed(1) : "0"}%`,
+    );
+
+    if (savings > 50) {
+      lines.push("");
+      lines.push("  Routing is saving you significant cost.");
+    } else if (savings > 0) {
+      lines.push("");
+      lines.push(
+        "  Tip: Use /strategy cost-first for cheaper tasks to increase savings.",
+      );
+    }
+
+    return lines.join("\n");
   },
 });
 
