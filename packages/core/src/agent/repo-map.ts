@@ -20,11 +20,19 @@ import {
 } from "node:fs";
 import { join, relative, extname, basename } from "node:path";
 
+export interface SymbolSignature {
+  name: string;
+  kind: "function" | "class" | "interface" | "type" | "const" | "enum";
+  signature: string;
+  exported: boolean;
+}
+
 export interface RepoMapEntry {
   file: string;
   exports: string[];
   imports: string[];
   symbols: string[];
+  signatures: SymbolSignature[];
   lineCount: number;
 }
 
@@ -198,13 +206,16 @@ function parseFile(filePath: string, content: string): RepoMapEntry {
   const exports: string[] = [];
   const imports: string[] = [];
   const symbols: string[] = [];
+  const signatures: SymbolSignature[] = [];
 
   const ext = extname(filePath);
 
   if ([".ts", ".tsx", ".js", ".jsx"].includes(ext)) {
     parseTypeScript(content, exports, imports, symbols);
+    extractTypeScriptSignatures(content, signatures);
   } else if (ext === ".py") {
     parsePython(content, exports, imports, symbols);
+    extractPythonSignatures(content, signatures);
   }
 
   return {
@@ -212,6 +223,7 @@ function parseFile(filePath: string, content: string): RepoMapEntry {
     exports: [...new Set(exports)],
     imports: [...new Set(imports)],
     symbols: [...new Set(symbols)],
+    signatures,
     lineCount: content.split("\n").length,
   };
 }
@@ -282,6 +294,238 @@ function parsePython(
   for (const m of importMatches) {
     imports.push(m[1] ?? m[2]);
   }
+}
+
+/**
+ * Extract function/class/interface/type signatures from TypeScript content.
+ */
+function extractTypeScriptSignatures(
+  content: string,
+  signatures: SymbolSignature[],
+): void {
+  // Exported function signatures: capture up to the opening brace or return type
+  const exportedFnRe =
+    /export\s+(?:default\s+)?(?:async\s+)?function\s+(\w+)\s*(<[^>]*>)?\s*\(([^)]*)\)(?:\s*:\s*([^\n{]+))?/g;
+  for (const m of content.matchAll(exportedFnRe)) {
+    const generics = m[2] ?? "";
+    const params = m[3].trim();
+    const returnType = m[4]?.trim() ?? "void";
+    signatures.push({
+      name: m[1],
+      kind: "function",
+      signature: `function ${m[1]}${generics}(${params}): ${returnType}`,
+      exported: true,
+    });
+  }
+
+  // Non-exported function signatures
+  const fnRe =
+    /^(?!export)(?:async\s+)?function\s+(\w+)\s*(<[^>]*>)?\s*\(([^)]*)\)(?:\s*:\s*([^\n{]+))?/gm;
+  for (const m of content.matchAll(fnRe)) {
+    const generics = m[2] ?? "";
+    const params = m[3].trim();
+    const returnType = m[4]?.trim() ?? "void";
+    signatures.push({
+      name: m[1],
+      kind: "function",
+      signature: `function ${m[1]}${generics}(${params}): ${returnType}`,
+      exported: false,
+    });
+  }
+
+  // Exported class declarations
+  const classRe =
+    /export\s+(?:default\s+)?(?:abstract\s+)?class\s+(\w+)(?:\s+extends\s+(\w+))?(?:\s+implements\s+([^\n{]+))?/g;
+  for (const m of content.matchAll(classRe)) {
+    let sig = `class ${m[1]}`;
+    if (m[2]) sig += ` extends ${m[2].trim()}`;
+    if (m[3]) sig += ` implements ${m[3].trim()}`;
+    signatures.push({
+      name: m[1],
+      kind: "class",
+      signature: sig,
+      exported: true,
+    });
+  }
+
+  // Exported interface declarations
+  const ifaceRe =
+    /export\s+(?:default\s+)?interface\s+(\w+)(?:\s+extends\s+([^\n{]+))?/g;
+  for (const m of content.matchAll(ifaceRe)) {
+    let sig = `interface ${m[1]}`;
+    if (m[2]) sig += ` extends ${m[2].trim()}`;
+    signatures.push({
+      name: m[1],
+      kind: "interface",
+      signature: sig,
+      exported: true,
+    });
+  }
+
+  // Exported type aliases
+  const typeRe = /export\s+type\s+(\w+)(?:<[^>]*>)?\s*=/g;
+  for (const m of content.matchAll(typeRe)) {
+    signatures.push({
+      name: m[1],
+      kind: "type",
+      signature: `type ${m[1]}`,
+      exported: true,
+    });
+  }
+
+  // Exported enums
+  const enumRe = /export\s+(?:const\s+)?enum\s+(\w+)/g;
+  for (const m of content.matchAll(enumRe)) {
+    signatures.push({
+      name: m[1],
+      kind: "enum",
+      signature: `enum ${m[1]}`,
+      exported: true,
+    });
+  }
+
+  // Exported const (arrow functions and values)
+  const constRe = /export\s+const\s+(\w+)(?:\s*:\s*([^\n=]+))?\s*=/g;
+  for (const m of content.matchAll(constRe)) {
+    const typeAnnotation = m[2]?.trim();
+    signatures.push({
+      name: m[1],
+      kind: "const",
+      signature: typeAnnotation
+        ? `const ${m[1]}: ${typeAnnotation}`
+        : `const ${m[1]}`,
+      exported: true,
+    });
+  }
+}
+
+/**
+ * Extract function/class signatures from Python content.
+ */
+function extractPythonSignatures(
+  content: string,
+  signatures: SymbolSignature[],
+): void {
+  // Module-level def (no indent)
+  const defRe = /^def\s+(\w+)\s*\(([^)]*)\)(?:\s*->\s*(\S+))?/gm;
+  for (const m of content.matchAll(defRe)) {
+    const returnType = m[3] ?? "None";
+    signatures.push({
+      name: m[1],
+      kind: "function",
+      signature: `def ${m[1]}(${m[2].trim()}) -> ${returnType}`,
+      exported: !m[1].startsWith("_"),
+    });
+  }
+
+  // Module-level class
+  const classRe = /^class\s+(\w+)(?:\(([^)]*)\))?/gm;
+  for (const m of content.matchAll(classRe)) {
+    const bases = m[2]?.trim();
+    const sig = bases ? `class ${m[1]}(${bases})` : `class ${m[1]}`;
+    signatures.push({
+      name: m[1],
+      kind: "class",
+      signature: sig,
+      exported: !m[1].startsWith("_"),
+    });
+  }
+}
+
+/**
+ * Generate a structured repo map string suitable for system prompt injection.
+ *
+ * Includes function/class signatures, export lists per file, and import relationships.
+ * This is the primary entry point for the agent context builder.
+ *
+ * @param projectPath - Root directory of the project
+ * @param maxFiles - Maximum number of top files to include (default: 20)
+ */
+export function generateRepoMap(projectPath: string, maxFiles = 20): string {
+  const map = buildRepoMap(projectPath, maxFiles);
+  if (map.topFiles.length === 0) return "";
+
+  const lines: string[] = [
+    `# Repository Map (${map.topFiles.length} key files of ${map.totalFiles} total)`,
+    "",
+  ];
+
+  for (const file of map.topFiles) {
+    const entry = map.entries.find((e) => e.file === file);
+    if (!entry) continue;
+
+    lines.push(`## ${entry.file} (${entry.lineCount} lines)`);
+
+    // Export list
+    if (entry.exports.length > 0) {
+      const exportList =
+        entry.exports.length <= 8
+          ? entry.exports.join(", ")
+          : entry.exports.slice(0, 8).join(", ") +
+            ` (+${entry.exports.length - 8} more)`;
+      lines.push(`  Exports: ${exportList}`);
+    }
+
+    // Signatures (only exported ones, limit to 10)
+    const exportedSigs = entry.signatures.filter((s) => s.exported);
+    if (exportedSigs.length > 0) {
+      const sigsToShow = exportedSigs.slice(0, 10);
+      for (const sig of sigsToShow) {
+        lines.push(`  - ${sig.signature}`);
+      }
+      if (exportedSigs.length > 10) {
+        lines.push(`  ... +${exportedSigs.length - 10} more signatures`);
+      }
+    }
+
+    // Import relationships (local imports only, skip node_modules)
+    const localImports = entry.imports.filter(
+      (imp) => imp.startsWith(".") || imp.startsWith("@brainstorm/"),
+    );
+    if (localImports.length > 0) {
+      const importList =
+        localImports.length <= 6
+          ? localImports.join(", ")
+          : localImports.slice(0, 6).join(", ") +
+            ` (+${localImports.length - 6} more)`;
+      lines.push(`  Imports: ${importList}`);
+    }
+
+    lines.push("");
+  }
+
+  // Import relationship summary (top edges)
+  const edgeSummary = buildImportSummary(map);
+  if (edgeSummary.length > 0) {
+    lines.push("## Import Graph (most connected)");
+    for (const line of edgeSummary) {
+      lines.push(`  ${line}`);
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Build a compact summary of the most important import relationships.
+ */
+function buildImportSummary(map: RepoMap): string[] {
+  // Count incoming edges per file
+  const inDegree = new Map<string, number>();
+  for (const edge of map.edges) {
+    inDegree.set(edge.to, (inDegree.get(edge.to) ?? 0) + 1);
+  }
+
+  // Sort by incoming edges descending, take top 5
+  const sorted = [...inDegree.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5);
+
+  return sorted.map(
+    ([file, count]) =>
+      `${file} <- imported by ${count} file${count > 1 ? "s" : ""}`,
+  );
 }
 
 /**

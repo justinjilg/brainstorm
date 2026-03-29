@@ -156,8 +156,10 @@ export {
 export {
   buildRepoMap,
   repoMapToContext,
+  generateRepoMap,
   type RepoMap,
   type RepoMapEntry,
+  type SymbolSignature,
 } from "./agent/repo-map.js";
 export {
   semanticSearch,

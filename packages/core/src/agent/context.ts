@@ -13,7 +13,7 @@ import { getOutputStylePrompt, type OutputStyle } from "./output-styles.js";
 import { loadSkills } from "../skills/loader.js";
 import { formatCommitContext } from "../search/lineage.js";
 import { formatStyleContext } from "../learning/style-learner.js";
-import { buildRepoMap, repoMapToContext } from "./repo-map.js";
+import { generateRepoMap } from "./repo-map.js";
 
 const DEFAULT_SYSTEM_PROMPT = `You are Brainstorm, an AI coding assistant powered by BrainstormRouter — an intelligent model routing gateway. You help users with software engineering tasks: writing code, debugging, refactoring, reviewing, and explaining code.
 
@@ -241,12 +241,12 @@ function buildSkillsSection(projectPath: string): string | null {
 
 /**
  * Build a "Project Structure" section from the repository map.
- * Shows top files ranked by connectivity (simplified PageRank).
+ * Uses the enhanced repo map with function/class signatures, export lists,
+ * and import relationship summaries — ranked by connectivity (PageRank-lite).
  */
 function buildRepoMapSection(projectPath: string): string | null {
   try {
-    const map = buildRepoMap(projectPath);
-    const context = repoMapToContext(map);
+    const context = generateRepoMap(projectPath);
     if (!context) return null;
 
     return `\n## Project Structure\n\n${context}`;

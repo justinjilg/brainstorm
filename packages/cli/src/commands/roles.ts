@@ -40,6 +40,10 @@ export interface RoleDefinition {
   outputStyle: OutputStyle;
   permissionMode: "auto" | "confirm" | "plan";
   routingStrategy: string;
+  /** If set, only these tools are allowed (whitelist) */
+  allowedTools?: string[];
+  /** If set, these tools are blocked (blacklist) */
+  blockedTools?: string[];
 }
 
 const ARCHITECT_PROMPT = `You are a senior software architect. Your job is to DESIGN, not implement.
@@ -152,6 +156,14 @@ export const ROLES: Record<RoleId, RoleDefinition> = {
     outputStyle: "detailed",
     permissionMode: "plan",
     routingStrategy: "quality-first",
+    blockedTools: [
+      "file_write",
+      "file_edit",
+      "multi_edit",
+      "batch_edit",
+      "shell",
+      "git_commit",
+    ],
   },
   "product-manager": {
     id: "product-manager",
@@ -244,6 +256,7 @@ export const ROLES: Record<RoleId, RoleDefinition> = {
     outputStyle: "concise",
     permissionMode: "confirm",
     routingStrategy: "cost-first",
+    blockedTools: ["git_commit", "git_branch", "process_spawn"],
   },
   qa: {
     id: "qa",
@@ -275,6 +288,14 @@ export const ROLES: Record<RoleId, RoleDefinition> = {
     outputStyle: "detailed",
     permissionMode: "plan",
     routingStrategy: "quality-first",
+    allowedTools: [
+      "file_read",
+      "grep",
+      "glob",
+      "shell",
+      "git_status",
+      "git_diff",
+    ],
   },
 };
 
