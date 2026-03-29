@@ -7,7 +7,8 @@
  * Uses execFileSync exclusively (no shell injection risk).
  */
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 
 export interface SandboxConfig {
   image: string;
@@ -23,12 +24,15 @@ export interface SandboxExecResult {
 }
 
 const DEFAULT_CONFIG: Partial<SandboxConfig> = {
-  image: 'node:22-slim',
-  containerWorkspace: '/workspace',
+  image: "node:22-slim",
+  containerWorkspace: "/workspace",
   timeout: 120000,
 };
 
-const SENTINEL = ',,BRAINSTORM_EXIT_CODE,,';
+/** Generate per-invocation sentinel to prevent output spoofing. */
+function makeSentinel(): string {
+  return `,,BRAINSTORM_EXIT_${randomUUID().replace(/-/g, "")},,`;
+}
 
 export class DockerSandbox {
   private config: SandboxConfig;
@@ -40,10 +44,10 @@ export class DockerSandbox {
 
   static isAvailable(): boolean {
     try {
-      execFileSync('docker', ['info'], {
-        encoding: 'utf-8',
+      execFileSync("docker", ["info"], {
+        encoding: "utf-8",
         timeout: 5000,
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: ["ignore", "pipe", "pipe"],
       });
       return true;
     } catch {
@@ -55,18 +59,28 @@ export class DockerSandbox {
     if (this.containerId) return;
 
     try {
-      const output = execFileSync('docker', [
-        'run', '-d',
-        '--name', `brainstorm-sandbox-${Date.now()}`,
-        '-v', `${this.config.hostWorkspace}:${this.config.containerWorkspace}`,
-        '-w', this.config.containerWorkspace,
-        this.config.image,
-        'tail', '-f', '/dev/null',
-      ], {
-        encoding: 'utf-8',
-        timeout: 30000,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
+      const output = execFileSync(
+        "docker",
+        [
+          "run",
+          "-d",
+          "--name",
+          `brainstorm-sandbox-${Date.now()}`,
+          "-v",
+          `${this.config.hostWorkspace}:${this.config.containerWorkspace}`,
+          "-w",
+          this.config.containerWorkspace,
+          this.config.image,
+          "tail",
+          "-f",
+          "/dev/null",
+        ],
+        {
+          encoding: "utf-8",
+          timeout: 30000,
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
 
       this.containerId = output.trim();
     } catch (err: any) {
@@ -76,36 +90,42 @@ export class DockerSandbox {
 
   exec(command: string): SandboxExecResult {
     if (!this.containerId) {
-      throw new Error('Sandbox not started. Call start() first.');
+      throw new Error("Sandbox not started. Call start() first.");
     }
 
     const start = Date.now();
 
     try {
-      const wrappedCommand = `${command}; echo "${SENTINEL}$?"`;
+      const sentinel = makeSentinel();
+      const wrappedCommand = `${command}; echo "${sentinel}$?"`;
 
-      const output = execFileSync('docker', [
-        'exec', this.containerId,
-        '/bin/sh', '-c', wrappedCommand,
-      ], {
-        encoding: 'utf-8',
-        timeout: this.config.timeout,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
+      const output = execFileSync(
+        "docker",
+        ["exec", this.containerId, "/bin/sh", "-c", wrappedCommand],
+        {
+          encoding: "utf-8",
+          timeout: this.config.timeout,
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
 
       const durationMs = Date.now() - start;
 
-      const sentinelIdx = output.lastIndexOf(SENTINEL);
+      const sentinelIdx = output.lastIndexOf(sentinel);
       let exitCode = 0;
       let cleanOutput = output;
 
       if (sentinelIdx >= 0) {
-        const codeStr = output.slice(sentinelIdx + SENTINEL.length).trim();
+        const codeStr = output.slice(sentinelIdx + sentinel.length).trim();
         exitCode = parseInt(codeStr, 10) || 0;
         cleanOutput = output.slice(0, sentinelIdx).trimEnd();
       }
 
-      cleanOutput = maskHostPaths(cleanOutput, this.config.hostWorkspace, this.config.containerWorkspace);
+      cleanOutput = maskHostPaths(
+        cleanOutput,
+        this.config.hostWorkspace,
+        this.config.containerWorkspace,
+      );
 
       return { output: cleanOutput, exitCode, durationMs };
     } catch (err: any) {
@@ -121,12 +141,14 @@ export class DockerSandbox {
     if (!this.containerId) return;
 
     try {
-      execFileSync('docker', ['rm', '-f', this.containerId], {
-        encoding: 'utf-8',
+      execFileSync("docker", ["rm", "-f", this.containerId], {
+        encoding: "utf-8",
         timeout: 10000,
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: ["ignore", "pipe", "pipe"],
       });
-    } catch { /* best effort */ }
+    } catch {
+      /* best effort */
+    }
 
     this.containerId = null;
   }
@@ -141,11 +163,22 @@ export class DockerSandbox {
 }
 
 const SAFE_COMMANDS = [
-  /^cat\b/, /^head\b/, /^tail\b/, /^wc\b/, /^echo\b/,
-  /^ls\b/, /^pwd\b/, /^which\b/, /^whoami\b/,
-  /^grep\b/, /^rg\b/, /^find\b/, /^fd\b/,
+  /^cat\b/,
+  /^head\b/,
+  /^tail\b/,
+  /^wc\b/,
+  /^echo\b/,
+  /^ls\b/,
+  /^pwd\b/,
+  /^which\b/,
+  /^whoami\b/,
+  /^grep\b/,
+  /^rg\b/,
+  /^find\b/,
+  /^fd\b/,
   /^git\s+(status|diff|log|show|blame|branch)\b/,
-  /^node\s+--version/, /^npm\s+--version/,
+  /^node\s+--version/,
+  /^npm\s+--version/,
 ];
 
 export function isSafeCommand(command: string): boolean {
@@ -164,6 +197,10 @@ export function translatePath(
   return path;
 }
 
-function maskHostPaths(output: string, hostWorkspace: string, containerWorkspace: string): string {
+function maskHostPaths(
+  output: string,
+  hostWorkspace: string,
+  containerWorkspace: string,
+): string {
   return output.replaceAll(hostWorkspace, containerWorkspace);
 }

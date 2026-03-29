@@ -2,6 +2,7 @@ import { z } from "zod";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { defineTool } from "../base.js";
+import { checkSandbox } from "./sandbox.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -22,7 +23,14 @@ function cleanupStaleProcesses(): void {
     0,
     managedProcesses.size - MAX_MANAGED_PROCESSES,
   );
-  for (const [key] of toRemove) managedProcesses.delete(key);
+  for (const [key, entry] of toRemove) {
+    try {
+      process.kill(entry.pid, "SIGTERM");
+    } catch {
+      /* already dead */
+    }
+    managedProcesses.delete(key);
+  }
 }
 
 export const processSpawnTool = defineTool({
@@ -36,6 +44,18 @@ export const processSpawnTool = defineTool({
     cwd: z.string().optional().describe("Working directory"),
   }),
   async execute({ name, command, cwd }) {
+    // Enforce sandbox restrictions (same as shell tool)
+    const sandboxResult = checkSandbox(command, "restricted");
+    if (!sandboxResult.allowed) {
+      return { error: `Blocked by sandbox: ${sandboxResult.reason}` };
+    }
+
+    if (managedProcesses.size >= MAX_MANAGED_PROCESSES) {
+      return {
+        error: `Too many background processes (max ${MAX_MANAGED_PROCESSES}). Kill some first.`,
+      };
+    }
+
     if (managedProcesses.has(name)) {
       return {
         error: `Process '${name}' is already running (pid: ${managedProcesses.get(name)!.pid})`,
