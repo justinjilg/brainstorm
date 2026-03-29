@@ -13,3 +13,7 @@ coverage/
 .playwright-mcp/
 .claude/
 tests/dogfood/output/
+*.log
+npm-debug.log*
+.brainstorm/vault.enc
+.brainstorm/*.enc
