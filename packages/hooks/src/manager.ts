@@ -1,10 +1,10 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { createLogger } from '@brainstorm/shared';
-import type { HookDefinition, HookEvent, HookResult } from './types.js';
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { createLogger } from "@brainstorm/shared";
+import type { HookDefinition, HookEvent, HookResult } from "./types.js";
 
 const execFileAsync = promisify(execFile);
-const log = createLogger('hooks');
+const log = createLogger("hooks");
 
 /** Cache compiled RegExps to avoid recompilation on every hook fire. */
 const regexCache = new Map<string, RegExp | null>();
@@ -15,7 +15,10 @@ const REDOS_PATTERN = /(\+|\*|\{)\s*(\+|\*|\{)/;
 function getCachedRegex(pattern: string): RegExp | null {
   if (regexCache.has(pattern)) return regexCache.get(pattern)!;
   if (REDOS_PATTERN.test(pattern)) {
-    log.warn({ pattern }, 'Rejected hook matcher — potential ReDoS (nested quantifiers)');
+    log.warn(
+      { pattern },
+      "Rejected hook matcher — potential ReDoS (nested quantifiers)",
+    );
     regexCache.set(pattern, null);
     return null;
   }
@@ -24,7 +27,7 @@ function getCachedRegex(pattern: string): RegExp | null {
     regexCache.set(pattern, re);
     return re;
   } catch (e) {
-    log.warn({ err: e, pattern }, 'Invalid hook matcher regex');
+    log.warn({ err: e, pattern }, "Invalid hook matcher regex");
     regexCache.set(pattern, null);
     return null;
   }
@@ -38,14 +41,22 @@ function getCachedRegex(pattern: string): RegExp | null {
  * foundation for Brainstorm CLI.
  */
 export class HookManager {
-  private hooks: HookDefinition[] = [];
+  private hooks: Array<{ id: string; def: HookDefinition }> = [];
   private nextId = 0;
 
   /** Register a hook. Returns a hook ID for removal. */
   register(hook: HookDefinition): string {
     const id = `hook-${this.nextId++}`;
-    this.hooks.push(hook);
+    this.hooks.push({ id, def: hook });
     return id;
+  }
+
+  /** Remove a hook by ID. Returns true if found and removed. */
+  remove(id: string): boolean {
+    const idx = this.hooks.findIndex((h) => h.id === id);
+    if (idx === -1) return false;
+    this.hooks.splice(idx, 1);
+    return true;
   }
 
   /** Register multiple hooks (e.g., from TOML config). */
@@ -55,7 +66,7 @@ export class HookManager {
 
   /** Get all registered hooks. */
   list(): HookDefinition[] {
-    return [...this.hooks];
+    return this.hooks.map((h) => h.def);
   }
 
   /**
@@ -68,21 +79,24 @@ export class HookManager {
     event: HookEvent,
     context?: { toolName?: string; filePath?: string; [key: string]: unknown },
   ): Promise<HookResult[]> {
-    const matching = this.hooks.filter((h) => {
-      if (h.event !== event) return false;
-      if (h.matcher) {
-        // For subagent hooks, match against subagent type
-        const matchTarget = (event === 'SubagentStart' || event === 'SubagentStop')
-          ? context?.subagentType as string
-          : context?.toolName;
-        if (matchTarget) {
-          const re = getCachedRegex(h.matcher);
-          if (!re) return false;
-          return re.test(matchTarget);
+    const matching = this.hooks
+      .map((h) => h.def)
+      .filter((h) => {
+        if (h.event !== event) return false;
+        if (h.matcher) {
+          // For subagent hooks, match against subagent type
+          const matchTarget =
+            event === "SubagentStart" || event === "SubagentStop"
+              ? (context?.subagentType as string)
+              : context?.toolName;
+          if (matchTarget) {
+            const re = getCachedRegex(h.matcher);
+            if (!re) return false;
+            return re.test(matchTarget);
+          }
         }
-      }
-      return true;
-    });
+        return true;
+      });
 
     const results: HookResult[] = [];
 
@@ -90,20 +104,38 @@ export class HookManager {
       const start = Date.now();
       const hookId = `${hook.event}:${hook.command.slice(0, 30)}`;
 
-      if (hook.type === 'command') {
+      if (hook.type === "command") {
         try {
           // Expand variables in command (shell-escaped to prevent injection)
           let cmd = hook.command;
-          if (context?.filePath) cmd = cmd.replace(/\$FILE/g, shellEscape(context.filePath));
-          if (context?.toolName) cmd = cmd.replace(/\$TOOL/g, shellEscape(context.toolName));
-          if (context?.subagentType) cmd = cmd.replace(/\$SUBAGENT_TYPE/g, shellEscape(String(context.subagentType)));
-          if (context?.subagentCost !== undefined) cmd = cmd.replace(/\$SUBAGENT_COST/g, shellEscape(String(context.subagentCost)));
-          if (context?.subagentModel) cmd = cmd.replace(/\$SUBAGENT_MODEL/g, shellEscape(String(context.subagentModel)));
+          if (context?.filePath)
+            cmd = cmd.replace(/\$FILE/g, shellEscape(context.filePath));
+          if (context?.toolName)
+            cmd = cmd.replace(/\$TOOL/g, shellEscape(context.toolName));
+          if (context?.subagentType)
+            cmd = cmd.replace(
+              /\$SUBAGENT_TYPE/g,
+              shellEscape(String(context.subagentType)),
+            );
+          if (context?.subagentCost !== undefined)
+            cmd = cmd.replace(
+              /\$SUBAGENT_COST/g,
+              shellEscape(String(context.subagentCost)),
+            );
+          if (context?.subagentModel)
+            cmd = cmd.replace(
+              /\$SUBAGENT_MODEL/g,
+              shellEscape(String(context.subagentModel)),
+            );
 
-          const { stdout, stderr } = await execFileAsync('/bin/sh', ['-c', cmd], {
-            timeout: 10_000,
-            cwd: process.cwd(),
-          });
+          const { stdout, stderr } = await execFileAsync(
+            "/bin/sh",
+            ["-c", cmd],
+            {
+              timeout: 10_000,
+              cwd: process.cwd(),
+            },
+          );
 
           results.push({
             hookId,
@@ -113,7 +145,7 @@ export class HookManager {
             durationMs: Date.now() - start,
           });
         } catch (err: any) {
-          const blocked = hook.blocking && event === 'PreToolUse';
+          const blocked = hook.blocking && event === "PreToolUse";
           results.push({
             hookId,
             event,
@@ -125,14 +157,18 @@ export class HookManager {
 
           if (blocked) break; // Stop processing further hooks
         }
-      } else if (hook.type === 'prompt') {
+      } else if (hook.type === "prompt") {
         // Prompt hooks require an LLM call — log warning until implemented
-        log.warn({ hookId, event }, 'Prompt hook type not yet implemented — skipping. Use "command" type instead.');
+        log.warn(
+          { hookId, event },
+          'Prompt hook type not yet implemented — skipping. Use "command" type instead.',
+        );
         results.push({
           hookId,
           event,
           success: false,
-          error: 'Prompt hook type not yet implemented. Use "command" type for now.',
+          error:
+            'Prompt hook type not yet implemented. Use "command" type for now.',
           durationMs: Date.now() - start,
         });
       }

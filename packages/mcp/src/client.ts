@@ -8,7 +8,7 @@ import { getOAuthToken, type OAuthConfig } from "./oauth.js";
 export interface MCPServerConfig {
   name: string;
   transport: "sse" | "http" | "stdio";
-  url: string;
+  url?: string;
   /** For stdio transport: command to spawn. */
   command?: string;
   /** For stdio transport: arguments to pass. */
@@ -63,9 +63,7 @@ export class MCPClientManager {
     }
   }
 
-  async connectAll(
-    registry: ToolRegistry,
-  ): Promise<{
+  async connectAll(registry: ToolRegistry): Promise<{
     connected: string[];
     errors: Array<{ name: string; error: string }>;
   }> {
@@ -149,7 +147,7 @@ export class MCPClientManager {
       await import("@ai-sdk/mcp/mcp-stdio");
     return new Experimental_StdioMCPTransport({
       command: server.command ?? "npx",
-      args: server.args ?? [server.url],
+      args: server.args ?? (server.url ? [server.url] : []),
       env: { ...process.env, ...server.env } as Record<string, string>,
     });
   }
