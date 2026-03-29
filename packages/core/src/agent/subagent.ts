@@ -18,7 +18,8 @@ export type SubagentType =
   | "review"
   | "general"
   | "decompose"
-  | "external";
+  | "external"
+  | "research";
 
 interface SubagentTypeConfig {
   /** Tools this subagent type is allowed to use */
@@ -126,6 +127,24 @@ const SUBAGENT_TYPES: Record<SubagentType, SubagentTypeConfig> = {
       "and estimated relative cost (low/medium/high). Return a structured JSON array of steps. " +
       "Read the codebase to understand the architecture before decomposing.",
     defaultMaxSteps: 5,
+    modelHint: "capable",
+  },
+  research: {
+    allowedTools: [
+      "file_read",
+      "glob",
+      "grep",
+      "list_dir",
+      "web_fetch",
+      "web_search",
+      "gh_issue",
+      "gh_pr",
+    ],
+    systemPrompt:
+      "You are a research subagent. Search external documentation, GitHub repos, Stack Overflow, and API references to find answers. " +
+      "Combine findings from multiple sources. Cite URLs for every claim. " +
+      "Return a structured research report with: summary, key findings (with sources), and recommended next steps.",
+    defaultMaxSteps: 8,
     modelHint: "capable",
   },
   external: {

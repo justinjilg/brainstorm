@@ -23,3 +23,9 @@ export {
   getWorkspaceDir,
   type ArtifactManifest,
 } from "./artifact-store.js";
+export {
+  loadRecipes,
+  loadRecipe,
+  listRecipes,
+  initRecipeDir,
+} from "./recipes.js";
