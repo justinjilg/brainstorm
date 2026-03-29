@@ -83,7 +83,7 @@ Returns all registered projects for the tenant.
     {
       "id": "uuid",
       "name": "hawktalk",
-      "path": "/Users/justin/Projects/hawktalk",
+      "path": "/home/user/projects/my-app",
       "description": "AI-powered book club app",
       "budget_daily": 5.0,
       "budget_monthly": 50.0,
@@ -100,7 +100,7 @@ Register or sync a project.
 ```json
 {
   "name": "hawktalk",
-  "path": "/Users/justin/Projects/hawktalk",
+  "path": "/home/user/projects/my-app",
   "description": "AI-powered book club app",
   "budget_daily": 5.0,
   "budget_monthly": 50.0

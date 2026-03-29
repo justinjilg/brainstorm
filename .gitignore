@@ -8,3 +8,8 @@ dist/
 *.db-journal
 .DS_Store
 coverage/
+
+# Development artifacts
+.playwright-mcp/
+.claude/
+tests/dogfood/output/

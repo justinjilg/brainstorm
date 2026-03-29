@@ -36,6 +36,7 @@ import { runInit } from "../init/index.js";
 import { runEvalCli, runProbe } from "@brainstorm/eval";
 import {
   createGatewayClient,
+  createIntelligenceClient,
   formatGatewayFeedback,
 } from "@brainstorm/gateway";
 import { MCPClientManager } from "@brainstorm/mcp";
@@ -2268,6 +2269,259 @@ orchestrateCmd
       if (t.resultSummary)
         console.log(`      ${t.resultSummary.slice(0, 100)}`);
     }
+    console.log();
+  });
+
+// ── Intelligence Command ───────────────────────────────────────────
+
+program
+  .command("intelligence")
+  .alias("intel")
+  .description("Show what BrainstormRouter has learned about your usage")
+  .option("--json", "Output as JSON")
+  .option(
+    "--period <period>",
+    "Usage period (daily, weekly, monthly)",
+    "weekly",
+  )
+  .action(async (opts: { json?: boolean; period: string }) => {
+    const gw = createGatewayClient();
+    const intel = createIntelligenceClient();
+
+    if (!gw) {
+      console.log(
+        "\n  No BRAINSTORM_API_KEY set. Cannot connect to BrainstormRouter.\n",
+      );
+      process.exit(1);
+    }
+
+    console.log("\n  Fetching intelligence from BrainstormRouter...\n");
+
+    // Fetch all data in parallel — graceful fallback on each endpoint
+    const [
+      leaderboard,
+      usage,
+      waste,
+      forecast,
+      daily,
+      governance,
+      recommendations,
+      patterns,
+    ] = await Promise.all([
+      gw.getLeaderboard().catch(() => []),
+      gw.getUsageSummary(opts.period).catch(() => null),
+      gw.getWasteInsights().catch(() => null),
+      gw.getForecast().catch(() => null),
+      gw.getDailyInsights().catch(() => []),
+      gw.getGovernanceSummary().catch(() => null),
+      intel?.getRecommendations("code", "typescript").catch(() => []) ?? [],
+      intel?.getPatterns("typescript").catch(() => []) ?? [],
+    ]);
+
+    if (opts.json) {
+      console.log(
+        JSON.stringify(
+          {
+            leaderboard,
+            usage,
+            waste,
+            forecast,
+            daily,
+            governance,
+            recommendations,
+            patterns,
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+
+    // ── Header ──
+    console.log("  ══════════════════════════════════════════════════");
+    console.log("   BrainstormRouter Intelligence Report");
+    console.log("  ══════════════════════════════════════════════════\n");
+
+    // ── Learning Status ──
+    // Usage shape: { data: [{ requestCount, totalCostUsd, ... }] }
+    const usageData = (usage as any)?.data?.[0];
+    const totalRequests = usageData?.requestCount ?? 0;
+    const confidence =
+      totalRequests >= 200 ? "HIGH" : totalRequests >= 50 ? "MEDIUM" : "LOW";
+    const confidenceNote =
+      confidence === "LOW"
+        ? ` (need ${200 - totalRequests} more for high confidence)`
+        : "";
+    console.log(
+      `  Learning Status: ${totalRequests.toLocaleString()} requests analyzed`,
+    );
+    console.log(`  Routing Confidence: ${confidence}${confidenceNote}\n`);
+
+    // ── Model Performance ──
+    // Leaderboard shape: { id, model_id, reward_score, value_score, latency_ms, sample_count, ... }
+    const realLeaderboard = leaderboard.filter(
+      (m: any) => m.id && !m.id.startsWith("cache/"),
+    );
+    if (realLeaderboard.length > 0) {
+      console.log("  Model Performance:\n");
+      for (const entry of realLeaderboard.slice(0, 8)) {
+        const m = entry as any;
+        const modelName = m.model_id ?? m.id ?? m.model ?? "unknown";
+        const name =
+          modelName.length > 35 ? modelName.slice(0, 35) + "…" : modelName;
+        const latency =
+          m.latency_ms != null
+            ? m.latency_ms < 1000
+              ? `${Math.round(m.latency_ms)}ms`
+              : `${(m.latency_ms / 1000).toFixed(1)}s`
+            : "  n/a";
+        const reward =
+          m.reward_score != null
+            ? (m.reward_score * 100).toFixed(0) + "%"
+            : "n/a";
+        const value = m.value_score != null ? m.value_score.toFixed(0) : "n/a";
+        const samples = m.sample_count ?? m.request_count ?? 0;
+        const isBest = entry === realLeaderboard[0] ? " ← BEST" : "";
+        console.log(
+          `    ${name.padEnd(37)} reward:${reward.padStart(4)} value:${value.padStart(5)} ${latency.padStart(6)} (${samples} samples)${isBest}`,
+        );
+      }
+      console.log();
+    }
+
+    // ── What the System Learned ──
+    if (recommendations.length > 0) {
+      console.log("  What the system learned:\n");
+      for (const rec of recommendations.slice(0, 5)) {
+        const r = rec as any;
+        const conf =
+          r.confidence != null ? `${Math.round(r.confidence * 100)}%` : "";
+        console.log(
+          `    • ${r.taskType} → ${r.recommendedModel} (${conf} confidence)`,
+        );
+        if (r.reasoning) {
+          console.log(`      ${r.reasoning}`);
+        }
+      }
+      console.log();
+    }
+
+    // ── Cost Intelligence ──
+    if (usageData) {
+      const totalTokens =
+        (usageData.totalInputTokens ?? 0) + (usageData.totalOutputTokens ?? 0);
+      console.log("  Cost Summary:\n");
+      console.log(`    Period:       ${(usage as any)?.period ?? opts.period}`);
+      console.log(
+        `    Total:        $${(usageData.totalCostUsd ?? 0).toFixed(4)}`,
+      );
+      console.log(
+        `    Requests:     ${(usageData.requestCount ?? 0).toLocaleString()}`,
+      );
+      console.log(`    Tokens:       ${totalTokens.toLocaleString()}`);
+      console.log(
+        `    Avg latency:  ${(usageData.avgLatencyMs ?? 0).toFixed(0)}ms`,
+      );
+      console.log();
+    }
+
+    // ── Budget Forecast ──
+    // Forecast shape: { forecast: { avgDailySpendUsd, trend, confidence, projectedPeriodSpendUsd }, todaySpendUsd, daysOfData }
+    const fc = (forecast as any)?.forecast;
+    if (fc) {
+      const trend = fc.trend ?? "stable";
+      const trendIcon =
+        trend === "increasing" ? "↑" : trend === "decreasing" ? "↓" : "→";
+      console.log("  Budget Forecast:\n");
+      console.log(
+        `    Avg daily:   $${(fc.avgDailySpendUsd ?? 0).toFixed(2)} (${trendIcon} ${trend})`,
+      );
+      console.log(
+        `    Projected:   $${(fc.projectedPeriodSpendUsd ?? 0).toFixed(2)}`,
+      );
+      console.log(
+        `    Today:       $${((forecast as any)?.todaySpendUsd ?? 0).toFixed(4)}`,
+      );
+      console.log(
+        `    Data points: ${(forecast as any)?.daysOfData ?? 0} days`,
+      );
+      console.log();
+    }
+
+    // ── Waste Insights ──
+    // Waste shape: { estimatedWasteUsd, overQualifiedModels: [...], duplicateRequests: [...] }
+    const wasteAny = waste as any;
+    if (
+      wasteAny &&
+      (wasteAny.overQualifiedModels?.length > 0 ||
+        wasteAny.duplicateRequests?.length > 0)
+    ) {
+      console.log("  Optimization Opportunities:\n");
+      console.log(
+        `    Total recoverable: $${(wasteAny.estimatedWasteUsd ?? 0).toFixed(4)}\n`,
+      );
+      for (const m of (wasteAny.overQualifiedModels ?? []).slice(0, 3)) {
+        console.log(
+          `    • ${m.model}: $${m.totalCostUsd.toFixed(4)} on ${m.requestCount} reqs`,
+        );
+        console.log(`      → ${m.suggestion}`);
+      }
+      const dupeCount = (wasteAny.duplicateRequests ?? []).length;
+      if (dupeCount > 0) {
+        const totalDupeWaste = (wasteAny.duplicateRequests ?? []).reduce(
+          (sum: number, d: any) => sum + (d.wastedCostUsd ?? 0),
+          0,
+        );
+        console.log(
+          `    • ${dupeCount} duplicate request patterns ($${totalDupeWaste.toFixed(4)} wasted)`,
+        );
+        console.log(`      → Enable prompt caching to reduce duplicates`);
+      }
+      console.log();
+    }
+
+    // ── Community Patterns ──
+    if (patterns.length > 0) {
+      console.log("  Community Patterns (TypeScript):\n");
+      for (const p of patterns.slice(0, 3)) {
+        const pat = p as any;
+        console.log(
+          `    • ${pat.taskType}: prefer ${(pat.preferredTools ?? []).join(", ")} (${pat.confirmations ?? 0} confirmations)`,
+        );
+        if (pat.avoidTools?.length > 0) {
+          console.log(`      avoid: ${pat.avoidTools.join(", ")}`);
+        }
+      }
+      console.log();
+    }
+
+    // ── Governance ──
+    if (governance) {
+      const gov = governance as any;
+      console.log("  Governance:\n");
+      if (gov.memory_health) {
+        console.log(
+          `    Memory:   ${gov.memory_health.total_entries} entries (${gov.memory_health.compliance_status})`,
+        );
+      }
+      if (gov.audit_stats) {
+        console.log(
+          `    Audit:    ${gov.audit_stats.total_requests} requests, ${gov.audit_stats.flagged} flagged`,
+        );
+      }
+      if (gov.anomaly_score != null) {
+        console.log(
+          `    Anomaly:  ${gov.anomaly_score.toFixed(2)} (0=clean, 1=suspicious)`,
+        );
+      }
+      console.log();
+    }
+
+    console.log("  ──────────────────────────────────────────────────");
+    console.log(
+      `  Tip: Run \`storm intel --json\` for machine-readable output.`,
+    );
     console.log();
   });
 

@@ -1,0 +1,12 @@
+# Default owner for everything
+* @justinjilg
+
+# Core packages
+packages/core/ @justinjilg
+packages/router/ @justinjilg
+packages/cli/ @justinjilg
+
+# Security-sensitive
+packages/vault/ @justinjilg
+packages/tools/ @justinjilg
+SECURITY.md @justinjilg

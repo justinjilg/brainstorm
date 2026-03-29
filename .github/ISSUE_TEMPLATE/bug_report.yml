@@ -1,0 +1,71 @@
+name: Bug Report
+description: Report a bug in Brainstorm
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug! Please fill out the sections below.
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: What happened? What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Minimal steps to reproduce the issue.
+      placeholder: |
+        1. Run `storm chat`
+        2. Type `/build add login page`
+        3. Error appears: ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Brainstorm Version
+      description: Output of `storm --version` or commit hash
+      placeholder: "v12 / commit abc1234"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - macOS
+        - Linux
+        - Windows (WSL)
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node.js Version
+      description: Output of `node --version`
+      placeholder: "v22.0.0"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs
+      description: Any error output, stack traces, or logs.
+      render: shell
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected Area
+      options:
+        - TUI / Display
+        - Routing / Model Selection
+        - Tools
+        - Build Wizard / Workflows
+        - Configuration / Vault
+        - BrainstormRouter Integration
+        - Orchestration Pipeline
+        - Plugin SDK
+        - Other
