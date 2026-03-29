@@ -682,7 +682,7 @@ commands.push({
       const lines = [
         `${role.icon} ${role.displayName} (active)`,
         `  Model:      ${model}`,
-        `  Tools:      ${role.permissionMode === "plan" ? "read-only" : "all"}`,
+        `  Tools:      ${role.allowedTools ? `only: ${role.allowedTools.join(", ")}` : role.blockedTools ? `all except: ${role.blockedTools.join(", ")}` : "all"}`,
         `  Style:      ${role.outputStyle}`,
         `  Strategy:   ${role.routingStrategy}`,
         `  Permission: ${role.permissionMode}`,

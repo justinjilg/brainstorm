@@ -25,6 +25,7 @@ import {
 } from "@brainstorm/core";
 import type { OutputStyle } from "@brainstorm/core";
 import { AgentManager, parseAgentNL } from "@brainstorm/agents";
+import { ROLES, type RoleId } from "../commands/roles.js";
 import {
   runWorkflow,
   getPresetWorkflow,
@@ -3192,6 +3193,15 @@ program
           process.stdout.write("\nbrainstorm > ");
           simpleAbortController = new AbortController();
 
+          // Build role tool filter from active role (if any)
+          const roleToolFilter =
+            currentRole && ROLES[currentRole as RoleId]
+              ? {
+                  allowedTools: ROLES[currentRole as RoleId].allowedTools,
+                  blockedTools: ROLES[currentRole as RoleId].blockedTools,
+                }
+              : undefined;
+
           for await (const event of runAgentLoop(sessionManager.getHistory(), {
             config,
             registry,
@@ -3207,6 +3217,7 @@ program
               permissionManager.check(name, perm),
             preferredModelId,
             middleware,
+            roleToolFilter,
             onTurnComplete: (ctx) => {
               ctx.turn = sessionManager.incrementTurn();
               ctx.sessionMinutes = sessionManager.getSessionMinutes();
@@ -3307,6 +3318,15 @@ program
       function handleSendMessage(text: string) {
         sessionManager.addUserMessage(text);
         currentAbortController = new AbortController();
+        // Build role tool filter from active role (if any)
+        const roleFilter =
+          currentRole && ROLES[currentRole as RoleId]
+            ? {
+                allowedTools: ROLES[currentRole as RoleId].allowedTools,
+                blockedTools: ROLES[currentRole as RoleId].blockedTools,
+              }
+            : undefined;
+
         const gen = runAgentLoop(sessionManager.getHistory(), {
           config,
           registry,
@@ -3321,6 +3341,7 @@ program
           permissionCheck: (name, perm) => permissionManager.check(name, perm),
           middleware,
           preferredModelId,
+          roleToolFilter: roleFilter,
         });
         // Wrap to capture assistant message after completion
         return (async function* () {

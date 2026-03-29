@@ -170,6 +170,8 @@ export interface AgentLoopOptions {
   trajectoryEnabled?: boolean;
   /** Session checkpointer for crash recovery. */
   checkpointer?: { saveIfNeeded: (data: any) => boolean };
+  /** Role-based tool filter. When set, restricts which tools the agent can use. */
+  roleToolFilter?: { allowedTools?: string[]; blockedTools?: string[] };
 }
 
 // All task types get tools — the model decides whether to use them.
@@ -333,17 +335,42 @@ export async function* runAgentLoop(
   // get the full tool set until mid-session escalation is implemented.
   const toolTier = getTierForComplexity(task.complexity);
   const useFullTools = toolTier !== "minimal";
-  const tierToolNames = useFullTools ? undefined : getToolsForTier(toolTier);
+  let effectiveToolNames = useFullTools ? undefined : getToolsForTier(toolTier);
+
+  // Role-based tool scoping: apply allowedTools/blockedTools from the active role.
+  // allowedTools is a whitelist (only these tools). blockedTools is a blacklist (all except these).
+  // Role filter merges with tier filter — the intersection is used.
+  if (options.roleToolFilter) {
+    const { allowedTools: roleAllowed, blockedTools: roleBlocked } =
+      options.roleToolFilter;
+    const allToolNames = tools.listTools().map((t) => t.name);
+
+    if (roleAllowed && roleAllowed.length > 0) {
+      // Whitelist: only these tools are available
+      const roleSet = new Set(roleAllowed);
+      if (effectiveToolNames) {
+        // Intersect with tier filter
+        effectiveToolNames = effectiveToolNames.filter((n) => roleSet.has(n));
+      } else {
+        effectiveToolNames = roleAllowed;
+      }
+    } else if (roleBlocked && roleBlocked.length > 0) {
+      // Blacklist: all tools except these
+      const blockedSet = new Set(roleBlocked);
+      const base = effectiveToolNames ?? allToolNames;
+      effectiveToolNames = base.filter((n) => !blockedSet.has(n));
+    }
+  }
 
   // Build tools with permission gating if a check function is provided
   const aiTools = shouldUseTools
     ? options.permissionCheck
       ? tools.toAISDKToolsWithPermissions(
           options.permissionCheck,
-          tierToolNames,
+          effectiveToolNames,
         )
-      : tierToolNames
-        ? tools.toAISDKToolsFiltered(tierToolNames)
+      : effectiveToolNames
+        ? tools.toAISDKToolsFiltered(effectiveToolNames)
         : tools.toAISDKTools()
     : undefined;
 
