@@ -1,0 +1,17 @@
+{
+  "name": "@brainstorm/ingest",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@brainstorm/shared": "*"
+  },
+  "devDependencies": {
+    "tsup": "^8",
+    "typescript": "^5.7"
+  }
+}
