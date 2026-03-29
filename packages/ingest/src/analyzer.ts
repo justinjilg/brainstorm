@@ -18,6 +18,7 @@ import { detectLanguages, type LanguageBreakdown } from "./languages.js";
 import { detectFrameworks, type FrameworkDetection } from "./frameworks.js";
 import { buildDependencyGraph, type DependencyGraph } from "./dependencies.js";
 import { computeComplexity, type ComplexityReport } from "./complexity.js";
+import { mapEndpoints, type EndpointMap } from "./endpoints.js";
 
 export interface ProjectAnalysis {
   /** Absolute path to the project root. */
@@ -32,6 +33,8 @@ export interface ProjectAnalysis {
   dependencies: DependencyGraph;
   /** Per-file and aggregate complexity metrics. */
   complexity: ComplexityReport;
+  /** API endpoints discovered from route definitions. */
+  endpoints: EndpointMap;
   /** Quick summary for display. */
   summary: AnalysisSummary;
 }
@@ -45,6 +48,7 @@ export interface AnalysisSummary {
   avgComplexity: number;
   hotspotCount: number;
   entryPointCount: number;
+  apiRouteCount: number;
 }
 
 /**
@@ -58,6 +62,7 @@ export function analyzeProject(projectPath: string): ProjectAnalysis {
   const frameworks = detectFrameworks(projectPath);
   const dependencies = buildDependencyGraph(projectPath);
   const complexity = computeComplexity(projectPath);
+  const endpoints = mapEndpoints(projectPath);
 
   const summary: AnalysisSummary = {
     primaryLanguage: languages.primary,
@@ -68,6 +73,7 @@ export function analyzeProject(projectPath: string): ProjectAnalysis {
     avgComplexity: complexity.summary.avgComplexity,
     hotspotCount: complexity.summary.hotspots.length,
     entryPointCount: dependencies.entryPoints.length,
+    apiRouteCount: endpoints.totalRoutes,
   };
 
   return {
@@ -77,6 +83,7 @@ export function analyzeProject(projectPath: string): ProjectAnalysis {
     frameworks,
     dependencies,
     complexity,
+    endpoints,
     summary,
   };
 }
