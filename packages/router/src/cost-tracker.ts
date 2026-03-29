@@ -1,7 +1,9 @@
 import type { CostRecord, TaskType, BudgetState } from "@brainstorm/shared";
 import type { BudgetConfig } from "@brainstorm/config";
-import { BudgetExceededError } from "@brainstorm/shared";
+import { BudgetExceededError, createLogger } from "@brainstorm/shared";
 import { CostRepository } from "@brainstorm/db";
+
+const log = createLogger("cost-tracker");
 
 export class CostTracker {
   private repo: CostRepository;
@@ -72,6 +74,10 @@ export class CostTracker {
           state.dailyUsed,
           state.dailyLimit,
         );
+      log.warn(
+        { used: state.dailyUsed, limit: state.dailyLimit },
+        "Daily budget exceeded (soft limit)",
+      );
     }
     if (state.monthlyLimit && state.monthlyUsed >= state.monthlyLimit) {
       if (state.hardLimit)
@@ -80,6 +86,10 @@ export class CostTracker {
           state.monthlyUsed,
           state.monthlyLimit,
         );
+      log.warn(
+        { used: state.monthlyUsed, limit: state.monthlyLimit },
+        "Monthly budget exceeded (soft limit)",
+      );
     }
     if (state.sessionLimit && state.sessionUsed >= state.sessionLimit) {
       if (state.hardLimit)
@@ -88,6 +98,10 @@ export class CostTracker {
           state.sessionUsed,
           state.sessionLimit,
         );
+      log.warn(
+        { used: state.sessionUsed, limit: state.sessionLimit },
+        "Session budget exceeded (soft limit)",
+      );
     }
   }
 

@@ -55,18 +55,38 @@ export function recordOutcome(
 
 /**
  * Sample from Beta(successes+1, failures+1) distribution.
- * Thompson sampling: higher success rate → higher sample values on average.
+ * Uses Gamma-ratio method: Beta(a,b) = Ga/(Ga+Gb) where Ga~Gamma(a), Gb~Gamma(b).
  */
 function betaSample(successes: number, failures: number): number {
-  // Approximation using Gamma distribution sampling via Box-Muller
-  const a = successes + 1;
-  const b = failures + 1;
+  const a = gammaSample(successes + 1);
+  const b = gammaSample(failures + 1);
+  return a / (a + b);
+}
 
-  // Simple approximation: use mean + noise proportional to variance
-  const mean = a / (a + b);
-  const variance = (a * b) / ((a + b) ** 2 * (a + b + 1));
-  const noise = (Math.random() - 0.5) * 2 * Math.sqrt(variance);
-  return Math.max(0, Math.min(1, mean + noise));
+/** Box-Muller normal sample. */
+function randn(): number {
+  return (
+    Math.sqrt(-2 * Math.log(Math.random())) *
+    Math.cos(2 * Math.PI * Math.random())
+  );
+}
+
+/** Marsaglia-Tsang Gamma sampler (shape >= 1; recursion for shape < 1). */
+function gammaSample(shape: number): number {
+  if (shape < 1) return gammaSample(1 + shape) * Math.random() ** (1 / shape);
+  const d = shape - 1 / 3;
+  const c = 1 / Math.sqrt(9 * d);
+  for (;;) {
+    let x: number, v: number;
+    do {
+      x = randn();
+      v = 1 + c * x;
+    } while (v <= 0);
+    v = v ** 3;
+    const u = Math.random();
+    if (u < 1 - 0.0331 * x ** 4) return d * v;
+    if (Math.log(u) < 0.5 * x ** 2 + d * (1 - v + Math.log(v))) return d * v;
+  }
 }
 
 export const learnedStrategy: RoutingStrategy = {

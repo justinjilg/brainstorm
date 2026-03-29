@@ -129,20 +129,22 @@ export class TriggerRunner {
           turnsUsed: 0,
         });
 
-        // Execute the task (placeholder — actual execution requires agent loop integration)
-        // For now, mark as completed with a note that execution engine is needed
+        // Execution requires agent loop integration (not yet wired)
+        // Mark as skipped rather than falsely completed
         this.runs.complete(run.id, {
-          status: "completed",
-          outputSummary: `Task "${task.name}" executed. Prompt: ${task.prompt.slice(0, 100)}...`,
+          status: "failed",
+          outputSummary:
+            "Execution engine not yet wired. Task was not executed.",
           cost: 0,
           turnsUsed: 0,
+          error: "AGENT_LOOP_NOT_CONNECTED",
         });
 
         result.tasksRun++;
         result.runs.push({
           taskName: task.name,
           runId: run.id,
-          status: "completed",
+          status: "failed",
           cost: 0,
         });
       } catch (err) {
