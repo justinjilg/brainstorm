@@ -226,6 +226,39 @@ export async function* runWorkflow(
 
       yield { type: "step-completed", step: stepRun, artifact };
 
+      // Kill gates: shell commands that must exit 0 before proceeding
+      if (stepDef.killGates && stepDef.killGates.length > 0) {
+        for (const gate of stepDef.killGates) {
+          try {
+            const { execFileSync } = await import("node:child_process");
+            execFileSync("/bin/sh", ["-c", gate], {
+              cwd: projectPath,
+              timeout: 60000,
+              stdio: ["ignore", "pipe", "pipe"],
+            });
+            yield {
+              type: "gate-passed",
+              step: stepRun,
+              gate,
+            };
+          } catch (err: any) {
+            const output = (err.stderr?.toString() ?? err.message ?? "").slice(
+              0,
+              500,
+            );
+            yield {
+              type: "gate-failed",
+              step: stepRun,
+              gate,
+              output,
+            };
+            // Gate failed — pause workflow
+            run.status = "paused";
+            return;
+          }
+        }
+      }
+
       // Check confidence escalation
       const escalation = determineEscalation(
         artifact.confidence,

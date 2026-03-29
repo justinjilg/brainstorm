@@ -20,6 +20,7 @@ import {
   PermissionManager,
   createSubagentTool,
   spawnSubagent,
+  spawnParallel,
   createDefaultMiddlewarePipeline,
   type CompactionCallbacks,
 } from "@brainstorm/core";
@@ -798,6 +799,10 @@ workflowCmd
     'Agent role overrides (e.g., "architect=my-arch,coder=my-coder")',
   )
   .option("--mode <mode>", "Communication mode (handoff|shared)", "handoff")
+  .option(
+    "--step-model <overrides...>",
+    'Per-step model overrides (e.g., "plan=claude-opus-4.6 code=claude-sonnet-4.6")',
+  )
   .option("--dry-run", "Show cost forecast only")
   .action(async (preset: string, descWords: string[], opts: any) => {
     const description = descWords.join(" ") || preset;
@@ -841,11 +846,33 @@ workflowCmd
       }
     }
 
+    // Parse step model overrides: --step-model "plan=claude-opus-4.6" "code=claude-sonnet-4.6"
+    const stepModelOverrides: Record<string, string> = {};
+    if (opts.stepModel) {
+      const items = Array.isArray(opts.stepModel)
+        ? opts.stepModel
+        : [opts.stepModel];
+      for (const item of items) {
+        for (const pair of (item as string).split(/\s+/)) {
+          const [step, model] = pair.split("=");
+          if (step && model) stepModelOverrides[step.trim()] = model.trim();
+        }
+      }
+    }
+
     console.log(`\n  Workflow: ${workflow.name}`);
     console.log(`  Request: "${description}"`);
     console.log(
-      `  Steps: ${workflow.steps.map((s) => s.agentRole).join(" → ")}\n`,
+      `  Steps: ${workflow.steps.map((s) => s.agentRole).join(" → ")}`,
     );
+    if (Object.keys(stepModelOverrides).length > 0) {
+      console.log(
+        `  Model overrides: ${Object.entries(stepModelOverrides)
+          .map(([s, m]) => `${s}=${m}`)
+          .join(", ")}`,
+      );
+    }
+    console.log();
 
     for await (const event of runWorkflow(
       workflow,
@@ -859,6 +886,7 @@ workflowCmd
         costTracker,
         agentManager,
         projectPath,
+        stepModelOverrides,
       },
     )) {
       switch (event.type) {
@@ -2849,6 +2877,86 @@ program
     console.log(`  To run the agent:`);
     console.log(`    cd ${worktreePath} && storm run --unattended "${task}"`);
     console.log();
+  });
+
+// ── Storm Command (Parallel Agent Spawning) ──────────────────────
+
+program
+  .command("storm")
+  .description("Run multiple tasks in parallel using subagents")
+  .argument(
+    "<tasks...>",
+    "Task descriptions (each runs as a separate subagent)",
+  )
+  .option(
+    "--type <type>",
+    "Subagent type for all tasks (explore, plan, code, review, research)",
+    "code",
+  )
+  .option("--budget <amount>", "Budget limit per task in dollars", "1.0")
+  .action(async (tasks: string[], opts: { type: string; budget: string }) => {
+    const config = loadConfig();
+    const db = getDb();
+    const resolvedKeys = await resolveProviderKeys();
+    const registry = await createProviderRegistry(config, resolvedKeys);
+    const costTracker = new CostTracker(db, config.budget);
+    const tools = createDefaultToolRegistry();
+    const projectPath = process.cwd();
+    const { prompt: systemPrompt, frontmatter } =
+      buildSystemPrompt(projectPath);
+    const router = new BrainstormRouter(
+      config,
+      registry,
+      costTracker,
+      frontmatter,
+    );
+
+    console.log(`\n  Storm — ${tasks.length} parallel agents`);
+    console.log(`  Type: ${opts.type} | Budget: $${opts.budget}/task\n`);
+
+    for (let i = 0; i < tasks.length; i++) {
+      console.log(`  [${i + 1}] ${tasks[i]}`);
+    }
+    console.log();
+
+    const startTime = Date.now();
+    const results = await spawnParallel(
+      tasks.map((task) => ({ task, type: opts.type as any })),
+      {
+        config,
+        registry,
+        router,
+        costTracker,
+        tools,
+        projectPath,
+        systemPrompt,
+        budgetLimit: parseFloat(opts.budget),
+      },
+    );
+
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`  ──────────────────────────────────────────────────`);
+    console.log(`  ${results.length} agents completed in ${elapsed}s\n`);
+
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      const status = r.text ? "done" : "failed";
+      const cost = `$${r.cost.toFixed(4)}`;
+      console.log(
+        `  [${i + 1}] ${status} (${r.toolCalls.length} tool calls, ${cost})`,
+      );
+      if (r.text) {
+        // Show first 200 chars of response
+        const preview = r.text.slice(0, 200).replace(/\n/g, " ");
+        console.log(`      ${preview}${r.text.length > 200 ? "..." : ""}`);
+      }
+      console.log();
+    }
+
+    const totalCost = results.reduce((sum, r) => sum + r.cost, 0);
+    console.log(`  Total cost: $${totalCost.toFixed(4)}`);
+    console.log();
+    closeDb();
   });
 
 // ── Queue Command (Task Queue) ───────────────────────────────────

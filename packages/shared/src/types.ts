@@ -395,6 +395,8 @@ export interface WorkflowStepDef {
   isReviewStep: boolean;
   loopBackTo?: string;
   skipCondition?: string;
+  /** Shell commands that must exit 0 before proceeding to the next step. */
+  killGates?: string[];
 }
 
 export interface Artifact {
@@ -485,6 +487,8 @@ export type WorkflowEvent =
       estimated: number;
       breakdown: Array<{ step: string; cost: number }>;
     }
+  | { type: "gate-passed"; step: WorkflowStepRun; gate: string }
+  | { type: "gate-failed"; step: WorkflowStepRun; gate: string; output: string }
   | { type: "workflow-paused"; reason: string; run: WorkflowRun }
   | { type: "workflow-completed"; run: WorkflowRun }
   | { type: "workflow-failed"; run: WorkflowRun; error: Error };
