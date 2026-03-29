@@ -70,4 +70,53 @@ export const BUILTIN_MCP_SERVERS: BuiltinMCPServer[] = [
       "Linear API — create/update issues, manage projects, track cycles and milestones",
     enabled: true,
   },
+  {
+    name: "jira",
+    transport: "stdio",
+    command: "npx",
+    args: ["mcp-jira"],
+    npmPackage: "mcp-jira",
+    description:
+      "Jira API — create/update issues, manage sprints, query boards and backlogs",
+    enabled: true,
+  },
+  {
+    name: "notion",
+    transport: "stdio",
+    command: "npx",
+    args: ["@anthropic/mcp-notion"],
+    npmPackage: "@anthropic/mcp-notion",
+    description:
+      "Notion API — read/write pages, databases, search workspace content",
+    enabled: true,
+  },
+  {
+    name: "datadog",
+    transport: "stdio",
+    command: "npx",
+    args: ["mcp-datadog"],
+    npmPackage: "mcp-datadog",
+    description:
+      "Datadog API — query metrics, monitors, logs, APM traces, dashboards",
+    enabled: true,
+  },
+  {
+    name: "aws",
+    transport: "stdio",
+    command: "npx",
+    args: ["mcp-aws"],
+    npmPackage: "mcp-aws",
+    description: "AWS API — S3, Lambda, CloudWatch, DynamoDB, IAM operations",
+    enabled: true,
+  },
+  {
+    name: "stripe",
+    transport: "stdio",
+    command: "npx",
+    args: ["@anthropic/mcp-stripe"],
+    npmPackage: "@anthropic/mcp-stripe",
+    description:
+      "Stripe API — customers, subscriptions, payments, invoices, webhooks",
+    enabled: true,
+  },
 ];

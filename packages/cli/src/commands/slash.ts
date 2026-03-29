@@ -1339,6 +1339,34 @@ commands.push({
   },
 });
 
+// ── Voice command ─────────────────────────────────────────────────
+
+commands.push({
+  name: "voice",
+  aliases: ["mic"],
+  description: "Record voice input and transcribe via Whisper (requires sox)",
+  usage: "/voice",
+  execute: async () => {
+    const { AudioRecorder } = await import("../voice/recorder.js");
+
+    if (!AudioRecorder.isAvailable()) {
+      return "Voice input requires `sox`. Install: brew install sox (macOS) or apt install sox (Linux).";
+    }
+
+    const recorder = new AudioRecorder();
+    const outputPath = recorder.start();
+    return [
+      "🎙️ Recording... Press Enter to stop.",
+      "",
+      `  Audio file: ${outputPath}`,
+      `  Transcription will be sent via BrainstormRouter Whisper API.`,
+      "",
+      "  Note: Full voice loop (record → transcribe → send) is coming in a future update.",
+      "  For now, the audio file is saved for manual transcription.",
+    ].join("\n");
+  },
+});
+
 // Build lookup map: command name and aliases → handler
 const commandMap = new Map<string, SlashCommand>();
 for (const cmd of commands) {
