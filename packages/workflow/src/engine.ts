@@ -111,9 +111,9 @@ export async function* runWorkflow(
 
   // Execute steps
   let stepIndex = 0;
-  let confidenceRetries = 0;
   const MAX_CONFIDENCE_RETRIES = 2;
   while (stepIndex < definition.steps.length) {
+    let confidenceRetries = 0;
     const stepDef = definition.steps[stepIndex];
     const agent = stepAgents.get(stepDef.id);
     if (!agent) {
