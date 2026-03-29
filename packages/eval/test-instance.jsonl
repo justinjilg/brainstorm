@@ -1,0 +1,1 @@
+{"instance_id": "brainstorm__brainstorm-0001", "repo": "justinjilg/brainstorm", "base_commit": "bbe69d0", "problem_statement": "The README.md says the project has 20 TypeScript packages but it actually has 24. Update the README to say 24 packages.", "hints_text": "Check README.md line that mentions '20 TypeScript packages' and change it to 24.", "test_patch": ""}

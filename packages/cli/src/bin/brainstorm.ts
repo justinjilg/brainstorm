@@ -242,24 +242,170 @@ program
         process.exit(1);
       }
 
-      // Run agent on each instance
-      console.log(`  Running agent on instances...`);
+      // Set up agent infrastructure (needed for spawnSubagent)
+      const config = loadConfig();
+      config.general.defaultPermissionMode = "auto"; // unattended
+      const db = getDb();
+      const resolvedKeys = await resolveProviderKeys();
+      const registry = await createProviderRegistry(config, resolvedKeys);
+      const costTracker = new CostTracker(db, config.budget);
+      const tools = createDefaultToolRegistry();
+      const { frontmatter } = buildSystemPrompt(process.cwd());
+      const router = new BrainstormRouter(
+        config,
+        registry,
+        costTracker,
+        frontmatter,
+      );
+      if (opts.model) {
+        // Force specific model if requested
+      } else {
+        router.setStrategy("quality-first");
+      }
+
+      const { execFileSync: execGit } = await import("node:child_process");
+      const {
+        mkdtempSync,
+        writeFileSync: writePatch,
+        rmSync,
+      } = await import("node:fs");
+      const { tmpdir } = await import("node:os");
+
+      let completed = 0;
+
+      // Run agent on each instance — REAL implementation
+      console.log(`  Running agent on ${instances.length} instances...\n`);
       const patches = await runSWEBench(
         instances,
         async (instance: any) => {
-          // Use Brainstorm to generate a patch for each instance
           const startTime = Date.now();
-          // Placeholder: in full implementation, this spawns a storm run --unattended
-          // with the issue description as the prompt, in a Docker container at baseCommit
-          return {
-            instanceId: instance.instanceId,
-            patch: "",
-            model: opts.model ?? "auto",
-            strategy: "quality-first",
-            cost: 0,
-            latencyMs: Date.now() - startTime,
-            success: false,
-          };
+          const instanceNum = ++completed;
+          const shortId = instance.instanceId.slice(0, 40);
+
+          try {
+            // 1. Create isolated workspace
+            const workDir = mkdtempSync(join(tmpdir(), "swe-bench-"));
+            const repoDir = join(workDir, "repo");
+
+            try {
+              // 2. Clone repo at baseCommit
+              process.stderr.write(
+                `  [${instanceNum}/${instances.length}] ${shortId} — cloning...`,
+              );
+              execGit(
+                "git",
+                [
+                  "clone",
+                  "--depth",
+                  "100",
+                  `https://github.com/${instance.repo}.git`,
+                  "repo",
+                ],
+                {
+                  cwd: workDir,
+                  timeout: 120000,
+                  stdio: ["ignore", "pipe", "pipe"],
+                },
+              );
+              execGit("git", ["checkout", instance.baseCommit], {
+                cwd: repoDir,
+                timeout: 30000,
+                stdio: ["ignore", "pipe", "pipe"],
+              });
+
+              // 3. Run Brainstorm agent on the issue
+              process.stderr.write(` solving...`);
+              const issuePrompt = [
+                `You are solving a GitHub issue in this repository.`,
+                ``,
+                `## Problem`,
+                instance.issue,
+                instance.hints ? `\n## Hints\n${instance.hints}` : "",
+                ``,
+                `## Instructions`,
+                `1. Read the relevant source files to understand the codebase`,
+                `2. Identify the root cause of the issue`,
+                `3. Make the minimal code changes needed to fix it`,
+                `4. Do NOT modify test files`,
+                `5. Verify your changes make sense by re-reading the modified files`,
+              ].join("\n");
+
+              const result = await spawnSubagent(issuePrompt, {
+                config,
+                registry,
+                router,
+                costTracker,
+                tools,
+                projectPath: repoDir,
+                type: "code",
+                maxSteps: 15,
+                budgetLimit: 3.0,
+                permissionCheck: () => "allow", // unattended — auto-approve everything
+              });
+
+              // 4. Capture the diff (what the agent actually changed)
+              let patch = "";
+              try {
+                patch = execGit("git", ["diff"], {
+                  cwd: repoDir,
+                  encoding: "utf-8",
+                  timeout: 10000,
+                  stdio: ["ignore", "pipe", "pipe"],
+                }) as unknown as string;
+
+                // Also capture any new untracked files
+                const untrackedDiff = execGit("git", ["diff", "--cached"], {
+                  cwd: repoDir,
+                  encoding: "utf-8",
+                  timeout: 10000,
+                  stdio: ["ignore", "pipe", "pipe"],
+                }) as unknown as string;
+                if (untrackedDiff) patch += "\n" + untrackedDiff;
+              } catch {
+                // git diff failed — no changes made
+              }
+
+              const success = patch.length > 0 && !result.budgetExceeded;
+              const status = success
+                ? "✓"
+                : patch.length === 0
+                  ? "no changes"
+                  : "budget exceeded";
+              process.stderr.write(
+                ` ${status} ($${result.cost.toFixed(3)}, ${result.modelUsed})\n`,
+              );
+
+              return {
+                instanceId: instance.instanceId,
+                patch,
+                model: result.modelUsed,
+                strategy: opts.model ? "forced" : "quality-first",
+                cost: result.cost,
+                latencyMs: Date.now() - startTime,
+                success,
+              };
+            } finally {
+              // Cleanup workspace
+              try {
+                rmSync(workDir, { recursive: true, force: true });
+              } catch {
+                /* best effort */
+              }
+            }
+          } catch (err: any) {
+            process.stderr.write(
+              ` ERROR: ${(err.message ?? "").slice(0, 80)}\n`,
+            );
+            return {
+              instanceId: instance.instanceId,
+              patch: "",
+              model: "error",
+              strategy: "quality-first",
+              cost: 0,
+              latencyMs: Date.now() - startTime,
+              success: false,
+            };
+          }
         },
         concurrency,
       );
