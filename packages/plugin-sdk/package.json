@@ -1,7 +1,6 @@
 {
   "name": "@brainstorm/plugin-sdk",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.12.1",
   "type": "module",
   "exports": {
     ".": {
@@ -16,11 +15,34 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brainstorm/shared": "*",
+    "@brainstorm/shared": "0.12.1",
     "zod": "^3"
   },
   "devDependencies": {
     "tsup": "^8",
     "typescript": "^5.7"
-  }
+  },
+  "description": "SDK for building Brainstorm plugins (tools, hooks, skills)",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/justinjilg/brainstorm.git",
+    "directory": "packages/plugin-sdk"
+  },
+  "homepage": "https://brainstorm.co",
+  "keywords": [
+    "ai",
+    "coding-assistant",
+    "llm",
+    "multi-model",
+    "routing",
+    "agent",
+    "developer-tools",
+    "brainstorm"
+  ],
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts"
 }

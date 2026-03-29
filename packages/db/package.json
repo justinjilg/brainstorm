@@ -1,7 +1,6 @@
 {
   "name": "@brainstorm/db",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.12.1",
   "type": "module",
   "exports": {
     ".": {
@@ -16,12 +15,35 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brainstorm/shared": "*",
+    "@brainstorm/shared": "0.12.1",
     "better-sqlite3": "^11"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7",
     "tsup": "^8",
     "typescript": "^5.7"
-  }
+  },
+  "description": "SQLite persistence with WAL mode and auto-migrations",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/justinjilg/brainstorm.git",
+    "directory": "packages/db"
+  },
+  "homepage": "https://brainstorm.co",
+  "keywords": [
+    "ai",
+    "coding-assistant",
+    "llm",
+    "multi-model",
+    "routing",
+    "agent",
+    "developer-tools",
+    "brainstorm"
+  ],
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts"
 }

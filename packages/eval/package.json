@@ -1,7 +1,6 @@
 {
   "name": "@brainstorm/eval",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.12.1",
   "type": "module",
   "exports": {
     ".": {
@@ -16,17 +15,40 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brainstorm/shared": "*",
-    "@brainstorm/config": "*",
-    "@brainstorm/providers": "*",
-    "@brainstorm/router": "*",
-    "@brainstorm/tools": "*",
-    "@brainstorm/core": "*",
-    "@brainstorm/db": "*",
-    "@brainstorm/gateway": "*"
+    "@brainstorm/shared": "0.12.1",
+    "@brainstorm/config": "0.12.1",
+    "@brainstorm/providers": "0.12.1",
+    "@brainstorm/router": "0.12.1",
+    "@brainstorm/tools": "0.12.1",
+    "@brainstorm/core": "0.12.1",
+    "@brainstorm/db": "0.12.1",
+    "@brainstorm/gateway": "0.12.1"
   },
   "devDependencies": {
     "tsup": "^8",
     "typescript": "^5.7"
-  }
+  },
+  "description": "Capability probes (7 dimensions), eval runner, and scorer",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/justinjilg/brainstorm.git",
+    "directory": "packages/eval"
+  },
+  "homepage": "https://brainstorm.co",
+  "keywords": [
+    "ai",
+    "coding-assistant",
+    "llm",
+    "multi-model",
+    "routing",
+    "agent",
+    "developer-tools",
+    "brainstorm"
+  ],
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts"
 }
