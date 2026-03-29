@@ -1,5 +1,5 @@
-import { resolve, relative } from 'node:path';
-import { realpathSync, existsSync } from 'node:fs';
+import { resolve, relative } from "node:path";
+import { realpathSync, existsSync } from "node:fs";
 
 /**
  * Path Safety Guard — prevents path traversal attacks.
@@ -19,7 +19,7 @@ import { realpathSync, existsSync } from 'node:fs';
 export function resolveSafe(filePath: string, workspaceRoot: string): string {
   // Block explicit '..' segments before resolution
   const segments = filePath.split(/[/\\]/);
-  if (segments.includes('..')) {
+  if (segments.includes("..")) {
     throw new PathTraversalError(filePath, workspaceRoot);
   }
 
@@ -27,22 +27,28 @@ export function resolveSafe(filePath: string, workspaceRoot: string): string {
 
   // Resolve symlinks if the file exists (prevents symlink-based escapes)
   const realResolved = existsSync(resolved) ? realpathSync(resolved) : resolved;
-  const realWorkspace = existsSync(workspaceRoot) ? realpathSync(workspaceRoot) : resolve(workspaceRoot);
+  const realWorkspace = existsSync(workspaceRoot)
+    ? realpathSync(workspaceRoot)
+    : resolve(workspaceRoot);
 
   const rel = relative(realWorkspace, realResolved);
 
   // Check for path traversal (relative path starts with .. or is absolute)
-  if (rel.startsWith('..') || rel.startsWith('/')) {
+  if (rel.startsWith("..") || rel.startsWith("/")) {
     throw new PathTraversalError(filePath, workspaceRoot);
   }
 
-  return resolved;
+  // Return the symlink-resolved path to prevent TOCTOU symlink swap attacks
+  return realResolved;
 }
 
 /**
  * Check if a path is within the workspace (non-throwing version).
  */
-export function isWithinWorkspace(filePath: string, workspaceRoot: string): boolean {
+export function isWithinWorkspace(
+  filePath: string,
+  workspaceRoot: string,
+): boolean {
   try {
     resolveSafe(filePath, workspaceRoot);
     return true;
@@ -56,7 +62,9 @@ export class PathTraversalError extends Error {
     public readonly attemptedPath: string,
     public readonly workspaceRoot: string,
   ) {
-    super(`Path traversal blocked: "${attemptedPath}" escapes workspace "${workspaceRoot}"`);
-    this.name = 'PathTraversalError';
+    super(
+      `Path traversal blocked: "${attemptedPath}" escapes workspace "${workspaceRoot}"`,
+    );
+    this.name = "PathTraversalError";
   }
 }
