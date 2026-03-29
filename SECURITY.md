@@ -27,21 +27,32 @@ Brainstorm handles sensitive data (API keys, code, shell access) and takes secur
 
 ### Key Storage
 
-- API keys are encrypted at rest using **AES-256-GCM** with **Argon2id** key derivation
-- Vault stored at `~/.brainstorm/vault.enc`
-- Optional 1Password bridge reads from vault "Dev Keys" via `op read`
+- API keys encrypted at rest using **AES-256-GCM** with **Argon2id** key derivation (64MB memory, 3 iterations, parallelism 4 — meets OWASP interactive-login recommendation)
+- Plaintext key ring buffers zeroed immediately after encryption/decryption (prevents memory residency)
+- Vault stored at `~/.brainstorm/vault.enc` with 0o600 permissions
+- Auto-lock with configurable timeout; re-prompts for password after timeout
+- 1Password bridge with 60-second failure TTL (self-heals from transient errors)
 - Key resolver chain: local vault → 1Password → environment variables
 
 ### Shell Execution
 
 - Three sandbox modes: `none`, `restricted` (default), `container` (Docker)
-- Restricted mode blocks dangerous patterns (rm -rf /, curl | sh, etc.)
-- Container mode runs all shell commands in an isolated Docker container
+- Restricted mode blocks dangerous patterns (rm -rf /, curl | sh, fork bombs, etc.)
+- Sandbox enforced on both `shell` and `process_spawn` tools
+- Container mode uses per-invocation sentinel UUIDs for exit code isolation
+- Background process limits enforced before spawn; orphans killed on eviction
 - Tool permission system: `auto`, `confirm`, `plan` modes
+
+### File Safety
+
+- Path traversal protection on all file tools (read, write, edit, multi-edit, batch-edit)
+- Blocked system paths: /etc, /usr, /var, /proc, /sys, /dev, /sbin, /boot
+- Atomic writes (tmp-file-then-rename) on file_write and multi_edit
+- Checkpoint snapshots before every write for undo capability
 
 ### Agent Security
 
-- 10 middleware in the security pipeline, including post-write credential scanning
+- 11 middleware in the security pipeline, including post-write credential scanning
 - 19 regex patterns detect leaked secrets in file writes
 - Subagent isolation: `none`, `git-stash`, `docker`
 - Permission levels per tool (read, write, execute, admin)

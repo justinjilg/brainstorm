@@ -1,5 +1,26 @@
 # Changelog
 
+## [v12.1] — 2026-03-29 — Security Hardening
+
+### Security
+
+- Vault: zero plaintext key ring buffers after encrypt/decrypt (memory residency fix)
+- Vault: fix auto-lock silently falling through to env vars without re-prompting
+- multi_edit: add path safety check (was missing — full filesystem write access)
+- process_spawn: add sandbox enforcement (was bypassing restricted-mode guards)
+- Docker sandbox: per-invocation sentinel UUID (prevents exit code spoofing)
+- 1Password: 60s failure cache TTL (transient errors self-heal vs 30min stale)
+
+### Fixed
+
+- CI: remove continue-on-error on test step (was silencing all test failures)
+- Gateway: extract shared HTTP helper (eliminates 40-line duplication)
+- Hooks: add remove(id) method (register returned ID but removal was missing)
+- MCP: url field optional in MCPServerConfig (matches Zod schema for stdio)
+- Error.captureStackTrace in BrainstormError base class
+- Telemetry test fixtures use valid enum values
+- CLAUDE.md package count 16→20
+
 ## [v12] — 2026-03-28 — Orchestration Engine
 
 - 9-phase orchestration pipeline: `storm orchestrate pipeline`
