@@ -1,4 +1,4 @@
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 
 /**
  * BrainstormRouter sends a "guardian" SSE event after [DONE] with cost/audit metadata.
@@ -11,8 +11,8 @@ function createGuardianFilterFetch(): typeof globalThis.fetch {
   return async (input: string | URL | Request, init?: RequestInit) => {
     const response = await globalThis.fetch(input, init);
 
-    const contentType = response.headers.get('content-type') ?? '';
-    if (!contentType.includes('text/event-stream') || !response.body) {
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!contentType.includes("text/event-stream") || !response.body) {
       return response;
     }
 
@@ -31,30 +31,37 @@ function createGuardianFilterFetch(): typeof globalThis.fetch {
         const text = decoder.decode(value, { stream: true });
 
         // Fast path: most chunks don't contain guardian data
-        if (!text.includes('guardian') && !text.includes(': guardian')) {
+        if (!text.includes("guardian") && !text.includes(": guardian")) {
           controller.enqueue(value);
           return;
         }
 
         // Slow path: filter line by line
-        const lines = text.split('\n');
+        const lines = text.split("\n");
         const kept: string[] = [];
         for (const line of lines) {
           // Drop event: guardian lines
-          if (line.startsWith('event: guardian') || line.startsWith('event:guardian')) continue;
+          if (
+            line.startsWith("event: guardian") ||
+            line.startsWith("event:guardian")
+          )
+            continue;
           // Drop SSE comments with guardian prefix
-          if (line.startsWith(': guardian')) continue;
+          if (line.startsWith(": guardian")) continue;
           // Drop data lines containing guardian JSON
-          if (line.startsWith('data: ') && line.includes('"guardian"')) {
+          if (line.startsWith("data: ") && line.includes('"guardian"')) {
             try {
               const parsed = JSON.parse(line.slice(6));
-              if (parsed && typeof parsed === 'object' && 'guardian' in parsed) continue;
-            } catch { /* not JSON, pass through */ }
+              if (parsed && typeof parsed === "object" && "guardian" in parsed)
+                continue;
+            } catch {
+              /* not JSON, pass through */
+            }
           }
           kept.push(line);
         }
 
-        const filtered = kept.join('\n');
+        const filtered = kept.join("\n");
         if (filtered.trim()) {
           controller.enqueue(encoder.encode(filtered));
         }
@@ -79,8 +86,8 @@ function createGuardianFilterFetch(): typeof globalThis.fetch {
  */
 export function createBrainstormSaaSProvider(apiKey: string) {
   return createOpenAICompatible({
-    name: 'brainstormrouter',
-    baseURL: 'https://api.brainstormrouter.com/v1',
+    name: "brainstormrouter",
+    baseURL: "https://api.brainstormrouter.com/v1",
     headers: {
       Authorization: `Bearer ${apiKey}`,
     },
@@ -89,9 +96,21 @@ export function createBrainstormSaaSProvider(apiKey: string) {
 }
 
 /**
- * Community tier API key — ships with the CLI for zero-setup onboarding.
+ * Community tier API key — INTENTIONALLY PUBLIC.
+ *
+ * This key is rate-limited and budget-capped at the BrainstormRouter
+ * infrastructure level. It enables zero-config onboarding for new users
+ * who haven't set up their own API keys yet. It has:
+ * - 10 RPM rate limit
+ * - $5/month budget cap
+ * - Community-tier scopes only (no admin access)
+ * - Usage attributed to "community" tenant (not a personal account)
+ *
+ * This is the standard pattern for OSS tools with a SaaS backend
+ * (e.g., Sentry DSN, PostHog project key). The key is safe to commit.
  */
-const COMMUNITY_KEY = 'br_live_b028d73791f9a2d614acafe80b89d36f66e69d3091d9b70b24658ccc03a5a48a';
+const COMMUNITY_KEY =
+  "br_live_b028d73791f9a2d614acafe80b89d36f66e69d3091d9b70b24658ccc03a5a48a";
 
 export function getBrainstormApiKey(): string {
   return process.env.BRAINSTORM_API_KEY ?? COMMUNITY_KEY;

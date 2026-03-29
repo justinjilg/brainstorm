@@ -233,25 +233,6 @@ const MIGRATIONS = [
     `,
   },
   {
-    name: "010_session_patterns",
-    sql: `
-      CREATE TABLE session_patterns (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        project_path TEXT NOT NULL,
-        pattern_type TEXT NOT NULL CHECK (pattern_type IN ('tool_success', 'command_timing', 'user_preference', 'model_choice')),
-        key TEXT NOT NULL,
-        value TEXT NOT NULL,
-        confidence REAL NOT NULL DEFAULT 0.5,
-        occurrences INTEGER NOT NULL DEFAULT 1,
-        last_seen INTEGER NOT NULL DEFAULT (unixepoch()),
-        created_at INTEGER NOT NULL DEFAULT (unixepoch())
-      );
-      CREATE INDEX idx_patterns_project ON session_patterns(project_path);
-      CREATE INDEX idx_patterns_type ON session_patterns(pattern_type, key);
-      CREATE UNIQUE INDEX idx_patterns_unique ON session_patterns(project_path, pattern_type, key);
-    `,
-  },
-  {
     name: "009_model_performance_v2",
     sql: `
       CREATE TABLE model_performance_v2 (
@@ -272,6 +253,25 @@ const MIGRATIONS = [
       CREATE INDEX idx_perf_v2_model_task ON model_performance_v2(model_id, task_type);
       CREATE INDEX idx_perf_v2_shape ON model_performance_v2(shape_key);
       CREATE INDEX idx_perf_v2_timestamp ON model_performance_v2(timestamp);
+    `,
+  },
+  {
+    name: "010_session_patterns",
+    sql: `
+      CREATE TABLE session_patterns (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_path TEXT NOT NULL,
+        pattern_type TEXT NOT NULL CHECK (pattern_type IN ('tool_success', 'command_timing', 'user_preference', 'model_choice')),
+        key TEXT NOT NULL,
+        value TEXT NOT NULL,
+        confidence REAL NOT NULL DEFAULT 0.5,
+        occurrences INTEGER NOT NULL DEFAULT 1,
+        last_seen INTEGER NOT NULL DEFAULT (unixepoch()),
+        created_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      CREATE INDEX idx_patterns_project ON session_patterns(project_path);
+      CREATE INDEX idx_patterns_type ON session_patterns(pattern_type, key);
+      CREATE UNIQUE INDEX idx_patterns_unique ON session_patterns(project_path, pattern_type, key);
     `,
   },
   {
