@@ -130,10 +130,27 @@ async function connectMCPServers(
 
 const program = new Command();
 
+// Read version from package.json at runtime (stays in sync with bump-version.mjs)
+import { readFileSync as readFileSyncVersion } from "node:fs";
+import { dirname as dirnameVersion } from "node:path";
+import { fileURLToPath as fileURLToPathVersion } from "node:url";
+const __pkg_dir = join(
+  dirnameVersion(fileURLToPathVersion(import.meta.url)),
+  "..",
+);
+let CLI_VERSION = "0.12.1";
+try {
+  CLI_VERSION = JSON.parse(
+    readFileSyncVersion(join(__pkg_dir, "package.json"), "utf-8"),
+  ).version;
+} catch {
+  /* fallback */
+}
+
 program
   .name("brainstorm")
   .description("AI coding assistant with intelligent model routing")
-  .version("0.1.0");
+  .version(CLI_VERSION);
 
 program
   .command("init")
