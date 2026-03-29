@@ -5,7 +5,7 @@
  * progress counts, and keyboard navigation.
  */
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
 import type {
   PlanFile,
@@ -168,10 +168,12 @@ export function PlanTree({
   const safeCursor = Math.min(cursor, nodes.length - 1);
   const selectedNode = nodes[safeCursor];
 
-  // Notify parent of selection change
-  if (selectedNode && selectedNode.id !== selectedId) {
-    onSelect(selectedNode.id, selectedNode.type);
-  }
+  // Notify parent of selection change (must be in useEffect, not during render)
+  useEffect(() => {
+    if (selectedNode && selectedNode.id !== selectedId) {
+      onSelect(selectedNode.id, selectedNode.type);
+    }
+  }, [selectedNode?.id]);
 
   // Scroll window
   const scrollOffset = Math.max(0, safeCursor - maxHeight + 3);
