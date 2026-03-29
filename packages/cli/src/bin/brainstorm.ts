@@ -2537,6 +2537,145 @@ program
     console.log();
   });
 
+// ── Loop Command ──────────────────────────────────────────────────
+
+program
+  .command("loop")
+  .description("Run a prompt or slash command on a recurring interval")
+  .argument("<prompt>", "Prompt or /command to run repeatedly")
+  .option("-i, --interval <minutes>", "Interval between runs in minutes", "10")
+  .option(
+    "-n, --max-runs <count>",
+    "Maximum number of runs (0 = unlimited)",
+    "0",
+  )
+  .action(
+    async (prompt: string, opts: { interval: string; maxRuns: string }) => {
+      const intervalMs = Math.max(1, parseInt(opts.interval) || 10) * 60 * 1000;
+      const maxRuns = parseInt(opts.maxRuns) || 0;
+      let runCount = 0;
+
+      console.log(
+        `\n  Loop: "${prompt}" every ${opts.interval}m${maxRuns > 0 ? ` (max ${maxRuns} runs)` : ""}`,
+      );
+      console.log(`  Press Ctrl+C to stop.\n`);
+
+      const runOnce = async () => {
+        runCount++;
+        const ts = new Date().toLocaleTimeString();
+        console.log(`  [${ts}] Run #${runCount}...`);
+
+        try {
+          // Shell out to `storm run` for each iteration — clean process per run
+          const { execFile } = await import("node:child_process");
+          const { promisify } = await import("node:util");
+          const execFileAsync = promisify(execFile);
+
+          const stormBin = process.argv[1]; // path to this script
+          const { stdout, stderr } = await execFileAsync(
+            process.execPath,
+            [stormBin, "run", prompt],
+            {
+              cwd: process.cwd(),
+              timeout: 5 * 60 * 1000, // 5 min max per run
+              env: { ...process.env },
+            },
+          );
+          if (stdout.trim()) console.log(stdout.trim());
+          if (stderr.trim()) console.error(stderr.trim());
+        } catch (err: any) {
+          console.error(
+            `  Error: ${(err.stderr ?? err.message).slice(0, 200)}`,
+          );
+        }
+
+        if (maxRuns > 0 && runCount >= maxRuns) {
+          console.log(`\n  Loop complete (${runCount} runs).`);
+          process.exit(0);
+        }
+      };
+
+      // Run immediately, then on interval
+      await runOnce();
+      setInterval(runOnce, intervalMs);
+    },
+  );
+
+// ── Memory Command ────────────────────────────────────────────────
+
+program
+  .command("memory")
+  .description("View and manage agent memory entries")
+  .argument("[action]", "Action: list, search, forget", "list")
+  .argument("[query]", "Search query or memory key to forget")
+  .action(async (action: string, query?: string) => {
+    const { MemoryManager } = await import("@brainstorm/core");
+    const homePath = join(homedir(), ".brainstorm", "memory");
+    const memory = new MemoryManager(homePath);
+
+    switch (action) {
+      case "list": {
+        const entries = memory.list();
+        if (entries.length === 0) {
+          console.log("\n  No memory entries.\n");
+          return;
+        }
+        console.log(`\n  Memory (${entries.length} entries):\n`);
+        for (const entry of entries) {
+          const typeIcon =
+            entry.type === "user"
+              ? "👤"
+              : entry.type === "feedback"
+                ? "💬"
+                : entry.type === "project"
+                  ? "📁"
+                  : "🔗";
+          console.log(`    ${typeIcon} ${entry.name}`);
+          console.log(`       ${entry.description.slice(0, 80)}`);
+        }
+        console.log();
+        break;
+      }
+      case "search": {
+        if (!query) {
+          console.error("  Usage: storm memory search <query>");
+          process.exit(1);
+        }
+        const results = memory.search(query);
+        if (results.length === 0) {
+          console.log(`\n  No memory entries matching "${query}".\n`);
+          return;
+        }
+        console.log(
+          `\n  Found ${results.length} entries matching "${query}":\n`,
+        );
+        for (const entry of results) {
+          console.log(`    ${entry.name}: ${entry.description.slice(0, 80)}`);
+        }
+        console.log();
+        break;
+      }
+      case "forget": {
+        if (!query) {
+          console.error("  Usage: storm memory forget <key>");
+          process.exit(1);
+        }
+        const deleted = memory.delete(query);
+        if (deleted) {
+          console.log(`\n  Forgot: "${query}"\n`);
+        } else {
+          console.log(`\n  Memory "${query}" not found.\n`);
+        }
+        break;
+      }
+      default:
+        console.error(
+          `  Unknown action: ${action}. Use list, search, or forget.`,
+        );
+        process.exit(1);
+    }
+  });
+
 // ── Sessions Command ───────────────────────────────────────────────
 
 program
