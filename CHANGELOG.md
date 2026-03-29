@@ -20,6 +20,26 @@
 - Error.captureStackTrace in BrainstormError base class
 - Telemetry test fixtures use valid enum values
 - CLAUDE.md package count 16→20
+- Thompson sampling: proper Gamma-ratio Beta sampler (Marsaglia-Tsang method)
+- Soft budget limits: log warnings instead of silent no-op
+- Scheduler: honest "failed" status when execution engine not wired
+- Workflow: confidenceRetries reset per step (was leaking across steps)
+- Review approval: rejection signals checked before approval signals
+- Path guard: return symlink-resolved path (prevents TOCTOU swap)
+- Ignore patterns: remove substring matching (was over-matching)
+- Secret scanner: catch unquoted .env values
+- Middleware pipeline: protected set prevents removal of security-scan
+- Agent loop: apply middleware beforeAgent return value (was discarded)
+- Trajectory capture: redact credentials, strip full path to basename
+- Memory extraction: per-instance dedup set (was leaking across sessions)
+- Trajectory reducer: fix inverted duplicate file-read detection
+- Dead code removed: memory manager updateIndex()
+- Subagent types: add missing "decompose" and "external"
+- Loop detector: non-read/write tools no longer inflate read count
+- PlanTree: move onSelect to useEffect (was mutating state during render)
+- Voice recorder: replace require() with ESM import
+- Vault get: mask secrets by default, require --reveal flag
+- Vault password env: log warning when using BRAINSTORM_VAULT_PASSWORD
 
 ## [v12] — 2026-03-28 — Orchestration Engine
 
