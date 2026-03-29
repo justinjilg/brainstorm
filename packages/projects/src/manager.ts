@@ -7,7 +7,7 @@
 
 import type Database from "better-sqlite3";
 import { basename, resolve } from "node:path";
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync, readFileSync } from "node:fs";
 import type { Project } from "@brainstorm/shared";
 import { ProjectRepository, ProjectMemoryRepository } from "./repository.js";
 
@@ -63,7 +63,7 @@ export class ProjectManager {
     if (!description) {
       try {
         const pkg = JSON.parse(
-          require("node:fs").readFileSync(`${absPath}/package.json`, "utf-8"),
+          readFileSync(`${absPath}/package.json`, "utf-8"),
         );
         description = pkg.description ?? "";
       } catch {
