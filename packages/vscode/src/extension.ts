@@ -1,5 +1,5 @@
-import type * as vscode from 'vscode';
-import { BrainstormChatProvider } from './chat-provider.js';
+import type * as vscode from "vscode";
+import { BrainstormChatProvider } from "./chat-provider.js";
 
 /**
  * VS Code Extension entry point.
@@ -17,7 +17,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Register chat participant
   const participant = (globalThis as any).vscode?.chat?.createChatParticipant?.(
-    'brainstorm',
+    "brainstorm",
     (
       request: vscode.ChatRequest,
       chatContext: vscode.ChatContext,
@@ -28,31 +28,56 @@ export function activate(context: vscode.ExtensionContext): void {
 
   if (participant) {
     participant.iconPath = {
-      light: (globalThis as any).vscode?.Uri?.joinPath?.(context.extensionUri, 'media', 'icon-light.svg'),
-      dark: (globalThis as any).vscode?.Uri?.joinPath?.(context.extensionUri, 'media', 'icon-dark.svg'),
+      light: (globalThis as any).vscode?.Uri?.joinPath?.(
+        context.extensionUri,
+        "media",
+        "icon-light.svg",
+      ),
+      dark: (globalThis as any).vscode?.Uri?.joinPath?.(
+        context.extensionUri,
+        "media",
+        "icon-dark.svg",
+      ),
     };
     context.subscriptions.push(participant);
   }
 
   // Register commands
   const startChat = (globalThis as any).vscode?.commands?.registerCommand?.(
-    'brainstorm.startChat',
+    "brainstorm.startChat",
     () => {
-      (globalThis as any).vscode?.commands?.executeCommand?.('workbench.action.chat.open', { participant: 'brainstorm' });
+      (globalThis as any).vscode?.commands?.executeCommand?.(
+        "workbench.action.chat.open",
+        { participant: "brainstorm" },
+      );
     },
   );
   if (startChat) context.subscriptions.push(startChat);
 
   const selectModel = (globalThis as any).vscode?.commands?.registerCommand?.(
-    'brainstorm.selectModel',
+    "brainstorm.selectModel",
     async () => {
-      const models = ['claude-sonnet-4.5', 'gpt-4.1', 'gemini-2.5-pro', 'llama-3.2'];
-      const selected = await (globalThis as any).vscode?.window?.showQuickPick?.(models, {
-        placeHolder: 'Select a model for Brainstorm',
+      const models = [
+        "claude-opus-4.6",
+        "claude-sonnet-4.6",
+        "claude-haiku-4.5",
+        "gpt-5.4",
+        "gpt-4.1",
+        "gemini-3.1-pro",
+        "gemini-3.1-flash",
+        "deepseek-v3",
+        "kimi-k2.5",
+        "auto (let router decide)",
+      ];
+      const selected = await (
+        globalThis as any
+      ).vscode?.window?.showQuickPick?.(models, {
+        placeHolder: "Select a model for Brainstorm",
       });
       if (selected) {
-        chatProvider?.dispose();
-        // Model selection would be passed to the storm process in a full implementation
+        const modelId =
+          selected === "auto (let router decide)" ? undefined : selected;
+        chatProvider?.setPreferredModel(modelId);
       }
     },
   );

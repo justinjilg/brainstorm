@@ -1,5 +1,5 @@
-import type * as vscode from 'vscode';
-import { StormProcess } from './storm-process.js';
+import type * as vscode from "vscode";
+import { StormProcess } from "./storm-process.js";
 
 /**
  * VS Code Chat Participant handler.
@@ -32,7 +32,7 @@ export class BrainstormChatProvider {
     const storm = this.getOrCreateProcess();
 
     return new Promise<vscode.ChatResult>((resolve) => {
-      let responseText = '';
+      let responseText = "";
 
       const onEvent = (event: { type: string; data: unknown }) => {
         if (token.isCancellationRequested) {
@@ -42,30 +42,30 @@ export class BrainstormChatProvider {
         }
 
         switch (event.type) {
-          case 'text':
-            if (typeof event.data === 'string') {
+          case "text":
+            if (typeof event.data === "string") {
               stream.markdown(event.data);
               responseText += event.data;
             }
             break;
 
-          case 'tool-call':
-            if (typeof event.data === 'object' && event.data !== null) {
+          case "tool-call":
+            if (typeof event.data === "object" && event.data !== null) {
               const tc = event.data as { name: string; input?: unknown };
               stream.progress(`Running tool: ${tc.name}`);
             }
             break;
 
-          case 'tool-result':
+          case "tool-result":
             // Tool results are consumed by the model, not shown to user
             break;
 
-          case 'done':
+          case "done":
             cleanup();
             resolve({ metadata: { responseLength: responseText.length } });
             break;
 
-          case 'error':
+          case "error":
             stream.markdown(`\n\n**Error:** ${String(event.data)}`);
             cleanup();
             resolve({ metadata: { error: true } });
@@ -81,16 +81,16 @@ export class BrainstormChatProvider {
       };
 
       const cleanup = () => {
-        storm.removeListener('event', onEvent);
-        storm.removeListener('text', onText);
+        storm.removeListener("event", onEvent);
+        storm.removeListener("text", onText);
       };
 
-      storm.on('event', onEvent);
-      storm.on('text', onText);
+      storm.on("event", onEvent);
+      storm.on("text", onText);
 
       // Include active file context if available
       const activeFile = this.getActiveFilePath();
-      const prefix = activeFile ? `[Context: ${activeFile}]\n` : '';
+      const prefix = activeFile ? `[Context: ${activeFile}]\n` : "";
 
       storm.send(prefix + request.prompt);
 
@@ -112,7 +112,7 @@ export class BrainstormChatProvider {
     this.stormProcess = new StormProcess(workspaceFolder, this.preferredModel);
     this.stormProcess.start();
 
-    this.stormProcess.on('exit', () => {
+    this.stormProcess.on("exit", () => {
       this.stormProcess = null;
     });
 
@@ -121,14 +121,16 @@ export class BrainstormChatProvider {
 
   /** Get the active file path for context injection. */
   private getActiveFilePath(): string | undefined {
-    // This is a placeholder — actual implementation uses vscode.window.activeTextEditor
-    // which is available at runtime but not during type checking without the full vscode API
-    return undefined;
+    const vscodeApi = (globalThis as any).vscode;
+    const editor = vscodeApi?.window?.activeTextEditor;
+    return editor?.document?.uri?.fsPath;
   }
 
   /** Get the workspace root path. */
   private getWorkspacePath(): string {
-    return process.cwd();
+    const vscodeApi = (globalThis as any).vscode;
+    const folders = vscodeApi?.workspace?.workspaceFolders;
+    return folders?.[0]?.uri?.fsPath ?? process.cwd();
   }
 
   /** Dispose the provider and clean up. */
