@@ -39,7 +39,7 @@ const shellSchema = z.object({
   defaultTimeout: z.number().default(120_000),
   maxOutputBytes: z.number().default(50_000),
   // none: no restrictions, restricted: block dangerous commands, container: Docker sandbox
-  sandbox: z.enum(["none", "restricted", "container"]).default("none"),
+  sandbox: z.enum(["none", "restricted", "container"]).default("restricted"),
   containerImage: z.string().default("node:22-slim"),
   containerTimeout: z.number().default(120_000),
 });
