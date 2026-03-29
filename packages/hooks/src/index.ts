@@ -1,3 +1,19 @@
-export { HookManager } from './manager.js';
-export type { HookDefinition, HookEvent, HookResult, HookType } from './types.js';
-export { detectLinter, runLint, createAutoLintHooks } from './builtin/auto-lint.js';
+export { HookManager } from "./manager.js";
+export type {
+  HookDefinition,
+  HookEvent,
+  HookResult,
+  HookType,
+} from "./types.js";
+export {
+  detectLinter,
+  runLint,
+  createAutoLintHooks,
+} from "./builtin/auto-lint.js";
+export {
+  detectTestRunner,
+  detectBuildCommand,
+  runVerify,
+  createAutoVerifyHooks,
+  type VerifyResult,
+} from "./builtin/auto-verify.js";
