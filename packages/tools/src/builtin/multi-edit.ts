@@ -1,32 +1,81 @@
-import { z } from 'zod';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { defineTool } from '../base.js';
-import { applyEdits } from './edit-common.js';
+import { z } from "zod";
+import { readFileSync, writeFileSync, renameSync, existsSync } from "node:fs";
+import { resolve, relative } from "node:path";
+import { homedir } from "node:os";
+import { randomUUID } from "node:crypto";
+import { defineTool } from "../base.js";
+import { applyEdits } from "./edit-common.js";
+
+function ensureSafePath(filePath: string): string {
+  const cwd = process.cwd();
+  const resolved = resolve(cwd, filePath);
+  const home = homedir();
+  const BLOCKED = [
+    "/etc",
+    "/usr",
+    "/var",
+    "/proc",
+    "/sys",
+    "/dev",
+    "/sbin",
+    "/boot",
+  ];
+  if (BLOCKED.some((p) => resolved.startsWith(p))) {
+    throw new Error(`Path blocked: "${filePath}" is a protected system path`);
+  }
+  const isInHome = resolved.startsWith(home);
+  const isInCwd = !relative(cwd, resolved).startsWith("..");
+  if (!isInHome && !isInCwd) {
+    throw new Error(
+      `Path blocked: "${filePath}" is outside home directory and workspace`,
+    );
+  }
+  return resolved;
+}
 
 export const multiEditTool = defineTool({
-  name: 'multi_edit',
-  description: 'Perform multiple find-and-replace edits in a single file atomically.',
-  permission: 'confirm',
+  name: "multi_edit",
+  description:
+    "Perform multiple find-and-replace edits in a single file atomically.",
+  permission: "confirm",
   inputSchema: z.object({
-    path: z.string().describe('Path to the file to edit'),
-    edits: z.array(z.object({
-      old_string: z.string().describe('Exact string to find'),
-      new_string: z.string().describe('Replacement string'),
-    })).describe('Array of find-and-replace operations'),
+    path: z.string().describe("Path to the file to edit"),
+    edits: z
+      .array(
+        z.object({
+          old_string: z.string().describe("Exact string to find"),
+          new_string: z.string().describe("Replacement string"),
+        }),
+      )
+      .describe("Array of find-and-replace operations"),
   }),
   async execute({ path, edits }) {
-    if (!existsSync(path)) return { error: `File not found: ${path}` };
+    let safePath: string;
+    try {
+      safePath = ensureSafePath(path);
+    } catch (e: any) {
+      return { error: e.message };
+    }
+    if (!existsSync(safePath)) return { error: `File not found: ${path}` };
 
-    const original = readFileSync(path, 'utf-8');
+    const original = readFileSync(safePath, "utf-8");
     const { content, results, appliedCount } = applyEdits(original, edits);
 
     if (appliedCount > 0) {
-      const { getCheckpointManager } = await import('../checkpoint.js');
+      const { getCheckpointManager } = await import("../checkpoint.js");
       const cp = getCheckpointManager();
-      if (cp) cp.snapshot(path);
-      writeFileSync(path, content, 'utf-8');
+      if (cp) cp.snapshot(safePath);
+      // Atomic write: tmp file then rename
+      const tmpPath = `${safePath}.${randomUUID().slice(0, 8)}.tmp`;
+      writeFileSync(tmpPath, content, "utf-8");
+      renameSync(tmpPath, safePath);
     }
 
-    return { path, applied: appliedCount, total: edits.length, results };
+    return {
+      path: safePath,
+      applied: appliedCount,
+      total: edits.length,
+      results,
+    };
   },
 });
