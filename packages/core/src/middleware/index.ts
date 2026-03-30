@@ -41,6 +41,7 @@ import { autoLintMiddleware } from "./builtin/auto-lint.js";
 import { createMemoryExtractionMiddleware } from "./builtin/memory-extract.js";
 import { createProactiveCompactionMiddleware } from "./builtin/proactive-compaction.js";
 import { createSecurityScanMiddleware } from "./builtin/security-scan.js";
+import { codeExtractionMiddleware } from "./code-extraction.js";
 
 export function createDefaultMiddlewarePipeline(
   projectPath?: string,
@@ -55,6 +56,7 @@ export function createDefaultMiddlewarePipeline(
   pipeline.use(subagentLimitMiddleware);
   pipeline.use(trajectoryReductionMiddleware);
   pipeline.use(autoLintMiddleware);
+  pipeline.use(codeExtractionMiddleware);
   pipeline.use(createProactiveCompactionMiddleware(contextWindow));
   pipeline.use(createSecurityScanMiddleware());
   if (projectPath) {

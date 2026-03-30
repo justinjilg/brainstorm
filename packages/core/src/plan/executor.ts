@@ -68,6 +68,20 @@ export async function* executePlan(
   const pendingTasks = countPending(plan);
 
   if (pendingTasks === 0) {
+    if (options.selfExtend) {
+      const { canSelfExtend } = await import("./self-extend.js");
+      const extensionCount =
+        (plan as unknown as Record<string, number>)._extensionCount ?? 0;
+      const { eligible, reason } = canSelfExtend(plan, extensionCount);
+      if (eligible) {
+        yield {
+          type: "plan-extending" as PlanEvent["type"],
+          plan,
+          reason: "All tasks complete, generating next batch",
+        } as any;
+        // The caller (agent loop) handles the actual extension by spawning PM agent
+      }
+    }
     yield { type: "plan-completed", plan, totalCost: 0 };
     return;
   }

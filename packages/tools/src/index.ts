@@ -155,6 +155,7 @@ import { batchEditTool } from "./builtin/batch-edit.js";
 import { webFetchTool } from "./builtin/web-fetch.js";
 import { webSearchTool } from "./builtin/web-search.js";
 import { processSpawnTool, processKillTool } from "./builtin/process-manage.js";
+import { buildVerifyTool } from "./builtin/build-verify.js";
 import {
   taskCreateTool,
   taskUpdateTool,
@@ -200,6 +201,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
   registry.register(shellTool);
   registry.register(processSpawnTool);
   registry.register(processKillTool);
+  registry.register(buildVerifyTool);
   // Git (6)
   registry.register(gitStatusTool);
   registry.register(gitDiffTool);

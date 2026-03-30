@@ -95,7 +95,8 @@ export type StrategyName =
   | "rule-based"
   | "combined"
   | "capability"
-  | "learned";
+  | "learned"
+  | "auto";
 
 export interface RoutingDecision {
   model: ModelEntry;
@@ -324,6 +325,13 @@ export type AgentRole =
   | "debugger"
   | "analyst"
   | "orchestrator"
+  | "product-manager"
+  | "security-reviewer"
+  | "code-reviewer"
+  | "style-reviewer"
+  | "qa"
+  | "compliance"
+  | "devops"
   | "custom";
 export type AgentLifecycle = "active" | "suspended";
 
@@ -373,7 +381,7 @@ export type StepStatus =
   | "completed"
   | "failed"
   | "skipped";
-export type CommunicationMode = "handoff" | "shared";
+export type CommunicationMode = "handoff" | "shared" | "parallel";
 
 export interface WorkflowDefinition {
   id: string;
