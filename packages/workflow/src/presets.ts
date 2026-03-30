@@ -112,6 +112,116 @@ export const PRESET_WORKFLOWS: WorkflowDefinition[] = [
       },
     ],
   },
+  {
+    id: "consensus-review",
+    name: "Consensus Review",
+    description:
+      "3-reviewer parallel code review with consensus voting. Security + code quality + style reviewers on different models. 2-of-3 must pass.",
+    communicationMode: "parallel",
+    maxIterations: 1,
+    steps: [
+      {
+        id: "security-review",
+        agentRole: "security-reviewer",
+        description:
+          "Security review: auth, injection, credentials, input validation",
+        inputArtifacts: [],
+        outputArtifact: "security-review",
+        outputSchema: "review-result",
+        isReviewStep: false,
+      },
+      {
+        id: "quality-review",
+        agentRole: "code-reviewer",
+        description:
+          "Code quality review: correctness, error handling, API design",
+        inputArtifacts: [],
+        outputArtifact: "quality-review",
+        outputSchema: "review-result",
+        isReviewStep: false,
+      },
+      {
+        id: "style-review",
+        agentRole: "style-reviewer",
+        description: "Style review: naming, organization, idiomatic patterns",
+        inputArtifacts: [],
+        outputArtifact: "style-review",
+        outputSchema: "review-result",
+        isReviewStep: false,
+      },
+    ],
+  },
+  {
+    id: "feature-pipeline",
+    name: "Feature Pipeline",
+    description:
+      "Full SDLC pipeline: spec → design → implement → review → test → compliance → integrate. Each phase has mandatory gates.",
+    communicationMode: "handoff",
+    maxIterations: 2,
+    steps: [
+      {
+        id: "spec",
+        agentRole: "product-manager",
+        description: "Write feature specification with acceptance criteria",
+        inputArtifacts: [],
+        outputArtifact: "spec",
+        outputSchema: "feature-spec",
+        isReviewStep: false,
+      },
+      {
+        id: "design",
+        agentRole: "architect",
+        description: "Design architecture, data model, API surface",
+        inputArtifacts: ["spec"],
+        outputArtifact: "design",
+        outputSchema: "architecture-design",
+        isReviewStep: false,
+      },
+      {
+        id: "implement",
+        agentRole: "coder",
+        description: "Write compilable code. Gate: build must pass.",
+        inputArtifacts: ["spec", "design"],
+        outputArtifact: "code",
+        isReviewStep: false,
+      },
+      {
+        id: "review",
+        agentRole: "reviewer",
+        description:
+          "3-agent consensus review. Gate: 2-of-3 must pass. Critical → loop to implement.",
+        inputArtifacts: ["code"],
+        outputArtifact: "review",
+        outputSchema: "review-result",
+        isReviewStep: true,
+        loopBackTo: "implement",
+      },
+      {
+        id: "test",
+        agentRole: "qa",
+        description: "Write tests and run them. Gate: tests must pass.",
+        inputArtifacts: ["code", "spec"],
+        outputArtifact: "tests",
+        isReviewStep: false,
+      },
+      {
+        id: "compliance",
+        agentRole: "compliance",
+        description: "Map implementation to SOC2/HIPAA controls with evidence",
+        inputArtifacts: ["code", "spec"],
+        outputArtifact: "compliance",
+        isReviewStep: false,
+      },
+      {
+        id: "integrate",
+        agentRole: "devops",
+        description: "CI/CD pipeline and dashboard integration",
+        inputArtifacts: ["code", "tests"],
+        outputArtifact: "integration",
+        isReviewStep: false,
+      },
+    ],
+  },
 ];
 
 export function getPresetWorkflow(id: string): WorkflowDefinition | undefined {

@@ -83,6 +83,8 @@ export interface PlanExecutorOptions {
   mode: "interactive" | "autonomous" | "dry-run";
   maxRetries: number;
   compactBetweenPhases: boolean;
+  /** When true, PM agent generates next batch of tasks when plan completes. Max 3 extensions. */
+  selfExtend?: boolean;
 }
 
 // ── Plan Events ─────────────────────────────────────────────────────

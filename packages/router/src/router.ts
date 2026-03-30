@@ -15,6 +15,7 @@ import { createRuleBasedStrategy } from "./strategies/rule-based.js";
 import { createCombinedStrategy } from "./strategies/combined.js";
 import { capabilityStrategy } from "./strategies/capability.js";
 import { learnedStrategy } from "./strategies/learned.js";
+import { autoStrategy } from "./strategies/auto.js";
 import type { RoutingStrategy } from "./strategies/types.js";
 import type { CostTracker } from "./cost-tracker.js";
 
@@ -50,6 +51,7 @@ export class BrainstormRouter {
       combined: combined,
       capability: capabilityStrategy,
       learned: learnedStrategy,
+      auto: autoStrategy,
     };
     if (false) {
       log.warn(
