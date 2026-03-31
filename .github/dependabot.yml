@@ -1,0 +1,64 @@
+# Dependabot — automated dependency updates
+# Docs: https://docs.github.com/en/code-security/dependabot
+version: 2
+
+updates:
+  # npm ecosystem (all workspace packages)
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: America/New_York
+    open-pull-requests-limit: 10
+    reviewers:
+      - justinpbarnett
+    labels:
+      - dependencies
+      - automated
+    # Group minor/patch updates to reduce PR noise
+    groups:
+      ai-sdk:
+        patterns:
+          - "ai"
+          - "@ai-sdk/*"
+      vitest:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+      typescript:
+        patterns:
+          - "typescript"
+          - "tsup"
+          - "tsx"
+      ink-tui:
+        patterns:
+          - "ink"
+          - "ink-*"
+          - "@inkjs/*"
+      linting:
+        patterns:
+          - "eslint"
+          - "eslint-*"
+          - "prettier"
+          - "@typescript-eslint/*"
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+        exclude-patterns:
+          - "ai"
+          - "@ai-sdk/*"
+          - "vitest"
+          - "typescript"
+
+  # GitHub Actions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - ci

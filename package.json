@@ -9,9 +9,17 @@
     "test:dogfood": "npx tsx tests/dogfood/run-dogfood.ts",
     "test:workflow": "npx tsx tests/workflow-demo/run-demo.ts",
     "typecheck": "turbo run typecheck",
-    "prepare": "husky"
+    "prepare": "husky",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "changeset publish",
+    "sbom": "node scripts/generate-sbom.mjs",
+    "setup:tooling": "node scripts/setup-tooling.mjs",
+    "setup:tooling:dry": "node scripts/setup-tooling.mjs --dry-run"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "^0.6.0",
+    "@changesets/cli": "^2.30.0",
     "husky": "^9",
     "lint-staged": "^15",
     "prettier": "^3",

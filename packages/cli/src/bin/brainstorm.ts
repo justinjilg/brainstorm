@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { initSentry, captureError, flushSentry } from "@brainst0rm/shared";
 import { loadConfig } from "@brainst0rm/config";
 import { getDb, closeDb, CostRepository } from "@brainst0rm/db";
 import {
@@ -4804,7 +4805,10 @@ program
   );
 
 export function run() {
-  // Graceful shutdown: stop Docker sandbox, close DB
+  // Initialize Sentry — no-ops if SENTRY_DSN is not set
+  initSentry({ release: process.env.npm_package_version });
+
+  // Graceful shutdown: stop Docker sandbox, close DB, flush Sentry
   const cleanup = () => {
     try {
       stopDockerSandbox();
@@ -4816,7 +4820,20 @@ export function run() {
     } catch {
       // Best effort — DB may already be closed
     }
+    flushSentry(1500).catch(() => {});
   };
+
+  // Catch unhandled errors and report to Sentry
+  process.on("uncaughtException", (err) => {
+    captureError(err, { source: "uncaughtException" });
+    cleanup();
+    process.exit(1);
+  });
+
+  process.on("unhandledRejection", (reason) => {
+    const err = reason instanceof Error ? reason : new Error(String(reason));
+    captureError(err, { source: "unhandledRejection" });
+  });
 
   process.on("SIGTERM", () => {
     cleanup();

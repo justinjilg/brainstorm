@@ -1,0 +1,138 @@
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    name: AI Review
+    runs-on: ubuntu-latest
+    # Skip bot PRs (Dependabot, Renovate)
+    if: github.actor != 'dependabot[bot]' && github.actor != 'renovate[bot]'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Get PR diff
+        id: diff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr diff "$PR_NUMBER" > /tmp/pr-diff.txt
+          echo "diff_size=$(wc -c < /tmp/pr-diff.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Skip large diffs
+        if: steps.diff.outputs.diff_size > 50000
+        run: echo "Diff too large for AI review. Skipping."
+
+      - name: AI Review via BrainstormRouter
+        if: steps.diff.outputs.diff_size <= 50000
+        env:
+          BRAINSTORM_API_KEY: ${{ secrets.BRAINSTORM_API_KEY }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          # All untrusted input (PR_TITLE, PR_BODY) accessed via process.env only
+          # Never interpolated in shell — only read inside Node.js runtime
+          export DIFF="$(cat /tmp/pr-diff.txt)"
+
+          node --input-type=module << 'SCRIPT'
+          import { writeFileSync } from 'node:fs';
+
+          const diff = process.env.DIFF || '';
+          const title = process.env.PR_TITLE || '(no title)';
+          const body = process.env.PR_BODY || '(no description)';
+          const apiKey = process.env.BRAINSTORM_API_KEY;
+
+          if (!apiKey) {
+            console.log('AI Review skipped — no BRAINSTORM_API_KEY configured.');
+            writeFileSync('/tmp/ai-review.md', '');
+            process.exit(0);
+          }
+
+          const prompt = `You are a senior code reviewer. Review this pull request diff and provide actionable feedback.
+
+          PR: ${title}
+          Description: ${body}
+
+          Focus on:
+          1. Bugs or logic errors
+          2. Security vulnerabilities (injection, auth bypass, secrets exposure)
+          3. Performance issues (N+1 queries, missing indexes, unnecessary re-renders)
+          4. Missing error handling at system boundaries
+          5. Breaking changes or API contract violations
+
+          Do NOT comment on:
+          - Style/formatting (automated tools handle this)
+          - Minor naming preferences
+          - Adding more tests (unless critical path is untested)
+
+          Format: Start with a 1-line summary, then bullet points for each finding with file:line references.
+          Use these severity markers: BLOCKING, WARNING, or NOTE.
+
+          If the PR is clean, say so briefly. Don't manufacture issues.
+
+          Diff:
+          \`\`\`diff
+          ${diff.slice(0, 30000)}
+          \`\`\``;
+
+          try {
+            const resp = await fetch('https://api.brainstormrouter.com/v1/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`,
+              },
+              body: JSON.stringify({
+                model: 'anthropic/claude-sonnet-4-6',
+                messages: [{ role: 'user', content: prompt }],
+                max_tokens: 2048,
+                temperature: 0.3,
+              }),
+            });
+
+            if (!resp.ok) {
+              const errText = await resp.text();
+              console.error(`BrainstormRouter error: ${resp.status} ${errText}`);
+              writeFileSync('/tmp/ai-review.md', '');
+              process.exit(0);
+            }
+
+            const data = await resp.json();
+            const review = data.choices?.[0]?.message?.content || '';
+
+            const comment = `## AI Code Review\n\n${review}\n\n---\n*Powered by [BrainstormRouter](https://brainstormrouter.com)*`;
+            writeFileSync('/tmp/ai-review.md', comment);
+          } catch (err) {
+            console.error('AI review failed:', err.message);
+            writeFileSync('/tmp/ai-review.md', '');
+          }
+          SCRIPT
+
+      - name: Post review comment
+        if: steps.diff.outputs.diff_size <= 50000
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if [ -s /tmp/ai-review.md ]; then
+            gh pr comment "$PR_NUMBER" --body-file /tmp/ai-review.md
+            echo "Review posted."
+          else
+            echo "No review to post."
+          fi

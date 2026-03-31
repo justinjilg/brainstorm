@@ -1,0 +1,148 @@
+{
+  "$schema": "Monitoring manifest — all deployed endpoints and their health checks",
+  "generated": "2026-03-31",
+  "monitors": [
+    {
+      "name": "BrainstormRouter API",
+      "url": "https://api.brainstormrouter.com/health",
+      "method": "GET",
+      "interval": 60,
+      "timeout": 10,
+      "expectedStatus": 200,
+      "alertChannels": ["slack-ops"],
+      "tags": ["critical", "api", "brainstormrouter"],
+      "notes": "Core API gateway — all LLM routing goes through here"
+    },
+    {
+      "name": "BrainstormMSP API",
+      "url": "https://brainstormmsp-api-7kh2c.ondigitalocean.app/health",
+      "method": "GET",
+      "interval": 60,
+      "timeout": 15,
+      "expectedStatus": 200,
+      "alertChannels": ["slack-ops"],
+      "tags": ["critical", "api", "brainstormmsp"],
+      "notes": "RMM platform backend — DO App Platform"
+    },
+    {
+      "name": "BrainstormMSP Frontend",
+      "url": "https://brainstormmsp-web-7kh2c.ondigitalocean.app",
+      "method": "GET",
+      "interval": 120,
+      "timeout": 10,
+      "expectedStatus": 200,
+      "alertChannels": ["slack-ops"],
+      "tags": ["critical", "web", "brainstormmsp"]
+    },
+    {
+      "name": "Peer10 API",
+      "url": "https://peer10-api-8c9d98f3.ondigitalocean.app/health",
+      "method": "GET",
+      "interval": 120,
+      "timeout": 15,
+      "expectedStatus": 200,
+      "alertChannels": ["slack-ops"],
+      "tags": ["product", "api", "peer10"]
+    },
+    {
+      "name": "Peer10 Web",
+      "url": "https://peer10-web-8c9d98f3.ondigitalocean.app",
+      "method": "GET",
+      "interval": 120,
+      "timeout": 10,
+      "expectedStatus": 200,
+      "alertChannels": ["slack-ops"],
+      "tags": ["product", "web", "peer10"]
+    },
+    {
+      "name": "EventFlow API",
+      "url": "https://eventflow-api-68c36a3f.ondigitalocean.app/health",
+      "method": "GET",
+      "interval": 120,
+      "timeout": 15,
+      "expectedStatus": 200,
+      "alertChannels": ["slack-ops"],
+      "tags": ["product", "api", "eventflow"]
+    },
+    {
+      "name": "BrainstormHive (Vercel)",
+      "url": "https://brainstormhive.com",
+      "method": "GET",
+      "interval": 300,
+      "timeout": 10,
+      "expectedStatus": 200,
+      "alertChannels": ["slack-ops"],
+      "tags": ["web", "vercel", "brainstormhive"]
+    },
+    {
+      "name": "Brainstorm GTM API",
+      "url": "https://brainstorm-gtm-790df857.ondigitalocean.app/health",
+      "method": "GET",
+      "interval": 120,
+      "timeout": 15,
+      "expectedStatus": 200,
+      "alertChannels": ["slack-ops"],
+      "tags": ["internal", "api", "gtm"]
+    },
+    {
+      "name": "Catsfeet.com",
+      "url": "https://catsfeet.com",
+      "method": "GET",
+      "interval": 300,
+      "timeout": 10,
+      "expectedStatus": 200,
+      "alertChannels": ["slack-ops"],
+      "tags": ["web", "gtm"]
+    },
+    {
+      "name": "OpenClaw Server",
+      "url": "http://167.99.12.153:8080/health",
+      "method": "GET",
+      "interval": 120,
+      "timeout": 10,
+      "expectedStatus": 200,
+      "alertChannels": ["slack-ops"],
+      "tags": ["critical", "server", "openclaw"],
+      "notes": "DO Droplet — Tailscale-accessible"
+    },
+    {
+      "name": "BrainstormRouter Docs",
+      "url": "https://docs.brainstormrouter.com",
+      "method": "GET",
+      "interval": 300,
+      "timeout": 10,
+      "expectedStatus": 200,
+      "alertChannels": ["slack-ops"],
+      "tags": ["docs", "brainstormrouter"]
+    }
+  ],
+  "alertChannels": {
+    "slack-ops": {
+      "type": "slack_webhook",
+      "envVar": "SLACK_OPS_WEBHOOK_URL",
+      "notes": "Store webhook URL in 1Password Dev Keys vault"
+    }
+  },
+  "setup": {
+    "uptimerobot": {
+      "description": "Free tier: 50 monitors, 5-min checks. Pro: 1-min checks.",
+      "signup": "https://uptimerobot.com/signUp",
+      "steps": [
+        "Sign up for free account",
+        "Import monitors from this manifest (API or manual)",
+        "Configure Slack alert channel with webhook URL",
+        "Set UPTIMEROBOT_API_KEY in 1Password Dev Keys vault"
+      ]
+    },
+    "betteruptime": {
+      "description": "Free tier: 10 monitors, status page included.",
+      "signup": "https://betteruptime.com",
+      "steps": [
+        "Sign up for free account",
+        "Import monitors from this manifest",
+        "Create public status page at status.brainstormrouter.com",
+        "Configure Slack integration"
+      ]
+    }
+  }
+}
