@@ -18,5 +18,8 @@ npm-debug.log*
 .brainstorm/vault.enc
 .brainstorm/*.enc
 
+# Generated artifacts
+docs/internal/sbom.json
+
 # Marketing site (separate project, lives elsewhere)
 apps/

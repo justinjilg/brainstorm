@@ -19,6 +19,7 @@
     "typescript": "^5.7"
   },
   "dependencies": {
+    "@sentry/node": "^10.47.0",
     "pino": "^9",
     "pino-pretty": "^13"
   },

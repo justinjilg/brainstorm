@@ -1,0 +1,17 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@3.1.3/schema.json",
+  "changelog": [
+    "@changesets/changelog-github",
+    { "repo": "justinpbarnett/brainstorm" }
+  ],
+  "commit": false,
+  "fixed": [],
+  "linked": [
+    ["@brainst0rm/shared", "@brainst0rm/config", "@brainst0rm/db"],
+    ["@brainst0rm/router", "@brainst0rm/gateway", "@brainst0rm/providers"]
+  ],
+  "access": "public",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": ["@brainst0rm/eval", "@brainst0rm/docgen", "@brainst0rm/ingest"]
+}
