@@ -631,6 +631,22 @@ export async function* runAgentLoop(
     if (isEmpty && fallbacks.length > 0 && retryDepth < MAX_FALLBACK_DEPTH) {
       const reason = isEmpty ? "empty_response" : "tool_blocked";
       router.recordFailure(decision.model.id, reason);
+      // Record failure for Thompson sampling on fallback path
+      const fallbackLatencyMs = Date.now() - turnStartMs;
+      recordOutcome(task.type, decision.model.id, false, fallbackLatencyMs, 0);
+      if (options.routingOutcomeRepo) {
+        try {
+          options.routingOutcomeRepo.record(
+            decision.model.id,
+            task.type,
+            false,
+            fallbackLatencyMs,
+            0,
+          );
+        } catch {
+          /* non-fatal */
+        }
+      }
       // Pick next fallback that hasn't been tried yet
       const fallbackModel = fallbacks.find((f) => !modelsTried.includes(f.id));
       if (fallbackModel) {
@@ -717,7 +733,7 @@ export async function* runAgentLoop(
 
     // Inject turn context for next turn's self-awareness
     if (options.onTurnComplete) {
-      const turnCost = costTracker.getSessionCost(); // approximate per-turn
+      // turnCost (per-turn delta) is already computed above — don't shadow with session total
       const budget = costTracker.getBudgetState();
       const budgetRemaining = budget.dailyLimit
         ? budget.dailyLimit - budget.dailyUsed
