@@ -178,6 +178,11 @@ export class ToolRegistry {
     for (const [name, toolDef] of this.tools) {
       if (toolDef.deferred) continue; // skip deferred tools
       if (allowed && !allowed.has(name)) continue;
+      // MCP tools lack inputSchema/execute — use their raw toAISDKTool() instead
+      if (!toolDef.inputSchema) {
+        result[name] = toolDef.toAISDKTool();
+        continue;
+      }
       result[name] = tool({
         description: toolDef.description,
         inputSchema: toolDef.inputSchema,

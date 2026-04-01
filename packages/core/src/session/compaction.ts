@@ -190,28 +190,8 @@ export async function compactContext(
     summary = toSummarize.length > 0 ? fallbackSummary(toSummarize) : "";
   }
 
-  // ── Persist compaction commit for reversible context collapse ────
-  // Store original message contents before replacing, enabling selective rehydration.
   let commitId: string | undefined;
-  if (options.commitRepo && options.sessionId) {
-    commitId = randomUUID();
-    try {
-      options.commitRepo.create({
-        id: commitId,
-        sessionId: options.sessionId,
-        timestamp: Math.floor(Date.now() / 1000),
-        summary,
-        originalMessageIds: oldMessages.map((_, i) => `msg-${i}`),
-        keptCount: kept.length,
-        summarizedCount: toSummarize.length,
-        droppedCount: dropped,
-        tokensBefore: estimateTokenCount(messages),
-        tokensAfter: undefined, // set after compaction
-      });
-    } catch {
-      commitId = undefined; // non-fatal — compaction still proceeds
-    }
-  }
+  const tokensBefore = estimateTokenCount(messages);
 
   // Build compacted message list: system + kept messages + summary + recent
   const compacted: ConversationMessage[] = [];
@@ -260,6 +240,28 @@ export async function compactContext(
   }
 
   compacted.push(...recentMessages);
+
+  // ── Persist compaction commit for reversible context collapse ────
+  // Stored after building the compacted list so tokensAfter is accurate.
+  if (options.commitRepo && options.sessionId) {
+    commitId = randomUUID();
+    try {
+      options.commitRepo.create({
+        id: commitId,
+        sessionId: options.sessionId,
+        timestamp: Math.floor(Date.now() / 1000),
+        summary,
+        originalMessageIds: oldMessages.map((_, i) => `msg-${i}`),
+        keptCount: kept.length,
+        summarizedCount: toSummarize.length,
+        droppedCount: dropped,
+        tokensBefore,
+        tokensAfter: estimateTokenCount(compacted),
+      });
+    } catch {
+      commitId = undefined; // non-fatal — compaction still proceeds
+    }
+  }
 
   return { messages: compacted, compacted: true, summaryCost, commitId };
 }
