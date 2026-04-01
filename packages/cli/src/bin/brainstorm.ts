@@ -1377,6 +1377,7 @@ program
 
       if (fullResponse) {
         sessionManager.addAssistantMessage(fullResponse);
+        sessionManager.flush();
       }
     },
   );
@@ -4620,7 +4621,10 @@ program
             }
           }
           simpleAbortController = null;
-          if (fullResponse) sessionManager.addAssistantMessage(fullResponse);
+          if (fullResponse) {
+            sessionManager.addAssistantMessage(fullResponse);
+            sessionManager.flush();
+          }
         }
         rl.close();
         return;
@@ -4670,7 +4674,10 @@ program
             if (event.type === "text-delta") fullResponse += event.delta;
             yield event;
           }
-          if (fullResponse) sessionManager.addAssistantMessage(fullResponse);
+          if (fullResponse) {
+            sessionManager.addAssistantMessage(fullResponse);
+            sessionManager.flush();
+          }
           currentAbortController = null;
         })();
       }
