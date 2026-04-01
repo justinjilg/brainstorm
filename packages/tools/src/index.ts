@@ -42,6 +42,7 @@ export {
   type RoutingPreference,
 } from "./builtin/routing-hint.js";
 export { costEstimateTool } from "./builtin/cost-estimate.js";
+export { createToolSearchTool } from "./builtin/tool-search.js";
 export {
   isParallelSafe,
   classifyToolBatch,
@@ -186,6 +187,7 @@ import {
   brMemoryStoreTool,
   brHealthTool,
 } from "./builtin/br-intelligence.js";
+import { createToolSearchTool } from "./builtin/tool-search.js";
 
 export function createDefaultToolRegistry(): ToolRegistry {
   const registry = new ToolRegistry();
@@ -244,5 +246,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
   registry.register(brMemorySearchTool);
   registry.register(brMemoryStoreTool);
   registry.register(brHealthTool);
+  // Tool search (1) — discovers and resolves deferred MCP tools
+  registry.register(createToolSearchTool(registry));
   return registry;
 }

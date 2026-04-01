@@ -124,10 +124,15 @@ export class MCPClientManager {
             // Anthropic requires input_schema.type = "object", some MCP tools omit it
             const normalized = normalizeMCPTool(toolDef as any);
 
+            // Register as deferred — schema stored but not sent to LLM until resolved.
+            // This keeps the context window lean; model uses tool_search to discover tools.
             (registry as any).tools.set(registeredName, {
               name: registeredName,
               description: normalized.description ?? toolName,
               permission: "confirm" as const,
+              concurrent: false,
+              readonly: false,
+              deferred: true,
               toAISDKTool: () => normalized,
             });
           }
