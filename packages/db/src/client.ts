@@ -496,4 +496,11 @@ const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_plan_task_runs_status ON plan_task_runs(status);
     `,
   },
+  {
+    name: "023_routing_outcome_index",
+    sql: `
+      CREATE INDEX IF NOT EXISTS idx_perf_v2_routing
+        ON model_performance_v2(task_type, model_id, success);
+    `,
+  },
 ];

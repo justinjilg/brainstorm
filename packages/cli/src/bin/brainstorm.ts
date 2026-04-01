@@ -1,7 +1,12 @@
 import { Command } from "commander";
 import { initSentry, captureError, flushSentry } from "@brainst0rm/shared";
 import { loadConfig } from "@brainst0rm/config";
-import { getDb, closeDb, CostRepository } from "@brainst0rm/db";
+import {
+  getDb,
+  closeDb,
+  CostRepository,
+  RoutingOutcomeRepository,
+} from "@brainst0rm/db";
 import {
   createProviderRegistry,
   getBrainstormApiKey,
@@ -1194,11 +1199,13 @@ program
       const { prompt: rawPrompt, frontmatter } = buildSystemPrompt(projectPath);
       const systemPrompt =
         rawPrompt + buildToolAwarenessSection(tools.listTools());
+      const routingOutcomeRepo = new RoutingOutcomeRepository(db);
       const router = new BrainstormRouter(
         config,
         registry,
         costTracker,
         frontmatter,
+        routingOutcomeRepo.loadAggregated(),
       );
 
       // Permission manager — gates tool execution
@@ -1258,6 +1265,7 @@ program
         compaction: buildCompactionCallbacks(sessionManager),
         permissionCheck: (tool, args) => permissionManager.check(tool, args),
         middleware,
+        routingOutcomeRepo,
       })) {
         switch (event.type) {
           case "thinking":
@@ -4263,11 +4271,14 @@ program
         currentOutputStyle,
       );
       systemPrompt += buildToolAwarenessSection(tools.listTools());
+      const routingOutcomeRepo = new RoutingOutcomeRepository(db);
+      const historicalStats = routingOutcomeRepo.loadAggregated();
       const router = new BrainstormRouter(
         config,
         registry,
         costTracker,
         frontmatter,
+        historicalStats,
       );
       // Paid keys or direct provider keys get quality-first by default.
       // Community tier without own keys stays on BR server-side routing.
@@ -4486,6 +4497,7 @@ program
             preferredModelId,
             middleware,
             roleToolFilter,
+            routingOutcomeRepo,
             onTurnComplete: (ctx) => {
               ctx.turn = sessionManager.incrementTurn();
               ctx.sessionMinutes = sessionManager.getSessionMinutes();
@@ -4610,6 +4622,7 @@ program
           middleware,
           preferredModelId,
           roleToolFilter: roleFilter,
+          routingOutcomeRepo,
         });
         // Wrap to capture assistant message after completion
         return (async function* () {

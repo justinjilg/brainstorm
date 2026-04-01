@@ -9,6 +9,10 @@ import type { RoutingStrategy } from "./types.js";
 import { costFirstStrategy } from "./cost-first.js";
 import { qualityFirstStrategy } from "./quality-first.js";
 import { createRuleBasedStrategy } from "./rule-based.js";
+import { learnedStrategy, getSamplesForTaskType } from "./learned.js";
+
+/** Minimum samples before Thompson sampling is trusted for a task type. */
+const LEARNED_THRESHOLD = 20;
 
 export function createCombinedStrategy(rules: RoutingRule[]): RoutingStrategy {
   const ruleStrategy = createRuleBasedStrategy(rules);
@@ -25,17 +29,42 @@ export function createCombinedStrategy(rules: RoutingRule[]): RoutingStrategy {
       const ruleResult = ruleStrategy.select(task, candidates, context);
       if (ruleResult) return ruleResult;
 
-      // 2. Trivial/simple tasks → cost-first (use local/cheap models)
+      // 2. Budget pressure check — if >80% daily budget spent, cost must dominate.
+      //    Thompson sampling optimizes for success rate, not cost. Under pressure,
+      //    we skip learned and fall through to cost-first for simple or trivial tasks.
+      const budgetPressure = context.budget.dailyLimit
+        ? context.budget.dailyUsed / context.budget.dailyLimit
+        : 0;
+
+      // 3. If Thompson sampling has enough data and budget allows, use learned strategy.
+      //    This is the key integration: once BR has seen enough outcomes, it stops
+      //    relying on hardcoded tiers and starts routing based on actual performance.
+      if (budgetPressure < 0.8) {
+        const samplesForTask = getSamplesForTaskType(task.type);
+        if (samplesForTask >= LEARNED_THRESHOLD) {
+          const learnedResult = learnedStrategy.select(
+            task,
+            candidates,
+            context,
+          );
+          if (learnedResult) {
+            learnedResult.reason = `Learned (${samplesForTask} samples): ${learnedResult.reason}`;
+            return learnedResult;
+          }
+        }
+      }
+
+      // 4. Trivial/simple tasks → cost-first (use local/cheap models)
       if (task.complexity === "trivial" || task.complexity === "simple") {
         return costFirstStrategy.select(task, candidates, context);
       }
 
-      // 3. Complex/expert tasks → quality-first (use the best available)
+      // 5. Complex/expert tasks → quality-first (use the best available)
       if (task.complexity === "complex" || task.complexity === "expert") {
         return qualityFirstStrategy.select(task, candidates, context);
       }
 
-      // 4. Moderate tasks → weighted scoring
+      // 6. Moderate tasks → weighted scoring
       return weightedSelect(task, candidates, context);
     },
   };

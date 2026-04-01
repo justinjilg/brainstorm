@@ -14,7 +14,7 @@ import { qualityFirstStrategy } from "./strategies/quality-first.js";
 import { createRuleBasedStrategy } from "./strategies/rule-based.js";
 import { createCombinedStrategy } from "./strategies/combined.js";
 import { capabilityStrategy } from "./strategies/capability.js";
-import { learnedStrategy } from "./strategies/learned.js";
+import { learnedStrategy, loadStats } from "./strategies/learned.js";
 import { autoStrategy } from "./strategies/auto.js";
 import type { RoutingStrategy } from "./strategies/types.js";
 import type { CostTracker } from "./cost-tracker.js";
@@ -41,6 +41,15 @@ export class BrainstormRouter {
     private registry: ProviderRegistry,
     private costTracker: CostTracker,
     stormFrontmatter?: StormFrontmatter | null,
+    historicalStats?: Array<{
+      taskType: string;
+      modelId: string;
+      successes: number;
+      failures: number;
+      avgLatencyMs: number;
+      avgCost: number;
+      samples: number;
+    }>,
   ) {
     this.activeStrategy = config.general.defaultStrategy;
     const combined = createCombinedStrategy(config.routing.rules);
@@ -53,11 +62,19 @@ export class BrainstormRouter {
       learned: learnedStrategy,
       auto: autoStrategy,
     };
-    if (false) {
-      log.warn(
-        "Learned routing strategy not yet available — using combined strategy",
+
+    // Load historical routing outcomes for Thompson sampling
+    if (historicalStats && historicalStats.length > 0) {
+      loadStats(historicalStats);
+      log.info(
+        {
+          entries: historicalStats.length,
+          totalSamples: historicalStats.reduce((n, s) => n + s.samples, 0),
+        },
+        "Loaded historical routing outcomes for Thompson sampling",
       );
     }
+
     this.projectHints = stormFrontmatter?.routing;
 
     // Auto-activate capability strategy when eval data exists

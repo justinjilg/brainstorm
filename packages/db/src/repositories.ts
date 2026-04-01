@@ -315,6 +315,67 @@ export class CostRepository {
   }
 }
 
+// ── Routing Outcomes (Thompson Sampling Persistence) ────────────────
+
+export interface AggregatedRoutingStats {
+  taskType: string;
+  modelId: string;
+  successes: number;
+  failures: number;
+  avgLatencyMs: number;
+  avgCost: number;
+  samples: number;
+}
+
+export class RoutingOutcomeRepository {
+  constructor(private db: Database.Database) {}
+
+  /** Record a single routing outcome (writes to model_performance_v2). */
+  record(
+    modelId: string,
+    taskType: string,
+    success: boolean,
+    latencyMs: number,
+    costUsd: number,
+  ): void {
+    this.db
+      .prepare(
+        `INSERT INTO model_performance_v2 (model_id, task_type, success, latency_ms, cost_usd)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(modelId, taskType, success ? 1 : 0, latencyMs, costUsd);
+  }
+
+  /** Load aggregated stats for Thompson sampling — grouped by (task_type, model_id). */
+  loadAggregated(): AggregatedRoutingStats[] {
+    const rows = this.db
+      .prepare(
+        `SELECT
+           task_type,
+           model_id,
+           SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) as successes,
+           SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) as failures,
+           AVG(latency_ms) as avg_latency_ms,
+           AVG(cost_usd) as avg_cost,
+           COUNT(*) as samples
+         FROM model_performance_v2
+         GROUP BY task_type, model_id
+         HAVING samples >= 1`,
+      )
+      .all() as any[];
+
+    return rows.map((r) => ({
+      taskType: r.task_type,
+      modelId: r.model_id,
+      successes: r.successes,
+      failures: r.failures,
+      avgLatencyMs: r.avg_latency_ms ?? 0,
+      avgCost: r.avg_cost ?? 0,
+      samples: r.samples,
+    }));
+  }
+}
+
 // ── Session Patterns ────────────────────────────────────────────────
 
 export interface SessionPattern {
