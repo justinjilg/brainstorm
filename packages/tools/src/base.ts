@@ -9,6 +9,12 @@ export interface BrainstormToolDef<TOutput = unknown> {
   inputSchema: z.ZodObject<any>;
   execute: (input: any) => Promise<TOutput>;
   toAISDKTool: () => ToolSet[string];
+  /** True if this tool is safe for parallel execution (no side effects). */
+  concurrent?: boolean;
+  /** True if this tool performs no mutations (read-only). */
+  readonly?: boolean;
+  /** True if this tool's schema is deferred (loaded on demand via ToolSearch). */
+  deferred?: boolean;
 }
 
 export function defineTool<T extends z.ZodObject<any>, TOutput>(config: {
@@ -17,6 +23,8 @@ export function defineTool<T extends z.ZodObject<any>, TOutput>(config: {
   permission: ToolPermission;
   inputSchema: T;
   execute: (input: z.infer<T>) => Promise<TOutput>;
+  concurrent?: boolean;
+  readonly?: boolean;
 }): BrainstormToolDef<TOutput> {
   return {
     ...config,

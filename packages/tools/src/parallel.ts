@@ -1,15 +1,18 @@
 /**
  * Parallel Tool Execution — determines which tools are safe to run concurrently.
  *
- * Read-only tools (file_read, grep, glob, list_dir, git_status, git_log, etc.)
- * can execute in parallel. Write tools must be sequential.
+ * Tools declare concurrency safety via `concurrent` metadata on BrainstormToolDef.
+ * Legacy fallback: hardcoded PARALLEL_SAFE / SEQUENTIAL_REQUIRED sets for tools
+ * that haven't declared metadata yet. New tools should always set `concurrent`.
  *
  * The AI SDK v6 handles parallel tool calls natively — this module provides
  * the classification for when the agent loop needs to manage execution order.
  */
 
-/** Tools that are safe to execute in parallel (read-only, no side effects). */
-const PARALLEL_SAFE = new Set([
+import type { BrainstormToolDef } from "./base.js";
+
+/** Legacy fallback: tools known to be safe for parallel execution. */
+const PARALLEL_SAFE_LEGACY = new Set([
   "file_read",
   "grep",
   "glob",
@@ -29,8 +32,8 @@ const PARALLEL_SAFE = new Set([
   "plan_preview",
 ]);
 
-/** Tools that must execute sequentially (have side effects). */
-const SEQUENTIAL_REQUIRED = new Set([
+/** Legacy fallback: tools that must execute sequentially. */
+const SEQUENTIAL_REQUIRED_LEGACY = new Set([
   "file_write",
   "file_edit",
   "multi_edit",
@@ -50,9 +53,28 @@ const SEQUENTIAL_REQUIRED = new Set([
   "ask_user",
 ]);
 
-/** Check if a tool is safe to execute in parallel with other parallel-safe tools. */
+/** Optional tool registry for metadata-based classification. */
+let _toolRegistry: Map<string, BrainstormToolDef> | null = null;
+
+/** Set the tool registry for metadata-based parallel classification. */
+export function setToolRegistryForParallel(
+  registry: Map<string, BrainstormToolDef>,
+): void {
+  _toolRegistry = registry;
+}
+
+/**
+ * Check if a tool is safe to execute in parallel.
+ * Priority: tool metadata `concurrent` field > legacy hardcoded sets > default sequential.
+ */
 export function isParallelSafe(toolName: string): boolean {
-  return PARALLEL_SAFE.has(toolName);
+  // Check tool metadata first (if registry is set)
+  if (_toolRegistry) {
+    const toolDef = _toolRegistry.get(toolName);
+    if (toolDef?.concurrent !== undefined) return toolDef.concurrent;
+  }
+  // Fall back to legacy hardcoded sets
+  return PARALLEL_SAFE_LEGACY.has(toolName);
 }
 
 /** Classify a batch of tool calls into parallel and sequential groups. */
@@ -64,7 +86,7 @@ export function classifyToolBatch(toolNames: string[]): {
   const sequential: string[] = [];
 
   for (const name of toolNames) {
-    if (PARALLEL_SAFE.has(name)) {
+    if (isParallelSafe(name)) {
       parallel.push(name);
     } else {
       sequential.push(name);

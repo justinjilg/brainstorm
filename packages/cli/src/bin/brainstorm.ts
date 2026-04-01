@@ -4225,24 +4225,10 @@ program
         (config.general as any).skipEvalProbes = true;
       }
 
+      // Boot Phase A: sync initialization (instant)
       const db = getDb();
-      const resolvedKeys = await resolveProviderKeys();
-      const resolvedBRKey =
-        resolvedKeys.get("BRAINSTORM_API_KEY") ?? getBrainstormApiKey();
-      const isCommunityTier = isCommunityKey(resolvedBRKey);
-      // Set env for native BR tools (br_status, br_budget, etc.)
-      if (resolvedBRKey) process.env._BR_RESOLVED_KEY = resolvedBRKey;
-      const registry = await createProviderRegistry(config, resolvedKeys);
-      const costTracker = new CostTracker(db, config.budget);
-      const tools = createDefaultToolRegistry();
-      // --fast: skip MCP server connections
-      if (!opts.fast)
-        await connectMCPServers(
-          tools,
-          config,
-          resolvedKeys.get("BRAINSTORM_API_KEY"),
-        );
       const projectPath = process.cwd();
+      const tools = createDefaultToolRegistry();
       configureSandbox(
         config.shell.sandbox as any,
         projectPath,
@@ -4250,27 +4236,42 @@ program
         config.shell.containerImage,
         config.shell.containerTimeout,
       );
-
-      // Permission manager — gates tool execution
       const permissionManager = new PermissionManager(
         config.general.defaultPermissionMode as any,
         config.permissions,
       );
-
-      // Output style — mutable so /style can change it mid-session
       let currentOutputStyle: OutputStyle =
         (config.general.outputStyle as OutputStyle) ?? "concise";
-
-      // Active role — mutable, set by /architect, /sr-developer, etc.
       let currentRole: string | undefined;
-
       const sessionManager = new SessionManager(db);
       const middleware = createDefaultMiddlewarePipeline(projectPath);
-      let { prompt: systemPrompt, frontmatter } = buildSystemPrompt(
-        projectPath,
-        currentOutputStyle,
-      );
+
+      // Boot Phase B: async key resolution runs in parallel with system prompt build
+      const [resolvedKeys, promptResult] = await Promise.all([
+        resolveProviderKeys(),
+        Promise.resolve(buildSystemPrompt(projectPath, currentOutputStyle)),
+      ]);
+      let { prompt: systemPrompt, frontmatter } = promptResult;
       systemPrompt += buildToolAwarenessSection(tools.listTools());
+      const resolvedBRKey =
+        resolvedKeys.get("BRAINSTORM_API_KEY") ?? getBrainstormApiKey();
+      const isCommunityTier = isCommunityKey(resolvedBRKey);
+      if (resolvedBRKey) process.env._BR_RESOLVED_KEY = resolvedBRKey;
+
+      // Boot Phase C: provider registry + MCP connections in parallel
+      const [registry] = await Promise.all([
+        createProviderRegistry(config, resolvedKeys),
+        opts.fast
+          ? Promise.resolve()
+          : connectMCPServers(
+              tools,
+              config,
+              resolvedKeys.get("BRAINSTORM_API_KEY"),
+            ),
+      ]);
+
+      // Boot Phase D: final assembly (depends on everything above)
+      const costTracker = new CostTracker(db, config.budget);
       const routingOutcomeRepo = new RoutingOutcomeRepository(db);
       const historicalStats = routingOutcomeRepo.loadAggregated();
       const router = new BrainstormRouter(
