@@ -6,6 +6,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./features-build": {
+      "types": "./dist/features-build.d.ts",
+      "import": "./dist/features-build.js"
     }
   },
   "scripts": {

@@ -42,6 +42,12 @@ export {
 } from "./skills/loader.js";
 export { MemoryManager, type MemoryEntry } from "./memory/manager.js";
 export { DREAM_SYSTEM_PROMPT, buildDreamPrompt } from "./memory/dream.js";
+export {
+  runDreamCycle,
+  isDreamDue,
+  incrementDreamSessionCounter,
+  type DreamCycleResult,
+} from "./memory/dream-runner.js";
 export { getPlanModeTools, getPlanModePrompt } from "./plan/mode.js";
 export { executePlan, type SubagentDispatcher } from "./plan/executor.js";
 export {
@@ -232,6 +238,7 @@ export {
   subagentLimitMiddleware,
   trajectoryReductionMiddleware,
   autoLintMiddleware,
+  createToolOutputTruncationMiddleware,
 } from "./middleware/index.js";
 export {
   SessionCheckpointer,
