@@ -1,7 +1,9 @@
 import { streamText } from "ai";
+import { randomUUID } from "node:crypto";
 import type { ConversationMessage } from "./manager.js";
 import { formatScratchpadContext } from "@brainst0rm/tools";
 import { reduceTrajectory } from "./trajectory-reducer.js";
+import type { CompactionCommitRepository } from "@brainst0rm/db";
 
 // ── Compaction Gate ──────────────────────────────────────────────
 
@@ -75,11 +77,17 @@ export async function compactContext(
     keepRecent?: number;
     summarizeModel?: any; // AI SDK model instance for summarization
     pricing?: { inputPer1MTokens: number; outputPer1MTokens: number };
+    /** Session ID for compaction commit tracking. */
+    sessionId?: string;
+    /** Repository for persisting compaction commits (enables reversible compaction). */
+    commitRepo?: CompactionCommitRepository;
   },
 ): Promise<{
   messages: ConversationMessage[];
   compacted: boolean;
   summaryCost: number;
+  /** Compaction commit ID if persisted (for selective rehydration). */
+  commitId?: string;
 }> {
   const { contextWindow, keepRecent = 5, summarizeModel } = options;
 
@@ -182,6 +190,29 @@ export async function compactContext(
     summary = toSummarize.length > 0 ? fallbackSummary(toSummarize) : "";
   }
 
+  // ── Persist compaction commit for reversible context collapse ────
+  // Store original message contents before replacing, enabling selective rehydration.
+  let commitId: string | undefined;
+  if (options.commitRepo && options.sessionId) {
+    commitId = randomUUID();
+    try {
+      options.commitRepo.create({
+        id: commitId,
+        sessionId: options.sessionId,
+        timestamp: Math.floor(Date.now() / 1000),
+        summary,
+        originalMessageIds: oldMessages.map((_, i) => `msg-${i}`),
+        keptCount: kept.length,
+        summarizedCount: toSummarize.length,
+        droppedCount: dropped,
+        tokensBefore: estimateTokenCount(messages),
+        tokensAfter: undefined, // set after compaction
+      });
+    } catch {
+      commitId = undefined; // non-fatal — compaction still proceeds
+    }
+  }
+
   // Build compacted message list: system + kept messages + summary + recent
   const compacted: ConversationMessage[] = [];
   if (systemMsg) compacted.push(systemMsg);
@@ -198,9 +229,11 @@ export async function compactContext(
   }
 
   if (summary) {
+    // Tag with commit ID for selective rehydration
+    const commitTag = commitId ? ` [compaction:${commitId}]` : "";
     compacted.push({
       role: "system",
-      content: `[Summarized context — ${toSummarize.length} messages condensed]\n\n${summary}`,
+      content: `[Summarized context — ${toSummarize.length} messages condensed]${commitTag}\n\n${summary}`,
     });
   }
 
@@ -214,6 +247,7 @@ export async function compactContext(
     summaryParts.push(`Summarized: ${toSummarize.length} messages.`);
   if (dropped > 0) summaryParts.push(`Dropped: ${dropped} redundant messages.`);
   summaryParts.push(`Retained: ${recentMessages.length} recent messages.`);
+  if (commitId) summaryParts.push(`Commit: ${commitId} (rehydratable).`);
   compacted.push({
     role: "system",
     content: `[Compaction summary] ${summaryParts.join(" ")}`,
@@ -227,7 +261,7 @@ export async function compactContext(
 
   compacted.push(...recentMessages);
 
-  return { messages: compacted, compacted: true, summaryCost };
+  return { messages: compacted, compacted: true, summaryCost, commitId };
 }
 
 // ── Message Classification ────────────────────────────────────────

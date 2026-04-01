@@ -1,4 +1,8 @@
-import { SessionRepository, MessageRepository } from "@brainst0rm/db";
+import {
+  SessionRepository,
+  MessageRepository,
+  CompactionCommitRepository,
+} from "@brainst0rm/db";
 import type { Session, TurnContext } from "@brainst0rm/shared";
 import { createLogger, formatTurnContext } from "@brainst0rm/shared";
 import {
@@ -25,10 +29,13 @@ export class SessionManager {
   private cachedTokenCount: number | null = null;
   /** Pending async writes (assistant messages, tool results). Flushed at end of turn. */
   private pendingWrites: Array<() => void> = [];
+  /** Repository for reversible compaction commits. */
+  private compactionRepo: CompactionCommitRepository;
 
   constructor(private db: any) {
     this.sessions = new SessionRepository(db);
     this.messages = new MessageRepository(db);
+    this.compactionRepo = new CompactionCommitRepository(db);
   }
 
   start(projectPath: string): Session {
@@ -214,7 +221,11 @@ export class SessionManager {
     summaryCost: number;
   }> {
     const tokensBefore = estimateTokenCount(this.conversationHistory);
-    const result = await compactContext(this.conversationHistory, options);
+    const result = await compactContext(this.conversationHistory, {
+      ...options,
+      sessionId: this.currentSession?.id,
+      commitRepo: this.compactionRepo,
+    });
 
     if (result.compacted) {
       const removed = this.conversationHistory.length - result.messages.length;
@@ -238,5 +249,74 @@ export class SessionManager {
       tokensAfter: tokensBefore,
       summaryCost: 0,
     };
+  }
+
+  /**
+   * Rehydrate a compaction — replace the summary message with original messages.
+   * Enables "zooming back in" on compacted context for detail recovery.
+   * Returns the new token estimate, or null if the commit wasn't found.
+   */
+  rehydrateCompaction(commitId: string): { tokensAfter: number } | null {
+    const commit = this.compactionRepo.get(commitId);
+    if (!commit || !this.currentSession) return null;
+
+    // Find the summary message with this commit's tag
+    const marker = `[compaction:${commitId}]`;
+    const summaryIdx = this.conversationHistory.findIndex((m) =>
+      m.content.includes(marker),
+    );
+    if (summaryIdx === -1) return null;
+
+    // Fetch original messages from DB by session
+    const dbMessages = this.messages.listBySession(commit.sessionId);
+    if (dbMessages.length === 0) return null;
+
+    // Use the original message IDs to find the right slice.
+    // Since we stored count-based IDs, reconstruct from the DB messages
+    // that were present before compaction (by count).
+    const originalCount = commit.originalMessageIds.length;
+    const originals: ConversationMessage[] = dbMessages
+      .slice(0, originalCount)
+      .filter((m) => m.role !== "tool")
+      .map((m) => ({
+        role: m.role as "user" | "assistant" | "system",
+        content: m.content,
+      }));
+
+    if (originals.length === 0) return null;
+
+    // Replace the summary message with the originals
+    this.conversationHistory.splice(summaryIdx, 1, ...originals);
+
+    // Invalidate token cache
+    this.cachedTokenCount = null;
+    const tokensAfter = this.getTokenEstimate();
+
+    log.info(
+      { commitId, restored: originals.length, tokensAfter },
+      "Rehydrated compaction commit",
+    );
+
+    return { tokensAfter };
+  }
+
+  /** List compaction commits for the current session. */
+  listCompactionCommits(): Array<{
+    id: string;
+    timestamp: number;
+    summary: string;
+    keptCount: number;
+    summarizedCount: number;
+  }> {
+    if (!this.currentSession) return [];
+    return this.compactionRepo
+      .listForSession(this.currentSession.id)
+      .map((c) => ({
+        id: c.id,
+        timestamp: c.timestamp,
+        summary: c.summary.slice(0, 200),
+        keptCount: c.keptCount,
+        summarizedCount: c.summarizedCount,
+      }));
   }
 }
