@@ -4335,6 +4335,7 @@ program
         projectPath,
         permissionCheck: (name, perm) => permissionManager.check(name, perm),
         containerIsolation: config.shell.sandbox === "container",
+        parentSegments: systemSegments,
       });
       tools.register(subagentTool);
 

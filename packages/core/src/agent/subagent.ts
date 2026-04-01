@@ -8,6 +8,8 @@ import {
   DockerSandbox,
 } from "@brainst0rm/tools";
 import { serializeRoutingMetadata } from "@brainst0rm/shared";
+import type { SystemPromptSegment } from "./context.js";
+import { segmentsToSystemArray } from "./context.js";
 
 // ── Subagent Types ──────────────────────────────────────────────────
 
@@ -216,6 +218,8 @@ export interface SubagentOptions {
   ) => "allow" | "confirm" | "deny";
   /** When true and container mode is active, code subagents get their own DockerSandbox. */
   containerIsolation?: boolean;
+  /** Parent's system prompt segments — enables prompt cache sharing (fork model). */
+  parentSegments?: SystemPromptSegment[];
 }
 
 export interface SubagentResult {
@@ -330,9 +334,24 @@ export async function spawnSubagent(
 
   const metadataHeader = serializeRoutingMetadata(taskProfile, decision);
 
+  // Fork model: if parent segments are available, share the cacheable prefix.
+  // The subagent gets cache hits on the stable portion (identity, tools, project context),
+  // making parallel subagents nearly free in terms of input token costs.
+  const systemForAPI = options.parentSegments
+    ? segmentsToSystemArray([
+        // Reuse parent's cacheable prefix (gets Anthropic cache hits)
+        ...options.parentSegments.filter((s) => s.cacheable),
+        // Subagent's own behavioral instructions (dynamic, not cached)
+        {
+          text: `\n## Subagent Instructions\n\n${systemPrompt}`,
+          cacheable: false,
+        },
+      ])
+    : systemPrompt;
+
   const result = streamText({
     model: modelId,
-    system: systemPrompt,
+    system: systemForAPI as any,
     messages: [
       {
         role: "user" as const,
