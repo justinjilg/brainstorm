@@ -376,6 +376,87 @@ export class RoutingOutcomeRepository {
   }
 }
 
+// ── Compaction Commits (Reversible Context Collapse) ────────────────
+
+export interface CompactionCommit {
+  id: string;
+  sessionId: string;
+  timestamp: number;
+  summary: string;
+  originalMessageIds: string[];
+  keptCount: number;
+  summarizedCount: number;
+  droppedCount: number;
+  tokensBefore?: number;
+  tokensAfter?: number;
+}
+
+export class CompactionCommitRepository {
+  constructor(private db: Database.Database) {}
+
+  /** Persist a compaction commit before replacing messages. */
+  create(commit: CompactionCommit): void {
+    this.db
+      .prepare(
+        `INSERT INTO compaction_commits (id, session_id, timestamp, summary, original_message_ids, kept_count, summarized_count, dropped_count, tokens_before, tokens_after)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        commit.id,
+        commit.sessionId,
+        commit.timestamp,
+        commit.summary,
+        JSON.stringify(commit.originalMessageIds),
+        commit.keptCount,
+        commit.summarizedCount,
+        commit.droppedCount,
+        commit.tokensBefore ?? null,
+        commit.tokensAfter ?? null,
+      );
+  }
+
+  /** Get a compaction commit by ID. */
+  get(id: string): CompactionCommit | null {
+    const row = this.db
+      .prepare("SELECT * FROM compaction_commits WHERE id = ?")
+      .get(id) as any;
+    if (!row) return null;
+    return {
+      id: row.id,
+      sessionId: row.session_id,
+      timestamp: row.timestamp,
+      summary: row.summary,
+      originalMessageIds: JSON.parse(row.original_message_ids),
+      keptCount: row.kept_count,
+      summarizedCount: row.summarized_count,
+      droppedCount: row.dropped_count,
+      tokensBefore: row.tokens_before,
+      tokensAfter: row.tokens_after,
+    };
+  }
+
+  /** List all compaction commits for a session. */
+  listForSession(sessionId: string): CompactionCommit[] {
+    const rows = this.db
+      .prepare(
+        "SELECT * FROM compaction_commits WHERE session_id = ? ORDER BY timestamp DESC",
+      )
+      .all(sessionId) as any[];
+    return rows.map((row) => ({
+      id: row.id,
+      sessionId: row.session_id,
+      timestamp: row.timestamp,
+      summary: row.summary,
+      originalMessageIds: JSON.parse(row.original_message_ids),
+      keptCount: row.kept_count,
+      summarizedCount: row.summarized_count,
+      droppedCount: row.dropped_count,
+      tokensBefore: row.tokens_before,
+      tokensAfter: row.tokens_after,
+    }));
+  }
+}
+
 // ── Session Patterns ────────────────────────────────────────────────
 
 export interface SessionPattern {

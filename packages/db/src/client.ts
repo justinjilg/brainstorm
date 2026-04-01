@@ -503,4 +503,22 @@ const MIGRATIONS = [
         ON model_performance_v2(task_type, model_id, success);
     `,
   },
+  {
+    name: "024_compaction_commits",
+    sql: `
+      CREATE TABLE IF NOT EXISTS compaction_commits (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        timestamp INTEGER NOT NULL DEFAULT (unixepoch()),
+        summary TEXT NOT NULL,
+        original_message_ids TEXT NOT NULL,
+        kept_count INTEGER NOT NULL DEFAULT 0,
+        summarized_count INTEGER NOT NULL DEFAULT 0,
+        dropped_count INTEGER NOT NULL DEFAULT 0,
+        tokens_before INTEGER,
+        tokens_after INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_compaction_session ON compaction_commits(session_id);
+    `,
+  },
 ];
