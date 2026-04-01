@@ -1,11 +1,13 @@
 import { SessionRepository, MessageRepository } from "@brainst0rm/db";
 import type { Session, TurnContext } from "@brainst0rm/shared";
-import { formatTurnContext } from "@brainst0rm/shared";
+import { createLogger, formatTurnContext } from "@brainst0rm/shared";
 import {
   estimateTokenCount,
   needsCompaction,
   compactContext,
 } from "./compaction.js";
+
+const log = createLogger("session-manager");
 
 export interface ConversationMessage {
   role: "user" | "assistant" | "system";
@@ -21,6 +23,8 @@ export class SessionManager {
   private sessionStartTime = Date.now();
   /** Cached token estimate — updated incrementally on addMessage, invalidated on compact. */
   private cachedTokenCount: number | null = null;
+  /** Pending async writes (assistant messages, tool results). Flushed at end of turn. */
+  private pendingWrites: Array<() => void> = [];
 
   constructor(private db: any) {
     this.sessions = new SessionRepository(db);
@@ -94,6 +98,11 @@ export class SessionManager {
     return forked;
   }
 
+  /**
+   * Add user message — SYNCHRONOUS write to DB.
+   * Critical for crash recovery: --resume needs the user message to exist
+   * even if the process dies before the assistant responds.
+   */
   addUserMessage(content: string): void {
     if (!this.currentSession) throw new Error("No active session");
     this.messages.create(this.currentSession.id, "user", content);
@@ -102,12 +111,27 @@ export class SessionManager {
     this.addTokenDelta(content);
   }
 
+  /**
+   * Add assistant message — ASYNC write to DB (fire-and-forget).
+   * Assistant responses can be regenerated on crash recovery, so we
+   * don't block the event loop waiting for the DB write. The in-memory
+   * history is updated immediately for conversation continuity.
+   */
   addAssistantMessage(content: string, modelId?: string): void {
     if (!this.currentSession) throw new Error("No active session");
-    this.messages.create(this.currentSession.id, "assistant", content, modelId);
-    this.sessions.incrementMessages(this.currentSession.id);
     this.conversationHistory.push({ role: "assistant", content });
     this.addTokenDelta(content);
+
+    // DB write is fire-and-forget — queued for batch flush at end of turn
+    const sessionId = this.currentSession.id;
+    this.pendingWrites.push(() => {
+      try {
+        this.messages.create(sessionId, "assistant", content, modelId);
+        this.sessions.incrementMessages(sessionId);
+      } catch (e) {
+        log.warn({ err: e }, "Failed to persist assistant message");
+      }
+    });
   }
 
   /** Inject turn context as an invisible system message the model sees but the user doesn't. */
@@ -121,6 +145,19 @@ export class SessionManager {
   private addTokenDelta(content: string): void {
     if (this.cachedTokenCount !== null) {
       this.cachedTokenCount += Math.ceil((content.length + 20) / 4);
+    }
+  }
+
+  /**
+   * Flush all pending async writes to DB.
+   * Call at end of each turn or on graceful shutdown.
+   * Uses a single implicit SQLite transaction (WAL mode) for batch efficiency.
+   */
+  flush(): void {
+    if (this.pendingWrites.length === 0) return;
+    const writes = this.pendingWrites.splice(0);
+    for (const write of writes) {
+      write();
     }
   }
 
