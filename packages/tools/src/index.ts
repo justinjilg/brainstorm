@@ -46,6 +46,7 @@ export {
   isParallelSafe,
   classifyToolBatch,
   executeWithParallelism,
+  setToolRegistryForParallel,
 } from "./parallel.js";
 export {
   getTierForComplexity,

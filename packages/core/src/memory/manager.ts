@@ -6,6 +6,7 @@ import {
   readdirSync,
   unlinkSync,
   renameSync,
+  statSync,
 } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -35,6 +36,8 @@ export interface MemoryEntry {
  * are pushed fire-and-forget to the cloud RMM. Local is source of truth.
  */
 const INDEX_DEBOUNCE_MS = 2000;
+/** Hard cap on total memory file size (excluding MEMORY.md index). */
+const MAX_MEMORY_BYTES = 25 * 1024; // 25KB — matches Claude Code's cap
 
 export class MemoryManager {
   private memoryDir: string;
@@ -91,6 +94,7 @@ export class MemoryManager {
     writeFileSync(filePath, fileContent, "utf-8");
 
     this.entries.set(id, memory);
+    this.enforceCapacity();
     this.scheduleIndexUpdate();
 
     // Fire-and-forget push to gateway
@@ -240,6 +244,76 @@ export class MemoryManager {
       createdAt: Math.floor(Date.now() / 1000),
       updatedAt: Math.floor(Date.now() / 1000),
     };
+  }
+
+  /**
+   * Enforce memory directory size cap via LRU eviction.
+   * Evicts oldest entries (by updatedAt) until total size is under MAX_MEMORY_BYTES.
+   * Entries with "[keep]" in their name are exempt from eviction.
+   */
+  private enforceCapacity(): void {
+    const files = readdirSync(this.memoryDir).filter(
+      (f) => f.endsWith(".md") && f !== "MEMORY.md",
+    );
+    let totalBytes = 0;
+    const fileSizes: Array<{
+      id: string;
+      file: string;
+      bytes: number;
+      updatedAt: number;
+    }> = [];
+
+    for (const file of files) {
+      const filePath = join(this.memoryDir, file);
+      try {
+        const bytes = statSync(filePath).size;
+        totalBytes += bytes;
+        const id = file.replace(".md", "");
+        const entry = this.entries.get(id);
+        fileSizes.push({ id, file, bytes, updatedAt: entry?.updatedAt ?? 0 });
+      } catch {
+        /* file may have been deleted concurrently */
+      }
+    }
+
+    if (totalBytes <= MAX_MEMORY_BYTES) return;
+
+    // Sort by updatedAt ascending (oldest first) for LRU eviction
+    // Entries with "[keep]" in name are pushed to the end (exempt)
+    fileSizes.sort((a, b) => {
+      const aKeep = this.entries.get(a.id)?.name.includes("[keep]") ? 1 : 0;
+      const bKeep = this.entries.get(b.id)?.name.includes("[keep]") ? 1 : 0;
+      if (aKeep !== bKeep) return aKeep - bKeep;
+      return a.updatedAt - b.updatedAt;
+    });
+
+    let evicted = 0;
+    for (const entry of fileSizes) {
+      if (totalBytes <= MAX_MEMORY_BYTES) break;
+      // Don't evict [keep] entries
+      if (this.entries.get(entry.id)?.name.includes("[keep]")) continue;
+
+      const filePath = join(this.memoryDir, entry.file);
+      try {
+        unlinkSync(filePath);
+        this.entries.delete(entry.id);
+        totalBytes -= entry.bytes;
+        evicted++;
+        log.info(
+          { id: entry.id, bytes: entry.bytes },
+          "Evicted memory entry (capacity exceeded)",
+        );
+      } catch (e) {
+        log.warn({ err: e, id: entry.id }, "Failed to evict memory entry");
+      }
+    }
+
+    if (evicted > 0) {
+      log.info(
+        { evicted, remainingBytes: totalBytes, cap: MAX_MEMORY_BYTES },
+        "Memory capacity enforcement complete",
+      );
+    }
   }
 
   /** Schedule a debounced index rebuild. */
