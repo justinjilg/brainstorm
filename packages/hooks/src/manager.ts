@@ -1,7 +1,12 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createLogger } from "@brainst0rm/shared";
-import type { HookDefinition, HookEvent, HookResult } from "./types.js";
+import type {
+  HookDefinition,
+  HookEvent,
+  HookResult,
+  PermissionDecision,
+} from "./types.js";
 
 const execFileAsync = promisify(execFile);
 const log = createLogger("hooks");
@@ -137,13 +142,23 @@ export class HookManager {
             },
           );
 
+          // Parse permission decision from stdout (e.g., "PERMISSION:deny")
+          const permissionDecision = parsePermissionDecision(stdout);
+
           results.push({
             hookId,
             event,
             success: true,
             output: stdout.trim(),
             durationMs: Date.now() - start,
+            ...(permissionDecision ? { permissionDecision } : {}),
           });
+
+          // A hook returning PERMISSION:deny blocks even if the hook itself "succeeded"
+          if (permissionDecision === "deny" && event === "PreToolUse") {
+            results[results.length - 1].blocked = true;
+            break;
+          }
         } catch (err: any) {
           const blocked = hook.blocking && event === "PreToolUse";
           results.push({
@@ -181,6 +196,35 @@ export class HookManager {
   isBlocked(results: HookResult[]): boolean {
     return results.some((r) => r.blocked);
   }
+
+  /**
+   * Get the strongest permission decision from hook results.
+   * Priority: deny > ask > allow > undefined (no decision).
+   * Hooks fire before bypassPermissions mode — a hook deny overrides everything.
+   */
+  getPermissionDecision(results: HookResult[]): PermissionDecision | undefined {
+    let decision: PermissionDecision | undefined;
+    for (const r of results) {
+      if (!r.permissionDecision) continue;
+      if (r.permissionDecision === "deny") return "deny"; // strongest — short-circuit
+      if (r.permissionDecision === "ask") decision = "ask";
+      else if (!decision) decision = r.permissionDecision;
+    }
+    return decision;
+  }
+}
+
+/**
+ * Parse a permission decision from hook stdout.
+ * Looks for "PERMISSION:allow", "PERMISSION:deny", or "PERMISSION:ask" on any line.
+ * This enables hooks to dynamically control tool permissions.
+ */
+function parsePermissionDecision(
+  stdout: string,
+): PermissionDecision | undefined {
+  const match = stdout.match(/PERMISSION:(allow|deny|ask)/i);
+  if (!match) return undefined;
+  return match[1].toLowerCase() as PermissionDecision;
 }
 
 /**

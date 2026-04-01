@@ -4,6 +4,7 @@ export type {
   HookEvent,
   HookResult,
   HookType,
+  PermissionDecision,
 } from "./types.js";
 export {
   detectLinter,
