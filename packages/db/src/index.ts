@@ -1,2 +1,11 @@
-export { getDb, closeDb, getTestDb } from './client.js';
-export { SessionRepository, MessageRepository, CostRepository, PatternRepository, SessionLockManager, type SessionPattern } from './repositories.js';
+export { getDb, closeDb, getTestDb } from "./client.js";
+export {
+  SessionRepository,
+  MessageRepository,
+  CostRepository,
+  PatternRepository,
+  RoutingOutcomeRepository,
+  SessionLockManager,
+  type SessionPattern,
+  type AggregatedRoutingStats,
+} from "./repositories.js";

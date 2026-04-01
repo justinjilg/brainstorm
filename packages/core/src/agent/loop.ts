@@ -2,7 +2,12 @@ import { streamText, stepCountIs } from "ai";
 import type { ConversationMessage } from "../session/manager.js";
 import type { BrainstormConfig } from "@brainst0rm/config";
 import type { ProviderRegistry } from "@brainst0rm/providers";
-import { BrainstormRouter, CostTracker } from "@brainst0rm/router";
+import {
+  BrainstormRouter,
+  CostTracker,
+  recordOutcome,
+} from "@brainst0rm/router";
+import type { RoutingOutcomeRepository } from "@brainst0rm/db";
 import type { ToolRegistry, PermissionCheckFn } from "@brainst0rm/tools";
 import {
   setTaskEventHandler,
@@ -166,6 +171,8 @@ export interface AgentLoopOptions {
   _modelsTried?: string[];
   /** Optional middleware pipeline for composable agent interceptors. */
   middleware?: MiddlewarePipeline;
+  /** Repository for persisting routing outcomes (Thompson sampling). */
+  routingOutcomeRepo?: RoutingOutcomeRepository;
   /** Enable trajectory recording to JSONL. */
   trajectoryEnabled?: boolean;
   /** Session checkpointer for crash recovery. */
@@ -377,6 +384,8 @@ export async function* runAgentLoop(
   // Serialize task context for gateway telemetry (x-br-metadata header)
   const metadataHeader = serializeRoutingMetadata(task, decision);
 
+  const turnStartMs = Date.now();
+  const sessionCostBefore = costTracker.getSessionCost();
   try {
     const result = streamText({
       model: modelId,
@@ -595,9 +604,9 @@ export async function* runAgentLoop(
     if (fallbacks.length === 0 && isEmpty) {
       // When BR Auto returns empty, construct fallbacks from explicit models in the registry
       const RETRY_MODELS = [
-        "anthropic/claude-sonnet-4.5-20250929",
+        "anthropic/claude-sonnet-4.6",
         "openai/gpt-4.1",
-        "anthropic/claude-haiku-4.5-20251001",
+        "anthropic/claude-haiku-4.5",
       ];
       fallbacks = RETRY_MODELS.filter((id) => id !== decision.model.id)
         .map((id) => options.registry.getModel(id))
@@ -670,6 +679,31 @@ export async function* runAgentLoop(
     // Record success for model momentum
     router.recordSuccess?.(decision.model.id);
 
+    // Record routing outcome for Thompson sampling (in-memory + DB persistence)
+    const turnLatencyMs = Date.now() - turnStartMs;
+    const turnSuccess = !isEmpty;
+    const turnCost = costTracker.getSessionCost() - sessionCostBefore;
+    recordOutcome(
+      task.type,
+      decision.model.id,
+      turnSuccess,
+      turnLatencyMs,
+      turnCost,
+    );
+    if (options.routingOutcomeRepo) {
+      try {
+        options.routingOutcomeRepo.record(
+          decision.model.id,
+          task.type,
+          turnSuccess,
+          turnLatencyMs,
+          turnCost,
+        );
+      } catch (e) {
+        log.warn({ err: e }, "Failed to persist routing outcome to DB");
+      }
+    }
+
     // Inject turn context for next turn's self-awareness
     if (options.onTurnComplete) {
       const turnCost = costTracker.getSessionCost(); // approximate per-turn
@@ -724,6 +758,22 @@ export async function* runAgentLoop(
       yield { type: "interrupted" };
     } else {
       router.recordFailure(decision.model.id, error.message);
+      // Record failure for Thompson sampling
+      const failLatencyMs = Date.now() - turnStartMs;
+      recordOutcome(task.type, decision.model.id, false, failLatencyMs, 0);
+      if (options.routingOutcomeRepo) {
+        try {
+          options.routingOutcomeRepo.record(
+            decision.model.id,
+            task.type,
+            false,
+            failLatencyMs,
+            0,
+          );
+        } catch {
+          /* non-fatal */
+        }
+      }
       // Wrap raw API errors with actionable messages
       const enriched = enrichError(error, decision.model.id);
       yield { type: "error", error: enriched };

@@ -6,7 +6,13 @@ export { qualityFirstStrategy } from "./strategies/quality-first.js";
 export { createRuleBasedStrategy } from "./strategies/rule-based.js";
 export { createCombinedStrategy } from "./strategies/combined.js";
 export { capabilityStrategy } from "./strategies/capability.js";
-export { learnedStrategy, recordOutcome } from "./strategies/learned.js";
+export {
+  learnedStrategy,
+  recordOutcome,
+  loadStats,
+  getTotalSamples,
+  getSamplesForTaskType,
+} from "./strategies/learned.js";
 export {
   optimizeTeamComposition,
   type TeamAssignment,

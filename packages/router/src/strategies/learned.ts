@@ -3,7 +3,8 @@
  *
  * Records (taskType, modelId, success, latency, cost) per turn.
  * Uses Beta distribution sampling to balance exploration vs exploitation.
- * BrainstormRouter does server-side sampling — this brings it client-side.
+ * Stats are persisted to model_performance_v2 via RoutingOutcomeRepository
+ * and loaded on router init for cross-session learning.
  */
 
 import type {
@@ -14,7 +15,7 @@ import type {
 } from "@brainst0rm/shared";
 import type { RoutingStrategy } from "./types.js";
 
-interface ModelStats {
+export interface ModelStats {
   successes: number;
   failures: number;
   totalLatencyMs: number;
@@ -22,11 +23,40 @@ interface ModelStats {
   samples: number;
 }
 
-// In-memory stats — persisted to session_patterns table via SessionPatternLearner
+// In-memory stats — loaded from DB on init, updated per-turn, persisted per-outcome
 const modelStats = new Map<string, ModelStats>();
 
 /**
+ * Load historical stats from aggregated DB data.
+ * Called once during router initialization.
+ */
+export function loadStats(
+  aggregated: Array<{
+    taskType: string;
+    modelId: string;
+    successes: number;
+    failures: number;
+    avgLatencyMs: number;
+    avgCost: number;
+    samples: number;
+  }>,
+): void {
+  modelStats.clear();
+  for (const row of aggregated) {
+    const key = `${row.taskType}:${row.modelId}`;
+    modelStats.set(key, {
+      successes: row.successes,
+      failures: row.failures,
+      totalLatencyMs: row.avgLatencyMs * row.samples,
+      totalCost: row.avgCost * row.samples,
+      samples: row.samples,
+    });
+  }
+}
+
+/**
  * Record an outcome for a model on a task type.
+ * Updates in-memory stats immediately. Caller is responsible for DB persistence.
  */
 export function recordOutcome(
   taskType: string,
@@ -51,6 +81,32 @@ export function recordOutcome(
   stats.samples++;
 
   modelStats.set(key, stats);
+}
+
+/**
+ * Get total sample count across all task_type:model pairs.
+ * Used to determine if learned strategy has enough data.
+ */
+export function getTotalSamples(): number {
+  let total = 0;
+  for (const stats of modelStats.values()) {
+    total += stats.samples;
+  }
+  return total;
+}
+
+/**
+ * Get sample count for a specific task type (across all models).
+ * Used by combined strategy to decide whether to delegate to learned.
+ */
+export function getSamplesForTaskType(taskType: string): number {
+  let total = 0;
+  for (const [key, stats] of modelStats.entries()) {
+    if (key.startsWith(`${taskType}:`)) {
+      total += stats.samples;
+    }
+  }
+  return total;
 }
 
 /**
@@ -89,6 +145,9 @@ function gammaSample(shape: number): number {
   }
 }
 
+/** Weight given to cost efficiency in the final score (0 = ignore cost, 1 = cost dominates). */
+const COST_WEIGHT = 0.25;
+
 export const learnedStrategy: RoutingStrategy = {
   name: "learned",
 
@@ -100,29 +159,47 @@ export const learnedStrategy: RoutingStrategy = {
     const eligible = candidates.filter((m) => m.status === "available");
     if (eligible.length === 0) return null;
 
-    // Score each model using Thompson sampling
-    const scored = eligible.map((model) => {
+    // Collect raw scores and avg costs
+    const raw = eligible.map((model) => {
       const key = `${task.type}:${model.id}`;
       const stats = modelStats.get(key);
 
-      // No history → high exploration score (optimistic prior)
-      const sample = stats
+      // Thompson sample for success probability
+      const successSample = stats
         ? betaSample(stats.successes, stats.failures)
         : 0.7 + Math.random() * 0.3;
 
-      return { model, sample };
+      // Average cost per turn (from historical data, or estimate from pricing)
+      const avgCost =
+        stats && stats.samples > 0
+          ? stats.totalCost / stats.samples
+          : (task.estimatedTokens.input / 1_000_000) *
+              model.pricing.inputPer1MTokens +
+            (task.estimatedTokens.output / 1_000_000) *
+              model.pricing.outputPer1MTokens;
+
+      return { model, successSample, avgCost, samples: stats?.samples ?? 0 };
     });
 
-    // Pick the model with highest sampled score
-    scored.sort((a, b) => b.sample - a.sample);
-    const selected = scored[0].model;
+    // Normalize cost to [0, 1] range (0 = cheapest, 1 = most expensive)
+    const maxCost = Math.max(...raw.map((r) => r.avgCost), 0.0001);
+    const scored = raw.map((r) => {
+      const costPenalty = r.avgCost / maxCost; // 0..1
+      // Final score: success probability with cost penalty
+      // A model with 95% success at $15/M gets penalized vs 90% success at $0.50/M
+      const score = r.successSample * (1 - COST_WEIGHT * costPenalty);
+      return { ...r, score };
+    });
+
+    scored.sort((a, b) => b.score - a.score);
+    const selected = scored[0];
 
     return {
-      model: selected,
+      model: selected.model,
       fallbacks: scored.slice(1, 3).map((s) => s.model),
       strategy: "learned",
-      reason: `Thompson sampling (score: ${scored[0].sample.toFixed(3)}, ${modelStats.get(`${task.type}:${selected.id}`)?.samples ?? 0} samples)`,
-      estimatedCost: 0,
+      reason: `Thompson sampling (score: ${selected.score.toFixed(3)}, success: ${selected.successSample.toFixed(3)}, cost: $${selected.avgCost.toFixed(4)}, ${selected.samples} samples)`,
+      estimatedCost: selected.avgCost,
     };
   },
 };
