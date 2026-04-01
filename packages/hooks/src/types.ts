@@ -3,17 +3,17 @@
  * Mirrors Claude Code's hook event model for compatibility.
  */
 export type HookEvent =
-  | 'PreToolUse'      // Before a tool executes — can block or modify
-  | 'PostToolUse'     // After a tool succeeds — for side effects (format, lint)
-  | 'SessionStart'    // When a session begins or resumes
-  | 'SessionEnd'      // When a session ends
-  | 'Stop'            // When the agent finishes responding
-  | 'PreCompact'      // Before context compaction
-  | 'PreCommit'       // Before a git commit
-  | 'SubagentStart'   // When a subagent is spawned
-  | 'SubagentStop';   // When a subagent completes (or is terminated)
+  | "PreToolUse" // Before a tool executes — can block or modify
+  | "PostToolUse" // After a tool succeeds — for side effects (format, lint)
+  | "SessionStart" // When a session begins or resumes
+  | "SessionEnd" // When a session ends
+  | "Stop" // When the agent finishes responding
+  | "PreCompact" // Before context compaction
+  | "PreCommit" // Before a git commit
+  | "SubagentStart" // When a subagent is spawned
+  | "SubagentStop"; // When a subagent completes (or is terminated)
 
-export type HookType = 'command' | 'prompt';
+export type HookType = "command" | "prompt";
 
 /**
  * Hook definition — matches a lifecycle event and runs an action.
@@ -33,6 +33,8 @@ export interface HookDefinition {
   description?: string;
 }
 
+export type PermissionDecision = "allow" | "deny" | "ask";
+
 export interface HookResult {
   hookId: string;
   event: HookEvent;
@@ -41,4 +43,6 @@ export interface HookResult {
   error?: string;
   durationMs: number;
   blocked?: boolean;
+  /** Permission override from PreToolUse hooks. Takes precedence over permission mode. */
+  permissionDecision?: PermissionDecision;
 }
