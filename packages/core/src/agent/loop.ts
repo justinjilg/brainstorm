@@ -33,6 +33,10 @@ import { normalizeInsightMarkers } from "./insights.js";
 import { parseGatewayHeaders } from "@brainst0rm/gateway";
 import type { MiddlewarePipeline } from "../middleware/pipeline.js";
 import { TrajectoryRecorder } from "../session/trajectory.js";
+import {
+  enterToolExecution,
+  exitToolExecution,
+} from "../session/compaction.js";
 import type { SystemPromptSegment } from "./context.js";
 import { segmentsToSystemArray } from "./context.js";
 import { predictTaskCost } from "./cost-predictor.js";
@@ -482,12 +486,14 @@ export async function* runAgentLoop(
             };
         } else if (part.type === "tool-call") {
           toolCallCount++;
+          enterToolExecution(); // gate compaction while tools are in-flight
           yield {
             type: "tool-call-start" as const,
             toolName: part.toolName,
             args: (part as any).input ?? (part as any).args,
           };
         } else if (part.type === "tool-result") {
+          exitToolExecution(); // ungate compaction
           const toolResult = (part as any).output ?? (part as any).result;
           // Track tool call success/failure for turn context
           const toolOk = !(
@@ -818,13 +824,7 @@ export async function* runAgentLoop(
         durationMs: Date.now() - sessionStartTime,
       });
 
-      // Async submission — don't block session exit
-      import("../session/trajectory.js").catch((e) => {
-        log.warn(
-          { err: e },
-          "Failed to load trajectory module for intelligence submission",
-        );
-      });
+      // TODO: Wire trajectory submission to BR Intelligence API when gateway endpoints are active
     }
   }
 }
