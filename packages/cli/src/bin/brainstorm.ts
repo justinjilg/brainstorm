@@ -28,7 +28,9 @@ import {
   spawnSubagent,
   spawnParallel,
   createDefaultMiddlewarePipeline,
+  segmentsToString,
   type CompactionCallbacks,
+  type SystemPromptSegment,
 } from "@brainst0rm/core";
 import type { OutputStyle } from "@brainst0rm/core";
 import { AgentManager, parseAgentNL } from "@brainst0rm/agents";
@@ -1196,9 +1198,20 @@ program
         config.shell.containerImage,
         config.shell.containerTimeout,
       );
-      const { prompt: rawPrompt, frontmatter } = buildSystemPrompt(projectPath);
-      const systemPrompt =
-        rawPrompt + buildToolAwarenessSection(tools.listTools());
+      const {
+        prompt: rawPrompt,
+        segments: rawSegments,
+        frontmatter,
+      } = buildSystemPrompt(projectPath);
+      const toolSection = buildToolAwarenessSection(tools.listTools());
+      const systemPrompt = rawPrompt + toolSection;
+      const systemSegments: SystemPromptSegment[] =
+        rawSegments.length > 0
+          ? [
+              { text: rawSegments[0].text + toolSection, cacheable: true },
+              ...rawSegments.slice(1),
+            ]
+          : [{ text: systemPrompt, cacheable: true }];
       const routingOutcomeRepo = new RoutingOutcomeRepository(db);
       const router = new BrainstormRouter(
         config,
@@ -1249,6 +1262,7 @@ program
         sessionId: session.id,
         projectPath,
         systemPrompt,
+        systemSegments,
         disableTools: !opts.tools,
         preferredModelId:
           opts.model ??
@@ -4251,8 +4265,20 @@ program
         resolveProviderKeys(),
         Promise.resolve(buildSystemPrompt(projectPath, currentOutputStyle)),
       ]);
-      let { prompt: systemPrompt, frontmatter } = promptResult;
-      systemPrompt += buildToolAwarenessSection(tools.listTools());
+      let {
+        prompt: systemPrompt,
+        segments: systemSegments,
+        frontmatter,
+      } = promptResult;
+      // Tool awareness goes in the cacheable zone (stable within session)
+      const toolSection = buildToolAwarenessSection(tools.listTools());
+      systemPrompt += toolSection;
+      if (systemSegments.length > 0) {
+        systemSegments[0] = {
+          text: systemSegments[0].text + toolSection,
+          cacheable: true,
+        };
+      }
       const resolvedBRKey =
         resolvedKeys.get("BRAINSTORM_API_KEY") ?? getBrainstormApiKey();
       const isCommunityTier = isCommunityKey(resolvedBRKey);
@@ -4438,9 +4464,19 @@ program
                     projectPath,
                     currentOutputStyle,
                   );
-                  systemPrompt =
-                    rebuilt.prompt +
-                    buildToolAwarenessSection(tools.listTools());
+                  const ts = buildToolAwarenessSection(tools.listTools());
+                  systemPrompt = rebuilt.prompt + ts;
+                  // Rebuild segments with tool section in cacheable zone
+                  systemSegments =
+                    rebuilt.segments.length > 0
+                      ? [
+                          {
+                            text: rebuilt.segments[0].text + ts,
+                            cacheable: true,
+                          },
+                          ...rebuilt.segments.slice(1),
+                        ]
+                      : [{ text: systemPrompt, cacheable: true }];
                 },
                 getOutputStyle: () => currentOutputStyle,
                 getBudget: () => {
@@ -4491,6 +4527,7 @@ program
             sessionId: session.id,
             projectPath,
             systemPrompt,
+            systemSegments,
             compaction: buildCompactionCallbacks(sessionManager),
             signal: simpleAbortController.signal,
             permissionCheck: (name, perm) =>
@@ -4617,6 +4654,7 @@ program
           sessionId: session.id,
           projectPath,
           systemPrompt,
+          systemSegments,
           compaction: buildCompactionCallbacks(sessionManager),
           signal: currentAbortController.signal,
           permissionCheck: (name, perm) => permissionManager.check(name, perm),
@@ -4715,8 +4753,15 @@ program
                 projectPath,
                 currentOutputStyle,
               );
-              systemPrompt =
-                rebuilt.prompt + buildToolAwarenessSection(tools.listTools());
+              const ts = buildToolAwarenessSection(tools.listTools());
+              systemPrompt = rebuilt.prompt + ts;
+              systemSegments =
+                rebuilt.segments.length > 0
+                  ? [
+                      { text: rebuilt.segments[0].text + ts, cacheable: true },
+                      ...rebuilt.segments.slice(1),
+                    ]
+                  : [{ text: systemPrompt, cacheable: true }];
             },
             getOutputStyle: () => currentOutputStyle,
             rebuildSystemPrompt: (basePromptOverride?: string) => {
@@ -4725,8 +4770,15 @@ program
                 currentOutputStyle,
                 basePromptOverride,
               );
-              systemPrompt =
-                rebuilt.prompt + buildToolAwarenessSection(tools.listTools());
+              const ts = buildToolAwarenessSection(tools.listTools());
+              systemPrompt = rebuilt.prompt + ts;
+              systemSegments =
+                rebuilt.segments.length > 0
+                  ? [
+                      { text: rebuilt.segments[0].text + ts, cacheable: true },
+                      ...rebuilt.segments.slice(1),
+                    ]
+                  : [{ text: systemPrompt, cacheable: true }];
             },
             getActiveRole: () => currentRole,
             setActiveRole: (role: string | undefined) => {

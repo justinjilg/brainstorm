@@ -13,6 +13,10 @@ export {
   buildSystemPrompt,
   parseAtMentions,
   buildToolAwarenessSection,
+  segmentsToSystemArray,
+  segmentsToString,
+  type SystemPromptSegment,
+  type SystemPromptResult,
 } from "./agent/context.js";
 export { SessionManager } from "./session/manager.js";
 export { PermissionManager } from "./permissions/manager.js";
