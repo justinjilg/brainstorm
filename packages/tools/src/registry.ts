@@ -112,9 +112,26 @@ export class ToolRegistry {
   toAISDKTools(): Record<string, ReturnType<BrainstormToolDef["toAISDKTool"]>> {
     const result: Record<string, any> = {};
     for (const [name, tool] of this.tools) {
+      // Skip deferred tools — they're not available until resolved via tool_search
+      if (tool.deferred) continue;
       result[name] = tool.toAISDKTool();
     }
     return result;
+  }
+
+  /** Resolve a deferred tool, making it available in toAISDKTools() output. */
+  resolveDeferred(name: string): boolean {
+    const tool = this.tools.get(name);
+    if (!tool || !tool.deferred) return false;
+    tool.deferred = false;
+    return true;
+  }
+
+  /** List deferred (not yet resolved) tools — for tool_search results. */
+  listDeferred(): Array<{ name: string; description: string }> {
+    return Array.from(this.tools.values())
+      .filter((t) => t.deferred)
+      .map((t) => ({ name: t.name, description: t.description }));
   }
 
   /**
@@ -127,6 +144,7 @@ export class ToolRegistry {
     const allowed = new Set(allowedNames);
     const result: Record<string, any> = {};
     for (const [name, tool] of this.tools) {
+      if (tool.deferred) continue; // skip deferred even if named
       if (allowed.has(name)) {
         result[name] = tool.toAISDKTool();
       }
@@ -158,6 +176,7 @@ export class ToolRegistry {
     const allowed = allowedNames ? new Set(allowedNames) : null;
     const result: Record<string, any> = {};
     for (const [name, toolDef] of this.tools) {
+      if (toolDef.deferred) continue; // skip deferred tools
       if (allowed && !allowed.has(name)) continue;
       result[name] = tool({
         description: toolDef.description,
