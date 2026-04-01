@@ -76,9 +76,49 @@ Only report failure to the user after 2 unsuccessful alternative approaches.
 
 ${INSIGHT_PROMPT_SECTION}`;
 
+/**
+ * A segment of the system prompt. Segments marked `cacheable` are stable across
+ * turns and can be cached by providers that support prompt caching (e.g., Anthropic).
+ * The AI SDK v6 passes `providerOptions.anthropic.cacheControl` for cache hints.
+ */
+export interface SystemPromptSegment {
+  text: string;
+  /** If true, this segment rarely changes and should be cached across turns. */
+  cacheable: boolean;
+}
+
 export interface SystemPromptResult {
+  /** Flat prompt string (backward compatibility for non-segmented consumers). */
   prompt: string;
+  /** Segmented prompt for providers that support prompt caching. */
+  segments: SystemPromptSegment[];
   frontmatter: StormFrontmatter | null;
+}
+
+/** Convert segments to AI SDK v6 system prompt array with Anthropic cache hints. */
+export function segmentsToSystemArray(
+  segments: SystemPromptSegment[],
+): Array<{
+  role: "system";
+  content: string;
+  providerOptions?: Record<string, any>;
+}> {
+  return segments.map((seg) => ({
+    role: "system" as const,
+    content: seg.text,
+    ...(seg.cacheable
+      ? {
+          providerOptions: {
+            anthropic: { cacheControl: { type: "ephemeral" } },
+          },
+        }
+      : {}),
+  }));
+}
+
+/** Convert segments to flat string (for trajectory recording, non-cached paths). */
+export function segmentsToString(segments: SystemPromptSegment[]): string {
+  return segments.map((s) => s.text).join("\n");
 }
 
 export function buildSystemPrompt(
@@ -86,63 +126,64 @@ export function buildSystemPrompt(
   outputStyle?: OutputStyle,
   basePromptOverride?: string,
 ): SystemPromptResult {
-  const parts = [basePromptOverride ?? DEFAULT_SYSTEM_PROMPT];
+  // ── Cacheable zone: stable within a session ──────────────────────
+  // These sections don't change between turns. Anthropic caches this prefix.
+  const stableParts = [basePromptOverride ?? DEFAULT_SYSTEM_PROMPT];
 
-  // Inject output style instructions
+  // Output style is set once per session (changed via /style command which rebuilds prompt)
   if (outputStyle) {
-    parts.push("\n" + getOutputStylePrompt(outputStyle));
+    stableParts.push("\n" + getOutputStylePrompt(outputStyle));
   }
+
   let frontmatter: StormFrontmatter | null = null;
 
   // Project context from STORM.md / BRAINSTORM.md (hierarchical: global → root → ... → cwd)
   const storm = loadHierarchicalStormFiles(projectPath);
   if (storm.sources.length > 0) {
     frontmatter = storm.frontmatter;
-    parts.push(
+    stableParts.push(
       `\n## Project Context (from ${storm.sources.join(", ")})\n\n${storm.body}`,
     );
 
-    // Extract actionable sections for stronger emphasis
     const verifyCommands = extractVerificationCommands(
       storm.frontmatter,
       storm.body,
     );
     if (verifyCommands) {
-      parts.push(
+      stableParts.push(
         `\n## Verification Commands\n\nAfter every file_write or file_edit on code files, run the appropriate command:\n${verifyCommands}\n\nRun the build command after edits. Run the test command after completing a logical unit of work.`,
       );
     }
 
     const protectedAreas = extractSection(storm.body, "Don't touch");
     if (protectedAreas) {
-      parts.push(
+      stableParts.push(
         `\n## Protected Areas\n\nThese files are off-limits. Do NOT modify them without explicit user approval:\n${protectedAreas}\nIf a task requires changes to a protected file, explain WHY and ask before proceeding.`,
       );
     }
 
     const conventions = extractSection(storm.body, "Conventions");
     if (conventions) {
-      parts.push(
+      stableParts.push(
         `\n## Code Patterns (MANDATORY)\n\nAlways follow these patterns when writing code in this project. Any code blocks below are reference examples — match this style exactly:\n${conventions}`,
       );
     }
 
-    // Additional decision-relevant sections
     const architecture = extractSection(storm.body, "Architecture");
     if (architecture) {
-      parts.push(
+      stableParts.push(
         `\n## Architecture Constraints\n\nRespect these architectural decisions when making changes:\n${architecture}`,
       );
     }
 
     const stack = extractSection(storm.body, "Stack");
     if (stack) {
-      parts.push(`\n## Stack\n\n${stack}`);
+      stableParts.push(`\n## Stack\n\n${stack}`);
     }
 
     const dependencies = extractSection(storm.body, "Dependencies");
     if (dependencies) {
-      parts.push(
+      stableParts.push(
         `\n## Dependency Rules\n\nFollow these dependency guidelines:\n${dependencies}`,
       );
     }
@@ -151,38 +192,42 @@ export function buildSystemPrompt(
   // Structural context (high-signal, stable across session)
   const repoMapSection = buildRepoMapSection(projectPath);
   if (repoMapSection) {
-    parts.push(repoMapSection);
+    stableParts.push(repoMapSection);
   }
 
   const skillsSection = buildSkillsSection(projectPath);
   if (skillsSection) {
-    parts.push(skillsSection);
+    stableParts.push(skillsSection);
   }
 
-  // Learned style conventions
   const styleContext = formatStyleContext(projectPath);
   if (styleContext) {
-    parts.push(`\n## Project Style Guide (auto-detected)\n\n${styleContext}`);
+    stableParts.push(
+      `\n## Project Style Guide (auto-detected)\n\n${styleContext}`,
+    );
   }
 
-  // Transient context (session-specific, changes frequently)
+  // ── Dynamic zone: changes per turn or session ────────────────────
+  // These sections may change between turns. Not cached.
+  const dynamicParts: string[] = [];
+
   const memoryContext = loadMemoryContext(projectPath);
   if (memoryContext) {
-    parts.push(`\n## Memory (from previous sessions)\n\n${memoryContext}`);
+    dynamicParts.push(
+      `\n## Memory (from previous sessions)\n\n${memoryContext}`,
+    );
   }
 
   const gitContext = getGitContext(projectPath);
   if (gitContext) {
-    parts.push(`\n## Git Context\n\n${gitContext}`);
+    dynamicParts.push(`\n## Git Context\n\n${gitContext}`);
   }
 
-  // Recent commit history (context lineage)
   const commitContext = formatCommitContext(projectPath);
   if (commitContext) {
-    parts.push(`\n## Recent Commits\n\n${commitContext}`);
+    dynamicParts.push(`\n## Recent Commits\n\n${commitContext}`);
   }
 
-  // Current date/time for temporal awareness
   const now = new Date();
   const days = [
     "Sunday",
@@ -193,11 +238,20 @@ export function buildSystemPrompt(
     "Friday",
     "Saturday",
   ];
-  parts.push(
+  dynamicParts.push(
     `\n## Current Date\n\nToday is ${now.toISOString().split("T")[0]} (${days[now.getDay()]}). Time: ${now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", timeZoneName: "short" })}.`,
   );
 
-  return { prompt: parts.join("\n"), frontmatter };
+  const segments: SystemPromptSegment[] = [
+    { text: stableParts.join("\n"), cacheable: true },
+    { text: dynamicParts.join("\n"), cacheable: false },
+  ];
+
+  return {
+    prompt: segmentsToString(segments),
+    segments,
+    frontmatter,
+  };
 }
 
 // Cache: skills rarely change within a session

@@ -33,6 +33,8 @@ import { normalizeInsightMarkers } from "./insights.js";
 import { parseGatewayHeaders } from "@brainst0rm/gateway";
 import type { MiddlewarePipeline } from "../middleware/pipeline.js";
 import { TrajectoryRecorder } from "../session/trajectory.js";
+import type { SystemPromptSegment } from "./context.js";
+import { segmentsToSystemArray } from "./context.js";
 import { predictTaskCost } from "./cost-predictor.js";
 import { detectTone, toneGuidance } from "./sentiment.js";
 import { shouldUseEnsemble } from "./ensemble.js";
@@ -150,6 +152,8 @@ export interface AgentLoopOptions {
   sessionId: string;
   projectPath: string;
   systemPrompt: string;
+  /** Segmented system prompt for prompt caching. When provided, used instead of flat systemPrompt. */
+  systemSegments?: SystemPromptSegment[];
   disableTools?: boolean;
   /** Override model selection — bypass the router. Used by cross-model workflows. */
   preferredModelId?: string;
@@ -387,9 +391,16 @@ export async function* runAgentLoop(
   const turnStartMs = Date.now();
   const sessionCostBefore = costTracker.getSessionCost();
   try {
+    // Use segmented system prompt for prompt caching when available.
+    // AI SDK v6 accepts system as string | SystemModelMessage | Array<SystemModelMessage>.
+    // Segments with cacheable=true get Anthropic cache_control hints; ignored by other providers.
+    const systemForAPI = options.systemSegments
+      ? segmentsToSystemArray(options.systemSegments)
+      : systemPrompt;
+
     const result = streamText({
       model: modelId,
-      system: systemPrompt,
+      system: systemForAPI as any,
       messages: messages as any,
       ...(aiTools ? { tools: aiTools } : {}),
       ...(metadataHeader
