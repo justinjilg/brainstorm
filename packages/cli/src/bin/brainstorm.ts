@@ -4449,6 +4449,10 @@ program
             eventType: "start",
           });
 
+          // Wire scheduler so due tasks appear in tick messages
+          const { TriggerRunner } = await import("@brainst0rm/scheduler");
+          const triggerRunner = new TriggerRunner(db);
+
           const daemon = new DaemonController({
             config: config.daemon,
             sessionId: session.id,
@@ -4478,6 +4482,7 @@ program
                 },
               });
             },
+            getDueTasks: () => triggerRunner.getDueTaskSummaries(),
             getLogSummary: () => {
               const recent = dailyLog.readRecent(10);
               if (recent.length === 0) return "No recent activity.";
