@@ -122,6 +122,14 @@ export class DaemonController {
       const tickResult = await this.runTick();
       yield* this.emitTickEvents(tickResult);
 
+      // Fire DaemonTick hook
+      if (this.options.onHook) {
+        await this.options.onHook("DaemonTick", {
+          tickNumber: tickResult.tickNumber,
+          cost: tickResult.cost,
+        });
+      }
+
       // 6. Handle sleep request from model
       if (tickResult.sleepRequested) {
         const sleepMs = tickResult.sleepRequested.ms;
@@ -134,6 +142,11 @@ export class DaemonController {
           sleepMs,
           reason: tickResult.sleepRequested.reason,
         } as AgentEvent;
+
+        // Fire DaemonSleep hook
+        if (this.options.onHook) {
+          await this.options.onHook("DaemonSleep", { sleepMs });
+        }
 
         await this.notifyStateChange();
       } else {

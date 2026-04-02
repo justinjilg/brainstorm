@@ -130,6 +130,7 @@ const commands: SlashCommand[] = [
         "System",
         "  /vault [action]    Manage API keys",
         "  /dream             Consolidate memory files",
+        "  /daemon [action]   Daemon control (status/pause/resume/stop/log)",
         "",
         "Modes: Esc toggles Dashboard │ Shift+Tab cycles permission",
       ];
@@ -1363,6 +1364,28 @@ commands.push({
       "",
       "  Note: Full voice loop (record → transcribe → send) is coming in a future update.",
       "  For now, the audio file is saved for manual transcription.",
+    ].join("\n");
+  },
+});
+
+// ── Daemon ────────────────────────────────────────────────────────
+commands.push({
+  name: "daemon",
+  aliases: [],
+  description: "Daemon mode control — status, pause, resume, stop, log",
+  usage: "/daemon [status|pause|resume|stop|log]",
+  execute: () => {
+    return [
+      "Daemon commands (only active in --daemon mode):",
+      "",
+      "  /daemon status   Show daemon state (ticks, cost, sleep status)",
+      "  /daemon pause    Pause tick loop",
+      "  /daemon resume   Resume tick loop",
+      "  /daemon log      Show today's daemon log",
+      "  /daemon stop     Stop daemon",
+      "",
+      "Start daemon mode: brainstorm chat --simple --daemon",
+      "Resume crashed daemon: brainstorm chat --simple --daemon --continue",
     ].join("\n");
   },
 });
