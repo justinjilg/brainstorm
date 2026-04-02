@@ -25,10 +25,17 @@ export interface TriggerResult {
   }>;
 }
 
+/** Callback for daemon-integrated execution. */
+export type DaemonExecutor = (
+  task: ScheduledTask,
+  run: ScheduledTaskRun,
+) => Promise<{ outputSummary: string; cost: number; turnsUsed: number }>;
+
 export class TriggerRunner {
   private tasks: ScheduledTaskRepository;
   private runs: TaskRunRepository;
   private maxConcurrent: number;
+  private executor: DaemonExecutor | null = null;
 
   constructor(
     private db: Database.Database,
@@ -37,6 +44,38 @@ export class TriggerRunner {
     this.tasks = new ScheduledTaskRepository(db);
     this.runs = new TaskRunRepository(db);
     this.maxConcurrent = opts?.maxConcurrent ?? 3;
+  }
+
+  /**
+   * Connect a daemon executor. When set, tasks are executed via the daemon
+   * controller's agent loop instead of the placeholder stub.
+   */
+  setExecutor(executor: DaemonExecutor): void {
+    this.executor = executor;
+  }
+
+  /** Get summaries of due tasks (for tick message injection). */
+  getDueTaskSummaries(): string[] {
+    this.tasks.expireStale();
+    const active = this.tasks.list(undefined, "active");
+    const due: string[] = [];
+
+    for (const task of active) {
+      if (!task.cronExpression) {
+        const lastRun = this.runs.getLastRun(task.id);
+        if (!lastRun)
+          due.push(`[one-shot] ${task.name}: ${task.prompt.slice(0, 80)}`);
+        continue;
+      }
+      const lastRun = this.runs.getLastRun(task.id);
+      if (isDue(task.cronExpression, lastRun?.createdAt ?? null)) {
+        due.push(
+          `[${task.cronExpression}] ${task.name}: ${task.prompt.slice(0, 80)}`,
+        );
+      }
+    }
+
+    return due;
   }
 
   /**
@@ -129,24 +168,42 @@ export class TriggerRunner {
           turnsUsed: 0,
         });
 
-        // Execution requires agent loop integration (not yet wired)
-        // Mark as skipped rather than falsely completed
-        this.runs.complete(run.id, {
-          status: "failed",
-          outputSummary:
-            "Execution engine not yet wired. Task was not executed.",
-          cost: 0,
-          turnsUsed: 0,
-          error: "AGENT_LOOP_NOT_CONNECTED",
-        });
+        if (this.executor) {
+          // Execute via daemon controller's agent loop
+          const execResult = await this.executor(task, run);
+          this.runs.complete(run.id, {
+            status: "completed",
+            outputSummary: execResult.outputSummary,
+            cost: execResult.cost,
+            turnsUsed: execResult.turnsUsed,
+          });
 
-        result.tasksRun++;
-        result.runs.push({
-          taskName: task.name,
-          runId: run.id,
-          status: "failed",
-          cost: 0,
-        });
+          result.tasksRun++;
+          result.runs.push({
+            taskName: task.name,
+            runId: run.id,
+            status: "completed",
+            cost: execResult.cost,
+          });
+        } else {
+          // No executor connected — mark as failed
+          this.runs.complete(run.id, {
+            status: "failed",
+            outputSummary:
+              "Execution engine not connected. Use --daemon mode or setExecutor().",
+            cost: 0,
+            turnsUsed: 0,
+            error: "AGENT_LOOP_NOT_CONNECTED",
+          });
+
+          result.tasksRun++;
+          result.runs.push({
+            taskName: task.name,
+            runId: run.id,
+            status: "failed",
+            cost: 0,
+          });
+        }
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
         this.runs.complete(run.id, {

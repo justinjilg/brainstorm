@@ -217,6 +217,24 @@ const permissionsSchema = z.object({
   role: z.enum(["viewer", "developer", "admin"]).optional(),
 });
 
+// ── Daemon Config ───────────────────────────────────────────────────
+
+const daemonSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** Base tick interval in milliseconds. Model can override via SleepTool. */
+  tickIntervalMs: z.number().min(5_000).max(600_000).default(30_000),
+  /** Maximum ticks before auto-stop (cost safety). */
+  maxTicksPerSession: z.number().min(1).max(10_000).default(1000),
+  /** Default sleep duration when model doesn't specify (ms). */
+  sleepDefaultMs: z.number().min(1_000).max(3_600_000).default(60_000),
+  /** Directory for append-only daily logs. */
+  dailyLogDir: z.string().default("~/.brainstorm/logs"),
+  /** Prompt cache expiry hint — warn model about cache invalidation (ms). */
+  promptCacheExpiryMs: z.number().default(300_000),
+  /** Compaction threshold override for daemon (more aggressive than interactive). */
+  compactionThreshold: z.number().min(0.1).max(1.0).default(0.6),
+});
+
 // ── Full Config ─────────────────────────────────────────────────────
 
 export const brainstormConfigSchema = z.object({
@@ -235,6 +253,7 @@ export const brainstormConfigSchema = z.object({
   agents: z.array(agentConfigSchema).default([]),
   workflows: z.array(workflowConfigSchema).default([]),
   mcp: mcpSchema.default({}),
+  daemon: daemonSchema.default({}),
 });
 
 export type BrainstormConfig = z.infer<typeof brainstormConfigSchema>;
@@ -249,3 +268,4 @@ export type MCPServerConfigSchema = z.infer<typeof mcpServerSchema>;
 export type CompactionConfig = z.infer<typeof compactionSchema>;
 export type ShellConfig = z.infer<typeof shellSchema>;
 export type PermissionsConfig = z.infer<typeof permissionsSchema>;
+export type DaemonConfig = z.infer<typeof daemonSchema>;

@@ -10,4 +10,8 @@ export {
   getScheduleToolList,
   validateTaskSafety,
 } from "./safety.js";
-export { TriggerRunner, type TriggerResult } from "./trigger.js";
+export {
+  TriggerRunner,
+  type TriggerResult,
+  type DaemonExecutor,
+} from "./trigger.js";

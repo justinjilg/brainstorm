@@ -135,6 +135,7 @@ export {
   createMemoryTools,
   type MemoryBackend,
 } from "./builtin/memory-tools.js";
+export { daemonSleepTool } from "./builtin/sleep.js";
 
 import { ToolRegistry } from "./registry.js";
 import { fileReadTool } from "./builtin/file-read.js";
@@ -188,8 +189,11 @@ import {
   brHealthTool,
 } from "./builtin/br-intelligence.js";
 import { createToolSearchTool } from "./builtin/tool-search.js";
+import { daemonSleepTool } from "./builtin/sleep.js";
 
-export function createDefaultToolRegistry(): ToolRegistry {
+export function createDefaultToolRegistry(opts?: {
+  daemon?: boolean;
+}): ToolRegistry {
   const registry = new ToolRegistry();
   // Filesystem (8)
   registry.register(fileReadTool);
@@ -248,5 +252,9 @@ export function createDefaultToolRegistry(): ToolRegistry {
   registry.register(brHealthTool);
   // Tool search (1) — discovers and resolves deferred MCP tools
   registry.register(createToolSearchTool(registry));
+  // Daemon sleep — only registered when daemon mode is active
+  if (opts?.daemon) {
+    registry.register(daemonSleepTool);
+  }
   return registry;
 }

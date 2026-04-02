@@ -161,6 +161,12 @@ export interface Session {
   projectPath: string;
   totalCost: number;
   messageCount: number;
+  /** Daemon mode metadata — populated only for daemon sessions. */
+  isDaemon?: boolean;
+  tickCount?: number;
+  lastTickAt?: number;
+  isPaused?: boolean;
+  tickIntervalMs?: number;
 }
 
 export interface Message {
@@ -241,6 +247,15 @@ export type AgentEvent =
   | { type: "empty-response"; modelId: string }
   | { type: "context-budget"; used: number; limit: number; percent: number }
   | { type: "loop-warning"; message: string }
+  | {
+      type: "daemon-tick";
+      tickNumber: number;
+      idleSeconds: number;
+      cost: number;
+    }
+  | { type: "daemon-sleep"; sleepMs: number; reason: string }
+  | { type: "daemon-wake"; trigger: "timer" | "user" | "scheduler" }
+  | { type: "daemon-stopped"; tickCount: number; totalCost: number }
   | { type: "interrupted" }
   | { type: "error"; error: Error }
   | {

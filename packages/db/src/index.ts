@@ -7,7 +7,9 @@ export {
   RoutingOutcomeRepository,
   CompactionCommitRepository,
   SessionLockManager,
+  DailyLogRepository,
   type SessionPattern,
   type AggregatedRoutingStats,
   type CompactionCommit,
+  type DailyLogEntry,
 } from "./repositories.js";

@@ -74,6 +74,64 @@ export class SessionRepository {
       messageCount: row.message_count,
     }));
   }
+
+  /** Mark a session as daemon-mode and set initial tick interval. */
+  markDaemon(id: string, tickIntervalMs: number): void {
+    this.db
+      .prepare(
+        "UPDATE sessions SET is_daemon = 1, tick_interval_ms = ?, updated_at = unixepoch() WHERE id = ?",
+      )
+      .run(tickIntervalMs, id);
+  }
+
+  /** Update daemon state after each tick. */
+  updateDaemonState(
+    id: string,
+    state: {
+      tickCount: number;
+      lastTickAt: number;
+      isPaused?: boolean;
+      totalCost?: number;
+    },
+  ): void {
+    this.db
+      .prepare(
+        `UPDATE sessions SET
+          tick_count = ?, last_tick_at = ?, is_paused = ?,
+          total_cost = COALESCE(?, total_cost), updated_at = unixepoch()
+        WHERE id = ?`,
+      )
+      .run(
+        state.tickCount,
+        state.lastTickAt,
+        state.isPaused ? 1 : 0,
+        state.totalCost ?? null,
+        id,
+      );
+  }
+
+  /** Get the most recent daemon session for a project (for --continue). */
+  getLastDaemon(projectPath: string): Session | null {
+    const row = this.db
+      .prepare(
+        "SELECT * FROM sessions WHERE project_path = ? AND is_daemon = 1 ORDER BY updated_at DESC LIMIT 1",
+      )
+      .get(projectPath) as any;
+    if (!row) return null;
+    return {
+      id: row.id,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      projectPath: row.project_path,
+      totalCost: row.total_cost,
+      messageCount: row.message_count,
+      isDaemon: true,
+      tickCount: row.tick_count,
+      lastTickAt: row.last_tick_at,
+      isPaused: !!row.is_paused,
+      tickIntervalMs: row.tick_interval_ms,
+    };
+  }
 }
 
 // ── Messages ─────────────────────────────────────────────────────────
@@ -613,5 +671,92 @@ export class SessionLockManager {
     this.db
       .prepare("DELETE FROM session_locks WHERE acquired_at < ?")
       .run(cutoff);
+  }
+}
+
+// ── Daemon Daily Log ───────────────────────────────────────────────
+
+export interface DailyLogEntry {
+  id: number;
+  sessionId?: string;
+  logDate: string;
+  entryTime: number;
+  tickNumber?: number;
+  eventType: string;
+  content: string;
+  cost: number;
+  modelId?: string;
+}
+
+export class DailyLogRepository {
+  constructor(private db: Database.Database) {}
+
+  /** Append a log entry. */
+  append(entry: Omit<DailyLogEntry, "id">): void {
+    this.db
+      .prepare(
+        `INSERT INTO daemon_daily_log (session_id, log_date, entry_time, tick_number, event_type, content, cost, model_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        entry.sessionId ?? null,
+        entry.logDate,
+        entry.entryTime,
+        entry.tickNumber ?? null,
+        entry.eventType,
+        entry.content,
+        entry.cost,
+        entry.modelId ?? null,
+      );
+  }
+
+  /** Read all entries for today. */
+  readToday(): DailyLogEntry[] {
+    const today = new Date().toISOString().slice(0, 10);
+    return this.readDate(today);
+  }
+
+  /** Read entries for a specific date (YYYY-MM-DD). */
+  readDate(date: string): DailyLogEntry[] {
+    const rows = this.db
+      .prepare(
+        "SELECT * FROM daemon_daily_log WHERE log_date = ? ORDER BY entry_time ASC",
+      )
+      .all(date) as any[];
+    return rows.map(this.mapRow);
+  }
+
+  /** Read entries for a date range (inclusive). */
+  readRange(startDate: string, endDate: string): DailyLogEntry[] {
+    const rows = this.db
+      .prepare(
+        "SELECT * FROM daemon_daily_log WHERE log_date >= ? AND log_date <= ? ORDER BY entry_time ASC",
+      )
+      .all(startDate, endDate) as any[];
+    return rows.map(this.mapRow);
+  }
+
+  /** Read the last N entries across all dates. */
+  readRecent(limit = 50): DailyLogEntry[] {
+    const rows = this.db
+      .prepare(
+        "SELECT * FROM daemon_daily_log ORDER BY entry_time DESC LIMIT ?",
+      )
+      .all(limit) as any[];
+    return rows.map(this.mapRow).reverse();
+  }
+
+  private mapRow(row: any): DailyLogEntry {
+    return {
+      id: row.id,
+      sessionId: row.session_id ?? undefined,
+      logDate: row.log_date,
+      entryTime: row.entry_time,
+      tickNumber: row.tick_number ?? undefined,
+      eventType: row.event_type,
+      content: row.content,
+      cost: row.cost,
+      modelId: row.model_id ?? undefined,
+    };
   }
 }
