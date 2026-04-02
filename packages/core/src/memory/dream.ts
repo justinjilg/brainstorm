@@ -37,20 +37,26 @@ After completing consolidation, summarize what you did:
 
 /**
  * Build the dream prompt with all current memory files embedded.
+ * Optionally includes recent daemon daily logs for richer consolidation context.
  */
 export function buildDreamPrompt(
   memoryDir: string,
   files: Array<{ filename: string; content: string }>,
+  dailyLogContext?: string,
 ): string {
-  const fileList = files.map((f) =>
-    `### ${f.filename}\n\`\`\`\n${f.content}\n\`\`\``
-  ).join('\n\n');
+  const fileList = files
+    .map((f) => `### ${f.filename}\n\`\`\`\n${f.content}\n\`\`\``)
+    .join("\n\n");
+
+  const dailyLogSection = dailyLogContext
+    ? `\n\n## Recent Daemon Activity (last 7 days)\n\nUse this context to identify patterns worth preserving as memories (recurring tasks, decisions made, issues encountered):\n\n${dailyLogContext}`
+    : "";
 
   return `Consolidate the memory files in: ${memoryDir}
 
 There are ${files.length} memory files. Here are their current contents:
 
-${fileList}
+${fileList}${dailyLogSection}
 
 Review all files and perform consolidation per your instructions. Use file_write to update files and file_read/glob to verify references. When done, rewrite MEMORY.md with the updated index.`;
 }

@@ -19,6 +19,7 @@ import { join } from "node:path";
 import { createLogger } from "@brainst0rm/shared";
 import { DREAM_SYSTEM_PROMPT, buildDreamPrompt } from "./dream.js";
 import { spawnSubagent, type SubagentOptions } from "../agent/subagent.js";
+import { DailyLog } from "../daemon/daily-log.js";
 
 const log = createLogger("dream-runner");
 
@@ -259,8 +260,12 @@ export async function runDreamCycle(
       };
     }
 
-    // Build the dream prompt
-    const dreamPrompt = buildDreamPrompt(memoryDir, rawFiles);
+    // Read last 7 days of daemon daily logs for richer consolidation
+    const dailyLog = new DailyLog();
+    const dailyLogContext = dailyLog.readRange(7) || undefined;
+
+    // Build the dream prompt (includes daily logs when available)
+    const dreamPrompt = buildDreamPrompt(memoryDir, rawFiles, dailyLogContext);
 
     // Override session count if provided (for testing)
     const state = readDreamState(memoryDir);
