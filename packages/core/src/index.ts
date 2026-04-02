@@ -265,3 +265,17 @@ export {
   type ActivityTag,
   type StepSummary,
 } from "./agent/step-summary.js";
+export {
+  DaemonController,
+  DailyLog,
+  formatTickMessage,
+  createInitialState,
+  type DaemonControllerOptions,
+  type DaemonState,
+  type DaemonStatus,
+  type TickResult,
+  type WakeTrigger,
+  type DailyLogOptions,
+  type LogAppendOptions,
+  type TickMessageContext,
+} from "./daemon/index.js";

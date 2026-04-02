@@ -4203,6 +4203,10 @@ program
   .command("chat", { isDefault: true })
   .description("Start an interactive chat session")
   .option("--simple", "Use simple readline interface instead of TUI")
+  .option(
+    "--daemon",
+    "Daemon mode — model-driven tick loop (requires --simple for MVP)",
+  )
   .option("--continue", "Resume the most recent session")
   .option("--resume <id>", "Resume a specific session by ID")
   .option("--fork <id>", "Fork a session (copy history, new session)")
@@ -4219,6 +4223,7 @@ program
   .action(
     async (opts: {
       simple?: boolean;
+      daemon?: boolean;
       continue?: boolean;
       resume?: string;
       fork?: string;
@@ -4228,6 +4233,14 @@ program
       fast?: boolean;
     }) => {
       const config = loadConfig();
+
+      // --daemon requires --simple for MVP
+      if (opts.daemon && !opts.simple) {
+        console.error(
+          "  Daemon mode requires --simple for MVP. Run: brainstorm chat --simple --daemon",
+        );
+        process.exit(1);
+      }
 
       // --lfg: full auto mode, skip all permission confirmations
       if (opts.lfg) {
@@ -4243,7 +4256,7 @@ program
       // Boot Phase A: sync initialization (instant)
       const db = getDb();
       const projectPath = process.cwd();
-      const tools = createDefaultToolRegistry();
+      const tools = createDefaultToolRegistry({ daemon: opts.daemon });
       configureSandbox(
         config.shell.sandbox as any,
         projectPath,
@@ -4409,7 +4422,191 @@ program
         console.log(
           `  Commands: /quit, /model <id>, /strategy <name>, /compact`,
         );
+        if (opts.daemon)
+          console.log(
+            `  DAEMON MODE: tick every ${config.daemon.tickIntervalMs / 1000}s, max ${config.daemon.maxTicksPerSession} ticks`,
+          );
         console.log(`  Ctrl+C to interrupt, Ctrl+D to exit.\n`);
+
+        // ── Daemon Mode ──────────────────────────────────────────
+        if (opts.daemon) {
+          const { DaemonController, DailyLog } =
+            await import("@brainst0rm/core");
+          const { DailyLogRepository, SessionRepository: SessRepo } =
+            await import("@brainst0rm/db");
+
+          const sessRepo = new SessRepo(db);
+          sessRepo.markDaemon(session.id, config.daemon.tickIntervalMs);
+
+          const dailyLogRepo = new DailyLogRepository(db);
+          const dailyLog = new DailyLog({
+            logDir: config.daemon.dailyLogDir,
+            repo: dailyLogRepo,
+            sessionId: session.id,
+          });
+
+          dailyLog.append("Daemon session started", {
+            eventType: "start",
+          });
+
+          const daemon = new DaemonController({
+            config: config.daemon,
+            sessionId: session.id,
+            projectPath,
+            runTick: (tickMessage: string) => {
+              sessionManager.addUserMessage(tickMessage);
+              return runAgentLoop(sessionManager.getHistory(), {
+                config,
+                registry,
+                router,
+                costTracker,
+                tools,
+                sessionId: session.id,
+                projectPath,
+                systemPrompt,
+                systemSegments,
+                compaction: buildCompactionCallbacks(sessionManager),
+                permissionCheck: (name: string, perm: any) =>
+                  permissionManager.check(name, perm),
+                preferredModelId,
+                middleware,
+                routingOutcomeRepo,
+                onTurnComplete: (ctx: any) => {
+                  ctx.turn = sessionManager.incrementTurn();
+                  ctx.sessionMinutes = sessionManager.getSessionMinutes();
+                  sessionManager.addTurnContext(ctx);
+                },
+              });
+            },
+            getLogSummary: () => {
+              const recent = dailyLog.readRecent(10);
+              if (recent.length === 0) return "No recent activity.";
+              return recent
+                .map((e) => `[${e.eventType}] ${e.content.slice(0, 100)}`)
+                .join("\n");
+            },
+            onTickComplete: async (result) => {
+              dailyLog.append(
+                `${result.toolCalls.length} tools, model=${result.modelUsed}`,
+                {
+                  tickNumber: result.tickNumber,
+                  eventType: "tick",
+                  cost: result.cost,
+                  modelId: result.modelUsed,
+                },
+              );
+              sessRepo.updateDaemonState(session.id, {
+                tickCount: result.tickNumber,
+                lastTickAt: Math.floor(Date.now() / 1000),
+                totalCost: costTracker.getSessionCost(),
+              });
+            },
+          });
+
+          // Readline for user input preemption
+          const readline = await import("node:readline/promises");
+          const rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout,
+          });
+
+          // User input listener — preempts daemon sleep
+          const inputLoop = (async () => {
+            try {
+              while (true) {
+                const line = await rl.question("");
+                if (!line.trim()) continue;
+                if (line.trim() === "/quit" || line.trim() === "/exit") {
+                  daemon.stop();
+                  break;
+                }
+                if (line.trim() === "/daemon pause") {
+                  daemon.pause();
+                  console.log("  [daemon paused]");
+                  continue;
+                }
+                if (line.trim() === "/daemon resume") {
+                  daemon.resume();
+                  console.log("  [daemon resumed]");
+                  continue;
+                }
+                if (line.trim() === "/daemon status") {
+                  const s = daemon.getState();
+                  console.log(
+                    `  [daemon: ${s.status} | ticks: ${s.tickCount} | cost: $${s.totalCost.toFixed(4)}]`,
+                  );
+                  continue;
+                }
+                if (line.trim() === "/daemon log") {
+                  const todayLog = dailyLog.readToday();
+                  console.log(todayLog || "  [no daemon log entries today]");
+                  continue;
+                }
+                // Regular user message — inject into daemon
+                daemon.injectUserMessage(line.trim());
+              }
+            } catch {
+              // readline closed (Ctrl+D)
+              daemon.stop();
+            }
+          })();
+
+          // Ctrl+C stops daemon
+          process.on("SIGINT", () => {
+            daemon.stop();
+            rl.close();
+          });
+
+          // Run daemon event loop
+          for await (const event of daemon.run()) {
+            switch (event.type) {
+              case "daemon-tick":
+                process.stderr.write(
+                  `  [tick #${(event as any).tickNumber} | $${(event as any).cost.toFixed(4)}]\n`,
+                );
+                break;
+              case "daemon-sleep":
+                process.stderr.write(
+                  `  [sleeping ${Math.round((event as any).sleepMs / 1000)}s: ${(event as any).reason}]\n`,
+                );
+                break;
+              case "daemon-wake":
+                process.stderr.write(`  [wake: ${(event as any).trigger}]\n`);
+                break;
+              case "daemon-stopped":
+                process.stderr.write(
+                  `\n  [daemon stopped: ${(event as any).tickCount} ticks, $${(event as any).totalCost.toFixed(4)} total]\n`,
+                );
+                break;
+              case "text-delta":
+                process.stdout.write(event.delta);
+                break;
+              case "tool-call-start":
+                process.stdout.write(`\n  [tool: ${event.toolName}]\n`);
+                break;
+              case "routing":
+                process.stderr.write(`\r  [${event.decision.model.name}]\n`);
+                break;
+              case "done": {
+                const turnCost = event.totalCost - costTracker.getSessionCost();
+                process.stdout.write(
+                  `\n  [$${event.totalCost.toFixed(4)} session]\n`,
+                );
+                break;
+              }
+              case "error":
+                process.stderr.write(`\n  Error: ${event.error.message}\n`);
+                break;
+            }
+          }
+
+          dailyLog.append("Daemon session ended", {
+            eventType: "stop",
+          });
+          await inputLoop;
+          rl.close();
+          return;
+        }
 
         let simpleAbortController: AbortController | null = null;
 

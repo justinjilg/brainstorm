@@ -8,6 +8,7 @@ export {
   type AgentConfig,
   type WorkflowConfig,
   type WorkflowStepConfig,
+  type DaemonConfig,
 } from "./schema.js";
 export {
   loadConfig,

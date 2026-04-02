@@ -521,4 +521,28 @@ const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_compaction_session ON compaction_commits(session_id);
     `,
   },
+  {
+    name: "025_daemon_sessions",
+    sql: `
+      ALTER TABLE sessions ADD COLUMN is_daemon INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE sessions ADD COLUMN tick_count INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE sessions ADD COLUMN last_tick_at INTEGER;
+      ALTER TABLE sessions ADD COLUMN is_paused INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE sessions ADD COLUMN tick_interval_ms INTEGER;
+
+      CREATE TABLE IF NOT EXISTS daemon_daily_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT,
+        log_date TEXT NOT NULL,
+        entry_time INTEGER NOT NULL DEFAULT (unixepoch()),
+        tick_number INTEGER,
+        event_type TEXT NOT NULL DEFAULT 'tick',
+        content TEXT NOT NULL,
+        cost REAL NOT NULL DEFAULT 0,
+        model_id TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_daemon_log_date ON daemon_daily_log(log_date);
+      CREATE INDEX IF NOT EXISTS idx_daemon_log_session ON daemon_daily_log(session_id);
+    `,
+  },
 ];

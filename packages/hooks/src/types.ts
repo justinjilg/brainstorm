@@ -11,7 +11,9 @@ export type HookEvent =
   | "PreCompact" // Before context compaction
   | "PreCommit" // Before a git commit
   | "SubagentStart" // When a subagent is spawned
-  | "SubagentStop"; // When a subagent completes (or is terminated)
+  | "SubagentStop" // When a subagent completes (or is terminated)
+  | "DaemonTick" // When a daemon tick fires
+  | "DaemonSleep"; // When the daemon enters sleep
 
 export type HookType = "command" | "prompt";
 
