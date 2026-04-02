@@ -45,6 +45,11 @@ export interface DaemonControllerOptions {
   onTickComplete?: (result: TickResult) => void | Promise<void>;
   /** Called when daemon state changes. */
   onStateChange?: (state: DaemonState) => void | Promise<void>;
+  /** Hook callback for DaemonTick/DaemonSleep events. */
+  onHook?: (
+    event: "DaemonTick" | "DaemonSleep",
+    context: { tickNumber?: number; sleepMs?: number; cost?: number },
+  ) => Promise<void>;
 }
 
 export function createInitialState(): DaemonState {

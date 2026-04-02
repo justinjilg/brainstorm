@@ -4389,11 +4389,31 @@ program
         }
         printResumeSummary(session, sessionManager);
       } else if (opts.continue) {
-        session = sessionManager.resumeLatest(projectPath);
-        if (!session) {
-          session = sessionManager.start(projectPath);
+        if (opts.daemon) {
+          // Daemon --continue: resume the last daemon session specifically
+          const { SessionRepository: SessRepoResume } =
+            await import("@brainst0rm/db");
+          const sessRepoResume = new SessRepoResume(db);
+          const lastDaemon = sessRepoResume.getLastDaemon(projectPath);
+          if (lastDaemon) {
+            session = sessionManager.resume(lastDaemon.id);
+            if (session) {
+              console.log(
+                `  Resuming daemon session ${lastDaemon.id.slice(0, 8)} (${lastDaemon.tickCount ?? 0} ticks, $${(lastDaemon.totalCost ?? 0).toFixed(4)})`,
+              );
+            } else {
+              session = sessionManager.start(projectPath);
+            }
+          } else {
+            session = sessionManager.start(projectPath);
+          }
         } else {
-          printResumeSummary(session, sessionManager);
+          session = sessionManager.resumeLatest(projectPath);
+          if (!session) {
+            session = sessionManager.start(projectPath);
+          } else {
+            printResumeSummary(session, sessionManager);
+          }
         }
       } else {
         session = sessionManager.start(projectPath);
