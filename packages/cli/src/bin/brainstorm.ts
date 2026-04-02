@@ -3471,6 +3471,124 @@ program
     console.log();
   });
 
+// ── Onboard Command ─────────────────────────────────────────────
+
+program
+  .command("onboard")
+  .description(
+    "LLM-driven project onboarding — discover conventions, generate specialized agents, wire routing",
+  )
+  .argument("[path]", "Project path", ".")
+  .option(
+    "--budget <dollars>",
+    "Max spend in USD (default: auto from project size)",
+  )
+  .option("--static-only", "Skip LLM phases (equivalent to setup-infra)")
+  .option("--dry-run", "Show plan without writing files or calling LLMs")
+  .option("--phases <phases>", "Comma-separated phases to run")
+  .action(
+    async (
+      projectPath: string,
+      opts: {
+        budget?: string;
+        staticOnly?: boolean;
+        dryRun?: boolean;
+        phases?: string;
+      },
+    ) => {
+      const { resolve } = await import("node:path");
+      const { runOnboardPipeline, ALL_PHASES } =
+        await import("@brainst0rm/onboard");
+      const absPath = resolve(projectPath);
+
+      const options = {
+        projectPath: absPath,
+        budget: opts.budget ? parseFloat(opts.budget) : undefined,
+        staticOnly: opts.staticOnly ?? false,
+        dryRun: opts.dryRun ?? false,
+        phases: opts.phases
+          ? (opts.phases.split(",").map((p) => p.trim()) as any)
+          : undefined,
+      };
+
+      console.log(
+        `\n  storm onboard ${absPath === process.cwd() ? "." : absPath}${opts.staticOnly ? " --static-only" : ""}${opts.dryRun ? " --dry-run" : ""}`,
+      );
+      console.log();
+
+      for await (const event of runOnboardPipeline(options)) {
+        switch (event.type) {
+          case "onboard-started":
+            if (event.estimatedBudget > 0) {
+              console.log(
+                `  Budget: $${options.budget?.toFixed(2) ?? "auto"} (estimated ~$${event.estimatedBudget.toFixed(2)})`,
+              );
+              console.log();
+            }
+            break;
+
+          case "phase-started":
+            process.stdout.write(`  Phase: ${event.description} ...`);
+            break;
+
+          case "phase-completed": {
+            const cost = event.cost > 0 ? `, $${event.cost.toFixed(2)}` : "";
+            const dur = (event.durationMs / 1000).toFixed(1);
+            console.log(` done (${dur}s${cost})`);
+            console.log(`    ${event.summary}`);
+            console.log();
+            break;
+          }
+
+          case "phase-skipped": {
+            const { PHASE_LABELS } = await import("@brainst0rm/onboard");
+            const label = PHASE_LABELS[event.phase] ?? event.phase;
+            console.log(`  Phase: ${label} ... skipped`);
+            console.log(`    ${event.reason}`);
+            console.log();
+            break;
+          }
+
+          case "phase-failed":
+            console.log(` FAILED`);
+            console.log(`    ${event.error}`);
+            console.log();
+            break;
+
+          case "file-written":
+            console.log(`    → ${event.path}`);
+            break;
+
+          case "budget-warning":
+            console.log(
+              `  ⚠ Budget: $${event.spent.toFixed(2)} spent, $${event.remaining.toFixed(2)} remaining`,
+            );
+            break;
+
+          case "onboard-completed": {
+            const r = event.result;
+            const dur = (r.totalDurationMs / 1000).toFixed(1);
+            console.log("  ══════════════════════════════════════════════════");
+            console.log(
+              `   Onboarding Complete — $${r.totalCost.toFixed(2)} total, ${dur}s`,
+            );
+            console.log("  ══════════════════════════════════════════════════");
+            if (r.filesWritten.length > 0) {
+              console.log();
+              for (const f of r.filesWritten) {
+                console.log(`  ${f}`);
+              }
+            }
+            console.log(
+              `\n  Next: Run \`storm chat\` to start working with agents that know your codebase.\n`,
+            );
+            break;
+          }
+        }
+      }
+    },
+  );
+
 // ── Route Explain Command ─────────────────────────────────────────
 
 program
