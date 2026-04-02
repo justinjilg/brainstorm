@@ -20,6 +20,8 @@ export {
 } from "./changeset.js";
 export { BaseConnector } from "./connector-base.js";
 export { createMSPConnector } from "./connectors/msp/index.js";
+export { createEmailConnector } from "./connectors/email/index.js";
+export { createVMConnector } from "./connectors/vm/index.js";
 export { GODMODE_MIGRATION_SQL } from "./audit.js";
 export type {
   GodModeConnector,
