@@ -1,0 +1,43 @@
+{
+  "name": "@brainst0rm/godmode",
+  "version": "0.13.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@brainst0rm/shared": "0.13.0",
+    "@brainst0rm/tools": "0.13.0",
+    "@brainst0rm/config": "0.13.0",
+    "zod": "^3.24"
+  },
+  "devDependencies": {
+    "tsup": "^8",
+    "typescript": "^5.7"
+  },
+  "description": "God Mode — natural language control plane with connector framework for BrainstormMSP, BrainstormVM, BrainstormEmailSecurity, and more",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/justinjilg/brainstorm.git",
+    "directory": "packages/godmode"
+  },
+  "homepage": "https://brainstorm.co",
+  "keywords": [
+    "ai",
+    "god-mode",
+    "control-plane",
+    "infrastructure",
+    "natural-language",
+    "brainstorm"
+  ],
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "publishConfig": {
+    "access": "public"
+  }
+}
