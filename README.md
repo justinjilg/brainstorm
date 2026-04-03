@@ -8,7 +8,7 @@
 
 <p align="center">
   <strong>Governed control plane for AI-managed infrastructure</strong><br/>
-  <sub>Connect AI operators to your entire product ecosystem through a standardized protocol. 50 tools. 5 products. One command.</sub>
+  <sub>Connect AI operators to your entire product ecosystem through a standardized protocol. 117 tools. 5 products. One command.</sub>
 </p>
 
 <p align="center">
@@ -17,7 +17,7 @@
   <a href="https://github.com/justinjilg/brainstorm/actions/workflows/ci.yml"><img src="https://github.com/justinjilg/brainstorm/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>&nbsp;
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" /></a>&nbsp;
   <img src="https://img.shields.io/badge/products-5-d97706.svg" alt="Products" />&nbsp;
-  <img src="https://img.shields.io/badge/tools-50+-d97706.svg" alt="Tools" />&nbsp;
+  <img src="https://img.shields.io/badge/tools-117-d97706.svg" alt="Tools" />&nbsp;
   <img src="https://img.shields.io/badge/packages-25-d97706.svg" alt="Packages" />
 </p>
 
@@ -43,13 +43,13 @@ brainstorm status
 
 ```
 Products:
-  ● BrainstormMSP        12 tools  brainstormmsp.ai        78ms  healthy
+  ● BrainstormMSP        79 tools  brainstormmsp.ai        78ms  healthy
   ● BrainstormRouter      10 tools  api.brainstormrouter.com 12ms  healthy
   ○ BrainstormGTM          9 tools  catsfeet.com             —    offline
   ○ BrainstormVM           9 tools  vm.brainstorm.co         —    offline
   ○ BrainstormShield      10 tools  shield.brainstorm.co     —    offline
 
-50 tools available across ecosystem.
+117 tools available across ecosystem.
 ```
 
 ## How it works
@@ -85,24 +85,24 @@ Destructive actions **always** go through ChangeSets: simulation → approval �
 
 ## Safety
 
-| Layer                | What it does                                                                 |
-| -------------------- | ---------------------------------------------------------------------------- |
-| **ChangeSets**       | Every mutation simulated before execution. Risk scored 0-100. User approves. |
-| **HMAC audit trail** | Every action signed with per-tenant HKDF-derived keys. Tamper-evident.       |
-| **Tenant isolation** | Every query scoped to `platform_tenant_id`. 56 tests verify no leakage.      |
-| **Rate limiting**    | 60 req/min per tenant per product.                                           |
-| **PQC signing**      | Evidence chains signed with hybrid Ed25519 + ML-DSA-65.                      |
-| **BrainstormRouter** | Cost tracking, budget enforcement, model selection via Thompson sampling.    |
+| Layer                  | What it does                                                                                                               |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| **ChangeSets**         | Every mutation simulated before execution. Risk scored 0-100. User approves.                                               |
+| **HMAC event signing** | Cross-product events signed with per-tenant HKDF-derived keys. Tamper-evident.                                             |
+| **Tenant isolation**   | Every query scoped to `platform_tenant_id`. Verified by RLS policies and dedicated test suites.                            |
+| **Rate limiting**      | 60 req/min per tenant per product.                                                                                         |
+| **PQC signing**        | Evidence chains signed with hybrid Ed25519 + ML-DSA-65 when `pqcrypto` is installed. Falls back to Ed25519-only otherwise. |
+| **BrainstormRouter**   | Cost tracking, budget enforcement, model selection via Thompson sampling.                                                  |
 
 ## Products
 
-| Product              | Tools | What it manages                                        |
-| -------------------- | ----- | ------------------------------------------------------ |
-| **BrainstormMSP**    | 12    | Devices, backups, compliance, security, edge agents    |
-| **BrainstormRouter** | 10    | LLM models, cost, budgets, API keys, memory            |
-| **BrainstormGTM**    | 9     | 70 AI agents, campaigns, leads, analytics              |
-| **BrainstormVM**     | 9     | VMs, storage, network, live migration                  |
-| **BrainstormShield** | 10    | Email security, quarantine, trust graphs, threat intel |
+| Product              | Tools | What it manages                                                                    |
+| -------------------- | ----- | ---------------------------------------------------------------------------------- |
+| **BrainstormMSP**    | 79    | Devices, backups, compliance, security, edge agents, AD, scripts, patches, osquery |
+| **BrainstormRouter** | 10    | LLM models, cost, budgets, API keys, memory                                        |
+| **BrainstormGTM**    | 9     | AI agents, campaigns, leads, analytics                                             |
+| **BrainstormVM**     | 9     | VMs, storage, network, live migration                                              |
+| **BrainstormShield** | 10    | Email security, quarantine, trust graphs, threat intel                             |
 
 ## Commands
 
@@ -258,7 +258,7 @@ storm intelligence
 git clone https://github.com/justinjilg/brainstorm.git
 cd brainstorm && npm install
 npx turbo run build          # Build all 23 packages
-npx turbo run test           # Run tests (90 tests)
+npx turbo run test           # Run tests (171 tests across 4 packages)
 node packages/cli/dist/brainstorm.js chat
 ```
 

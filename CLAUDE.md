@@ -57,7 +57,7 @@ npm install                      # Install all workspace deps
 npx turbo run build              # Build all packages (respects dependency graph)
 npx turbo run build --force      # Rebuild all (ignore cache)
 npx turbo run build --filter=@brainst0rm/router  # Build single package + deps
-npx turbo run test               # Run all tests (vitest, 90 tests)
+npx turbo run test               # Run all tests (vitest, 171 tests across 4 packages)
 
 # CLI commands
 node packages/cli/dist/brainstorm.js chat      # Interactive chat (default)
@@ -113,7 +113,7 @@ Build wizard in `packages/cli/src/commands/build-wizard.ts` — state machine wi
 
 ## Testing
 
-90 tests across 2 packages:
+171 tests across 4 packages:
 
 - `packages/core` — 67 tests (middleware pipeline, semantic search, skills loader, loop detection, compaction)
 - `packages/tools` — 23 tests (sandbox, Docker integration, file operations)
