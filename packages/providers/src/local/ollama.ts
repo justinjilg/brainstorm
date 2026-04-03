@@ -35,8 +35,11 @@ export async function discoverOllamaModels(
         capabilities: {
           toolCalling: true,
           streaming: true,
-          vision: m.name.includes("vision") || m.name.includes("llava"),
-          reasoning: tier <= 2,
+          vision:
+            m.name.includes("vision") ||
+            m.name.includes("llava") ||
+            m.name.includes("gemma4"),
+          reasoning: tier <= 2 || m.name.includes("gemma4"),
           contextWindow: inferContextWindow(m.name),
           qualityTier: tier,
           speedTier: inferSpeedTier(paramSize),
@@ -78,6 +81,7 @@ function inferSpeedTier(paramSize: string): 1 | 2 | 3 | 4 | 5 {
 }
 
 function inferContextWindow(name: string): number {
+  if (name.includes("gemma4")) return 262144; // Gemma 4: 256K native
   if (name.includes("128k")) return 131072;
   if (name.includes("32k")) return 32768;
   return 8192;

@@ -127,6 +127,13 @@ const commands: SlashCommand[] = [
         "  /recommend [type]  Get model recommendation from BR",
         "  /stats             Session analytics + BR usage",
         "",
+        "God Mode",
+        "  /godmode           Control plane status",
+        "  /godmode tools     List God Mode tools",
+        "  /godmode changesets Pending ChangeSets",
+        "  /godmode audit     ChangeSet audit log",
+        "  /serve             Start HTTP API server",
+        "",
         "System",
         "  /vault [action]    Manage API keys",
         "  /dream             Consolidate memory files",
@@ -1386,6 +1393,163 @@ commands.push({
       "",
       "Start daemon mode: brainstorm chat --simple --daemon",
       "Resume crashed daemon: brainstorm chat --simple --daemon --continue",
+    ].join("\n");
+  },
+});
+
+// ── God Mode ─────────────────────────────────────────────────────
+
+commands.push({
+  name: "godmode",
+  aliases: ["gm"],
+  description: "God Mode status — connected systems, tools, pending changesets",
+  usage: "/godmode [tools|connectors|changesets|audit]",
+  execute: async (args) => {
+    const subcommand = args?.trim().toLowerCase();
+
+    if (subcommand === "tools") {
+      try {
+        const { listChangeSets } = await import("@brainst0rm/godmode");
+        // List all God Mode tools (gm_* prefix)
+        return [
+          "God Mode Tools:",
+          "",
+          "  ChangeSet tools (always available):",
+          "    gm_changeset_list     — List pending changesets",
+          "    gm_changeset_approve  — Approve + execute a changeset",
+          "    gm_changeset_reject   — Reject a changeset draft",
+          "",
+          "  Connector tools are registered dynamically when systems",
+          "  connect. Use natural language to discover them:",
+          '    "list all devices"   → MSP device tools',
+          '    "quarantine email"   → Email security tools',
+          '    "create VM snapshot" → VM tools',
+        ].join("\n");
+      } catch {
+        return "God Mode package not available.";
+      }
+    }
+
+    if (subcommand === "changesets" || subcommand === "cs") {
+      try {
+        const { listChangeSets } = await import("@brainst0rm/godmode");
+        const active = listChangeSets();
+        if (active.length === 0) return "No active changesets.";
+        const lines = ["Pending ChangeSets:", ""];
+        for (const cs of active) {
+          lines.push(
+            `  [${cs.id}] ${cs.connector}/${cs.action} — risk: ${cs.riskScore}/100 — ${cs.status}`,
+          );
+          lines.push(`    ${cs.description}`);
+          if (cs.riskFactors.length > 0)
+            lines.push(`    Risks: ${cs.riskFactors.join(", ")}`);
+          lines.push("");
+        }
+        return lines.join("\n");
+      } catch {
+        return "God Mode package not available.";
+      }
+    }
+
+    if (subcommand === "audit") {
+      try {
+        const { getAuditLog } = await import("@brainst0rm/godmode");
+        const log = getAuditLog();
+        if (log.length === 0) return "No God Mode audit entries this session.";
+        const lines = ["God Mode Audit Log (this session):", ""];
+        for (const entry of log.slice(-10)) {
+          const ts = new Date(entry.createdAt).toLocaleTimeString();
+          lines.push(
+            `  ${ts} ${entry.connector}/${entry.action} — ${entry.status} — risk: ${entry.riskScore}`,
+          );
+        }
+        if (log.length > 10) lines.push(`  ... and ${log.length - 10} more`);
+        return lines.join("\n");
+      } catch {
+        return "God Mode package not available.";
+      }
+    }
+
+    // Default: show status overview
+    return [
+      "God Mode — Natural Language Control Plane",
+      "",
+      "  Status: enabled (connectors load at session start)",
+      "  Config: [godmode] section in config.toml",
+      "",
+      "  Subcommands:",
+      "    /godmode tools       — List available God Mode tools",
+      "    /godmode changesets   — Show pending ChangeSets",
+      "    /godmode audit        — Show changeset audit log",
+      "",
+      "  Usage: Just describe what you want in natural language.",
+      "  The agent will use God Mode tools automatically.",
+      "",
+      "  HTTP API: brainstorm serve --port 8000",
+    ].join("\n");
+  },
+});
+
+// ── Serve ────────────────────────────────────────────────────────
+
+commands.push({
+  name: "serve",
+  aliases: ["api"],
+  description: "Start/stop the HTTP API server from within chat",
+  usage: "/serve [stop|status]",
+  execute: async (args) => {
+    const subcommand = args?.trim().toLowerCase();
+
+    if (subcommand === "stop") {
+      const pid = (globalThis as any).__brainstorm_serve_pid;
+      if (!pid) return "No serve process running.";
+      try {
+        process.kill(pid, "SIGTERM");
+        (globalThis as any).__brainstorm_serve_pid = undefined;
+        return "API server stopped.";
+      } catch {
+        return "Failed to stop server (may have already exited).";
+      }
+    }
+
+    if (subcommand === "status") {
+      const pid = (globalThis as any).__brainstorm_serve_pid;
+      if (!pid) return "API server is not running. Use /serve to start.";
+      try {
+        process.kill(pid, 0); // check if alive
+        return `API server running (pid: ${pid}).`;
+      } catch {
+        (globalThis as any).__brainstorm_serve_pid = undefined;
+        return "API server is not running (process exited).";
+      }
+    }
+
+    // Start the server as a child process
+    const { fork } = await import("node:child_process");
+    const { join } = await import("node:path");
+    const { dirname } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+
+    const binDir = join(dirname(fileURLToPath(import.meta.url)));
+    const binPath = join(binDir, "brainstorm.js");
+
+    const child = fork(binPath, ["serve", "--cors"], {
+      stdio: "ignore",
+      detached: true,
+    });
+
+    child.unref();
+    (globalThis as any).__brainstorm_serve_pid = child.pid;
+
+    return [
+      `API server starting (pid: ${child.pid})`,
+      "",
+      "  http://127.0.0.1:8000/health",
+      "  http://127.0.0.1:8000/api/v1/tools",
+      "  http://127.0.0.1:8000/api/v1/products",
+      "",
+      "  /serve status  — check if running",
+      "  /serve stop    — stop the server",
     ].join("\n");
   },
 });

@@ -49,6 +49,18 @@ export abstract class BaseConnector implements GodModeConnector {
     }
 
     const url = `${this.config.baseUrl}${path}`;
+
+    // Enforce HTTPS for non-local connections
+    if (
+      !url.startsWith("https://") &&
+      !url.startsWith("http://localhost") &&
+      !url.startsWith("http://127.0.0.1")
+    ) {
+      return {
+        error: `${this.displayName}: HTTPS required for non-local connections (got ${this.config.baseUrl})`,
+      } as any;
+    }
+
     const timeout = options?.timeout ?? 10_000;
 
     try {

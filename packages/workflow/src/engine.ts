@@ -7,6 +7,7 @@ import type {
   WorkflowEvent,
   Artifact,
   AgentProfile,
+  AgentRole,
   StepStatus,
 } from "@brainst0rm/shared";
 import type { BrainstormConfig } from "@brainst0rm/config";
@@ -226,9 +227,38 @@ export async function* runWorkflow(
 
       yield { type: "step-completed", step: stepRun, artifact };
 
-      // Kill gates: shell commands that must exit 0 before proceeding
+      // Kill gates: shell commands that must exit 0 before proceeding.
+      // Gates are validated against an allowlist to prevent arbitrary command execution.
+      const ALLOWED_GATE_PREFIXES = [
+        "npm test",
+        "npm run ",
+        "npx turbo run ",
+        "npx vitest",
+        "git diff --quiet",
+        "git status --porcelain",
+        "make ",
+        "cargo test",
+        "cargo build",
+        "go test",
+        "pytest",
+      ];
+
       if (stepDef.killGates && stepDef.killGates.length > 0) {
         for (const gate of stepDef.killGates) {
+          const isAllowed = ALLOWED_GATE_PREFIXES.some((prefix) =>
+            gate.trimStart().startsWith(prefix),
+          );
+          if (!isAllowed) {
+            yield {
+              type: "gate-failed" as const,
+              step: stepRun,
+              gate,
+              output: `Gate rejected: command not in allowlist. Allowed prefixes: ${ALLOWED_GATE_PREFIXES.join(", ")}`,
+            };
+            run.status = "paused";
+            return;
+          }
+
           try {
             const { execFileSync } = await import("node:child_process");
             execFileSync("/bin/sh", ["-c", gate], {
@@ -362,7 +392,7 @@ function createDefaultAgent(role: string): AgentProfile {
   return {
     id: `default-${role}`,
     displayName: role.charAt(0).toUpperCase() + role.slice(1),
-    role: role as any,
+    role: role as AgentRole,
     description: "",
     modelId: "auto",
     allowedTools: role === "coder" ? "all" : ["file_read", "glob", "grep"],

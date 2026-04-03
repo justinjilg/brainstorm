@@ -618,6 +618,66 @@ export interface ScheduledTaskRun {
   createdAt: number;
 }
 
+// ── Platform Contract ───────────────────────────────────────────────
+
+export type RiskLevel = "read_only" | "low" | "medium" | "high" | "critical";
+export type EvidenceType = "observation" | "execution" | "decision";
+
+/** Tool schema exposed by a product through the God Mode contract. */
+export interface GodModeTool {
+  name: string;
+  domain: string;
+  product: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  risk_level: RiskLevel;
+  requires_changeset: boolean;
+  evidence_type?: EvidenceType;
+}
+
+/** Cross-product event with tamper-evident signing. */
+export interface PlatformEvent {
+  id: string;
+  type: string;
+  tenant_id: string;
+  product: string;
+  timestamp: string;
+  data: Record<string, unknown>;
+  schema_version: number;
+  correlation_id?: string;
+  signature: string;
+}
+
+/** Platform tenant record. */
+export interface PlatformTenant {
+  id: string;
+  name: string;
+  slug: string;
+  plan: "starter" | "professional" | "enterprise";
+  status: "active" | "suspended" | "deprovisioned";
+  products: Record<string, { enabled: boolean; role: string }>;
+  created_at: string;
+}
+
+/** Product health as reported by the platform. */
+export interface ProductHealth {
+  product: string;
+  status: "healthy" | "degraded" | "unreachable";
+  latency_ms: number;
+  tool_count: number;
+  capabilities: string[];
+  last_checked: string;
+}
+
+/** API response envelope for the serve command. */
+export interface PlatformApiResponse<T = unknown> {
+  ok: boolean;
+  data?: T;
+  error?: string;
+  request_id: string;
+  timestamp: string;
+}
+
 // ── Orchestration ───────────────────────────────────────────────────
 
 export type OrchestrationStatus =

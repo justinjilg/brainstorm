@@ -15,6 +15,8 @@ const OP_ITEM_NAMES: Record<string, string> = {
   DEEPSEEK_API_KEY: "DeepSeek API Key",
   MOONSHOT_API_KEY: "Moonshot API Key",
   BRAINSTORM_ADMIN_KEY: "BrainstormRouter Admin Key",
+  // God Mode connector keys
+  BRAINSTORM_MSP_API_KEY: "BrainstormMSP God Mode Service Key",
 };
 
 /** Cached result of op availability check (stable for process lifetime). */
@@ -37,7 +39,7 @@ export function isOpAvailable(): boolean {
 }
 
 /** TTL cache for op read results — avoids shelling out on every call. */
-const OP_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const OP_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes (shorter to detect credential rotation faster)
 const OP_FAILURE_TTL_MS = 60 * 1000; // 60 seconds for failed lookups (self-heal from transient errors)
 const opCache = new Map<string, { value: string | null; fetchedAt: number }>();
 

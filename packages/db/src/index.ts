@@ -8,8 +8,10 @@ export {
   CompactionCommitRepository,
   SessionLockManager,
   DailyLogRepository,
+  ChangeSetLogRepository,
   type SessionPattern,
   type AggregatedRoutingStats,
   type CompactionCommit,
   type DailyLogEntry,
+  type ChangeSetLogEntry,
 } from "./repositories.js";

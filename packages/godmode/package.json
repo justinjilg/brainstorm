@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "build": "tsup",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@brainst0rm/shared": "0.13.0",

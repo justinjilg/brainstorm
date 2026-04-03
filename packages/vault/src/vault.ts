@@ -23,6 +23,8 @@ export class BrainstormVault {
   private lastAccessAt = 0;
   private autoLockMs: number;
   private readonly vaultPath: string;
+  private rotating = false;
+  private autoLockTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(vaultPath: string, autoLockMinutes = 30) {
     this.vaultPath = vaultPath;
@@ -68,7 +70,21 @@ export class BrainstormVault {
       throw new Error("No vault found. Run `brainstorm vault init` first.");
 
     const raw = readFileSync(this.vaultPath, "utf-8");
-    const vaultFile: VaultFile = JSON.parse(raw);
+    let vaultFile: VaultFile;
+    try {
+      vaultFile = JSON.parse(raw);
+    } catch {
+      // Backup corrupt vault file and throw
+      const backupPath = this.vaultPath + ".corrupt." + Date.now();
+      try {
+        writeFileSync(backupPath, raw, { mode: 0o600 });
+      } catch {
+        /* best effort */
+      }
+      throw new Error(
+        `Vault file is corrupt (backed up to ${backupPath}). Re-initialize with: brainstorm vault init`,
+      );
+    }
 
     if (vaultFile.version !== 1)
       throw new Error(`Unsupported vault version: ${vaultFile.version}`);
@@ -93,6 +109,17 @@ export class BrainstormVault {
     this.cachedCreatedAt = payload.metadata.created_at;
     this.keys = new Map(Object.entries(payload.keys));
     this.lastAccessAt = Date.now();
+
+    // Start proactive auto-lock timer (checks every 60s)
+    if (this.autoLockMs > 0 && !this.autoLockTimer) {
+      this.autoLockTimer = setInterval(() => {
+        if (this.keys && Date.now() - this.lastAccessAt > this.autoLockMs) {
+          this.lock();
+        }
+      }, 60_000);
+      // Don't block process exit
+      if (this.autoLockTimer.unref) this.autoLockTimer.unref();
+    }
   }
 
   /** Write encrypted vault to disk, then clear keys and derived key from memory. */
@@ -191,6 +218,8 @@ export class BrainstormVault {
   /** Re-encrypt vault with a new password and salt. Vault must be open. */
   rotate(newPassword: string): void {
     if (!this.keys) throw new Error("Vault must be open to rotate");
+    if (this.rotating) throw new Error("Rotation already in progress");
+    this.rotating = true;
 
     const salt = generateSalt();
     const key = deriveKey(newPassword, salt);
@@ -210,6 +239,15 @@ export class BrainstormVault {
     this.derivedKey = key;
     this.cachedSalt = salt;
     this.lastAccessAt = Date.now();
+    this.rotating = false;
+  }
+
+  /** Stop the auto-lock timer (call on process shutdown). */
+  dispose(): void {
+    if (this.autoLockTimer) {
+      clearInterval(this.autoLockTimer);
+      this.autoLockTimer = null;
+    }
   }
 
   /**
