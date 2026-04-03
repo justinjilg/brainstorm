@@ -1,6 +1,6 @@
 {
   "name": "@brainst0rm/cli",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "Open-source AI coding assistant with intelligent multi-model routing",
   "type": "module",
   "license": "Apache-2.0",
