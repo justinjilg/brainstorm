@@ -49,7 +49,7 @@ Auth:     ✓ BR key set
 Vault:    ✓ 1Password connected
 
 Products:
-  ● BrainstormMSP        12 tools  brainstormmsp.ai        78ms  healthy
+  ● BrainstormMSP        79 tools  brainstormmsp.ai        78ms  healthy
   ● BrainstormRouter      10 tools  api.brainstormrouter.com 12ms  healthy
   ○ BrainstormGTM          9 tools  catsfeet.com             —    offline
   ○ BrainstormVM           9 tools  vm.brainstorm.co         —    offline
@@ -57,7 +57,7 @@ Products:
 
 MCP:      ✓ brainstorm MCP server configured
 
-12 tools available across ecosystem.
+79 tools available across ecosystem.
 ```
 
 ---
@@ -109,10 +109,10 @@ Tools with `requires_changeset: true` go through a safety flow: **simulation →
 ### Safety
 
 - **ChangeSets** — every destructive action is simulated before execution. Risk scored 0-100. Cascading effects shown. User approves or rejects.
-- **Audit trail** — every tool call is logged with HMAC-signed evidence. Tamper-evident. 7-year retention.
-- **Tenant isolation** — every query scoped to `platform_tenant_id`. 56 tests verify no cross-tenant leakage.
+- **Audit trail** — tool calls logged to SQLite. Cross-product events HMAC-signed with per-tenant HKDF keys. Compliance evidence retained for 7 years.
+- **Tenant isolation** — every query scoped to `platform_tenant_id`. Verified by RLS policies and dedicated test suites.
 - **Rate limiting** — 60 req/min per tenant per product. Prevents runaway automation.
-- **PQC signing** — evidence chains signed with hybrid Ed25519 + ML-DSA-65 (post-quantum ready).
+- **PQC signing** — evidence chains signed with hybrid Ed25519 + ML-DSA-65 when `pqcrypto` is installed. Falls back to Ed25519-only otherwise.
 
 ---
 
