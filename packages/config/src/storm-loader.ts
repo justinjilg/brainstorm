@@ -249,7 +249,11 @@ function loadStormFileFromDir(dir: string): StormFile | null {
     try {
       const content = readFileSync(filepath, "utf-8");
       const { frontmatter, body } = parseStormFile(content);
-      return { frontmatter, body, source: filepath };
+      // Sanitize source path — never leak absolute paths to prompts/providers
+      const safeSource = filepath.startsWith(homedir())
+        ? "~" + filepath.slice(homedir().length)
+        : filename;
+      return { frontmatter, body, source: safeSource };
     } catch (error) {
       log.warn({ err: error, file: filepath }, "Failed to read storm file");
       return null;

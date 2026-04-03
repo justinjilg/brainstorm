@@ -135,6 +135,13 @@ const agentConfigSchema = z.object({
       "debugger",
       "analyst",
       "orchestrator",
+      "product-manager",
+      "security-reviewer",
+      "code-reviewer",
+      "style-reviewer",
+      "qa",
+      "compliance",
+      "devops",
       "custom",
     ])
     .default("custom"),
@@ -177,7 +184,9 @@ const workflowConfigSchema = z.object({
   id: z.string(),
   name: z.string().optional(),
   description: z.string().default(""),
-  communicationMode: z.enum(["handoff", "shared"]).default("handoff"),
+  communicationMode: z
+    .enum(["handoff", "shared", "parallel"])
+    .default("handoff"),
   maxIterations: z.number().default(3),
   steps: z.array(workflowStepConfigSchema).default([]),
 });
