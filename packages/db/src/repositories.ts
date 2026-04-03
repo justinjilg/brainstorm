@@ -631,10 +631,8 @@ export class SessionLockManager {
 
   /** Acquire a lock for a session. Returns true if acquired, false if held by another. */
   acquire(sessionId: string, holder: string): boolean {
-    // Clean stale locks first
     this.cleanStale();
 
-    // Atomic: INSERT or check existing holder in a single immediate transaction
     const result = this.db
       .transaction(() => {
         const existing = this.db
@@ -642,7 +640,16 @@ export class SessionLockManager {
           .get(sessionId) as any;
 
         if (existing) {
-          return existing.holder === holder;
+          if (existing.holder === holder) {
+            // Renew the lease
+            this.db
+              .prepare(
+                "UPDATE session_locks SET acquired_at = unixepoch() WHERE session_id = ?",
+              )
+              .run(sessionId);
+            return true;
+          }
+          return false;
         }
 
         this.db
@@ -655,6 +662,16 @@ export class SessionLockManager {
       .immediate();
 
     return result;
+  }
+
+  /** Renew the lease on a held lock. Call this periodically during long operations. */
+  renew(sessionId: string, holder: string): boolean {
+    const result = this.db
+      .prepare(
+        "UPDATE session_locks SET acquired_at = unixepoch() WHERE session_id = ? AND holder = ?",
+      )
+      .run(sessionId, holder);
+    return result.changes > 0;
   }
 
   /** Release a lock. Only the holder can release. */
@@ -674,7 +691,7 @@ export class SessionLockManager {
     return !!row;
   }
 
-  /** Remove locks older than 5 minutes (stale/crashed processes). */
+  /** Remove locks older than STALE_LOCK_SECONDS (stale/crashed processes). */
   private cleanStale(): void {
     const cutoff = Math.floor(Date.now() / 1000) - STALE_LOCK_SECONDS;
     this.db

@@ -157,7 +157,7 @@ const MIGRATIONS = [
       CREATE TABLE agent_profiles (
         id TEXT PRIMARY KEY,
         display_name TEXT NOT NULL,
-        role TEXT NOT NULL CHECK (role IN ('architect', 'coder', 'reviewer', 'debugger', 'analyst', 'custom')),
+        role TEXT NOT NULL CHECK (role IN ('architect', 'coder', 'reviewer', 'debugger', 'analyst', 'orchestrator', 'product-manager', 'security-reviewer', 'code-reviewer', 'style-reviewer', 'qa', 'compliance', 'devops', 'custom')),
         description TEXT NOT NULL DEFAULT '',
         model_id TEXT NOT NULL,
         system_prompt TEXT,
@@ -185,7 +185,7 @@ const MIGRATIONS = [
         name TEXT NOT NULL,
         description TEXT NOT NULL DEFAULT '',
         steps_json TEXT NOT NULL,
-        communication_mode TEXT NOT NULL DEFAULT 'handoff' CHECK (communication_mode IN ('handoff', 'shared')),
+        communication_mode TEXT NOT NULL DEFAULT 'handoff' CHECK (communication_mode IN ('handoff', 'shared', 'parallel')),
         max_iterations INTEGER NOT NULL DEFAULT 3,
         created_at INTEGER NOT NULL DEFAULT (unixepoch()),
         updated_at INTEGER NOT NULL DEFAULT (unixepoch())
@@ -566,6 +566,52 @@ const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_gm_changeset_connector ON godmode_changeset_log(connector);
       CREATE INDEX IF NOT EXISTS idx_gm_changeset_status ON godmode_changeset_log(status);
       CREATE INDEX IF NOT EXISTS idx_gm_changeset_created ON godmode_changeset_log(created_at);
+    `,
+  },
+  {
+    name: "027_widen_role_and_comm_constraints",
+    sql: `
+      -- SQLite cannot ALTER CHECK constraints, so we drop and recreate.
+      -- agent_profiles: widen role to include all AgentRole values
+      CREATE TABLE IF NOT EXISTS agent_profiles_new (
+        id TEXT PRIMARY KEY,
+        display_name TEXT NOT NULL,
+        role TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        model_id TEXT NOT NULL,
+        system_prompt TEXT,
+        allowed_tools TEXT NOT NULL DEFAULT '"all"',
+        output_format TEXT,
+        budget_per_workflow REAL,
+        budget_daily REAL,
+        exhaustion_action TEXT NOT NULL DEFAULT 'downgrade',
+        downgrade_model_id TEXT,
+        confidence_threshold REAL NOT NULL DEFAULT 0.7,
+        max_steps INTEGER NOT NULL DEFAULT 10,
+        fallback_chain TEXT NOT NULL DEFAULT '[]',
+        guardrails TEXT NOT NULL DEFAULT '{}',
+        lifecycle TEXT NOT NULL DEFAULT 'active' CHECK (lifecycle IN ('active', 'suspended')),
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      INSERT OR IGNORE INTO agent_profiles_new SELECT * FROM agent_profiles;
+      DROP TABLE IF EXISTS agent_profiles;
+      ALTER TABLE agent_profiles_new RENAME TO agent_profiles;
+
+      -- workflow_definitions: widen communication_mode to include 'parallel'
+      CREATE TABLE IF NOT EXISTS workflow_definitions_new (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        steps_json TEXT NOT NULL,
+        communication_mode TEXT NOT NULL DEFAULT 'handoff',
+        max_iterations INTEGER NOT NULL DEFAULT 3,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      INSERT OR IGNORE INTO workflow_definitions_new SELECT * FROM workflow_definitions;
+      DROP TABLE IF EXISTS workflow_definitions;
+      ALTER TABLE workflow_definitions_new RENAME TO workflow_definitions;
     `,
   },
 ];
