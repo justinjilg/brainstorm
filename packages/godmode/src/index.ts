@@ -19,10 +19,35 @@ export {
   registerExecutor,
 } from "./changeset.js";
 export { BaseConnector } from "./connector-base.js";
-export { createMSPConnector } from "./connectors/msp/index.js";
-export { createEmailConnector } from "./connectors/email/index.js";
-export { createVMConnector } from "./connectors/vm/index.js";
-export { GODMODE_MIGRATION_SQL } from "./audit.js";
+export { ProductConnector } from "./product-connector.js";
+export { createProductConnectors } from "./product-factory.js";
+export {
+  signEvent,
+  verifyEvent,
+  createSignedEvent,
+  deriveTenantKey,
+  canonicalize,
+} from "./signing.js";
+export {
+  verifyJWT,
+  extractBearerToken,
+  type JWTPayload,
+  type AuthResult,
+} from "./jwt.js";
+export {
+  GODMODE_MIGRATION_SQL,
+  setAuditPersister,
+  getAuditLog,
+} from "./audit.js";
+export {
+  productManifestSchema,
+  parseManifest,
+  validateManifestData,
+  generateManifestTemplate,
+  verifyProductContract,
+  type ProductManifest,
+  type VerifyResult,
+} from "./manifest.js";
 export type {
   GodModeConnector,
   GodModeConfig,

@@ -115,9 +115,27 @@ export function getTierForComplexity(complexity: Complexity): ToolTier {
   return COMPLEXITY_TO_TIER[complexity];
 }
 
-/** Get tool names for a given tier. */
-export function getToolsForTier(tier: ToolTier): string[] {
-  return TIER_TOOLS[tier];
+/** All tool names known to the tier system (built-in tools). */
+const ALL_TIERED_TOOLS = new Set(TIER_TOOLS.full);
+
+/**
+ * Get tool names for a given tier.
+ * Always includes dynamically registered tools (God Mode, MCP, plugins)
+ * that aren't in any tier — these are the reason the user may be talking
+ * to the system and must never be filtered out.
+ */
+export function getToolsForTier(
+  tier: ToolTier,
+  allRegisteredTools?: string[],
+): string[] {
+  const tierTools = TIER_TOOLS[tier];
+  if (!allRegisteredTools) return tierTools;
+
+  // Include any tool not in the tier system (external/dynamic tools)
+  const dynamicTools = allRegisteredTools.filter(
+    (name) => !ALL_TIERED_TOOLS.has(name),
+  );
+  return [...tierTools, ...dynamicTools];
 }
 
 /** Check if a tool is available in the current tier. */

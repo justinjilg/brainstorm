@@ -56,7 +56,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ResolvedKeys } from "@brainst0rm/providers";
 
-/** Known API key names that providers need at startup. */
+/** Known API key names that providers and connectors need at startup. */
 const PROVIDER_KEY_NAMES = [
   "BRAINSTORM_API_KEY",
   "ANTHROPIC_API_KEY",
@@ -65,6 +65,10 @@ const PROVIDER_KEY_NAMES = [
   "DEEPSEEK_API_KEY",
   "MOONSHOT_API_KEY",
   "BRAINSTORM_ADMIN_KEY",
+  // God Mode connector keys — resolved so connectors can authenticate
+  "BRAINSTORM_MSP_API_KEY",
+  "BRAINSTORM_EMAIL_API_KEY",
+  "BRAINSTORM_VM_API_KEY",
 ];
 
 /**
@@ -81,7 +85,12 @@ async function resolveProviderKeys(): Promise<ResolvedKeys> {
   const resolved = new Map<string, string>();
   for (const name of PROVIDER_KEY_NAMES) {
     const value = await resolver.get(name);
-    if (value) resolved.set(name, value);
+    if (value) {
+      resolved.set(name, value);
+      // Make resolved keys available via process.env for God Mode connectors
+      // and other subsystems that read from environment
+      process.env[name] = value;
+    }
   }
 
   return { get: (name: string) => resolved.get(name) ?? null };
@@ -1238,6 +1247,81 @@ program
         router.setStrategy(opts.strategy as any);
       } else if (!isCommunityTier || hasDirectKeys) {
         router.setStrategy("quality-first");
+      }
+
+      // God Mode: connect if any connector key is present
+      const runHasConnectorKey = !!(
+        process.env.BRAINSTORM_MSP_API_KEY ||
+        process.env.BRAINSTORM_EMAIL_API_KEY ||
+        process.env.BRAINSTORM_VM_API_KEY ||
+        process.env._GM_MSP_KEY ||
+        process.env._GM_EMAIL_KEY ||
+        process.env._GM_VM_KEY
+      );
+      if (runHasConnectorKey || config.godmode.enabled) {
+        try {
+          const {
+            connectGodMode: connectGM,
+            createProductConnectors: createPC,
+            setAuditPersister: setAP,
+          } = await import("@brainst0rm/godmode");
+          const { ChangeSetLogRepository: CSLogRun } =
+            await import("@brainst0rm/db");
+
+          const csLogRun = new CSLogRun(db);
+          setAP((entry) => {
+            csLogRun.log({
+              changesetId: entry.changesetId,
+              connector: entry.connector,
+              action: entry.action,
+              description: entry.description,
+              riskScore: entry.riskScore,
+              status: entry.status,
+              changesJson: entry.changesJson,
+              simulationJson: entry.simulationJson,
+              rollbackJson: entry.rollbackJson,
+              createdAt: entry.createdAt,
+              executedAt: entry.executedAt,
+              sessionId: null,
+            });
+          });
+
+          const defaultConns: Record<string, any> = {
+            msp: {
+              enabled: true,
+              baseUrl:
+                process.env.BRAINSTORM_MSP_URL ?? "https://brainstormmsp.ai",
+              apiKeyName: "BRAINSTORM_MSP_API_KEY",
+            },
+          };
+          const mergedConfig = {
+            ...config.godmode,
+            connectors: { ...defaultConns, ...config.godmode.connectors },
+          };
+          const activeConns = await createPC(mergedConfig);
+
+          const gmResult = await connectGM(tools, mergedConfig, activeConns);
+
+          if (gmResult.connectedSystems.length > 0) {
+            // Rebuild tool awareness and system prompt with God Mode tools
+            const gmToolSection = buildToolAwarenessSection(tools.listTools());
+            systemSegments[0] = {
+              text:
+                rawSegments[0]?.text +
+                gmToolSection +
+                "\n" +
+                (gmResult.promptSegment?.text ?? ""),
+              cacheable: true,
+            };
+            process.stderr.write(
+              `[godmode] Connected: ${gmResult.connectedSystems.map((s) => s.displayName).join(", ")} (${gmResult.totalTools} tools)\n`,
+            );
+          }
+        } catch (err) {
+          process.stderr.write(
+            `[godmode] ${err instanceof Error ? err.message : String(err)}\n`,
+          );
+        }
       }
 
       const session = sessionManager.start(projectPath);
@@ -4315,6 +4399,938 @@ program
     console.log();
   });
 
+// ── Platform Command ─────────────────────────────────────────────
+
+const platformCmd = program
+  .command("platform")
+  .description("Platform contract tools — verify, init, manifest");
+
+platformCmd
+  .command("verify")
+  .description("Verify a product implements the Brainstorm platform contract")
+  .argument("<url>", "Product API base URL (e.g., https://brainstormmsp.ai)")
+  .option("--token <jwt>", "Bearer token for authenticated endpoints")
+  .option("--timeout <ms>", "Request timeout in milliseconds", "10000")
+  .action(async (url: string, opts: { token?: string; timeout?: string }) => {
+    const { verifyProductContract } = await import("@brainst0rm/godmode");
+
+    console.log(`\n  Platform Contract Verification`);
+    console.log(`  ──────────────────────────────\n`);
+    console.log(`  Target: ${url}`);
+    console.log();
+
+    const results = await verifyProductContract(url, {
+      timeout: parseInt(opts.timeout ?? "10000"),
+      token: opts.token,
+    });
+
+    let passed = 0;
+    let failed = 0;
+
+    for (const r of results) {
+      const icon = r.status === "pass" ? "✓" : r.status === "fail" ? "✗" : "○";
+      const color =
+        r.status === "pass"
+          ? "\x1b[32m"
+          : r.status === "fail"
+            ? "\x1b[31m"
+            : "\x1b[90m";
+      const latency = r.latencyMs ? ` (${r.latencyMs}ms)` : "";
+      console.log(
+        `  ${color}${icon}\x1b[0m ${r.endpoint} — ${r.message}${latency}`,
+      );
+
+      if (r.status === "pass") passed++;
+      else if (r.status === "fail") failed++;
+    }
+
+    console.log();
+    console.log(
+      `  ${passed} passed, ${failed} failed, ${results.length} total`,
+    );
+
+    if (failed > 0) {
+      console.log(`\n  Missing endpoints need to be implemented.`);
+      console.log(`  See: brainstorm platform init`);
+    } else {
+      console.log(`\n  Product implements the platform contract.`);
+    }
+    console.log();
+
+    process.exit(failed > 0 ? 1 : 0);
+  });
+
+platformCmd
+  .command("init")
+  .description("Generate a product-manifest.yaml template")
+  .option("--id <id>", "Product ID (lowercase, hyphens)", "my-product")
+  .option("--name <name>", "Display name", "My Product")
+  .option("--url <url>", "API base URL", "http://localhost:3000")
+  .action(async (opts: { id: string; name: string; url: string }) => {
+    const { generateManifestTemplate } = await import("@brainst0rm/godmode");
+    const { writeFileSync, existsSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+
+    const template = generateManifestTemplate(opts.id, opts.name, opts.url);
+
+    const outPath = resolve("product-manifest.yaml");
+    if (existsSync(outPath)) {
+      console.error(
+        `  product-manifest.yaml already exists. Delete it first to regenerate.`,
+      );
+      process.exit(1);
+    }
+
+    writeFileSync(outPath, template, "utf-8");
+    console.log(`\n  ✓ Generated product-manifest.yaml`);
+    console.log(
+      `  Edit the file, then run: brainstorm platform verify ${opts.url}\n`,
+    );
+  });
+
+platformCmd
+  .command("validate")
+  .description("Validate a product-manifest.yaml file")
+  .argument("[path]", "Path to manifest file", "product-manifest.yaml")
+  .action(async (path: string) => {
+    const { readFileSync, existsSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const { validateManifestData } = await import("@brainst0rm/godmode");
+
+    const filePath = resolve(path);
+    if (!existsSync(filePath)) {
+      console.error(`  File not found: ${filePath}`);
+      console.error(`  Run: brainstorm platform init`);
+      process.exit(1);
+    }
+
+    const content = readFileSync(filePath, "utf-8");
+    let data: unknown;
+    try {
+      // Try YAML-compatible JSON parse, or fall back to simple key:value parsing
+      data = JSON.parse(content);
+    } catch {
+      // For YAML, we need a parser — suggest installing yaml package
+      console.error(
+        `  Cannot parse ${path}. Install 'yaml' package or use JSON format.`,
+      );
+      try {
+        const yaml = await import("yaml");
+        data = yaml.parse(content);
+      } catch {
+        console.error(`  Tip: npm install yaml`);
+        process.exit(1);
+      }
+    }
+
+    const result = validateManifestData(data);
+    if (result.ok) {
+      const m = result.manifest!;
+      console.log(
+        `\n  ✓ Valid manifest: ${m.product.name} (${m.product.id}) v${m.product.version}`,
+      );
+      console.log(`    API: ${m.security.api_base}`);
+      console.log(
+        `    Auth: human=${m.security.auth.human}, machine=${m.security.auth.machine}`,
+      );
+      console.log(`    Capabilities: ${m.capabilities.length}`);
+      console.log(
+        `    Events: publishes=${m.events.publishes.length}, subscribes=${m.events.subscribes.length}`,
+      );
+      console.log();
+    } else {
+      console.error(`\n  ✗ Invalid manifest:`);
+      for (const err of result.errors ?? []) {
+        console.error(`    - ${err}`);
+      }
+      console.error();
+      process.exit(1);
+    }
+  });
+
+// ── MCP Command ──────────────────────────────────────────────────
+
+program
+  .command("mcp")
+  .description(
+    "Start MCP server (stdio) — exposes God Mode tools to Claude Code/Desktop",
+  )
+  .action(async () => {
+    const { startMCPServer } = await import("../mcp-server.js");
+    await startMCPServer();
+  });
+
+// ── Setup Command ────────────────────────────────────────────────
+
+program
+  .command("setup")
+  .description(
+    "Bootstrap Brainstorm on this machine — auth, config, MCP, ecosystem context",
+  )
+  .action(async () => {
+    const { existsSync, mkdirSync, writeFileSync, readFileSync } =
+      await import("node:fs");
+    const { join } = await import("node:path");
+    const { homedir } = await import("node:os");
+
+    console.log(`\n  ══════════════════════════════════════════════════`);
+    console.log(`   brainstorm setup`);
+    console.log(`  ══════════════════════════════════════════════════\n`);
+
+    // Step 1: Check BR API key
+    const brKey = process.env.BRAINSTORM_API_KEY;
+    if (brKey) {
+      console.log(`  ✓ BrainstormRouter API key found`);
+    } else {
+      console.log(`  ✗ BRAINSTORM_API_KEY not set`);
+      console.log(`    Get one at https://brainstormrouter.com/dashboard`);
+      console.log(`    Then: export BRAINSTORM_API_KEY=br_live_xxx\n`);
+    }
+
+    // Step 2: Check 1Password
+    const opToken = process.env.OP_SERVICE_ACCOUNT_TOKEN;
+    if (opToken) {
+      console.log(`  ✓ 1Password service account connected`);
+    } else {
+      console.log(`  ○ 1Password not configured (optional)`);
+    }
+
+    // Step 3: Test product connectivity
+    console.log(`\n  Testing products...\n`);
+    const products = [
+      {
+        id: "msp",
+        url: process.env.BRAINSTORM_MSP_URL ?? "https://brainstormmsp.ai",
+        key: "BRAINSTORM_MSP_API_KEY",
+      },
+      {
+        id: "br",
+        url:
+          process.env.BRAINSTORM_BR_URL ?? "https://api.brainstormrouter.com",
+        key: "BRAINSTORM_API_KEY",
+      },
+      {
+        id: "gtm",
+        url: process.env.BRAINSTORM_GTM_URL ?? "https://catsfeet.com",
+        key: "BRAINSTORM_GTM_API_KEY",
+      },
+      {
+        id: "vm",
+        url: process.env.BRAINSTORM_VM_URL ?? "https://vm.brainstorm.co",
+        key: "BRAINSTORM_VM_API_KEY",
+      },
+      {
+        id: "shield",
+        url:
+          process.env.BRAINSTORM_SHIELD_URL ?? "https://shield.brainstorm.co",
+        key: "BRAINSTORM_SHIELD_API_KEY",
+      },
+    ];
+
+    let connectedCount = 0;
+    let totalTools = 0;
+    const connectedSystems: string[] = [];
+
+    for (const p of products) {
+      try {
+        const res = await fetch(`${p.url}/health`, {
+          signal: AbortSignal.timeout(5000),
+        });
+        if (res.ok) {
+          const health = (await res.json()) as any;
+          // Try to get tool count
+          let toolCount = 0;
+          const apiKey = process.env[p.key];
+          if (apiKey) {
+            try {
+              const toolsRes = await fetch(`${p.url}/api/v1/god-mode/tools`, {
+                headers: { Authorization: `Bearer ${apiKey}` },
+                signal: AbortSignal.timeout(5000),
+              });
+              if (toolsRes.ok) {
+                const data = (await toolsRes.json()) as any;
+                toolCount = data.tool_count ?? data.tools?.length ?? 0;
+              }
+            } catch {}
+          }
+          console.log(
+            `  ● ${p.id.padEnd(8)} ${String(toolCount).padStart(2)} tools  ${health.version ?? ""}`,
+          );
+          connectedCount++;
+          totalTools += toolCount;
+          connectedSystems.push(p.id);
+        } else {
+          console.log(`  ○ ${p.id.padEnd(8)} unreachable (${res.status})`);
+        }
+      } catch {
+        console.log(`  ○ ${p.id.padEnd(8)} offline`);
+      }
+    }
+
+    // Step 4: Configure MCP for Claude Code
+    const claudeDir = join(homedir(), ".claude");
+    const mcpPath = join(claudeDir, "mcp.json");
+
+    if (existsSync(mcpPath)) {
+      try {
+        const existing = JSON.parse(readFileSync(mcpPath, "utf-8"));
+        if (!existing.mcpServers?.brainstorm) {
+          existing.mcpServers = existing.mcpServers ?? {};
+          existing.mcpServers.brainstorm = {
+            command: "brainstorm",
+            args: ["mcp"],
+          };
+          writeFileSync(mcpPath, JSON.stringify(existing, null, 2));
+          console.log(
+            `\n  ✓ Added brainstorm MCP server to ~/.claude/mcp.json`,
+          );
+        } else {
+          console.log(
+            `\n  ✓ brainstorm MCP server already in ~/.claude/mcp.json`,
+          );
+        }
+      } catch {
+        console.log(`\n  ⚠ Could not update ~/.claude/mcp.json (parse error)`);
+      }
+    } else {
+      console.log(
+        `\n  ○ ~/.claude/mcp.json not found (Claude Code not detected)`,
+      );
+    }
+
+    // Step 5: Summary
+    console.log(`\n  ──────────────────────────────────────────────────`);
+    console.log(
+      `  ${connectedCount} products connected, ${totalTools} tools available`,
+    );
+    console.log(`  Run: brainstorm status (full diagnostic)`);
+    console.log(`  Run: brainstorm mcp (start MCP server for Claude)`);
+    console.log();
+  });
+
+// ── Status Command (ecosystem) ───────────────────────────────────
+
+program
+  .command("ecosystem")
+  .alias("status")
+  .description(
+    "Show full ecosystem status — all products, tools, auth, connectivity",
+  )
+  .action(async () => {
+    console.log(`\n  Brainstorm Ecosystem Status`);
+    console.log(`  ───────────────────────────\n`);
+
+    // Auth
+    const brKey = process.env.BRAINSTORM_API_KEY;
+    console.log(
+      `  Auth:     ${brKey ? "✓ BR key set" : "✗ BRAINSTORM_API_KEY not set"}`,
+    );
+    console.log(
+      `  Vault:    ${process.env.OP_SERVICE_ACCOUNT_TOKEN ? "✓ 1Password connected" : "○ 1Password not configured"}`,
+    );
+
+    // Products
+    console.log(`\n  Products:`);
+    const products = [
+      {
+        id: "msp",
+        name: "BrainstormMSP",
+        url: process.env.BRAINSTORM_MSP_URL ?? "https://brainstormmsp.ai",
+        key: "BRAINSTORM_MSP_API_KEY",
+      },
+      {
+        id: "br",
+        name: "BrainstormRouter",
+        url:
+          process.env.BRAINSTORM_BR_URL ?? "https://api.brainstormrouter.com",
+        key: "BRAINSTORM_API_KEY",
+      },
+      {
+        id: "gtm",
+        name: "BrainstormGTM",
+        url: process.env.BRAINSTORM_GTM_URL ?? "https://catsfeet.com",
+        key: "BRAINSTORM_GTM_API_KEY",
+      },
+      {
+        id: "vm",
+        name: "BrainstormVM",
+        url: process.env.BRAINSTORM_VM_URL ?? "https://vm.brainstorm.co",
+        key: "BRAINSTORM_VM_API_KEY",
+      },
+      {
+        id: "shield",
+        name: "BrainstormShield",
+        url:
+          process.env.BRAINSTORM_SHIELD_URL ?? "https://shield.brainstorm.co",
+        key: "BRAINSTORM_SHIELD_API_KEY",
+      },
+    ];
+
+    let totalTools = 0;
+    for (const p of products) {
+      try {
+        const start = Date.now();
+        const res = await fetch(`${p.url}/health`, {
+          signal: AbortSignal.timeout(5000),
+        });
+        const latency = Date.now() - start;
+        if (res.ok) {
+          const health = (await res.json()) as any;
+          let toolCount = 0;
+          const apiKey = process.env[p.key];
+          if (apiKey) {
+            try {
+              const toolsRes = await fetch(`${p.url}/api/v1/god-mode/tools`, {
+                headers: { Authorization: `Bearer ${apiKey}` },
+                signal: AbortSignal.timeout(5000),
+              });
+              if (toolsRes.ok) {
+                const data = (await toolsRes.json()) as any;
+                toolCount = data.tool_count ?? data.tools?.length ?? 0;
+                totalTools += toolCount;
+              }
+            } catch {}
+          }
+          console.log(
+            `    ● ${p.name.padEnd(20)} ${String(toolCount).padStart(2)} tools  ${p.url.padEnd(35)} ${latency}ms  ${health.status ?? "ok"}`,
+          );
+        } else {
+          console.log(
+            `    ○ ${p.name.padEnd(20)}  — tools  ${p.url.padEnd(35)}  —    ${res.status}`,
+          );
+        }
+      } catch {
+        console.log(
+          `    ○ ${p.name.padEnd(20)}  — tools  ${p.url.padEnd(35)}  —    offline`,
+        );
+      }
+    }
+
+    // MCP
+    const { existsSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { homedir } = await import("node:os");
+    const mcpPath = join(homedir(), ".claude", "mcp.json");
+    let mcpConfigured = false;
+    if (existsSync(mcpPath)) {
+      try {
+        const mcp = JSON.parse(
+          (await import("node:fs")).readFileSync(mcpPath, "utf-8"),
+        );
+        mcpConfigured = !!mcp.mcpServers?.brainstorm;
+      } catch {}
+    }
+    console.log(
+      `\n  MCP:      ${mcpConfigured ? "✓ brainstorm MCP server configured" : "○ not configured (run brainstorm setup)"}`,
+    );
+
+    console.log(`\n  ${totalTools} tools available across ecosystem.`);
+    console.log();
+  });
+
+// ── Serve Command ────────────────────────────────────────────────
+
+program
+  .command("serve")
+  .description(
+    "Start the Brainstorm control plane HTTP API server (God Mode over HTTP)",
+  )
+  .option("--port <port>", "Port to listen on", "8000")
+  .option("--host <host>", "Host to bind to", "127.0.0.1")
+  .option("--cors", "Enable CORS for dashboard access")
+  .action(async (opts: { port: string; host: string; cors?: boolean }) => {
+    const { createServer } = await import("node:http");
+    const { randomUUID } = await import("node:crypto");
+    const {
+      connectGodMode,
+      createProductConnectors,
+      listChangeSets,
+      approveChangeSet,
+      rejectChangeSet,
+      verifyEvent,
+      verifyJWT,
+      extractBearerToken,
+      setAuditPersister,
+    } = await import("@brainst0rm/godmode");
+    const { ChangeSetLogRepository } = await import("@brainst0rm/db");
+    const config = loadConfig();
+    const port = parseInt(opts.port);
+    const host = opts.host;
+
+    console.log(`\n  ══════════════════════════════════════════════════`);
+    console.log(`   brainstorm serve — Control Plane API`);
+    console.log(`  ══════════════════════════════════════════════════\n`);
+
+    // ── Boot: resolve keys from env only (non-interactive) ─────
+    const envKeys = new Map<string, string>();
+    for (const name of PROVIDER_KEY_NAMES) {
+      const val = process.env[name];
+      if (val) envKeys.set(name, val);
+    }
+    const resolvedKeys: ResolvedKeys = {
+      get: (name: string) => envKeys.get(name) ?? null,
+    };
+    const registry = await createProviderRegistry(config, resolvedKeys);
+    const db = getDb();
+
+    // Wire audit persistence — changeset executions go to SQLite
+    const csLogRepo = new ChangeSetLogRepository(db);
+    setAuditPersister((entry) => {
+      csLogRepo.log({
+        changesetId: entry.changesetId,
+        connector: entry.connector,
+        action: entry.action,
+        description: entry.description,
+        riskScore: entry.riskScore,
+        status: entry.status,
+        changesJson: entry.changesJson,
+        simulationJson: entry.simulationJson,
+        rollbackJson: entry.rollbackJson,
+        createdAt: entry.createdAt,
+        executedAt: entry.executedAt,
+        sessionId: null,
+      });
+    });
+
+    const costTracker = new CostTracker(db, config.budget);
+    const tools = createDefaultToolRegistry();
+    const { frontmatter } = buildSystemPrompt(process.cwd());
+    const router = new BrainstormRouter(
+      config,
+      registry,
+      costTracker,
+      frontmatter,
+    );
+
+    // ── Boot: connect God Mode connectors (generic, config-driven) ─
+    const defaultConnectors: Record<string, any> = {
+      msp: {
+        enabled: true,
+        baseUrl: process.env.BRAINSTORM_MSP_URL ?? "https://brainstormmsp.ai",
+        apiKeyName: "BRAINSTORM_MSP_API_KEY",
+      },
+    };
+    const mergedGmConfig = {
+      ...config.godmode,
+      connectors: { ...defaultConnectors, ...config.godmode.connectors },
+    };
+    const connectors = await createProductConnectors(mergedGmConfig);
+    const godmode = await connectGodMode(tools, mergedGmConfig, connectors);
+
+    console.log(
+      `  God Mode: ${godmode.connectedSystems.length} systems connected, ${godmode.totalTools} tools`,
+    );
+    for (const sys of godmode.connectedSystems) {
+      console.log(
+        `    ✓ ${sys.displayName} (${sys.toolCount} tools, ${sys.latencyMs}ms)`,
+      );
+    }
+    for (const err of godmode.errors) {
+      console.log(`    ✗ ${err.name}: ${err.error}`);
+    }
+
+    // ── Helpers ────────────────────────────────────────────────
+
+    function json(res: any, status: number, body: unknown): void {
+      const payload = JSON.stringify(body);
+      res.writeHead(status, {
+        "Content-Type": "application/json",
+        ...(opts.cors
+          ? {
+              "Access-Control-Allow-Origin": "*",
+              "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+              "Access-Control-Allow-Headers": "Content-Type, Authorization",
+            }
+          : {}),
+      });
+      res.end(payload);
+    }
+
+    function envelope<T>(data: T): {
+      ok: true;
+      data: T;
+      request_id: string;
+      timestamp: string;
+    } {
+      return {
+        ok: true,
+        data,
+        request_id: randomUUID(),
+        timestamp: new Date().toISOString(),
+      };
+    }
+
+    function errorResponse(res: any, status: number, message: string): void {
+      json(res, status, {
+        ok: false,
+        error: message,
+        request_id: randomUUID(),
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    async function readBody(req: any): Promise<string> {
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) chunks.push(chunk);
+      return Buffer.concat(chunks).toString("utf-8");
+    }
+
+    // ── All tools flattened for the /tools endpoint ────────────
+    const allTools = tools.listTools();
+
+    // ── HTTP Server ────────────────────────────────────────────
+
+    const server = createServer(async (req, res) => {
+      const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
+      const path = url.pathname;
+      const method = req.method ?? "GET";
+
+      // CORS preflight
+      if (method === "OPTIONS" && opts.cors) {
+        res.writeHead(204, {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          "Access-Control-Max-Age": "86400",
+        });
+        res.end();
+        return;
+      }
+
+      try {
+        // ── Health (no auth) ────────────────────────────────────
+        if (path === "/health" && method === "GET") {
+          json(res, 200, {
+            status: "healthy",
+            version: CLI_VERSION,
+            uptime_seconds: Math.floor(process.uptime()),
+            god_mode: {
+              connected: godmode.connectedSystems.length,
+              tools: godmode.totalTools,
+            },
+          });
+          return;
+        }
+
+        // ── Auth gate for /api/* routes ────────────────────────
+        const jwtSecret = process.env.SUPABASE_JWT_SECRET;
+        let tenantId: string | undefined;
+
+        if (path.startsWith("/api/")) {
+          if (!jwtSecret) {
+            // No JWT secret configured — allow unauthenticated access
+            // (development mode). Log a warning on first request.
+          } else {
+            const token = extractBearerToken(
+              req.headers.authorization as string | undefined,
+            );
+            if (!token) {
+              errorResponse(res, 401, "Missing Authorization header");
+              return;
+            }
+            const auth = verifyJWT(token, jwtSecret);
+            if (!auth.authenticated) {
+              errorResponse(res, 401, auth.error ?? "Authentication failed");
+              return;
+            }
+            tenantId = auth.payload?.platform_tenant_id;
+          }
+        }
+
+        // ── Products ────────────────────────────────────────────
+        if (path === "/api/v1/products" && method === "GET") {
+          const products = godmode.connectedSystems.map((sys) => ({
+            product: sys.name,
+            display_name: sys.displayName,
+            status: "healthy" as const,
+            latency_ms: sys.latencyMs,
+            tool_count: sys.toolCount,
+            capabilities: sys.capabilities,
+            last_checked: new Date().toISOString(),
+          }));
+          json(res, 200, envelope(products));
+          return;
+        }
+
+        // ── Tools ───────────────────────────────────────────────
+        if (path === "/api/v1/tools" && method === "GET") {
+          json(res, 200, envelope(allTools));
+          return;
+        }
+
+        // ── Execute Tool ────────────────────────────────────────
+        if (path === "/api/v1/tools/execute" && method === "POST") {
+          const body = JSON.parse(await readBody(req));
+          const { tool: toolName, params } = body;
+
+          if (!toolName) {
+            errorResponse(res, 400, "Missing 'tool' field");
+            return;
+          }
+
+          const tool = tools.get(toolName);
+          if (!tool) {
+            errorResponse(res, 404, `Tool '${toolName}' not found`);
+            return;
+          }
+
+          try {
+            const result = await tool.execute(params ?? {});
+            json(
+              res,
+              200,
+              envelope({
+                tool: toolName,
+                result,
+                executed_at: new Date().toISOString(),
+              }),
+            );
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            errorResponse(res, 500, `Tool execution failed: ${msg}`);
+          }
+          return;
+        }
+
+        // ── ChangeSets ──────────────────────────────────────────
+        if (path === "/api/v1/changesets" && method === "GET") {
+          json(res, 200, envelope(listChangeSets()));
+          return;
+        }
+
+        // ── Approve ChangeSet ───────────────────────────────────
+        const approveMatch = path.match(
+          /^\/api\/v1\/changesets\/([^/]+)\/approve$/,
+        );
+        if (approveMatch && method === "POST") {
+          const result = await approveChangeSet(approveMatch[1], "user");
+          json(res, result.success ? 200 : 400, envelope(result));
+          return;
+        }
+
+        // ── Reject ChangeSet ────────────────────────────────────
+        const rejectMatch = path.match(
+          /^\/api\/v1\/changesets\/([^/]+)\/reject$/,
+        );
+        if (rejectMatch && method === "POST") {
+          const result = rejectChangeSet(rejectMatch[1]);
+          json(res, result.success ? 200 : 400, envelope(result));
+          return;
+        }
+
+        // ── Audit Trail (tool calls) ──────────────────────────────
+        if (path === "/api/v1/audit" && method === "GET") {
+          const limit = parseInt(url.searchParams.get("limit") ?? "50");
+          const offset = parseInt(url.searchParams.get("offset") ?? "0");
+          try {
+            const rows = db
+              .prepare(
+                `SELECT * FROM audit_log ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+              )
+              .all(limit, offset);
+            json(res, 200, envelope({ entries: rows, limit, offset }));
+          } catch {
+            json(res, 200, envelope({ entries: [], limit, offset }));
+          }
+          return;
+        }
+
+        // ── Audit Trail (God Mode changesets) ───────────────────
+        if (path === "/api/v1/audit/changesets" && method === "GET") {
+          const { ChangeSetLogRepository } = await import("@brainst0rm/db");
+          const csLog = new ChangeSetLogRepository(db);
+          const limit = parseInt(url.searchParams.get("limit") ?? "50");
+          const offset = parseInt(url.searchParams.get("offset") ?? "0");
+          const connector = url.searchParams.get("connector");
+          const entries = connector
+            ? csLog.byConnector(connector, limit)
+            : csLog.recent(limit, offset);
+          json(
+            res,
+            200,
+            envelope({
+              entries,
+              total: csLog.count(),
+              limit,
+              offset,
+            }),
+          );
+          return;
+        }
+
+        // ── Platform Events (receive) ───────────────────────────
+        if (path === "/api/v1/platform/events" && method === "POST") {
+          const body = JSON.parse(await readBody(req));
+          const masterSecret = process.env.BRAINSTORM_PLATFORM_SECRET;
+
+          if (!masterSecret) {
+            errorResponse(res, 503, "Platform secret not configured");
+            return;
+          }
+
+          if (!verifyEvent(body, masterSecret)) {
+            errorResponse(res, 401, "Invalid event signature");
+            return;
+          }
+
+          // Log the verified event
+          console.log(
+            `  [event] ${body.type} from ${body.product} (tenant: ${body.tenant_id})`,
+          );
+          json(res, 200, envelope({ received: true, event_id: body.id }));
+          return;
+        }
+
+        // ── Chat (non-streaming) ────────────────────────────────
+        if (path === "/api/v1/chat" && method === "POST") {
+          const body = JSON.parse(await readBody(req));
+          const { message } = body;
+
+          if (!message) {
+            errorResponse(res, 400, "Missing 'message' field");
+            return;
+          }
+
+          const sessionManager = new SessionManager(db);
+          const session = sessionManager.start(process.cwd());
+          const { prompt: sysPrompt, segments: sysSegments } =
+            buildSystemPrompt(process.cwd());
+          const gmPromptText = godmode.promptSegment?.text ?? "";
+          const fullSystemPrompt = sysPrompt + gmPromptText;
+
+          const messages = [{ role: "user" as const, content: message }];
+          let finalText = "";
+          let totalCost = 0;
+
+          for await (const event of runAgentLoop(messages, {
+            config,
+            registry,
+            router,
+            costTracker,
+            tools,
+            sessionId: session.id,
+            projectPath: process.cwd(),
+            systemPrompt: fullSystemPrompt,
+            systemSegments: sysSegments,
+            permissionCheck: () => "allow" as const,
+            middleware: createDefaultMiddlewarePipeline(process.cwd()),
+          })) {
+            if (event.type === "text-delta") {
+              finalText += event.delta;
+            }
+            if (event.type === "done") {
+              totalCost = event.totalCost;
+            }
+          }
+
+          json(
+            res,
+            200,
+            envelope({
+              response: finalText,
+              session_id: session.id,
+              cost: totalCost,
+            }),
+          );
+          return;
+        }
+
+        // ── Chat Stream (SSE) ───────────────────────────────────
+        if (path === "/api/v1/chat/stream" && method === "POST") {
+          const body = JSON.parse(await readBody(req));
+          const { message } = body;
+
+          if (!message) {
+            errorResponse(res, 400, "Missing 'message' field");
+            return;
+          }
+
+          res.writeHead(200, {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
+            ...(opts.cors ? { "Access-Control-Allow-Origin": "*" } : {}),
+          });
+
+          const sessionManager = new SessionManager(db);
+          const session = sessionManager.start(process.cwd());
+          const { prompt: sysPrompt, segments: sysSegments } =
+            buildSystemPrompt(process.cwd());
+          const gmPromptText = godmode.promptSegment?.text ?? "";
+          const fullSystemPrompt = sysPrompt + gmPromptText;
+
+          const messages = [{ role: "user" as const, content: message }];
+
+          for await (const event of runAgentLoop(messages, {
+            config,
+            registry,
+            router,
+            costTracker,
+            tools,
+            sessionId: session.id,
+            projectPath: process.cwd(),
+            systemPrompt: fullSystemPrompt,
+            systemSegments: sysSegments,
+            permissionCheck: () => "allow" as const,
+            middleware: createDefaultMiddlewarePipeline(process.cwd()),
+          })) {
+            res.write(`data: ${JSON.stringify(event)}\n\n`);
+            if (event.type === "done" || event.type === "error") break;
+          }
+
+          res.write("data: [DONE]\n\n");
+          res.end();
+          return;
+        }
+
+        // ── 404 ─────────────────────────────────────────────────
+        errorResponse(res, 404, `Not found: ${method} ${path}`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`  [serve] Error: ${msg}`);
+        errorResponse(res, 500, msg);
+      }
+    });
+
+    server.listen(port, host, () => {
+      console.log(`\n  ──────────────────────────────────────────────────`);
+      console.log(`  API server listening on http://${host}:${port}`);
+      console.log();
+      console.log(`  Endpoints:`);
+      console.log(`    GET  /health                           Health check`);
+      console.log(
+        `    GET  /api/v1/products                  Connected products`,
+      );
+      console.log(
+        `    GET  /api/v1/tools                     All God Mode tools`,
+      );
+      console.log(`    POST /api/v1/tools/execute             Execute a tool`);
+      console.log(
+        `    GET  /api/v1/changesets                Pending ChangeSets`,
+      );
+      console.log(
+        `    POST /api/v1/changesets/:id/approve    Approve + execute`,
+      );
+      console.log(
+        `    POST /api/v1/changesets/:id/reject     Reject a ChangeSet`,
+      );
+      console.log(`    GET  /api/v1/audit                     Audit trail`);
+      console.log(
+        `    POST /api/v1/platform/events           Receive signed events`,
+      );
+      console.log(
+        `    POST /api/v1/chat                      Natural language query`,
+      );
+      console.log(
+        `    POST /api/v1/chat/stream               SSE streaming chat`,
+      );
+      console.log();
+    });
+
+    // Keep alive — SIGINT/SIGTERM handled by the global handlers
+    await new Promise(() => {});
+  });
+
 // ── Chat Command ──────────────────────────────────────────────────
 
 program
@@ -4469,6 +5485,90 @@ program
         parentSegments: systemSegments,
       });
       tools.register(subagentTool);
+
+      // Boot Phase E: God Mode connectors (parallel, non-blocking)
+      let godModeResult: Awaited<
+        ReturnType<typeof import("@brainst0rm/godmode").connectGodMode>
+      > | null = null;
+      // Auto-enable God Mode when any connector key is present in env
+      const hasAnyConnectorKey = !!(
+        process.env.BRAINSTORM_MSP_API_KEY ||
+        process.env.BRAINSTORM_EMAIL_API_KEY ||
+        process.env.BRAINSTORM_VM_API_KEY ||
+        process.env._GM_MSP_KEY ||
+        process.env._GM_EMAIL_KEY ||
+        process.env._GM_VM_KEY
+      );
+      const godmodeEnabled = config.godmode.enabled || hasAnyConnectorKey;
+
+      if (godmodeEnabled && !opts.fast) {
+        try {
+          const {
+            connectGodMode,
+            createProductConnectors,
+            setAuditPersister: setAuditPersisterChat,
+          } = await import("@brainst0rm/godmode");
+          const { ChangeSetLogRepository: CSLogChat } =
+            await import("@brainst0rm/db");
+
+          // Wire audit persistence for chat sessions
+          const csLogChat = new CSLogChat(db);
+          setAuditPersisterChat((entry) => {
+            csLogChat.log({
+              changesetId: entry.changesetId,
+              connector: entry.connector,
+              action: entry.action,
+              description: entry.description,
+              riskScore: entry.riskScore,
+              status: entry.status,
+              changesJson: entry.changesJson,
+              simulationJson: entry.simulationJson,
+              rollbackJson: entry.rollbackJson,
+              createdAt: entry.createdAt,
+              executedAt: entry.executedAt,
+              sessionId: null,
+            });
+          });
+
+          const defaultConnectors: Record<string, any> = {
+            msp: {
+              enabled: true,
+              baseUrl:
+                process.env.BRAINSTORM_MSP_URL ?? "https://brainstormmsp.ai",
+              apiKeyName: "BRAINSTORM_MSP_API_KEY",
+            },
+          };
+          const mergedGmConfig = {
+            ...config.godmode,
+            connectors: { ...defaultConnectors, ...config.godmode.connectors },
+          };
+          const activeConnectors =
+            await createProductConnectors(mergedGmConfig);
+
+          godModeResult = await connectGodMode(
+            tools,
+            mergedGmConfig,
+            activeConnectors,
+          );
+
+          if (godModeResult.connectedSystems.length > 0) {
+            process.stderr.write(
+              `[godmode] Connected: ${godModeResult.connectedSystems.map((s) => s.displayName).join(", ")} (${godModeResult.totalTools} tools)\n`,
+            );
+            // Inject God Mode capabilities into system prompt
+            if (godModeResult.promptSegment?.text) {
+              systemPrompt += "\n" + godModeResult.promptSegment.text;
+              if (systemSegments.length > 0) {
+                systemSegments.push(godModeResult.promptSegment);
+              }
+            }
+          }
+        } catch (err) {
+          process.stderr.write(
+            `[godmode] Init failed: ${err instanceof Error ? err.message : String(err)}\n`,
+          );
+        }
+      }
 
       // Preferred model override — mutable so /model can change it
       // Community tier without direct provider keys: force brainstormrouter/auto
@@ -5069,6 +6169,13 @@ program
             opAvailable: !!process.env.OP_SERVICE_ACCOUNT_TOKEN,
             resolvedKeys: PROVIDER_KEY_NAMES.filter((k) => resolvedKeys.get(k)),
           },
+          godModeInfo: godModeResult
+            ? {
+                connectedSystems: godModeResult.connectedSystems,
+                errors: godModeResult.errors,
+                totalTools: godModeResult.totalTools,
+              }
+            : undefined,
           memoryInfo: await (async () => {
             try {
               const { MemoryManager } = await import("@brainst0rm/core");

@@ -634,18 +634,27 @@ export class SessionLockManager {
     // Clean stale locks first
     this.cleanStale();
 
-    try {
-      this.db
-        .prepare("INSERT INTO session_locks (session_id, holder) VALUES (?, ?)")
-        .run(sessionId, holder);
-      return true;
-    } catch {
-      // UNIQUE constraint violation — check if we already hold it
-      const existing = this.db
-        .prepare("SELECT holder FROM session_locks WHERE session_id = ?")
-        .get(sessionId) as any;
-      return existing?.holder === holder;
-    }
+    // Atomic: INSERT or check existing holder in a single immediate transaction
+    const result = this.db
+      .transaction(() => {
+        const existing = this.db
+          .prepare("SELECT holder FROM session_locks WHERE session_id = ?")
+          .get(sessionId) as any;
+
+        if (existing) {
+          return existing.holder === holder;
+        }
+
+        this.db
+          .prepare(
+            "INSERT INTO session_locks (session_id, holder) VALUES (?, ?)",
+          )
+          .run(sessionId, holder);
+        return true;
+      })
+      .immediate();
+
+    return result;
   }
 
   /** Release a lock. Only the holder can release. */
@@ -757,6 +766,97 @@ export class DailyLogRepository {
       content: row.content,
       cost: row.cost,
       modelId: row.model_id ?? undefined,
+    };
+  }
+}
+
+// ── God Mode Audit Repository ──────────────────────────────────────
+
+export interface ChangeSetLogEntry {
+  changesetId: string;
+  connector: string;
+  action: string;
+  description: string;
+  riskScore: number;
+  status: string;
+  changesJson: string | null;
+  simulationJson: string | null;
+  rollbackJson: string | null;
+  createdAt: number;
+  executedAt: number | null;
+  sessionId: string | null;
+}
+
+export class ChangeSetLogRepository {
+  constructor(private db: Database.Database) {}
+
+  /** Persist a changeset execution to the audit log. */
+  log(entry: ChangeSetLogEntry): void {
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO godmode_changeset_log
+         (changeset_id, connector, action, description, risk_score, status,
+          changes_json, simulation_json, rollback_json, created_at, executed_at, session_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        entry.changesetId,
+        entry.connector,
+        entry.action,
+        entry.description,
+        entry.riskScore,
+        entry.status,
+        entry.changesJson,
+        entry.simulationJson,
+        entry.rollbackJson,
+        entry.createdAt,
+        entry.executedAt,
+        entry.sessionId,
+      );
+  }
+
+  /** Get recent changeset audit entries. */
+  recent(limit = 50, offset = 0): ChangeSetLogEntry[] {
+    const rows = this.db
+      .prepare(
+        "SELECT * FROM godmode_changeset_log ORDER BY created_at DESC LIMIT ? OFFSET ?",
+      )
+      .all(limit, offset) as any[];
+    return rows.map(this.mapRow);
+  }
+
+  /** Get entries for a specific connector. */
+  byConnector(connector: string, limit = 50): ChangeSetLogEntry[] {
+    const rows = this.db
+      .prepare(
+        "SELECT * FROM godmode_changeset_log WHERE connector = ? ORDER BY created_at DESC LIMIT ?",
+      )
+      .all(connector, limit) as any[];
+    return rows.map(this.mapRow);
+  }
+
+  /** Count total entries. */
+  count(): number {
+    const row = this.db
+      .prepare("SELECT COUNT(*) as cnt FROM godmode_changeset_log")
+      .get() as any;
+    return row?.cnt ?? 0;
+  }
+
+  private mapRow(row: any): ChangeSetLogEntry {
+    return {
+      changesetId: row.changeset_id,
+      connector: row.connector,
+      action: row.action,
+      description: row.description,
+      riskScore: row.risk_score,
+      status: row.status,
+      changesJson: row.changes_json,
+      simulationJson: row.simulation_json,
+      rollbackJson: row.rollback_json,
+      createdAt: row.created_at,
+      executedAt: row.executed_at,
+      sessionId: row.session_id,
     };
   }
 }

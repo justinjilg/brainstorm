@@ -545,4 +545,27 @@ const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_daemon_log_session ON daemon_daily_log(session_id);
     `,
   },
+  {
+    name: "026_godmode_changeset_log",
+    sql: `
+      CREATE TABLE IF NOT EXISTS godmode_changeset_log (
+        changeset_id TEXT PRIMARY KEY,
+        connector TEXT NOT NULL,
+        action TEXT NOT NULL,
+        description TEXT NOT NULL,
+        risk_score INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        changes_json TEXT,
+        simulation_json TEXT,
+        rollback_json TEXT,
+        created_at INTEGER NOT NULL,
+        executed_at INTEGER,
+        session_id TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_gm_changeset_connector ON godmode_changeset_log(connector);
+      CREATE INDEX IF NOT EXISTS idx_gm_changeset_status ON godmode_changeset_log(status);
+      CREATE INDEX IF NOT EXISTS idx_gm_changeset_created ON godmode_changeset_log(created_at);
+    `,
+  },
 ];

@@ -257,9 +257,15 @@ interface ProviderCache {
 function loadProviderCache(): ProviderCache | null {
   try {
     if (!existsSync(CACHE_PATH)) return null;
-    const data = JSON.parse(readFileSync(CACHE_PATH, "utf-8")) as ProviderCache;
+    const raw = readFileSync(CACHE_PATH, "utf-8");
+    // Guard against corrupt/oversized cache files (max 1MB)
+    if (raw.length > 1_000_000) return null;
+    const data = JSON.parse(raw);
+    // Validate required fields exist
+    if (typeof data?.timestamp !== "number" || !Array.isArray(data?.modelIds))
+      return null;
     if (Date.now() - data.timestamp > CACHE_TTL_MS) return null;
-    return data;
+    return data as ProviderCache;
   } catch {
     return null;
   }

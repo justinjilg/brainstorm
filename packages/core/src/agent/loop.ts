@@ -130,6 +130,26 @@ if (!process.env.BRAINSTORM_LOG_LEVEL) {
   (globalThis as any).AI_SDK_LOG_WARNINGS = false;
 }
 
+/** Extract text content from a stream part (AI SDK v6: .text or legacy .delta). */
+function getPartText(part: Record<string, unknown>): string {
+  return (part.text as string) ?? (part.delta as string) ?? "";
+}
+
+/** Extract tool call input from a stream part (AI SDK v6: .input or legacy .args). */
+function getPartInput(
+  part: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  return (
+    (part.input as Record<string, unknown>) ??
+    (part.args as Record<string, unknown>)
+  );
+}
+
+/** Extract tool result output from a stream part (AI SDK v6: .output or legacy .result). */
+function getPartOutput(part: Record<string, unknown>): unknown {
+  return part.output ?? part.result;
+}
+
 export interface CompactionCallbacks {
   /** Current estimated token count of conversation history. */
   getTokenEstimate: () => number;
@@ -324,17 +344,34 @@ export async function* runAgentLoop(
     const tokenEstimate = options.compaction.getTokenEstimate();
 
     if (tokenEstimate > contextWindow * threshold) {
-      const compactionResult = await options.compaction.compact({
-        contextWindow,
-        keepRecent: config.compaction?.keepRecent ?? 5,
-      });
-      if (compactionResult.compacted) {
-        yield {
-          type: "compaction",
-          removed: compactionResult.removed,
-          tokensBefore: compactionResult.tokensBefore,
-          tokensAfter: compactionResult.tokensAfter,
-        };
+      try {
+        const COMPACTION_TIMEOUT_MS = 30_000;
+        const compactionResult = await Promise.race([
+          options.compaction.compact({
+            contextWindow,
+            keepRecent: config.compaction?.keepRecent ?? 5,
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () => reject(new Error("Compaction timeout")),
+              COMPACTION_TIMEOUT_MS,
+            ),
+          ),
+        ]);
+        if (compactionResult.compacted) {
+          yield {
+            type: "compaction",
+            removed: compactionResult.removed,
+            tokensBefore: compactionResult.tokensBefore,
+            tokensAfter: compactionResult.tokensAfter,
+          };
+        }
+      } catch (compactionErr) {
+        // Compaction failed — continue without it rather than crashing the session
+        log.warn(
+          { err: compactionErr },
+          "Compaction failed, continuing without compaction",
+        );
       }
     }
   }
@@ -350,7 +387,10 @@ export async function* runAgentLoop(
   // get the full tool set until mid-session escalation is implemented.
   const toolTier = getTierForComplexity(task.complexity);
   const useFullTools = toolTier !== "minimal";
-  let effectiveToolNames = useFullTools ? undefined : getToolsForTier(toolTier);
+  const allToolNames = tools.listTools().map((t) => t.name);
+  let effectiveToolNames = useFullTools
+    ? undefined
+    : getToolsForTier(toolTier, allToolNames);
 
   // Role-based tool scoping: apply allowedTools/blockedTools from the active role.
   // allowedTools is a whitelist (only these tools). blockedTools is a blacklist (all except these).
@@ -472,11 +512,11 @@ export async function* runAgentLoop(
         }
         lastEventTime = now;
         if (part.type === "reasoning-delta") {
-          const content = (part as any).text ?? (part as any).delta ?? "";
+          const content = getPartText(part as Record<string, unknown>);
           if (content) yield { type: "reasoning" as const, content };
         } else if (part.type === "text-delta") {
           textDeltaCount++;
-          const raw = (part as any).text ?? (part as any).delta ?? "";
+          const raw = getPartText(part as Record<string, unknown>);
           if (raw.includes("[TOOL BLOCKED]")) hasToolBlocked = true;
           const filtered = streamFilter.filter(raw);
           if (filtered)
@@ -490,11 +530,13 @@ export async function* runAgentLoop(
           yield {
             type: "tool-call-start" as const,
             toolName: part.toolName,
-            args: (part as any).input ?? (part as any).args,
+            args: getPartInput(part as Record<string, unknown>),
           };
         } else if (part.type === "tool-result") {
           exitToolExecution(); // ungate compaction
-          const toolResult = (part as any).output ?? (part as any).result;
+          const toolResult = getPartOutput(
+            part as Record<string, unknown>,
+          ) as any;
           // Track tool call success/failure for turn context
           const toolOk = !(
             toolResult &&
@@ -504,13 +546,17 @@ export async function* runAgentLoop(
           toolCallResults.push({ name: part.toolName, ok: toolOk });
           // Track file access for turn context
           if (part.toolName === "file_read" && toolOk) {
-            const path = (part as any).input?.path ?? (part as any).args?.path;
+            const path = getPartInput(part as Record<string, unknown>)?.path as
+              | string
+              | undefined;
             if (path) filesRead.push(path);
           } else if (
             (part.toolName === "file_write" || part.toolName === "file_edit") &&
             toolOk
           ) {
-            const path = (part as any).input?.path ?? (part as any).args?.path;
+            const path = getPartInput(part as Record<string, unknown>)?.path as
+              | string
+              | undefined;
             if (path) filesWritten.push(path);
           }
           // Track build/test results for persistent build state warnings
@@ -521,7 +567,8 @@ export async function* runAgentLoop(
             typeof toolResult === "object"
           ) {
             const cmd =
-              (part as any).input?.command ?? (part as any).args?.command ?? "";
+              (getPartInput(part as Record<string, unknown>)
+                ?.command as string) ?? "";
             options.buildState.recordShellResult(
               cmd,
               toolResult.exitCode ?? 0,
@@ -534,8 +581,8 @@ export async function* runAgentLoop(
             result: toolResult,
           };
           // Loop detection — warn about repetitive behavior
-          const toolPath =
-            (part as any).input?.path ?? (part as any).args?.path;
+          const toolPath = getPartInput(part as Record<string, unknown>)
+            ?.path as string | undefined;
           const loopWarnings = loopDetector.recordToolCall(
             part.toolName,
             toolPath,
@@ -619,14 +666,15 @@ export async function* runAgentLoop(
     // Build fallback list: use decision.fallbacks, or generate from registry if empty
     let fallbacks = decision.fallbacks;
     if (fallbacks.length === 0 && isEmpty) {
-      // When BR Auto returns empty, construct fallbacks from explicit models in the registry
-      const RETRY_MODELS = [
+      // Fallback models for empty responses — configurable via config.routing.fallbackModels
+      const RETRY_MODELS: string[] = (config as any).routing
+        ?.fallbackModels ?? [
         "anthropic/claude-sonnet-4.6",
-        "openai/gpt-4.1",
+        "openai/gpt-5.4",
         "anthropic/claude-haiku-4.5",
       ];
-      fallbacks = RETRY_MODELS.filter((id) => id !== decision.model.id)
-        .map((id) => options.registry.getModel(id))
+      fallbacks = RETRY_MODELS.filter((id: string) => id !== decision.model.id)
+        .map((id: string) => options.registry.getModel(id))
         .filter((m): m is ModelEntry => m != null && m.status === "available");
     }
 
@@ -649,8 +697,8 @@ export async function* runAgentLoop(
             fallbackLatencyMs,
             0,
           );
-        } catch {
-          /* non-fatal */
+        } catch (outcomeErr) {
+          log.warn({ err: outcomeErr }, "Failed to persist routing outcome");
         }
       }
       // Pick next fallback that hasn't been tried yet
@@ -803,8 +851,8 @@ export async function* runAgentLoop(
             failLatencyMs,
             0,
           );
-        } catch {
-          /* non-fatal */
+        } catch (outcomeErr) {
+          log.warn({ err: outcomeErr }, "Failed to persist routing outcome");
         }
       }
       // Wrap raw API errors with actionable messages
@@ -814,7 +862,7 @@ export async function* runAgentLoop(
   } finally {
     setTaskEventHandler(null);
     setToolOutputHandler(null);
-    // Keep background handler alive — background tasks outlive individual agent loop runs
+    setBackgroundEventHandler(null);
 
     // Submit trajectory to BR Intelligence API (fire-and-forget)
     if (trajectory) {

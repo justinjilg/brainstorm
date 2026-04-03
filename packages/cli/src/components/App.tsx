@@ -55,6 +55,18 @@ interface AppProps {
   gateway?: any;
   /** Memory info for Config mode */
   memoryInfo?: { localCount: number; types: Record<string, number> };
+  /** God Mode connection data for Dashboard */
+  godModeInfo?: {
+    connectedSystems: Array<{
+      name: string;
+      displayName: string;
+      capabilities: string[];
+      latencyMs: number;
+      toolCount: number;
+    }>;
+    errors: Array<{ name: string; error: string }>;
+    totalTools: number;
+  };
 }
 
 interface RoutingEntry {
@@ -287,6 +299,7 @@ export function App(props: AppProps) {
           sessionStart={sessionStart}
           brData={brData}
           onRefreshBR={refreshBR}
+          godModeInfo={props.godModeInfo}
         />
       )}
 

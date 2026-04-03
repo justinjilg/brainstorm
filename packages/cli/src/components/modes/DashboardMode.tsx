@@ -1,3 +1,18 @@
+/**
+ * Dashboard Mode — Full Ecosystem Inventory
+ *
+ * Three panels showing everything registered in the Brainstorm platform:
+ * Left:   Connected systems with health + routing history
+ * Center: Tool registry grouped by domain + tool health
+ * Right:  Audit trail + cost trends
+ *
+ * Data sources:
+ * - godModeInfo: from ProductConnector discovery at boot
+ * - toolStats: captured from agent loop events
+ * - brData: fetched from BrainstormRouter API
+ * - routingHistory: captured from routing decisions
+ */
+
 import React, { useEffect } from "react";
 import { Box, Text } from "ink";
 import { Gauge } from "../viz/Gauge.js";
@@ -18,6 +33,14 @@ interface ToolStat {
   successes: number;
 }
 
+interface ConnectedSystem {
+  name: string;
+  displayName: string;
+  capabilities: string[];
+  latencyMs: number;
+  toolCount: number;
+}
+
 interface DashboardModeProps {
   sessionCost: number;
   tokenCount: { input: number; output: number };
@@ -28,6 +51,11 @@ interface DashboardModeProps {
   sessionStart: number;
   brData?: BRDashboardData;
   onRefreshBR?: () => void;
+  godModeInfo?: {
+    connectedSystems: ConnectedSystem[];
+    errors: Array<{ name: string; error: string }>;
+    totalTools: number;
+  };
 }
 
 function formatElapsed(ms: number): string {
@@ -49,6 +77,23 @@ function timeAgo(ts: number): string {
   return `${Math.floor(secs / 60)}m ago`;
 }
 
+/** Group tools by their product prefix (msp_, br_, gtm_, etc.). */
+function groupToolsByDomain(
+  systems: ConnectedSystem[],
+): Array<{ domain: string; product: string; count: number }> {
+  const groups: Array<{ domain: string; product: string; count: number }> = [];
+  for (const sys of systems) {
+    for (const cap of sys.capabilities) {
+      groups.push({
+        domain: cap,
+        product: sys.name,
+        count: Math.ceil(sys.toolCount / Math.max(sys.capabilities.length, 1)),
+      });
+    }
+  }
+  return groups;
+}
+
 export function DashboardMode({
   sessionCost,
   tokenCount,
@@ -59,11 +104,13 @@ export function DashboardMode({
   sessionStart,
   brData,
   onRefreshBR,
+  godModeInfo,
 }: DashboardModeProps) {
   const elapsed = Date.now() - sessionStart;
   const costPerHour = elapsed > 60000 ? (sessionCost / elapsed) * 3600000 : 0;
+  const gm = godModeInfo;
+  const domainGroups = gm ? groupToolsByDomain(gm.connectedSystems) : [];
 
-  // Auto-fetch BR data on first mount
   useEffect(() => {
     if (onRefreshBR && (!brData || brData.lastFetched === 0)) {
       onRefreshBR();
@@ -72,7 +119,7 @@ export function DashboardMode({
 
   return (
     <Box flexDirection="column" flexGrow={1} paddingX={1}>
-      {/* Top: Session Stats */}
+      {/* Row 1: Session Stats + Platform Stats */}
       <Box
         borderStyle="round"
         borderColor="gray"
@@ -112,19 +159,30 @@ export function DashboardMode({
             ${costPerHour.toFixed(2)}
           </Text>
         </Box>
-        {brData?.forecast && (
-          <Box flexDirection="column">
-            <Text color="gray">Forecast</Text>
-            <Text color={brData.forecast.will_exceed ? "red" : "green"} bold>
-              ${brData.forecast.projected_spend.toFixed(2)}
-            </Text>
-          </Box>
-        )}
+        <Box flexDirection="column">
+          <Text color="gray">Products</Text>
+          <Text
+            color={gm && gm.connectedSystems.length > 0 ? "green" : "gray"}
+            bold
+          >
+            {gm?.connectedSystems.length ?? 0}
+          </Text>
+        </Box>
+        <Box flexDirection="column">
+          <Text color="gray">Tools</Text>
+          <Text bold>{gm?.totalTools ?? 0}</Text>
+        </Box>
+        <Box flexDirection="column">
+          <Text color="gray">Models</Text>
+          <Text>
+            {modelCount.local}L/{modelCount.cloud}C
+          </Text>
+        </Box>
       </Box>
 
-      {/* Middle row: 3 panels */}
+      {/* Row 2: Three panels */}
       <Box marginTop={1} flexDirection="row" flexGrow={1}>
-        {/* Left: Routing Log + Leaderboard */}
+        {/* LEFT: Connected Systems + Routing */}
         <Box
           borderStyle="round"
           borderColor="gray"
@@ -134,6 +192,40 @@ export function DashboardMode({
         >
           <Text bold color="green">
             {" "}
+            Connected Systems
+          </Text>
+          {gm && gm.connectedSystems.length > 0 ? (
+            gm.connectedSystems.map((sys) => (
+              <Box key={sys.name}>
+                <Text color="green">● </Text>
+                <Text bold>{sys.displayName.padEnd(18)}</Text>
+                <Text color="gray">{String(sys.toolCount).padStart(2)}t </Text>
+                <Text color="gray" dimColor>
+                  {sys.latencyMs}ms
+                </Text>
+              </Box>
+            ))
+          ) : (
+            <Text color="gray" dimColor>
+              {" "}
+              No products connected
+            </Text>
+          )}
+          {gm &&
+            gm.errors.length > 0 &&
+            gm.errors.map((err) => (
+              <Box key={err.name}>
+                <Text color="red">○ </Text>
+                <Text color="gray">{err.name.padEnd(18)}</Text>
+                <Text color="red" dimColor>
+                  {err.error.slice(0, 25)}
+                </Text>
+              </Box>
+            ))}
+
+          <Text> </Text>
+          <Text bold color="blue">
+            {" "}
             Routing Log
           </Text>
           {routingHistory.length === 0 ? (
@@ -142,20 +234,19 @@ export function DashboardMode({
               Send a message to start.
             </Text>
           ) : (
-            routingHistory.slice(0, 6).map((entry, i) => (
+            routingHistory.slice(0, 5).map((entry, i) => (
               <Box key={i}>
                 <Text color="gray" dimColor>
                   {timeAgo(entry.timestamp).padEnd(8)}
                 </Text>
                 <Text color={getProviderColor(entry.model)} bold>
-                  {entry.model.padEnd(18)}
+                  {entry.model.padEnd(16)}
                 </Text>
                 <Text color="gray">{entry.strategy}</Text>
               </Box>
             ))
           )}
 
-          {/* BR Leaderboard */}
           {brData && brData.leaderboard.length > 0 && (
             <>
               <Text> </Text>
@@ -163,24 +254,28 @@ export function DashboardMode({
                 {" "}
                 Leaderboard
               </Text>
-              {brData.leaderboard.slice(0, 5).map((entry, i) => (
-                <Box key={i}>
-                  <Text color="gray">{String(i + 1).padStart(2)}. </Text>
-                  <Text color={getProviderColor(entry.provider)} bold>
-                    {entry.model.split("/").pop()?.padEnd(18) ??
-                      entry.model.padEnd(18)}
-                  </Text>
-                  <Text color="gray">
-                    Q{entry.quality_rank} S{entry.speed_rank} V
-                    {entry.value_rank}
-                  </Text>
-                </Box>
-              ))}
+              {brData.leaderboard
+                .filter((e) => e?.model)
+                .slice(0, 4)
+                .map((entry, i) => (
+                  <Box key={i}>
+                    <Text color="gray">{String(i + 1).padStart(2)}. </Text>
+                    <Text color={getProviderColor(entry.provider ?? "")} bold>
+                      {(entry.model ?? "unknown")
+                        .split("/")
+                        .pop()
+                        ?.padEnd(16) ?? "unknown".padEnd(16)}
+                    </Text>
+                    <Text color="gray">
+                      Q{entry.quality_rank ?? "?"} S{entry.speed_rank ?? "?"}
+                    </Text>
+                  </Box>
+                ))}
             </>
           )}
         </Box>
 
-        {/* Center: Tool Health */}
+        {/* CENTER: Tool Registry by Domain + Health */}
         <Box
           borderStyle="round"
           borderColor="gray"
@@ -191,57 +286,70 @@ export function DashboardMode({
         >
           <Text bold color="cyan">
             {" "}
-            Tool Health
+            Tool Registry ({gm?.totalTools ?? 0})
           </Text>
-          {toolStats.length === 0 ? (
+          {domainGroups.length > 0 ? (
+            domainGroups.slice(0, 8).map((g) => (
+              <Box key={`${g.product}-${g.domain}`}>
+                <Text color="gray">{g.product.padEnd(6)}</Text>
+                <Text>{g.domain.padEnd(20)}</Text>
+                <Text color="gray" dimColor>
+                  {g.count}t
+                </Text>
+              </Box>
+            ))
+          ) : (
             <Text color="gray" dimColor>
               {" "}
-              No tool calls yet.
+              No tools registered
             </Text>
-          ) : (
-            toolStats
-              .sort((a, b) => b.calls - a.calls)
-              .slice(0, 8)
-              .map((tool) => {
-                const rate =
-                  tool.calls > 0
-                    ? Math.round((tool.successes / tool.calls) * 100)
-                    : 0;
-                const color =
-                  rate >= 90 ? "green" : rate >= 70 ? "yellow" : "red";
-                return (
-                  <Box key={tool.name}>
-                    <Text color={color}>
-                      {rate >= 90 ? "●" : rate >= 70 ? "◐" : "○"}{" "}
-                    </Text>
-                    <Text>{tool.name.padEnd(14)}</Text>
-                    <Text color="gray">{String(tool.calls).padStart(3)} </Text>
-                    <Gauge value={rate} width={8} showPercent={false} />
-                    <Text color={color}> {rate}%</Text>
-                  </Box>
-                );
-              })
           )}
 
-          {/* BR Waste Detection */}
+          {toolStats.length > 0 && (
+            <>
+              <Text> </Text>
+              <Text bold color="magenta">
+                {" "}
+                Tool Health
+              </Text>
+              {toolStats
+                .sort((a, b) => b.calls - a.calls)
+                .slice(0, 6)
+                .map((tool) => {
+                  const rate =
+                    tool.calls > 0
+                      ? Math.round((tool.successes / tool.calls) * 100)
+                      : 0;
+                  const color =
+                    rate >= 90 ? "green" : rate >= 70 ? "yellow" : "red";
+                  return (
+                    <Box key={tool.name}>
+                      <Text color={color}>
+                        {rate >= 90 ? "●" : rate >= 70 ? "◐" : "○"}{" "}
+                      </Text>
+                      <Text>{tool.name.padEnd(18)}</Text>
+                      <Text color="gray">
+                        {String(tool.calls).padStart(3)}{" "}
+                      </Text>
+                      <Gauge value={rate} width={6} showPercent={false} />
+                    </Box>
+                  );
+                })}
+            </>
+          )}
+
           {brData?.waste && brData.waste.total_waste_usd > 0 && (
             <>
               <Text> </Text>
               <Text bold color="red">
                 {" "}
-                Waste: ${brData.waste.total_waste_usd.toFixed(2)}
+                Waste: ${(brData.waste?.total_waste_usd ?? 0).toFixed(2)}
               </Text>
-              {brData.waste.suggestions.slice(0, 3).map((s, i) => (
-                <Text key={i} color="gray" dimColor>
-                  {" "}
-                  {s.description.slice(0, 50)}
-                </Text>
-              ))}
             </>
           )}
         </Box>
 
-        {/* Right: Audit + Daily Trend */}
+        {/* RIGHT: Audit + Cost Trends */}
         <Box
           borderStyle="round"
           borderColor="gray"
@@ -252,7 +360,7 @@ export function DashboardMode({
         >
           <Text bold color="magenta">
             {" "}
-            Guardian Audit
+            Audit Trail
           </Text>
           {!brData || brData.audit.length === 0 ? (
             <Text color="gray" dimColor>
@@ -260,63 +368,76 @@ export function DashboardMode({
               No audit data. Press r to refresh.
             </Text>
           ) : (
-            brData.audit.slice(0, 6).map((entry, i) => {
-              const statusColor =
-                entry.guardian_status === "safe"
-                  ? "green"
-                  : entry.guardian_status === "flagged"
-                    ? "yellow"
-                    : "red";
-              return (
-                <Box key={i}>
-                  <Text color={statusColor}>
-                    {entry.guardian_status === "safe" ? "●" : "⚠"}{" "}
-                  </Text>
-                  <Text color={getProviderColor(entry.model)}>
-                    {entry.model.split("/").pop()?.padEnd(14) ?? ""}
-                  </Text>
-                  <Text color="gray">${entry.cost_usd.toFixed(4)}</Text>
-                </Box>
-              );
-            })
+            brData.audit
+              .filter((e) => e != null)
+              .slice(0, 5)
+              .map((entry, i) => {
+                const statusColor =
+                  entry.guardian_status === "safe"
+                    ? "green"
+                    : entry.guardian_status === "flagged"
+                      ? "yellow"
+                      : "red";
+                return (
+                  <Box key={i}>
+                    <Text color={statusColor}>
+                      {entry.guardian_status === "safe" ? "●" : "⚠"}{" "}
+                    </Text>
+                    <Text color={getProviderColor(entry.model ?? "")}>
+                      {(entry.model ?? "").split("/").pop()?.padEnd(12) ?? ""}
+                    </Text>
+                    <Text color="gray">
+                      ${(entry.cost_usd ?? 0).toFixed(4)}
+                    </Text>
+                  </Box>
+                );
+              })
           )}
 
-          {/* Daily Cost Trend */}
           {brData && brData.dailyTrend.length > 0 && (
             <>
               <Text> </Text>
               <Text bold color="blue">
                 {" "}
-                7-Day Trend
+                7-Day Cost
               </Text>
               <Box>
                 <Sparkline
-                  data={brData.dailyTrend.map((d) => d.cost_usd)}
+                  data={brData.dailyTrend.map((d) => d?.cost_usd ?? 0)}
                   color="yellow"
-                  width={20}
+                  width={18}
                 />
                 <Text color="gray">
                   {" "}
                   $
                   {brData.dailyTrend
                     .reduce((s, d) => s + d.cost_usd, 0)
-                    .toFixed(2)}{" "}
-                  total
+                    .toFixed(2)}
                 </Text>
               </Box>
+            </>
+          )}
+
+          {brData?.forecast && (
+            <>
+              <Text> </Text>
+              <Text bold color={brData.forecast?.will_exceed ? "red" : "green"}>
+                {" "}
+                Forecast: ${(brData.forecast?.projected_spend ?? 0).toFixed(2)}
+              </Text>
             </>
           )}
         </Box>
       </Box>
 
-      {/* Bottom: Status */}
+      {/* Bottom: Status bar */}
       <Box paddingX={1}>
         <Text color="gray" dimColor>
           {brData?.loading
-            ? "Loading BR data..."
+            ? "Loading..."
             : brData?.error
               ? `BR: ${brData.error}`
-              : `r refresh │ ${modelCount.local}L/${modelCount.cloud}C`}
+              : `r refresh │ Esc chat │ ${gm ? `${gm.connectedSystems.length} products │ ${gm.totalTools} tools` : "godmode off"} │ ${modelCount.local}L/${modelCount.cloud}C`}
         </Text>
       </Box>
     </Box>

@@ -1,113 +1,246 @@
-# Getting Started
+# Getting Started with Brainstorm
 
-Get up and running with Brainstorm in 5 minutes.
+Brainstorm is a governed control plane for AI-managed infrastructure. It connects AI operators (Claude Code, Claude Desktop, or any MCP-compatible agent) to your entire product ecosystem through a standardized protocol.
 
-## Install
+## Quick Start (2 minutes)
+
+### 1. Install
 
 ```bash
 npm install -g @brainst0rm/cli
 ```
 
-## Configure
-
-### Option A: BrainstormRouter (Recommended)
-
-Sign up at [brainstormrouter.com](https://brainstormrouter.com) for an API key. This gives you access to 357+ models across 7 providers with intelligent routing.
+### 2. Set your API key
 
 ```bash
-storm vault add BRAINSTORM_API_KEY
-# Paste your key when prompted
+export BRAINSTORM_API_KEY=br_live_xxx
 ```
 
-### Option B: Direct Provider Keys
+Get a key at [brainstormrouter.com/dashboard](https://brainstormrouter.com/dashboard). This single key authenticates you across the entire ecosystem.
 
-If you prefer to use providers directly:
+### 3. Run setup
 
 ```bash
-storm vault add ANTHROPIC_API_KEY
-# or
-storm vault add OPENAI_API_KEY
+brainstorm setup
 ```
 
-### Option C: Local Models Only
+This will:
 
-No API key needed. Just have Ollama running:
+- Verify your API key
+- Test connectivity to all products (MSP, BR, GTM, VM, Shield)
+- Configure Claude Code's MCP settings (`~/.claude/mcp.json`)
+- Report what's connected and how many tools are available
+
+### 4. Restart Claude Code
+
+Claude Code will discover Brainstorm's MCP server and gain access to all God Mode tools across every connected product.
+
+### 5. Verify
 
 ```bash
-# Install Ollama (https://ollama.ai)
-ollama serve
-ollama pull llama3.2
-
-# Brainstorm auto-discovers local models
-storm models
+brainstorm status
 ```
 
-## First Session
+```
+Brainstorm Ecosystem Status
+───────────────────────────
 
-```bash
-# Interactive chat (default)
-storm chat
+Auth:     ✓ BR key set
+Vault:    ✓ 1Password connected
 
-# Single prompt with tools
-storm run --tools "What files are in this project?"
+Products:
+  ● BrainstormMSP        12 tools  brainstormmsp.ai        78ms  healthy
+  ● BrainstormRouter      10 tools  api.brainstormrouter.com 12ms  healthy
+  ○ BrainstormGTM          9 tools  catsfeet.com             —    offline
+  ○ BrainstormVM           9 tools  vm.brainstorm.co         —    offline
+  ○ BrainstormShield      10 tools  shield.brainstorm.co     —    offline
 
-# Full auto mode (skip confirmations)
-storm run --tools --lfg "Read the codebase and explain the architecture"
+MCP:      ✓ brainstorm MCP server configured
+
+12 tools available across ecosystem.
 ```
 
-## Project Context
-
-Create a `BRAINSTORM.md` in your project root to give Brainstorm context:
-
-```markdown
----
-build_command: npm run build
-test_command: npm test
 ---
 
-# My Project
+## How It Works
 
-This is a Next.js app with Drizzle ORM.
+### Architecture
 
-## Conventions
-
-- Components go in src/components/
-- Use server components by default
-- Tests use vitest
+```
+You (human intent)
+  → Claude Code (AI operator — reads, writes, reasons, decides)
+    → Brainstorm MCP Server (tool discovery + routing)
+      → BrainstormRouter (model selection, cost tracking, memory)
+        → Products (MSP, VM, Shield, GTM, Ops)
+          → Edge agents, databases, infrastructure
 ```
 
-Brainstorm reads this file automatically and uses it to make better decisions.
+### The Platform Contract
 
-## Slash Commands
+Every product in the ecosystem implements the same 5 endpoints:
 
-In chat mode, use slash commands:
+| Endpoint                        | Purpose              |
+| ------------------------------- | -------------------- |
+| `GET /health`                   | Is the system alive? |
+| `GET /api/v1/god-mode/tools`    | What can it do?      |
+| `POST /api/v1/god-mode/execute` | Do it.               |
+| `POST /api/v1/platform/events`  | Something happened.  |
+| `POST /api/v1/platform/tenants` | Add/remove a tenant. |
 
-| Command    | Action                       |
-| ---------- | ---------------------------- |
-| `/model`   | Switch models                |
-| `/fast`    | Toggle fast mode             |
-| `/compact` | Compress context window      |
-| `/clear`   | Reset conversation           |
-| `/help`    | Show all commands            |
-| `/dream`   | Consolidate session memories |
+The CLI discovers products at runtime. Adding a new product to the ecosystem requires zero code changes — just a config entry.
 
-## Check Your Setup
+### Tools
+
+When Claude Code connects via MCP, it gets access to all discovered tools:
+
+| Tool                     | Product | What it does                         |
+| ------------------------ | ------- | ------------------------------------ |
+| `msp_list_devices`       | MSP     | Search managed devices               |
+| `msp_backup_coverage`    | MSP     | Check backup status                  |
+| `msp_isolate_device`     | MSP     | Network-isolate a compromised device |
+| `br_list_models`         | BR      | List available LLM models            |
+| `br_budget_status`       | BR      | Check spend vs budget                |
+| `gtm_list_campaigns`     | GTM     | Show active marketing campaigns      |
+| `vm_list_instances`      | VM      | List virtual machines                |
+| `shield_list_quarantine` | Shield  | Show quarantined emails              |
+
+Tools with `requires_changeset: true` go through a safety flow: **simulation → approval → execution**. The AI cannot destroy a VM or isolate a device without showing you what will happen first.
+
+### Safety
+
+- **ChangeSets** — every destructive action is simulated before execution. Risk scored 0-100. Cascading effects shown. User approves or rejects.
+- **Audit trail** — every tool call is logged with HMAC-signed evidence. Tamper-evident. 7-year retention.
+- **Tenant isolation** — every query scoped to `platform_tenant_id`. 56 tests verify no cross-tenant leakage.
+- **Rate limiting** — 60 req/min per tenant per product. Prevents runaway automation.
+- **PQC signing** — evidence chains signed with hybrid Ed25519 + ML-DSA-65 (post-quantum ready).
+
+---
+
+## Commands
+
+### `brainstorm setup`
+
+One-command bootstrap. Run on any new machine.
 
 ```bash
-# Verify models are available
-storm models
-
-# Check configuration
-storm config
-
-# View budget and costs
-storm budget
+brainstorm setup
 ```
 
-## Next Steps
+### `brainstorm status`
 
-- Read [Architecture](architecture.md) to understand how Brainstorm works
-- See [Tools Reference](tools.md) for all 42 built-in tools
-- Check [Configuration Guide](config-guide.md) for all options
-- Learn about [BrainstormRouter Integration](brainstormrouter-integration.md)
-- Build a [Plugin](plugin-development.md) to extend Brainstorm
+Full ecosystem diagnostic.
+
+```bash
+brainstorm status
+```
+
+### `brainstorm mcp`
+
+MCP server (stdio). Claude Code spawns this automatically via `~/.claude/mcp.json`.
+
+### `brainstorm serve`
+
+HTTP API server for dashboards and direct API access.
+
+```bash
+brainstorm serve --port 8000 --cors
+```
+
+### `brainstorm run`
+
+Single-shot prompt with tool access.
+
+```bash
+brainstorm run --tools --max-steps 5 --lfg "list all managed devices"
+```
+
+### `brainstorm platform verify <url>`
+
+Test if a product implements the platform contract.
+
+```bash
+brainstorm platform verify https://brainstormmsp.ai
+```
+
+### `brainstorm platform init`
+
+Generate a `product-manifest.yaml` template for a new product.
+
+---
+
+## Authentication
+
+### API Keys
+
+| Key                         | Purpose                     |
+| --------------------------- | --------------------------- |
+| `BRAINSTORM_API_KEY`        | BrainstormRouter (required) |
+| `BRAINSTORM_MSP_API_KEY`    | MSP God Mode tools          |
+| `BRAINSTORM_GTM_API_KEY`    | GTM agent management        |
+| `BRAINSTORM_VM_API_KEY`     | VM operations               |
+| `BRAINSTORM_SHIELD_API_KEY` | Email security tools        |
+
+### 1Password
+
+If `OP_SERVICE_ACCOUNT_TOKEN` is set, all keys resolve from 1Password automatically.
+
+```bash
+export OP_SERVICE_ACCOUNT_TOKEN=ops_xxx
+brainstorm setup  # keys resolve automatically
+```
+
+### Multi-Tenant
+
+Every API call is scoped to `platform_tenant_id` from the JWT. Teams get their own tenant. Data is isolated at the database level with RLS policies.
+
+---
+
+## Adding a New Product
+
+### 1. Implement 3 endpoints
+
+```
+GET  /health → { status: "healthy", version: "1.0.0", product: "myproduct" }
+GET  /api/v1/god-mode/tools → { product: "myproduct", tools: [...] }
+POST /api/v1/god-mode/execute → { tool: "myproduct.do_thing", params: {...} }
+```
+
+### 2. Add to config
+
+```toml
+[godmode.connectors.myproduct]
+enabled = true
+displayName = "My Product"
+baseUrl = "https://myproduct.example.com"
+apiKeyName = "MYPRODUCT_API_KEY"
+```
+
+### 3. Verify
+
+```bash
+brainstorm platform verify https://myproduct.example.com
+```
+
+### 4. Restart Claude Code
+
+The new product's tools appear automatically. No code changes in Brainstorm.
+
+---
+
+## Specification
+
+Full platform contract: [docs/platform-contract-v1.md](platform-contract-v1.md)
+
+Covers: authentication, tool discovery, tool execution, event signing, tenant lifecycle, product manifests, error codes, rate limiting, naming conventions.
+
+---
+
+## For AI Operators
+
+When operating through Brainstorm:
+
+- **Call tools, don't guess.** Every product's capabilities are discoverable via God Mode.
+- **Destructive actions produce ChangeSets.** Show the simulation. Wait for approval.
+- **Everything is audited.** HMAC-signed, tenant-scoped, tamper-evident.
+- **Route LLM calls through BrainstormRouter.** It tracks cost and picks the best model.
+- **Discover at runtime.** `GET /api/v1/god-mode/tools` tells you what any system can do.

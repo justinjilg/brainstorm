@@ -1,5 +1,14 @@
 import type { ModelEntry, CapabilityScores } from "@brainst0rm/shared";
-import type { Subtask } from "@brainst0rm/agents";
+
+/** Subtask shape from the orchestrator's decomposition. */
+interface Subtask {
+  id: string;
+  description: string;
+  requiredCapabilities: string[];
+  estimatedTokens: number;
+  complexity: string;
+  priority: number;
+}
 
 /** Minimum capability score threshold for a model to be eligible for a subtask. */
 const DEFAULT_CAPABILITY_THRESHOLD = 0.6;

@@ -13,6 +13,17 @@ import type { ChangeSet } from "./types.js";
 /** In-memory audit log (persisted to SQLite via packages/db in CLI context). */
 const auditLog: AuditEntry[] = [];
 
+/** Optional persistence callback — set by the CLI to write to SQLite. */
+let persistFn: ((entry: AuditEntry) => void) | null = null;
+
+/**
+ * Register a persistence callback for audit entries.
+ * Called by the CLI during boot to wire in ChangeSetLogRepository.
+ */
+export function setAuditPersister(fn: (entry: AuditEntry) => void): void {
+  persistFn = fn;
+}
+
 export interface AuditEntry {
   changesetId: string;
   connector: string;
@@ -49,6 +60,16 @@ export function logChangeSet(changeset: ChangeSet): AuditEntry {
   };
 
   auditLog.push(entry);
+
+  // Persist to SQLite if a persister is registered
+  if (persistFn) {
+    try {
+      persistFn(entry);
+    } catch {
+      // Don't fail the audit log if persistence fails
+    }
+  }
+
   return entry;
 }
 

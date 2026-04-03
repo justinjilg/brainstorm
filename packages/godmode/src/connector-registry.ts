@@ -38,10 +38,24 @@ export async function connectGodMode(
   const connected: GodModeConnectionResult["connectedSystems"] = [];
   const errors: GodModeConnectionResult["errors"] = [];
 
-  // Health check all connectors in parallel
+  // Health check all connectors in parallel (15s timeout per connector)
+  const HEALTH_CHECK_TIMEOUT_MS = 15_000;
   const results = await Promise.allSettled(
     connectors.map(async (connector) => {
-      const health = await connector.healthCheck();
+      const health = await Promise.race([
+        connector.healthCheck(),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () =>
+              reject(
+                new Error(
+                  `Health check timeout (${HEALTH_CHECK_TIMEOUT_MS}ms)`,
+                ),
+              ),
+            HEALTH_CHECK_TIMEOUT_MS,
+          ),
+        ),
+      ]);
       return { connector, health };
     }),
   );

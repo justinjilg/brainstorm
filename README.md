@@ -7,8 +7,8 @@
 </p>
 
 <p align="center">
-  <strong>Open-source AI coding assistant with intelligent multi-model routing</strong><br/>
-  <sub>Routes every task to the optimal model — architecture to Opus, coding to Sonnet, quick edits to Haiku — automatically.</sub>
+  <strong>Governed control plane for AI-managed infrastructure</strong><br/>
+  <sub>Connect AI operators to your entire product ecosystem through a standardized protocol. 50 tools. 5 products. One command.</sub>
 </p>
 
 <p align="center">
@@ -16,57 +16,128 @@
   <a href="https://www.npmjs.com/package/@brainst0rm/cli"><img src="https://img.shields.io/npm/dm/@brainst0rm/cli.svg?color=d97706" alt="npm downloads" /></a>&nbsp;
   <a href="https://github.com/justinjilg/brainstorm/actions/workflows/ci.yml"><img src="https://github.com/justinjilg/brainstorm/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>&nbsp;
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" /></a>&nbsp;
-  <img src="https://img.shields.io/badge/models-10+-d97706.svg" alt="Models" />&nbsp;
-  <img src="https://img.shields.io/badge/tools-42+-d97706.svg" alt="Tools" />&nbsp;
-  <img src="https://img.shields.io/badge/packages-23-d97706.svg" alt="Packages" />
+  <img src="https://img.shields.io/badge/products-5-d97706.svg" alt="Products" />&nbsp;
+  <img src="https://img.shields.io/badge/tools-50+-d97706.svg" alt="Tools" />&nbsp;
+  <img src="https://img.shields.io/badge/packages-25-d97706.svg" alt="Packages" />
 </p>
 
 <p align="center">
   <a href="https://brainstorm.co">Website</a>&nbsp;&nbsp;·&nbsp;&nbsp;
-  <a href="docs/getting-started.md">Docs</a>&nbsp;&nbsp;·&nbsp;&nbsp;
-  <a href="docs/feature-reference.md">Feature Reference</a>&nbsp;&nbsp;·&nbsp;&nbsp;
+  <a href="docs/getting-started.md">Getting Started</a>&nbsp;&nbsp;·&nbsp;&nbsp;
+  <a href="docs/platform-contract-v1.md">Platform Contract</a>&nbsp;&nbsp;·&nbsp;&nbsp;
   <a href="CHANGELOG.md">Changelog</a>&nbsp;&nbsp;·&nbsp;&nbsp;
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
 ---
 
-## Quickstart
+## What is Brainstorm?
+
+Brainstorm connects AI operators (Claude Code, Claude Desktop, or any MCP-compatible agent) to your infrastructure through a governed channel. Every action flows through safety controls, cost management, and tamper-evident audit trails.
 
 ```bash
 npm install -g @brainst0rm/cli
-storm chat
+brainstorm setup
+brainstorm status
 ```
 
-That's it. Brainstorm auto-discovers your API keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`) and local models (Ollama, LM Studio, llama.cpp). No configuration required.
+```
+Products:
+  ● BrainstormMSP        12 tools  brainstormmsp.ai        78ms  healthy
+  ● BrainstormRouter      10 tools  api.brainstormrouter.com 12ms  healthy
+  ○ BrainstormGTM          9 tools  catsfeet.com             —    offline
+  ○ BrainstormVM           9 tools  vm.brainstorm.co         —    offline
+  ○ BrainstormShield      10 tools  shield.brainstorm.co     —    offline
 
-## Why Brainstorm?
+50 tools available across ecosystem.
+```
 
-Every AI coding tool locks you into one model. Brainstorm routes each task to the best model for the job:
+## How it works
 
-- **Architecture review?** Routed to Opus 4.6 — highest reasoning quality.
-- **Implement a function?** Routed to Sonnet 4.6 — fast, capable, 5x cheaper.
-- **Fix a typo?** Routed to Haiku 4.5 — instant, 19x cheaper.
-- **Hit your budget?** Falls back to DeepSeek V3 or your local Ollama models — $0.
+Every product implements the same contract — 3 endpoints:
 
-The router learns from outcomes via Thompson sampling. After a few sessions, it knows which models perform best for _your_ codebase and _your_ task types. The result: better code at lower cost, automatically.
+```
+GET  /health                    → Is it alive?
+GET  /api/v1/god-mode/tools     → What can it do?
+POST /api/v1/god-mode/execute   → Do it.
+```
 
-### How it compares
+The CLI discovers products at runtime. Adding a new product = 5 lines of config. Zero code changes.
 
-|                         | Brainstorm | Claude Code | Cursor | Aider | Codex CLI |
-| ----------------------- | :--------: | :---------: | :----: | :---: | :-------: |
-| Multi-model routing     |     ✓      |             |        |   ~   |           |
-| Thompson sampling       |     ✓      |             |        |       |           |
-| Local model support     |     ✓      |             |        |   ✓   |           |
-| Cost tracking + budgets |     ✓      |             |        |       |           |
-| Encrypted vault         |     ✓      |             |        |       |           |
-| 9-phase orchestration   |     ✓      |             |        |       |           |
-| Plugin SDK              |     ✓      |      ✓      |   ~    |       |           |
-| Terminal dashboard      |     ✓      |             |        |       |           |
-| Open source             |     ✓      |             |        |   ✓   |     ✓     |
-| IDE integration         |     ✓      |      ✓      |   ✓    |   ~   |           |
+## For AI operators
 
-<sub>~ = partial support. Comparison as of March 2026. We use these tools daily and respect them all.</sub>
+Brainstorm exposes all God Mode tools via **MCP** (Model Context Protocol). Claude Code spawns `brainstorm mcp` as a subprocess and gets direct access to every connected product.
+
+```
+"list all managed devices"
+  → Claude calls msp_list_devices tool
+  → Brainstorm routes to MSP server
+  → Real data: Justin's MacBook Pro, macOS 26.2, serial LG4V52HNH9
+
+"isolate that laptop"
+  → ChangeSet created (Risk: 65/100)
+  → Simulation: drops all connections except management
+  → Cascades: VPN disconnected, Time Machine paused
+  → Awaiting approval...
+```
+
+Destructive actions **always** go through ChangeSets: simulation → approval → execution. No AI can destroy a VM or isolate a device without showing you what will happen first.
+
+## Safety
+
+| Layer                | What it does                                                                 |
+| -------------------- | ---------------------------------------------------------------------------- |
+| **ChangeSets**       | Every mutation simulated before execution. Risk scored 0-100. User approves. |
+| **HMAC audit trail** | Every action signed with per-tenant HKDF-derived keys. Tamper-evident.       |
+| **Tenant isolation** | Every query scoped to `platform_tenant_id`. 56 tests verify no leakage.      |
+| **Rate limiting**    | 60 req/min per tenant per product.                                           |
+| **PQC signing**      | Evidence chains signed with hybrid Ed25519 + ML-DSA-65.                      |
+| **BrainstormRouter** | Cost tracking, budget enforcement, model selection via Thompson sampling.    |
+
+## Products
+
+| Product              | Tools | What it manages                                        |
+| -------------------- | ----- | ------------------------------------------------------ |
+| **BrainstormMSP**    | 12    | Devices, backups, compliance, security, edge agents    |
+| **BrainstormRouter** | 10    | LLM models, cost, budgets, API keys, memory            |
+| **BrainstormGTM**    | 9     | 70 AI agents, campaigns, leads, analytics              |
+| **BrainstormVM**     | 9     | VMs, storage, network, live migration                  |
+| **BrainstormShield** | 10    | Email security, quarantine, trust graphs, threat intel |
+
+## Commands
+
+```bash
+brainstorm setup              # Bootstrap: auth, config, MCP, connectivity
+brainstorm status             # Full ecosystem diagnostic
+brainstorm mcp                # MCP server for Claude Code/Desktop
+brainstorm serve              # HTTP API for dashboards
+brainstorm run --tools "..."  # Single-shot with God Mode tools
+brainstorm platform verify    # Test product contract compliance
+brainstorm platform init      # Generate product manifest template
+```
+
+## Adding a product
+
+Any HTTP server that implements the [platform contract](docs/platform-contract-v1.md) becomes part of the ecosystem:
+
+```toml
+# brainstorm.toml
+[godmode.connectors.myproduct]
+enabled = true
+displayName = "My Product"
+baseUrl = "https://myproduct.example.com"
+apiKeyName = "MYPRODUCT_API_KEY"
+```
+
+```bash
+brainstorm platform verify https://myproduct.example.com
+# ✓ GET /health — 200 OK
+# ✓ GET /api/v1/god-mode/tools — 8 tools
+# ✓ POST /api/v1/god-mode/execute — working
+# Product implements the platform contract.
+```
+
+Restart Claude Code. The new product's tools appear automatically.
 
 ## What It Does
 

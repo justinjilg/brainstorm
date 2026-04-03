@@ -2,13 +2,28 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Start Here
+
+If this is your first time in this repo, read these docs:
+
+- **[docs/getting-started.md](docs/getting-started.md)** — how to set up and operate the Brainstorm ecosystem
+- **[docs/platform-contract-v1.md](docs/platform-contract-v1.md)** — the 5-endpoint contract every product implements
+
+Quick setup: `npm install -g @brainst0rm/cli && brainstorm setup && brainstorm status`
+
+## What This Is
+
+Brainstorm is a **governed control plane for AI-managed infrastructure**. It connects AI operators (you, Claude Code) to products (MSP, VM, Shield, GTM, Ops) through a standardized protocol. Every action flows through safety controls (ChangeSets), cost management (BrainstormRouter), and audit trails (HMAC-signed evidence).
+
+You are the primary operator. Use God Mode tools to query and manage systems. Use `brainstorm status` to see what's connected. Use `brainstorm platform verify <url>` to test product compliance.
+
 ## Decision Authority
 
-Claude is the primary technical decision-maker for this project. As the AI being orchestrated by BrainstormRouter, Claude has unique insight into what an LLM needs from a routing/orchestration layer — context management, latency sensitivity, cost awareness, quality thresholds, and tool calling patterns. When facing technical trade-offs, decide based on "what would make me most effective as the orchestrated AI?" and explain the reasoning.
+Claude is the primary technical decision-maker for this project. When facing technical trade-offs, decide based on "what would make the governed channel better?" — better discovery, better safety, better observability, better cost control.
 
 ## Project
 
-Brainstorm — an open-source, CLI-first AI coding assistant with intelligent model routing (BrainstormRouter) and a 4-mode terminal dashboard. Routes tasks to the optimal model across 10+ models and 8 providers. Open-core model: free CLI + BrainstormRouter SaaS for intelligent cloud routing.
+Brainstorm — a governed control plane for AI operators managing multi-product infrastructure. 50 God Mode tools across 5 products (MSP, BR, GTM, VM, Shield), discoverable at runtime via the platform contract. MCP server for Claude Code/Desktop integration. Single API key authenticates across the ecosystem.
 
 ## Architecture
 

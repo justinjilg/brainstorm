@@ -235,6 +235,36 @@ const daemonSchema = z.object({
   compactionThreshold: z.number().min(0.1).max(1.0).default(0.6),
 });
 
+// ── God Mode Config ─────────────────────────────────────────────────
+
+const godmodeConnectorSchema = z.object({
+  enabled: z.boolean().default(true),
+  baseUrl: z.string(),
+  apiKeyName: z.string(),
+  /** Human-readable product name (e.g., "BrainstormMSP"). Derived from ID if omitted. */
+  displayName: z.string().optional(),
+});
+
+const godmodeSchema = z.object({
+  enabled: z.boolean().default(true),
+  /** Risk score threshold for auto-approval (0-100). Below this, no user confirmation needed. */
+  autoApproveRiskThreshold: z.number().min(0).max(100).default(20),
+  /** Per-connector configuration. Key is connector name ("msp", "email", "vm", etc.). */
+  connectors: z.record(godmodeConnectorSchema).default({}),
+});
+
+// ── Serve Config ────────────────────────────────────────────────────
+
+const serveSchema = z.object({
+  port: z.number().default(8000),
+  host: z.string().default("127.0.0.1"),
+  cors: z.boolean().default(false),
+  /** Supabase project URL for JWT verification. */
+  supabaseUrl: z.string().optional(),
+  /** Supabase anon key for JWT verification. */
+  supabaseAnonKey: z.string().optional(),
+});
+
 // ── Full Config ─────────────────────────────────────────────────────
 
 export const brainstormConfigSchema = z.object({
@@ -247,6 +277,20 @@ export const brainstormConfigSchema = z.object({
   routing: z
     .object({
       rules: z.array(routingRuleSchema).default([]),
+      /** Fallback models for empty response retry. */
+      fallbackModels: z
+        .array(z.string())
+        .default([
+          "anthropic/claude-sonnet-4.6",
+          "openai/gpt-5.4",
+          "anthropic/claude-haiku-4.5",
+        ]),
+    })
+    .default({}),
+  memory: z
+    .object({
+      /** Maximum memory storage in bytes (default 25KB). */
+      maxBytes: z.number().default(25 * 1024),
     })
     .default({}),
   models: z.array(modelOverrideSchema).default([]),
@@ -254,6 +298,8 @@ export const brainstormConfigSchema = z.object({
   workflows: z.array(workflowConfigSchema).default([]),
   mcp: mcpSchema.default({}),
   daemon: daemonSchema.default({}),
+  godmode: godmodeSchema.default({}),
+  serve: serveSchema.default({}),
 });
 
 export type BrainstormConfig = z.infer<typeof brainstormConfigSchema>;
@@ -266,6 +312,9 @@ export type WorkflowConfig = z.infer<typeof workflowConfigSchema>;
 export type WorkflowStepConfig = z.infer<typeof workflowStepConfigSchema>;
 export type MCPServerConfigSchema = z.infer<typeof mcpServerSchema>;
 export type CompactionConfig = z.infer<typeof compactionSchema>;
+export type GodModeConfig = z.infer<typeof godmodeSchema>;
+export type GodModeConnectorConfig = z.infer<typeof godmodeConnectorSchema>;
+export type ServeConfig = z.infer<typeof serveSchema>;
 export type ShellConfig = z.infer<typeof shellSchema>;
 export type PermissionsConfig = z.infer<typeof permissionsSchema>;
 export type DaemonConfig = z.infer<typeof daemonSchema>;
