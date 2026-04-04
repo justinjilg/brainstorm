@@ -102,8 +102,9 @@ export class OrchestrationEngine {
     this.runs.updateStatus(orchestrationRun.id, "running");
 
     // Create per-project tasks
+    // Allocate budget evenly across projects — no slack, hard ceiling
     const budgetPerProject = opts.budgetLimit
-      ? (opts.budgetLimit / resolvedProjects.length) * 1.2 // 20% slack
+      ? opts.budgetLimit / resolvedProjects.length
       : undefined;
 
     const orchestrationTasks: OrchestrationTask[] = [];

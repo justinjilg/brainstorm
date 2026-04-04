@@ -179,6 +179,12 @@ export async function* runWorkflow(
       // Per-step model override for cross-model workflows
       const stepModelId = options.stepModelOverrides?.[stepDef.id];
 
+      // Enforce per-agent tool allowlist via roleToolFilter
+      const roleToolFilter =
+        agent.allowedTools && agent.allowedTools !== "all"
+          ? { allowedTools: agent.allowedTools as string[] }
+          : undefined;
+
       for await (const event of runAgentLoop(ctx.messages, {
         config,
         registry,
@@ -189,6 +195,7 @@ export async function* runWorkflow(
         projectPath,
         systemPrompt,
         disableTools: !shouldUseTools(stepDef, agent),
+        roleToolFilter,
         ...(stepModelId ? { preferredModelId: stepModelId } : {}),
       })) {
         // Forward agent events as step progress
