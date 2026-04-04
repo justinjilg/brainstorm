@@ -205,7 +205,8 @@ export class MemoryManager {
       const filePath = join(this.memoryDir, file);
       try {
         const content = readFileSync(filePath, "utf-8");
-        const entry = this.parseMemoryFile(file, content);
+        const stat = statSync(filePath);
+        const entry = this.parseMemoryFile(file, content, stat.mtimeMs);
         if (entry) {
           this.entries.set(entry.id, entry);
         } else {
@@ -222,6 +223,7 @@ export class MemoryManager {
   private parseMemoryFile(
     filename: string,
     content: string,
+    fileMtimeMs?: number,
   ): MemoryEntry | null {
     const id = filename.replace(".md", "");
     const fmMatch = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
@@ -235,14 +237,20 @@ export class MemoryManager {
     const type = (fm.match(/type:\s*(.+)/)?.[1]?.trim() ??
       "project") as MemoryEntry["type"];
 
+    // Use file modification time for LRU ordering instead of Date.now()
+    // This preserves recency across process restarts
+    const mtime = fileMtimeMs
+      ? Math.floor(fileMtimeMs / 1000)
+      : Math.floor(Date.now() / 1000);
+
     return {
       id,
       name,
       description,
       type,
       content: body,
-      createdAt: Math.floor(Date.now() / 1000),
-      updatedAt: Math.floor(Date.now() / 1000),
+      createdAt: mtime,
+      updatedAt: mtime,
     };
   }
 

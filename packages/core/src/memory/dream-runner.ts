@@ -273,21 +273,23 @@ export async function runDreamCycle(
       state.sessionsSinceDream = options.sessionCount;
     }
 
-    // Spawn a read-only subagent for consolidation
+    // Spawn a write-capable subagent for consolidation (needs file_write to update memory files)
     const result = await spawnSubagent(dreamPrompt, {
       ...options.subagentOptions,
-      type: "explore",
+      type: "code",
       systemPrompt: DREAM_SYSTEM_PROMPT,
       budgetLimit: DREAM_BUDGET,
       maxSteps: 15,
     });
 
-    // Update dream state
-    const updatedState: DreamState = {
-      lastDreamAt: Date.now(),
-      sessionsSinceDream: 0,
-    };
-    writeDreamState(memoryDir, updatedState);
+    // Only mark dream complete if the subagent actually performed writes
+    if (result.toolCalls.length > 0 && !result.budgetExceeded) {
+      const updatedState: DreamState = {
+        lastDreamAt: Date.now(),
+        sessionsSinceDream: 0,
+      };
+      writeDreamState(memoryDir, updatedState);
+    }
 
     const summary = result.budgetExceeded
       ? `Dream cycle completed (budget capped). Model: ${result.modelUsed}, Cost: $${result.cost.toFixed(4)}, Tool calls: ${result.toolCalls.length}. Output (partial): ${result.text.slice(0, 300)}`
