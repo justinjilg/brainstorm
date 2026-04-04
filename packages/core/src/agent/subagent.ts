@@ -288,13 +288,14 @@ export async function spawnSubagent(
   const systemPrompt = options.systemPrompt ?? typeConfig.systemPrompt;
   const maxSteps = options.maxSteps ?? typeConfig.defaultMaxSteps;
 
-  // Filter tools based on subagent type, with permission gating if available
-  const baseTools =
-    typeConfig.allowedTools === "all"
-      ? options.permissionCheck
-        ? tools.toAISDKToolsWithPermissions(options.permissionCheck)
-        : tools.toAISDKTools()
-      : tools.toAISDKToolsFiltered(typeConfig.allowedTools);
+  // Filter tools based on subagent type — always enforce permission gating
+  const allowedNames =
+    typeConfig.allowedTools === "all" ? undefined : typeConfig.allowedTools;
+  const baseTools = options.permissionCheck
+    ? tools.toAISDKToolsWithPermissions(options.permissionCheck, allowedNames)
+    : allowedNames
+      ? tools.toAISDKToolsFiltered(allowedNames)
+      : tools.toAISDKTools();
   const filteredTools = baseTools;
 
   const subagentSessionId = `subagent-${type}-${Date.now()}`;
