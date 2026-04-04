@@ -43,9 +43,12 @@ const FAST_TASKS = new Set([
 ]);
 
 function estimateCost(model: ModelEntry, task: TaskProfile): number {
-  const tokens = task.estimatedTokens ?? 2000;
+  const inputTokens = task.estimatedTokens?.input ?? 1000;
+  const outputTokens = task.estimatedTokens?.output ?? 1000;
   return (
-    (model.costPer1kInput * tokens + model.costPer1kOutput * tokens) / 1000
+    (model.pricing.inputPer1MTokens * inputTokens +
+      model.pricing.outputPer1MTokens * outputTokens) /
+    1_000_000
   );
 }
 
@@ -75,7 +78,9 @@ export const autoStrategy: RoutingStrategy = {
     }
 
     // Budget pressure: if over 80% spent, prefer cheaper models
-    if (context.budget.used / context.budget.daily > 0.8) {
+    const dailyLimit = context.budget.dailyLimit ?? Infinity;
+    const dailyUsed = context.budget.dailyUsed;
+    if (dailyLimit > 0 && dailyUsed / dailyLimit > 0.8) {
       targetTier = Math.min(targetTier + 2, 5) as QualityTier;
     }
 
@@ -97,7 +102,7 @@ export const autoStrategy: RoutingStrategy = {
     return {
       model: best.model,
       fallbacks,
-      reason: `Auto: ${task.type} → tier ${targetTier} (budget ${Math.round((context.budget.used / context.budget.daily) * 100)}% used)`,
+      reason: `Auto: ${task.type} → tier ${targetTier} (budget ${dailyLimit > 0 ? Math.round((dailyUsed / dailyLimit) * 100) : 0}% used)`,
       estimatedCost: best.cost,
       strategy: "auto",
     };

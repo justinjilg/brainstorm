@@ -33,6 +33,7 @@ export class BrainstormRouter {
     modelId: string;
     successCount: number;
     lastSuccess: number;
+    taskType: string;
   } | null = null;
   private projectHints?: StormFrontmatter["routing"];
 
@@ -123,7 +124,12 @@ export class BrainstormRouter {
     const context = this.buildRoutingContext(opts.conversationTokens);
 
     // Model momentum: if a model has been working well, stick with it (within 5 min)
-    if (this.momentum && Date.now() - this.momentum.lastSuccess < 300_000) {
+    // Only apply momentum when the task type matches to avoid using a chat model for complex work
+    if (
+      this.momentum &&
+      Date.now() - this.momentum.lastSuccess < 300_000 &&
+      this.momentum.taskType === task.type
+    ) {
       const momentumModel = candidates.find(
         (m) => m.id === this.momentum!.modelId,
       );
@@ -133,7 +139,7 @@ export class BrainstormRouter {
           fallbacks: candidates
             .filter((m) => m.id !== momentumModel.id)
             .slice(0, 3),
-          reason: `Momentum: ${momentumModel.name} (${this.momentum.successCount} consecutive successes)`,
+          reason: `Momentum: ${momentumModel.name} (${this.momentum.successCount} successes, same task type)`,
           estimatedCost: 0,
           strategy: this.activeStrategy,
         };
@@ -215,13 +221,19 @@ export class BrainstormRouter {
     }
   }
 
-  /** Record a successful completion — builds model momentum. */
-  recordSuccess(modelId: string): void {
+  /** Record a successful completion — builds model momentum (scoped by task type). */
+  recordSuccess(modelId: string, taskType?: string): void {
     if (this.momentum?.modelId === modelId) {
       this.momentum.successCount++;
       this.momentum.lastSuccess = Date.now();
+      if (taskType) this.momentum.taskType = taskType;
     } else {
-      this.momentum = { modelId, successCount: 1, lastSuccess: Date.now() };
+      this.momentum = {
+        modelId,
+        successCount: 1,
+        lastSuccess: Date.now(),
+        taskType: taskType ?? "unknown",
+      };
     }
   }
 
