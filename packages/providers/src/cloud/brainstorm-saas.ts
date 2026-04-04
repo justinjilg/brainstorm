@@ -20,10 +20,17 @@ function createGuardianFilterFetch(): typeof globalThis.fetch {
     const decoder = new TextDecoder();
     const encoder = new TextEncoder();
 
+    // Buffered line parser — SSE frames may span chunk boundaries
+    let lineBuffer = "";
+
     const filteredStream = new ReadableStream({
       async pull(controller) {
         const { done, value } = await reader.read();
         if (done) {
+          // Flush remaining buffer on stream end
+          if (lineBuffer.trim()) {
+            controller.enqueue(encoder.encode(lineBuffer));
+          }
           controller.close();
           return;
         }
@@ -31,13 +38,21 @@ function createGuardianFilterFetch(): typeof globalThis.fetch {
         const text = decoder.decode(value, { stream: true });
 
         // Fast path: most chunks don't contain guardian data
-        if (!text.includes("guardian") && !text.includes(": guardian")) {
+        if (
+          !text.includes("guardian") &&
+          !text.includes(": guardian") &&
+          !lineBuffer
+        ) {
           controller.enqueue(value);
           return;
         }
 
-        // Slow path: filter line by line
-        const lines = text.split("\n");
+        // Slow path: buffered line-by-line filtering
+        lineBuffer += text;
+        const lines = lineBuffer.split("\n");
+        // Last element may be incomplete — keep it in the buffer
+        lineBuffer = lines.pop() ?? "";
+
         const kept: string[] = [];
         for (const line of lines) {
           // Drop event: guardian lines
@@ -61,7 +76,7 @@ function createGuardianFilterFetch(): typeof globalThis.fetch {
           kept.push(line);
         }
 
-        const filtered = kept.join("\n");
+        const filtered = kept.join("\n") + "\n";
         if (filtered.trim()) {
           controller.enqueue(encoder.encode(filtered));
         }

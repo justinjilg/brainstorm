@@ -60,8 +60,13 @@ export async function createProviderRegistry(
     );
   }
 
-  // BrainstormRouter SaaS (primary cloud provider when configured)
-  const brApiKey = getKey("BRAINSTORM_API_KEY") ?? getBrainstormApiKey();
+  // BrainstormRouter SaaS — only enabled with an explicit API key.
+  // The embedded community key is NOT used implicitly to prevent sending
+  // prompts/code to a remote service without explicit opt-in.
+  const explicitBrKey = getKey("BRAINSTORM_API_KEY");
+  const brApiKey =
+    explicitBrKey ??
+    (process.env.BRAINSTORM_API_KEY ? getBrainstormApiKey() : null);
   const hasBrainstormSaaS = !!brApiKey;
   if (brApiKey) {
     providers.brainstormrouter = createBrainstormSaaSProvider(brApiKey);

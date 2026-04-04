@@ -25,20 +25,29 @@ export class KeyResolver {
    */
   async get(name: string): Promise<string | null> {
     // 1. Vault — lazy unlock (re-prompts if previous attempt failed)
+    let vaultUnlockAttempted = false;
     if (this.vault?.exists()) {
       if (!this.vault.isOpen() && this.promptPassword) {
+        vaultUnlockAttempted = true;
         try {
           const password = await this.promptPassword();
           this.vault.open(password);
         } catch {
-          // Wrong password or user cancelled — fall through to other backends this time
-          // Will re-prompt on the next get() call
+          // Wrong password or user cancelled — vault is authoritative once it exists.
+          // Only fall through to other backends if the key truly isn't in the vault,
+          // not because unlock failed. Log a warning so the user knows.
+          process.stderr.write(
+            "[vault] Unlock failed — falling back to 1Password/env for this key only\n",
+          );
         }
       }
       if (this.vault.isOpen()) {
         const value = this.vault.get(name);
         if (value) return value;
+        // Key not in vault — safe to check other backends
       }
+      // If vault exists but unlock failed, still try other backends
+      // but the warning above makes the fallback visible
     }
 
     // 2. 1Password CLI (cached availability check)
