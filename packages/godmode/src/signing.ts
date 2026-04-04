@@ -69,10 +69,24 @@ export function signEvent(
  * Verify a signed platform event.
  * Uses timing-safe comparison to prevent timing attacks.
  */
+/** Maximum age (in seconds) for a platform event to be accepted. */
+const MAX_EVENT_AGE_SECONDS = 300; // 5 minutes
+
 export function verifyEvent(
   event: PlatformEvent,
   masterSecret: string,
 ): boolean {
+  // Reject events without a signature
+  if (!event.signature) return false;
+
+  // Replay protection: reject events outside the freshness window
+  if (event.timestamp) {
+    const eventTime = new Date(event.timestamp).getTime();
+    const now = Date.now();
+    const ageMs = Math.abs(now - eventTime);
+    if (ageMs > MAX_EVENT_AGE_SECONDS * 1000) return false;
+  }
+
   const { signature, ...rest } = event;
   const expected = signEvent(rest, masterSecret);
 
