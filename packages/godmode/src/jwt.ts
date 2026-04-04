@@ -84,6 +84,14 @@ export function verifyJWT(token: string, jwtSecret: string): AuthResult {
     return { authenticated: false, error: "Token expired" };
   }
 
+  // Require platform_tenant_id — every God Mode call must be tenant-scoped
+  if (!payload.platform_tenant_id && !payload.sub) {
+    return {
+      authenticated: false,
+      error: "Missing subject or platform_tenant_id claim",
+    };
+  }
+
   return { authenticated: true, payload };
 }
 

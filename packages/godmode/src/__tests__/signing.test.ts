@@ -51,7 +51,7 @@ describe("Platform Event Signing", () => {
         type: "msp.alert.created",
         tenant_id: TENANT_ID,
         product: "msp",
-        timestamp: "2026-04-02T00:00:00Z",
+        timestamp: new Date().toISOString(),
         data: { severity: "high" },
         schema_version: 1,
       };
@@ -70,7 +70,7 @@ describe("Platform Event Signing", () => {
         type: "msp.alert.created",
         tenant_id: TENANT_ID,
         product: "msp",
-        timestamp: "2026-04-02T00:00:00Z",
+        timestamp: new Date().toISOString(),
         data: { severity: "low" },
         schema_version: 1,
       };
@@ -86,7 +86,7 @@ describe("Platform Event Signing", () => {
         type: "test",
         tenant_id: TENANT_ID,
         product: "msp",
-        timestamp: "2026-04-02T00:00:00Z",
+        timestamp: new Date().toISOString(),
         data: {},
         schema_version: 1,
       };
@@ -102,7 +102,7 @@ describe("Platform Event Signing", () => {
         type: "test",
         tenant_id: TENANT_ID,
         product: "msp",
-        timestamp: "2026-04-02T00:00:00Z",
+        timestamp: new Date().toISOString(),
         data: {},
         schema_version: 1,
         signature: "",

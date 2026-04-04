@@ -17,6 +17,7 @@
 import { randomUUID } from "node:crypto";
 import { defineTool, type BrainstormToolDef } from "@brainst0rm/tools";
 import { z } from "zod";
+import { logChangeSet } from "./audit.js";
 import type {
   ChangeSet,
   ChangeSetStatus,
@@ -130,12 +131,20 @@ export async function approveChangeSet(
 
   try {
     const result = await executor(cs);
-    cs.status = "executed";
-    cs.executedAt = Date.now();
-    cs.rollbackData = result.rollbackData;
+    if (result.success) {
+      cs.status = "executed";
+      cs.executedAt = Date.now();
+      cs.rollbackData = result.rollbackData;
+    } else {
+      // Execution returned failure — mark as failed, not executed
+      cs.status = "draft"; // Keep retryable
+    }
+    // Always audit both success and failure
+    logChangeSet(cs);
     return { success: result.success, message: result.message, changeset: cs };
   } catch (error) {
     cs.status = "draft"; // revert to draft on failure
+    logChangeSet(cs); // Audit the failure
     const msg = error instanceof Error ? error.message : String(error);
     return {
       success: false,

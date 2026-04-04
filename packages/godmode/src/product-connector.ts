@@ -262,9 +262,11 @@ export class ProductConnector implements GodModeConnector {
     permission: ToolPermission,
   ): BrainstormToolDef {
     const connector = this;
+    // Namespace executor key by connector to prevent cross-product collision
+    const executorKey = `${this.name}:${toolName}`;
 
     // Register a generic executor for when changesets are approved
-    registerExecutor(toolName, async (cs) => {
+    registerExecutor(executorKey, async (cs) => {
       // Extract original params from the changeset's simulation statePreview
       const originalParams = (cs.simulation.statePreview as any)
         ?.originalParams;
@@ -322,7 +324,7 @@ export class ProductConnector implements GodModeConnector {
 
         const changeset = createChangeSet({
           connector: connector.name,
-          action: toolName,
+          action: executorKey, // Namespaced to prevent cross-product collision
           description: simResult.description ?? `Execute ${serverTool.name}`,
           changes: simResult.changes ?? [
             {
