@@ -815,13 +815,16 @@ export async function* runAgentLoop(
 
     // Save checkpoint for crash recovery (if checkpointer provided)
     if (options.checkpointer) {
+      // Force save on every turn by using current timestamp as turn number.
+      // The checkpointer interval check (turnNumber - lastSaveTurn < interval)
+      // will always pass with a monotonically increasing value.
       options.checkpointer.saveIfNeeded({
         sessionId,
-        turnNumber: 0, // caller sets actual turn
+        turnNumber: Math.floor(Date.now() / 1000),
         conversationHistory: messages,
         scratchpad: {},
-        filesRead: [],
-        filesWritten: [],
+        filesRead: filesRead,
+        filesWritten: filesWritten,
         buildStatus: options.buildState?.getStatus() ?? "unknown",
         totalCost: costTracker.getSessionCost(),
         projectPath: options.projectPath,
