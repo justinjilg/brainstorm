@@ -216,7 +216,7 @@ async function discoverProducts(): Promise<ConnectedProduct[]> {
         const healthRes = await fetch(`${cfg.baseUrl}/health`, {
           signal: AbortSignal.timeout(10_000),
         });
-        const health = await healthRes.json();
+        const health = (await healthRes.json()) as any;
         const latencyMs = Date.now() - start;
 
         // Fetch tools
@@ -227,7 +227,7 @@ async function discoverProducts(): Promise<ConnectedProduct[]> {
 
         let tools: ServerTool[] = [];
         if (toolsRes.ok) {
-          const data = await toolsRes.json();
+          const data = (await toolsRes.json()) as any;
           tools = data.tools ?? [];
         }
 
@@ -288,7 +288,7 @@ async function executeGodModeTool(
       return { error: `${res.status}: ${body.slice(0, 200)}` };
     }
 
-    const data = await res.json();
+    const data = (await res.json()) as any;
     return data.data ?? data;
   } catch (err) {
     return { error: err instanceof Error ? err.message : String(err) };
