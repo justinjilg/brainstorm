@@ -19,7 +19,8 @@ function detectBuildCommand(cwd: string): string | null {
   if (existsSync(join(cwd, "go.mod"))) return "go vet ./...";
   if (existsSync(join(cwd, "tsconfig.json"))) return "npx tsc --noEmit";
   if (existsSync(join(cwd, "Cargo.toml"))) return "cargo check";
-  if (existsSync(join(cwd, "pyproject.toml"))) return "python -m py_compile";
+  if (existsSync(join(cwd, "pyproject.toml")))
+    return "python -m compileall -q .";
   if (existsSync(join(cwd, "package.json"))) {
     try {
       const pkg = JSON.parse(
@@ -38,12 +39,9 @@ function runCommand(
   command: string,
   cwd: string,
 ): { passed: boolean; output: string; command: string } {
-  const parts = command.split(" ");
-  const bin = parts[0];
-  const args = parts.slice(1);
-
   try {
-    const stdout = execFileSync(bin, args, {
+    // Use shell execution to handle quoting, pipes, and composite commands correctly
+    const stdout = execFileSync("/bin/sh", ["-c", command], {
       cwd,
       stdio: "pipe",
       timeout: 120_000,

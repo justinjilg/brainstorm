@@ -178,9 +178,23 @@ export class ToolRegistry {
     for (const [name, toolDef] of this.tools) {
       if (toolDef.deferred) continue; // skip deferred tools
       if (allowed && !allowed.has(name)) continue;
-      // MCP tools lack inputSchema/execute — use their raw toAISDKTool() instead
+      // MCP tools lack inputSchema — wrap with permission gate before delegating
       if (!toolDef.inputSchema) {
-        result[name] = toolDef.toAISDKTool();
+        const rawTool = toolDef.toAISDKTool();
+        if (rawTool.execute) {
+          const originalExecute = rawTool.execute;
+          (rawTool as any).execute = async (input: any, opts: any) => {
+            const decision = check(name, toolDef.permission);
+            if (decision === "deny") {
+              return {
+                error: `Tool '${name}' is blocked in the current permission mode.`,
+                blocked: true,
+              };
+            }
+            return originalExecute(input, opts);
+          };
+        }
+        result[name] = rawTool;
         continue;
       }
       result[name] = tool({

@@ -52,7 +52,8 @@ export function createToolSearchTool(registry: ToolRegistry) {
           .slice(7)
           .split(",")
           .map((n) => n.trim());
-        matched = deferred.filter((t) => names.some((n) => t.name.includes(n)));
+        // Exact name match only — substring matching would over-enable privileged tools
+        matched = deferred.filter((t) => names.some((n) => t.name === n));
       } else {
         // Keyword search across name + description
         const terms = input.query.toLowerCase().split(/\s+/);
