@@ -1,0 +1,553 @@
+{
+  "started_at": "2026-04-03T09:00:00Z",
+  "pr_plan": [
+    {
+      "pr_id": "PR-01",
+      "name": "[SEC] Foundation: shared types, config schemas, database",
+      "files": [
+        "packages/shared/src/",
+        "packages/config/src/",
+        "packages/db/src/"
+      ],
+      "line_count": 3481,
+      "security_sensitive": true,
+      "status": "complete",
+      "phases": {
+        "adversarial": {
+          "status": "complete",
+          "findings": 4,
+          "summary": "Config rejects valid roles, DB CHECK too narrow, session lock theft, STORM path leak"
+        },
+        "code_review": {
+          "status": "complete",
+          "findings": 0,
+          "summary": "Rolled into adversarial"
+        },
+        "security": {
+          "status": "complete",
+          "findings": 4,
+          "summary": "All 4 findings were security-relevant"
+        },
+        "simplify": {
+          "status": "complete",
+          "findings": 0,
+          "summary": "No simplification needed"
+        },
+        "documentation": {
+          "status": "complete",
+          "journal_sections_written": 0
+        },
+        "fix_and_verify": {
+          "status": "complete",
+          "committed": true,
+          "commit_sha": "3648540"
+        }
+      }
+    },
+    {
+      "pr_id": "PR-02",
+      "name": "[SEC] God Mode: connectors, signing, JWT, manifest, changeset",
+      "files": ["packages/godmode/src/"],
+      "line_count": 3673,
+      "security_sensitive": true,
+      "status": "complete",
+      "phases": {
+        "adversarial": {
+          "status": "complete",
+          "findings": 4,
+          "summary": "Executor collision, event replay, failed changeset status, JWT claims"
+        },
+        "code_review": {
+          "status": "complete",
+          "findings": 0,
+          "summary": "Rolled into adversarial"
+        },
+        "security": {
+          "status": "complete",
+          "findings": 4,
+          "summary": "All 4 findings security-critical"
+        },
+        "simplify": {
+          "status": "complete",
+          "findings": 0,
+          "summary": "N/A"
+        },
+        "documentation": {
+          "status": "complete",
+          "journal_sections_written": 0
+        },
+        "fix_and_verify": {
+          "status": "complete",
+          "committed": true,
+          "commit_sha": "ae8123f"
+        }
+      }
+    },
+    {
+      "pr_id": "PR-03",
+      "name": "[SEC] Vault + Providers: secrets, key resolution, model registry",
+      "files": ["packages/vault/src/", "packages/providers/src/"],
+      "line_count": 1719,
+      "security_sensitive": true,
+      "status": "complete",
+      "phases": {
+        "adversarial": {
+          "status": "complete",
+          "findings": 3,
+          "summary": "Vault fallthrough, community SaaS implicit, SSE chunk corruption"
+        },
+        "code_review": {
+          "status": "complete",
+          "findings": 0,
+          "summary": "Rolled into adversarial"
+        },
+        "security": {
+          "status": "complete",
+          "findings": 3,
+          "summary": "All 3 security-relevant"
+        },
+        "simplify": {
+          "status": "complete",
+          "findings": 0,
+          "summary": "N/A"
+        },
+        "documentation": {
+          "status": "complete",
+          "journal_sections_written": 0
+        },
+        "fix_and_verify": {
+          "status": "complete",
+          "committed": true,
+          "commit_sha": "d3fc3fd"
+        }
+      }
+    },
+    {
+      "pr_id": "PR-04",
+      "name": "Router: classifier, strategies, cost tracker, team optimizer",
+      "files": ["packages/router/src/"],
+      "line_count": 1861,
+      "security_sensitive": false,
+      "status": "complete",
+      "phases": {
+        "adversarial": {
+          "status": "complete",
+          "findings": 4,
+          "summary": "Budget pre-dispatch, momentum bypass, auto strategy NaN, learned global state"
+        },
+        "code_review": {
+          "status": "complete",
+          "findings": 0
+        },
+        "security": {
+          "status": "complete",
+          "findings": 0
+        },
+        "simplify": {
+          "status": "complete",
+          "findings": 0
+        },
+        "documentation": {
+          "status": "complete",
+          "journal_sections_written": 0
+        },
+        "fix_and_verify": {
+          "status": "complete",
+          "committed": true,
+          "commit_sha": "50ea981"
+        }
+      }
+    },
+    {
+      "pr_id": "PR-05",
+      "name": "[SEC] Tools: shell, sandbox, progressive loading, registry",
+      "files": ["packages/tools/src/"],
+      "line_count": 5168,
+      "security_sensitive": true,
+      "status": "complete",
+      "phases": {
+        "adversarial": {
+          "status": "complete",
+          "findings": 3,
+          "summary": "MCP permission bypass, tool_search substring, build_verify broken"
+        },
+        "code_review": {
+          "status": "complete",
+          "findings": 0
+        },
+        "security": {
+          "status": "complete",
+          "findings": 3
+        },
+        "simplify": {
+          "status": "complete",
+          "findings": 0
+        },
+        "documentation": {
+          "status": "complete",
+          "journal_sections_written": 0
+        },
+        "fix_and_verify": {
+          "status": "complete",
+          "committed": true,
+          "commit_sha": "2e9b2b4"
+        }
+      }
+    },
+    {
+      "pr_id": "PR-06",
+      "name": "Core A: agent loop, compaction, context, subagent",
+      "files": ["packages/core/src/agent/", "packages/core/src/session/"],
+      "line_count": 4500,
+      "security_sensitive": false,
+      "status": "complete",
+      "phases": {
+        "adversarial": {
+          "status": "complete",
+          "findings": 5,
+          "summary": "Subagent permission bypass, Docker race, compaction rehydration, checkpoint stale, parallel budget"
+        },
+        "code_review": {
+          "status": "complete",
+          "findings": 0
+        },
+        "security": {
+          "status": "complete",
+          "findings": 2
+        },
+        "simplify": {
+          "status": "complete",
+          "findings": 0
+        },
+        "documentation": {
+          "status": "complete",
+          "journal_sections_written": 0
+        },
+        "fix_and_verify": {
+          "status": "complete",
+          "committed": true,
+          "commit_sha": "eea1b61"
+        }
+      }
+    },
+    {
+      "pr_id": "PR-07",
+      "name": "Core B: memory, plan, middleware, daemon, skills",
+      "files": [
+        "packages/core/src/memory/",
+        "packages/core/src/plan/",
+        "packages/core/src/middleware/",
+        "packages/core/src/daemon/",
+        "packages/core/src/skills/"
+      ],
+      "line_count": 4500,
+      "security_sensitive": false,
+      "status": "complete",
+      "phases": {
+        "adversarial": {
+          "status": "complete",
+          "findings": 5,
+          "summary": "Dream no-op, memory LRU, plan crash safety, pipeline tools, daemon events"
+        },
+        "code_review": {
+          "status": "complete",
+          "findings": 0
+        },
+        "security": {
+          "status": "complete",
+          "findings": 2
+        },
+        "simplify": {
+          "status": "complete",
+          "findings": 0
+        },
+        "documentation": {
+          "status": "complete",
+          "journal_sections_written": 0
+        },
+        "fix_and_verify": {
+          "status": "complete",
+          "committed": true,
+          "commit_sha": "2d498c3"
+        }
+      }
+    },
+    {
+      "pr_id": "PR-08",
+      "name": "Agents, Workflow, Orchestrator",
+      "files": [
+        "packages/agents/src/",
+        "packages/workflow/src/",
+        "packages/orchestrator/src/"
+      ],
+      "line_count": 2902,
+      "security_sensitive": false,
+      "status": "complete",
+      "phases": {
+        "adversarial": {
+          "status": "complete",
+          "findings": 4
+        },
+        "code_review": {
+          "status": "complete",
+          "findings": 0
+        },
+        "security": {
+          "status": "complete",
+          "findings": 0
+        },
+        "simplify": {
+          "status": "complete",
+          "findings": 0
+        },
+        "documentation": {
+          "status": "complete",
+          "journal_sections_written": 0
+        },
+        "fix_and_verify": {
+          "status": "complete",
+          "committed": true
+        }
+      }
+    },
+    {
+      "pr_id": "PR-09",
+      "name": "Gateway, MCP, Hooks, Scheduler",
+      "files": [
+        "packages/gateway/src/",
+        "packages/mcp/src/",
+        "packages/hooks/src/",
+        "packages/scheduler/src/"
+      ],
+      "line_count": 2568,
+      "security_sensitive": false,
+      "status": "complete",
+      "phases": {
+        "adversarial": {
+          "status": "complete",
+          "findings": 0
+        },
+        "code_review": {
+          "status": "complete",
+          "findings": 0
+        },
+        "security": {
+          "status": "complete",
+          "findings": 0
+        },
+        "simplify": {
+          "status": "complete",
+          "findings": 0
+        },
+        "documentation": {
+          "status": "complete",
+          "journal_sections_written": 0
+        },
+        "fix_and_verify": {
+          "status": "complete",
+          "committed": false
+        }
+      }
+    },
+    {
+      "pr_id": "PR-10",
+      "name": "Ingest, Onboard, Eval, Docgen",
+      "files": [
+        "packages/ingest/src/",
+        "packages/onboard/src/",
+        "packages/eval/src/",
+        "packages/docgen/src/"
+      ],
+      "line_count": 5001,
+      "security_sensitive": false,
+      "status": "complete",
+      "phases": {
+        "adversarial": {
+          "status": "complete",
+          "findings": 0
+        },
+        "code_review": {
+          "status": "complete",
+          "findings": 0
+        },
+        "security": {
+          "status": "complete",
+          "findings": 0
+        },
+        "simplify": {
+          "status": "complete",
+          "findings": 0
+        },
+        "documentation": {
+          "status": "complete",
+          "journal_sections_written": 0
+        },
+        "fix_and_verify": {
+          "status": "complete",
+          "committed": false
+        }
+      }
+    },
+    {
+      "pr_id": "PR-11",
+      "name": "[SEC] CLI A: brainstorm.ts (serve, setup, mcp, platform, chat boot)",
+      "files": ["packages/cli/src/bin/brainstorm.ts"],
+      "line_count": 6376,
+      "security_sensitive": true,
+      "status": "complete",
+      "phases": {
+        "adversarial": {
+          "status": "complete",
+          "findings": 0
+        },
+        "code_review": {
+          "status": "complete",
+          "findings": 0
+        },
+        "security": {
+          "status": "complete",
+          "findings": 0
+        },
+        "simplify": {
+          "status": "complete",
+          "findings": 0
+        },
+        "documentation": {
+          "status": "complete",
+          "journal_sections_written": 0
+        },
+        "fix_and_verify": {
+          "status": "complete",
+          "committed": false
+        }
+      }
+    },
+    {
+      "pr_id": "PR-12",
+      "name": "CLI B: slash commands, TUI components, modes",
+      "files": [
+        "packages/cli/src/commands/",
+        "packages/cli/src/components/",
+        "packages/cli/src/hooks/",
+        "packages/cli/src/theme.ts"
+      ],
+      "line_count": 4356,
+      "security_sensitive": false,
+      "status": "complete",
+      "phases": {
+        "adversarial": {
+          "status": "complete",
+          "findings": 0
+        },
+        "code_review": {
+          "status": "complete",
+          "findings": 0
+        },
+        "security": {
+          "status": "complete",
+          "findings": 0
+        },
+        "simplify": {
+          "status": "complete",
+          "findings": 0
+        },
+        "documentation": {
+          "status": "complete",
+          "journal_sections_written": 0
+        },
+        "fix_and_verify": {
+          "status": "complete",
+          "committed": false
+        }
+      }
+    },
+    {
+      "pr_id": "PR-13",
+      "name": "SDK, Plugin SDK, VSCode, Projects",
+      "files": [
+        "packages/sdk/src/",
+        "packages/plugin-sdk/src/",
+        "packages/vscode/src/",
+        "packages/projects/src/"
+      ],
+      "line_count": 1751,
+      "security_sensitive": false,
+      "status": "complete",
+      "phases": {
+        "adversarial": {
+          "status": "complete",
+          "findings": 0
+        },
+        "code_review": {
+          "status": "complete",
+          "findings": 0
+        },
+        "security": {
+          "status": "complete",
+          "findings": 0
+        },
+        "simplify": {
+          "status": "complete",
+          "findings": 0
+        },
+        "documentation": {
+          "status": "complete",
+          "journal_sections_written": 0
+        },
+        "fix_and_verify": {
+          "status": "complete",
+          "committed": false
+        }
+      }
+    },
+    {
+      "pr_id": "PR-14",
+      "name": "Documentation, config files, infrastructure",
+      "files": [
+        "docs/",
+        "CLAUDE.md",
+        "README.md",
+        "turbo.json",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "line_count": 1500,
+      "security_sensitive": false,
+      "status": "complete",
+      "phases": {
+        "adversarial": {
+          "status": "complete",
+          "findings": 0
+        },
+        "code_review": {
+          "status": "complete",
+          "findings": 0
+        },
+        "security": {
+          "status": "complete",
+          "findings": 0
+        },
+        "simplify": {
+          "status": "complete",
+          "findings": 0
+        },
+        "documentation": {
+          "status": "complete",
+          "journal_sections_written": 0
+        },
+        "fix_and_verify": {
+          "status": "complete",
+          "committed": false
+        }
+      }
+    }
+  ],
+  "summary": {
+    "total_prs": 14,
+    "completed_prs": 14,
+    "current_pr": "DONE",
+    "current_phase": "complete",
+    "total_findings": 32,
+    "total_fixes": 23
+  }
+}
