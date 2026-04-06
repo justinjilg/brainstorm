@@ -130,12 +130,55 @@ export function createAgentTools(client: AgentClient): BrainstormToolDef[] {
     defineTool({
       name: "agent_workflows",
       description:
-        "List active and recent remediation workflows dispatched to edge agents. Shows OODA cycle state, approval status, and outcomes.",
+        "List remediation workflows dispatched to edge agents. Filter by state, agent, or pending approval. " +
+        "States: awaiting_approval, approved, executing, completed, failed, rejected.",
       permission: "auto",
       readonly: true,
-      inputSchema: z.object({}),
-      async execute() {
-        return client.listWorkflows();
+      inputSchema: z.object({
+        state: z
+          .string()
+          .optional()
+          .describe(
+            "Filter by workflow state (e.g. awaiting_approval, approved, executing)",
+          ),
+        agent_id: z
+          .string()
+          .optional()
+          .describe("Filter to a specific agent ID"),
+        pending_approval: z
+          .boolean()
+          .optional()
+          .describe("Only show workflows awaiting approval"),
+      }),
+      async execute(params) {
+        return client.listWorkflows(params);
+      },
+    }),
+
+    defineTool({
+      name: "agent_workflow_approve",
+      description:
+        "Approve or reject a remediation workflow. Low-risk workflows execute immediately after approval. " +
+        "High/critical risk workflows require an MFA token. Critical workflows require dual approval (two different users).",
+      permission: "confirm",
+      inputSchema: z.object({
+        workflow_id: z.string().describe("Workflow ID to approve/reject"),
+        approved: z.boolean().describe("true to approve, false to reject"),
+        notes: z
+          .string()
+          .optional()
+          .describe("Approval/rejection notes (logged in audit trail)"),
+        mfa_token: z
+          .string()
+          .optional()
+          .describe("MFA token (required for high/critical risk workflows)"),
+      }),
+      async execute({ workflow_id, approved, notes, mfa_token }) {
+        return client.approveWorkflow(workflow_id, {
+          approved,
+          notes,
+          mfa_token,
+        });
       },
     }),
   ];
