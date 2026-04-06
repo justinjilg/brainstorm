@@ -163,8 +163,27 @@ export class AgentClient {
 
   // ── Workflows ────────────────────────────────────────────────
 
-  async listWorkflows(): Promise<any> {
-    return this.apiFetch("/api/v1/edge/workflows");
+  async listWorkflows(opts?: {
+    state?: string;
+    agent_id?: string;
+    pending_approval?: boolean;
+  }): Promise<any> {
+    const params = new URLSearchParams();
+    if (opts?.state) params.set("state", opts.state);
+    if (opts?.agent_id) params.set("agent_id", opts.agent_id);
+    if (opts?.pending_approval) params.set("pending_approval", "true");
+    const qs = params.toString();
+    return this.apiFetch(`/api/v1/edge/workflows${qs ? `?${qs}` : ""}`);
+  }
+
+  async approveWorkflow(
+    workflowId: string,
+    opts: { approved: boolean; notes?: string; mfa_token?: string },
+  ): Promise<any> {
+    return this.apiFetch(`/api/v1/edge/workflows/${workflowId}/approve`, {
+      method: "POST",
+      body: JSON.stringify(opts),
+    });
   }
 
   // ── HTTP Client ──────────────────────────────────────────────
