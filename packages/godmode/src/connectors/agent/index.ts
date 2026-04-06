@@ -6,10 +6,12 @@
  * REST endpoints to list agents, dispatch commands, read OODA events,
  * inspect evidence chains, and monitor workflows.
  *
- * 10 tools across 2 categories:
+ * 12 tools across 3 categories:
  *   Discovery: agent_list, agent_status, agent_ooda_events, agent_ooda_stats,
- *              agent_signals, agent_evidence, agent_verify_evidence, agent_workflows
+ *              agent_signals, agent_evidence, agent_verify_evidence, agent_workflows,
+ *              agent_workflow_approve
  *   Commands:  agent_run_tool, agent_osquery
+ *   Control:   agent_kill_switch
  *
  * All routes verified against BrainstormMSP app/api/edge/core.py.
  */
@@ -24,6 +26,7 @@ import type {
 import { AgentClient } from "./client.js";
 import { createAgentTools } from "./tools/agents.js";
 import { createCommandTools } from "./tools/commands.js";
+import { createControlTools } from "./tools/control.js";
 
 export class AgentConnector implements GodModeConnector {
   name = "agent";
@@ -52,6 +55,7 @@ export class AgentConnector implements GodModeConnector {
       this.cachedTools = [
         ...createAgentTools(this.client),
         ...createCommandTools(this.client),
+        ...createControlTools(this.client),
       ];
     }
     return this.cachedTools;
