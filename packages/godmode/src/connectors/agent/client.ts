@@ -186,6 +186,15 @@ export class AgentClient {
     });
   }
 
+  // ── Kill Switch ──────────────────────────────────────────────
+
+  async killSwitch(agentId: string, reason: string): Promise<any> {
+    return this.apiFetch(`/api/v1/edge/agents/${agentId}/kill`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    });
+  }
+
   // ── HTTP Client ──────────────────────────────────────────────
 
   async apiFetch(path: string, options?: RequestInit): Promise<any> {
