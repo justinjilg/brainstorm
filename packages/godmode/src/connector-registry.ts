@@ -97,8 +97,18 @@ export async function connectGodMode(
     registry.register(tool);
   }
 
-  // Build dynamic prompt
+  // Build dynamic prompt — base + connector-specific intelligence
   const promptSegment = buildGodModePrompt(connected, config);
+
+  // Append connector-specific prompt segments (e.g., agent OODA intelligence)
+  for (const result of results) {
+    if (result.status !== "fulfilled") continue;
+    const { connector, health } = result.value;
+    if (!health.ok) continue;
+    if (typeof connector.getPrompt === "function") {
+      promptSegment.text += "\n" + connector.getPrompt();
+    }
+  }
 
   return {
     connectedSystems: connected,
