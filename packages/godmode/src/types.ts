@@ -21,6 +21,8 @@ export interface GodModeConnector {
   getTools(): BrainstormToolDef[];
   /** Check if the external system is reachable. */
   healthCheck(): Promise<HealthResult>;
+  /** Optional: return a system prompt segment with connector-specific intelligence. */
+  getPrompt?(): string;
 }
 
 export type ConnectorCapability =

@@ -27,6 +27,7 @@ import { AgentClient } from "./client.js";
 import { createAgentTools } from "./tools/agents.js";
 import { createCommandTools } from "./tools/commands.js";
 import { createControlTools } from "./tools/control.js";
+import { buildAgentPrompt } from "./prompt.js";
 
 export class AgentConnector implements GodModeConnector {
   name = "agent";
@@ -59,6 +60,10 @@ export class AgentConnector implements GodModeConnector {
       ];
     }
     return this.cachedTools;
+  }
+
+  getPrompt(): string {
+    return buildAgentPrompt(0);
   }
 }
 
