@@ -1286,11 +1286,12 @@ program
             });
           });
 
+          const mspBaseUrl =
+            process.env.BRAINSTORM_MSP_URL ?? "https://brainstormmsp.ai";
           const defaultConns: Record<string, any> = {
             msp: {
               enabled: true,
-              baseUrl:
-                process.env.BRAINSTORM_MSP_URL ?? "https://brainstormmsp.ai",
+              baseUrl: mspBaseUrl,
               apiKeyName: "BRAINSTORM_MSP_API_KEY",
             },
           };
@@ -1299,6 +1300,17 @@ program
             connectors: { ...defaultConns, ...config.godmode.connectors },
           };
           const activeConns = await createPC(mergedConfig);
+
+          // Add typed agent connector (routes through MSP's agent management API)
+          const { createAgentConnector } =
+            await import("@brainst0rm/godmode/connectors/agent");
+          activeConns.push(
+            createAgentConnector({
+              enabled: true,
+              baseUrl: mspBaseUrl,
+              apiKeyName: "BRAINSTORM_MSP_API_KEY",
+            }),
+          );
 
           const gmResult = await connectGM(tools, mergedConfig, activeConns);
 
@@ -4903,10 +4915,12 @@ program
     );
 
     // ── Boot: connect God Mode connectors (generic, config-driven) ─
+    const mspBaseUrl =
+      process.env.BRAINSTORM_MSP_URL ?? "https://brainstormmsp.ai";
     const defaultConnectors: Record<string, any> = {
       msp: {
         enabled: true,
-        baseUrl: process.env.BRAINSTORM_MSP_URL ?? "https://brainstormmsp.ai",
+        baseUrl: mspBaseUrl,
         apiKeyName: "BRAINSTORM_MSP_API_KEY",
       },
     };
@@ -4915,6 +4929,18 @@ program
       connectors: { ...defaultConnectors, ...config.godmode.connectors },
     };
     const connectors = await createProductConnectors(mergedGmConfig);
+
+    // Add typed agent connector (routes through MSP's agent management API)
+    const { createAgentConnector } =
+      await import("@brainst0rm/godmode/connectors/agent");
+    connectors.push(
+      createAgentConnector({
+        enabled: true,
+        baseUrl: mspBaseUrl,
+        apiKeyName: "BRAINSTORM_MSP_API_KEY",
+      }),
+    );
+
     const godmode = await connectGodMode(tools, mergedGmConfig, connectors);
 
     console.log(
@@ -5530,11 +5556,12 @@ program
             });
           });
 
+          const mspBaseUrlChat =
+            process.env.BRAINSTORM_MSP_URL ?? "https://brainstormmsp.ai";
           const defaultConnectors: Record<string, any> = {
             msp: {
               enabled: true,
-              baseUrl:
-                process.env.BRAINSTORM_MSP_URL ?? "https://brainstormmsp.ai",
+              baseUrl: mspBaseUrlChat,
               apiKeyName: "BRAINSTORM_MSP_API_KEY",
             },
           };
@@ -5544,6 +5571,17 @@ program
           };
           const activeConnectors =
             await createProductConnectors(mergedGmConfig);
+
+          // Add typed agent connector (routes through MSP's agent management API)
+          const { createAgentConnector: createAgentChat } =
+            await import("@brainst0rm/godmode/connectors/agent");
+          activeConnectors.push(
+            createAgentChat({
+              enabled: true,
+              baseUrl: mspBaseUrlChat,
+              apiKeyName: "BRAINSTORM_MSP_API_KEY",
+            }),
+          );
 
           godModeResult = await connectGodMode(
             tools,
