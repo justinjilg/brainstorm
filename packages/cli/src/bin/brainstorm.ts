@@ -1256,7 +1256,8 @@ program
         process.env.BRAINSTORM_VM_API_KEY ||
         process.env._GM_MSP_KEY ||
         process.env._GM_EMAIL_KEY ||
-        process.env._GM_VM_KEY
+        process.env._GM_VM_KEY ||
+        process.env._GM_AGENT_KEY
       );
       if (runHasConnectorKey || config.godmode.enabled) {
         try {
@@ -1308,7 +1309,7 @@ program
             createAgentConnector({
               enabled: true,
               baseUrl: mspBaseUrl,
-              apiKeyName: "BRAINSTORM_MSP_API_KEY",
+              apiKeyName: "_GM_AGENT_KEY",
             }),
           );
 
@@ -4937,7 +4938,7 @@ program
       createAgentConnector({
         enabled: true,
         baseUrl: mspBaseUrl,
-        apiKeyName: "BRAINSTORM_MSP_API_KEY",
+        apiKeyName: "_GM_AGENT_KEY",
       }),
     );
 
@@ -5523,7 +5524,8 @@ program
         process.env.BRAINSTORM_VM_API_KEY ||
         process.env._GM_MSP_KEY ||
         process.env._GM_EMAIL_KEY ||
-        process.env._GM_VM_KEY
+        process.env._GM_VM_KEY ||
+        process.env._GM_AGENT_KEY
       );
       const godmodeEnabled = config.godmode.enabled || hasAnyConnectorKey;
 
@@ -5579,7 +5581,7 @@ program
             createAgentChat({
               enabled: true,
               baseUrl: mspBaseUrlChat,
-              apiKeyName: "BRAINSTORM_MSP_API_KEY",
+              apiKeyName: "_GM_AGENT_KEY",
             }),
           );
 
