@@ -44,7 +44,7 @@ const SCAN_RULES: ScanRule[] = [
   {
     category: "prompt-injection",
     pattern:
-      /ignore\s+(previous|prior|all|above|your)\s+(instructions|context|rules)/gi,
+      /ignore\s+(all\s+)?(previous|prior|above|your)\s+(instructions|context|rules)/gi,
     severity: "high",
     detail: "Instruction override attempt",
     weight: 0.4,

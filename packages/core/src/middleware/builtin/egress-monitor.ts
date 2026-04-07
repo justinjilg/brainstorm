@@ -71,7 +71,7 @@ const COMMAND_EGRESS_PATTERNS: EgressPattern[] = [
   {
     name: "webhook-post",
     commandPattern:
-      /curl\s+-X\s*POST.*\.(webhook\.site|requestbin|hookbin|pipedream)/i,
+      /curl\s+-X\s*POST.*(?:webhook\.site|requestbin|hookbin|pipedream)/i,
     severity: "critical",
   },
 ];
@@ -171,7 +171,7 @@ export function createEgressMonitorMiddleware(): AgentMiddleware {
       // Pre-check: non-allowlisted domains with POST/data flags
       if (
         hasNonAllowlistedDomain(cmd) &&
-        /\b(-X\s*POST|-d\s|--data|--upload-file)\b/i.test(cmd)
+        /(-X\s*POST\b|\s-d\s|--data\b|--upload-file\b)/i.test(cmd)
       ) {
         egressWarnings++;
         log.warn(
