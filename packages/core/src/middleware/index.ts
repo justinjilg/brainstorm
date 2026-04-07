@@ -31,6 +31,12 @@ export {
   flushTrustWindow,
   clearCurrentTaint,
 } from "./builtin/trust-propagation.js";
+export {
+  createToolSequenceDetectorMiddleware,
+  setSequenceDetectorTrustRef,
+} from "./builtin/tool-sequence-detector.js";
+export { createEgressMonitorMiddleware } from "./builtin/egress-monitor.js";
+export { createToolContractMiddleware } from "./builtin/tool-contract-enforcement.js";
 
 /**
  * Create a default middleware pipeline with all built-in middleware.
@@ -50,6 +56,9 @@ import { createProactiveCompactionMiddleware } from "./builtin/proactive-compact
 import { createSecurityScanMiddleware } from "./builtin/security-scan.js";
 import { createToolOutputTruncationMiddleware } from "./builtin/tool-output-truncation.js";
 import { createTrustPropagationMiddleware } from "./builtin/trust-propagation.js";
+import { createToolSequenceDetectorMiddleware } from "./builtin/tool-sequence-detector.js";
+import { createEgressMonitorMiddleware } from "./builtin/egress-monitor.js";
+import { createToolContractMiddleware } from "./builtin/tool-contract-enforcement.js";
 import { codeExtractionMiddleware } from "./code-extraction.js";
 
 export function createDefaultMiddlewarePipeline(
@@ -58,6 +67,9 @@ export function createDefaultMiddlewarePipeline(
 ): MiddlewarePipeline {
   const pipeline = new MiddlewarePipeline();
   pipeline.use(createTrustPropagationMiddleware()); // Must be first — tracks taint before other middleware
+  pipeline.use(createToolContractMiddleware()); // Argument validation — catches dangerous args early
+  pipeline.use(createToolSequenceDetectorMiddleware()); // Sequence detection — trust-aware pattern matching
+  pipeline.use(createEgressMonitorMiddleware()); // Network boundary — blocks exfiltration patterns
   pipeline.use(turnContextMiddleware);
   pipeline.use(toolHealthMiddleware);
   pipeline.use(buildStateMiddleware);
