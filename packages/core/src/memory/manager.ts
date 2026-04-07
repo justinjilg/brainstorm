@@ -16,9 +16,13 @@ import type { BrainstormGateway } from "@brainst0rm/gateway";
 
 const log = createLogger("memory");
 
+export type MemoryTier = "system" | "archive";
+
 export interface MemoryEntry {
   id: string;
   type: "user" | "project" | "feedback" | "reference";
+  /** system = always in prompt. archive = index only, loaded on demand. */
+  tier: MemoryTier;
   name: string;
   description: string;
   content: string;
@@ -41,6 +45,7 @@ const MAX_MEMORY_BYTES = 25 * 1024; // 25KB — matches Claude Code's cap
 
 export class MemoryManager {
   private memoryDir: string;
+  private systemDir: string;
   private indexPath: string;
   private entries: Map<string, MemoryEntry> = new Map();
   private indexDirty = false;
@@ -60,28 +65,54 @@ export class MemoryManager {
       projectHash,
       "memory",
     );
+    this.systemDir = join(this.memoryDir, "system");
     this.indexPath = join(this.memoryDir, "MEMORY.md");
     mkdirSync(this.memoryDir, { recursive: true });
+    mkdirSync(this.systemDir, { recursive: true });
     this.loadAll();
   }
 
   /** Save a memory entry. Creates or updates the file. */
   save(
-    entry: Omit<MemoryEntry, "id" | "createdAt" | "updatedAt">,
+    entry: Omit<MemoryEntry, "id" | "createdAt" | "updatedAt" | "tier"> & {
+      tier?: MemoryTier;
+    },
   ): MemoryEntry {
     const id = entry.name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
     const now = Math.floor(Date.now() / 1000);
     const existing = this.entries.get(id);
 
+    // Default tier: user/feedback → system (always in prompt), project/reference → archive
+    const tier =
+      entry.tier ??
+      existing?.tier ??
+      (entry.type === "user" || entry.type === "feedback"
+        ? "system"
+        : "archive");
+
     const memory: MemoryEntry = {
       id,
       ...entry,
+      tier,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     };
 
-    // Write memory file
-    const filePath = join(this.memoryDir, `${id}.md`);
+    // If tier changed, remove from old location
+    if (existing && existing.tier !== tier) {
+      const oldDir =
+        existing.tier === "system" ? this.systemDir : this.memoryDir;
+      const oldPath = join(oldDir, `${id}.md`);
+      try {
+        unlinkSync(oldPath);
+      } catch {
+        /* may not exist */
+      }
+    }
+
+    // Write memory file to the correct directory
+    const targetDir = tier === "system" ? this.systemDir : this.memoryDir;
+    const filePath = join(targetDir, `${id}.md`);
     const fileContent = [
       "---",
       `name: ${memory.name}`,
@@ -136,12 +167,36 @@ export class MemoryManager {
     return true;
   }
 
-  /** Get context string for injection into system prompt (first 200 lines of index). */
+  /**
+   * Get context string for injection into system prompt.
+   *
+   * Progressive disclosure:
+   * - system/ entries: full content always included
+   * - archive entries: names + descriptions only (use memory search to load)
+   */
   getContextString(): string {
-    if (!existsSync(this.indexPath)) return "";
-    const content = readFileSync(this.indexPath, "utf-8");
-    const lines = content.split("\n");
-    return lines.slice(0, 200).join("\n");
+    const parts: string[] = [];
+    const systemEntries = this.list().filter((m) => m.tier === "system");
+    const archiveEntries = this.list().filter((m) => m.tier === "archive");
+
+    if (systemEntries.length > 0) {
+      parts.push("### Active Memory (always loaded)\n");
+      for (const m of systemEntries) {
+        parts.push(`**${m.name}** (${m.type}): ${m.description}`);
+        parts.push(m.content);
+        parts.push("");
+      }
+    }
+
+    if (archiveEntries.length > 0) {
+      parts.push("### Archive (search to load)\n");
+      for (const m of archiveEntries) {
+        parts.push(`- **${m.name}** — ${m.description}`);
+      }
+      parts.push("");
+    }
+
+    return parts.join("\n").trim();
   }
 
   /** Get the memory directory path (for subagent access). */
@@ -196,21 +251,33 @@ export class MemoryManager {
   }
 
   private loadAll(): void {
-    if (!existsSync(this.memoryDir)) return;
-    const files = readdirSync(this.memoryDir).filter(
+    // Load from both root (archive) and system/ directories
+    this.loadFromDir(this.memoryDir, "archive");
+    this.loadFromDir(this.systemDir, "system");
+  }
+
+  private loadFromDir(dir: string, tier: MemoryTier): void {
+    if (!existsSync(dir)) return;
+    const files = readdirSync(dir).filter(
       (f) => f.endsWith(".md") && f !== "MEMORY.md",
     );
 
     for (const file of files) {
-      const filePath = join(this.memoryDir, file);
+      const filePath = join(dir, file);
+      // Skip directories (like system/)
+      try {
+        if (statSync(filePath).isDirectory()) continue;
+      } catch {
+        continue;
+      }
+
       try {
         const content = readFileSync(filePath, "utf-8");
         const stat = statSync(filePath);
-        const entry = this.parseMemoryFile(file, content, stat.mtimeMs);
+        const entry = this.parseMemoryFile(file, content, stat.mtimeMs, tier);
         if (entry) {
           this.entries.set(entry.id, entry);
         } else {
-          // File exists but couldn't parse — backup and warn
           this.backupCorruptFile(filePath, file);
         }
       } catch (e) {
@@ -224,6 +291,7 @@ export class MemoryManager {
     filename: string,
     content: string,
     fileMtimeMs?: number,
+    tier?: MemoryTier,
   ): MemoryEntry | null {
     const id = filename.replace(".md", "");
     const fmMatch = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
@@ -238,7 +306,6 @@ export class MemoryManager {
       "project") as MemoryEntry["type"];
 
     // Use file modification time for LRU ordering instead of Date.now()
-    // This preserves recency across process restarts
     const mtime = fileMtimeMs
       ? Math.floor(fileMtimeMs / 1000)
       : Math.floor(Date.now() / 1000);
@@ -248,6 +315,7 @@ export class MemoryManager {
       name,
       description,
       type,
+      tier: tier ?? "archive",
       content: body,
       createdAt: mtime,
       updatedAt: mtime,
@@ -338,10 +406,45 @@ export class MemoryManager {
   flushIndex(): void {
     if (!this.indexDirty) return;
     this.indexDirty = false;
-    const lines = this.list().map(
-      (m) => `- [${m.name}](${m.id}.md) — ${m.description}`,
-    );
+
+    const systemEntries = this.list().filter((m) => m.tier === "system");
+    const archiveEntries = this.list().filter((m) => m.tier === "archive");
+
+    const lines: string[] = [];
+    if (systemEntries.length > 0) {
+      lines.push("## System (always in prompt)\n");
+      for (const m of systemEntries) {
+        lines.push(`- [${m.name}](system/${m.id}.md) — ${m.description}`);
+      }
+      lines.push("");
+    }
+    if (archiveEntries.length > 0) {
+      lines.push("## Archive (search to load)\n");
+      for (const m of archiveEntries) {
+        lines.push(`- [${m.name}](${m.id}.md) — ${m.description}`);
+      }
+    }
+
     writeFileSync(this.indexPath, lines.join("\n") + "\n", "utf-8");
+  }
+
+  /** Promote an archive entry to system (always in prompt). */
+  promote(id: string): boolean {
+    const entry = this.entries.get(id);
+    if (!entry || entry.tier === "system") return false;
+    return !!this.save({ ...entry, tier: "system" });
+  }
+
+  /** Demote a system entry to archive (index only). */
+  demote(id: string): boolean {
+    const entry = this.entries.get(id);
+    if (!entry || entry.tier === "archive") return false;
+    return !!this.save({ ...entry, tier: "archive" });
+  }
+
+  /** List entries by tier. */
+  listByTier(tier: MemoryTier): MemoryEntry[] {
+    return this.list().filter((m) => m.tier === tier);
   }
 
   /** Backup a corrupt memory file instead of deleting it. */

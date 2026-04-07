@@ -96,9 +96,7 @@ export interface SystemPromptResult {
 }
 
 /** Convert segments to AI SDK v6 system prompt array with Anthropic cache hints. */
-export function segmentsToSystemArray(
-  segments: SystemPromptSegment[],
-): Array<{
+export function segmentsToSystemArray(segments: SystemPromptSegment[]): Array<{
   role: "system";
   content: string;
   providerOptions?: Record<string, any>;
@@ -394,24 +392,32 @@ function getGitContext(projectPath: string): string | null {
  */
 function loadMemoryContext(projectPath: string): string | null {
   try {
-    const projectHash = createHash("sha256")
-      .update(projectPath)
-      .digest("hex")
-      .slice(0, 12);
-    const indexPath = join(
-      homedir(),
-      ".brainstorm",
-      "projects",
-      projectHash,
-      "memory",
-      "MEMORY.md",
-    );
-    if (!existsSync(indexPath)) return null;
-    const content = readFileSync(indexPath, "utf-8").trim();
-    if (!content) return null;
-    return content.split("\n").slice(0, 200).join("\n");
+    const { MemoryManager } = require("../memory/manager.js");
+    const manager = new MemoryManager(projectPath);
+    const ctx = manager.getContextString();
+    return ctx || null;
   } catch {
-    return null;
+    // Fallback: read raw MEMORY.md if MemoryManager fails
+    try {
+      const projectHash = createHash("sha256")
+        .update(projectPath)
+        .digest("hex")
+        .slice(0, 12);
+      const indexPath = join(
+        homedir(),
+        ".brainstorm",
+        "projects",
+        projectHash,
+        "memory",
+        "MEMORY.md",
+      );
+      if (!existsSync(indexPath)) return null;
+      const content = readFileSync(indexPath, "utf-8").trim();
+      if (!content) return null;
+      return content.split("\n").slice(0, 200).join("\n");
+    } catch {
+      return null;
+    }
   }
 }
 

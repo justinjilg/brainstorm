@@ -44,7 +44,11 @@ export {
   findSkill,
   type SkillDefinition,
 } from "./skills/loader.js";
-export { MemoryManager, type MemoryEntry } from "./memory/manager.js";
+export {
+  MemoryManager,
+  type MemoryEntry,
+  type MemoryTier,
+} from "./memory/manager.js";
 export { DREAM_SYSTEM_PROMPT, buildDreamPrompt } from "./memory/dream.js";
 export {
   runDreamCycle,
