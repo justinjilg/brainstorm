@@ -22,4 +22,9 @@ npm-debug.log*
 docs/internal/sbom.json
 
 # Marketing site (separate project, lives elsewhere)
-apps/
+apps/web/
+
+# Desktop app build artifacts (source is tracked)
+apps/desktop/dist/
+apps/desktop/node_modules/
+apps/desktop/src-tauri/target/
