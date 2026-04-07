@@ -15,6 +15,8 @@ import type { ModelEntry, Complexity } from "@brainst0rm/shared";
 
 export interface EnsembleCandidate {
   model: string;
+  /** Provider family (e.g., "anthropic", "openai", "google"). */
+  provider?: string;
   text: string;
   tokenCount: number;
   latencyMs: number;
@@ -152,6 +154,55 @@ export function formatEnsembleResult(result: EnsembleResult): string {
     .join(", ");
 
   return `[Ensemble: ${result.candidates.length} candidates (${candidateList}). Winner: ${result.winner.model}. ${result.reason}${result.earlyTermination ? " (early termination)" : ""}]`;
+}
+
+/**
+ * Minimum number of distinct provider families required for ensemble.
+ * Prevents the Sybil attack: if all candidates are from the same provider,
+ * they share biases and blind spots, making the ensemble a monoculture.
+ */
+const MIN_PROVIDER_FAMILIES = 2;
+
+/**
+ * Check if a set of models has sufficient provider diversity for ensemble.
+ * Returns the distinct provider families found.
+ */
+export function checkProviderDiversity(models: Array<{ provider: string }>): {
+  diverse: boolean;
+  families: string[];
+  count: number;
+} {
+  const families = [...new Set(models.map((m) => m.provider.toLowerCase()))];
+  return {
+    diverse: families.length >= MIN_PROVIDER_FAMILIES,
+    families,
+    count: families.length,
+  };
+}
+
+/**
+ * Filter ensemble candidates to ensure provider diversity.
+ * If all candidates are from one provider, returns a warning.
+ */
+export function ensureDiversity(candidates: EnsembleCandidate[]): {
+  candidates: EnsembleCandidate[];
+  warning?: string;
+} {
+  const withProvider = candidates.filter((c) => c.provider);
+  if (withProvider.length === 0) return { candidates };
+
+  const families = [
+    ...new Set(withProvider.map((c) => c.provider!.toLowerCase())),
+  ];
+
+  if (families.length < MIN_PROVIDER_FAMILIES && candidates.length >= 2) {
+    return {
+      candidates,
+      warning: `Ensemble has ${candidates.length} candidates but only ${families.length} provider family (${families.join(", ")}). Results may share systematic biases. Add models from different providers for true diversity.`,
+    };
+  }
+
+  return { candidates };
 }
 
 /**

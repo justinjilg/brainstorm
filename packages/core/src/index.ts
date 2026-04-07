@@ -153,6 +153,13 @@ export {
   type VelocityWarning,
 } from "./security/approval-velocity.js";
 export {
+  CircuitBreaker,
+  CircuitBreakerRegistry,
+  type CircuitBreakerOptions,
+  type CircuitEvent,
+  type CircuitState,
+} from "./security/circuit-breaker.js";
+export {
   getToolOutputTrust,
   getToolTrustThreshold,
   checkToolTrust,
@@ -316,6 +323,8 @@ export {
   selectWinner,
   checkEarlyTermination,
   formatEnsembleResult,
+  checkProviderDiversity,
+  ensureDiversity,
   type EnsembleCandidate,
   type EnsembleResult,
   type EnsembleStrategy,

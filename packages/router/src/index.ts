@@ -12,6 +12,11 @@ export {
   loadStats,
   getTotalSamples,
   getSamplesForTaskType,
+  getOutcomeAuditLog,
+  getConvergenceAlerts,
+  getModelDistribution,
+  type OutcomeAuditEntry,
+  type ConvergenceAlert,
 } from "./strategies/learned.js";
 export {
   optimizeTeamComposition,
