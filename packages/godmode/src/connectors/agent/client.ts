@@ -198,8 +198,8 @@ export class AgentClient {
   // ── HTTP Client ──────────────────────────────────────────────
 
   async apiFetch(path: string, options?: RequestInit): Promise<any> {
-    const key =
-      process.env[`_GM_AGENT_KEY`] ?? process.env[this.apiKeyName] ?? null;
+    // Resolve key from the configured apiKeyName only — no global override
+    const key = process.env[this.apiKeyName] ?? null;
 
     if (!key) {
       return {

@@ -1,0 +1,53 @@
+{
+  "name": "@brainst0rm/server",
+  "version": "0.13.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@brainst0rm/shared": "0.13.0",
+    "@brainst0rm/core": "0.13.0",
+    "@brainst0rm/db": "0.13.0",
+    "@brainst0rm/router": "0.13.0",
+    "@brainst0rm/tools": "0.13.0",
+    "@brainst0rm/providers": "0.13.0",
+    "@brainst0rm/godmode": "0.13.0"
+  },
+  "devDependencies": {
+    "tsup": "^8",
+    "typescript": "^5.7"
+  },
+  "description": "Brainstorm control plane HTTP server — agent runtime as a service",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/justinjilg/brainstorm.git",
+    "directory": "packages/server"
+  },
+  "homepage": "https://brainstorm.co",
+  "keywords": [
+    "ai",
+    "agent",
+    "server",
+    "brainstorm",
+    "control-plane"
+  ],
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "publishConfig": {
+    "access": "public"
+  }
+}

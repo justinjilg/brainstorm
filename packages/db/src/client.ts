@@ -614,4 +614,28 @@ const MIGRATIONS = [
       ALTER TABLE workflow_definitions_new RENAME TO workflow_definitions;
     `,
   },
+  {
+    name: "028_conversations",
+    sql: `
+      CREATE TABLE IF NOT EXISTS conversations (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL DEFAULT 'Untitled',
+        description TEXT NOT NULL DEFAULT '',
+        project_path TEXT NOT NULL,
+        tags TEXT NOT NULL DEFAULT '[]',
+        model_override TEXT,
+        memory_overrides TEXT NOT NULL DEFAULT '{}',
+        metadata TEXT NOT NULL DEFAULT '{}',
+        is_archived INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        last_message_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_conversations_project ON conversations(project_path);
+      CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated_at DESC);
+
+      ALTER TABLE sessions ADD COLUMN conversation_id TEXT REFERENCES conversations(id) ON DELETE SET NULL;
+      CREATE INDEX IF NOT EXISTS idx_sessions_conversation ON sessions(conversation_id);
+    `,
+  },
 ];

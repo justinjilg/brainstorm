@@ -284,6 +284,11 @@ export {
   type StepSummary,
 } from "./agent/step-summary.js";
 export {
+  ConversationManager,
+  type ConversationContext,
+  type CreateConversationOpts,
+} from "./conversations/index.js";
+export {
   DaemonController,
   DailyLog,
   formatTickMessage,

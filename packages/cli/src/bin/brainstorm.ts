@@ -5006,20 +5006,10 @@ program
   .option("--host <host>", "Host to bind to", "127.0.0.1")
   .option("--cors", "Enable CORS for dashboard access")
   .action(async (opts: { port: string; host: string; cors?: boolean }) => {
-    const { createServer } = await import("node:http");
-    const { randomUUID } = await import("node:crypto");
-    const {
-      connectGodMode,
-      createProductConnectors,
-      listChangeSets,
-      approveChangeSet,
-      rejectChangeSet,
-      verifyEvent,
-      verifyJWT,
-      extractBearerToken,
-      setAuditPersister,
-    } = await import("@brainst0rm/godmode");
+    const { connectGodMode, createProductConnectors, setAuditPersister } =
+      await import("@brainst0rm/godmode");
     const { ChangeSetLogRepository } = await import("@brainst0rm/db");
+    const { BrainstormServer } = await import("@brainst0rm/server");
     const config = loadConfig();
     const port = parseInt(opts.port);
     const host = opts.host;
@@ -5110,403 +5100,71 @@ program
       console.log(`    ✗ ${err.name}: ${err.error}`);
     }
 
-    // ── Helpers ────────────────────────────────────────────────
+    // ── Boot: memory manager for conversations ──────────────────
+    const { MemoryManager } = await import("@brainst0rm/core");
+    const memoryManager = new MemoryManager(process.cwd());
 
-    function json(res: any, status: number, body: unknown): void {
-      const payload = JSON.stringify(body);
-      res.writeHead(status, {
-        "Content-Type": "application/json",
-        ...(opts.cors
-          ? {
-              "Access-Control-Allow-Origin": "*",
-              "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-              "Access-Control-Allow-Headers": "Content-Type, Authorization",
-            }
-          : {}),
-      });
-      res.end(payload);
-    }
+    // ── Start server via @brainst0rm/server ────────────────────
+    const server = new BrainstormServer(
+      {
+        db,
+        config,
+        registry,
+        router,
+        costTracker,
+        tools,
+        godmode,
+        memoryManager,
+        version: CLI_VERSION,
+      },
+      {
+        port,
+        host,
+        cors: opts.cors,
+        jwtSecret: process.env.SUPABASE_JWT_SECRET,
+        projectPath: process.cwd(),
+      },
+    );
 
-    function envelope<T>(data: T): {
-      ok: true;
-      data: T;
-      request_id: string;
-      timestamp: string;
-    } {
-      return {
-        ok: true,
-        data,
-        request_id: randomUUID(),
-        timestamp: new Date().toISOString(),
-      };
-    }
+    const { url } = await server.start();
 
-    function errorResponse(res: any, status: number, message: string): void {
-      json(res, status, {
-        ok: false,
-        error: message,
-        request_id: randomUUID(),
-        timestamp: new Date().toISOString(),
-      });
-    }
-
-    async function readBody(req: any): Promise<string> {
-      const chunks: Buffer[] = [];
-      for await (const chunk of req) chunks.push(chunk);
-      return Buffer.concat(chunks).toString("utf-8");
-    }
-
-    // ── All tools flattened for the /tools endpoint ────────────
-    const allTools = tools.listTools();
-
-    // ── HTTP Server ────────────────────────────────────────────
-
-    const server = createServer(async (req, res) => {
-      const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
-      const path = url.pathname;
-      const method = req.method ?? "GET";
-
-      // CORS preflight
-      if (method === "OPTIONS" && opts.cors) {
-        res.writeHead(204, {
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          "Access-Control-Max-Age": "86400",
-        });
-        res.end();
-        return;
-      }
-
-      try {
-        // ── Health (no auth) ────────────────────────────────────
-        if (path === "/health" && method === "GET") {
-          json(res, 200, {
-            status: "healthy",
-            version: CLI_VERSION,
-            uptime_seconds: Math.floor(process.uptime()),
-            god_mode: {
-              connected: godmode.connectedSystems.length,
-              tools: godmode.totalTools,
-            },
-          });
-          return;
-        }
-
-        // ── Auth gate for /api/* routes ────────────────────────
-        const jwtSecret = process.env.SUPABASE_JWT_SECRET;
-        let tenantId: string | undefined;
-
-        if (path.startsWith("/api/")) {
-          if (!jwtSecret) {
-            // No JWT secret configured — allow unauthenticated access
-            // (development mode). Log a warning on first request.
-          } else {
-            const token = extractBearerToken(
-              req.headers.authorization as string | undefined,
-            );
-            if (!token) {
-              errorResponse(res, 401, "Missing Authorization header");
-              return;
-            }
-            const auth = verifyJWT(token, jwtSecret);
-            if (!auth.authenticated) {
-              errorResponse(res, 401, auth.error ?? "Authentication failed");
-              return;
-            }
-            tenantId = auth.payload?.platform_tenant_id;
-          }
-        }
-
-        // ── Products ────────────────────────────────────────────
-        if (path === "/api/v1/products" && method === "GET") {
-          const products = godmode.connectedSystems.map((sys) => ({
-            product: sys.name,
-            display_name: sys.displayName,
-            status: "healthy" as const,
-            latency_ms: sys.latencyMs,
-            tool_count: sys.toolCount,
-            capabilities: sys.capabilities,
-            last_checked: new Date().toISOString(),
-          }));
-          json(res, 200, envelope(products));
-          return;
-        }
-
-        // ── Tools ───────────────────────────────────────────────
-        if (path === "/api/v1/tools" && method === "GET") {
-          json(res, 200, envelope(allTools));
-          return;
-        }
-
-        // ── Execute Tool ────────────────────────────────────────
-        if (path === "/api/v1/tools/execute" && method === "POST") {
-          const body = JSON.parse(await readBody(req));
-          const { tool: toolName, params } = body;
-
-          if (!toolName) {
-            errorResponse(res, 400, "Missing 'tool' field");
-            return;
-          }
-
-          const tool = tools.get(toolName);
-          if (!tool) {
-            errorResponse(res, 404, `Tool '${toolName}' not found`);
-            return;
-          }
-
-          try {
-            const result = await tool.execute(params ?? {});
-            json(
-              res,
-              200,
-              envelope({
-                tool: toolName,
-                result,
-                executed_at: new Date().toISOString(),
-              }),
-            );
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            errorResponse(res, 500, `Tool execution failed: ${msg}`);
-          }
-          return;
-        }
-
-        // ── ChangeSets ──────────────────────────────────────────
-        if (path === "/api/v1/changesets" && method === "GET") {
-          json(res, 200, envelope(listChangeSets()));
-          return;
-        }
-
-        // ── Approve ChangeSet ───────────────────────────────────
-        const approveMatch = path.match(
-          /^\/api\/v1\/changesets\/([^/]+)\/approve$/,
-        );
-        if (approveMatch && method === "POST") {
-          const result = await approveChangeSet(approveMatch[1], "user");
-          json(res, result.success ? 200 : 400, envelope(result));
-          return;
-        }
-
-        // ── Reject ChangeSet ────────────────────────────────────
-        const rejectMatch = path.match(
-          /^\/api\/v1\/changesets\/([^/]+)\/reject$/,
-        );
-        if (rejectMatch && method === "POST") {
-          const result = rejectChangeSet(rejectMatch[1]);
-          json(res, result.success ? 200 : 400, envelope(result));
-          return;
-        }
-
-        // ── Audit Trail (tool calls) ──────────────────────────────
-        if (path === "/api/v1/audit" && method === "GET") {
-          const limit = parseInt(url.searchParams.get("limit") ?? "50");
-          const offset = parseInt(url.searchParams.get("offset") ?? "0");
-          try {
-            const rows = db
-              .prepare(
-                `SELECT * FROM audit_log ORDER BY created_at DESC LIMIT ? OFFSET ?`,
-              )
-              .all(limit, offset);
-            json(res, 200, envelope({ entries: rows, limit, offset }));
-          } catch {
-            json(res, 200, envelope({ entries: [], limit, offset }));
-          }
-          return;
-        }
-
-        // ── Audit Trail (God Mode changesets) ───────────────────
-        if (path === "/api/v1/audit/changesets" && method === "GET") {
-          const { ChangeSetLogRepository } = await import("@brainst0rm/db");
-          const csLog = new ChangeSetLogRepository(db);
-          const limit = parseInt(url.searchParams.get("limit") ?? "50");
-          const offset = parseInt(url.searchParams.get("offset") ?? "0");
-          const connector = url.searchParams.get("connector");
-          const entries = connector
-            ? csLog.byConnector(connector, limit)
-            : csLog.recent(limit, offset);
-          json(
-            res,
-            200,
-            envelope({
-              entries,
-              total: csLog.count(),
-              limit,
-              offset,
-            }),
-          );
-          return;
-        }
-
-        // ── Platform Events (receive) ───────────────────────────
-        if (path === "/api/v1/platform/events" && method === "POST") {
-          const body = JSON.parse(await readBody(req));
-          const masterSecret = process.env.BRAINSTORM_PLATFORM_SECRET;
-
-          if (!masterSecret) {
-            errorResponse(res, 503, "Platform secret not configured");
-            return;
-          }
-
-          if (!verifyEvent(body, masterSecret)) {
-            errorResponse(res, 401, "Invalid event signature");
-            return;
-          }
-
-          // Log the verified event
-          console.log(
-            `  [event] ${body.type} from ${body.product} (tenant: ${body.tenant_id})`,
-          );
-          json(res, 200, envelope({ received: true, event_id: body.id }));
-          return;
-        }
-
-        // ── Chat (non-streaming) ────────────────────────────────
-        if (path === "/api/v1/chat" && method === "POST") {
-          const body = JSON.parse(await readBody(req));
-          const { message } = body;
-
-          if (!message) {
-            errorResponse(res, 400, "Missing 'message' field");
-            return;
-          }
-
-          const sessionManager = new SessionManager(db);
-          const session = sessionManager.start(process.cwd());
-          const { prompt: sysPrompt, segments: sysSegments } =
-            buildSystemPrompt(process.cwd());
-          const gmPromptText = godmode.promptSegment?.text ?? "";
-          const fullSystemPrompt = sysPrompt + gmPromptText;
-
-          const messages = [{ role: "user" as const, content: message }];
-          let finalText = "";
-          let totalCost = 0;
-
-          for await (const event of runAgentLoop(messages, {
-            config,
-            registry,
-            router,
-            costTracker,
-            tools,
-            sessionId: session.id,
-            projectPath: process.cwd(),
-            systemPrompt: fullSystemPrompt,
-            systemSegments: sysSegments,
-            permissionCheck: () => "allow" as const,
-            middleware: createDefaultMiddlewarePipeline(process.cwd()),
-          })) {
-            if (event.type === "text-delta") {
-              finalText += event.delta;
-            }
-            if (event.type === "done") {
-              totalCost = event.totalCost;
-            }
-          }
-
-          json(
-            res,
-            200,
-            envelope({
-              response: finalText,
-              session_id: session.id,
-              cost: totalCost,
-            }),
-          );
-          return;
-        }
-
-        // ── Chat Stream (SSE) ───────────────────────────────────
-        if (path === "/api/v1/chat/stream" && method === "POST") {
-          const body = JSON.parse(await readBody(req));
-          const { message } = body;
-
-          if (!message) {
-            errorResponse(res, 400, "Missing 'message' field");
-            return;
-          }
-
-          res.writeHead(200, {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-            Connection: "keep-alive",
-            ...(opts.cors ? { "Access-Control-Allow-Origin": "*" } : {}),
-          });
-
-          const sessionManager = new SessionManager(db);
-          const session = sessionManager.start(process.cwd());
-          const { prompt: sysPrompt, segments: sysSegments } =
-            buildSystemPrompt(process.cwd());
-          const gmPromptText = godmode.promptSegment?.text ?? "";
-          const fullSystemPrompt = sysPrompt + gmPromptText;
-
-          const messages = [{ role: "user" as const, content: message }];
-
-          for await (const event of runAgentLoop(messages, {
-            config,
-            registry,
-            router,
-            costTracker,
-            tools,
-            sessionId: session.id,
-            projectPath: process.cwd(),
-            systemPrompt: fullSystemPrompt,
-            systemSegments: sysSegments,
-            permissionCheck: () => "allow" as const,
-            middleware: createDefaultMiddlewarePipeline(process.cwd()),
-          })) {
-            res.write(`data: ${JSON.stringify(event)}\n\n`);
-            if (event.type === "done" || event.type === "error") break;
-          }
-
-          res.write("data: [DONE]\n\n");
-          res.end();
-          return;
-        }
-
-        // ── 404 ─────────────────────────────────────────────────
-        errorResponse(res, 404, `Not found: ${method} ${path}`);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(`  [serve] Error: ${msg}`);
-        errorResponse(res, 500, msg);
-      }
-    });
-
-    server.listen(port, host, () => {
-      console.log(`\n  ──────────────────────────────────────────────────`);
-      console.log(`  API server listening on http://${host}:${port}`);
-      console.log();
-      console.log(`  Endpoints:`);
-      console.log(`    GET  /health                           Health check`);
-      console.log(
-        `    GET  /api/v1/products                  Connected products`,
-      );
-      console.log(
-        `    GET  /api/v1/tools                     All God Mode tools`,
-      );
-      console.log(`    POST /api/v1/tools/execute             Execute a tool`);
-      console.log(
-        `    GET  /api/v1/changesets                Pending ChangeSets`,
-      );
-      console.log(
-        `    POST /api/v1/changesets/:id/approve    Approve + execute`,
-      );
-      console.log(
-        `    POST /api/v1/changesets/:id/reject     Reject a ChangeSet`,
-      );
-      console.log(`    GET  /api/v1/audit                     Audit trail`);
-      console.log(
-        `    POST /api/v1/platform/events           Receive signed events`,
-      );
-      console.log(
-        `    POST /api/v1/chat                      Natural language query`,
-      );
-      console.log(
-        `    POST /api/v1/chat/stream               SSE streaming chat`,
-      );
-      console.log();
-    });
+    console.log(`\n  ──────────────────────────────────────────────────`);
+    console.log(`  API server listening on ${url}`);
+    console.log();
+    console.log(`  Endpoints:`);
+    console.log(`    GET  /health                           Health check`);
+    console.log(
+      `    GET  /api/v1/products                  Connected products`,
+    );
+    console.log(
+      `    GET  /api/v1/tools                     All God Mode tools`,
+    );
+    console.log(`    POST /api/v1/tools/execute             Execute a tool`);
+    console.log(
+      `    GET  /api/v1/changesets                Pending ChangeSets`,
+    );
+    console.log(`    POST /api/v1/changesets/:id/approve    Approve + execute`);
+    console.log(
+      `    POST /api/v1/changesets/:id/reject     Reject a ChangeSet`,
+    );
+    console.log(`    GET  /api/v1/audit                     Audit trail`);
+    console.log(
+      `    POST /api/v1/platform/events           Receive signed events`,
+    );
+    console.log(
+      `    POST /api/v1/chat                      Chat (non-streaming)`,
+    );
+    console.log(
+      `    POST /api/v1/chat/stream               SSE streaming chat`,
+    );
+    console.log(
+      `    GET  /api/v1/conversations             List conversations`,
+    );
+    console.log(
+      `    POST /api/v1/conversations             Create conversation`,
+    );
+    console.log(`    POST /api/v1/conversations/:id/handoff Model handoff`);
+    console.log();
 
     // Keep alive — SIGINT/SIGTERM handled by the global handlers
     await new Promise(() => {});

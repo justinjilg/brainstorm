@@ -877,3 +877,220 @@ export class ChangeSetLogRepository {
     };
   }
 }
+
+// ── Conversations ─────────────────────────────────────────────────────
+
+export interface Conversation {
+  id: string;
+  name: string;
+  description: string;
+  projectPath: string;
+  tags: string[];
+  modelOverride: string | null;
+  /** Per-conversation memory overrides: { memoryId: content | null (suppress) } */
+  memoryOverrides: Record<string, string | null>;
+  metadata: Record<string, unknown>;
+  isArchived: boolean;
+  createdAt: number;
+  updatedAt: number;
+  lastMessageAt: number | null;
+}
+
+export class ConversationRepository {
+  constructor(private db: Database.Database) {}
+
+  create(
+    projectPath: string,
+    opts?: {
+      name?: string;
+      description?: string;
+      tags?: string[];
+      modelOverride?: string | null;
+      memoryOverrides?: Record<string, string | null>;
+      metadata?: Record<string, unknown>;
+    },
+  ): Conversation {
+    const id = randomUUID();
+    const now = Math.floor(Date.now() / 1000);
+    this.db
+      .prepare(
+        `INSERT INTO conversations (id, name, description, project_path, tags, model_override, memory_overrides, metadata, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        opts?.name ?? "Untitled",
+        opts?.description ?? "",
+        projectPath,
+        JSON.stringify(opts?.tags ?? []),
+        opts?.modelOverride ?? null,
+        JSON.stringify(opts?.memoryOverrides ?? {}),
+        JSON.stringify(opts?.metadata ?? {}),
+        now,
+        now,
+      );
+    return {
+      id,
+      name: opts?.name ?? "Untitled",
+      description: opts?.description ?? "",
+      projectPath,
+      tags: opts?.tags ?? [],
+      modelOverride: opts?.modelOverride ?? null,
+      memoryOverrides: opts?.memoryOverrides ?? {},
+      metadata: opts?.metadata ?? {},
+      isArchived: false,
+      createdAt: now,
+      updatedAt: now,
+      lastMessageAt: null,
+    };
+  }
+
+  get(id: string): Conversation | null {
+    const row = this.db
+      .prepare("SELECT * FROM conversations WHERE id = ?")
+      .get(id) as any;
+    if (!row) return null;
+    return this.mapRow(row);
+  }
+
+  list(
+    projectPath?: string,
+    opts?: { includeArchived?: boolean; limit?: number },
+  ): Conversation[] {
+    const limit = opts?.limit ?? 50;
+    const includeArchived = opts?.includeArchived ?? false;
+    let query: string;
+    let params: any[];
+
+    if (projectPath) {
+      query = includeArchived
+        ? "SELECT * FROM conversations WHERE project_path = ? ORDER BY updated_at DESC LIMIT ?"
+        : "SELECT * FROM conversations WHERE project_path = ? AND is_archived = 0 ORDER BY updated_at DESC LIMIT ?";
+      params = [projectPath, limit];
+    } else {
+      query = includeArchived
+        ? "SELECT * FROM conversations ORDER BY updated_at DESC LIMIT ?"
+        : "SELECT * FROM conversations WHERE is_archived = 0 ORDER BY updated_at DESC LIMIT ?";
+      params = [limit];
+    }
+
+    const rows = this.db.prepare(query).all(...params) as any[];
+    return rows.map(this.mapRow);
+  }
+
+  update(
+    id: string,
+    updates: Partial<
+      Pick<
+        Conversation,
+        | "name"
+        | "description"
+        | "tags"
+        | "modelOverride"
+        | "memoryOverrides"
+        | "metadata"
+        | "isArchived"
+      >
+    >,
+  ): Conversation | null {
+    const existing = this.get(id);
+    if (!existing) return null;
+
+    const merged = { ...existing, ...updates };
+    this.db
+      .prepare(
+        `UPDATE conversations SET
+           name = ?, description = ?, tags = ?, model_override = ?,
+           memory_overrides = ?, metadata = ?, is_archived = ?,
+           updated_at = unixepoch()
+         WHERE id = ?`,
+      )
+      .run(
+        merged.name,
+        merged.description,
+        JSON.stringify(merged.tags),
+        merged.modelOverride,
+        JSON.stringify(merged.memoryOverrides),
+        JSON.stringify(merged.metadata),
+        merged.isArchived ? 1 : 0,
+        id,
+      );
+    return this.get(id);
+  }
+
+  delete(id: string): boolean {
+    const result = this.db
+      .prepare("DELETE FROM conversations WHERE id = ?")
+      .run(id);
+    return result.changes > 0;
+  }
+
+  /** Touch the last_message_at timestamp for a conversation. */
+  touchLastMessage(id: string): void {
+    this.db
+      .prepare(
+        "UPDATE conversations SET last_message_at = unixepoch(), updated_at = unixepoch() WHERE id = ?",
+      )
+      .run(id);
+  }
+
+  /** Link a session to a conversation. */
+  linkSession(sessionId: string, conversationId: string): void {
+    this.db
+      .prepare("UPDATE sessions SET conversation_id = ? WHERE id = ?")
+      .run(conversationId, sessionId);
+  }
+
+  /** Get all sessions belonging to a conversation. */
+  getSessions(conversationId: string): Session[] {
+    const rows = this.db
+      .prepare(
+        "SELECT * FROM sessions WHERE conversation_id = ? ORDER BY created_at DESC",
+      )
+      .all(conversationId) as any[];
+    return rows.map((row) => ({
+      id: row.id,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      projectPath: row.project_path,
+      totalCost: row.total_cost,
+      messageCount: row.message_count,
+      isDaemon: !!row.is_daemon,
+      tickCount: row.tick_count,
+      lastTickAt: row.last_tick_at,
+      isPaused: !!row.is_paused,
+      tickIntervalMs: row.tick_interval_ms,
+    }));
+  }
+
+  /** Fork a conversation — copies metadata but not sessions. */
+  fork(id: string, newName?: string): Conversation | null {
+    const original = this.get(id);
+    if (!original) return null;
+    return this.create(original.projectPath, {
+      name: newName ?? `${original.name} (fork)`,
+      description: original.description,
+      tags: [...original.tags],
+      modelOverride: original.modelOverride,
+      memoryOverrides: { ...original.memoryOverrides },
+      metadata: { ...original.metadata, forkedFrom: id },
+    });
+  }
+
+  private mapRow(row: any): Conversation {
+    return {
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      projectPath: row.project_path,
+      tags: JSON.parse(row.tags || "[]"),
+      modelOverride: row.model_override,
+      memoryOverrides: JSON.parse(row.memory_overrides || "{}"),
+      metadata: JSON.parse(row.metadata || "{}"),
+      isArchived: !!row.is_archived,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      lastMessageAt: row.last_message_at,
+    };
+  }
+}

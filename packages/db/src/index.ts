@@ -9,9 +9,11 @@ export {
   SessionLockManager,
   DailyLogRepository,
   ChangeSetLogRepository,
+  ConversationRepository,
   type SessionPattern,
   type AggregatedRoutingStats,
   type CompactionCommit,
   type DailyLogEntry,
   type ChangeSetLogEntry,
+  type Conversation,
 } from "./repositories.js";
