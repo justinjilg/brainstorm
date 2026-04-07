@@ -1,100 +1,214 @@
-import { z } from 'zod';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { defineTool } from '../base.js';
+import { z } from "zod";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { defineTool } from "../base.js";
 
 const execFileAsync = promisify(execFile);
 
 /**
- * GitHub PR tool — create, list, and view pull requests via the gh CLI.
+ * GitHub PR tool — full pull request lifecycle via the gh CLI.
  * Requires `gh` to be installed and authenticated.
+ *
+ * Actions: create, list, view, merge, close, reopen, diff, checks, comment, ready
  */
 export const ghPrTool = defineTool({
-  name: 'gh_pr',
+  name: "gh_pr",
   description:
-    'Create, list, or view GitHub pull requests via the gh CLI. For "create": gathers branch context (commits, diff) and creates a PR with title + body. For "list": shows open PRs. For "view": shows PR details.',
-  permission: 'confirm',
+    "Full GitHub pull request management. Actions: create (new PR), list (filter by state), view (details+files), merge (with strategy), close/reopen, diff (full patch), checks (CI status), comment (add discussion), ready (mark draft as ready for review).",
+  permission: "confirm",
   inputSchema: z.object({
-    action: z.enum(['create', 'list', 'view']).describe('PR action to perform'),
+    action: z
+      .enum([
+        "create",
+        "list",
+        "view",
+        "merge",
+        "close",
+        "reopen",
+        "diff",
+        "checks",
+        "comment",
+        "ready",
+      ])
+      .describe("PR action to perform"),
     // create fields
-    title: z.string().optional().describe('PR title (< 70 chars). Required for "create".'),
-    body: z.string().optional().describe('PR body (markdown). Required for "create".'),
-    base: z.string().optional().describe('Base branch (default: main)'),
-    draft: z.boolean().optional().describe('Create as draft PR'),
-    // view fields
-    number: z.number().optional().describe('PR number for "view" action'),
+    title: z.string().optional().describe("PR title (< 70 chars)"),
+    body: z.string().optional().describe("PR body (markdown)"),
+    base: z.string().optional().describe("Base branch (default: main)"),
+    draft: z.boolean().optional().describe("Create as draft PR"),
+    reviewers: z
+      .array(z.string())
+      .optional()
+      .describe("Request review from these users"),
+    labels: z.array(z.string()).optional().describe("Labels to apply"),
+    // view/merge/close/diff/checks/comment fields
+    number: z.number().optional().describe("PR number"),
+    // merge fields
+    mergeMethod: z
+      .enum(["merge", "squash", "rebase"])
+      .optional()
+      .describe("Merge strategy (default: merge)"),
+    deleteAfterMerge: z
+      .boolean()
+      .optional()
+      .describe("Delete branch after merge (default: true)"),
+    // comment fields
+    commentBody: z.string().optional().describe("Comment text (markdown)"),
     // list fields
-    state: z.enum(['open', 'closed', 'merged', 'all']).optional().describe('Filter PRs by state (default: open)'),
-    limit: z.number().optional().describe('Max PRs to list (default: 10)'),
-    cwd: z.string().optional().describe('Working directory'),
+    state: z
+      .enum(["open", "closed", "merged", "all"])
+      .optional()
+      .describe("Filter by state"),
+    limit: z.number().optional().describe("Max items (default: 10)"),
+    author: z.string().optional().describe("Filter by author"),
+    search: z.string().optional().describe("Search query for PRs"),
+    cwd: z.string().optional().describe("Working directory"),
   }),
-  async execute({ action, title, body, base, draft, number, state, limit, cwd }) {
-    const opts = { cwd: cwd ?? process.cwd() };
+  async execute(input) {
+    const opts = { cwd: input.cwd ?? process.cwd() };
 
     try {
-      switch (action) {
-        case 'create':
-          return await createPr({ title, body, base, draft, opts });
-        case 'list':
-          return await listPrs({ state, limit, opts });
-        case 'view':
-          return await viewPr({ number, opts });
+      switch (input.action) {
+        case "create": {
+          if (!input.title) return { error: "title is required" };
+          if (!input.body) return { error: "body is required" };
+          const args = [
+            "pr",
+            "create",
+            "--title",
+            input.title,
+            "--body",
+            input.body,
+          ];
+          if (input.base) args.push("--base", input.base);
+          if (input.draft) args.push("--draft");
+          if (input.reviewers?.length)
+            args.push("--reviewer", input.reviewers.join(","));
+          if (input.labels?.length)
+            args.push("--label", input.labels.join(","));
+          const { stdout } = await execFileAsync("gh", args, opts);
+          return { success: true, url: stdout.trim() };
+        }
+
+        case "list": {
+          const args = [
+            "pr",
+            "list",
+            "--json",
+            "number,title,state,author,url,headRefName,labels,isDraft,createdAt,updatedAt",
+            "--limit",
+            String(input.limit ?? 10),
+          ];
+          if (input.state && input.state !== "all")
+            args.push("--state", input.state);
+          if (input.author) args.push("--author", input.author);
+          if (input.search) args.push("--search", input.search);
+          const { stdout } = await execFileAsync("gh", args, opts);
+          return { prs: JSON.parse(stdout) };
+        }
+
+        case "view": {
+          if (!input.number) return { error: "number is required" };
+          const { stdout } = await execFileAsync(
+            "gh",
+            [
+              "pr",
+              "view",
+              String(input.number),
+              "--json",
+              "number,title,state,body,author,url,additions,deletions,files,reviewDecision,reviewRequests,labels,milestone,isDraft,mergeable,headRefName,baseRefName,commits",
+            ],
+            opts,
+          );
+          return { pr: JSON.parse(stdout) };
+        }
+
+        case "merge": {
+          if (!input.number) return { error: "number is required" };
+          const args = ["pr", "merge", String(input.number)];
+          const method = input.mergeMethod ?? "merge";
+          args.push(`--${method}`);
+          if (input.deleteAfterMerge !== false) args.push("--delete-branch");
+          const { stdout } = await execFileAsync("gh", args, opts);
+          return { success: true, output: stdout.trim() };
+        }
+
+        case "close": {
+          if (!input.number) return { error: "number is required" };
+          const args = ["pr", "close", String(input.number)];
+          if (input.commentBody) args.push("--comment", input.commentBody);
+          const { stdout } = await execFileAsync("gh", args, opts);
+          return { success: true, output: stdout.trim() };
+        }
+
+        case "reopen": {
+          if (!input.number) return { error: "number is required" };
+          const { stdout } = await execFileAsync(
+            "gh",
+            ["pr", "reopen", String(input.number)],
+            opts,
+          );
+          return { success: true, output: stdout.trim() };
+        }
+
+        case "diff": {
+          if (!input.number) return { error: "number is required" };
+          const { stdout } = await execFileAsync(
+            "gh",
+            ["pr", "diff", String(input.number)],
+            opts,
+          );
+          return { diff: stdout };
+        }
+
+        case "checks": {
+          if (!input.number) return { error: "number is required" };
+          const { stdout } = await execFileAsync(
+            "gh",
+            [
+              "pr",
+              "checks",
+              String(input.number),
+              "--json",
+              "name,state,conclusion,startedAt,completedAt,detailsUrl",
+            ],
+            opts,
+          );
+          return { checks: JSON.parse(stdout) };
+        }
+
+        case "comment": {
+          if (!input.number) return { error: "number is required" };
+          if (!input.commentBody) return { error: "commentBody is required" };
+          const { stdout } = await execFileAsync(
+            "gh",
+            [
+              "pr",
+              "comment",
+              String(input.number),
+              "--body",
+              input.commentBody,
+            ],
+            opts,
+          );
+          return { success: true, url: stdout.trim() };
+        }
+
+        case "ready": {
+          if (!input.number) return { error: "number is required" };
+          const { stdout } = await execFileAsync(
+            "gh",
+            ["pr", "ready", String(input.number)],
+            opts,
+          );
+          return { success: true, output: stdout.trim() };
+        }
+
         default:
-          return { error: `Unknown action: ${action}` };
+          return { error: `Unknown action: ${input.action}` };
       }
     } catch (err: any) {
       return { error: err.stderr || err.message };
     }
   },
 });
-
-async function createPr({
-  title,
-  body,
-  base,
-  draft,
-  opts,
-}: {
-  title?: string;
-  body?: string;
-  base?: string;
-  draft?: boolean;
-  opts: { cwd: string };
-}) {
-  if (!title) return { error: 'title is required for "create" action' };
-  if (!body) return { error: 'body is required for "create" action' };
-
-  const args = ['pr', 'create', '--title', title, '--body', body];
-  if (base) args.push('--base', base);
-  if (draft) args.push('--draft');
-
-  const { stdout } = await execFileAsync('gh', args, opts);
-  return { success: true, url: stdout.trim() };
-}
-
-async function listPrs({
-  state,
-  limit,
-  opts,
-}: {
-  state?: string;
-  limit?: number;
-  opts: { cwd: string };
-}) {
-  const args = ['pr', 'list', '--json', 'number,title,state,author,url', '--limit', String(limit ?? 10)];
-  if (state && state !== 'all') args.push('--state', state);
-
-  const { stdout } = await execFileAsync('gh', args, opts);
-  return { prs: JSON.parse(stdout) };
-}
-
-async function viewPr({ number, opts }: { number?: number; opts: { cwd: string } }) {
-  if (!number) return { error: 'number is required for "view" action' };
-
-  const { stdout } = await execFileAsync(
-    'gh',
-    ['pr', 'view', String(number), '--json', 'number,title,state,body,author,url,additions,deletions,files'],
-    opts,
-  );
-  return { pr: JSON.parse(stdout) };
-}
