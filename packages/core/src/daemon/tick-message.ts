@@ -20,6 +20,10 @@ export interface TickMessageContext {
   pendingTasks?: string[];
   budgetRemaining?: number;
   promptCacheStale?: boolean;
+  /** Summary of active (system-tier) memory entries. */
+  memorySummary?: string;
+  /** Available skill names for autonomous invocation. */
+  availableSkills?: Array<{ name: string; description: string }>;
 }
 
 export function formatTickMessage(ctx: TickMessageContext): string {
@@ -69,6 +73,22 @@ export function formatTickMessage(ctx: TickMessageContext): string {
     parts.push(`  <recent_activity>`);
     parts.push(`    ${ctx.logSummary}`);
     parts.push(`  </recent_activity>`);
+  }
+
+  // Memory awareness — what the daemon knows
+  if (ctx.memorySummary) {
+    parts.push(`  <memory_summary>`);
+    parts.push(`    ${ctx.memorySummary}`);
+    parts.push(`  </memory_summary>`);
+  }
+
+  // Available skills — the daemon's playbook
+  if (ctx.availableSkills && ctx.availableSkills.length > 0) {
+    parts.push(`  <available_skills count="${ctx.availableSkills.length}">`);
+    for (const skill of ctx.availableSkills) {
+      parts.push(`    - ${skill.name}: ${skill.description}`);
+    }
+    parts.push(`  </available_skills>`);
   }
 
   parts.push(`</tick>`);

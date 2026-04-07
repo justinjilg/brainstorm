@@ -5885,6 +5885,12 @@ program
           const { TriggerRunner } = await import("@brainst0rm/scheduler");
           const triggerRunner = new TriggerRunner(db);
 
+          // Wire memory and skills into daemon tick context
+          const { MemoryManager, loadSkills } =
+            await import("@brainst0rm/core");
+          const daemonMemory = new MemoryManager(projectPath);
+          const daemonSkills = loadSkills(projectPath);
+
           const daemon = new DaemonController({
             config: config.daemon,
             sessionId: session.id,
@@ -5915,6 +5921,18 @@ program
               });
             },
             getDueTasks: () => triggerRunner.getDueTaskSummaries(),
+            getMemorySummary: () => {
+              const system = daemonMemory.listByTier("system");
+              if (system.length === 0) return "No active memories.";
+              return system
+                .map((m: any) => `[${m.type}] ${m.name}: ${m.description}`)
+                .join("\n");
+            },
+            getAvailableSkills: () =>
+              daemonSkills.map((s: any) => ({
+                name: s.name,
+                description: s.description.slice(0, 100),
+              })),
             getLogSummary: () => {
               const recent = dailyLog.readRecent(10);
               if (recent.length === 0) return "No recent activity.";
