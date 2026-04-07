@@ -1256,7 +1256,6 @@ program
   .command("run")
   .description("Run a single prompt non-interactively")
   .argument("[prompt]", "The prompt to send")
-  .option("--json", "Output structured JSON (for CI/CD pipelines)")
   .option("--pipe", "Read from stdin if no prompt given")
   .option("--model <id>", "Target a specific model (bypass routing)")
   .option("--tools", "Enable tool use (default: disabled)")
@@ -1267,10 +1266,6 @@ program
   )
   .option("--lfg", "Full auto mode — skip all permission confirmations")
   .option(
-    "--stream",
-    "Stream every AgentEvent as JSONL to stdout (real-time observability)",
-  )
-  .option(
     "--unattended",
     "Unattended mode — enable tools, auto-approve, auto-commit on success",
   )
@@ -1278,14 +1273,12 @@ program
     async (
       prompt: string | undefined,
       opts: {
-        json?: boolean;
         pipe?: boolean;
         model?: string;
         tools?: boolean;
         maxSteps?: string;
         strategy?: string;
         lfg?: boolean;
-        stream?: boolean;
         unattended?: boolean;
       },
     ) => {
@@ -1323,12 +1316,14 @@ program
         if (!opts.maxSteps || opts.maxSteps === "1") opts.maxSteps = "15";
       }
 
+      // TTY detection: terminal gets human rendering, pipes get JSONL events
+      const isTTY = process.stdout.isTTY ?? false;
+
       const db = getDb();
-      // In headless modes (--stream, --json), skip vault prompt — env only
-      const resolvedKeys =
-        opts.stream || opts.json
-          ? { get: (name: string) => process.env[name] ?? null }
-          : await resolveProviderKeys();
+      // When piped, skip vault prompt (headless — env-only key resolution)
+      const resolvedKeys = isTTY
+        ? await resolveProviderKeys()
+        : { get: (name: string) => process.env[name] ?? null };
       const resolvedBRKey =
         resolvedKeys.get("BRAINSTORM_API_KEY") ?? getBrainstormApiKey();
       const isCommunityTier = isCommunityKey(resolvedBRKey);
@@ -1489,7 +1484,7 @@ program
       let modelName = "unknown";
       let toolCallCount = 0;
 
-      if (!opts.json) {
+      if (isTTY) {
         process.stdout.write("\n");
       }
 
@@ -1522,109 +1517,81 @@ program
         middleware,
         routingOutcomeRepo,
       })) {
-        // --stream: emit every event as timestamped JSONL to stdout
-        if (opts.stream) {
+        // Piped: every event as timestamped JSONL
+        if (!isTTY) {
           process.stdout.write(
             JSON.stringify({ ts: Date.now(), ...event }) + "\n",
           );
         }
 
+        // Track state regardless of output mode
         switch (event.type) {
-          case "thinking":
-            if (!opts.json && !opts.stream) {
-              const spinnerFrames = [
-                "⠋",
-                "⠙",
-                "⠹",
-                "⠸",
-                "⠼",
-                "⠴",
-                "⠦",
-                "⠧",
-                "⠇",
-                "⠏",
-              ];
-              const frame =
-                spinnerFrames[
-                  Math.floor(Date.now() / 100) % spinnerFrames.length
-                ];
-              const phases: Record<string, string> = {
-                classifying: "Classifying task...",
-                routing: "Selecting model...",
-                connecting: `Connecting...`,
-                streaming: "Streaming...",
-              };
-              process.stderr.write(
-                `\r${frame} ${phases[event.phase] ?? event.phase}`,
-              );
-            }
-            break;
           case "routing":
             modelName = event.decision.model.name;
-            if (!opts.stream)
-              process.stderr.write(
-                `\r[${event.decision.strategy}] → ${modelName}\n`,
-              );
             break;
           case "text-delta":
             fullResponse += event.delta;
             break;
           case "tool-call-start":
             toolCallCount++;
-            if (!opts.stream)
-              process.stderr.write(`\n[tool: ${event.toolName}]\n`);
             break;
-          case "gateway-feedback": {
-            if (!opts.stream) {
+          case "model-retry":
+            modelName = event.toModel;
+            fullResponse = "";
+            break;
+          case "error":
+            if (!isTTY) process.exit(1);
+            break;
+        }
+
+        // TTY: human rendering
+        if (isTTY) {
+          switch (event.type) {
+            case "thinking": {
+              const frames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
+              const f = frames[Math.floor(Date.now() / 100) % frames.length];
+              const labels: Record<string, string> = {
+                classifying: "Classifying task...",
+                routing: "Selecting model...",
+                connecting: "Connecting...",
+                streaming: "Streaming...",
+              };
+              process.stderr.write(
+                `\r${f} ${labels[event.phase] ?? event.phase}`,
+              );
+              break;
+            }
+            case "routing":
+              process.stderr.write(
+                `\r[${event.decision.strategy}] → ${modelName}\n`,
+              );
+              break;
+            case "tool-call-start":
+              process.stderr.write(`\n[tool: ${event.toolName}]\n`);
+              break;
+            case "tool-call-result":
+              process.stderr.write(`[done]\n`);
+              break;
+            case "gateway-feedback": {
               const gwLine = formatGatewayFeedback(event.feedback);
               if (gwLine) process.stderr.write(`${gwLine}\n`);
+              break;
             }
-            break;
-          }
-          case "model-retry":
-            if (!opts.stream)
+            case "model-retry":
               process.stderr.write(
                 `\n[retry] ${event.fromModel} → ${event.toModel} (${event.reason})\n`,
               );
-            modelName = event.toModel;
-            fullResponse = ""; // Reset for retry
-            break;
-          case "done":
-            if (opts.json) {
-              // Structured JSON output for CI/CD — only valid JSON on stdout
-              process.stdout.write(
-                JSON.stringify({
-                  text: fullResponse,
-                  model: modelName,
-                  cost: event.totalCost,
-                  toolCalls: toolCallCount,
-                  success: true,
-                }) + "\n",
-              );
-            } else {
+              break;
+            case "done":
               process.stdout.write(renderMarkdownToString(fullResponse));
               process.stdout.write(
                 `\n\n[cost: $${event.totalCost.toFixed(4)}]\n`,
               );
-            }
-            break;
-          case "error":
-            if (opts.json) {
-              process.stdout.write(
-                JSON.stringify({
-                  text: "",
-                  model: modelName,
-                  cost: 0,
-                  toolCalls: toolCallCount,
-                  error: event.error.message,
-                  success: false,
-                }) + "\n",
-              );
-              process.exit(1);
-            } else {
+              break;
+            case "error":
               process.stderr.write(`\nError: ${event.error.message}\n`);
-            }
-            break;
+              break;
+          }
         }
       }
 
