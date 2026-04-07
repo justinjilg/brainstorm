@@ -161,6 +161,62 @@ export class CostTracker {
   }
 
   /**
+   * Advise a sleep interval based on cost velocity and budget pressure.
+   * Called by KAIROS daemon when no model-requested sleep exists.
+   *
+   * Returns the advised interval in ms. When budget pressure is:
+   *   < 50% used: return default (no change)
+   *   50-75% used: 1.5x interval (gentle slowdown)
+   *   75-90% used: 2x interval (meaningful slowdown)
+   *   > 90% used: 3x interval (conservation mode)
+   */
+  getAdvisedSleepMs(defaultIntervalMs: number): {
+    intervalMs: number;
+    reason: string;
+    budgetPressure: number;
+  } {
+    const sessionLimit = this.budgetConfig.perSession;
+    if (!sessionLimit || sessionLimit <= 0) {
+      return {
+        intervalMs: defaultIntervalMs,
+        reason: "No session budget — default interval",
+        budgetPressure: 0,
+      };
+    }
+
+    const pressure = this.sessionCost / sessionLimit;
+    const forecast = this.forecast();
+
+    if (pressure > 0.9 || forecast.exceedsLimit) {
+      return {
+        intervalMs: defaultIntervalMs * 3,
+        reason: `Conservation mode: ${(pressure * 100).toFixed(0)}% budget used ($${this.sessionCost.toFixed(3)}/$${sessionLimit.toFixed(2)})`,
+        budgetPressure: pressure,
+      };
+    }
+    if (pressure > 0.75) {
+      return {
+        intervalMs: defaultIntervalMs * 2,
+        reason: `Budget pressure: ${(pressure * 100).toFixed(0)}% used, slowing ticks`,
+        budgetPressure: pressure,
+      };
+    }
+    if (pressure > 0.5) {
+      return {
+        intervalMs: Math.round(defaultIntervalMs * 1.5),
+        reason: `Moderate budget use: ${(pressure * 100).toFixed(0)}%, gentle slowdown`,
+        budgetPressure: pressure,
+      };
+    }
+
+    return {
+      intervalMs: defaultIntervalMs,
+      reason: `Budget healthy: ${(pressure * 100).toFixed(0)}% used`,
+      budgetPressure: pressure,
+    };
+  }
+
+  /**
    * Forecast total session cost based on current velocity.
    * Projects cost from average cost-per-turn over remaining estimated turns.
    */

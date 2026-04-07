@@ -162,6 +162,11 @@ export class DaemonController {
         tickResult.tickNumber > 0 &&
         tickResult.tickNumber % gateInterval === 0
       ) {
+        // Gather router intelligence for the gate context
+        const routerIntel = this.options.getRouterIntelligence?.() ?? null;
+        const costPacing =
+          this.options.getCostPacing?.(this.config.tickIntervalMs) ?? null;
+
         const gateContext: ApprovalGateContext = {
           tickNumber: tickResult.tickNumber,
           ticksSinceLastGate: tickResult.tickNumber - this.lastGateTick,
@@ -169,6 +174,16 @@ export class DaemonController {
           toolCallsSinceLastGate: [...this.toolCallsSinceGate],
           totalCost: this.state.totalCost,
           sessionDurationMs: Date.now() - this.state.sessionStartedAt,
+          // Router intelligence
+          modelMomentum: routerIntel?.momentum ?? null,
+          recentFailures: routerIntel?.recentFailureCount ?? 0,
+          budgetPressure: costPacing?.budgetPressure ?? 0,
+          costPacingActive: costPacing
+            ? costPacing.intervalMs > this.config.tickIntervalMs
+            : false,
+          convergenceAlerts: routerIntel?.convergenceAlerts.length
+            ? routerIntel.convergenceAlerts
+            : undefined,
         };
 
         log.info(
@@ -230,11 +245,23 @@ export class DaemonController {
 
         await this.notifyStateChange();
       } else {
-        // Default tick interval
-        const defaultSleep = this.config.tickIntervalMs;
-        this.state.sleepUntil = Date.now() + defaultSleep;
-        this.state.sleepReason = "default tick interval";
+        // Cost-paced tick interval: ask BR's cost tracker for advice
+        const pacing = this.options.getCostPacing?.(this.config.tickIntervalMs);
+        const sleepMs = pacing?.intervalMs ?? this.config.tickIntervalMs;
+        this.state.sleepUntil = Date.now() + sleepMs;
+        this.state.sleepReason = pacing?.reason ?? "default tick interval";
         this.state.status = "sleeping";
+
+        if (pacing && pacing.intervalMs > this.config.tickIntervalMs) {
+          log.info(
+            {
+              defaultMs: this.config.tickIntervalMs,
+              advisedMs: pacing.intervalMs,
+              pressure: pacing.budgetPressure.toFixed(2),
+            },
+            "Cost pacer stretched tick interval",
+          );
+        }
       }
     }
 

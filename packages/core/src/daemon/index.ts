@@ -4,7 +4,11 @@ export {
   type DailyLogOptions,
   type LogAppendOptions,
 } from "./daily-log.js";
-export { formatTickMessage, type TickMessageContext } from "./tick-message.js";
+export {
+  formatTickMessage,
+  type TickMessageContext,
+  type DaemonMetrics,
+} from "./tick-message.js";
 export {
   type DaemonControllerOptions,
   type DaemonState,

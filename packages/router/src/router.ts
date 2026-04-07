@@ -237,6 +237,25 @@ export class BrainstormRouter {
     }
   }
 
+  /** Get current model momentum for daemon intelligence. */
+  getMomentum(): {
+    modelId: string;
+    successCount: number;
+    lastSuccess: number;
+    taskType: string;
+  } | null {
+    return this.momentum ? { ...this.momentum } : null;
+  }
+
+  /** Get recent failures for daemon intelligence. */
+  getRecentFailures(): Array<{
+    modelId: string;
+    timestamp: number;
+    error: string;
+  }> {
+    return [...this.recentFailures];
+  }
+
   setStrategy(name: StrategyName): void {
     this.activeStrategy = name;
   }
