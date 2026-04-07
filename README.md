@@ -52,6 +52,24 @@ Products:
 117 tools available across ecosystem.
 ```
 
+## For AI Operators
+
+If you're an LLM operating this codebase or using brainstorm as a tool:
+
+| Resource                                                   | What it provides                                                       |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------- |
+| [`docs/llm-operator-guide.md`](docs/llm-operator-guide.md) | Full CLI contract, tool reference, error shapes, auth, headless safety |
+| [`docs/tool-catalog.json`](docs/tool-catalog.json)         | Machine-readable JSON Schema for all 45 built-in tools                 |
+| `brainstorm introspect`                                    | Runtime capabilities dump (JSON): tools, models, auth state, config    |
+
+**Non-interactive usage:**
+
+```bash
+brainstorm run --json --tools "your prompt"                    # Single prompt, JSON output
+brainstorm run --json --tools --lfg --max-steps 15 "prompt"    # Full automation, no approval prompts
+brainstorm introspect                                          # Discover capabilities (always JSON)
+```
+
 ## How it works
 
 Every product implements the same contract — 3 endpoints:

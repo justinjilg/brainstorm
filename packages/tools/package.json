@@ -12,15 +12,19 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "export-catalog": "tsx src/export-catalog.ts",
+    "export-catalog:check": "tsx src/export-catalog.ts --check"
   },
   "dependencies": {
     "@brainst0rm/shared": "0.13.0",
     "ai": "^6",
     "zod": "^3",
-    "fast-glob": "^3"
+    "fast-glob": "^3",
+    "zod-to-json-schema": "^3.25"
   },
   "devDependencies": {
+    "tsx": "^4",
     "tsup": "^8",
     "typescript": "^5.7"
   },
