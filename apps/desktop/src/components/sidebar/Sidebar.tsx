@@ -1,4 +1,5 @@
 import type { AppMode } from "../../App";
+import { GodModeWidget } from "./GodModeWidget";
 
 const MODE_ICONS: Record<AppMode, string> = {
   chat: "💬",
@@ -133,6 +134,9 @@ export function Sidebar({
           </div>
         </div>
       </div>
+
+      {/* God Mode */}
+      <GodModeWidget />
 
       {/* Active role */}
       {activeRole && (
