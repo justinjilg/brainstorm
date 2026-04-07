@@ -1264,6 +1264,8 @@ program
     "--strategy <name>",
     "Routing strategy: cost-first, quality-first, combined, capability",
   )
+  .option("--json", "Output final result as structured JSON")
+  .option("--events", "Stream every AgentEvent as timestamped JSONL")
   .option("--lfg", "Full auto mode — skip all permission confirmations")
   .option(
     "--unattended",
@@ -1278,6 +1280,8 @@ program
         tools?: boolean;
         maxSteps?: string;
         strategy?: string;
+        json?: boolean;
+        events?: boolean;
         lfg?: boolean;
         unattended?: boolean;
       },
@@ -1316,14 +1320,17 @@ program
         if (!opts.maxSteps || opts.maxSteps === "1") opts.maxSteps = "15";
       }
 
-      // TTY detection: terminal gets human rendering, pipes get JSONL events
-      const isTTY = process.stdout.isTTY ?? false;
+      // Output mode: explicit flags override, human-readable by default
+      const machineMode = opts.json || opts.events;
+      // Can we prompt for input? Only if stdin is a TTY.
+      const canPrompt = process.stdin.isTTY ?? false;
 
       const db = getDb();
-      // When piped, skip vault prompt (headless — env-only key resolution)
-      const resolvedKeys = isTTY
-        ? await resolveProviderKeys()
-        : { get: (name: string) => process.env[name] ?? null };
+      // Skip vault prompt when non-interactive (no TTY on stdin) or explicit machine mode
+      const resolvedKeys =
+        canPrompt && !machineMode
+          ? await resolveProviderKeys()
+          : { get: (name: string) => process.env[name] ?? null };
       const resolvedBRKey =
         resolvedKeys.get("BRAINSTORM_API_KEY") ?? getBrainstormApiKey();
       const isCommunityTier = isCommunityKey(resolvedBRKey);
@@ -1484,7 +1491,7 @@ program
       let modelName = "unknown";
       let toolCallCount = 0;
 
-      if (isTTY) {
+      if (!machineMode) {
         process.stdout.write("\n");
       }
 
@@ -1517,8 +1524,8 @@ program
         middleware,
         routingOutcomeRepo,
       })) {
-        // Piped: every event as timestamped JSONL
-        if (!isTTY) {
+        // --events: every event as timestamped JSONL
+        if (opts.events) {
           process.stdout.write(
             JSON.stringify({ ts: Date.now(), ...event }) + "\n",
           );
@@ -1539,13 +1546,37 @@ program
             modelName = event.toModel;
             fullResponse = "";
             break;
-          case "error":
-            if (!isTTY) process.exit(1);
-            break;
         }
 
-        // TTY: human rendering
-        if (isTTY) {
+        // --json: emit final result only (on done/error)
+        if (opts.json) {
+          if (event.type === "done") {
+            process.stdout.write(
+              JSON.stringify({
+                text: fullResponse,
+                model: modelName,
+                cost: event.totalCost,
+                toolCalls: toolCallCount,
+                success: true,
+              }) + "\n",
+            );
+          } else if (event.type === "error") {
+            process.stdout.write(
+              JSON.stringify({
+                text: "",
+                model: modelName,
+                cost: 0,
+                toolCalls: toolCallCount,
+                error: event.error.message,
+                success: false,
+              }) + "\n",
+            );
+            process.exit(1);
+          }
+        }
+
+        // Default: human rendering
+        if (!machineMode) {
           switch (event.type) {
             case "thinking": {
               const frames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
