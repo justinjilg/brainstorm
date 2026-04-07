@@ -190,6 +190,8 @@ import {
 } from "./builtin/br-intelligence.js";
 import { createToolSearchTool } from "./builtin/tool-search.js";
 import { daemonSleepTool } from "./builtin/sleep.js";
+import { memoryTool } from "./builtin/memory-tool.js";
+export { createWiredMemoryTool } from "./builtin/memory-tool.js";
 
 export function createDefaultToolRegistry(opts?: {
   daemon?: boolean;
@@ -250,6 +252,8 @@ export function createDefaultToolRegistry(opts?: {
   registry.register(brMemorySearchTool);
   registry.register(brMemoryStoreTool);
   registry.register(brHealthTool);
+  // Memory (1) — read, write, search, promote, demote persistent memory
+  registry.register(memoryTool);
   // Tool search (1) — discovers and resolves deferred MCP tools
   registry.register(createToolSearchTool(registry));
   // Daemon sleep — only registered when daemon mode is active

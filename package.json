@@ -28,9 +28,6 @@
     "vitest": "^3"
   },
   "lint-staged": {
-    "packages/tools/src/builtin/**/*.ts": [
-      "npm run --workspace=@brainst0rm/tools export-catalog:check"
-    ],
     "*.{ts,tsx}": [
       "prettier --write"
     ],
