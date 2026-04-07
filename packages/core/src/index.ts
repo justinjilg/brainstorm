@@ -132,6 +132,12 @@ export {
   type PolicyFinding,
 } from "./security/policy-validator.js";
 export {
+  validateToolContract,
+  hasToolContract,
+  type ContractViolation,
+  type ContractResult,
+} from "./security/tool-contracts.js";
+export {
   getToolOutputTrust,
   getToolTrustThreshold,
   checkToolTrust,
@@ -277,6 +283,9 @@ export {
   trajectoryReductionMiddleware,
   autoLintMiddleware,
   createToolOutputTruncationMiddleware,
+  createToolSequenceDetectorMiddleware,
+  createEgressMonitorMiddleware,
+  createToolContractMiddleware,
 } from "./middleware/index.js";
 export {
   SessionCheckpointer,

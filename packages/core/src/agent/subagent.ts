@@ -7,9 +7,11 @@ import {
   setDockerSandbox,
   DockerSandbox,
 } from "@brainst0rm/tools";
-import { serializeRoutingMetadata } from "@brainst0rm/shared";
+import { serializeRoutingMetadata, createLogger } from "@brainst0rm/shared";
 import type { SystemPromptSegment } from "./context.js";
 import { segmentsToSystemArray } from "./context.js";
+
+const log = createLogger("subagent");
 
 // ── Subagent Types ──────────────────────────────────────────────────
 
@@ -211,7 +213,11 @@ export interface SubagentOptions {
   budgetLimit?: number;
   /** Optional hook callback for SubagentStart/SubagentStop events. */
   onHook?: SubagentHookFn;
-  /** Permission check — when provided, subagent tools are gated by this function. */
+  /**
+   * Permission check — gating function for subagent tools.
+   * MANDATORY: if not provided, subagent tools are restricted to read-only.
+   * This prevents privilege escalation via subagent spawning.
+   */
   permissionCheck?: (
     toolName: string,
     toolPermission: any,
@@ -220,6 +226,12 @@ export interface SubagentOptions {
   containerIsolation?: boolean;
   /** Parent's system prompt segments — enables prompt cache sharing (fork model). */
   parentSegments?: SystemPromptSegment[];
+  /**
+   * Parent's available tool names — subagent tools are intersected with this set.
+   * Prevents privilege escalation: a subagent can never have more tools than its parent.
+   * If not provided, the subagent type's allowedTools are used as-is (legacy behavior).
+   */
+  parentToolNames?: string[];
 }
 
 export interface SubagentResult {
@@ -288,15 +300,67 @@ export async function spawnSubagent(
   const systemPrompt = options.systemPrompt ?? typeConfig.systemPrompt;
   const maxSteps = options.maxSteps ?? typeConfig.defaultMaxSteps;
 
-  // Filter tools based on subagent type — always enforce permission gating
-  const allowedNames =
-    typeConfig.allowedTools === "all" ? undefined : typeConfig.allowedTools;
+  // ── Privilege Reduction: subagent tools are the INTERSECTION of ──
+  // ── its type's allowed tools and the parent's available tools.  ──
+  // ── A subagent can NEVER have more tools than its parent.       ──
+
+  // Step 1: Determine the subagent type's allowed tool set
+  let typeAllowed: string[] | undefined =
+    typeConfig.allowedTools === "all"
+      ? undefined
+      : [...typeConfig.allowedTools];
+
+  // Step 2: Intersect with parent's available tools (privilege ceiling)
+  if (options.parentToolNames && options.parentToolNames.length > 0) {
+    const parentSet = new Set(options.parentToolNames);
+    if (typeAllowed) {
+      // Type has explicit list — intersect with parent
+      typeAllowed = typeAllowed.filter((t) => parentSet.has(t));
+    } else {
+      // Type gets "all" — restrict to parent's set
+      typeAllowed = options.parentToolNames;
+    }
+  }
+
+  // Step 3: Mutating subagent types (code, general) REQUIRE permissionCheck.
+  // Without it, they're downgraded to read-only to prevent privilege escalation.
+  const MUTATING_TYPES = new Set<SubagentType>(["code", "general"]);
+  const READ_ONLY_TOOLS = [
+    "file_read",
+    "glob",
+    "grep",
+    "list_dir",
+    "git_status",
+    "git_diff",
+    "git_log",
+  ];
+
+  if (MUTATING_TYPES.has(type) && !options.permissionCheck) {
+    log.warn(
+      { type },
+      "Mutating subagent spawned without permissionCheck — restricting to read-only",
+    );
+    typeAllowed = READ_ONLY_TOOLS;
+  }
+
+  // Step 4: Build the filtered tool set
   const baseTools = options.permissionCheck
-    ? tools.toAISDKToolsWithPermissions(options.permissionCheck, allowedNames)
-    : allowedNames
-      ? tools.toAISDKToolsFiltered(allowedNames)
+    ? tools.toAISDKToolsWithPermissions(options.permissionCheck, typeAllowed)
+    : typeAllowed
+      ? tools.toAISDKToolsFiltered(typeAllowed)
       : tools.toAISDKTools();
   const filteredTools = baseTools;
+
+  // Log the effective capability manifest (frozen at spawn time)
+  log.info(
+    {
+      type,
+      effectiveTools: typeAllowed ?? "all",
+      parentToolCount: options.parentToolNames?.length ?? "unrestricted",
+      hasPermissionCheck: !!options.permissionCheck,
+    },
+    "Subagent capability manifest frozen",
+  );
 
   const subagentSessionId = `subagent-${type}-${Date.now()}`;
   const budgetLimit = options.budgetLimit ?? costTracker.getSubagentBudget();
