@@ -13,6 +13,7 @@ import { homedir } from "node:os";
 import { createHash } from "node:crypto";
 import { createLogger } from "@brainst0rm/shared";
 import type { BrainstormGateway } from "@brainst0rm/gateway";
+import { initMemoryRepo, commitMemoryChange } from "./git.js";
 
 const log = createLogger("memory");
 
@@ -69,6 +70,7 @@ export class MemoryManager {
     this.indexPath = join(this.memoryDir, "MEMORY.md");
     mkdirSync(this.memoryDir, { recursive: true });
     mkdirSync(this.systemDir, { recursive: true });
+    initMemoryRepo(this.memoryDir);
     this.loadAll();
   }
 
@@ -140,6 +142,12 @@ export class MemoryManager {
         });
     }
 
+    // Git-track the change
+    commitMemoryChange(
+      this.memoryDir,
+      `memory: ${existing ? "update" : "create"} ${memory.name}`,
+    );
+
     return memory;
   }
 
@@ -155,15 +163,20 @@ export class MemoryManager {
 
   /** Delete a memory entry. */
   delete(id: string): boolean {
-    if (!this.entries.has(id)) return false;
+    const entry = this.entries.get(id);
+    if (!entry) return false;
     this.entries.delete(id);
-    const filePath = join(this.memoryDir, `${id}.md`);
+
+    // Remove from correct directory based on tier
+    const dir = entry.tier === "system" ? this.systemDir : this.memoryDir;
+    const filePath = join(dir, `${id}.md`);
     try {
       unlinkSync(filePath);
     } catch (e) {
       log.warn({ err: e, filePath }, "Failed to delete memory file");
     }
     this.scheduleIndexUpdate();
+    commitMemoryChange(this.memoryDir, `memory: delete ${entry.name}`);
     return true;
   }
 

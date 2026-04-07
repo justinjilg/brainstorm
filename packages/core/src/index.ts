@@ -51,6 +51,20 @@ export {
 } from "./memory/manager.js";
 export { DREAM_SYSTEM_PROMPT, buildDreamPrompt } from "./memory/dream.js";
 export {
+  exportStormFile,
+  importStormFile,
+  readStormFile,
+  writeStormFile,
+  type StormFile,
+  type ImportResult,
+} from "./agent/storm-file.js";
+export {
+  initMemoryRepo,
+  commitMemoryChange,
+  getMemoryHistory,
+  getMemoryDiff,
+} from "./memory/git.js";
+export {
   runDreamCycle,
   isDreamDue,
   incrementDreamSessionCounter,
