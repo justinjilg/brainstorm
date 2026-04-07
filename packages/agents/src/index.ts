@@ -27,3 +27,8 @@ export {
   type AgentCreationIntent,
   type ParseResult,
 } from "./nl-parser.js";
+export {
+  ROLE_SKILLS,
+  getSkillsForRole,
+  getAllMappedSkills,
+} from "./role-skills.js";
