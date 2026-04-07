@@ -11,5 +11,6 @@ export {
   type DaemonStatus,
   type TickResult,
   type WakeTrigger,
+  type ApprovalGateContext,
   createInitialState,
 } from "./types.js";

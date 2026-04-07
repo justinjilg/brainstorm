@@ -38,6 +38,11 @@ export {
 export { createEgressMonitorMiddleware } from "./builtin/egress-monitor.js";
 export { createToolContractMiddleware } from "./builtin/tool-contract-enforcement.js";
 export { createContentInjectionFilterMiddleware } from "./builtin/content-injection-filter.js";
+export {
+  createApprovalFrictionMiddleware,
+  recordApprovalDecision,
+  getApprovalTracker,
+} from "./builtin/approval-friction.js";
 
 /**
  * Create a default middleware pipeline with all built-in middleware.
@@ -61,6 +66,7 @@ import { createToolSequenceDetectorMiddleware } from "./builtin/tool-sequence-de
 import { createEgressMonitorMiddleware } from "./builtin/egress-monitor.js";
 import { createToolContractMiddleware } from "./builtin/tool-contract-enforcement.js";
 import { createContentInjectionFilterMiddleware } from "./builtin/content-injection-filter.js";
+import { createApprovalFrictionMiddleware } from "./builtin/approval-friction.js";
 import { codeExtractionMiddleware } from "./code-extraction.js";
 
 export function createDefaultMiddlewarePipeline(
@@ -73,6 +79,7 @@ export function createDefaultMiddlewarePipeline(
   pipeline.use(createToolContractMiddleware()); // Argument validation — catches dangerous args early
   pipeline.use(createToolSequenceDetectorMiddleware()); // Sequence detection — trust-aware pattern matching
   pipeline.use(createEgressMonitorMiddleware()); // Network boundary — blocks exfiltration patterns
+  pipeline.use(createApprovalFrictionMiddleware()); // Human shield — approval velocity + cooling periods
   pipeline.use(turnContextMiddleware);
   pipeline.use(toolHealthMiddleware);
   pipeline.use(buildStateMiddleware);
