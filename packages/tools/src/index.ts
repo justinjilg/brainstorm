@@ -106,6 +106,12 @@ export {
 } from "./builtin/shell.js";
 export { ghPrTool } from "./builtin/gh-pr.js";
 export { ghIssueTool } from "./builtin/gh-issue.js";
+export { ghReviewTool } from "./builtin/gh-review.js";
+export { ghActionsTool } from "./builtin/gh-actions.js";
+export { ghReleaseTool } from "./builtin/gh-release.js";
+export { ghSearchTool } from "./builtin/gh-search.js";
+export { ghSecurityTool } from "./builtin/gh-security.js";
+export { ghRepoTool } from "./builtin/gh-repo.js";
 export { gitBranchTool } from "./builtin/git-branch.js";
 export { gitStashTool } from "./builtin/git-stash.js";
 export { listDirTool } from "./builtin/list-dir.js";
@@ -150,6 +156,12 @@ import { gitLogTool } from "./builtin/git-log.js";
 import { gitCommitTool } from "./builtin/git-commit.js";
 import { ghPrTool } from "./builtin/gh-pr.js";
 import { ghIssueTool } from "./builtin/gh-issue.js";
+import { ghReviewTool } from "./builtin/gh-review.js";
+import { ghActionsTool } from "./builtin/gh-actions.js";
+import { ghReleaseTool } from "./builtin/gh-release.js";
+import { ghSearchTool } from "./builtin/gh-search.js";
+import { ghSecurityTool } from "./builtin/gh-security.js";
+import { ghRepoTool } from "./builtin/gh-repo.js";
 import { gitBranchTool } from "./builtin/git-branch.js";
 import { gitStashTool } from "./builtin/git-stash.js";
 import { listDirTool } from "./builtin/list-dir.js";
@@ -219,8 +231,15 @@ export function createDefaultToolRegistry(opts?: {
   registry.register(gitBranchTool);
   registry.register(gitStashTool);
   // GitHub (2)
+  // GitHub (8)
   registry.register(ghPrTool);
   registry.register(ghIssueTool);
+  registry.register(ghReviewTool);
+  registry.register(ghActionsTool);
+  registry.register(ghReleaseTool);
+  registry.register(ghSearchTool);
+  registry.register(ghSecurityTool);
+  registry.register(ghRepoTool);
   // Web (2)
   registry.register(webFetchTool);
   registry.register(webSearchTool);

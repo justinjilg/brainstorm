@@ -44,6 +44,12 @@ const TRUST_THRESHOLDS: Record<string, number> = {
 
   // Memory tools: moderate trust
   memory: 0.4,
+
+  // GitHub tools: moderate-high trust for mutating actions
+  gh_pr: 0.5,
+  gh_review: 0.5,
+  gh_release: 0.6,
+  gh_actions: 0.5,
 };
 
 /** Tools whose outputs are inherently untrusted (external data). */
