@@ -17,18 +17,51 @@ import { initMemoryRepo, commitMemoryChange } from "./git.js";
 
 const log = createLogger("memory");
 
-export type MemoryTier = "system" | "archive";
+export type MemoryTier = "system" | "archive" | "quarantine";
+
+export type MemorySource =
+  | "user_input"
+  | "web_fetch"
+  | "agent_extraction"
+  | "dream_consolidation"
+  | "import"
+  | "local_file"
+  | "unknown";
+
+/** Default trust scores by source. Higher = more trusted. */
+const DEFAULT_TRUST: Record<MemorySource, number> = {
+  user_input: 1.0,
+  local_file: 0.6,
+  agent_extraction: 0.5,
+  dream_consolidation: 0.7,
+  web_fetch: 0.2,
+  import: 0.3,
+  unknown: 0.4,
+};
+
+/** Threshold below which entries are quarantined instead of stored normally. */
+const QUARANTINE_THRESHOLD = 0.4;
 
 export interface MemoryEntry {
   id: string;
   type: "user" | "project" | "feedback" | "reference";
-  /** system = always in prompt. archive = index only, loaded on demand. */
+  /** system = always in prompt. archive = index only. quarantine = untrusted, not injected. */
   tier: MemoryTier;
   name: string;
   description: string;
   content: string;
   createdAt: number;
   updatedAt: number;
+  /** Where this entry originated. */
+  source: MemorySource;
+  /** URL if sourced from web. */
+  sourceUrl?: string;
+  /** Trust score 0.0-1.0. Derived from source, can be overridden. */
+  trustScore: number;
+  /** SHA256 of content for tamper detection. */
+  contentHash: string;
+  /** Who created this entry (user, agent model ID, dream, import). */
+  author?: string;
 }
 
 /**
@@ -47,6 +80,7 @@ const MAX_MEMORY_BYTES = 25 * 1024; // 25KB — matches Claude Code's cap
 export class MemoryManager {
   private memoryDir: string;
   private systemDir: string;
+  private quarantineDir: string;
   private indexPath: string;
   private entries: Map<string, MemoryEntry> = new Map();
   private indexDirty = false;
@@ -67,35 +101,70 @@ export class MemoryManager {
       "memory",
     );
     this.systemDir = join(this.memoryDir, "system");
+    this.quarantineDir = join(this.memoryDir, "quarantine");
     this.indexPath = join(this.memoryDir, "MEMORY.md");
     mkdirSync(this.memoryDir, { recursive: true });
     mkdirSync(this.systemDir, { recursive: true });
+    mkdirSync(this.quarantineDir, { recursive: true });
     initMemoryRepo(this.memoryDir);
     this.loadAll();
   }
 
   /** Save a memory entry. Creates or updates the file. */
   save(
-    entry: Omit<MemoryEntry, "id" | "createdAt" | "updatedAt" | "tier"> & {
+    entry: Omit<
+      MemoryEntry,
+      "id" | "createdAt" | "updatedAt" | "tier" | "trustScore" | "contentHash"
+    > & {
       tier?: MemoryTier;
+      trustScore?: number;
     },
   ): MemoryEntry {
     const id = entry.name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
     const now = Math.floor(Date.now() / 1000);
     const existing = this.entries.get(id);
 
-    // Default tier: user/feedback → system (always in prompt), project/reference → archive
-    const tier =
-      entry.tier ??
-      existing?.tier ??
-      (entry.type === "user" || entry.type === "feedback"
-        ? "system"
-        : "archive");
+    // Resolve trust score from explicit value, existing entry, or source default
+    const source = entry.source ?? "unknown";
+    const trustScore =
+      entry.trustScore ?? existing?.trustScore ?? DEFAULT_TRUST[source];
+    const contentHash = createHash("sha256")
+      .update(entry.content)
+      .digest("hex")
+      .slice(0, 16);
+
+    // Quarantine low-trust entries — never auto-promote to system tier
+    let tier: MemoryTier;
+    if (trustScore < QUARANTINE_THRESHOLD && !entry.tier) {
+      tier = "quarantine";
+      log.info({ id, source, trustScore }, "Low-trust entry quarantined");
+    } else if (
+      entry.tier === "system" &&
+      source === "web_fetch" &&
+      trustScore < 0.7
+    ) {
+      // Block web-sourced entries from system tier unless high trust
+      tier = "archive";
+      log.warn(
+        { id, source, trustScore },
+        "Web-sourced entry blocked from system tier — demoted to archive",
+      );
+    } else {
+      tier =
+        entry.tier ??
+        existing?.tier ??
+        (entry.type === "user" || entry.type === "feedback"
+          ? "system"
+          : "archive");
+    }
 
     const memory: MemoryEntry = {
       id,
       ...entry,
+      source,
       tier,
+      trustScore,
+      contentHash,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     };
@@ -103,7 +172,11 @@ export class MemoryManager {
     // If tier changed, remove from old location
     if (existing && existing.tier !== tier) {
       const oldDir =
-        existing.tier === "system" ? this.systemDir : this.memoryDir;
+        existing.tier === "system"
+          ? this.systemDir
+          : existing.tier === "quarantine"
+            ? this.quarantineDir
+            : this.memoryDir;
       const oldPath = join(oldDir, `${id}.md`);
       try {
         unlinkSync(oldPath);
@@ -113,18 +186,26 @@ export class MemoryManager {
     }
 
     // Write memory file to the correct directory
-    const targetDir = tier === "system" ? this.systemDir : this.memoryDir;
+    const targetDir =
+      tier === "system"
+        ? this.systemDir
+        : tier === "quarantine"
+          ? this.quarantineDir
+          : this.memoryDir;
     const filePath = join(targetDir, `${id}.md`);
-    const fileContent = [
+    const fmLines = [
       "---",
       `name: ${memory.name}`,
       `description: ${memory.description}`,
       `type: ${memory.type}`,
-      "---",
-      "",
-      memory.content,
-    ].join("\n");
-    writeFileSync(filePath, fileContent, "utf-8");
+      `source: ${memory.source}`,
+      `trustScore: ${memory.trustScore}`,
+      `contentHash: ${memory.contentHash}`,
+    ];
+    if (memory.sourceUrl) fmLines.push(`sourceUrl: ${memory.sourceUrl}`);
+    if (memory.author) fmLines.push(`author: ${memory.author}`);
+    fmLines.push("---", "", memory.content);
+    writeFileSync(filePath, fmLines.join("\n"), "utf-8");
 
     this.entries.set(id, memory);
     this.enforceCapacity();
@@ -168,7 +249,12 @@ export class MemoryManager {
     this.entries.delete(id);
 
     // Remove from correct directory based on tier
-    const dir = entry.tier === "system" ? this.systemDir : this.memoryDir;
+    const dir =
+      entry.tier === "system"
+        ? this.systemDir
+        : entry.tier === "quarantine"
+          ? this.quarantineDir
+          : this.memoryDir;
     const filePath = join(dir, `${id}.md`);
     try {
       unlinkSync(filePath);
@@ -191,11 +277,18 @@ export class MemoryManager {
     const parts: string[] = [];
     const systemEntries = this.list().filter((m) => m.tier === "system");
     const archiveEntries = this.list().filter((m) => m.tier === "archive");
+    const quarantinedEntries = this.list().filter(
+      (m) => m.tier === "quarantine",
+    );
 
     if (systemEntries.length > 0) {
       parts.push("### Active Memory (always loaded)\n");
       for (const m of systemEntries) {
-        parts.push(`**${m.name}** (${m.type}): ${m.description}`);
+        const trustTag =
+          m.source !== "user_input"
+            ? ` [source: ${m.source}, trust: ${m.trustScore.toFixed(1)}]`
+            : "";
+        parts.push(`**${m.name}** (${m.type})${trustTag}: ${m.description}`);
         parts.push(m.content);
         parts.push("");
       }
@@ -205,6 +298,19 @@ export class MemoryManager {
       parts.push("### Archive (search to load)\n");
       for (const m of archiveEntries) {
         parts.push(`- **${m.name}** — ${m.description}`);
+      }
+      parts.push("");
+    }
+
+    // Quarantined entries are NOT injected as content — only listed as warnings
+    if (quarantinedEntries.length > 0) {
+      parts.push(
+        `### Quarantined (${quarantinedEntries.length} entries — untrusted, not loaded)\n`,
+      );
+      for (const m of quarantinedEntries) {
+        parts.push(
+          `- **${m.name}** [${m.source}, trust: ${m.trustScore.toFixed(1)}] — ${m.description}`,
+        );
       }
       parts.push("");
     }
@@ -264,9 +370,10 @@ export class MemoryManager {
   }
 
   private loadAll(): void {
-    // Load from both root (archive) and system/ directories
+    // Load from root (archive), system/, and quarantine/ directories
     this.loadFromDir(this.memoryDir, "archive");
     this.loadFromDir(this.systemDir, "system");
+    this.loadFromDir(this.quarantineDir, "quarantine");
   }
 
   private loadFromDir(dir: string, tier: MemoryTier): void {
@@ -318,6 +425,28 @@ export class MemoryManager {
     const type = (fm.match(/type:\s*(.+)/)?.[1]?.trim() ??
       "project") as MemoryEntry["type"];
 
+    // Provenance fields (backwards-compatible: defaults for legacy entries)
+    const source = (fm.match(/source:\s*(.+)/)?.[1]?.trim() ??
+      "unknown") as MemorySource;
+    const trustScore =
+      parseFloat(fm.match(/trustScore:\s*(.+)/)?.[1]?.trim() ?? "") ||
+      DEFAULT_TRUST[source];
+    const storedHash = fm.match(/contentHash:\s*(.+)/)?.[1]?.trim();
+    const sourceUrl = fm.match(/sourceUrl:\s*(.+)/)?.[1]?.trim();
+    const author = fm.match(/author:\s*(.+)/)?.[1]?.trim();
+
+    // Integrity check: verify content hash if stored
+    const computedHash = createHash("sha256")
+      .update(body)
+      .digest("hex")
+      .slice(0, 16);
+    if (storedHash && storedHash !== computedHash) {
+      log.warn(
+        { id, stored: storedHash, computed: computedHash },
+        "Memory entry content hash mismatch — possible tampering",
+      );
+    }
+
     // Use file modification time for LRU ordering instead of Date.now()
     const mtime = fileMtimeMs
       ? Math.floor(fileMtimeMs / 1000)
@@ -330,6 +459,11 @@ export class MemoryManager {
       type,
       tier: tier ?? "archive",
       content: body,
+      source,
+      sourceUrl,
+      trustScore,
+      contentHash: computedHash,
+      author,
       createdAt: mtime,
       updatedAt: mtime,
     };
@@ -422,6 +556,9 @@ export class MemoryManager {
 
     const systemEntries = this.list().filter((m) => m.tier === "system");
     const archiveEntries = this.list().filter((m) => m.tier === "archive");
+    const quarantinedEntries = this.list().filter(
+      (m) => m.tier === "quarantine",
+    );
 
     const lines: string[] = [];
     if (systemEntries.length > 0) {
@@ -436,16 +573,28 @@ export class MemoryManager {
       for (const m of archiveEntries) {
         lines.push(`- [${m.name}](${m.id}.md) — ${m.description}`);
       }
+      lines.push("");
+    }
+    if (quarantinedEntries.length > 0) {
+      lines.push("## Quarantine (untrusted — review before use)\n");
+      for (const m of quarantinedEntries) {
+        lines.push(
+          `- [${m.name}](quarantine/${m.id}.md) — ${m.description} [${m.source}, trust: ${m.trustScore.toFixed(1)}]`,
+        );
+      }
     }
 
     writeFileSync(this.indexPath, lines.join("\n") + "\n", "utf-8");
   }
 
-  /** Promote an archive entry to system (always in prompt). */
+  /** Promote an entry to system tier (always in prompt). Quarantined entries require explicit trust override. */
   promote(id: string): boolean {
     const entry = this.entries.get(id);
     if (!entry || entry.tier === "system") return false;
-    return !!this.save({ ...entry, tier: "system" });
+    // Quarantined entries get trust bumped on explicit promotion
+    const trustOverride =
+      entry.tier === "quarantine" ? Math.max(entry.trustScore, 0.6) : undefined;
+    return !!this.save({ ...entry, tier: "system", trustScore: trustOverride });
   }
 
   /** Demote a system entry to archive (index only). */
@@ -453,6 +602,17 @@ export class MemoryManager {
     const entry = this.entries.get(id);
     if (!entry || entry.tier === "archive") return false;
     return !!this.save({ ...entry, tier: "archive" });
+  }
+
+  /** Quarantine an entry (remove from prompt, mark as untrusted). */
+  quarantine(id: string): boolean {
+    const entry = this.entries.get(id);
+    if (!entry || entry.tier === "quarantine") return false;
+    return !!this.save({
+      ...entry,
+      tier: "quarantine",
+      trustScore: Math.min(entry.trustScore, 0.3),
+    });
   }
 
   /** List entries by tier. */

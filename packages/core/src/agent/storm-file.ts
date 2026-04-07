@@ -174,6 +174,8 @@ export function importStormFile(
       description: entry.description,
       content: entry.content,
       tier: "system" as MemoryTier,
+      source: "import" as const,
+      author: `storm-import:${stormFile.agent.id}`,
     });
     systemCount++;
   }
@@ -185,6 +187,8 @@ export function importStormFile(
       description: entry.description,
       content: entry.content,
       tier: "archive" as MemoryTier,
+      source: "import" as const,
+      author: `storm-import:${stormFile.agent.id}`,
     });
     archiveCount++;
   }

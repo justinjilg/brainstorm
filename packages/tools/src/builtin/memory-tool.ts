@@ -107,12 +107,18 @@ export function createWiredMemoryTool(manager: any) {
             content: input.content,
             type: input.type ?? "project",
             tier: input.tier,
+            source: "agent_extraction" as const,
+            author: "agent",
           });
           return {
             saved: true,
             id: entry.id,
             tier: entry.tier,
-            message: `Memory "${entry.name}" saved to ${entry.tier}`,
+            trustScore: entry.trustScore,
+            message:
+              entry.tier === "quarantine"
+                ? `Memory "${entry.name}" quarantined (low trust: ${entry.trustScore.toFixed(1)})`
+                : `Memory "${entry.name}" saved to ${entry.tier}`,
           };
         }
 
