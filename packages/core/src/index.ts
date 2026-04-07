@@ -138,6 +138,16 @@ export {
   type ContractResult,
 } from "./security/tool-contracts.js";
 export {
+  sanitizeContent,
+  extractText,
+  type SanitizeResult,
+} from "./security/content-sanitizer.js";
+export {
+  scanContent,
+  type ContentScanResult,
+  type ScanFinding,
+} from "./security/markdown-scanner.js";
+export {
   getToolOutputTrust,
   getToolTrustThreshold,
   checkToolTrust,
@@ -286,6 +296,7 @@ export {
   createToolSequenceDetectorMiddleware,
   createEgressMonitorMiddleware,
   createToolContractMiddleware,
+  createContentInjectionFilterMiddleware,
 } from "./middleware/index.js";
 export {
   SessionCheckpointer,
