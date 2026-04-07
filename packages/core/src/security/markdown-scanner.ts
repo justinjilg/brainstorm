@@ -212,6 +212,36 @@ const SCAN_RULES: ScanRule[] = [
  * Returns findings and a composite risk score.
  */
 export function scanContent(content: string): ContentScanResult {
+  // Input size limit
+  const MAX_SCAN_SIZE = 1_000_000;
+  if (content.length > MAX_SCAN_SIZE) {
+    content = content.slice(0, MAX_SCAN_SIZE);
+  }
+
+  try {
+    return _scanContentUnsafe(content);
+  } catch (err) {
+    // FAIL CLOSED: if scanning crashes, report as unsafe
+    log.error(
+      { err, inputLength: content.length },
+      "Content scan crashed — reporting as unsafe (fail-closed)",
+    );
+    return {
+      safe: false,
+      findings: [
+        {
+          category: "scan-error",
+          severity: "high",
+          detail: `Scanner crashed: ${err instanceof Error ? err.message : "unknown"}`,
+          offset: 0,
+        },
+      ],
+      riskScore: 1.0,
+    };
+  }
+}
+
+function _scanContentUnsafe(content: string): ContentScanResult {
   const findings: ScanFinding[] = [];
   let totalWeight = 0;
 
@@ -237,13 +267,13 @@ export function scanContent(content: string): ContentScanResult {
   const safe = findings.filter((f) => f.severity === "high").length === 0;
 
   if (findings.length > 0) {
-    log.info(
+    log.warn(
       {
         findingCount: findings.length,
         riskScore: riskScore.toFixed(2),
         categories: [...new Set(findings.map((f) => f.category))],
       },
-      "Content scan complete",
+      "Content scan: suspicious patterns detected",
     );
   }
 

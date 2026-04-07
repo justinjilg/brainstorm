@@ -58,9 +58,9 @@ function buildTagRemovalRegex(tag: string): RegExp {
 /** Event handler attributes. */
 const EVENT_HANDLER_RE = /\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi;
 
-/** javascript: and data: URLs in attributes. */
+/** javascript: and data: URLs in attributes (quoted and unquoted). */
 const DANGEROUS_URL_RE =
-  /\s+(href|src|action|formaction)\s*=\s*(?:"(?:javascript|data|vbscript):[^"]*"|'(?:javascript|data|vbscript):[^']*')/gi;
+  /\s+(href|src|action|formaction)\s*=\s*(?:"(?:javascript|data|vbscript):[^"]*"|'(?:javascript|data|vbscript):[^']*'|(?:javascript|data|vbscript):[^\s>]*)/gi;
 
 // ── Hidden Content Patterns ────────────────────────────────────────
 
@@ -81,6 +81,34 @@ const LARGE_BASE64_RE = /[A-Za-z0-9+/]{200,}={0,2}/g;
  * Returns cleaned content safe for LLM context injection.
  */
 export function sanitizeContent(raw: string): SanitizeResult {
+  // Input size limit — prevent ReDoS/OOM on very large inputs
+  const MAX_INPUT_SIZE = 1_000_000; // 1MB
+  if (raw.length > MAX_INPUT_SIZE) {
+    log.warn(
+      { size: raw.length, limit: MAX_INPUT_SIZE },
+      "Input exceeds sanitization size limit — truncating",
+    );
+    raw = raw.slice(0, MAX_INPUT_SIZE);
+  }
+
+  try {
+    return _sanitizeContentUnsafe(raw);
+  } catch (err) {
+    // FAIL CLOSED: if sanitization crashes, return empty content
+    log.error(
+      { err, inputLength: raw.length },
+      "Content sanitization crashed — returning empty content (fail-closed)",
+    );
+    return {
+      content: "",
+      strippedCount: 1,
+      strippedCategories: ["sanitization-error"],
+      modified: true,
+    };
+  }
+}
+
+function _sanitizeContentUnsafe(raw: string): SanitizeResult {
   let content = raw;
   let strippedCount = 0;
   const strippedCategories: string[] = [];
@@ -96,6 +124,20 @@ export function sanitizeContent(raw: string): SanitizeResult {
       }
       content = content.replace(re, "");
     }
+  }
+
+  // 1b. Strip any remaining unclosed dangerous opening tags
+  const unclosedTagRe = new RegExp(
+    `<(${REMOVE_WITH_CONTENT.join("|")})\\b[^>]*>`,
+    "gi",
+  );
+  const unclosedMatches = content.match(unclosedTagRe);
+  if (unclosedMatches && unclosedMatches.length > 0) {
+    strippedCount += unclosedMatches.length;
+    if (!strippedCategories.includes("dangerous-tags")) {
+      strippedCategories.push("dangerous-tags");
+    }
+    content = content.replace(unclosedTagRe, "");
   }
 
   // 2. Remove event handler attributes
@@ -141,9 +183,9 @@ export function sanitizeContent(raw: string): SanitizeResult {
   const modified = content !== raw;
 
   if (modified) {
-    log.info(
+    log.warn(
       { strippedCount, categories: strippedCategories },
-      "Content sanitized",
+      "Content sanitized — dangerous elements stripped",
     );
   }
 
