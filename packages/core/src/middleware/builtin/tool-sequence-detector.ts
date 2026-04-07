@@ -65,6 +65,7 @@ const EXFIL_COMMAND_PATTERNS = [
   /\bbase64\b/,
   /\bxxd\b/,
   /\bopenssl\b.*enc/,
+  /-F\s+\S*file=@/i, // curl file upload
 ];
 
 function hasExfilIndicators(command: string): boolean {
@@ -149,6 +150,20 @@ const SEQUENCE_RULES: SequenceRule[] = [
     reason:
       "Sensitive file was read recently — blocking outbound web request. Secrets in context + outbound network = exfiltration risk.",
   },
+  {
+    name: "sensitive-path-then-upload",
+    precondition: (history) => history.some((e) => e.flags.sensitiveRead),
+    trigger: (call) => {
+      if (call.name !== "shell") return false;
+      const cmd = String(call.input.command ?? "");
+      // Catch any outbound network command after sensitive path access
+      // This fires at ALL trust levels — staging + exfil is suspicious regardless
+      return hasExfilIndicators(cmd);
+    },
+    trustThreshold: 1.1, // Always fires (no trust level can reach 1.1)
+    reason:
+      "Sensitive path was accessed in a recent shell command, and this command has network/encoding indicators. Possible multi-step data staging and exfiltration.",
+  },
 ];
 
 // ── Middleware ──────────────────────────────────────────────────────
@@ -173,6 +188,26 @@ export function createToolSequenceDetectorMiddleware(): AgentMiddleware {
       // Prune old events outside the sequence window
       const cutoff = Date.now() - SEQUENCE_WINDOW_MS;
       history = history.filter((e) => e.timestamp > cutoff);
+
+      // Pre-scan: if this is a shell command that touches sensitive paths,
+      // record it in history NOW so subsequent calls see the taint.
+      if (call.name === "shell") {
+        const cmd = String(call.input.command ?? "");
+        const tokens = cmd.split(/\s+/);
+        const touchesSensitive = tokens.some(
+          (t) => !t.startsWith("-") && isSensitivePath(t),
+        );
+        if (touchesSensitive) {
+          history.push({
+            tool: "shell",
+            timestamp: Date.now(),
+            flags: { sensitiveRead: true },
+          });
+          if (history.length > HISTORY_SIZE) {
+            history = history.slice(-HISTORY_SIZE);
+          }
+        }
+      }
 
       // Get current trust from the trust propagation middleware
       const trustWindow = _currentTrustRef;
