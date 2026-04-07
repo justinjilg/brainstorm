@@ -48,6 +48,7 @@ export {
   MemoryManager,
   type MemoryEntry,
   type MemoryTier,
+  type MemorySource,
 } from "./memory/manager.js";
 export { DREAM_SYSTEM_PROMPT, buildDreamPrompt } from "./memory/dream.js";
 export {

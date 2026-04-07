@@ -99,6 +99,8 @@ export function createMemoryExtractionMiddleware(
           name: fact.name,
           description: fact.description,
           content: fact.content,
+          source: "agent_extraction" as const,
+          author: "memory-extract-middleware",
         });
       }
     },
