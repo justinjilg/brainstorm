@@ -247,6 +247,16 @@ export class DaemonController {
       } else {
         // Cost-paced tick interval: ask BR's cost tracker for advice
         const pacing = this.options.getCostPacing?.(this.config.tickIntervalMs);
+
+        // Budget exhausted — stop the daemon, don't just slow down
+        if (pacing?.shouldStop) {
+          log.warn(
+            { reason: pacing.reason, pressure: pacing.budgetPressure },
+            "Cost pacer signals stop — budget exhausted",
+          );
+          break;
+        }
+
         const sleepMs = pacing?.intervalMs ?? this.config.tickIntervalMs;
         this.state.sleepUntil = Date.now() + sleepMs;
         this.state.sleepReason = pacing?.reason ?? "default tick interval";
