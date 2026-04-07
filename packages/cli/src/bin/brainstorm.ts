@@ -674,12 +674,33 @@ routerCmd
 program
   .command("models")
   .description("List available models and their status")
-  .action(async () => {
+  .option("--json", "Output as JSON")
+  .action(async (opts: { json?: boolean }) => {
     const config = loadConfig();
     const registry = await createProviderRegistry(
       config,
       await resolveProviderKeys(),
     );
+
+    if (opts.json) {
+      console.log(
+        JSON.stringify(
+          registry.models.map((m) => ({
+            id: m.id,
+            provider: m.provider,
+            isLocal: m.isLocal,
+            status: m.status,
+            qualityTier: m.capabilities.qualityTier,
+            speedTier: m.capabilities.speedTier,
+            inputPer1MTokens: m.pricing.inputPer1MTokens,
+            outputPer1MTokens: m.pricing.outputPer1MTokens,
+          })),
+          null,
+          2,
+        ),
+      );
+      return;
+    }
 
     console.log("\n🧠 Brainstorm — Available Models\n");
 
@@ -714,11 +735,33 @@ program
 program
   .command("budget")
   .description("Show cost tracking and budget status")
-  .action(async () => {
+  .option("--json", "Output as JSON")
+  .action(async (opts: { json?: boolean }) => {
     const config = loadConfig();
     const db = getDb();
     const costTracker = new CostTracker(db, config.budget);
     const summary = costTracker.getSummary();
+
+    if (opts.json) {
+      console.log(
+        JSON.stringify(
+          {
+            session: summary.session,
+            today: summary.today,
+            thisMonth: summary.thisMonth,
+            limits: {
+              daily: config.budget.daily ?? null,
+              monthly: config.budget.monthly ?? null,
+              hardLimit: config.budget.hardLimit,
+            },
+            byModel: summary.byModel,
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
 
     console.log("\n🧠 Brainstorm — Budget Status\n");
     console.log(`  Session:    $${summary.session.toFixed(4)}`);
@@ -743,8 +786,15 @@ program
 program
   .command("config")
   .description("Show current configuration")
-  .action(async () => {
+  .option("--json", "Output as JSON")
+  .action(async (opts: { json?: boolean }) => {
     const config = loadConfig();
+
+    if (opts.json) {
+      console.log(JSON.stringify(config, null, 2));
+      return;
+    }
+
     console.log("\n🧠 Brainstorm — Configuration\n");
     console.log(`  Strategy:     ${config.general.defaultStrategy}`);
     console.log(`  Max steps:    ${config.general.maxSteps}`);
@@ -772,6 +822,91 @@ program
       console.log(`  Routing rules: ${config.routing.rules.length}`);
     }
     console.log();
+  });
+
+// ── Introspect Command ────────────────────────────────────────────
+
+program
+  .command("introspect")
+  .description(
+    "Dump full capabilities as JSON — models, tools, config, products, auth state. Designed for machine consumption.",
+  )
+  .action(async () => {
+    const config = loadConfig();
+    const toolRegistry = createDefaultToolRegistry();
+
+    // Env-only key resolution (non-interactive — no vault prompt)
+    const envKeys = {
+      get(name: string): string | null {
+        return process.env[name] ?? null;
+      },
+    };
+    let registry: Awaited<ReturnType<typeof createProviderRegistry>> | null =
+      null;
+    try {
+      registry = await createProviderRegistry(config, envKeys);
+    } catch {
+      // Provider discovery may fail without keys — that's fine for introspect
+    }
+
+    const db = getDb();
+    const costTracker = new CostTracker(db, config.budget);
+    const budget = costTracker.getSummary();
+
+    // Static tools with metadata
+    const staticTools = toolRegistry.listTools().map((t) => ({
+      name: t.name,
+      permission: t.permission,
+    }));
+
+    // Auth state from env
+    const auth: Record<string, boolean> = {
+      brainstormRouter: !!process.env.BRAINSTORM_API_KEY,
+      anthropic:
+        !!process.env.ANTHROPIC_API_KEY || !!process.env.BRAINSTORM_API_KEY,
+      openai: !!process.env.OPENAI_API_KEY || !!process.env.BRAINSTORM_API_KEY,
+      google:
+        !!process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
+        !!process.env.BRAINSTORM_API_KEY,
+      msp: !!process.env.BRAINSTORM_MSP_API_KEY || !!process.env._GM_AGENT_KEY,
+    };
+
+    const output = {
+      version: CLI_VERSION,
+      static: {
+        tools: staticTools,
+        toolCount: staticTools.length,
+      },
+      runtime: {
+        models: registry
+          ? registry.models.map((m) => ({
+              id: m.id,
+              provider: m.provider,
+              isLocal: m.isLocal,
+              available: m.status === "available",
+            }))
+          : [],
+        modelCount: registry?.models.length ?? 0,
+      },
+      auth,
+      config: {
+        strategy: config.general.defaultStrategy,
+        maxSteps: config.general.maxSteps,
+        permissionMode: config.general.defaultPermissionMode,
+        budget: {
+          daily: config.budget.daily ?? null,
+          monthly: config.budget.monthly ?? null,
+          spent: {
+            session: budget.session,
+            today: budget.today,
+            thisMonth: budget.thisMonth,
+          },
+        },
+        sandbox: config.shell.sandbox,
+      },
+    };
+
+    console.log(JSON.stringify(output, null, 2));
   });
 
 // ── Agent Commands ─────────────────────────────────────────────────

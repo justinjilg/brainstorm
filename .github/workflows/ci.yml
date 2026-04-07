@@ -31,5 +31,8 @@ jobs:
       - name: Type check
         run: npx turbo run typecheck
 
+      - name: Verify tool catalog freshness
+        run: npm run --workspace=@brainst0rm/tools export-catalog:check
+
       - name: Run tests
         run: npx turbo run test -- --passWithNoTests
