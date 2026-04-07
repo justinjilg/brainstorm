@@ -170,7 +170,7 @@ export function validatePolicyFile(
   }
 
   return {
-    safe: findings.filter((f) => f.severity === "high").length === 0,
+    safe: !findings.some((f) => f.severity === "high"),
     findings,
   };
 }
@@ -193,7 +193,7 @@ export function validateStormMemoryEntries(
   }
 
   return {
-    safe: findings.filter((f) => f.severity === "high").length === 0,
+    safe: !findings.some((f) => f.severity === "high"),
     findings,
   };
 }

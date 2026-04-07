@@ -94,7 +94,16 @@ export function getToolTrustThreshold(toolName: string): number | null {
 
 /** Create a fresh trust window. */
 export function createTrustWindow(): TrustWindow {
+  // Default to user-trusted (1.0) for empty windows. The first tool result
+  // will set the actual trust level. This is safe because the agent starts
+  // in a human-initiated context (the user typed a message).
   return { scores: [], minTrust: 1.0, tainted: false };
+}
+
+/** Guard against Math.min() returning Infinity on empty arrays. */
+function safeMinTrust(scores: Array<{ trust: number }>): number {
+  if (scores.length === 0) return 1.0;
+  return Math.min(...scores.map((s) => s.trust));
 }
 
 /** Record a tool result's trust level in the window. */
@@ -107,7 +116,7 @@ export function recordToolTrust(
   const entry = { tool: toolName, trust: score, timestamp: Date.now() };
 
   const scores = [...window.scores, entry].slice(-WINDOW_SIZE);
-  const minTrust = Math.min(...scores.map((s) => s.trust));
+  const minTrust = safeMinTrust(scores);
   const tainted = minTrust < 0.4;
 
   if (tainted && !window.tainted) {
