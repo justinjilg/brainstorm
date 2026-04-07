@@ -1,6 +1,8 @@
-import { readFileSync, readdirSync, existsSync } from "node:fs";
-import { join, basename } from "node:path";
+import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
+import { join, basename, dirname } from "node:path";
 import { homedir } from "node:os";
+import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 
 export interface SkillDefinition {
   name: string;
@@ -30,7 +32,7 @@ export interface SkillDefinition {
 export function loadSkills(projectPath: string): SkillDefinition[] {
   const skills: SkillDefinition[] = [];
 
-  // 1. Project-level skills: .brainstorm/skills/
+  // 1. Project-level skills: .brainstorm/skills/ (highest priority)
   const projectSkillsDir = join(projectPath, ".brainstorm", "skills");
   skills.push(...loadSkillsFromDir(projectSkillsDir, "project"));
 
@@ -42,7 +44,40 @@ export function loadSkills(projectPath: string): SkillDefinition[] {
   const claudeCommandsDir = join(projectPath, ".claude", "commands");
   skills.push(...loadSkillsFromDir(claudeCommandsDir, "claude-compat"));
 
-  return skills;
+  // 4. Built-in skills: bundled with brainstorm (lowest priority)
+  // Find @brainst0rm/core's package.json → dist/skills/builtin/
+  try {
+    const corePkgPath = createRequire(import.meta.url).resolve(
+      "@brainst0rm/core/package.json",
+    );
+    const builtinSkillsDir = join(
+      dirname(corePkgPath),
+      "dist",
+      "skills",
+      "builtin",
+    );
+    skills.push(...loadSkillsFromDir(builtinSkillsDir, "builtin" as any));
+  } catch {
+    // Fallback: relative to import.meta.url
+    try {
+      const builtinSkillsDir = join(
+        dirname(fileURLToPath(import.meta.url)),
+        "skills",
+        "builtin",
+      );
+      skills.push(...loadSkillsFromDir(builtinSkillsDir, "builtin" as any));
+    } catch {
+      // No builtin skills available — not fatal
+    }
+  }
+
+  // Deduplicate: first occurrence wins (project overrides global overrides builtin)
+  const seen = new Set<string>();
+  return skills.filter((s) => {
+    if (seen.has(s.name)) return false;
+    seen.add(s.name);
+    return true;
+  });
 }
 
 function loadSkillsFromDir(
@@ -52,12 +87,32 @@ function loadSkillsFromDir(
   if (!existsSync(dir)) return [];
 
   const skills: SkillDefinition[] = [];
-  const files = readdirSync(dir).filter((f) => f.endsWith(".md"));
+  const entries = readdirSync(dir);
 
-  for (const file of files) {
+  for (const entry of entries) {
     try {
-      const content = readFileSync(join(dir, file), "utf-8");
-      const name = basename(file, ".md");
+      const entryPath = join(dir, entry);
+      const stat = statSync(entryPath);
+
+      let content: string;
+      let name: string;
+      let skillDir: string | undefined;
+
+      if (stat.isDirectory()) {
+        // Directory format: skill-name/SKILL.md
+        const skillMd = join(entryPath, "SKILL.md");
+        if (!existsSync(skillMd)) continue;
+        content = readFileSync(skillMd, "utf-8");
+        name = entry;
+        skillDir = entryPath;
+      } else if (entry.endsWith(".md")) {
+        // Flat format: skill-name.md
+        content = readFileSync(entryPath, "utf-8");
+        name = basename(entry, ".md");
+      } else {
+        continue;
+      }
+
       const {
         description,
         body,
@@ -67,8 +122,11 @@ function loadSkillsFromDir(
         systemPrompt,
       } = parseFrontmatter(content);
 
-      // Inject temporal template variables
-      const processedBody = injectTemporalVars(body);
+      // Inject temporal template variables + skill directory path
+      let processedBody = injectTemporalVars(body);
+      if (skillDir) {
+        processedBody = processedBody.replace(/<SKILL_DIR>/g, skillDir);
+      }
 
       skills.push({
         name,
@@ -81,7 +139,7 @@ function loadSkillsFromDir(
         ...(systemPrompt ? { systemPrompt } : {}),
       });
     } catch {
-      /* skip unreadable files */
+      /* skip unreadable entries */
     }
   }
 
