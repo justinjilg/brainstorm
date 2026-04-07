@@ -130,6 +130,22 @@ export class DaemonController {
         });
       }
 
+      // Auto-reflection: trigger memory consolidation every N ticks
+      const reflectionInterval = this.options.reflectionInterval ?? 50;
+      if (
+        this.options.onReflectionDue &&
+        tickResult.tickNumber > 0 &&
+        tickResult.tickNumber % reflectionInterval === 0
+      ) {
+        log.info(
+          { tickNumber: tickResult.tickNumber },
+          "Reflection due — triggering memory consolidation",
+        );
+        await this.options.onReflectionDue(tickResult.tickNumber).catch((e) => {
+          log.warn({ err: e }, "Reflection trigger failed (non-fatal)");
+        });
+      }
+
       // 6. Handle sleep request from model
       if (tickResult.sleepRequested) {
         const sleepMs = tickResult.sleepRequested.ms;
@@ -218,6 +234,8 @@ export class DaemonController {
       dueTasks: this.options.getDueTasks?.(),
       pendingTasks: this.options.getPendingTasks?.(),
       promptCacheStale,
+      memorySummary: this.options.getMemorySummary?.(),
+      availableSkills: this.options.getAvailableSkills?.(),
     };
 
     const tickMessage = formatTickMessage(tickCtx);

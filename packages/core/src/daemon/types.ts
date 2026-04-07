@@ -41,6 +41,10 @@ export interface DaemonControllerOptions {
   getPendingTasks?: () => string[];
   /** Optional: get today's log summary for context. */
   getLogSummary?: () => string;
+  /** Optional: get memory summary for tick context. */
+  getMemorySummary?: () => string;
+  /** Optional: get available skills for autonomous invocation. */
+  getAvailableSkills?: () => Array<{ name: string; description: string }>;
   /** Called on each tick for persistence. */
   onTickComplete?: (result: TickResult) => void | Promise<void>;
   /** Called when daemon state changes. */
@@ -50,6 +54,13 @@ export interface DaemonControllerOptions {
     event: "DaemonTick" | "DaemonSleep",
     context: { tickNumber?: number; sleepMs?: number; cost?: number },
   ) => Promise<void>;
+  /**
+   * Called when memory reflection is due (every reflectionInterval ticks, default 50).
+   * The callback should trigger the dream/reflection subagent.
+   */
+  onReflectionDue?: (tickNumber: number) => Promise<void>;
+  /** Number of ticks between reflection triggers (default: 50). */
+  reflectionInterval?: number;
 }
 
 export function createInitialState(): DaemonState {
