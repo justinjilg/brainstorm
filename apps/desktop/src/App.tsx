@@ -10,6 +10,7 @@ import { SecurityView } from "./components/security/SecurityView";
 import { ConfigView } from "./components/config/ConfigView";
 import { StatusRail } from "./components/status-rail/StatusRail";
 import { CommandPalette } from "./components/CommandPalette";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useServerHealth } from "./hooks/useServerHealth";
 
 export type AppMode =
@@ -156,30 +157,58 @@ export function App() {
         {/* Main panel */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           {mode === "chat" && (
-            <ChatView
-              conversationId={activeConversationId}
-              detailOpen={detailOpen}
-              onDetailToggle={() => setDetailOpen((prev) => !prev)}
-              onCostUpdate={setSessionCost}
-              onModelUpdate={(model, provider) => {
-                setActiveModel(model);
-                setActiveProvider(provider);
-              }}
-              onContextUpdate={setContextPercent}
-            />
+            <ErrorBoundary fallbackLabel="Chat">
+              <ChatView
+                conversationId={activeConversationId}
+                detailOpen={detailOpen}
+                onDetailToggle={() => setDetailOpen((prev) => !prev)}
+                onCostUpdate={setSessionCost}
+                onModelUpdate={(model, provider) => {
+                  setActiveModel(model);
+                  setActiveProvider(provider);
+                }}
+                onContextUpdate={setContextPercent}
+              />
+            </ErrorBoundary>
           )}
           {mode === "dashboard" && (
-            <DashboardView
-              sessionCost={sessionCost}
-              contextPercent={contextPercent}
-            />
+            <ErrorBoundary fallbackLabel="Dashboard">
+              <DashboardView
+                sessionCost={sessionCost}
+                contextPercent={contextPercent}
+              />
+            </ErrorBoundary>
           )}
-          {mode === "models" && <ModelsView />}
-          {mode === "memory" && <MemoryView />}
-          {mode === "skills" && <SkillsView />}
-          {mode === "workflows" && <WorkflowsView />}
-          {mode === "security" && <SecurityView />}
-          {mode === "config" && <ConfigView />}
+          {mode === "models" && (
+            <ErrorBoundary fallbackLabel="Models">
+              <ModelsView />
+            </ErrorBoundary>
+          )}
+          {mode === "memory" && (
+            <ErrorBoundary fallbackLabel="Memory">
+              <MemoryView />
+            </ErrorBoundary>
+          )}
+          {mode === "skills" && (
+            <ErrorBoundary fallbackLabel="Skills">
+              <SkillsView />
+            </ErrorBoundary>
+          )}
+          {mode === "workflows" && (
+            <ErrorBoundary fallbackLabel="Workflows">
+              <WorkflowsView />
+            </ErrorBoundary>
+          )}
+          {mode === "security" && (
+            <ErrorBoundary fallbackLabel="Security">
+              <SecurityView />
+            </ErrorBoundary>
+          )}
+          {mode === "config" && (
+            <ErrorBoundary fallbackLabel="Config">
+              <ConfigView />
+            </ErrorBoundary>
+          )}
         </div>
 
         {/* Detail panel */}
