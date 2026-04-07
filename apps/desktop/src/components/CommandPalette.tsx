@@ -1,0 +1,335 @@
+/**
+ * Command Palette — Cmd+K fuzzy search across actions, modes, models, skills.
+ */
+
+import { useState, useCallback, useEffect, useRef } from "react";
+import type { AppMode } from "../App";
+
+interface PaletteCommand {
+  id: string;
+  label: string;
+  category: string;
+  shortcut?: string;
+  action: () => void;
+}
+
+interface CommandPaletteProps {
+  open: boolean;
+  onClose: () => void;
+  onModeChange: (mode: AppMode) => void;
+  onToggleSidebar: () => void;
+  onToggleDetail: () => void;
+}
+
+export function CommandPalette({
+  open,
+  onClose,
+  onModeChange,
+  onToggleSidebar,
+  onToggleDetail,
+}: CommandPaletteProps) {
+  const [query, setQuery] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+
+  const commands: PaletteCommand[] = [
+    // Modes
+    {
+      id: "mode-chat",
+      label: "Go to Chat",
+      category: "Navigate",
+      shortcut: "⌘1",
+      action: () => onModeChange("chat"),
+    },
+    {
+      id: "mode-dashboard",
+      label: "Go to Dashboard",
+      category: "Navigate",
+      shortcut: "⌘2",
+      action: () => onModeChange("dashboard"),
+    },
+    {
+      id: "mode-models",
+      label: "Go to Models",
+      category: "Navigate",
+      shortcut: "⌘3",
+      action: () => onModeChange("models"),
+    },
+    {
+      id: "mode-memory",
+      label: "Go to Memory",
+      category: "Navigate",
+      shortcut: "⌘4",
+      action: () => onModeChange("memory"),
+    },
+    {
+      id: "mode-skills",
+      label: "Go to Skills",
+      category: "Navigate",
+      shortcut: "⌘5",
+      action: () => onModeChange("skills"),
+    },
+    {
+      id: "mode-workflows",
+      label: "Go to Workflows",
+      category: "Navigate",
+      shortcut: "⌘6",
+      action: () => onModeChange("workflows"),
+    },
+    {
+      id: "mode-security",
+      label: "Go to Security",
+      category: "Navigate",
+      shortcut: "⌘7",
+      action: () => onModeChange("security"),
+    },
+    {
+      id: "mode-config",
+      label: "Go to Config",
+      category: "Navigate",
+      shortcut: "⌘8",
+      action: () => onModeChange("config"),
+    },
+
+    // Actions
+    {
+      id: "toggle-sidebar",
+      label: "Toggle Sidebar",
+      category: "View",
+      shortcut: "⌘B",
+      action: onToggleSidebar,
+    },
+    {
+      id: "toggle-detail",
+      label: "Toggle Detail Panel",
+      category: "View",
+      shortcut: "⌘D",
+      action: onToggleDetail,
+    },
+    {
+      id: "new-conversation",
+      label: "New Conversation",
+      category: "Chat",
+      shortcut: "⌘N",
+      action: () => {},
+    },
+
+    // Models
+    {
+      id: "model-opus",
+      label: "Switch to Claude Opus 4.6",
+      category: "Model",
+      action: () => {},
+    },
+    {
+      id: "model-sonnet",
+      label: "Switch to Claude Sonnet 4.6",
+      category: "Model",
+      action: () => {},
+    },
+    {
+      id: "model-gpt",
+      label: "Switch to GPT-5.4",
+      category: "Model",
+      action: () => {},
+    },
+    {
+      id: "model-gemini",
+      label: "Switch to Gemini 3.1 Pro",
+      category: "Model",
+      action: () => {},
+    },
+
+    // Roles
+    {
+      id: "role-architect",
+      label: "Activate Architect Role",
+      category: "Role",
+      action: () => {},
+    },
+    {
+      id: "role-developer",
+      label: "Activate Developer Role",
+      category: "Role",
+      action: () => {},
+    },
+    {
+      id: "role-qa",
+      label: "Activate QA Role",
+      category: "Role",
+      action: () => {},
+    },
+    {
+      id: "role-reviewer",
+      label: "Activate Reviewer Role",
+      category: "Role",
+      action: () => {},
+    },
+
+    // KAIROS
+    {
+      id: "kairos-start",
+      label: "Start KAIROS Daemon",
+      category: "KAIROS",
+      shortcut: "⌘/",
+      action: () => {},
+    },
+    {
+      id: "kairos-pause",
+      label: "Pause KAIROS",
+      category: "KAIROS",
+      action: () => {},
+    },
+    {
+      id: "kairos-log",
+      label: "View KAIROS Daily Log",
+      category: "KAIROS",
+      shortcut: "⌘L",
+      action: () => {},
+    },
+
+    // Security
+    {
+      id: "red-team",
+      label: "Run Red Team Simulation",
+      category: "Security",
+      action: () => onModeChange("security"),
+    },
+    {
+      id: "dream",
+      label: "Trigger Dream Cycle",
+      category: "Memory",
+      action: () => {},
+    },
+  ];
+
+  const filtered = query
+    ? commands.filter(
+        (c) =>
+          c.label.toLowerCase().includes(query.toLowerCase()) ||
+          c.category.toLowerCase().includes(query.toLowerCase()),
+      )
+    : commands;
+
+  useEffect(() => {
+    if (open) {
+      setQuery("");
+      setSelectedIndex(0);
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [query]);
+
+  const executeCommand = useCallback(
+    (cmd: PaletteCommand) => {
+      cmd.action();
+      onClose();
+    },
+    [onClose],
+  );
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedIndex((prev) => Math.min(prev + 1, filtered.length - 1));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedIndex((prev) => Math.max(prev - 1, 0));
+        return;
+      }
+      if (e.key === "Enter" && filtered[selectedIndex]) {
+        executeCommand(filtered[selectedIndex]);
+      }
+    },
+    [onClose, filtered, selectedIndex, executeCommand],
+  );
+
+  if (!open) return null;
+
+  // Group by category
+  const groups = new Map<string, PaletteCommand[]>();
+  for (const cmd of filtered) {
+    const list = groups.get(cmd.category) ?? [];
+    list.push(cmd);
+    groups.set(cmd.category, list);
+  }
+
+  let flatIndex = 0;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]"
+      onClick={onClose}
+    >
+      {/* Backdrop */}
+      <div className="fixed inset-0 bg-black/50" />
+
+      {/* Palette */}
+      <div
+        className="relative w-[500px] max-h-[400px] bg-[var(--ctp-base)] border border-[var(--ctp-surface1)] rounded-xl shadow-2xl overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Search input */}
+        <div className="px-4 py-3 border-b border-[var(--ctp-surface0)]">
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Type a command..."
+            className="w-full bg-transparent text-sm text-[var(--ctp-text)] outline-none placeholder:text-[var(--ctp-overlay0)]"
+          />
+        </div>
+
+        {/* Results */}
+        <div className="flex-1 overflow-y-auto py-1">
+          {[...groups.entries()].map(([category, cmds]) => (
+            <div key={category}>
+              <div className="px-4 py-1 text-[10px] text-[var(--ctp-overlay0)] uppercase tracking-wider">
+                {category}
+              </div>
+              {cmds.map((cmd) => {
+                const idx = flatIndex++;
+                return (
+                  <button
+                    key={cmd.id}
+                    onClick={() => executeCommand(cmd)}
+                    className={`w-full flex items-center justify-between px-4 py-1.5 text-sm transition-colors ${
+                      idx === selectedIndex
+                        ? "bg-[var(--ctp-surface0)] text-[var(--ctp-text)]"
+                        : "text-[var(--ctp-subtext1)] hover:bg-[var(--ctp-surface0)]/50"
+                    }`}
+                  >
+                    <span>{cmd.label}</span>
+                    {cmd.shortcut && (
+                      <span className="text-[10px] text-[var(--ctp-overlay0)] font-mono">
+                        {cmd.shortcut}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+
+          {filtered.length === 0 && (
+            <div className="px-4 py-6 text-center text-sm text-[var(--ctp-overlay0)]">
+              No commands match "{query}"
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
