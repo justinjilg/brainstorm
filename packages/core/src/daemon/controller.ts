@@ -21,6 +21,7 @@ import {
   type DaemonState,
   type TickResult,
   type WakeTrigger,
+  type ApprovalGateContext,
   createInitialState,
 } from "./types.js";
 import { formatTickMessage, type TickMessageContext } from "./tick-message.js";
@@ -38,6 +39,10 @@ export class DaemonController {
   private sleepTimer: ReturnType<typeof setTimeout> | null = null;
   private userMessageQueue: string[] = [];
   private wakeResolve: (() => void) | null = null;
+  /** Tracks state since last approval gate for KAIROS review summaries. */
+  private lastGateTick = 0;
+  private costAtLastGate = 0;
+  private toolCallsSinceGate: string[] = [];
 
   constructor(options: DaemonControllerOptions) {
     this.options = options;
@@ -144,6 +149,65 @@ export class DaemonController {
         await this.options.onReflectionDue(tickResult.tickNumber).catch((e) => {
           log.warn({ err: e }, "Reflection trigger failed (non-fatal)");
         });
+      }
+
+      // Track tool calls for approval gate summary
+      this.toolCallsSinceGate.push(...tickResult.toolCalls);
+
+      // 5b. Approval gate: pause for human review every N ticks
+      const gateInterval = this.options.approvalGateInterval ?? 0;
+      if (
+        gateInterval > 0 &&
+        this.options.onApprovalGate &&
+        tickResult.tickNumber > 0 &&
+        tickResult.tickNumber % gateInterval === 0
+      ) {
+        const gateContext: ApprovalGateContext = {
+          tickNumber: tickResult.tickNumber,
+          ticksSinceLastGate: tickResult.tickNumber - this.lastGateTick,
+          costSinceLastGate: this.state.totalCost - this.costAtLastGate,
+          toolCallsSinceLastGate: [...this.toolCallsSinceGate],
+          totalCost: this.state.totalCost,
+          sessionDurationMs: Date.now() - this.state.sessionStartedAt,
+        };
+
+        log.info(
+          { tickNumber: tickResult.tickNumber, gateInterval },
+          "Approval gate reached — pausing for human review",
+        );
+
+        this.state.isPaused = true;
+        this.state.status = "paused";
+        await this.notifyStateChange();
+
+        yield {
+          type: "daemon-sleep",
+          sleepMs: 0,
+          reason: `Approval gate at tick ${tickResult.tickNumber} — awaiting human review`,
+        } as AgentEvent;
+
+        const shouldContinue = await this.options
+          .onApprovalGate(gateContext)
+          .catch((e) => {
+            log.warn({ err: e }, "Approval gate callback failed — stopping");
+            return false;
+          });
+
+        // Reset gate tracking
+        this.lastGateTick = tickResult.tickNumber;
+        this.costAtLastGate = this.state.totalCost;
+        this.toolCallsSinceGate = [];
+
+        if (!shouldContinue) {
+          log.info("Human declined to continue at approval gate — stopping");
+          break;
+        }
+
+        this.state.isPaused = false;
+        this.state.status = "running";
+        await this.notifyStateChange();
+
+        yield { type: "daemon-wake", trigger: "user" } as AgentEvent;
       }
 
       // 6. Handle sleep request from model

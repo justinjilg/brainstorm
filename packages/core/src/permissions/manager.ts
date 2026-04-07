@@ -34,9 +34,13 @@ interface PersistedPermissions {
  */
 export class PermissionManager {
   private mode: PermissionMode;
-  private sessionAlways = new Set<string>();
+  private sessionAlways = new Map<string, number>(); // tool → expiry timestamp
   private persistentAllowlist = new Set<string>();
   private persistentDenylist = new Set<string>();
+  /** Session-level "always allow" TTL in ms. Default: 30 minutes. */
+  private sessionTTLMs: number;
+  /** Session start timestamp for absolute expiry. */
+  private readonly sessionStartedAt = Date.now();
 
   constructor(
     defaultMode: PermissionMode = "confirm",
@@ -44,8 +48,11 @@ export class PermissionManager {
       allowlist?: string[];
       denylist?: string[];
       role?: "viewer" | "developer" | "admin";
+      /** Session-level permission TTL in minutes. Default: 30. */
+      sessionTTLMinutes?: number;
     },
   ) {
+    this.sessionTTLMs = (configPermissions?.sessionTTLMinutes ?? 30) * 60_000;
     // Role presets override default mode
     if (configPermissions?.role) {
       switch (configPermissions.role) {
@@ -122,15 +129,22 @@ export class PermissionManager {
     // Check persistent allowlist (survives across sessions)
     if (this.persistentAllowlist.has(toolName)) return "allow";
 
-    // Check session "always allow" list
-    if (this.sessionAlways.has(toolName)) return "allow";
+    // Check session "always allow" list (with expiry)
+    const expiry = this.sessionAlways.get(toolName);
+    if (expiry !== undefined) {
+      if (Date.now() < expiry) {
+        return "allow";
+      }
+      // Expired — remove and require re-confirmation
+      this.sessionAlways.delete(toolName);
+    }
 
     return "confirm";
   }
 
-  /** Mark a tool as "always allow" for this session only. */
+  /** Mark a tool as "always allow" for this session (with TTL expiry). */
   alwaysAllow(toolName: string): void {
-    this.sessionAlways.add(toolName);
+    this.sessionAlways.set(toolName, Date.now() + this.sessionTTLMs);
   }
 
   /** Persistently allow a tool across all future sessions. */
@@ -162,6 +176,31 @@ export class PermissionManager {
   /** Get current persistent denylist. */
   getDenylist(): string[] {
     return Array.from(this.persistentDenylist);
+  }
+
+  /** Get session "always allow" tools with their remaining TTL. */
+  getSessionPermissions(): Array<{ tool: string; expiresInMs: number }> {
+    const now = Date.now();
+    const result: Array<{ tool: string; expiresInMs: number }> = [];
+    for (const [tool, expiry] of this.sessionAlways) {
+      const remaining = expiry - now;
+      if (remaining > 0) {
+        result.push({ tool, expiresInMs: remaining });
+      } else {
+        this.sessionAlways.delete(tool);
+      }
+    }
+    return result;
+  }
+
+  /** Expire all session-level permissions (e.g., on session end or mode change). */
+  expireSessionPermissions(): void {
+    this.sessionAlways.clear();
+  }
+
+  /** Get the session TTL in minutes. */
+  getSessionTTLMinutes(): number {
+    return this.sessionTTLMs / 60_000;
   }
 
   private loadPersisted(): PersistedPermissions {

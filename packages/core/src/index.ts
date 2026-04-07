@@ -148,6 +148,11 @@ export {
   type ScanFinding,
 } from "./security/markdown-scanner.js";
 export {
+  ApprovalVelocityTracker,
+  type ApprovalEvent,
+  type VelocityWarning,
+} from "./security/approval-velocity.js";
+export {
   getToolOutputTrust,
   getToolTrustThreshold,
   checkToolTrust,
@@ -297,6 +302,9 @@ export {
   createEgressMonitorMiddleware,
   createToolContractMiddleware,
   createContentInjectionFilterMiddleware,
+  createApprovalFrictionMiddleware,
+  recordApprovalDecision,
+  getApprovalTracker,
 } from "./middleware/index.js";
 export {
   SessionCheckpointer,
@@ -334,6 +342,7 @@ export {
   type DaemonStatus,
   type TickResult,
   type WakeTrigger,
+  type ApprovalGateContext,
   type DailyLogOptions,
   type LogAppendOptions,
   type TickMessageContext,

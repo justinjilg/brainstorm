@@ -61,6 +61,33 @@ export interface DaemonControllerOptions {
   onReflectionDue?: (tickNumber: number) => Promise<void>;
   /** Number of ticks between reflection triggers (default: 50). */
   reflectionInterval?: number;
+  /**
+   * Number of ticks between mandatory human review gates (default: 0 = disabled).
+   * When set, the daemon pauses every N ticks and calls onApprovalGate
+   * with a summary of recent activity. The daemon stays paused until
+   * the human explicitly resumes.
+   */
+  approvalGateInterval?: number;
+  /**
+   * Called when an approval gate is reached. Should present a summary
+   * to the human and return true to continue or false to stop the daemon.
+   */
+  onApprovalGate?: (context: ApprovalGateContext) => Promise<boolean>;
+}
+
+export interface ApprovalGateContext {
+  /** Current tick number. */
+  tickNumber: number;
+  /** Number of ticks since last gate (or session start). */
+  ticksSinceLastGate: number;
+  /** Total cost accumulated since last gate. */
+  costSinceLastGate: number;
+  /** Tool calls made since last gate. */
+  toolCallsSinceLastGate: string[];
+  /** Total session cost. */
+  totalCost: number;
+  /** Session duration in ms. */
+  sessionDurationMs: number;
 }
 
 export function createInitialState(): DaemonState {
