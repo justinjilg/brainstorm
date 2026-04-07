@@ -22,9 +22,12 @@ import { ghSecurityTool } from "../builtin/gh-security";
 import { ghRepoTool } from "../builtin/gh-repo";
 
 const isCI = process.env.CI === "true";
-const run = isCI ? it.skip : it;
-const REPO = "justinjilg/platform-gold";
-const CWD = process.env.HOME + "/Projects/platform-gold";
+const REPO = process.env.GH_TEST_REPO ?? "justinjilg/platform-gold";
+const CWD = process.env.GH_TEST_CWD; // Must be set explicitly — no hardcoded paths
+
+// Skip if CI, or if no local checkout configured
+const canRun = !isCI && !!CWD;
+const run = canRun ? it : it.skip;
 
 describe("Integration: gh_repo against platform-gold", () => {
   run("info returns repo with correct name", async () => {
