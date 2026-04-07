@@ -126,6 +126,12 @@ export {
   PathTraversalError,
 } from "./security/path-guard.js";
 export {
+  validatePolicyFile,
+  validateStormMemoryEntries,
+  type PolicyValidationResult,
+  type PolicyFinding,
+} from "./security/policy-validator.js";
+export {
   filterResponse,
   createStreamFilter,
   type StreamFilter,
