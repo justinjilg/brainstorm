@@ -14,6 +14,7 @@
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
+import { resolve, extname } from "node:path";
 import type { AgentProfile } from "@brainst0rm/shared";
 import {
   MemoryManager,
@@ -200,8 +201,25 @@ export function importStormFile(
 // ── File I/O ──────────────────────────────────────────────────────
 
 export function readStormFile(filePath: string): StormFile {
-  const content = readFileSync(filePath, "utf-8");
-  return JSON.parse(content);
+  const resolved = resolve(filePath);
+  const ext = extname(resolved);
+  if (ext && ext !== ".storm" && ext !== ".json") {
+    throw new Error(
+      `Invalid storm file extension: ${ext}. Expected .storm or .json`,
+    );
+  }
+
+  const content = readFileSync(resolved, "utf-8");
+  const parsed = JSON.parse(content);
+
+  // Validate format field to prevent importing arbitrary JSON
+  if (parsed.format !== "storm-agent-v1") {
+    throw new Error(
+      `Invalid storm file format: ${parsed.format ?? "missing"}. Expected storm-agent-v1.`,
+    );
+  }
+
+  return parsed;
 }
 
 export function writeStormFile(filePath: string, storm: StormFile): void {

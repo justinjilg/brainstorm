@@ -79,8 +79,11 @@ export function verifyJWT(token: string, jwtSecret: string): AuthResult {
     return { authenticated: false, error: "Invalid header encoding" };
   }
 
-  // Check expiration
-  if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+  // Check expiration — require exp claim to prevent indefinite tokens
+  if (!payload.exp) {
+    return { authenticated: false, error: "Token missing expiration claim" };
+  }
+  if (payload.exp < Math.floor(Date.now() / 1000)) {
     return { authenticated: false, error: "Token expired" };
   }
 

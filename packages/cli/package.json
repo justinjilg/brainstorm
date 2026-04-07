@@ -46,6 +46,7 @@
     "@brainst0rm/mcp": "0.13.0",
     "@brainst0rm/providers": "0.13.0",
     "@brainst0rm/router": "0.13.0",
+    "@brainst0rm/server": "0.13.0",
     "@brainst0rm/shared": "0.13.0",
     "@brainst0rm/tools": "0.13.0",
     "@brainst0rm/vault": "0.13.0",
