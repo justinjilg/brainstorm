@@ -46,3 +46,25 @@
 - The perception layer is architecturally sound but implementation-fragile: no error handling, no input limits, and regex-only detection creates a false sense of security
 - The trust-label sliding window is the most novel design but also the most vulnerable: 5 benign reads clear any taint
 - All 4 files need the same 3 fixes: try-catch with fail-closed, input size limits, and Unicode normalization before scanning
+
+## PR-02: [SEC] Security Action Layer — tool-contracts, approval-velocity, circuit-breaker
+
+### Architecture Insights
+
+- These 3 files are the **action boundary** — they validate tool arguments, throttle approvals, and circuit-break repeated failures
+- Tool contracts are stateless per-call (correct design — no state to poison)
+- Approval velocity uses a 30-second sliding window with configurable rapid threshold
+- Circuit breaker follows standard CLOSED→OPEN→HALF_OPEN state machine
+
+### Security Observations
+
+- **CRITICAL: Sensitive file reads produce "warning" not "block".** Reading ~/.ssh/id_rsa, ~/.aws/credentials, /etc/shadow — all pass through with just a log warning. The middleware only blocks on `severity: "block"`.
+- **CRITICAL: Path traversal requires double ../..** — single ../../../etc/shadow bypasses the check entirely
+- **Approval velocity timing attack:** 2 rapid approvals, wait 30s, repeat — never triggers the 3-in-30s window
+- **Circuit breaker probe attack:** An attacker who controls one "probe" call can close the circuit immediately, resetting all failure counters
+
+### Key Takeaways
+
+- Tool contracts had the right structure but wrong severity assignments — warnings on critical paths defeat the purpose
+- Approval velocity is a good concept but the window math doesn't account for interleaved denials or timing attacks
+- Circuit breaker event types had a type mismatch (open vs opened) that would silently break event filtering

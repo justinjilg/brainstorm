@@ -201,7 +201,10 @@ export class CircuitBreaker {
       "Circuit state transition",
     );
 
-    this.addEvent(newState as CircuitEvent["type"], reason);
+    // Map state names to event type names (open → opened)
+    const eventType: CircuitEvent["type"] =
+      newState === "open" ? "opened" : newState;
+    this.addEvent(eventType, reason);
   }
 
   private addEvent(type: CircuitEvent["type"], detail: string): void {
@@ -227,11 +230,22 @@ export class CircuitBreakerRegistry {
 
   /** Get or create a circuit breaker for an operation. */
   getBreaker(options: CircuitBreakerOptions): CircuitBreaker {
-    let breaker = this.breakers.get(options.name);
-    if (!breaker) {
-      breaker = new CircuitBreaker(options);
-      this.breakers.set(options.name, breaker);
+    const existing = this.breakers.get(options.name);
+    if (existing) {
+      // Warn if caller expects different configuration than what exists
+      if (
+        options.failureThreshold !== undefined ||
+        options.cooldownMs !== undefined
+      ) {
+        log.info(
+          { name: options.name },
+          "Returning existing circuit breaker — options from first registration apply",
+        );
+      }
+      return existing;
     }
+    const breaker = new CircuitBreaker(options);
+    this.breakers.set(options.name, breaker);
     return breaker;
   }
 

@@ -12,7 +12,7 @@
       ],
       "line_count": 783,
       "security_sensitive": true,
-      "status": "in_progress",
+      "status": "complete",
       "phases": {
         "adversarial": {
           "status": "complete",
@@ -38,7 +38,11 @@
           "status": "complete",
           "journal_sections_written": 6
         },
-        "fix_and_verify": { "status": "in_progress" }
+        "fix_and_verify": {
+          "status": "complete",
+          "committed": true,
+          "commit_sha": "cdefaab"
+        }
       }
     },
     {
@@ -312,10 +316,10 @@
   ],
   "summary": {
     "total_prs": 13,
-    "completed_prs": 0,
-    "current_pr": "PR-01",
-    "current_phase": "documentation",
+    "completed_prs": 1,
+    "current_pr": "PR-02",
+    "current_phase": "adversarial",
     "total_findings": 31,
-    "total_fixes": 0
+    "total_fixes": 6
   }
 }
