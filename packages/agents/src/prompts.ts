@@ -1,5 +1,6 @@
 import type { AgentProfile } from "@brainst0rm/shared";
 import { OUTPUT_SCHEMAS } from "./schemas.js";
+import { getSkillsForRole } from "./role-skills.js";
 
 const ROLE_PROMPTS: Record<string, string> = {
   architect: `You are a software architect. Your job is to analyze requirements and produce a detailed implementation plan. Think about file structure, interfaces, data flow, and edge cases before any code is written. Be thorough but practical.`,
@@ -26,6 +27,8 @@ export {
 export function buildAgentSystemPrompt(
   agent: AgentProfile,
   stepDescription?: string,
+  /** Loaded skill content keyed by skill name. Pass from loadSkills() result. */
+  loadedSkills?: Map<string, { description: string; content: string }>,
 ): string {
   const parts: string[] = [];
 
@@ -45,6 +48,26 @@ export function buildAgentSystemPrompt(
   // Step description
   if (stepDescription) {
     parts.push(`\nCurrent task: ${stepDescription}`);
+  }
+
+  // Role-specific skills — inject content for each mapped skill
+  const roleSkillNames = getSkillsForRole(agent.role);
+  if (roleSkillNames.length > 0 && loadedSkills && loadedSkills.size > 0) {
+    const skillSections: string[] = [];
+    for (const name of roleSkillNames) {
+      const skill = loadedSkills.get(name);
+      if (skill) {
+        skillSections.push(`### ${name}\n${skill.content}`);
+      }
+    }
+    if (skillSections.length > 0) {
+      parts.push(`\n## Your Skills\n\n${skillSections.join("\n\n")}`);
+    }
+  } else if (roleSkillNames.length > 0) {
+    // No loaded content available — at minimum list the skill names
+    parts.push(
+      `\n## Your Skills\n\nYou are trained in: ${roleSkillNames.join(", ")}`,
+    );
   }
 
   // Output format instructions — inject actual schema shape so the model knows the structure

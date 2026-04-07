@@ -22,11 +22,24 @@ export function buildStepContext(
   agent: AgentProfile,
   run: WorkflowRun,
   isRetryAfterReject: boolean,
+  loadedSkills?: Map<string, { description: string; content: string }>,
 ): FilteredContext {
   if (run.communicationMode === "shared") {
-    return buildSharedContext(step, agent, run, isRetryAfterReject);
+    return buildSharedContext(
+      step,
+      agent,
+      run,
+      isRetryAfterReject,
+      loadedSkills,
+    );
   }
-  return buildHandoffContext(step, agent, run, isRetryAfterReject);
+  return buildHandoffContext(
+    step,
+    agent,
+    run,
+    isRetryAfterReject,
+    loadedSkills,
+  );
 }
 
 function buildHandoffContext(
@@ -34,8 +47,13 @@ function buildHandoffContext(
   agent: AgentProfile,
   run: WorkflowRun,
   isRetryAfterReject: boolean,
+  loadedSkills?: Map<string, { description: string; content: string }>,
 ): FilteredContext {
-  const systemPrompt = buildAgentSystemPrompt(agent, step.description);
+  const systemPrompt = buildAgentSystemPrompt(
+    agent,
+    step.description,
+    loadedSkills,
+  );
   const messages: FilteredContext["messages"] = [];
 
   // Original user request
@@ -80,8 +98,13 @@ function buildSharedContext(
   agent: AgentProfile,
   run: WorkflowRun,
   isRetryAfterReject: boolean,
+  loadedSkills?: Map<string, { description: string; content: string }>,
 ): FilteredContext {
-  const systemPrompt = buildAgentSystemPrompt(agent, step.description);
+  const systemPrompt = buildAgentSystemPrompt(
+    agent,
+    step.description,
+    loadedSkills,
+  );
   const messages: FilteredContext["messages"] = [];
 
   // Original user request

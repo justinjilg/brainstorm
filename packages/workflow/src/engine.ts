@@ -17,7 +17,7 @@ import {
   createDefaultToolRegistry,
   type ToolRegistry,
 } from "@brainst0rm/tools";
-import { runAgentLoop, buildSystemPrompt } from "@brainst0rm/core";
+import { runAgentLoop, buildSystemPrompt, loadSkills } from "@brainst0rm/core";
 import { AgentManager, buildAgentSystemPrompt } from "@brainst0rm/agents";
 import { buildStepContext } from "./context-filter.js";
 import {
@@ -48,6 +48,13 @@ export async function* runWorkflow(
 ): AsyncGenerator<WorkflowEvent> {
   const { router, costTracker, agentManager, config, registry, projectPath } =
     options;
+
+  // Load skills once for the entire workflow — keyed by name for role-based injection
+  const allSkills = loadSkills(projectPath);
+  const skillMap = new Map<string, { description: string; content: string }>();
+  for (const s of allSkills) {
+    skillMap.set(s.name, { description: s.description, content: s.content });
+  }
 
   // Initialize the run
   const run: WorkflowRun = {
@@ -166,7 +173,7 @@ export async function* runWorkflow(
     try {
       // Build context for this step
       const isRetry = run.iteration > 0 && stepDef.loopBackTo !== undefined;
-      const ctx = buildStepContext(stepDef, agent, run, isRetry);
+      const ctx = buildStepContext(stepDef, agent, run, isRetry, skillMap);
 
       // Build tools (respect agent's allowedTools)
       const tools = createDefaultToolRegistry();
