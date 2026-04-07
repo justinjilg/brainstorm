@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { Sidebar } from "./components/sidebar/Sidebar";
 import { ChatView } from "./components/chat/ChatView";
 import { StatusRail } from "./components/status-rail/StatusRail";
+import { useServerHealth } from "./hooks/useServerHealth";
 
 export type AppMode =
   | "chat"
@@ -46,10 +47,13 @@ export function App() {
     "running" | "sleeping" | "paused" | "stopped"
   >("stopped");
 
-  // Suppress unused warnings — these setters wire to SSE events in Phase 1B
+  // Suppress unused warnings — these setters wire to SSE events in Phase 2
   void _setStrategy;
   void _setActiveRole;
   void _setKairosStatus;
+
+  // Server connection status
+  const serverHealth = useServerHealth();
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -93,11 +97,32 @@ export function App() {
       {/* Title bar drag region */}
       <div
         data-tauri-drag-region
-        className="h-8 flex items-center justify-center shrink-0 bg-[var(--ctp-mantle)] border-b border-[var(--ctp-surface0)]"
+        className="h-8 flex items-center justify-between px-20 shrink-0 bg-[var(--ctp-mantle)] border-b border-[var(--ctp-surface0)]"
       >
+        <span />
         <span className="text-xs text-[var(--ctp-overlay0)] select-none">
           Brainstorm Desktop
         </span>
+        <div className="flex items-center gap-1.5 text-[10px]">
+          <span
+            className="w-1.5 h-1.5 rounded-full"
+            style={{
+              backgroundColor: serverHealth.connected
+                ? "var(--ctp-green)"
+                : "var(--ctp-red)",
+            }}
+          />
+          <span
+            className="select-none"
+            style={{
+              color: serverHealth.connected
+                ? "var(--ctp-overlay0)"
+                : "var(--ctp-red)",
+            }}
+          >
+            {serverHealth.connected ? "Connected" : "Disconnected"}
+          </span>
+        </div>
       </div>
 
       {/* Main content area */}
