@@ -160,6 +160,21 @@ export {
   type CircuitState,
 } from "./security/circuit-breaker.js";
 export {
+  runRedTeamSimulation,
+  formatScorecard,
+  type DefenseScorecard,
+  type CategoryScore,
+  type RedTeamConfig,
+} from "./security/red-team-engine.js";
+export {
+  createSeedPopulation,
+  mutate,
+  crossover,
+  resolvePayload,
+  type AttackGenome,
+  type AttackCategory,
+} from "./security/attack-genome.js";
+export {
   getToolOutputTrust,
   getToolTrustThreshold,
   checkToolTrust,
