@@ -132,6 +132,15 @@ export {
   type PolicyFinding,
 } from "./security/policy-validator.js";
 export {
+  getToolOutputTrust,
+  getToolTrustThreshold,
+  checkToolTrust,
+  createTrustWindow,
+  recordToolTrust,
+  clearTaint,
+  type TrustWindow,
+} from "./security/trust-labels.js";
+export {
   filterResponse,
   createStreamFilter,
   type StreamFilter,

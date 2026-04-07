@@ -25,6 +25,12 @@ export { createMemoryExtractionMiddleware } from "./builtin/memory-extract.js";
 export { createProactiveCompactionMiddleware } from "./builtin/proactive-compaction.js";
 export { createSecurityScanMiddleware } from "./builtin/security-scan.js";
 export { createToolOutputTruncationMiddleware } from "./builtin/tool-output-truncation.js";
+export {
+  createTrustPropagationMiddleware,
+  syncTrustWindow,
+  flushTrustWindow,
+  clearCurrentTaint,
+} from "./builtin/trust-propagation.js";
 
 /**
  * Create a default middleware pipeline with all built-in middleware.
@@ -43,6 +49,7 @@ import { createMemoryExtractionMiddleware } from "./builtin/memory-extract.js";
 import { createProactiveCompactionMiddleware } from "./builtin/proactive-compaction.js";
 import { createSecurityScanMiddleware } from "./builtin/security-scan.js";
 import { createToolOutputTruncationMiddleware } from "./builtin/tool-output-truncation.js";
+import { createTrustPropagationMiddleware } from "./builtin/trust-propagation.js";
 import { codeExtractionMiddleware } from "./code-extraction.js";
 
 export function createDefaultMiddlewarePipeline(
@@ -50,6 +57,7 @@ export function createDefaultMiddlewarePipeline(
   contextWindow?: number,
 ): MiddlewarePipeline {
   const pipeline = new MiddlewarePipeline();
+  pipeline.use(createTrustPropagationMiddleware()); // Must be first — tracks taint before other middleware
   pipeline.use(turnContextMiddleware);
   pipeline.use(toolHealthMiddleware);
   pipeline.use(buildStateMiddleware);
