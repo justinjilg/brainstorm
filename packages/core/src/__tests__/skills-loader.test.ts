@@ -16,9 +16,11 @@ describe("loadSkills", () => {
     expect(Array.isArray(skills)).toBe(true);
   });
 
-  it("returns empty array for nonexistent project", () => {
+  it("loads builtin skills even for nonexistent project", () => {
     const skills = loadSkills("/nonexistent/path");
-    expect(skills).toEqual([]);
+    // Builtin skills always load regardless of project path
+    expect(skills.length).toBeGreaterThan(0);
+    expect(skills.some((s) => s.source === "builtin")).toBe(true);
   });
 
   it("skills have required fields", () => {
@@ -29,7 +31,9 @@ describe("loadSkills", () => {
       expect(skill).toHaveProperty("description");
       expect(skill).toHaveProperty("content");
       expect(skill).toHaveProperty("source");
-      expect(["project", "global", "claude-compat"]).toContain(skill.source);
+      expect(["project", "global", "claude-compat", "builtin"]).toContain(
+        skill.source,
+      );
     }
   });
 });
