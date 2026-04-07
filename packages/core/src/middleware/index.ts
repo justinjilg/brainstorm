@@ -37,6 +37,7 @@ export {
 } from "./builtin/tool-sequence-detector.js";
 export { createEgressMonitorMiddleware } from "./builtin/egress-monitor.js";
 export { createToolContractMiddleware } from "./builtin/tool-contract-enforcement.js";
+export { createContentInjectionFilterMiddleware } from "./builtin/content-injection-filter.js";
 
 /**
  * Create a default middleware pipeline with all built-in middleware.
@@ -59,6 +60,7 @@ import { createTrustPropagationMiddleware } from "./builtin/trust-propagation.js
 import { createToolSequenceDetectorMiddleware } from "./builtin/tool-sequence-detector.js";
 import { createEgressMonitorMiddleware } from "./builtin/egress-monitor.js";
 import { createToolContractMiddleware } from "./builtin/tool-contract-enforcement.js";
+import { createContentInjectionFilterMiddleware } from "./builtin/content-injection-filter.js";
 import { codeExtractionMiddleware } from "./code-extraction.js";
 
 export function createDefaultMiddlewarePipeline(
@@ -67,6 +69,7 @@ export function createDefaultMiddlewarePipeline(
 ): MiddlewarePipeline {
   const pipeline = new MiddlewarePipeline();
   pipeline.use(createTrustPropagationMiddleware()); // Must be first — tracks taint before other middleware
+  pipeline.use(createContentInjectionFilterMiddleware()); // Sanitize web content at ingestion
   pipeline.use(createToolContractMiddleware()); // Argument validation — catches dangerous args early
   pipeline.use(createToolSequenceDetectorMiddleware()); // Sequence detection — trust-aware pattern matching
   pipeline.use(createEgressMonitorMiddleware()); // Network boundary — blocks exfiltration patterns
