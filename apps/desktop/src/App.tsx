@@ -35,16 +35,21 @@ export function App() {
   // State from agent events
   const [activeModel, setActiveModel] = useState("Claude Opus 4.6");
   const [activeProvider, setActiveProvider] = useState("anthropic");
-  const [strategy, setStrategy] = useState("combined");
+  const [strategy, _setStrategy] = useState("combined");
   const [sessionCost, setSessionCost] = useState(0);
   const [contextPercent, setContextPercent] = useState(0);
   const [permissionMode, setPermissionMode] = useState<
     "auto" | "confirm" | "plan"
   >("confirm");
-  const [activeRole, setActiveRole] = useState<string | null>(null);
-  const [kairosStatus, setKairosStatus] = useState<
+  const [activeRole, _setActiveRole] = useState<string | null>(null);
+  const [kairosStatus, _setKairosStatus] = useState<
     "running" | "sleeping" | "paused" | "stopped"
   >("stopped");
+
+  // Suppress unused warnings — these setters wire to SSE events in Phase 1B
+  void _setStrategy;
+  void _setActiveRole;
+  void _setKairosStatus;
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
