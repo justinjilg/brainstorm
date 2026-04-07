@@ -1,6 +1,13 @@
 import { useState, useCallback } from "react";
 import { Sidebar } from "./components/sidebar/Sidebar";
 import { ChatView } from "./components/chat/ChatView";
+import { DashboardView } from "./components/dashboard/DashboardView";
+import { ModelsView } from "./components/models/ModelsView";
+import { MemoryView } from "./components/memory/MemoryView";
+import { SkillsView } from "./components/skills/SkillsView";
+import { WorkflowsView } from "./components/workflows/WorkflowsView";
+import { SecurityView } from "./components/security/SecurityView";
+import { ConfigView } from "./components/config/ConfigView";
 import { StatusRail } from "./components/status-rail/StatusRail";
 import { useServerHealth } from "./hooks/useServerHealth";
 
@@ -141,7 +148,7 @@ export function App() {
 
         {/* Main panel */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          {mode === "chat" ? (
+          {mode === "chat" && (
             <ChatView
               conversationId={activeConversationId}
               detailOpen={detailOpen}
@@ -153,14 +160,19 @@ export function App() {
               }}
               onContextUpdate={setContextPercent}
             />
-          ) : (
-            <div className="flex-1 flex items-center justify-center text-[var(--ctp-overlay0)]">
-              <div className="text-center">
-                <div className="text-2xl mb-2">{MODE_LABELS[mode].label}</div>
-                <div className="text-sm">Coming in Phase 2</div>
-              </div>
-            </div>
           )}
+          {mode === "dashboard" && (
+            <DashboardView
+              sessionCost={sessionCost}
+              contextPercent={contextPercent}
+            />
+          )}
+          {mode === "models" && <ModelsView />}
+          {mode === "memory" && <MemoryView />}
+          {mode === "skills" && <SkillsView />}
+          {mode === "workflows" && <WorkflowsView />}
+          {mode === "security" && <SecurityView />}
+          {mode === "config" && <ConfigView />}
         </div>
 
         {/* Detail panel */}
