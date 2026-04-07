@@ -11,6 +11,8 @@ import { ConfigView } from "./components/config/ConfigView";
 import { StatusRail } from "./components/status-rail/StatusRail";
 import { CommandPalette } from "./components/CommandPalette";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { KeyboardOverlay } from "./components/KeyboardOverlay";
+import { RolePicker } from "./components/RolePicker";
 import { useServerHealth } from "./hooks/useServerHealth";
 
 export type AppMode =
@@ -42,6 +44,8 @@ export function App() {
     string | null
   >(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [keyboardOverlayOpen, setKeyboardOverlayOpen] = useState(false);
+  const [rolePickerOpen, setRolePickerOpen] = useState(false);
 
   // State from agent events
   const [activeModel, setActiveModel] = useState("Claude Opus 4.6");
@@ -98,6 +102,11 @@ export function App() {
       if (e.key === "k") {
         e.preventDefault();
         setPaletteOpen((prev) => !prev);
+        return;
+      }
+      if (e.key === "/" || e.key === "?") {
+        e.preventDefault();
+        setKeyboardOverlayOpen((prev) => !prev);
         return;
       }
     }
@@ -232,6 +241,23 @@ export function App() {
         )}
       </div>
 
+      {/* Keyboard shortcut overlay */}
+      <KeyboardOverlay
+        open={keyboardOverlayOpen}
+        onClose={() => setKeyboardOverlayOpen(false)}
+      />
+
+      {/* Role picker */}
+      <RolePicker
+        open={rolePickerOpen}
+        onClose={() => setRolePickerOpen(false)}
+        currentRole={activeRole}
+        onRoleSelect={(role) => {
+          _setActiveRole(role);
+          setRolePickerOpen(false);
+        }}
+      />
+
       {/* Command palette */}
       <CommandPalette
         open={paletteOpen}
@@ -254,7 +280,7 @@ export function App() {
         contextPercent={contextPercent}
         kairosStatus={kairosStatus}
         permissionMode={permissionMode}
-        onRoleClick={() => {}}
+        onRoleClick={() => setRolePickerOpen(true)}
         onModelClick={() => {}}
         onStrategyClick={() => {}}
         onPermissionClick={() =>
