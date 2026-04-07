@@ -43,10 +43,13 @@ export const ghSearchTool = defineTool({
 
     try {
       // Build the query with filters
+      // Note: repo/owner use --repo/--owner flags, not query string,
+      // because gh CLI wraps the query and escapes colons in repo: syntax.
       let q = input.query;
-      if (input.repo) q += ` repo:${input.repo}`;
-      if (input.owner) q += ` org:${input.owner}`;
       if (input.language) q += ` language:${input.language}`;
+      const repoFlags: string[] = [];
+      if (input.repo) repoFlags.push("--repo", input.repo);
+      if (input.owner) repoFlags.push("--owner", input.owner);
 
       switch (input.action) {
         case "code": {
@@ -58,6 +61,7 @@ export const ghSearchTool = defineTool({
               "search",
               "code",
               q,
+              ...repoFlags,
               "--json",
               "repository,path,textMatches",
               "--limit",
@@ -71,71 +75,81 @@ export const ghSearchTool = defineTool({
         case "issues": {
           if (input.state) q += ` state:${input.state}`;
           if (input.label) q += ` label:${input.label}`;
-          q += " is:issue";
-          const args = [
+          const issueArgs = [
             "search",
             "issues",
             q,
+            ...repoFlags,
             "--json",
             "number,title,state,repository,author,labels,url,createdAt",
             "--limit",
             String(input.limit ?? 10),
           ];
-          if (input.sort) args.push("--sort", input.sort);
-          if (input.order) args.push("--order", input.order);
-          const { stdout } = await execFileAsync("gh", args, opts);
-          return { results: JSON.parse(stdout) };
+          if (input.sort) issueArgs.push("--sort", input.sort);
+          if (input.order) issueArgs.push("--order", input.order);
+          const { stdout: issueOut } = await execFileAsync(
+            "gh",
+            issueArgs,
+            opts,
+          );
+          return { results: JSON.parse(issueOut) };
         }
 
         case "prs": {
           if (input.state) q += ` state:${input.state}`;
           if (input.label) q += ` label:${input.label}`;
-          q += " is:pr";
-          const args = [
+          const prArgs = [
             "search",
             "prs",
             q,
+            ...repoFlags,
             "--json",
             "number,title,state,repository,author,labels,url,createdAt",
             "--limit",
             String(input.limit ?? 10),
           ];
-          if (input.sort) args.push("--sort", input.sort);
-          if (input.order) args.push("--order", input.order);
-          const { stdout } = await execFileAsync("gh", args, opts);
-          return { results: JSON.parse(stdout) };
+          if (input.sort) prArgs.push("--sort", input.sort);
+          if (input.order) prArgs.push("--order", input.order);
+          const { stdout: prOut } = await execFileAsync("gh", prArgs, opts);
+          return { results: JSON.parse(prOut) };
         }
 
         case "commits": {
-          const args = [
+          const commitArgs = [
             "search",
             "commits",
             q,
+            ...repoFlags,
             "--json",
             "sha,commit,repository,url",
             "--limit",
             String(input.limit ?? 10),
           ];
-          if (input.sort) args.push("--sort", input.sort);
-          if (input.order) args.push("--order", input.order);
-          const { stdout } = await execFileAsync("gh", args, opts);
-          return { results: JSON.parse(stdout) };
+          if (input.sort) commitArgs.push("--sort", input.sort);
+          if (input.order) commitArgs.push("--order", input.order);
+          const { stdout: commitOut } = await execFileAsync(
+            "gh",
+            commitArgs,
+            opts,
+          );
+          return { results: JSON.parse(commitOut) };
         }
 
         case "repos": {
-          const args = [
+          const repoArgs = [
             "search",
             "repos",
             q,
+            ...repoFlags,
             "--json",
             "fullName,description,stargazersCount,language,url,updatedAt,isArchived",
             "--limit",
             String(input.limit ?? 10),
           ];
-          if (input.sort) args.push("--sort", input.sort);
-          if (input.order) args.push("--order", input.order);
-          const { stdout } = await execFileAsync("gh", args, opts);
-          return { results: JSON.parse(stdout) };
+          if (input.sort) repoArgs.push("--sort", input.sort);
+          if (input.order) repoArgs.push("--order", input.order);
+          const { stdout: repoOut } = await execFileAsync("gh", repoArgs, opts);
+          return { results: JSON.parse(repoOut) };
         }
 
         default:
