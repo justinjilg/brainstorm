@@ -2,6 +2,7 @@ import { streamText, stepCountIs } from "ai";
 import type { ConversationMessage } from "../session/manager.js";
 import type { BrainstormConfig } from "@brainst0rm/config";
 import type { ProviderRegistry } from "@brainst0rm/providers";
+import type { RoutingDecision } from "@brainst0rm/shared";
 import {
   BrainstormRouter,
   CostTracker,
@@ -294,15 +295,28 @@ export async function* runAgentLoop(
   // Phase: routing
   yield { type: "thinking" as const, phase: "routing" as const };
   const conversationTokens = options.compaction?.getTokenEstimate() ?? 0;
-  const decision = options.preferredModelId
-    ? {
+  let decision: RoutingDecision;
+  if (options.preferredModelId) {
+    const pinnedModel = options.registry.getModel(options.preferredModelId);
+    if (pinnedModel) {
+      // Explicit model pin overrides routing strategy unconditionally
+      decision = {
         ...router.route(task, conversationTokens),
-        model:
-          options.registry.getModel(options.preferredModelId) ??
-          router.route(task, conversationTokens).model,
-        reason: `Cross-model workflow override: ${options.preferredModelId}`,
-      }
-    : router.route(task, conversationTokens);
+        model: pinnedModel,
+        reason: `Model pin: ${options.preferredModelId}`,
+      };
+    } else {
+      // Model not in registry — warn and fall back to routing (don't fail silently)
+      const routed = router.route(task, conversationTokens);
+      yield {
+        type: "loop-warning" as const,
+        message: `Model '${options.preferredModelId}' not available — falling back to ${routed.model.id}`,
+      };
+      decision = routed;
+    }
+  } else {
+    decision = router.route(task, conversationTokens);
+  }
 
   yield { type: "routing", decision };
 
@@ -702,7 +716,9 @@ export async function* runAgentLoop(
         }
       }
       // Pick next fallback that hasn't been tried yet
-      const fallbackModel = fallbacks.find((f) => !modelsTried.includes(f.id));
+      const fallbackModel = fallbacks.find(
+        (f: { id: string }) => !modelsTried.includes(f.id),
+      );
       if (fallbackModel) {
         yield {
           type: "model-retry" as const,
