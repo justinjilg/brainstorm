@@ -94,6 +94,40 @@ const INJECTION_PATTERNS: Array<{
     severity: "medium",
     description: "Role-play injection",
   },
+
+  // Security feature suppression (subtle policy manipulation)
+  {
+    pattern: /always\s+use\s+auto\s+mode/i,
+    severity: "high",
+    description: "Instruction to disable permission checks (auto mode)",
+  },
+  {
+    pattern:
+      /skip\s+(confirmation|approval|permission|verification)\s+(prompt|check|step|dialog)/i,
+    severity: "high",
+    description: "Instruction to bypass confirmation prompts",
+  },
+  {
+    pattern:
+      /disable\s+(security|safety|permission|confirmation|check|guard|scan)/i,
+    severity: "high",
+    description: "Instruction to disable security features",
+  },
+  {
+    pattern: /always\s+allow\b|never\s+(?:ask|prompt|confirm|block|deny)/i,
+    severity: "high",
+    description: "Instruction to remove all safety gates",
+  },
+  {
+    pattern: /without\s+(?:asking|confirming|checking|approval|permission)/i,
+    severity: "medium",
+    description: "Instruction to bypass human-in-the-loop",
+  },
+  {
+    pattern: /trust\s+all\s+(?:input|content|files|sources)/i,
+    severity: "high",
+    description: "Instruction to disable trust boundary enforcement",
+  },
 ];
 
 /**

@@ -79,6 +79,42 @@ const SCAN_RULES: ScanRule[] = [
     weight: 0.5,
   },
 
+  // ── Indirect Injection (social engineering) ──
+  {
+    category: "prompt-injection",
+    pattern:
+      /(?:the\s+user|they|he|she)\s+(?:wanted|asked|told|said|requested|mentioned|instructed)\s+(?:you|me)\s+to\b/gi,
+    severity: "high",
+    detail:
+      "Indirect instruction attribution (pretending a prior user request)",
+    weight: 0.4,
+  },
+  {
+    category: "prompt-injection",
+    pattern:
+      /(?:as\s+(?:instructed|requested|mentioned|discussed)\s+(?:earlier|before|previously|above))/gi,
+    severity: "medium",
+    detail: "False reference to prior instructions",
+    weight: 0.3,
+  },
+  {
+    category: "prompt-injection",
+    pattern:
+      /(?:remember|recall|don't\s+forget)\s+(?:that\s+)?(?:you|your)\s+(?:were|are)\s+(?:supposed|meant|expected)\s+to/gi,
+    severity: "high",
+    detail: "False memory implantation (claiming a prior commitment)",
+    weight: 0.4,
+  },
+  {
+    category: "prompt-injection",
+    pattern:
+      /(?:the\s+)?(?:correct|proper|right|intended)\s+(?:behavior|action|response)\s+is\s+to/gi,
+    severity: "medium",
+    detail:
+      "Normative framing (defining correct behavior from untrusted source)",
+    weight: 0.3,
+  },
+
   // ── Dangerous URLs ──
   {
     category: "dangerous-url",
