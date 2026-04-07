@@ -370,4 +370,5 @@ export {
   type DailyLogOptions,
   type LogAppendOptions,
   type TickMessageContext,
+  type DaemonMetrics,
 } from "./daemon/index.js";

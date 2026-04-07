@@ -24,6 +24,30 @@ export interface TickMessageContext {
   memorySummary?: string;
   /** Available skill names for autonomous invocation. */
   availableSkills?: Array<{ name: string; description: string }>;
+
+  // ── Daemon Self-Awareness (KAIROS ↔ BR intelligence loop) ──
+
+  /** Performance metrics from the router — makes the model aware of its own trajectory. */
+  daemonMetrics?: DaemonMetrics;
+}
+
+export interface DaemonMetrics {
+  /** Success rate over recent ticks (0.0-1.0). */
+  successRate: number;
+  /** Model momentum strength. */
+  momentum: "strong" | "building" | "none" | "broken";
+  /** Currently active model ID. */
+  activeModel: string;
+  /** Consecutive successes with current model. */
+  consecutiveSuccesses: number;
+  /** Budget pressure level. */
+  budgetPressure: "healthy" | "moderate" | "high" | "critical";
+  /** Whether tick interval has been stretched by cost pacer. */
+  costPacingActive: boolean;
+  /** Ticks until next approval gate (null = no gates configured). */
+  ticksUntilGate: number | null;
+  /** Convergence warning from Thompson sampling, if any. */
+  convergenceWarning?: string;
 }
 
 export function formatTickMessage(ctx: TickMessageContext): string {
@@ -89,6 +113,31 @@ export function formatTickMessage(ctx: TickMessageContext): string {
       parts.push(`    - ${skill.name}: ${skill.description}`);
     }
     parts.push(`  </available_skills>`);
+  }
+
+  // Daemon self-awareness — performance metrics from the router
+  if (ctx.daemonMetrics) {
+    const m = ctx.daemonMetrics;
+    parts.push(`  <performance>`);
+    parts.push(
+      `    <model id="${m.activeModel}" momentum="${m.momentum}" successes="${m.consecutiveSuccesses}" />`,
+    );
+    parts.push(
+      `    <success_rate>${(m.successRate * 100).toFixed(0)}%</success_rate>`,
+    );
+    parts.push(`    <budget_pressure>${m.budgetPressure}</budget_pressure>`);
+    if (m.costPacingActive) {
+      parts.push(
+        `    <cost_pacing active="true" note="Tick intervals stretched to conserve budget" />`,
+      );
+    }
+    if (m.ticksUntilGate !== null) {
+      parts.push(`    <next_gate ticks="${m.ticksUntilGate}" />`);
+    }
+    if (m.convergenceWarning) {
+      parts.push(`    <warning>${m.convergenceWarning}</warning>`);
+    }
+    parts.push(`  </performance>`);
   }
 
   parts.push(`</tick>`);

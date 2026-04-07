@@ -73,6 +73,32 @@ export interface DaemonControllerOptions {
    * to the human and return true to continue or false to stop the daemon.
    */
   onApprovalGate?: (context: ApprovalGateContext) => Promise<boolean>;
+
+  // ── KAIROS ↔ BR Intelligence Loop ──
+
+  /**
+   * Get current model momentum from the router.
+   * Enables cost-paced sleep and momentum-aware approval gates.
+   */
+  getRouterIntelligence?: () => {
+    momentum: {
+      modelId: string;
+      successCount: number;
+      taskType: string;
+    } | null;
+    recentFailureCount: number;
+    convergenceAlerts: string[];
+  };
+
+  /**
+   * Get cost-pacing advice from the cost tracker.
+   * Returns advised sleep interval based on budget velocity.
+   */
+  getCostPacing?: (defaultIntervalMs: number) => {
+    intervalMs: number;
+    reason: string;
+    budgetPressure: number;
+  };
 }
 
 export interface ApprovalGateContext {
@@ -88,6 +114,23 @@ export interface ApprovalGateContext {
   totalCost: number;
   /** Session duration in ms. */
   sessionDurationMs: number;
+
+  // ── Router Intelligence (KAIROS ↔ BR feedback loop) ──
+
+  /** Current model momentum — how well the active model is performing. */
+  modelMomentum: {
+    modelId: string;
+    successCount: number;
+    taskType: string;
+  } | null;
+  /** Recent model failures (last 60s). */
+  recentFailures: number;
+  /** Budget pressure: 0.0 (healthy) to 1.0 (exhausted). */
+  budgetPressure: number;
+  /** Whether cost pacing has kicked in (intervals stretched). */
+  costPacingActive: boolean;
+  /** Thompson sampling convergence alerts, if any. */
+  convergenceAlerts?: string[];
 }
 
 export function createInitialState(): DaemonState {
