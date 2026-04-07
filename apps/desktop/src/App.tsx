@@ -9,6 +9,7 @@ import { WorkflowsView } from "./components/workflows/WorkflowsView";
 import { SecurityView } from "./components/security/SecurityView";
 import { ConfigView } from "./components/config/ConfigView";
 import { StatusRail } from "./components/status-rail/StatusRail";
+import { CommandPalette } from "./components/CommandPalette";
 import { useServerHealth } from "./hooks/useServerHealth";
 
 export type AppMode =
@@ -39,6 +40,7 @@ export function App() {
   const [activeConversationId, setActiveConversationId] = useState<
     string | null
   >(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   // State from agent events
   const [activeModel, setActiveModel] = useState("Claude Opus 4.6");
@@ -90,6 +92,11 @@ export function App() {
       if (e.key === "d") {
         e.preventDefault();
         setDetailOpen((prev) => !prev);
+        return;
+      }
+      if (e.key === "k") {
+        e.preventDefault();
+        setPaletteOpen((prev) => !prev);
         return;
       }
     }
@@ -195,6 +202,18 @@ export function App() {
           </div>
         )}
       </div>
+
+      {/* Command palette */}
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onModeChange={(m) => {
+          setMode(m);
+          setPaletteOpen(false);
+        }}
+        onToggleSidebar={() => setSidebarCollapsed((prev) => !prev)}
+        onToggleDetail={() => setDetailOpen((prev) => !prev)}
+      />
 
       {/* Status rail */}
       <StatusRail
