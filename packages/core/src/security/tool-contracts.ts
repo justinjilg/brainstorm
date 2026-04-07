@@ -142,17 +142,17 @@ function validateFileRead(input: Record<string, unknown>): ContractViolation[] {
         tool: "file_read",
         rule: "sensitive-path",
         detail: `Reading ${reason}: ${path}`,
-        severity: "warning",
+        severity: "block",
       });
     }
   }
 
-  // Path traversal detection
-  if (/\.\.[/\\]/.test(path) && /\.\.[/\\].*\.\.[/\\]/.test(path)) {
+  // Path traversal detection — any ../ outside the project is suspicious
+  if (/\.\.[/\\]/.test(path)) {
     violations.push({
       tool: "file_read",
       rule: "path-traversal",
-      detail: `Multiple parent directory references suggest path traversal: ${path}`,
+      detail: `Parent directory reference in path: ${path}`,
       severity: "block",
     });
   }
