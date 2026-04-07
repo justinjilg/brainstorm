@@ -1267,6 +1267,10 @@ program
   )
   .option("--lfg", "Full auto mode — skip all permission confirmations")
   .option(
+    "--stream",
+    "Stream every AgentEvent as JSONL to stdout (real-time observability)",
+  )
+  .option(
     "--unattended",
     "Unattended mode — enable tools, auto-approve, auto-commit on success",
   )
@@ -1281,6 +1285,7 @@ program
         maxSteps?: string;
         strategy?: string;
         lfg?: boolean;
+        stream?: boolean;
         unattended?: boolean;
       },
     ) => {
@@ -1319,7 +1324,11 @@ program
       }
 
       const db = getDb();
-      const resolvedKeys = await resolveProviderKeys();
+      // In headless modes (--stream, --json), skip vault prompt — env only
+      const resolvedKeys =
+        opts.stream || opts.json
+          ? { get: (name: string) => process.env[name] ?? null }
+          : await resolveProviderKeys();
       const resolvedBRKey =
         resolvedKeys.get("BRAINSTORM_API_KEY") ?? getBrainstormApiKey();
       const isCommunityTier = isCommunityKey(resolvedBRKey);
@@ -1513,9 +1522,16 @@ program
         middleware,
         routingOutcomeRepo,
       })) {
+        // --stream: emit every event as timestamped JSONL to stdout
+        if (opts.stream) {
+          process.stdout.write(
+            JSON.stringify({ ts: Date.now(), ...event }) + "\n",
+          );
+        }
+
         switch (event.type) {
           case "thinking":
-            if (!opts.json) {
+            if (!opts.json && !opts.stream) {
               const spinnerFrames = [
                 "⠋",
                 "⠙",
@@ -1545,26 +1561,31 @@ program
             break;
           case "routing":
             modelName = event.decision.model.name;
-            process.stderr.write(
-              `\r[${event.decision.strategy}] → ${modelName}\n`,
-            );
+            if (!opts.stream)
+              process.stderr.write(
+                `\r[${event.decision.strategy}] → ${modelName}\n`,
+              );
             break;
           case "text-delta":
             fullResponse += event.delta;
             break;
           case "tool-call-start":
             toolCallCount++;
-            process.stderr.write(`\n[tool: ${event.toolName}]\n`);
+            if (!opts.stream)
+              process.stderr.write(`\n[tool: ${event.toolName}]\n`);
             break;
           case "gateway-feedback": {
-            const gwLine = formatGatewayFeedback(event.feedback);
-            if (gwLine) process.stderr.write(`${gwLine}\n`);
+            if (!opts.stream) {
+              const gwLine = formatGatewayFeedback(event.feedback);
+              if (gwLine) process.stderr.write(`${gwLine}\n`);
+            }
             break;
           }
           case "model-retry":
-            process.stderr.write(
-              `\n[retry] ${event.fromModel} → ${event.toModel} (${event.reason})\n`,
-            );
+            if (!opts.stream)
+              process.stderr.write(
+                `\n[retry] ${event.fromModel} → ${event.toModel} (${event.reason})\n`,
+              );
             modelName = event.toModel;
             fullResponse = ""; // Reset for retry
             break;
