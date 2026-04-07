@@ -98,6 +98,8 @@ export interface DaemonControllerOptions {
     intervalMs: number;
     reason: string;
     budgetPressure: number;
+    /** True when budget is exhausted — daemon should stop. */
+    shouldStop: boolean;
   };
 }
 

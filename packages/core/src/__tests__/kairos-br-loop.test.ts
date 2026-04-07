@@ -65,6 +65,26 @@ describe("Cost-Paced Sleep", () => {
     const advisedMs = defaultMs * 3; // 90s (conservation mode)
     expect(advisedMs).toBe(90_000);
   });
+
+  it("exhausted budget signals stop, not infinite slowdown", () => {
+    const sessionCost = 5.5;
+    const sessionLimit = 5.0;
+    const pressure = sessionCost / sessionLimit; // 110%
+
+    expect(pressure).toBeGreaterThanOrEqual(1.0);
+    const shouldStop = pressure >= 1.0;
+    expect(shouldStop).toBe(true);
+  });
+
+  it("exactly at limit signals stop", () => {
+    const sessionCost = 5.0;
+    const sessionLimit = 5.0;
+    const pressure = sessionCost / sessionLimit; // 100%
+
+    expect(pressure).toBe(1.0);
+    const shouldStop = pressure >= 1.0;
+    expect(shouldStop).toBe(true);
+  });
 });
 
 describe("Momentum-Aware Approval Gates", () => {

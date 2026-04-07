@@ -174,6 +174,8 @@ export class CostTracker {
     intervalMs: number;
     reason: string;
     budgetPressure: number;
+    /** True when budget is exhausted — daemon should stop, not just slow down. */
+    shouldStop: boolean;
   } {
     const sessionLimit = this.budgetConfig.perSession;
     if (!sessionLimit || sessionLimit <= 0) {
@@ -181,17 +183,29 @@ export class CostTracker {
         intervalMs: defaultIntervalMs,
         reason: "No session budget — default interval",
         budgetPressure: 0,
+        shouldStop: false,
       };
     }
 
     const pressure = this.sessionCost / sessionLimit;
     const forecast = this.forecast();
 
+    // Budget exhausted — signal daemon to stop
+    if (pressure >= 1.0) {
+      return {
+        intervalMs: 0,
+        reason: `Budget exhausted: $${this.sessionCost.toFixed(3)} >= $${sessionLimit.toFixed(2)} limit. Daemon should stop.`,
+        budgetPressure: pressure,
+        shouldStop: true,
+      };
+    }
+
     if (pressure > 0.9 || forecast.exceedsLimit) {
       return {
         intervalMs: defaultIntervalMs * 3,
         reason: `Conservation mode: ${(pressure * 100).toFixed(0)}% budget used ($${this.sessionCost.toFixed(3)}/$${sessionLimit.toFixed(2)})`,
         budgetPressure: pressure,
+        shouldStop: false,
       };
     }
     if (pressure > 0.75) {
@@ -199,6 +213,7 @@ export class CostTracker {
         intervalMs: defaultIntervalMs * 2,
         reason: `Budget pressure: ${(pressure * 100).toFixed(0)}% used, slowing ticks`,
         budgetPressure: pressure,
+        shouldStop: false,
       };
     }
     if (pressure > 0.5) {
@@ -206,6 +221,7 @@ export class CostTracker {
         intervalMs: Math.round(defaultIntervalMs * 1.5),
         reason: `Moderate budget use: ${(pressure * 100).toFixed(0)}%, gentle slowdown`,
         budgetPressure: pressure,
+        shouldStop: false,
       };
     }
 
@@ -213,6 +229,7 @@ export class CostTracker {
       intervalMs: defaultIntervalMs,
       reason: `Budget healthy: ${(pressure * 100).toFixed(0)}% used`,
       budgetPressure: pressure,
+      shouldStop: false,
     };
   }
 
