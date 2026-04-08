@@ -89,6 +89,7 @@ fn stop_server(state: tauri::State<'_, Mutex<SidecarState>>) -> Result<String, S
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(Mutex::new(SidecarState { child: None }))
         .invoke_handler(tauri::generate_handler![
             get_server_url,
