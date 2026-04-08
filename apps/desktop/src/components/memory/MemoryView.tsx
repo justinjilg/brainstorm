@@ -1,186 +1,234 @@
 /**
- * Memory View — white-box memory inspector with trust scores.
- * Letta-inspired: see and edit agent memory, trust scoring, quarantine.
+ * Memory View — wired to real BrainstormServer memory API.
  */
 
 import { useState } from "react";
+import { useMemory, type MemoryEntry } from "../../hooks/useServerData";
 
 type MemoryTier = "system" | "archive" | "quarantine";
 
-interface MemoryEntry {
-  id: string;
-  name: string;
-  description: string;
-  tier: MemoryTier;
-  source: string;
-  trustScore: number;
-  author: string;
-  content: string;
-  contentHash: string;
-  createdAt: string;
-}
-
-const DEMO_ENTRIES: MemoryEntry[] = [
-  {
-    id: "1",
-    name: "user-preferences",
-    description: "User coding preferences",
-    tier: "system",
-    source: "user_input",
-    trustScore: 1.0,
-    author: "human",
-    content: "Prefers Opus for code, concise responses, ESM imports",
-    contentHash: "a3f2...",
-    createdAt: "2026-04-07",
-  },
-  {
-    id: "2",
-    name: "project-conventions",
-    description: "Project patterns and conventions",
-    tier: "system",
-    source: "agent_extraction",
-    trustScore: 0.5,
-    author: "memory-middleware",
-    content: "ESM imports, tsup bundling, vitest for tests, pino logger",
-    contentHash: "b7c1...",
-    createdAt: "2026-04-07",
-  },
-  {
-    id: "3",
-    name: "brainstorm-architecture",
-    description: "20-package turborepo monorepo",
-    tier: "archive",
-    source: "agent_extraction",
-    trustScore: 0.5,
-    author: "memory-middleware",
-    content:
-      "Turborepo with packages/shared, /config, /db, /providers, /router, /tools, /core, /agents, /workflow, /hooks, /mcp, /eval, /gateway, /vault, /cli, /plugin-sdk, /projects, /scheduler, /orchestrator, /vscode",
-    contentHash: "c9d3...",
-    createdAt: "2026-04-06",
-  },
-  {
-    id: "4",
-    name: "web-extracted-config",
-    description: "Config from external website",
-    tier: "quarantine",
-    source: "web_fetch",
-    trustScore: 0.2,
-    author: "web_fetch",
-    content: "Untrusted configuration pattern extracted from external docs",
-    contentHash: "d4e5...",
-    createdAt: "2026-04-07",
-  },
-];
-
 const TIER_CONFIG: Record<
-  MemoryTier,
+  string,
   { label: string; color: string; icon: string }
 > = {
-  system: {
-    label: "System (always in prompt)",
-    color: "var(--ctp-green)",
-    icon: "●",
-  },
-  archive: {
-    label: "Archive (searchable, on-demand)",
-    color: "var(--ctp-blue)",
-    icon: "◐",
-  },
-  quarantine: {
-    label: "Quarantine (untrusted)",
-    color: "var(--ctp-red)",
-    icon: "⚠",
-  },
+  system: { label: "System", color: "var(--ctp-green)", icon: "●" },
+  archive: { label: "Archive", color: "var(--ctp-blue)", icon: "◐" },
+  quarantine: { label: "Quarantine", color: "var(--ctp-red)", icon: "⚠" },
 };
 
 export function MemoryView() {
+  const { entries, loading, promote, quarantine, demote, remove, create } =
+    useMemory();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeTier, setActiveTier] = useState<MemoryTier | "all">("all");
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newContent, setNewContent] = useState("");
 
   const filtered =
     activeTier === "all"
-      ? DEMO_ENTRIES
-      : DEMO_ENTRIES.filter((e) => e.tier === activeTier);
+      ? entries
+      : entries.filter((e) => e.tier === activeTier);
 
-  const selected = DEMO_ENTRIES.find((e) => e.id === selectedId);
+  const selected = entries.find((e) => e.id === selectedId);
+
+  const handleCreate = async () => {
+    if (newName && newContent) {
+      await create(newName, newContent);
+      setNewName("");
+      setNewContent("");
+      setShowCreateForm(false);
+    }
+  };
 
   return (
-    <div className="flex-1 flex overflow-hidden">
+    <div className="flex-1 flex overflow-hidden bg-[var(--ctp-base)]">
       {/* Entry list */}
-      <div className="w-[55%] border-r border-[var(--ctp-surface0)] flex flex-col overflow-hidden">
+      <div
+        className="flex flex-col overflow-hidden"
+        style={{
+          width: "55%",
+          borderRight: "1px solid var(--border-subtle)",
+        }}
+      >
         {/* Tier filter */}
-        <div className="flex items-center gap-1 px-4 py-2 border-b border-[var(--ctp-surface0)]">
+        <div
+          className="flex items-center gap-1 px-4 py-2"
+          style={{ borderBottom: "1px solid var(--border-subtle)" }}
+        >
           {(["all", "system", "archive", "quarantine"] as const).map((tier) => (
             <button
               key={tier}
               onClick={() => setActiveTier(tier)}
-              className={`text-[10px] px-2 py-0.5 rounded transition-colors ${
-                activeTier === tier
-                  ? "bg-[var(--ctp-surface1)] text-[var(--ctp-text)]"
-                  : "text-[var(--ctp-overlay0)] hover:text-[var(--ctp-subtext0)]"
-              }`}
+              className="interactive px-2 py-1 rounded-md"
+              style={{
+                fontSize: "var(--text-2xs)",
+                color:
+                  activeTier === tier
+                    ? "var(--ctp-text)"
+                    : "var(--ctp-overlay0)",
+                background:
+                  activeTier === tier ? "var(--ctp-surface0)" : "transparent",
+              }}
             >
               {tier === "all"
-                ? "All"
-                : tier.charAt(0).toUpperCase() + tier.slice(1)}
-              {tier !== "all" && (
-                <span className="ml-1 text-[var(--ctp-overlay0)]">
-                  ({DEMO_ENTRIES.filter((e) => e.tier === tier).length})
-                </span>
-              )}
+                ? `All (${entries.length})`
+                : `${tier} (${entries.filter((e) => e.tier === tier).length})`}
             </button>
           ))}
         </div>
 
         {/* Entries */}
         <div className="flex-1 overflow-y-auto">
-          {filtered.map((entry) => {
-            const tierCfg = TIER_CONFIG[entry.tier];
-            return (
-              <div
-                key={entry.id}
-                onClick={() => setSelectedId(entry.id)}
-                className={`px-4 py-3 cursor-pointer border-b border-[var(--ctp-surface0)]/50 transition-colors ${
-                  selectedId === entry.id
-                    ? "bg-[var(--ctp-surface0)]"
-                    : "hover:bg-[var(--ctp-surface0)]/50"
-                }`}
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <span style={{ color: tierCfg.color }}>{tierCfg.icon}</span>
-                  <span className="text-sm text-[var(--ctp-text)]">
-                    {entry.name}
-                  </span>
-                  <TrustBadge score={entry.trustScore} />
+          {loading ? (
+            <div
+              className="p-4 animate-pulse-glow"
+              style={{
+                fontSize: "var(--text-sm)",
+                color: "var(--ctp-overlay1)",
+              }}
+            >
+              Loading memory entries...
+            </div>
+          ) : filtered.length === 0 ? (
+            <div
+              className="p-4 text-center"
+              style={{
+                fontSize: "var(--text-xs)",
+                color: "var(--ctp-overlay0)",
+              }}
+            >
+              No entries{activeTier !== "all" ? ` in ${activeTier} tier` : ""}
+            </div>
+          ) : (
+            filtered.map((entry) => {
+              const tierCfg = TIER_CONFIG[entry.tier] ?? TIER_CONFIG.archive;
+              return (
+                <div
+                  key={entry.id}
+                  onClick={() => setSelectedId(entry.id)}
+                  className="interactive px-4 py-3"
+                  style={{
+                    borderBottom: "1px solid var(--border-subtle)",
+                    background:
+                      selectedId === entry.id
+                        ? "var(--ctp-surface0)"
+                        : "transparent",
+                  }}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <span style={{ color: tierCfg.color }}>{tierCfg.icon}</span>
+                    <span
+                      style={{
+                        fontSize: "var(--text-sm)",
+                        color: "var(--ctp-text)",
+                      }}
+                    >
+                      {entry.name}
+                    </span>
+                    <TrustBadge score={entry.trustScore} />
+                  </div>
+                  <div
+                    className="ml-5"
+                    style={{
+                      fontSize: "var(--text-2xs)",
+                      color: "var(--ctp-overlay0)",
+                    }}
+                  >
+                    {entry.source} · {entry.type}
+                  </div>
                 </div>
-                <div className="text-[10px] text-[var(--ctp-overlay0)] ml-5">
-                  {entry.source} · {entry.author} · {entry.createdAt}
-                </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-2 px-4 py-2 border-t border-[var(--ctp-surface0)]">
-          <button className="text-[10px] px-2 py-1 rounded bg-[var(--ctp-surface0)] text-[var(--ctp-overlay1)] hover:text-[var(--ctp-text)]">
+        <div
+          className="flex items-center gap-2 px-4 py-2"
+          style={{ borderTop: "1px solid var(--border-subtle)" }}
+        >
+          <button
+            onClick={() => setShowCreateForm(true)}
+            className="interactive px-2 py-1 rounded-lg"
+            style={{
+              fontSize: "var(--text-2xs)",
+              border: "1px solid var(--border-default)",
+              color: "var(--ctp-overlay1)",
+            }}
+          >
             + New Entry
           </button>
-          <button className="text-[10px] px-2 py-1 rounded bg-[var(--ctp-surface0)] text-[var(--ctp-overlay1)] hover:text-[var(--ctp-text)]">
-            Dream Now
-          </button>
-          <button className="text-[10px] px-2 py-1 rounded bg-[var(--ctp-surface0)] text-[var(--ctp-overlay1)] hover:text-[var(--ctp-text)]">
-            Git History
-          </button>
         </div>
+
+        {/* Create form */}
+        {showCreateForm && (
+          <div
+            className="px-4 py-3 animate-fade-in"
+            style={{
+              borderTop: "1px solid var(--border-subtle)",
+              background: "var(--ctp-surface0)",
+            }}
+          >
+            <input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="Entry name"
+              className="w-full bg-transparent outline-none mb-2 text-[var(--ctp-text)]"
+              style={{ fontSize: "var(--text-xs)" }}
+            />
+            <textarea
+              value={newContent}
+              onChange={(e) => setNewContent(e.target.value)}
+              placeholder="Content..."
+              rows={3}
+              className="w-full bg-transparent outline-none resize-none text-[var(--ctp-text)] mb-2"
+              style={{ fontSize: "var(--text-xs)" }}
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={handleCreate}
+                className="interactive px-3 py-1 rounded-lg bg-[var(--ctp-mauve)] text-[var(--ctp-crust)]"
+                style={{ fontSize: "var(--text-2xs)" }}
+              >
+                Save
+              </button>
+              <button
+                onClick={() => setShowCreateForm(false)}
+                className="interactive px-3 py-1 rounded-lg"
+                style={{
+                  fontSize: "var(--text-2xs)",
+                  color: "var(--ctp-overlay0)",
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Detail */}
-      <div className="w-[45%] overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto p-6">
         {selected ? (
-          <MemoryDetail entry={selected} />
+          <MemoryDetail
+            entry={selected}
+            onPromote={() => promote(selected.id)}
+            onQuarantine={() => quarantine(selected.id)}
+            onDemote={() => demote(selected.id)}
+            onDelete={() => {
+              remove(selected.id);
+              setSelectedId(null);
+            }}
+          />
         ) : (
-          <div className="flex items-center justify-center h-full text-sm text-[var(--ctp-overlay0)]">
+          <div
+            className="flex items-center justify-center h-full"
+            style={{
+              fontSize: "var(--text-sm)",
+              color: "var(--ctp-overlay0)",
+            }}
+          >
             Select a memory entry to inspect
           </div>
         )}
@@ -189,78 +237,121 @@ export function MemoryView() {
   );
 }
 
-function MemoryDetail({ entry }: { entry: MemoryEntry }) {
-  const tierCfg = TIER_CONFIG[entry.tier];
-  const [editing, setEditing] = useState(false);
+function MemoryDetail({
+  entry,
+  onPromote,
+  onQuarantine,
+  onDemote,
+  onDelete,
+}: {
+  entry: MemoryEntry;
+  onPromote: () => void;
+  onQuarantine: () => void;
+  onDemote: () => void;
+  onDelete: () => void;
+}) {
+  const tierCfg = TIER_CONFIG[entry.tier] ?? TIER_CONFIG.archive;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 animate-fade-in">
       <div>
         <div className="flex items-center gap-2 mb-1">
           <span style={{ color: tierCfg.color }}>{tierCfg.icon}</span>
-          <span className="text-lg font-medium text-[var(--ctp-text)]">
+          <span
+            className="font-medium"
+            style={{ fontSize: "var(--text-lg)", color: "var(--ctp-text)" }}
+          >
             {entry.name}
           </span>
         </div>
-        <div className="text-xs text-[var(--ctp-overlay0)]">
+        <div
+          style={{ fontSize: "var(--text-xs)", color: "var(--ctp-overlay0)" }}
+        >
           {entry.description}
         </div>
       </div>
 
-      {/* Metadata */}
-      <div className="grid grid-cols-2 gap-2 text-xs">
+      <div
+        className="grid grid-cols-2 gap-3"
+        style={{ fontSize: "var(--text-xs)" }}
+      >
         <MetaField label="Source" value={entry.source} />
-        <MetaField label="Author" value={entry.author} />
+        <MetaField label="Type" value={entry.type} />
         <MetaField
           label="Trust"
           value={<TrustBadge score={entry.trustScore} />}
         />
-        <MetaField label="Hash" value={entry.contentHash} />
         <MetaField
           label="Tier"
           value={<span style={{ color: tierCfg.color }}>{entry.tier}</span>}
         />
-        <MetaField label="Created" value={entry.createdAt} />
       </div>
 
-      {/* Content */}
-      <div className="space-y-1">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] text-[var(--ctp-overlay0)] uppercase tracking-wider">
-            Content
-          </span>
-          <button
-            onClick={() => setEditing(!editing)}
-            className="text-[10px] text-[var(--ctp-mauve)] hover:brightness-125"
-          >
-            {editing ? "Save" : "✎ Edit"}
-          </button>
-        </div>
-        {editing ? (
-          <textarea
-            defaultValue={entry.content}
-            className="w-full h-32 p-2 rounded-lg bg-[var(--ctp-surface0)] text-sm text-[var(--ctp-text)] outline-none resize-none border border-[var(--ctp-surface2)] focus:border-[var(--ctp-mauve)]"
-          />
-        ) : (
-          <div className="p-3 rounded-lg bg-[var(--ctp-surface0)] text-sm text-[var(--ctp-text)] whitespace-pre-wrap">
-            {entry.content}
-          </div>
-        )}
+      <div
+        className="p-4 rounded-xl"
+        style={{
+          background: "var(--ctp-surface0)",
+          border: "1px solid var(--border-subtle)",
+          fontSize: "var(--text-sm)",
+          color: "var(--ctp-text)",
+          lineHeight: "1.6",
+          whiteSpace: "pre-wrap",
+        }}
+      >
+        {entry.content}
       </div>
 
-      {/* Actions */}
       <div className="flex gap-2">
         {entry.tier !== "system" && (
-          <button className="text-[10px] px-2 py-1 rounded bg-[var(--ctp-green)]/20 text-[var(--ctp-green)]">
-            Promote
+          <button
+            onClick={onPromote}
+            className="interactive px-3 py-1.5 rounded-lg"
+            style={{
+              fontSize: "var(--text-2xs)",
+              background: "var(--glow-green)",
+              color: "var(--ctp-green)",
+              border: "1px solid rgba(166, 227, 161, 0.2)",
+            }}
+          >
+            Promote to System
+          </button>
+        )}
+        {entry.tier === "system" && (
+          <button
+            onClick={onDemote}
+            className="interactive px-3 py-1.5 rounded-lg"
+            style={{
+              fontSize: "var(--text-2xs)",
+              color: "var(--ctp-blue)",
+              border: "1px solid var(--border-default)",
+            }}
+          >
+            Demote to Archive
           </button>
         )}
         {entry.tier !== "quarantine" && (
-          <button className="text-[10px] px-2 py-1 rounded bg-[var(--ctp-red)]/20 text-[var(--ctp-red)]">
+          <button
+            onClick={onQuarantine}
+            className="interactive px-3 py-1.5 rounded-lg"
+            style={{
+              fontSize: "var(--text-2xs)",
+              background: "var(--glow-red)",
+              color: "var(--ctp-red)",
+              border: "1px solid rgba(243, 139, 168, 0.2)",
+            }}
+          >
             Quarantine
           </button>
         )}
-        <button className="text-[10px] px-2 py-1 rounded bg-[var(--ctp-surface0)] text-[var(--ctp-overlay1)]">
+        <button
+          onClick={onDelete}
+          className="interactive px-3 py-1.5 rounded-lg"
+          style={{
+            fontSize: "var(--text-2xs)",
+            color: "var(--ctp-overlay0)",
+            border: "1px solid var(--border-default)",
+          }}
+        >
           Delete
         </button>
       </div>
@@ -275,11 +366,14 @@ function TrustBadge({ score }: { score: number }) {
       : score >= 0.4
         ? "var(--ctp-yellow)"
         : "var(--ctp-red)";
-
   return (
     <span
-      className="text-[10px] px-1 py-0.5 rounded"
-      style={{ color, backgroundColor: `${color}20` }}
+      className="px-1.5 py-0.5 rounded-md"
+      style={{
+        fontSize: "var(--text-2xs)",
+        color,
+        background: `${color}15`,
+      }}
     >
       {score.toFixed(1)}
     </span>
@@ -295,8 +389,12 @@ function MetaField({
 }) {
   return (
     <div>
-      <div className="text-[10px] text-[var(--ctp-overlay0)]">{label}</div>
-      <div className="text-[var(--ctp-subtext1)]">{value}</div>
+      <div
+        style={{ fontSize: "var(--text-2xs)", color: "var(--ctp-overlay0)" }}
+      >
+        {label}
+      </div>
+      <div style={{ color: "var(--ctp-subtext1)" }}>{value}</div>
     </div>
   );
 }
