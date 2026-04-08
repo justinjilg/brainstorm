@@ -36,7 +36,6 @@ export function ChatView({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Propagate state to parent
   useEffect(() => {
     onCostUpdate(sessionCost);
   }, [sessionCost, onCostUpdate]);
@@ -47,7 +46,6 @@ export function ChatView({
     }
   }, [currentModel, currentProvider, onModelUpdate]);
 
-  // Auto-scroll on new content
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -74,113 +72,219 @@ export function ChatView({
     [handleSend, isProcessing, abort],
   );
 
+  // Auto-resize textarea
+  const handleInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      setInput(e.target.value);
+      const el = e.target;
+      el.style.height = "auto";
+      el.style.height = Math.min(el.scrollHeight, 200) + "px";
+    },
+    [],
+  );
+
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
-        {messages.length === 0 && !isProcessing && (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center max-w-md">
-              <div className="text-4xl mb-4">⚡</div>
-              <div className="text-lg font-medium text-[var(--ctp-text)] mb-2">
-                Brainstorm Desktop
-              </div>
-              <div className="text-sm text-[var(--ctp-overlay1)] leading-relaxed mb-4">
-                Multi-model agent orchestration. Switch roles, route across
-                providers, track costs in real-time.
-              </div>
-              <div className="text-xs text-[var(--ctp-overlay0)]">
-                Ensure BrainstormServer is running on port 3100
+    <div className="flex-1 flex flex-col overflow-hidden bg-[var(--ctp-base)]">
+      {/* Messages area */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto">
+        <div className="max-w-[720px] mx-auto px-6 py-8">
+          {/* Empty state */}
+          {messages.length === 0 && !isProcessing && (
+            <div className="flex items-center justify-center min-h-[60vh]">
+              <div className="text-center animate-fade-in">
+                <div
+                  className="tracking-[0.3em] uppercase font-semibold mb-3"
+                  style={{
+                    fontSize: "var(--text-lg)",
+                    color: "var(--ctp-overlay1)",
+                  }}
+                >
+                  Brainstorm
+                </div>
+                <div
+                  className="mb-8"
+                  style={{
+                    fontSize: "var(--text-sm)",
+                    color: "var(--ctp-overlay0)",
+                  }}
+                >
+                  Multi-model agent orchestration
+                </div>
+                <div className="flex items-center justify-center gap-3">
+                  {[
+                    { label: "New Chat", hint: "⌘N", icon: "+" },
+                    { label: "Models", hint: "⌘3", icon: "◆" },
+                    { label: "Commands", hint: "⌘K", icon: "⌘" },
+                  ].map((action) => (
+                    <button
+                      key={action.label}
+                      className="interactive flex flex-col items-center gap-1.5 px-5 py-3 rounded-xl"
+                      style={{
+                        border: "1px solid var(--border-default)",
+                        fontSize: "var(--text-xs)",
+                      }}
+                    >
+                      <span
+                        className="text-[var(--ctp-overlay1)]"
+                        style={{ fontSize: "var(--text-lg)" }}
+                      >
+                        {action.icon}
+                      </span>
+                      <span className="text-[var(--ctp-subtext1)]">
+                        {action.label}
+                      </span>
+                      <span
+                        className="font-mono text-[var(--ctp-overlay0)]"
+                        style={{ fontSize: "var(--text-2xs)" }}
+                      >
+                        {action.hint}
+                      </span>
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {messages.map((msg) => (
-          <MessageBubble key={msg.id} message={msg} />
-        ))}
+          {/* Messages */}
+          <div className="space-y-6">
+            {messages.map((msg, i) => (
+              <div
+                key={msg.id}
+                className="animate-fade-in"
+                style={{ animationDelay: `${Math.min(i * 30, 200)}ms` }}
+              >
+                <MessageBubble message={msg} />
+              </div>
+            ))}
 
-        {/* Streaming response */}
-        {streamingText && (
-          <div className="flex justify-start">
-            <div className="max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed bg-[var(--ctp-surface0)] text-[var(--ctp-text)]">
-              {currentModel && (
-                <div className="flex items-center gap-1.5 mb-1 text-[10px]">
-                  <span
-                    className="w-1.5 h-1.5 rounded-full"
-                    style={{
-                      backgroundColor: providerColor(currentProvider),
-                    }}
-                  />
-                  <span className="text-[var(--ctp-overlay1)]">
-                    {currentModel}
+            {/* Streaming response */}
+            {streamingText && (
+              <div className="animate-fade-in">
+                {currentModel && (
+                  <div
+                    className="flex items-center gap-2 mb-2"
+                    style={{ fontSize: "var(--text-2xs)" }}
+                  >
+                    <span
+                      className="w-1.5 h-1.5 rounded-full"
+                      style={{
+                        backgroundColor: providerColor(currentProvider),
+                      }}
+                    />
+                    <span className="text-[var(--ctp-overlay0)]">
+                      {currentModel}
+                    </span>
+                  </div>
+                )}
+                <div style={{ fontSize: "var(--text-base)" }}>
+                  <Markdown content={streamingText} />
+                  <span className="animate-cursor-blink text-[var(--ctp-mauve)] ml-0.5">
+                    ▎
                   </span>
                 </div>
-              )}
-              <div>
-                <Markdown content={streamingText} />
-                <span className="animate-pulse text-[var(--ctp-mauve)]">▌</span>
               </div>
-            </div>
-          </div>
-        )}
+            )}
 
-        {/* Active tool calls */}
-        {activeTools.length > 0 && (
-          <div className="space-y-1 ml-2">
-            {activeTools.map((tool) => (
-              <ToolCallCard key={tool.id} tool={tool} />
-            ))}
-          </div>
-        )}
+            {/* Active tool calls */}
+            {activeTools.length > 0 && (
+              <div className="space-y-2 animate-fade-in">
+                {activeTools.map((tool) => (
+                  <ToolCallCard key={tool.id} tool={tool} />
+                ))}
+              </div>
+            )}
 
-        {/* Processing indicator (no streaming text yet) */}
-        {isProcessing && !streamingText && activeTools.length === 0 && (
-          <div className="flex items-center gap-2 text-sm text-[var(--ctp-overlay1)] ml-2">
-            <span className="animate-pulse">●</span>
-            <span>Connecting to model...</span>
+            {/* Thinking indicator */}
+            {isProcessing && !streamingText && activeTools.length === 0 && (
+              <div
+                className="flex items-center gap-2 animate-fade-in"
+                style={{
+                  fontSize: "var(--text-sm)",
+                  color: "var(--ctp-overlay1)",
+                }}
+              >
+                <span className="animate-pulse-glow">●</span>
+                <span>Thinking...</span>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
-      {/* Input area */}
-      <div className="border-t border-[var(--ctp-surface0)] p-3 bg-[var(--ctp-mantle)]">
-        <div className="flex items-end gap-2 bg-[var(--ctp-surface0)] rounded-xl p-2">
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={
-              isProcessing
-                ? "Agent is working... (Esc to abort)"
-                : "Send a message..."
-            }
-            rows={1}
-            disabled={isProcessing}
-            className="flex-1 bg-transparent text-[var(--ctp-text)] text-sm resize-none outline-none placeholder:text-[var(--ctp-overlay0)] min-h-[24px] max-h-[120px] disabled:opacity-50"
-            style={{ userSelect: "text", WebkitUserSelect: "text" }}
-          />
-          {isProcessing ? (
-            <button
-              onClick={abort}
-              className="px-3 py-1 rounded-lg text-xs font-medium bg-[var(--ctp-red)] text-[var(--ctp-crust)] hover:brightness-110"
-            >
-              Stop
-            </button>
-          ) : (
-            <button
-              onClick={handleSend}
-              disabled={!input.trim()}
-              className="px-3 py-1 rounded-lg text-xs font-medium transition-colors bg-[var(--ctp-mauve)] text-[var(--ctp-crust)] hover:brightness-110 disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              Send
-            </button>
-          )}
-        </div>
-        <div className="flex items-center justify-between mt-1.5 px-1 text-[10px] text-[var(--ctp-overlay0)]">
-          <span>Enter to send · Shift+Enter for new line · Esc to abort</span>
-          <span>⌘D detail · ⌘B sidebar</span>
+      {/* Floating composer */}
+      <div className="px-4 pb-4 pt-2">
+        <div
+          className="max-w-[720px] mx-auto rounded-2xl overflow-hidden"
+          style={{
+            background: "var(--ctp-surface0)",
+            boxShadow: "var(--shadow-md)",
+            border: "1px solid var(--border-default)",
+          }}
+        >
+          <div className="flex items-end gap-3 p-3">
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                isProcessing
+                  ? "Agent is working... (Esc to abort)"
+                  : "Type a message..."
+              }
+              rows={1}
+              disabled={isProcessing}
+              className="flex-1 bg-transparent resize-none outline-none placeholder:text-[var(--ctp-overlay0)] disabled:opacity-40"
+              style={{
+                color: "var(--ctp-text)",
+                fontSize: "var(--text-base)",
+                lineHeight: "1.5",
+                minHeight: "24px",
+                maxHeight: "200px",
+                userSelect: "text",
+                WebkitUserSelect: "text" as never,
+              }}
+            />
+            {isProcessing ? (
+              <button
+                onClick={abort}
+                className="interactive shrink-0 w-8 h-8 rounded-full flex items-center justify-center"
+                style={{
+                  background: "var(--ctp-red)",
+                  color: "var(--ctp-crust)",
+                }}
+                title="Stop (Esc)"
+              >
+                ■
+              </button>
+            ) : (
+              <button
+                onClick={handleSend}
+                disabled={!input.trim()}
+                className="interactive shrink-0 w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-20 disabled:cursor-not-allowed"
+                style={{
+                  background: input.trim()
+                    ? "var(--ctp-mauve)"
+                    : "var(--ctp-surface2)",
+                  color: "var(--ctp-crust)",
+                }}
+                title="Send (Enter)"
+              >
+                ↑
+              </button>
+            )}
+          </div>
+          <div
+            className="flex items-center justify-between px-4 pb-2"
+            style={{
+              fontSize: "var(--text-2xs)",
+              color: "var(--ctp-overlay0)",
+            }}
+          >
+            <span>Enter to send · Shift+Enter for new line</span>
+            <span className="font-mono">⌘K commands</span>
+          </div>
         </div>
       </div>
     </div>
@@ -215,8 +319,16 @@ const MessageBubble = memo(function MessageBubble({
 
   if (isRouting) {
     return (
-      <div className="flex items-center gap-2 text-[11px] text-[var(--ctp-overlay0)] ml-2">
+      <div
+        className="flex items-center gap-2"
+        style={{
+          fontSize: "var(--text-2xs)",
+          color: "var(--ctp-overlay0)",
+        }}
+      >
+        <span style={{ color: "var(--ctp-surface2)" }}>─</span>
         <span>{message.content}</span>
+        <span style={{ color: "var(--ctp-surface2)" }}>─</span>
       </div>
     );
   }
@@ -224,89 +336,137 @@ const MessageBubble = memo(function MessageBubble({
   if (isSystem) {
     return (
       <div className="flex justify-center">
-        <div className="px-3 py-1.5 rounded-lg text-xs bg-[var(--ctp-red)]/10 text-[var(--ctp-red)] max-w-[80%]">
+        <div
+          className="px-4 py-2 rounded-xl max-w-[80%]"
+          style={{
+            background: "var(--glow-red)",
+            border: "1px solid rgba(243, 139, 168, 0.2)",
+            fontSize: "var(--text-xs)",
+            color: "var(--ctp-red)",
+          }}
+        >
           {message.content}
         </div>
       </div>
     );
   }
 
+  if (isUser) {
+    return (
+      <div className="flex justify-end">
+        <div
+          className="max-w-[70%] rounded-2xl px-4 py-3"
+          style={{
+            background: "var(--ctp-surface0)",
+            fontSize: "var(--text-base)",
+            lineHeight: "1.5",
+          }}
+        >
+          <div className="whitespace-pre-wrap">{message.content}</div>
+        </div>
+      </div>
+    );
+  }
+
+  // Assistant message — content-first, no bubble
   return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
-      <div
-        className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-          isUser
-            ? "bg-[var(--ctp-mauve)] text-[var(--ctp-crust)]"
-            : "bg-[var(--ctp-surface0)] text-[var(--ctp-text)]"
-        }`}
-      >
-        {!isUser && message.model && (
-          <div className="flex items-center gap-1.5 mb-1 text-[10px]">
-            <span
-              className="w-1.5 h-1.5 rounded-full"
-              style={{
-                backgroundColor: providerColor(message.provider ?? null),
-              }}
-            />
-            <span className="text-[var(--ctp-overlay1)]">{message.model}</span>
-            {message.cost != null && message.cost > 0 && (
-              <span className="text-[var(--ctp-overlay0)]">
+    <div>
+      {/* Model + cost header */}
+      {message.model && (
+        <div
+          className="flex items-center gap-2 mb-2"
+          style={{ fontSize: "var(--text-2xs)" }}
+        >
+          <span
+            className="w-1.5 h-1.5 rounded-full"
+            style={{ backgroundColor: providerColor(message.provider ?? null) }}
+          />
+          <span className="text-[var(--ctp-overlay0)]">{message.model}</span>
+          {message.cost != null && message.cost > 0 && (
+            <>
+              <span className="text-[var(--ctp-surface2)]">·</span>
+              <span className="text-[var(--ctp-overlay0)] font-mono">
                 ${message.cost.toFixed(4)}
               </span>
-            )}
-          </div>
-        )}
+            </>
+          )}
+        </div>
+      )}
 
-        {/* Reasoning trace (expandable) */}
-        {message.reasoning && <ReasoningTrace text={message.reasoning} />}
+      {/* Reasoning trace */}
+      {message.reasoning && <ReasoningTrace text={message.reasoning} />}
 
-        {isUser ? (
-          <div className="whitespace-pre-wrap">{message.content}</div>
-        ) : (
-          <Markdown content={message.content} />
-        )}
-
-        {/* Tool calls */}
-        {message.toolCalls && message.toolCalls.length > 0 && (
-          <div className="mt-2 space-y-1 border-t border-white/10 pt-2">
-            {message.toolCalls.map((tc) => (
-              <div
-                key={tc.id}
-                className="flex items-center gap-1.5 text-[10px] text-[var(--ctp-overlay1)]"
-              >
-                <span>
-                  {tc.status === "success"
-                    ? "✓"
-                    : tc.status === "error"
-                      ? "✗"
-                      : "●"}
-                </span>
-                <span>{tc.name}</span>
-                {tc.durationMs != null && (
-                  <span className="text-[var(--ctp-overlay0)]">
-                    {tc.durationMs}ms
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+      {/* Content — flows full-width, no bubble */}
+      <div style={{ fontSize: "var(--text-base)", lineHeight: "1.6" }}>
+        <Markdown content={message.content} />
       </div>
+
+      {/* Tool calls */}
+      {message.toolCalls && message.toolCalls.length > 0 && (
+        <div
+          className="mt-3 space-y-1.5 pt-3"
+          style={{ borderTop: "1px solid var(--border-subtle)" }}
+        >
+          {message.toolCalls.map((tc) => (
+            <div
+              key={tc.id}
+              className="flex items-center gap-2"
+              style={{
+                fontSize: "var(--text-2xs)",
+                color: "var(--ctp-overlay1)",
+              }}
+            >
+              <span
+                style={{
+                  color:
+                    tc.status === "success"
+                      ? "var(--ctp-green)"
+                      : tc.status === "error"
+                        ? "var(--ctp-red)"
+                        : "var(--ctp-yellow)",
+                }}
+              >
+                {tc.status === "success"
+                  ? "✓"
+                  : tc.status === "error"
+                    ? "✗"
+                    : "●"}
+              </span>
+              <span className="font-mono">{tc.name}</span>
+              {tc.durationMs != null && (
+                <span className="text-[var(--ctp-overlay0)]">
+                  {tc.durationMs}ms
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 });
 
 function ToolCallCard({ tool }: { tool: ToolCallInfo }) {
+  const isRunning = tool.status === "running";
   return (
-    <div className="flex items-center gap-2 text-xs text-[var(--ctp-overlay1)] bg-[var(--ctp-surface0)] rounded-lg px-3 py-1.5">
+    <div
+      className="flex items-center gap-3 px-4 py-2.5 rounded-xl"
+      style={{
+        background: isRunning ? "var(--glow-mauve)" : "var(--ctp-surface0)",
+        border: `1px solid ${isRunning ? "rgba(203, 166, 247, 0.15)" : "var(--border-subtle)"}`,
+        fontSize: "var(--text-xs)",
+      }}
+    >
       <span
-        className={
-          tool.status === "running"
-            ? "animate-pulse text-[var(--ctp-yellow)]"
-            : tool.status === "success"
-              ? "text-[var(--ctp-green)]"
-              : "text-[var(--ctp-red)]"
-        }
+        className={isRunning ? "animate-pulse-glow" : ""}
+        style={{
+          color:
+            tool.status === "running"
+              ? "var(--ctp-mauve)"
+              : tool.status === "success"
+                ? "var(--ctp-green)"
+                : "var(--ctp-red)",
+        }}
       >
         {tool.status === "running"
           ? "●"
@@ -314,9 +474,11 @@ function ToolCallCard({ tool }: { tool: ToolCallInfo }) {
             ? "✓"
             : "✗"}
       </span>
-      <span className="font-mono">{tool.name}</span>
+      <span className="font-mono text-[var(--ctp-subtext1)]">{tool.name}</span>
       {tool.durationMs != null && (
-        <span className="text-[var(--ctp-overlay0)]">{tool.durationMs}ms</span>
+        <span className="text-[var(--ctp-overlay0)] font-mono">
+          {tool.durationMs}ms
+        </span>
       )}
     </div>
   );
@@ -326,15 +488,37 @@ function ReasoningTrace({ text }: { text: string }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="mb-1">
+    <div className="mb-3">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="text-[10px] text-[var(--ctp-overlay0)] hover:text-[var(--ctp-overlay1)]"
+        className="interactive flex items-center gap-1.5 px-2 py-1 rounded-lg"
+        style={{
+          fontSize: "var(--text-2xs)",
+          color: "var(--ctp-overlay0)",
+        }}
       >
-        {expanded ? "▾" : "▸"} Reasoning
+        <span
+          className="transition-transform"
+          style={{
+            transform: expanded ? "rotate(90deg)" : "rotate(0)",
+            transitionDuration: "var(--duration-fast)",
+          }}
+        >
+          ▸
+        </span>
+        Reasoning
       </button>
       {expanded && (
-        <div className="text-[11px] text-[var(--ctp-overlay1)] italic mt-1 pl-2 border-l border-[var(--ctp-surface1)]">
+        <div
+          className="mt-1 pl-3 animate-fade-in"
+          style={{
+            borderLeft: "2px solid var(--ctp-surface1)",
+            fontSize: "var(--text-xs)",
+            color: "var(--ctp-overlay1)",
+            fontStyle: "italic",
+            lineHeight: "1.5",
+          }}
+        >
           {text}
         </div>
       )}
