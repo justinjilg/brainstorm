@@ -1,9 +1,6 @@
 @import "tailwindcss";
-@import "@fontsource/geist/400.css";
-@import "@fontsource/geist/500.css";
-@import "@fontsource/geist/600.css";
-@import "@fontsource/geist/700.css";
-@import "@fontsource-variable/geist-mono";
+/* Geist font loaded via system fallback — @fontsource imports removed
+   to prevent CSS resolution failures in Tauri webview */
 
 /* ═══════════════════════════════════════════════════════════════
    BRAINSTORM DESKTOP — Design System

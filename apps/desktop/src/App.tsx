@@ -67,7 +67,7 @@ export function App() {
 
   // Project + team state
   const [currentProject, setCurrentProject] = useState<string | null>(
-    process.env.HOME ? `${process.env.HOME}/Projects/brainstorm` : null,
+    null, // Set when user selects a project folder
   );
   const [team, setTeam] = useState<TeamAgent[]>([]);
   const [totalBudget] = useState(5.0);
