@@ -146,6 +146,24 @@ export function TeamBuilder({
             key={agent.id}
             agent={agent}
             onRemove={() => removeAgent(agent.id)}
+            onSkillAdd={(skill) => {
+              onTeamChange(
+                team.map((a) =>
+                  a.id === agent.id
+                    ? { ...a, skills: [...a.skills, skill] }
+                    : a,
+                ),
+              );
+            }}
+            onSkillRemove={(skill) => {
+              onTeamChange(
+                team.map((a) =>
+                  a.id === agent.id
+                    ? { ...a, skills: a.skills.filter((s) => s !== skill) }
+                    : a,
+                ),
+              );
+            }}
           />
         ))}
       </div>
@@ -246,10 +264,15 @@ export function TeamBuilder({
 function AgentCard({
   agent,
   onRemove,
+  onSkillAdd,
+  onSkillRemove,
 }: {
   agent: TeamAgent;
   onRemove: () => void;
+  onSkillAdd?: (skill: string) => void;
+  onSkillRemove?: (skill: string) => void;
 }) {
+  const [dragOver, setDragOver] = useState(false);
   const roleColor = ROLE_COLORS[agent.role] ?? "var(--ctp-overlay1)";
   const providerColor =
     PROVIDER_COLORS[agent.provider] ?? "var(--ctp-overlay0)";
@@ -257,9 +280,33 @@ function AgentCard({
   return (
     <div
       className="interactive px-3 py-2.5 rounded-xl group"
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData("agent", JSON.stringify(agent));
+        e.dataTransfer.effectAllowed = "move";
+      }}
+      onDragOver={(e) => {
+        if (e.dataTransfer.types.includes("skill")) {
+          e.preventDefault();
+          setDragOver(true);
+        }
+      }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragOver(false);
+        const skill = e.dataTransfer.getData("skill");
+        if (skill && onSkillAdd && !agent.skills.includes(skill)) {
+          onSkillAdd(skill);
+        }
+      }}
       style={{
-        background: "var(--ctp-surface0)",
-        border: "1px solid var(--border-subtle)",
+        background: dragOver ? "var(--glow-mauve)" : "var(--ctp-surface0)",
+        border: dragOver
+          ? "1px solid var(--ctp-mauve)"
+          : "1px solid var(--border-subtle)",
+        cursor: "grab",
+        transition: "all var(--duration-fast) var(--ease-out)",
       }}
     >
       <div className="flex items-center justify-between mb-1">
@@ -303,30 +350,46 @@ function AgentCard({
       </div>
 
       <div className="flex flex-wrap gap-1">
-        {agent.skills.slice(0, 3).map((skill) => (
+        {agent.skills.map((skill) => (
           <span
             key={skill}
-            className="px-1.5 py-0.5 rounded-md"
+            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md group/skill"
             style={{
               fontSize: "var(--text-2xs)",
               color: "var(--ctp-overlay1)",
               background: "var(--ctp-crust)",
+              border: "1px solid var(--border-subtle)",
             }}
           >
             {skill.split("-").slice(0, 2).join("-")}
+            {onSkillRemove && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSkillRemove(skill);
+                }}
+                className="opacity-0 group-hover/skill:opacity-100"
+                style={{ fontSize: "8px", color: "var(--ctp-overlay0)" }}
+              >
+                ×
+              </button>
+            )}
           </span>
         ))}
-        {agent.skills.length > 3 && (
-          <span
-            style={{
-              fontSize: "var(--text-2xs)",
-              color: "var(--ctp-overlay0)",
-            }}
-          >
-            +{agent.skills.length - 3}
-          </span>
-        )}
       </div>
+
+      {dragOver && (
+        <div
+          className="mt-1 text-center py-1 rounded-md animate-fade-in"
+          style={{
+            fontSize: "var(--text-2xs)",
+            color: "var(--ctp-mauve)",
+            border: "1px dashed var(--ctp-mauve)",
+          }}
+        >
+          Drop skill here
+        </div>
+      )}
     </div>
   );
 }
