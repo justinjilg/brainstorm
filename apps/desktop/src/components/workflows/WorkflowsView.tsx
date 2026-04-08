@@ -11,7 +11,12 @@ export function WorkflowsView() {
         <span className="text-xs font-medium text-[var(--ctp-overlay0)] uppercase tracking-wider">
           Workflows
         </span>
-        <button className="text-[10px] px-3 py-1 rounded-lg bg-[var(--ctp-surface0)] text-[var(--ctp-overlay1)] hover:text-[var(--ctp-text)]">
+        <button
+          onClick={() =>
+            alert("Workflow builder coming soon — use the Plan view for now")
+          }
+          className="interactive text-[10px] px-3 py-1 rounded-lg bg-[var(--ctp-surface0)] text-[var(--ctp-overlay1)] hover:text-[var(--ctp-text)]"
+        >
           + New Workflow
         </button>
       </div>

@@ -35,7 +35,7 @@ export function SecurityView() {
       generations: 5,
       populationSize: 30,
     });
-    if (result) {
+    if (result !== null && result !== undefined) {
       setScorecard(result);
     } else {
       setError("Red team simulation failed — check server logs");
