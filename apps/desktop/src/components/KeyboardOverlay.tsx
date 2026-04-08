@@ -15,9 +15,14 @@ export function KeyboardOverlay({ open, onClose }: KeyboardOverlayProps) {
       className="fixed inset-0 z-50 flex items-center justify-center"
       onClick={onClose}
     >
-      <div className="fixed inset-0 bg-black/60" />
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-float" />
       <div
-        className="relative w-[600px] max-h-[500px] bg-[var(--ctp-base)] border border-[var(--ctp-surface1)] rounded-xl shadow-2xl overflow-y-auto"
+        className="relative w-[600px] max-h-[500px] rounded-2xl overflow-y-auto animate-fade-in"
+        style={{
+          background: "var(--surface-float)",
+          boxShadow: "var(--shadow-float)",
+          border: "1px solid var(--border-default)",
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-4 border-b border-[var(--ctp-surface0)]">
