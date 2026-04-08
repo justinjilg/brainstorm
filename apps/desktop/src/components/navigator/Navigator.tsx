@@ -74,7 +74,8 @@ export function Navigator({
   onOpenPalette: _onOpenPalette,
   kairosStatus,
 }: NavigatorProps) {
-  void _onOpenPalette; // Available for search box wiring
+  // onOpenPalette available for search box when added
+  void _onOpenPalette;
   const kairosInfo = KAIROS_STATUS[kairosStatus];
 
   if (collapsed) {
