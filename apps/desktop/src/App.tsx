@@ -9,6 +9,8 @@ import { SkillsView } from "./components/skills/SkillsView";
 import { WorkflowsView } from "./components/workflows/WorkflowsView";
 import { SecurityView } from "./components/security/SecurityView";
 import { ConfigView } from "./components/config/ConfigView";
+import { PlanView } from "./components/plan/PlanView";
+import { TraceView } from "./components/trace/TraceView";
 import { StatusRail } from "./components/status-rail/StatusRail";
 import { CommandPalette } from "./components/CommandPalette";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -20,6 +22,8 @@ import { useConversations } from "./hooks/useConversations";
 
 export type AppMode =
   | "chat"
+  | "plan"
+  | "trace"
   | "dashboard"
   | "models"
   | "memory"
@@ -226,6 +230,22 @@ export function App() {
                 onModeChange={setMode}
                 onOpenPalette={() => setPaletteOpen(true)}
               />
+            </ErrorBoundary>
+          )}
+          {mode === "plan" && (
+            <ErrorBoundary fallbackLabel="Plan">
+              <PlanView
+                plan={null}
+                onTaskSelect={() => {}}
+                onApprove={() => {}}
+                onPause={() => {}}
+                onResume={() => {}}
+              />
+            </ErrorBoundary>
+          )}
+          {mode === "trace" && (
+            <ErrorBoundary fallbackLabel="Trace">
+              <TraceView events={[]} onEventSelect={() => {}} />
             </ErrorBoundary>
           )}
           {mode === "dashboard" && (
