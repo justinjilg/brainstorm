@@ -1,4 +1,5 @@
 import type { AppMode } from "../../App";
+import type { Conversation } from "../../lib/api-client";
 import { GodModeWidget } from "./GodModeWidget";
 
 interface SidebarProps {
@@ -10,6 +11,8 @@ interface SidebarProps {
   onConversationSelect: (id: string | null) => void;
   kairosStatus: "running" | "sleeping" | "paused" | "stopped";
   activeRole: string | null;
+  conversations: Conversation[];
+  onNewConversation: () => void;
 }
 
 const KAIROS_STATUS: Record<string, { label: string; color: string }> = {
@@ -24,8 +27,12 @@ export function Sidebar({
   activeMode,
   onModeChange,
   modeLabels,
+  activeConversationId,
+  onConversationSelect,
   kairosStatus,
   activeRole,
+  conversations,
+  onNewConversation,
 }: SidebarProps) {
   const kairosInfo = KAIROS_STATUS[kairosStatus];
 
@@ -120,39 +127,59 @@ export function Sidebar({
       {/* Section: Conversations */}
       <SectionHeader title="Conversations" />
       <div className="flex-1 overflow-y-auto px-2">
-        {/* Active conversation */}
-        <div
-          className="interactive flex items-center gap-3 px-3 py-3 rounded-xl mb-1"
-          style={{
-            background: "var(--ctp-surface0)",
-            borderLeft: "2px solid var(--ctp-mauve)",
-          }}
-        >
-          <span
-            className="w-2 h-2 rounded-full shrink-0"
-            style={{ background: "var(--color-anthropic)" }}
-          />
-          <div className="flex-1 min-w-0">
-            <div
-              className="truncate text-[var(--ctp-text)]"
-              style={{ fontSize: "var(--text-sm)" }}
-            >
-              New conversation
-            </div>
-            <div
-              className="text-[var(--ctp-overlay0)]"
-              style={{ fontSize: "var(--text-2xs)" }}
-            >
-              Claude Opus 4.6
-            </div>
-          </div>
-          <span
-            className="text-[var(--ctp-overlay0)] shrink-0"
-            style={{ fontSize: "var(--text-2xs)" }}
+        {conversations.length === 0 ? (
+          <div
+            className="px-3 py-4 text-center"
+            style={{
+              fontSize: "var(--text-xs)",
+              color: "var(--ctp-overlay0)",
+            }}
           >
-            now
-          </span>
-        </div>
+            No conversations yet
+          </div>
+        ) : (
+          conversations.map((conv) => {
+            const isActive = activeConversationId === conv.id;
+            return (
+              <div
+                key={conv.id}
+                onClick={() => onConversationSelect(conv.id)}
+                className="interactive flex items-center gap-3 px-3 py-3 rounded-xl mb-1"
+                style={{
+                  background: isActive ? "var(--ctp-surface0)" : "transparent",
+                  borderLeft: isActive
+                    ? "2px solid var(--ctp-mauve)"
+                    : "2px solid transparent",
+                }}
+              >
+                <span
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{ background: "var(--color-anthropic)" }}
+                />
+                <div className="flex-1 min-w-0">
+                  <div
+                    className="truncate text-[var(--ctp-text)]"
+                    style={{ fontSize: "var(--text-sm)" }}
+                  >
+                    {conv.name || "Untitled"}
+                  </div>
+                  <div
+                    className="text-[var(--ctp-overlay0)]"
+                    style={{ fontSize: "var(--text-2xs)" }}
+                  >
+                    {conv.modelOverride ?? "Default model"}
+                  </div>
+                </div>
+                <span
+                  className="text-[var(--ctp-overlay0)] shrink-0"
+                  style={{ fontSize: "var(--text-2xs)" }}
+                >
+                  {formatRelativeTime(conv.lastMessageAt)}
+                </span>
+              </div>
+            );
+          })
+        )}
       </div>
 
       {/* Section: KAIROS */}
@@ -203,6 +230,7 @@ export function Sidebar({
         style={{ borderTop: "1px solid var(--border-subtle)" }}
       >
         <button
+          onClick={onNewConversation}
           className="interactive w-full flex items-center justify-between px-3 py-2 rounded-xl"
           style={{
             border: "1px solid var(--border-default)",
@@ -221,6 +249,19 @@ export function Sidebar({
       </div>
     </div>
   );
+}
+
+function formatRelativeTime(isoString: string): string {
+  const date = new Date(isoString);
+  const now = Date.now();
+  const diffMs = now - date.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return "now";
+  if (diffMin < 60) return `${diffMin}m`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h`;
+  const diffDays = Math.floor(diffHr / 24);
+  return `${diffDays}d`;
 }
 
 function SectionHeader({ title }: { title: string }) {
