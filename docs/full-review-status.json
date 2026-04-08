@@ -55,14 +55,21 @@
       ],
       "line_count": 782,
       "security_sensitive": true,
-      "status": "pending",
+      "status": "complete",
       "phases": {
-        "adversarial": { "status": "pending" },
-        "code_review": { "status": "pending" },
-        "security": { "status": "pending" },
-        "simplify": { "status": "pending" },
-        "documentation": { "status": "pending" },
-        "fix_and_verify": { "status": "pending" }
+        "adversarial": { "status": "complete", "findings": 4 },
+        "code_review": { "status": "complete", "findings": 4 },
+        "security": { "status": "complete", "findings": 0 },
+        "simplify": { "status": "complete", "findings": 0 },
+        "documentation": {
+          "status": "complete",
+          "journal_sections_written": 3
+        },
+        "fix_and_verify": {
+          "status": "complete",
+          "committed": true,
+          "commit_sha": "c5d647f"
+        }
       }
     },
     {
@@ -316,10 +323,10 @@
   ],
   "summary": {
     "total_prs": 13,
-    "completed_prs": 1,
-    "current_pr": "PR-02",
+    "completed_prs": 2,
+    "current_pr": "PR-03",
     "current_phase": "adversarial",
-    "total_findings": 31,
-    "total_fixes": 6
+    "total_findings": 39,
+    "total_fixes": 10
   }
 }

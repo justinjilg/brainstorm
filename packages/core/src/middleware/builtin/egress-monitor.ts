@@ -102,17 +102,27 @@ const ALLOWLISTED_DOMAINS = new Set([
 ]);
 
 function extractDomains(command: string): string[] {
-  const urlPattern = /https?:\/\/([a-zA-Z0-9.-]+(?:\.[a-zA-Z]{2,}))(:\d+)?/g;
-  const domains: string[] = [];
+  // Match domain-based URLs
+  const domainPattern = /https?:\/\/([a-zA-Z0-9.-]+(?:\.[a-zA-Z]{2,}))(:\d+)?/g;
+  // Match IP-based URLs (IPv4) — IPs bypass the domain regex
+  const ipPattern = /https?:\/\/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?/g;
+
+  const results: string[] = [];
   let match: RegExpExecArray | null;
-  while ((match = urlPattern.exec(command)) !== null) {
-    domains.push(match[1].toLowerCase());
+
+  while ((match = domainPattern.exec(command)) !== null) {
+    results.push(match[1].toLowerCase());
   }
-  return domains;
+  while ((match = ipPattern.exec(command)) !== null) {
+    results.push(match[1]);
+  }
+
+  return results;
 }
 
 function hasNonAllowlistedDomain(command: string): boolean {
   const domains = extractDomains(command);
+  if (domains.length === 0) return false;
   return domains.some((d) => !ALLOWLISTED_DOMAINS.has(d));
 }
 
