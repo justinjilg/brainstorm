@@ -15,6 +15,7 @@ import { KeyboardOverlay } from "./components/KeyboardOverlay";
 import { RolePicker } from "./components/RolePicker";
 import { ModelSwitcher } from "./components/ModelSwitcher";
 import { useServerHealth } from "./hooks/useServerHealth";
+import { useConversations } from "./hooks/useConversations";
 
 export type AppMode =
   | "chat"
@@ -68,8 +69,9 @@ export function App() {
   void _setActiveRole;
   void _setKairosStatus;
 
-  // Server connection status
+  // Server connection + data
   const serverHealth = useServerHealth();
+  const { conversations, create: createConversation } = useConversations();
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -171,6 +173,11 @@ export function App() {
           onConversationSelect={setActiveConversationId}
           kairosStatus={kairosStatus}
           activeRole={activeRole}
+          conversations={conversations}
+          onNewConversation={async () => {
+            const conv = await createConversation();
+            if (conv) setActiveConversationId(conv.id);
+          }}
         />
 
         {/* Main panel */}
