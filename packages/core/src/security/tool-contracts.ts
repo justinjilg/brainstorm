@@ -102,8 +102,8 @@ function validateShell(input: Record<string, unknown>): ContractViolation[] {
     violations.push({
       tool: "shell",
       rule: "excessive-chaining",
-      detail: `Command chains ${chainedCommands.length} subcommands — complex chains are harder to audit`,
-      severity: "warning",
+      detail: `Command chains ${chainedCommands.length} subcommands — complex chains can bypass detection`,
+      severity: "block",
     });
   }
 

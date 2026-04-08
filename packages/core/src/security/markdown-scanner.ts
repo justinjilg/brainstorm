@@ -148,7 +148,8 @@ const SCAN_RULES: ScanRule[] = [
   },
   {
     category: "hidden-content",
-    pattern: /[\u200B\u200C\u200D\uFEFF]{3,}/g,
+    pattern:
+      /[\u200B\u200C\u200D\u200E\u200F\uFEFF\u2060\u2061\u2062\u2063\u2064]{3,}/g,
     severity: "medium",
     detail: "Cluster of zero-width characters (steganographic content)",
     weight: 0.3,
@@ -253,7 +254,7 @@ function _scanContentUnsafe(content: string): ContentScanResult {
       findings.push({
         category: rule.category,
         severity: rule.severity,
-        detail: `${rule.detail}: "${match[0].slice(0, 60)}"`,
+        detail: `${rule.detail}: "${match[0].slice(0, 60).replace(/[\x00-\x1f\x7f-\x9f]/g, "")}"`,
         offset: match.index,
       });
       totalWeight += rule.weight;

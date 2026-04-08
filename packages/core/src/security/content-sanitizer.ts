@@ -197,20 +197,24 @@ function _sanitizeContentUnsafe(raw: string): SanitizeResult {
  * Use when you want plain text, not sanitized HTML.
  */
 export function extractText(html: string): string {
-  // First sanitize to remove dangerous content
-  const { content } = sanitizeContent(html);
-
-  // Strip remaining HTML tags, keeping text content
-  let text = content
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/?(p|div|h[1-6]|li|tr|blockquote)\b[^>]*>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
+  // Decode HTML entities FIRST — before sanitization.
+  // If we decode after, &lt;script&gt; becomes <script> post-sanitize.
+  let decoded = html
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'");
+
+  // Then sanitize the decoded content
+  const { content } = sanitizeContent(decoded);
+
+  // Strip remaining HTML tags, keeping text content
+  let text = content
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/?(p|div|h[1-6]|li|tr|blockquote)\b[^>]*>/gi, "\n")
+    .replace(/<[^>]+>/g, "");
 
   // Collapse multiple blank lines
   text = text.replace(/\n{3,}/g, "\n\n").trim();

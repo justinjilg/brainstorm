@@ -106,6 +106,6 @@ export function flushTrustWindow(metadata: Record<string, unknown>): void {
  */
 export function clearCurrentTaint(): void {
   if (_currentWindow) {
-    _currentWindow = clearTaint(_currentWindow);
+    _currentWindow = clearTaint();
   }
 }
