@@ -13,6 +13,7 @@ interface SidebarProps {
   activeRole: string | null;
   conversations: Conversation[];
   onNewConversation: () => void;
+  onOpenPalette: () => void;
 }
 
 const KAIROS_STATUS: Record<string, { label: string; color: string }> = {
@@ -33,6 +34,7 @@ export function Sidebar({
   activeRole,
   conversations,
   onNewConversation,
+  onOpenPalette,
 }: SidebarProps) {
   const kairosInfo = KAIROS_STATUS[kairosStatus];
 
@@ -81,7 +83,8 @@ export function Sidebar({
       {/* Search */}
       <div className="px-3 pt-4 pb-2">
         <div
-          className="flex items-center gap-2 px-3 h-8 rounded-lg"
+          className="interactive flex items-center gap-2 px-3 h-8 rounded-lg"
+          onClick={onOpenPalette}
           style={{
             background: "var(--ctp-surface0)",
             border: "1px solid var(--border-subtle)",
@@ -186,7 +189,8 @@ export function Sidebar({
       <SectionHeader title="KAIROS" />
       <div className="px-3 pb-2">
         <div
-          className="px-3 py-2.5 rounded-xl"
+          onClick={() => onModeChange("config")}
+          className="interactive px-3 py-2.5 rounded-xl"
           style={{
             background: "var(--ctp-surface0)",
             border: "1px solid var(--border-subtle)",

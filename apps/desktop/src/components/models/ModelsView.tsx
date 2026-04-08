@@ -85,7 +85,11 @@ const PROVIDER_COLORS: Record<string, string> = {
   deepseek: "var(--color-deepseek)",
 };
 
-export function ModelsView() {
+export function ModelsView({
+  onModelSelect,
+}: {
+  onModelSelect?: (id: string, name: string, provider: string) => void;
+}) {
   const [selected, setSelected] = useState<string | null>(null);
   const [compareMode, setCompareMode] = useState(false);
   const [compared, setCompared] = useState<Set<string>>(new Set());
@@ -176,7 +180,7 @@ export function ModelsView() {
       {/* Detail panel */}
       <div className="w-[45%] overflow-y-auto p-4">
         {selectedModel ? (
-          <ModelDetail model={selectedModel} />
+          <ModelDetail model={selectedModel} onSelect={onModelSelect} />
         ) : (
           <div className="flex items-center justify-center h-full text-sm text-[var(--ctp-overlay0)]">
             Select a model to view details
@@ -187,7 +191,13 @@ export function ModelsView() {
   );
 }
 
-function ModelDetail({ model }: { model: ModelInfo }) {
+function ModelDetail({
+  model,
+  onSelect,
+}: {
+  model: ModelInfo;
+  onSelect?: (id: string, name: string, provider: string) => void;
+}) {
   return (
     <div className="space-y-4">
       <div>
@@ -242,7 +252,10 @@ function ModelDetail({ model }: { model: ModelInfo }) {
         </span>
       </div>
 
-      <button className="w-full py-2 rounded-lg text-xs font-medium bg-[var(--ctp-mauve)] text-[var(--ctp-crust)] hover:brightness-110 transition-colors">
+      <button
+        onClick={() => onSelect?.(model.id, model.name, model.provider)}
+        className="interactive w-full py-2 rounded-lg text-xs font-medium bg-[var(--ctp-mauve)] text-[var(--ctp-crust)] hover:brightness-110"
+      >
         Use This Model
       </button>
     </div>
