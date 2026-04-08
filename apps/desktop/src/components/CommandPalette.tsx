@@ -19,6 +19,9 @@ interface CommandPaletteProps {
   onModeChange: (mode: AppMode) => void;
   onToggleSidebar: () => void;
   onToggleDetail: () => void;
+  onModelSwitch?: (name: string, provider: string) => void;
+  onRoleSwitch?: (roleId: string | null) => void;
+  onNewConversation?: () => void;
 }
 
 export function CommandPalette({
@@ -27,6 +30,9 @@ export function CommandPalette({
   onModeChange,
   onToggleSidebar,
   onToggleDetail,
+  onModelSwitch,
+  onRoleSwitch,
+  onNewConversation,
 }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -111,7 +117,7 @@ export function CommandPalette({
       label: "New Conversation",
       category: "Chat",
       shortcut: "⌘N",
-      action: () => {},
+      action: () => onNewConversation?.(),
     },
 
     // Models
@@ -119,25 +125,25 @@ export function CommandPalette({
       id: "model-opus",
       label: "Switch to Claude Opus 4.6",
       category: "Model",
-      action: () => {},
+      action: () => onModelSwitch?.("Claude Opus 4.6", "anthropic"),
     },
     {
       id: "model-sonnet",
       label: "Switch to Claude Sonnet 4.6",
       category: "Model",
-      action: () => {},
+      action: () => onModelSwitch?.("Claude Sonnet 4.6", "anthropic"),
     },
     {
       id: "model-gpt",
       label: "Switch to GPT-5.4",
       category: "Model",
-      action: () => {},
+      action: () => onModelSwitch?.("GPT-5.4", "openai"),
     },
     {
       id: "model-gemini",
       label: "Switch to Gemini 3.1 Pro",
       category: "Model",
-      action: () => {},
+      action: () => onModelSwitch?.("Gemini 3.1 Pro", "google"),
     },
 
     // Roles
@@ -145,47 +151,41 @@ export function CommandPalette({
       id: "role-architect",
       label: "Activate Architect Role",
       category: "Role",
-      action: () => {},
+      action: () => onRoleSwitch?.("architect"),
     },
     {
       id: "role-developer",
       label: "Activate Developer Role",
       category: "Role",
-      action: () => {},
+      action: () => onRoleSwitch?.("developer"),
     },
     {
       id: "role-qa",
       label: "Activate QA Role",
       category: "Role",
-      action: () => {},
+      action: () => onRoleSwitch?.("qa"),
     },
     {
-      id: "role-reviewer",
-      label: "Activate Reviewer Role",
+      id: "role-clear",
+      label: "Clear Role",
       category: "Role",
-      action: () => {},
+      action: () => onRoleSwitch?.(null),
     },
 
     // KAIROS
     {
-      id: "kairos-start",
-      label: "Start KAIROS Daemon",
+      id: "kairos-config",
+      label: "KAIROS Configuration",
       category: "KAIROS",
       shortcut: "⌘/",
-      action: () => {},
-    },
-    {
-      id: "kairos-pause",
-      label: "Pause KAIROS",
-      category: "KAIROS",
-      action: () => {},
+      action: () => onModeChange("config"),
     },
     {
       id: "kairos-log",
       label: "View KAIROS Daily Log",
       category: "KAIROS",
       shortcut: "⌘L",
-      action: () => {},
+      action: () => onModeChange("config"),
     },
 
     // Security
@@ -197,9 +197,9 @@ export function CommandPalette({
     },
     {
       id: "dream",
-      label: "Trigger Dream Cycle",
+      label: "View Memory",
       category: "Memory",
-      action: () => {},
+      action: () => onModeChange("memory"),
     },
   ];
 

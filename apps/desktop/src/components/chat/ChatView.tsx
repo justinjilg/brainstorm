@@ -13,12 +13,19 @@ interface ChatViewProps {
   onCostUpdate: (cost: number) => void;
   onModelUpdate: (model: string, provider: string) => void;
   onContextUpdate: (percent: number) => void;
+  onNewConversation: () => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onModeChange: (...args: any[]) => void;
+  onOpenPalette: () => void;
 }
 
 export function ChatView({
   conversationId,
   onCostUpdate,
   onModelUpdate,
+  onNewConversation,
+  onModeChange,
+  onOpenPalette,
 }: ChatViewProps) {
   const {
     messages,
@@ -112,12 +119,28 @@ export function ChatView({
                 </div>
                 <div className="flex items-center justify-center gap-3">
                   {[
-                    { label: "New Chat", hint: "⌘N", icon: "+" },
-                    { label: "Models", hint: "⌘3", icon: "◆" },
-                    { label: "Commands", hint: "⌘K", icon: "⌘" },
+                    {
+                      label: "New Chat",
+                      hint: "⌘N",
+                      icon: "+",
+                      onClick: onNewConversation,
+                    },
+                    {
+                      label: "Models",
+                      hint: "⌘3",
+                      icon: "◆",
+                      onClick: () => onModeChange("models"),
+                    },
+                    {
+                      label: "Commands",
+                      hint: "⌘K",
+                      icon: "⌘",
+                      onClick: onOpenPalette,
+                    },
                   ].map((action) => (
                     <button
                       key={action.label}
+                      onClick={action.onClick}
                       className="interactive flex flex-col items-center gap-1.5 px-5 py-3 rounded-xl"
                       style={{
                         border: "1px solid var(--border-default)",

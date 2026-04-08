@@ -174,6 +174,7 @@ export function App() {
           kairosStatus={kairosStatus}
           activeRole={activeRole}
           conversations={conversations}
+          onOpenPalette={() => setPaletteOpen(true)}
           onNewConversation={async () => {
             const conv = await createConversation();
             if (conv) setActiveConversationId(conv.id);
@@ -194,6 +195,12 @@ export function App() {
                   setActiveProvider(provider);
                 }}
                 onContextUpdate={setContextPercent}
+                onNewConversation={async () => {
+                  const conv = await createConversation();
+                  if (conv) setActiveConversationId(conv.id);
+                }}
+                onModeChange={setMode}
+                onOpenPalette={() => setPaletteOpen(true)}
               />
             </ErrorBoundary>
           )}
@@ -207,7 +214,13 @@ export function App() {
           )}
           {mode === "models" && (
             <ErrorBoundary fallbackLabel="Models">
-              <ModelsView />
+              <ModelsView
+                onModelSelect={(_id, name, prov) => {
+                  setActiveModel(name);
+                  setActiveProvider(prov);
+                  setMode("chat");
+                }}
+              />
             </ErrorBoundary>
           )}
           {mode === "memory" && (
@@ -297,6 +310,15 @@ export function App() {
         }}
         onToggleSidebar={() => setSidebarCollapsed((prev) => !prev)}
         onToggleDetail={() => setDetailOpen((prev) => !prev)}
+        onModelSwitch={(name, provider) => {
+          setActiveModel(name);
+          setActiveProvider(provider);
+        }}
+        onRoleSwitch={(roleId) => _setActiveRole(roleId)}
+        onNewConversation={async () => {
+          const conv = await createConversation();
+          if (conv) setActiveConversationId(conv.id);
+        }}
       />
 
       {/* Status rail */}
@@ -311,7 +333,18 @@ export function App() {
         permissionMode={permissionMode}
         onRoleClick={() => setRolePickerOpen(true)}
         onModelClick={() => setModelSwitcherOpen(true)}
-        onStrategyClick={() => {}}
+        onStrategyClick={() => {
+          const strategies = [
+            "auto",
+            "quality",
+            "cost",
+            "combined",
+            "learned",
+            "capability",
+          ];
+          const idx = strategies.indexOf(strategy);
+          _setStrategy(strategies[(idx + 1) % strategies.length]);
+        }}
         onPermissionClick={() =>
           setPermissionMode((prev) =>
             prev === "auto" ? "confirm" : prev === "confirm" ? "plan" : "auto",

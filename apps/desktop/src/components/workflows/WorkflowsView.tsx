@@ -2,6 +2,8 @@
  * Workflows View — plan trees, orchestration visualization.
  */
 
+import { useState } from "react";
+
 export function WorkflowsView() {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -170,6 +172,7 @@ function PlanNode({
   meta: string;
   children?: React.ReactNode;
 }) {
+  const [expanded, setExpanded] = useState(children != null);
   const statusColor =
     status === "complete"
       ? "var(--ctp-green)"
@@ -179,7 +182,10 @@ function PlanNode({
 
   return (
     <div style={{ marginLeft: level * 16 }}>
-      <div className="flex items-center gap-2 py-1 px-2 rounded hover:bg-[var(--ctp-surface0)]/50 cursor-pointer">
+      <div
+        onClick={() => children && setExpanded(!expanded)}
+        className="interactive flex items-center gap-2 py-1 px-2 rounded"
+      >
         <span className="text-xs" style={{ color: statusColor }}>
           {icon}
         </span>
@@ -196,7 +202,7 @@ function PlanNode({
           <span className="text-[10px] text-[var(--ctp-overlay0)]">{meta}</span>
         )}
       </div>
-      {children}
+      {expanded && children}
     </div>
   );
 }
