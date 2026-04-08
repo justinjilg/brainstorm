@@ -41,6 +41,8 @@ const WORKSPACE_MODES: { mode: AppMode; label: string }[] = [
   { mode: "dashboard", label: "Dashboard" },
   { mode: "models", label: "Models" },
   { mode: "memory", label: "Memory" },
+  { mode: "plan", label: "Plan" },
+  { mode: "trace", label: "Trace" },
   { mode: "skills", label: "Skills" },
   { mode: "workflows", label: "Workflows" },
   { mode: "security", label: "Security" },
