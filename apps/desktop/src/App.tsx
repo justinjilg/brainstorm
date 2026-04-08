@@ -120,34 +120,42 @@ export function App() {
       onKeyDown={handleKeyDown}
       tabIndex={-1}
     >
-      {/* Title bar drag region */}
+      {/* Title bar — 40px, native traffic lights on macOS */}
       <div
         data-tauri-drag-region
-        className="h-8 flex items-center justify-between px-20 shrink-0 bg-[var(--ctp-mantle)] border-b border-[var(--ctp-surface0)]"
+        className="h-10 flex items-center justify-between shrink-0 bg-[var(--ctp-mantle)]"
+        style={{ borderBottom: "1px solid var(--border-subtle)" }}
       >
-        <span />
-        <span className="text-xs text-[var(--ctp-overlay0)] select-none">
-          Brainstorm Desktop
+        {/* Left: space for macOS traffic lights */}
+        <div className="w-20 shrink-0" />
+
+        {/* Center: app name */}
+        <span
+          className="select-none tracking-[0.15em] uppercase"
+          style={{ fontSize: "var(--text-2xs)", color: "var(--ctp-overlay0)" }}
+        >
+          Brainstorm
         </span>
-        <div className="flex items-center gap-1.5 text-[10px]">
-          <span
-            className="w-1.5 h-1.5 rounded-full"
-            style={{
-              backgroundColor: serverHealth.connected
-                ? "var(--ctp-green)"
-                : "var(--ctp-red)",
-            }}
-          />
-          <span
-            className="select-none"
-            style={{
-              color: serverHealth.connected
-                ? "var(--ctp-overlay0)"
-                : "var(--ctp-red)",
-            }}
+
+        {/* Right: connection + model */}
+        <div className="w-20 shrink-0 flex items-center justify-end pr-4 gap-2">
+          <div
+            className="flex items-center gap-1.5"
+            title={
+              serverHealth.connected
+                ? `Connected to BrainstormServer`
+                : `Disconnected — server not running on port 3100`
+            }
           >
-            {serverHealth.connected ? "Connected" : "Disconnected"}
-          </span>
+            <span
+              className={`w-2 h-2 rounded-full ${serverHealth.connected ? "animate-pulse-glow" : ""}`}
+              style={{
+                backgroundColor: serverHealth.connected
+                  ? "var(--ctp-green)"
+                  : "var(--ctp-red)",
+              }}
+            />
+          </div>
         </div>
       </div>
 
