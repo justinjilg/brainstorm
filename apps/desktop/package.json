@@ -12,6 +12,8 @@
     "tauri:build": "tauri build"
   },
   "dependencies": {
+    "@fontsource-variable/geist-mono": "^5.2.7",
+    "@fontsource/geist": "^5.2.8",
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-notification": "^2.0.0",
     "@tauri-apps/plugin-shell": "^2.0.0",
