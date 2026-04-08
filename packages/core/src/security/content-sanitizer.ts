@@ -109,7 +109,8 @@ export function sanitizeContent(raw: string): SanitizeResult {
 }
 
 function _sanitizeContentUnsafe(raw: string): SanitizeResult {
-  let content = raw;
+  // Unicode NFC normalization before scanning
+  let content = raw.normalize("NFC");
   let strippedCount = 0;
   const strippedCategories: string[] = [];
 
@@ -196,6 +197,7 @@ function _sanitizeContentUnsafe(raw: string): SanitizeResult {
  * Extract readable text from HTML, stripping all tags.
  * Use when you want plain text, not sanitized HTML.
  */
+/** @internal Currently unused — exported for potential future consumers. */
 export function extractText(html: string): string {
   // Decode HTML entities FIRST — before sanitization.
   // If we decode after, &lt;script&gt; becomes <script> post-sanitize.

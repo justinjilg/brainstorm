@@ -83,7 +83,10 @@ export class ApprovalVelocityTracker {
     const recentApprovals = this.getRecentRapidApprovals();
 
     if (recentApprovals.length >= this.rapidCountThreshold) {
-      this.coolingUntil = Date.now() + this.coolingPeriodMs;
+      // Only set cooling if not already cooling — don't extend indefinitely
+      if (!this.coolingUntil || Date.now() >= this.coolingUntil) {
+        this.coolingUntil = Date.now() + this.coolingPeriodMs;
+      }
 
       const warning: VelocityWarning = {
         type: "rapid-approval",

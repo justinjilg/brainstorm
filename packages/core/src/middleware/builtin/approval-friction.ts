@@ -92,7 +92,10 @@ export function createApprovalFrictionMiddleware(): AgentMiddleware {
   };
 }
 
-// Module-level state for pending warnings
+// Module-level pending warning state.
+// KNOWN LIMITATION: shared across all middleware instances in the same process.
+// In multi-session deployments, one session's warning could be consumed by another.
+// Fix requires threading state through the middleware pipeline's metadata dict.
 let _pendingWarning: VelocityWarning | null = null;
 
 /**

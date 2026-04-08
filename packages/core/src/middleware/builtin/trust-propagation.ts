@@ -78,8 +78,13 @@ export function createTrustPropagationMiddleware(): AgentMiddleware {
   };
 }
 
-// Module-level state for the current trust window
-// (middleware hooks don't share state natively — this bridges them)
+// Module-level state for the current trust window.
+// KNOWN LIMITATION: shared across all middleware instances in the same process.
+// In multi-session deployments, concurrent sessions must call syncTrustWindow/
+// flushTrustWindow around each hook invocation to prevent cross-session corruption.
+// The middleware pipeline's tool wrapping in loop.ts calls these synchronously
+// within each tool execution, which is safe for single-threaded Node.js but
+// would need per-session scoping for true concurrent isolation.
 let _currentWindow: TrustWindow | null = null;
 
 /**
