@@ -1,9 +1,10 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, memo } from "react";
 import {
   useChat,
   type ChatMessage,
   type ToolCallInfo,
 } from "../../hooks/useChat";
+import { Markdown } from "./Markdown";
 
 interface ChatViewProps {
   conversationId: string | null;
@@ -116,8 +117,8 @@ export function ChatView({
                   </span>
                 </div>
               )}
-              <div className="whitespace-pre-wrap">
-                {streamingText}
+              <div>
+                <Markdown content={streamingText} />
                 <span className="animate-pulse text-[var(--ctp-mauve)]">▌</span>
               </div>
             </div>
@@ -203,7 +204,11 @@ function providerColor(provider: string | null): string {
   }
 }
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+const MessageBubble = memo(function MessageBubble({
+  message,
+}: {
+  message: ChatMessage;
+}) {
   const isUser = message.role === "user";
   const isRouting = message.role === "routing";
   const isSystem = message.role === "system";
@@ -255,7 +260,11 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         {/* Reasoning trace (expandable) */}
         {message.reasoning && <ReasoningTrace text={message.reasoning} />}
 
-        <div className="whitespace-pre-wrap">{message.content}</div>
+        {isUser ? (
+          <div className="whitespace-pre-wrap">{message.content}</div>
+        ) : (
+          <Markdown content={message.content} />
+        )}
 
         {/* Tool calls */}
         {message.toolCalls && message.toolCalls.length > 0 && (
@@ -285,7 +294,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
       </div>
     </div>
   );
-}
+});
 
 function ToolCallCard({ tool }: { tool: ToolCallInfo }) {
   return (

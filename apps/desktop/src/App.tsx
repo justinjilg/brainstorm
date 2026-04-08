@@ -13,6 +13,7 @@ import { CommandPalette } from "./components/CommandPalette";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { KeyboardOverlay } from "./components/KeyboardOverlay";
 import { RolePicker } from "./components/RolePicker";
+import { ModelSwitcher } from "./components/ModelSwitcher";
 import { useServerHealth } from "./hooks/useServerHealth";
 
 export type AppMode =
@@ -46,6 +47,7 @@ export function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [keyboardOverlayOpen, setKeyboardOverlayOpen] = useState(false);
   const [rolePickerOpen, setRolePickerOpen] = useState(false);
+  const [modelSwitcherOpen, setModelSwitcherOpen] = useState(false);
 
   // State from agent events
   const [activeModel, setActiveModel] = useState("Claude Opus 4.6");
@@ -247,6 +249,18 @@ export function App() {
         onClose={() => setKeyboardOverlayOpen(false)}
       />
 
+      {/* Model switcher */}
+      <ModelSwitcher
+        open={modelSwitcherOpen}
+        onClose={() => setModelSwitcherOpen(false)}
+        currentModelId={null}
+        onSelect={(model) => {
+          setActiveModel(model.name);
+          setActiveProvider(model.provider);
+          setModelSwitcherOpen(false);
+        }}
+      />
+
       {/* Role picker */}
       <RolePicker
         open={rolePickerOpen}
@@ -281,7 +295,7 @@ export function App() {
         kairosStatus={kairosStatus}
         permissionMode={permissionMode}
         onRoleClick={() => setRolePickerOpen(true)}
-        onModelClick={() => {}}
+        onModelClick={() => setModelSwitcherOpen(true)}
         onStrategyClick={() => {}}
         onPermissionClick={() =>
           setPermissionMode((prev) =>
