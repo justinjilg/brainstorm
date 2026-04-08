@@ -60,10 +60,9 @@ export function App() {
   const [keyboardOverlayOpen, setKeyboardOverlayOpen] = useState(false);
   const [rolePickerOpen, setRolePickerOpen] = useState(false);
   const [modelSwitcherOpen, setModelSwitcherOpen] = useState(false);
-  const [inspectorContext, _setInspectorContext] = useState<InspectorContext>({
+  const [inspectorContext, setInspectorContext] = useState<InspectorContext>({
     type: "none",
   });
-  void _setInspectorContext; // Wired when plan/trace events select items
 
   // Project + team state
   const [currentProject, setCurrentProject] = useState<string | null>(
@@ -75,21 +74,17 @@ export function App() {
   // State from agent events
   const [activeModel, setActiveModel] = useState("Claude Opus 4.6");
   const [activeProvider, setActiveProvider] = useState("anthropic");
-  const [strategy, _setStrategy] = useState("combined");
+  const [strategy, setStrategy] = useState("combined");
   const [sessionCost, setSessionCost] = useState(0);
   const [contextPercent, setContextPercent] = useState(0);
   const [permissionMode, setPermissionMode] = useState<
     "auto" | "confirm" | "plan"
   >("confirm");
-  const [activeRole, _setActiveRole] = useState<string | null>(null);
-  const [kairosStatus, _setKairosStatus] = useState<
+  const [activeRole, setActiveRole] = useState<string | null>(null);
+  const [kairosStatus, setKairosStatus] = useState<
     "running" | "sleeping" | "paused" | "stopped"
   >("stopped");
-
-  // Suppress unused warnings — these setters wire to SSE events in Phase 2
-  void _setStrategy;
-  void _setActiveRole;
-  void _setKairosStatus;
+  void setKairosStatus; // Set by KAIROS SSE events when daemon connects
 
   // Server connection + data
   const serverHealth = useServerHealth();
@@ -244,16 +239,32 @@ export function App() {
             <ErrorBoundary fallbackLabel="Plan">
               <PlanView
                 plan={null}
-                onTaskSelect={() => {}}
-                onApprove={() => {}}
-                onPause={() => {}}
-                onResume={() => {}}
+                onTaskSelect={(_taskId) => {
+                  setDetailOpen(true);
+                  // TODO: find task from plan and set inspector context
+                  setInspectorContext({ type: "none" });
+                }}
+                onApprove={(phaseId) => {
+                  console.log("Approve phase:", phaseId);
+                }}
+                onPause={() => {
+                  console.log("Plan paused");
+                }}
+                onResume={() => {
+                  console.log("Plan resumed");
+                }}
               />
             </ErrorBoundary>
           )}
           {mode === "trace" && (
             <ErrorBoundary fallbackLabel="Trace">
-              <TraceView events={[]} onEventSelect={() => {}} />
+              <TraceView
+                events={[]}
+                onEventSelect={(event) => {
+                  setDetailOpen(true);
+                  setInspectorContext({ type: "trace-event", event });
+                }}
+              />
             </ErrorBoundary>
           )}
           {mode === "dashboard" && (
@@ -335,7 +346,7 @@ export function App() {
         onClose={() => setRolePickerOpen(false)}
         currentRole={activeRole}
         onRoleSelect={(role) => {
-          _setActiveRole(role);
+          setActiveRole(role);
           setRolePickerOpen(false);
         }}
       />
@@ -354,7 +365,7 @@ export function App() {
           setActiveModel(name);
           setActiveProvider(provider);
         }}
-        onRoleSwitch={(roleId) => _setActiveRole(roleId)}
+        onRoleSwitch={(roleId) => setActiveRole(roleId)}
         onNewConversation={async () => {
           const conv = await createConversation();
           if (conv) setActiveConversationId(conv.id);
@@ -383,7 +394,7 @@ export function App() {
             "capability",
           ];
           const idx = strategies.indexOf(strategy);
-          _setStrategy(strategies[(idx + 1) % strategies.length]);
+          setStrategy(strategies[(idx + 1) % strategies.length]);
         }}
         onPermissionClick={() =>
           setPermissionMode((prev) =>
