@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "beforeDevCommand": "npx vite --port 1420",
+    "beforeBuildCommand": "npx tsc -b && npx vite build"
   },
   "app": {
     "withGlobalTauri": false,
