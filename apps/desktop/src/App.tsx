@@ -11,6 +11,10 @@ import { SecurityView } from "./components/security/SecurityView";
 import { ConfigView } from "./components/config/ConfigView";
 import { PlanView } from "./components/plan/PlanView";
 import { TraceView } from "./components/trace/TraceView";
+import {
+  InspectorPanel,
+  type InspectorContext,
+} from "./components/inspector/InspectorPanel";
 import { StatusRail } from "./components/status-rail/StatusRail";
 import { CommandPalette } from "./components/CommandPalette";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -56,6 +60,10 @@ export function App() {
   const [keyboardOverlayOpen, setKeyboardOverlayOpen] = useState(false);
   const [rolePickerOpen, setRolePickerOpen] = useState(false);
   const [modelSwitcherOpen, setModelSwitcherOpen] = useState(false);
+  const [inspectorContext, _setInspectorContext] = useState<InspectorContext>({
+    type: "none",
+  });
+  void _setInspectorContext; // Wired when plan/trace events select items
 
   // Project + team state
   const [currentProject, setCurrentProject] = useState<string | null>(
@@ -294,24 +302,12 @@ export function App() {
           )}
         </div>
 
-        {/* Detail panel */}
+        {/* Inspector panel */}
         {detailOpen && (
-          <div className="w-80 border-l border-[var(--ctp-surface0)] bg-[var(--ctp-mantle)] flex flex-col overflow-hidden">
-            <div className="p-3 border-b border-[var(--ctp-surface0)] flex items-center justify-between">
-              <span className="text-xs font-medium text-[var(--ctp-subtext0)]">
-                Detail
-              </span>
-              <button
-                onClick={() => setDetailOpen(false)}
-                className="text-[var(--ctp-overlay0)] hover:text-[var(--ctp-text)] text-xs"
-              >
-                ⌘D
-              </button>
-            </div>
-            <div className="flex-1 p-3 text-sm text-[var(--ctp-overlay1)]">
-              Detail panel appears when tools produce output.
-            </div>
-          </div>
+          <InspectorPanel
+            context={inspectorContext}
+            onClose={() => setDetailOpen(false)}
+          />
         )}
       </div>
 
