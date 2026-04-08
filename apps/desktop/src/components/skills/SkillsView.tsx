@@ -70,8 +70,13 @@ export function SkillsView() {
             skills.map((skill) => (
               <div
                 key={skill.name}
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData("skill", skill.name);
+                  e.dataTransfer.effectAllowed = "copy";
+                }}
                 onClick={() => setSelectedName(skill.name)}
-                className="interactive flex items-center gap-3 px-4 py-3"
+                className="interactive flex items-center gap-3 px-4 py-3 cursor-grab active:cursor-grabbing"
                 style={{
                   borderBottom: "1px solid var(--border-subtle)",
                   background:
