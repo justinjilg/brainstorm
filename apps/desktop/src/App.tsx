@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
-import { Sidebar } from "./components/sidebar/Sidebar";
+import { Navigator } from "./components/navigator/Navigator";
+import type { TeamAgent } from "./components/navigator/TeamBuilder";
 import { ChatView } from "./components/chat/ChatView";
 import { DashboardView } from "./components/dashboard/DashboardView";
 import { ModelsView } from "./components/models/ModelsView";
@@ -27,7 +28,9 @@ export type AppMode =
   | "security"
   | "config";
 
-const MODE_LABELS: Record<AppMode, { label: string; shortcut: string }> = {
+// @ts-expect-error — kept for reference, Navigator has its own mode list
+const _MODE_LABELS: Record<AppMode, { label: string; shortcut: string }> = {
+  // eslint-disable-line
   chat: { label: "Chat", shortcut: "⌘1" },
   dashboard: { label: "Dashboard", shortcut: "⌘2" },
   models: { label: "Models", shortcut: "⌘3" },
@@ -49,6 +52,13 @@ export function App() {
   const [keyboardOverlayOpen, setKeyboardOverlayOpen] = useState(false);
   const [rolePickerOpen, setRolePickerOpen] = useState(false);
   const [modelSwitcherOpen, setModelSwitcherOpen] = useState(false);
+
+  // Project + team state
+  const [currentProject, setCurrentProject] = useState<string | null>(
+    process.env.HOME ? `${process.env.HOME}/Projects/brainstorm` : null,
+  );
+  const [team, setTeam] = useState<TeamAgent[]>([]);
+  const [totalBudget] = useState(5.0);
 
   // State from agent events
   const [activeModel, setActiveModel] = useState("Claude Opus 4.6");
@@ -163,18 +173,32 @@ export function App() {
 
       {/* Main content area */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
-        <Sidebar
+        {/* Navigator */}
+        <Navigator
           collapsed={sidebarCollapsed}
           activeMode={mode}
           onModeChange={setMode}
-          modeLabels={MODE_LABELS}
+          currentProject={currentProject}
+          recentProjects={[]}
+          onProjectSelect={setCurrentProject}
+          onOpenFolder={async () => {
+            try {
+              const { open } = await import("@tauri-apps/plugin-dialog");
+              const selected = await open({ directory: true, multiple: false });
+              if (selected) setCurrentProject(selected as string);
+            } catch {
+              // Tauri dialog not available in dev mode
+            }
+          }}
+          team={team}
+          onTeamChange={setTeam}
+          totalBudget={totalBudget}
+          conversations={conversations}
           activeConversationId={activeConversationId}
           onConversationSelect={setActiveConversationId}
+          onOpenPalette={() => setPaletteOpen(true)}
           kairosStatus={kairosStatus}
           activeRole={activeRole}
-          conversations={conversations}
-          onOpenPalette={() => setPaletteOpen(true)}
           onNewConversation={async () => {
             const conv = await createConversation();
             if (conv) setActiveConversationId(conv.id);
