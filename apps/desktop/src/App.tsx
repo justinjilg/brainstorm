@@ -218,8 +218,6 @@ export function App() {
             <ErrorBoundary fallbackLabel="Chat">
               <ChatView
                 conversationId={activeConversationId}
-                detailOpen={detailOpen}
-                onDetailToggle={() => setDetailOpen((prev) => !prev)}
                 onCostUpdate={setSessionCost}
                 onModelUpdate={(model, provider) => {
                   setActiveModel(model);
@@ -264,15 +262,18 @@ export function App() {
                   setDetailOpen(true);
                   setInspectorContext({ type: "trace-event", event });
                 }}
+                onApprove={(eventId) => {
+                  console.log("Approved:", eventId);
+                }}
+                onDeny={(eventId) => {
+                  console.log("Denied:", eventId);
+                }}
               />
             </ErrorBoundary>
           )}
           {mode === "dashboard" && (
             <ErrorBoundary fallbackLabel="Dashboard">
-              <DashboardView
-                sessionCost={sessionCost}
-                contextPercent={contextPercent}
-              />
+              <DashboardView sessionCost={sessionCost} />
             </ErrorBoundary>
           )}
           {mode === "models" && (

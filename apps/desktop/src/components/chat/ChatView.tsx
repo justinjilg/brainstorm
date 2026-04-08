@@ -8,8 +8,6 @@ import { Markdown } from "./Markdown";
 
 interface ChatViewProps {
   conversationId: string | null;
-  detailOpen: boolean;
-  onDetailToggle: () => void;
   onCostUpdate: (cost: number) => void;
   onModelUpdate: (model: string, provider: string) => void;
   onContextUpdate: (percent: number) => void;

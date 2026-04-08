@@ -71,11 +71,9 @@ export function Navigator({
   activeConversationId,
   onConversationSelect,
   onNewConversation,
-  onOpenPalette: _onOpenPalette,
+  onOpenPalette,
   kairosStatus,
 }: NavigatorProps) {
-  // onOpenPalette available for search box when added
-  void _onOpenPalette;
   const kairosInfo = KAIROS_STATUS[kairosStatus];
 
   if (collapsed) {
@@ -126,6 +124,23 @@ export function Navigator({
         onProjectSelect={onProjectSelect}
         onOpenFolder={onOpenFolder}
       />
+
+      {/* Search / Command bar */}
+      <div className="px-3 pb-1">
+        <div
+          onClick={onOpenPalette}
+          className="interactive flex items-center gap-2 px-3 h-8 rounded-lg"
+          style={{
+            background: "var(--ctp-surface0)",
+            border: "1px solid var(--border-subtle)",
+            fontSize: "var(--text-xs)",
+            color: "var(--ctp-overlay0)",
+          }}
+        >
+          <span style={{ fontSize: "var(--text-2xs)" }}>⌘K</span>
+          <span>Search commands...</span>
+        </div>
+      </div>
 
       {/* Workspace modes */}
       <div className="px-3 py-1">

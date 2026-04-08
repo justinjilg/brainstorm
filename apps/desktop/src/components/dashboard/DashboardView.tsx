@@ -7,10 +7,10 @@ import { useTools, useHealthStats } from "../../hooks/useServerData";
 
 interface DashboardProps {
   sessionCost: number;
-  contextPercent: number;
 }
 
 export function DashboardView({ sessionCost }: DashboardProps) {
+  // contextPercent removed — only used in StatusRail
   const [activeTab, setActiveTab] = useState<"routing" | "tools" | "cost">(
     "tools",
   );
