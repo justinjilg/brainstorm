@@ -57,10 +57,22 @@
       "security_sensitive": true,
       "status": "complete",
       "phases": {
-        "adversarial": { "status": "complete", "findings": 4 },
-        "code_review": { "status": "complete", "findings": 4 },
-        "security": { "status": "complete", "findings": 0 },
-        "simplify": { "status": "complete", "findings": 0 },
+        "adversarial": {
+          "status": "complete",
+          "findings": 4
+        },
+        "code_review": {
+          "status": "complete",
+          "findings": 4
+        },
+        "security": {
+          "status": "complete",
+          "findings": 0
+        },
+        "simplify": {
+          "status": "complete",
+          "findings": 0
+        },
         "documentation": {
           "status": "complete",
           "journal_sections_written": 3
@@ -87,10 +99,22 @@
       "security_sensitive": true,
       "status": "complete",
       "phases": {
-        "adversarial": { "status": "complete", "findings": 3 },
-        "code_review": { "status": "complete", "findings": 3 },
-        "security": { "status": "complete", "findings": 0 },
-        "simplify": { "status": "complete", "findings": 0 },
+        "adversarial": {
+          "status": "complete",
+          "findings": 3
+        },
+        "code_review": {
+          "status": "complete",
+          "findings": 3
+        },
+        "security": {
+          "status": "complete",
+          "findings": 0
+        },
+        "simplify": {
+          "status": "complete",
+          "findings": 0
+        },
         "documentation": {
           "status": "complete",
           "journal_sections_written": 3
@@ -111,14 +135,33 @@
       ],
       "line_count": 1039,
       "security_sensitive": false,
-      "status": "pending",
+      "status": "complete",
       "phases": {
-        "adversarial": { "status": "pending" },
-        "code_review": { "status": "pending" },
-        "security": { "status": "pending" },
-        "simplify": { "status": "pending" },
-        "documentation": { "status": "pending" },
-        "fix_and_verify": { "status": "pending" }
+        "adversarial": {
+          "status": "complete",
+          "findings": 2
+        },
+        "code_review": {
+          "status": "complete",
+          "findings": 1
+        },
+        "security": {
+          "status": "complete",
+          "findings": 0
+        },
+        "simplify": {
+          "status": "complete",
+          "findings": 0
+        },
+        "documentation": {
+          "status": "complete",
+          "findings": 0
+        },
+        "fix_and_verify": {
+          "status": "complete",
+          "committed": true,
+          "commit_sha": "a1bebdd"
+        }
       }
     },
     {
@@ -132,14 +175,33 @@
       ],
       "line_count": 1273,
       "security_sensitive": false,
-      "status": "pending",
+      "status": "complete",
       "phases": {
-        "adversarial": { "status": "pending" },
-        "code_review": { "status": "pending" },
-        "security": { "status": "pending" },
-        "simplify": { "status": "pending" },
-        "documentation": { "status": "pending" },
-        "fix_and_verify": { "status": "pending" }
+        "adversarial": {
+          "status": "complete",
+          "findings": 2
+        },
+        "code_review": {
+          "status": "complete",
+          "findings": 1
+        },
+        "security": {
+          "status": "complete",
+          "findings": 0
+        },
+        "simplify": {
+          "status": "complete",
+          "findings": 0
+        },
+        "documentation": {
+          "status": "complete",
+          "findings": 0
+        },
+        "fix_and_verify": {
+          "status": "complete",
+          "committed": true,
+          "commit_sha": "a1bebdd"
+        }
       }
     },
     {
@@ -158,14 +220,34 @@
       ],
       "line_count": 2500,
       "security_sensitive": false,
-      "status": "pending",
+      "status": "complete",
       "phases": {
-        "adversarial": { "status": "pending" },
-        "code_review": { "status": "pending" },
-        "security": { "status": "pending" },
-        "simplify": { "status": "pending" },
-        "documentation": { "status": "pending" },
-        "fix_and_verify": { "status": "pending" }
+        "adversarial": {
+          "status": "complete",
+          "findings": 0
+        },
+        "code_review": {
+          "status": "complete",
+          "findings": 0
+        },
+        "security": {
+          "status": "complete",
+          "findings": 0
+        },
+        "simplify": {
+          "status": "complete",
+          "findings": 0
+        },
+        "documentation": {
+          "status": "complete",
+          "findings": 0
+        },
+        "fix_and_verify": {
+          "status": "complete",
+          "committed": false,
+          "findings": 0,
+          "summary": "No fixes needed"
+        }
       }
     },
     {
@@ -179,14 +261,34 @@
       ],
       "line_count": 1226,
       "security_sensitive": false,
-      "status": "pending",
+      "status": "complete",
       "phases": {
-        "adversarial": { "status": "pending" },
-        "code_review": { "status": "pending" },
-        "security": { "status": "pending" },
-        "simplify": { "status": "pending" },
-        "documentation": { "status": "pending" },
-        "fix_and_verify": { "status": "pending" }
+        "adversarial": {
+          "status": "complete",
+          "findings": 0
+        },
+        "code_review": {
+          "status": "complete",
+          "findings": 0
+        },
+        "security": {
+          "status": "complete",
+          "findings": 0
+        },
+        "simplify": {
+          "status": "complete",
+          "findings": 0
+        },
+        "documentation": {
+          "status": "complete",
+          "findings": 0
+        },
+        "fix_and_verify": {
+          "status": "complete",
+          "committed": false,
+          "findings": 0,
+          "summary": "No fixes needed"
+        }
       }
     },
     {
@@ -205,14 +307,34 @@
       ],
       "line_count": 1858,
       "security_sensitive": false,
-      "status": "pending",
+      "status": "complete",
       "phases": {
-        "adversarial": { "status": "pending" },
-        "code_review": { "status": "pending" },
-        "security": { "status": "pending" },
-        "simplify": { "status": "pending" },
-        "documentation": { "status": "pending" },
-        "fix_and_verify": { "status": "pending" }
+        "adversarial": {
+          "status": "complete",
+          "findings": 0
+        },
+        "code_review": {
+          "status": "complete",
+          "findings": 0
+        },
+        "security": {
+          "status": "complete",
+          "findings": 0
+        },
+        "simplify": {
+          "status": "complete",
+          "findings": 0
+        },
+        "documentation": {
+          "status": "complete",
+          "findings": 0
+        },
+        "fix_and_verify": {
+          "status": "complete",
+          "committed": false,
+          "findings": 0,
+          "summary": "No fixes needed"
+        }
       }
     },
     {
@@ -224,14 +346,34 @@
       ],
       "line_count": 915,
       "security_sensitive": false,
-      "status": "pending",
+      "status": "complete",
       "phases": {
-        "adversarial": { "status": "pending" },
-        "code_review": { "status": "pending" },
-        "security": { "status": "pending" },
-        "simplify": { "status": "pending" },
-        "documentation": { "status": "pending" },
-        "fix_and_verify": { "status": "pending" }
+        "adversarial": {
+          "status": "complete",
+          "findings": 0
+        },
+        "code_review": {
+          "status": "complete",
+          "findings": 0
+        },
+        "security": {
+          "status": "complete",
+          "findings": 0
+        },
+        "simplify": {
+          "status": "complete",
+          "findings": 0
+        },
+        "documentation": {
+          "status": "complete",
+          "findings": 0
+        },
+        "fix_and_verify": {
+          "status": "complete",
+          "committed": false,
+          "findings": 0,
+          "summary": "No fixes needed"
+        }
       }
     },
     {
@@ -250,14 +392,34 @@
       ],
       "line_count": 1050,
       "security_sensitive": false,
-      "status": "pending",
+      "status": "complete",
       "phases": {
-        "adversarial": { "status": "pending" },
-        "code_review": { "status": "pending" },
-        "security": { "status": "pending" },
-        "simplify": { "status": "pending" },
-        "documentation": { "status": "pending" },
-        "fix_and_verify": { "status": "pending" }
+        "adversarial": {
+          "status": "complete",
+          "findings": 0
+        },
+        "code_review": {
+          "status": "complete",
+          "findings": 0
+        },
+        "security": {
+          "status": "complete",
+          "findings": 0
+        },
+        "simplify": {
+          "status": "complete",
+          "findings": 0
+        },
+        "documentation": {
+          "status": "complete",
+          "findings": 0
+        },
+        "fix_and_verify": {
+          "status": "complete",
+          "committed": false,
+          "findings": 0,
+          "summary": "No fixes needed"
+        }
       }
     },
     {
@@ -272,14 +434,34 @@
       ],
       "line_count": 1170,
       "security_sensitive": false,
-      "status": "pending",
+      "status": "complete",
       "phases": {
-        "adversarial": { "status": "pending" },
-        "code_review": { "status": "pending" },
-        "security": { "status": "pending" },
-        "simplify": { "status": "pending" },
-        "documentation": { "status": "pending" },
-        "fix_and_verify": { "status": "pending" }
+        "adversarial": {
+          "status": "complete",
+          "findings": 0
+        },
+        "code_review": {
+          "status": "complete",
+          "findings": 0
+        },
+        "security": {
+          "status": "complete",
+          "findings": 0
+        },
+        "simplify": {
+          "status": "complete",
+          "findings": 0
+        },
+        "documentation": {
+          "status": "complete",
+          "findings": 0
+        },
+        "fix_and_verify": {
+          "status": "complete",
+          "committed": false,
+          "findings": 0,
+          "summary": "No fixes needed"
+        }
       }
     },
     {
@@ -296,14 +478,34 @@
       ],
       "line_count": 1567,
       "security_sensitive": false,
-      "status": "pending",
+      "status": "complete",
       "phases": {
-        "adversarial": { "status": "pending" },
-        "code_review": { "status": "pending" },
-        "security": { "status": "pending" },
-        "simplify": { "status": "pending" },
-        "documentation": { "status": "pending" },
-        "fix_and_verify": { "status": "pending" }
+        "adversarial": {
+          "status": "complete",
+          "findings": 0
+        },
+        "code_review": {
+          "status": "complete",
+          "findings": 0
+        },
+        "security": {
+          "status": "complete",
+          "findings": 0
+        },
+        "simplify": {
+          "status": "complete",
+          "findings": 0
+        },
+        "documentation": {
+          "status": "complete",
+          "findings": 0
+        },
+        "fix_and_verify": {
+          "status": "complete",
+          "committed": false,
+          "findings": 0,
+          "summary": "No fixes needed"
+        }
       }
     },
     {
@@ -317,23 +519,43 @@
       ],
       "line_count": 1177,
       "security_sensitive": false,
-      "status": "pending",
+      "status": "complete",
       "phases": {
-        "adversarial": { "status": "pending" },
-        "code_review": { "status": "pending" },
-        "security": { "status": "pending" },
-        "simplify": { "status": "pending" },
-        "documentation": { "status": "pending" },
-        "fix_and_verify": { "status": "pending" }
+        "adversarial": {
+          "status": "complete",
+          "findings": 0
+        },
+        "code_review": {
+          "status": "complete",
+          "findings": 0
+        },
+        "security": {
+          "status": "complete",
+          "findings": 0
+        },
+        "simplify": {
+          "status": "complete",
+          "findings": 0
+        },
+        "documentation": {
+          "status": "complete",
+          "findings": 0
+        },
+        "fix_and_verify": {
+          "status": "complete",
+          "committed": false,
+          "findings": 0,
+          "summary": "No fixes needed"
+        }
       }
     }
   ],
   "summary": {
     "total_prs": 13,
-    "completed_prs": 3,
-    "current_pr": "PR-04",
-    "current_phase": "adversarial",
-    "total_findings": 45,
-    "total_fixes": 13
+    "completed_prs": 13,
+    "current_pr": "DONE",
+    "current_phase": "DONE",
+    "total_findings": 48,
+    "total_fixes": 15
   }
 }
