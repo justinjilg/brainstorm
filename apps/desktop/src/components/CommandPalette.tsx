@@ -272,15 +272,23 @@ export function CommandPalette({
       onClick={onClose}
     >
       {/* Backdrop */}
-      <div className="fixed inset-0 bg-black/50" />
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-float" />
 
       {/* Palette */}
       <div
-        className="relative w-[500px] max-h-[400px] bg-[var(--ctp-base)] border border-[var(--ctp-surface1)] rounded-xl shadow-2xl overflow-hidden flex flex-col"
+        className="relative w-[520px] max-h-[420px] rounded-2xl overflow-hidden flex flex-col animate-fade-in"
+        style={{
+          background: "var(--surface-float)",
+          boxShadow: "var(--shadow-float)",
+          border: "1px solid var(--border-default)",
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Search input */}
-        <div className="px-4 py-3 border-b border-[var(--ctp-surface0)]">
+        <div
+          className="px-5 py-4"
+          style={{ borderBottom: "1px solid var(--border-subtle)" }}
+        >
           <input
             ref={inputRef}
             type="text"
@@ -288,7 +296,8 @@ export function CommandPalette({
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Type a command..."
-            className="w-full bg-transparent text-sm text-[var(--ctp-text)] outline-none placeholder:text-[var(--ctp-overlay0)]"
+            style={{ fontSize: "var(--text-base)" }}
+            className="w-full bg-transparent text-[var(--ctp-text)] outline-none placeholder:text-[var(--ctp-overlay0)]"
           />
         </div>
 
@@ -296,7 +305,15 @@ export function CommandPalette({
         <div className="flex-1 overflow-y-auto py-1">
           {[...groups.entries()].map(([category, cmds]) => (
             <div key={category}>
-              <div className="px-4 py-1 text-[10px] text-[var(--ctp-overlay0)] uppercase tracking-wider">
+              <div
+                className="px-5 py-1.5"
+                style={{
+                  fontSize: "var(--text-2xs)",
+                  color: "var(--ctp-overlay0)",
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase" as const,
+                }}
+              >
                 {category}
               </div>
               {cmds.map((cmd) => {
