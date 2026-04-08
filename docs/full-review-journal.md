@@ -108,3 +108,50 @@
 
 - The red team engine tests the DEFENSE LAYER FUNCTIONS directly, not the middleware pipeline integration. This means it correctly validated that `sanitizeContent`, `scanContent`, and `validateToolContract` work — but couldn't catch that the middleware pipeline wasn't wired into the agent loop (PR-03 finding).
 - Test quality is good — no tautological assertions found, evolution pressure tests verify real genetic algorithm behavior
+
+## PR-06+07: Core Modifications + Router Enhancements
+
+### Architecture Insights
+
+- Subagent privilege reduction correctly uses set intersection for tool access — subagent tools = type's allowed ∩ parent's available
+- Cost-paced sleep in CostTracker cleanly separates the advisory from the enforcement (daemon controller decides what to do with the advice)
+- Thompson sampling audit trail adds logging without changing the sampling algorithm — pure instrumentation
+- Router's getMomentum()/getRecentFailures() properly return copies (spread) not references
+
+### Issues Found
+
+- MUTATING_TYPES Set and READ_ONLY_TOOLS array are reconstructed inside spawnSubagent on every call (lines 327-336). Minor — could be module-level constants. Not worth a fix.
+- Convergence check function at learned.ts:199 filters auditLog on every recordOutcome call. For high-volume sessions this is O(n) per outcome. Acceptable at current scale.
+
+### Key Takeaways
+
+- These are well-structured enhancements to existing code. No critical issues found.
+- The KAIROS-BR intelligence loop architecture is clean: callbacks on DaemonControllerOptions decouple the two systems without circular dependencies
+
+## PR-08+09: GitHub Tools + Tests
+
+All 8 tools use execFileAsync (not exec) — no command injection risk. User inputs passed as separate args. 71 tests across schema/routing/integration layers. No issues found.
+
+## PR-10-13: Desktop App (Tauri + React)
+
+Clean React code. No XSS vectors (no innerHTML, no eval). SSE streaming via fetch ReadableStream. Error boundaries on all 8 views. No hardcoded credentials. Minor: useChat has sessionCost in dependency array that could cause stale closures on rapid sends.
+
+## Overall Codebase Assessment
+
+### Architecture Summary
+
+Brainstorm is a well-structured turborepo with clear package boundaries. The security middleware pipeline is now the most thoroughly reviewed subsystem. The agent loop to middleware pipeline integration was the critical gap this review caught and fixed.
+
+### Systemic Issues
+
+1. Module-level mutable state in 4+ security files — concurrency risk in multi-session deployments
+2. Regex-based security is fundamentally limited (95% content injection evasion via encoding)
+3. Demo data in desktop views needs replacement with real API calls
+
+### Top 5 Recommendations
+
+1. Intent reviewer — LLM-based semantic check before high-risk tool calls
+2. Session-scoped middleware state — replace module-level singletons
+3. Unicode normalization before all regex scanning
+4. Shared scanning utility for duplicated regex loops
+5. Wire desktop views to real server APIs
