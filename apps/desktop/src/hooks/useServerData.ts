@@ -91,3 +91,148 @@ export function useHealthStats(pollMs = 5000) {
 
   return health;
 }
+
+// ── Memory ─────────────────────────────────────────────────────────
+
+export interface MemoryEntry {
+  id: string;
+  name: string;
+  description: string;
+  type: string;
+  tier: string;
+  source: string;
+  trustScore: number;
+  content: string;
+  contentHash: string;
+  author?: string;
+}
+
+export function useMemory() {
+  const [entries, setEntries] = useState<MemoryEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    const client = getClient();
+    const data = await client.listMemory();
+    setEntries(data as MemoryEntry[]);
+    setLoading(false);
+  }, []);
+
+  const promote = useCallback(
+    async (id: string) => {
+      const client = getClient();
+      await client.updateMemory(id, { tier: "system" });
+      refresh();
+    },
+    [refresh],
+  );
+
+  const quarantine = useCallback(
+    async (id: string) => {
+      const client = getClient();
+      await client.updateMemory(id, { tier: "quarantine" });
+      refresh();
+    },
+    [refresh],
+  );
+
+  const demote = useCallback(
+    async (id: string) => {
+      const client = getClient();
+      await client.updateMemory(id, { tier: "archive" });
+      refresh();
+    },
+    [refresh],
+  );
+
+  const remove = useCallback(
+    async (id: string) => {
+      const client = getClient();
+      await client.deleteMemory(id);
+      refresh();
+    },
+    [refresh],
+  );
+
+  const create = useCallback(
+    async (name: string, content: string) => {
+      const client = getClient();
+      await client.createMemory({ name, content });
+      refresh();
+    },
+    [refresh],
+  );
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return {
+    entries,
+    loading,
+    refresh,
+    promote,
+    quarantine,
+    demote,
+    remove,
+    create,
+  };
+}
+
+// ── Skills ─────────────────────────────────────────────────────────
+
+export interface SkillInfo {
+  name: string;
+  description: string;
+  source: string;
+  content: string;
+}
+
+export function useSkills() {
+  const [skills, setSkills] = useState<SkillInfo[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    const client = getClient();
+    const data = await client.listSkills();
+    setSkills(data);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { skills, loading, refresh };
+}
+
+// ── Models ─────────────────────────────────────────────────────────
+
+export interface ModelInfo {
+  id: string;
+  name: string;
+  provider: string;
+  status: string;
+  pricing: { inputPer1MTokens: number; outputPer1MTokens: number };
+}
+
+export function useModels() {
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    const client = getClient();
+    const data = await client.listModels();
+    setModels(data);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { models, loading, refresh };
+}

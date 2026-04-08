@@ -237,11 +237,129 @@ export class BrainstormClient {
       provider: string;
       status: string;
       pricing: { inputPer1MTokens: number; outputPer1MTokens: number };
+      capabilities: Record<string, boolean>;
     }>
   > {
-    // Models come from the health endpoint or a dedicated endpoint
-    // For now, return empty — will wire to router in Phase 2
-    return [];
+    try {
+      const res = await fetch(`${this.base}/api/v1/models`);
+      if (!res.ok) return [];
+      const body = (await res.json()) as ApiEnvelope<any[]>;
+      return body.ok ? body.data : [];
+    } catch {
+      return [];
+    }
+  }
+
+  // ── Memory ──────────────────────────────────────────────────────
+
+  async listMemory(): Promise<
+    Array<{
+      id: string;
+      name: string;
+      description: string;
+      type: string;
+      tier: string;
+      source: string;
+      trustScore: number;
+      content: string;
+      contentHash: string;
+      author?: string;
+      createdAt?: string;
+    }>
+  > {
+    try {
+      const res = await fetch(`${this.base}/api/v1/memory`);
+      if (!res.ok) return [];
+      const body = (await res.json()) as ApiEnvelope<any[]>;
+      return body.ok ? body.data : [];
+    } catch {
+      return [];
+    }
+  }
+
+  async createMemory(entry: {
+    name: string;
+    content: string;
+    type?: string;
+    source?: string;
+  }): Promise<boolean> {
+    try {
+      const res = await fetch(`${this.base}/api/v1/memory`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(entry),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  async updateMemory(
+    id: string,
+    update: { tier?: string; content?: string },
+  ): Promise<boolean> {
+    try {
+      const res = await fetch(`${this.base}/api/v1/memory/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(update),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  async deleteMemory(id: string): Promise<boolean> {
+    try {
+      const res = await fetch(`${this.base}/api/v1/memory/${id}`, {
+        method: "DELETE",
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  // ── Skills ──────────────────────────────────────────────────────
+
+  async listSkills(): Promise<
+    Array<{
+      name: string;
+      description: string;
+      source: string;
+      content: string;
+    }>
+  > {
+    try {
+      const res = await fetch(`${this.base}/api/v1/skills`);
+      if (!res.ok) return [];
+      const body = (await res.json()) as ApiEnvelope<any[]>;
+      return body.ok ? body.data : [];
+    } catch {
+      return [];
+    }
+  }
+
+  // ── Security ────────────────────────────────────────────────────
+
+  async runRedTeam(opts?: {
+    generations?: number;
+    populationSize?: number;
+  }): Promise<any | null> {
+    try {
+      const res = await fetch(`${this.base}/api/v1/security/red-team`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(opts ?? {}),
+      });
+      if (!res.ok) return null;
+      const body = (await res.json()) as ApiEnvelope<any>;
+      return body.ok ? body.data : null;
+    } catch {
+      return null;
+    }
   }
 }
 

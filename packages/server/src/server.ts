@@ -263,6 +263,31 @@ export class BrainstormServer {
     if (sessionsMatch && method === "GET")
       return this.handleConversationSessions(sessionsMatch[1], res);
 
+    // ── Memory routes ──────────────────────────────────────────────
+    if (path === "/api/v1/memory" && method === "GET")
+      return this.handleListMemory(res);
+    if (path === "/api/v1/memory" && method === "POST")
+      return this.handleCreateMemory(req, res);
+    const memoryMatch = path.match(/^\/api\/v1\/memory\/([^/]+)$/);
+    if (memoryMatch && method === "PATCH")
+      return this.handleUpdateMemory(memoryMatch[1], req, res);
+    if (memoryMatch && method === "DELETE")
+      return this.handleDeleteMemory(memoryMatch[1], res);
+    if (path === "/api/v1/memory/dream" && method === "POST")
+      return this.handleDreamCycle(res);
+
+    // ── Skills routes ────────────────────────────────────────────
+    if (path === "/api/v1/skills" && method === "GET")
+      return this.handleListSkills(res);
+
+    // ── Models route ─────────────────────────────────────────────
+    if (path === "/api/v1/models" && method === "GET")
+      return this.handleListModels(res);
+
+    // ── Security route ───────────────────────────────────────────
+    if (path === "/api/v1/security/red-team" && method === "POST")
+      return this.handleRedTeam(req, res);
+
     // 404
     this.errorResponse(res, 404, `Not found: ${method} ${path}`);
   }
@@ -670,6 +695,154 @@ export class BrainstormServer {
     this.json(res, 200, this.envelope(sessions));
   }
 
+  // ── Memory ────────────────────────────────────────────────────────
+
+  private handleListMemory(res: ServerResponse): void {
+    if (!this.deps.memoryManager) {
+      return this.errorResponse(res, 503, "Memory manager not configured");
+    }
+    const entries = this.deps.memoryManager.list();
+    this.json(res, 200, this.envelope(entries));
+  }
+
+  private async handleCreateMemory(
+    req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> {
+    if (!this.deps.memoryManager) {
+      return this.errorResponse(res, 503, "Memory manager not configured");
+    }
+    const body = await this.readBody<{
+      name: string;
+      content: string;
+      type?: string;
+      tier?: string;
+      source?: string;
+    }>(req);
+    if (!body.name || !body.content) {
+      return this.errorResponse(res, 400, "name and content required");
+    }
+    const entry = this.deps.memoryManager.save({
+      name: body.name,
+      description: body.name,
+      type: (body.type as any) ?? "project",
+      content: body.content,
+      source: (body.source as any) ?? "user_input",
+      trustScore: 1.0,
+    });
+    this.json(res, 201, this.envelope(entry));
+  }
+
+  private async handleUpdateMemory(
+    id: string,
+    req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> {
+    if (!this.deps.memoryManager) {
+      return this.errorResponse(res, 503, "Memory manager not configured");
+    }
+    const body = await this.readBody<{
+      content?: string;
+      tier?: string;
+    }>(req);
+    try {
+      if (body.tier === "system") {
+        this.deps.memoryManager.promote(id);
+      } else if (body.tier === "quarantine") {
+        this.deps.memoryManager.quarantine(id);
+      } else if (body.tier === "archive") {
+        this.deps.memoryManager.demote(id);
+      }
+      this.json(res, 200, this.envelope({ updated: true, id }));
+    } catch (err: any) {
+      this.errorResponse(res, 404, err.message ?? "Entry not found");
+    }
+  }
+
+  private handleDeleteMemory(id: string, res: ServerResponse): void {
+    if (!this.deps.memoryManager) {
+      return this.errorResponse(res, 503, "Memory manager not configured");
+    }
+    try {
+      this.deps.memoryManager.delete(id);
+      this.json(res, 200, this.envelope({ deleted: true, id }));
+    } catch (err: any) {
+      this.errorResponse(res, 404, err.message ?? "Entry not found");
+    }
+  }
+
+  private handleDreamCycle(res: ServerResponse): void {
+    // Dream cycle requires infrastructure not available via HTTP
+    // Return accepted status — the CLI or desktop app triggers it directly
+    this.json(
+      res,
+      202,
+      this.envelope({
+        status: "dream_acknowledged",
+        message:
+          "Dream cycle must be triggered from the CLI or desktop app directly",
+      }),
+    );
+  }
+
+  // ── Skills ───────────────────────────────────────────────────────
+
+  private handleListSkills(res: ServerResponse): void {
+    import("@brainst0rm/core").then(({ loadSkills }) => {
+      try {
+        const skills = loadSkills(this.opts.projectPath);
+        const list = skills.map((s) => ({
+          name: s.name,
+          description: s.description ?? "",
+          source: s.source ?? "builtin",
+          content: s.content.slice(0, 500),
+        }));
+        this.json(res, 200, this.envelope(list));
+      } catch {
+        this.json(res, 200, this.envelope([]));
+      }
+    });
+  }
+
+  // ── Models ───────────────────────────────────────────────────────
+
+  private handleListModels(res: ServerResponse): void {
+    const models = this.deps.registry.models.map((m) => ({
+      id: m.id,
+      name: m.name,
+      provider: m.provider,
+      status: m.status,
+      pricing: m.pricing,
+      capabilities: m.capabilities,
+    }));
+    this.json(res, 200, this.envelope(models));
+  }
+
+  // ── Security ─────────────────────────────────────────────────────
+
+  private async handleRedTeam(
+    req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> {
+    const body = await this.readBody<{
+      generations?: number;
+      populationSize?: number;
+    }>(req);
+
+    try {
+      const { runRedTeamSimulation, createDefaultMiddlewarePipeline } =
+        await import("@brainst0rm/core");
+      const pipeline = createDefaultMiddlewarePipeline(this.opts.projectPath);
+      const scorecard = runRedTeamSimulation(pipeline, {
+        generations: body.generations ?? 5,
+        populationSize: body.populationSize ?? 30,
+      });
+      this.json(res, 200, this.envelope(scorecard));
+    } catch (err: any) {
+      this.errorResponse(res, 500, err.message ?? "Red team simulation failed");
+    }
+  }
+
   // ── Chat Helpers ──────────────────────────────────────────────────
 
   private prepareChat(body: ChatRequest): {
@@ -745,9 +918,7 @@ export class BrainstormServer {
 
   // ── Auth ──────────────────────────────────────────────────────────
 
-  private async checkAuth(
-    req: IncomingMessage,
-  ): Promise<
+  private async checkAuth(req: IncomingMessage): Promise<
     | {
         ok: true;
         payload?: { sub?: string; email?: string; platform_role?: string };
