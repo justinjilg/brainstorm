@@ -78,6 +78,22 @@ const SHELL_DENYLIST: Array<{ pattern: RegExp; reason: string }> = [
     pattern: /\b(passwd|useradd|usermod|groupadd)\b/,
     reason: "User/group modification",
   },
+  {
+    pattern: /\beval\b.*\$\(.*base64/i,
+    reason: "Encoded command execution via eval + base64",
+  },
+  {
+    pattern: /\bbase64\s+-d\b.*\|\s*(sh|bash|zsh)\b/i,
+    reason: "Encoded command piped to shell interpreter",
+  },
+  {
+    pattern: /\becho\b.*\|\s*base64\s+-d\b/i,
+    reason: "Base64 decode of inline payload",
+  },
+  {
+    pattern: /\bpython[23]?\s+-c\b.*\bimport\s+(os|subprocess|socket)\b/i,
+    reason: "Python one-liner with dangerous imports",
+  },
 ];
 
 function validateShell(input: Record<string, unknown>): ContractViolation[] {
@@ -276,6 +292,15 @@ function validateGodModeTool(
         rule: "destructive-remote-tool",
         detail: `Destructive remote tool: ${remoteTool}`,
         severity: "block",
+      });
+    }
+    // Warn on any unknown remote tool — the closed set can't cover everything
+    if (remoteTool && !DESTRUCTIVE_REMOTE_TOOLS.has(remoteTool)) {
+      violations.push({
+        tool: toolName,
+        rule: "unvetted-remote-tool",
+        detail: `Remote tool "${remoteTool}" not in known-safe list — review before execution`,
+        severity: "warning",
       });
     }
   }

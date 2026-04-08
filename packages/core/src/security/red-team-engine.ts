@@ -243,9 +243,8 @@ function evaluateGenome(
     } else {
       depth++;
     }
-  } else {
-    depth++; // N/A for non-policy attacks
   }
+  // N/A layers don't count toward depth — only actually-tested layers do
 
   // Test 4-7: Run tool sequence through middleware pipeline
   for (const toolGene of genome.toolSequence) {

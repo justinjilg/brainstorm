@@ -243,6 +243,10 @@ export function scanContent(content: string): ContentScanResult {
 }
 
 function _scanContentUnsafe(content: string): ContentScanResult {
+  // Unicode NFC normalization — prevents token-splitting bypasses
+  // like igno\u2060re → "ignore" after normalization
+  content = content.normalize("NFC");
+
   const findings: ScanFinding[] = [];
   let totalWeight = 0;
 

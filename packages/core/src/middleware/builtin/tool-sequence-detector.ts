@@ -307,7 +307,8 @@ function looksLikeSecrets(content: string): boolean {
 
 // ── Trust Window Bridge ────────────────────────────────────────────
 
-/** Reference to the current trust window (set by trust-propagation middleware). */
+// Module-level trust window reference — same concurrency limitation as trust-propagation.ts.
+// Safe for single-threaded Node.js; needs per-session scoping for concurrent isolation.
 let _currentTrustRef: TrustWindowLike | null = null;
 
 /**

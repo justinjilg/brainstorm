@@ -137,6 +137,9 @@ export function validatePolicyFile(
   content: string,
   filename: string,
 ): PolicyValidationResult {
+  // Unicode NFC normalization — prevents token-splitting bypasses
+  content = content.normalize("NFC");
+
   const findings: PolicyFinding[] = [];
 
   for (const { pattern, severity, description } of INJECTION_PATTERNS) {
@@ -178,6 +181,7 @@ export function validatePolicyFile(
 /**
  * Validate a .storm file's memory entries for adversarial content.
  */
+/** @internal Currently unused — exported for .storm import validation. */
 export function validateStormMemoryEntries(
   entries: Array<{ name: string; content: string }>,
   stormFilename: string,
