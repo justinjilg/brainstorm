@@ -11,6 +11,9 @@ import type {
   MiddlewareBlock,
 } from "./types.js";
 import { isBlocked } from "./types.js";
+import { createLogger } from "@brainst0rm/shared";
+
+const log = createLogger("middleware-pipeline");
 
 /** Middleware that cannot be removed via remove(). */
 const PROTECTED_MIDDLEWARE = new Set(["security-scan", "subagent-limit"]);
@@ -60,28 +63,53 @@ export class MiddlewarePipeline {
     return current;
   }
 
-  /** Run wrapToolCall hooks. Returns modified call or block signal. */
+  /**
+   * Run wrapToolCall hooks. Returns modified call or block signal.
+   * FAIL-CLOSED: if any middleware throws, the tool call is blocked.
+   */
   runWrapToolCall(
     call: MiddlewareToolCall,
   ): MiddlewareToolCall | MiddlewareBlock {
     let current: MiddlewareToolCall = call;
     for (const mw of this.middleware) {
       if (mw.wrapToolCall) {
-        const result = mw.wrapToolCall(current);
-        if (isBlocked(result)) return result;
-        if (result) current = result;
+        try {
+          const result = mw.wrapToolCall(current);
+          if (isBlocked(result)) return result;
+          if (result) current = result;
+        } catch (err) {
+          log.error(
+            { middleware: mw.name, tool: call.name, err },
+            "Middleware wrapToolCall threw — blocking call (fail-closed)",
+          );
+          return {
+            blocked: true,
+            reason: `Security middleware error in ${mw.name}`,
+            middleware: mw.name,
+          };
+        }
       }
     }
     return current;
   }
 
-  /** Run afterToolResult hooks. Returns modified result. */
+  /**
+   * Run afterToolResult hooks. Returns modified result.
+   * FAIL-SAFE: if any middleware throws, log and continue with unmodified result.
+   */
   runAfterToolResult(result: MiddlewareToolResult): MiddlewareToolResult {
     let current = result;
     for (const mw of this.middleware) {
       if (mw.afterToolResult) {
-        const modified = mw.afterToolResult(current);
-        if (modified) current = modified;
+        try {
+          const modified = mw.afterToolResult(current);
+          if (modified) current = modified;
+        } catch (err) {
+          log.error(
+            { middleware: mw.name, tool: result.name, err },
+            "Middleware afterToolResult threw — continuing with unmodified result",
+          );
+        }
       }
     }
     return current;

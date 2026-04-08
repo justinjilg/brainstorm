@@ -443,6 +443,52 @@ export async function* runAgentLoop(
         : tools.toAISDKTools()
     : undefined;
 
+  // Wire middleware into tool execution — wrap each tool's execute with
+  // runWrapToolCall (pre-execution gate) and runAfterToolResult (post-processing).
+  // This is the critical integration point: without this, security middleware
+  // only runs in tests, not in production.
+  if (aiTools && options.middleware) {
+    const pipeline = options.middleware;
+    for (const [toolName, toolObj] of Object.entries(aiTools)) {
+      if (toolObj && typeof toolObj === "object" && "execute" in toolObj) {
+        const originalExecute = (toolObj as any).execute;
+        (toolObj as any).execute = async (input: any, opts: any) => {
+          // Pre-execution: check if middleware blocks this call
+          const mwCall = {
+            id: `mw-${Date.now()}`,
+            name: toolName,
+            input: input ?? {},
+          };
+          const wrapped = pipeline.runWrapToolCall(mwCall);
+          if ("blocked" in wrapped && wrapped.blocked) {
+            return {
+              error: `Blocked by security policy: ${wrapped.reason}`,
+              blocked: true,
+              middleware: wrapped.middleware,
+            };
+          }
+          // Execute the tool
+          const startMs = Date.now();
+          const result = await originalExecute(input, opts);
+          // Post-execution: run afterToolResult for taint tracking
+          const mwResult = {
+            toolCallId: mwCall.id,
+            name: toolName,
+            ok: !(
+              result &&
+              typeof result === "object" &&
+              (result.error || result.ok === false)
+            ),
+            output: result,
+            durationMs: Date.now() - startMs,
+          };
+          pipeline.runAfterToolResult(mwResult);
+          return result;
+        };
+      }
+    }
+  }
+
   // Serialize task context for gateway telemetry (x-br-metadata header)
   const metadataHeader = serializeRoutingMetadata(task, decision);
 
