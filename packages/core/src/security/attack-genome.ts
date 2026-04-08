@@ -390,9 +390,8 @@ const SHELL_WRAPPERS = [
   (cmd: string) => `sh -c '${cmd.replace(/'/g, "'\\''")}'`,
   (cmd: string) => cmd.split(" ").join("\t"), // tab-separated
   (cmd: string) => {
-    // Variable substitution evasion
-    const parts = cmd.split("/");
-    return parts.join("/" + "");
+    // Path obfuscation: use ./ segments (cd /./etc/./passwd === /etc/passwd)
+    return cmd.replace(/\//g, "/./");
   },
 ];
 
