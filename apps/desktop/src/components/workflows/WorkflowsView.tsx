@@ -5,6 +5,8 @@
 import { useState } from "react";
 
 export function WorkflowsView() {
+  const [showHint, setShowHint] = useState(false);
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--ctp-surface0)]">
@@ -12,14 +14,36 @@ export function WorkflowsView() {
           Workflows
         </span>
         <button
-          onClick={() =>
-            alert("Workflow builder coming soon — use the Plan view for now")
-          }
+          onClick={() => setShowHint(true)}
           className="interactive text-[10px] px-3 py-1 rounded-lg bg-[var(--ctp-surface0)] text-[var(--ctp-overlay1)] hover:text-[var(--ctp-text)]"
         >
           + New Workflow
         </button>
       </div>
+
+      {showHint && (
+        <div
+          className="mx-4 mt-3 px-4 py-3 rounded-xl animate-fade-in flex items-center justify-between"
+          style={{
+            background: "var(--glow-mauve)",
+            border: "1px solid rgba(203, 166, 247, 0.2)",
+            fontSize: "var(--text-xs)",
+            color: "var(--ctp-mauve)",
+          }}
+        >
+          <span>
+            Use the Plan view to create multi-phase workflows from natural
+            language prompts.
+          </span>
+          <button
+            onClick={() => setShowHint(false)}
+            className="interactive px-2 py-0.5 rounded-md ml-3 shrink-0"
+            style={{ fontSize: "var(--text-2xs)" }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {/* Plan tree */}
