@@ -89,3 +89,22 @@
 - The most important finding of the entire review: production code never called the security middleware. Tests showed "blocked" but the agent would have executed every blocked tool call in real usage.
 - The fix wraps every AI SDK tool's `execute` function with middleware pipeline calls at the point where tools are built (loop.ts lines 434-444)
 - Egress monitor needed IPv4 extraction alongside domain extraction
+
+## PR-04+05: Red Team Engine + Security Tests
+
+### Architecture Insights
+
+- The red team engine is a standalone simulation tool — it creates its own middleware pipeline instances and evaluates genomes against them. It does NOT test the production pipeline.
+- Fitness scoring measures unique defense layers evaded, not raw depth. An attack caught by 1 of 7 layers gets fitness 0.857.
+- Tests are well-structured: 46 attack scenarios, 15 evolution proofs, 13 KAIROS-BR loop tests, 9 engine tests.
+
+### Issues Found
+
+- Fitness formula used `caughtBy.length` (already deduped) correctly but `depth` counter was inflated by per-tool-call iterations and free depth++ for non-policy attacks
+- Shell wrapper was a no-op (`parts.join("/" + "")` === `parts.join("/")`) — replaced with actual path obfuscation using `./` segments
+- Module-level `_genomeCounter` is non-deterministic across parallel test runs (minor)
+
+### Key Takeaways
+
+- The red team engine tests the DEFENSE LAYER FUNCTIONS directly, not the middleware pipeline integration. This means it correctly validated that `sanitizeContent`, `scanContent`, and `validateToolContract` work — but couldn't catch that the middleware pipeline wasn't wired into the agent loop (PR-03 finding).
+- Test quality is good — no tautological assertions found, evolution pressure tests verify real genetic algorithm behavior

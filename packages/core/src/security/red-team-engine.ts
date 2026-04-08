@@ -298,11 +298,14 @@ function evaluateGenome(
     }
   }
 
-  // Score
+  // Score: fitness based on unique layers that caught this attack
   genome.caughtBy = [...new Set(caughtBy)];
   genome.penetrationDepth = Math.min(depth, totalLayers);
+  // Fitness = fraction of layers evaded. 0 caught = 1.0 (full evasion).
+  // Use unique caught-by count against total layers for consistent scoring.
+  const uniqueCaught = genome.caughtBy.length;
   genome.fitness =
-    caughtBy.length === 0 ? 1.0 : 1.0 - genome.caughtBy.length / totalLayers;
+    uniqueCaught === 0 ? 1.0 : Math.max(0, 1.0 - uniqueCaught / totalLayers);
 }
 
 // ── Scorecard Builder ──────────────────────────────────────────────
