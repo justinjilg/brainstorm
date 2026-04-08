@@ -148,7 +148,7 @@ export function validatePolicyFile(
       findings.push({
         severity,
         pattern: description,
-        snippet: match[0].slice(0, 80),
+        snippet: match[0].slice(0, 80).replace(/[\x00-\x1f\x7f-\x9f]/g, ""),
         location: `${filename}:${lineNum}`,
       });
 

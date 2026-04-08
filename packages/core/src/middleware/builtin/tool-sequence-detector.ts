@@ -178,6 +178,7 @@ interface TrustWindowLike {
 
 export function createToolSequenceDetectorMiddleware(): AgentMiddleware {
   let history: ToolEvent[] = [];
+  const preScannedCalls = new Set<string>(); // Track pre-scanned call IDs to avoid double-recording
 
   return {
     name: "tool-sequence-detector",
@@ -189,8 +190,9 @@ export function createToolSequenceDetectorMiddleware(): AgentMiddleware {
       const cutoff = Date.now() - SEQUENCE_WINDOW_MS;
       history = history.filter((e) => e.timestamp > cutoff);
 
-      // Pre-scan: if this is a shell command that touches sensitive paths,
-      // record it in history NOW so subsequent calls see the taint.
+      // Pre-scan: if this shell command touches sensitive paths, record it
+      // in history so subsequent wrapToolCall checks see the taint.
+      // afterToolResult will skip re-recording if already pre-scanned.
       if (call.name === "shell") {
         const cmd = String(call.input.command ?? "");
         const tokens = cmd.split(/\s+/);
@@ -206,6 +208,7 @@ export function createToolSequenceDetectorMiddleware(): AgentMiddleware {
           if (history.length > HISTORY_SIZE) {
             history = history.slice(-HISTORY_SIZE);
           }
+          preScannedCalls.add(call.id);
         }
       }
 
@@ -233,13 +236,20 @@ export function createToolSequenceDetectorMiddleware(): AgentMiddleware {
 
         return {
           blocked: true,
-          reason: `[${rule.name}] ${rule.reason} (trust: ${currentTrust.toFixed(1)}, requires: ${rule.trustThreshold})`,
+          reason:
+            "Tool call blocked by security policy. Check session logs for details.",
           middleware: "tool-sequence-detector",
         };
       }
     },
 
     afterToolResult(result: MiddlewareToolResult): MiddlewareToolResult | void {
+      // Skip if already recorded by pre-scan in wrapToolCall
+      if (preScannedCalls.has(result.toolCallId)) {
+        preScannedCalls.delete(result.toolCallId);
+        return;
+      }
+
       const flags: ToolEvent["flags"] = {};
 
       // Detect sensitive file reads

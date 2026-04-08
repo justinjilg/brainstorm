@@ -163,13 +163,28 @@ export class ApprovalVelocityTracker {
 
   private getRecentRapidApprovals(): ApprovalEvent[] {
     const now = Date.now();
-    // Look at the last N approvals within a 30-second window
     const windowMs = 30_000;
-    return this.history.filter(
+
+    // Look at recent events within the window, but a denial anywhere
+    // in the sequence proves the human is paying attention — reset count.
+    const recentInWindow = this.history.filter(
+      (e) => now - e.timestamp < windowMs,
+    );
+
+    // Find the last denial — only count consecutive approvals after it
+    let lastDenialIndex = -1;
+    for (let i = recentInWindow.length - 1; i >= 0; i--) {
+      if (recentInWindow[i].decision === "deny") {
+        lastDenialIndex = i;
+        break;
+      }
+    }
+
+    // Only count rapid approvals AFTER the last denial
+    const afterDenial = recentInWindow.slice(lastDenialIndex + 1);
+    return afterDenial.filter(
       (e) =>
-        e.decision === "approve" &&
-        e.decisionTimeMs < this.rapidThresholdMs &&
-        now - e.timestamp < windowMs,
+        e.decision === "approve" && e.decisionTimeMs < this.rapidThresholdMs,
     );
   }
 }

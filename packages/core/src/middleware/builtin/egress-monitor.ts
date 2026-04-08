@@ -171,7 +171,8 @@ export function createEgressMonitorMiddleware(): AgentMiddleware {
             );
             return {
               blocked: true,
-              reason: `[${pattern.name}] Command matches exfiltration pattern. ${cmd.slice(0, 80)}...`,
+              reason:
+                "Command blocked by egress security policy. Check session logs for details.",
               middleware: "egress-monitor",
             };
           }

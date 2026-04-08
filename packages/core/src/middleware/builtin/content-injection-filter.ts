@@ -25,9 +25,6 @@ const log = createLogger("content-injection-filter");
 const WEB_TOOLS = new Set(["web_fetch", "web_search"]);
 
 export function createContentInjectionFilterMiddleware(): AgentMiddleware {
-  let sessionScanCount = 0;
-  let sessionFindingCount = 0;
-
   return {
     name: "content-injection-filter",
 
@@ -38,15 +35,11 @@ export function createContentInjectionFilterMiddleware(): AgentMiddleware {
       const content = extractContent(result.output);
       if (!content) return;
 
-      sessionScanCount++;
-
       // Step 1: Sanitize HTML (remove dangerous elements)
       const sanitized = sanitizeContent(content);
 
       // Step 2: Scan sanitized content for injection patterns
       const scan = scanContent(sanitized.content);
-
-      sessionFindingCount += scan.findings.length;
 
       // Build metadata to attach to the result
       const metadata: Record<string, unknown> = {};

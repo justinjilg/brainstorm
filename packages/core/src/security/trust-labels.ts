@@ -61,10 +61,16 @@ const MODERATE_TRUST_TOOLS = new Set([
   "glob",
   "grep",
   "list_dir",
-  "git_log",
-  "git_diff",
   "git_status",
 ]);
+
+/**
+ * Tools whose outputs may contain untrusted contributor content.
+ * git_log and git_diff can contain arbitrary content from any commit author
+ * (including untrusted PR contributors), so they get lower trust than
+ * local file reads.
+ */
+const SEMI_TRUSTED_TOOLS = new Set(["git_log", "git_diff"]);
 
 /** Default trust for tools not in any category. */
 const DEFAULT_TOOL_OUTPUT_TRUST = 0.5;
@@ -83,6 +89,7 @@ const WINDOW_SIZE = 5;
 /** Get the trust level for a tool's output. */
 export function getToolOutputTrust(toolName: string): number {
   if (UNTRUSTED_OUTPUT_TOOLS.has(toolName)) return 0.2;
+  if (SEMI_TRUSTED_TOOLS.has(toolName)) return 0.5;
   if (MODERATE_TRUST_TOOLS.has(toolName)) return 0.7;
   return DEFAULT_TOOL_OUTPUT_TRUST;
 }
@@ -151,15 +158,20 @@ export function checkToolTrust(
     .map((s) => s.tool)
     .join(", ");
 
+  // Log detailed reason for operators, return opaque reason to the model
+  log.warn(
+    { tool: toolName, taintSource, minTrust: window.minTrust, threshold },
+    "Tool call blocked by trust propagation",
+  );
+
   return {
     allowed: false,
-    reason: `Context tainted by ${taintSource} (trust: ${window.minTrust.toFixed(1)}) — ${toolName} requires trust >= ${threshold}`,
+    reason:
+      "Tool call blocked by security policy. Check session logs for details.",
     requiredTrust: threshold,
     currentTrust: window.minTrust,
   };
 }
 
 /** Reset trust window (e.g., after explicit human approval clears taint). */
-export function clearTaint(window: TrustWindow): TrustWindow {
-  return { scores: [], minTrust: 1.0, tainted: false };
-}
+export const clearTaint = createTrustWindow;
