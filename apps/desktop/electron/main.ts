@@ -7,7 +7,7 @@
  * in the child's regular Node.js, not Electron's modified V8).
  */
 
-import { app, BrowserWindow, ipcMain, dialog } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, session } from "electron";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, type ChildProcess } from "node:child_process";
@@ -124,6 +124,14 @@ function spawnBackend(): void {
       setTimeout(() => spawnBackend(), 2000);
     } else {
       console.error("Backend failed to stay alive after 3 attempts");
+      // Notify renderer with unrecoverable error so UI shows permanent error state
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send("chat-event", {
+          type: "fatal-error",
+          error:
+            "Backend failed to start after 3 attempts. Please restart the application.",
+        });
+      }
     }
   });
 
@@ -258,6 +266,26 @@ function createWindow(): BrowserWindow {
 // ── App lifecycle ────────────────────────────────────────────────
 
 app.whenReady().then(() => {
+  // ── Content Security Policy ─────────────────────────────────────
+  // Prevents XSS from executing arbitrary scripts in the renderer.
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        "Content-Security-Policy": [
+          [
+            "default-src 'self'",
+            "script-src 'self'",
+            "style-src 'self' 'unsafe-inline'", // needed for inline styles (React, Tailwind)
+            "font-src 'self' data:",
+            "img-src 'self' data: https:",
+            "connect-src 'self' ws://localhost:* http://localhost:*",
+          ].join("; "),
+        ],
+      },
+    });
+  });
+
   spawnBackend();
   registerIPC();
   createWindow();
