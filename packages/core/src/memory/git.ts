@@ -14,6 +14,9 @@ import { createLogger } from "@brainst0rm/shared";
 
 const log = createLogger("memory-git");
 
+// 10s timeout prevents indefinite hangs on git lock files or slow NFS
+const GIT_TIMEOUT_MS = 10_000;
+
 function git(
   memoryDir: string,
   args: string[],
@@ -23,14 +26,22 @@ function git(
     cwd: memoryDir,
     encoding: opts?.encoding ?? "utf-8",
     stdio: ["ignore", "pipe", "ignore"],
+    timeout: GIT_TIMEOUT_MS,
   }) as string;
 }
 
 function gitSilent(memoryDir: string, args: string[]): boolean {
   try {
-    execFileSync("git", args, { cwd: memoryDir, stdio: "ignore" });
+    execFileSync("git", args, {
+      cwd: memoryDir,
+      stdio: "ignore",
+      timeout: GIT_TIMEOUT_MS,
+    });
     return true;
-  } catch {
+  } catch (e) {
+    if ((e as any)?.killed) {
+      log.warn({ args, memoryDir }, "Git command timed out — skipping");
+    }
     return false;
   }
 }

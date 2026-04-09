@@ -163,6 +163,14 @@ export function createWiredMemoryTool(manager: any) {
 
         case "promote": {
           if (!input.id) return { error: "id required for promote" };
+          // Check if entry is quarantined — agent cannot promote quarantined entries
+          const existing = manager.get(input.id);
+          if (existing?.tier === "quarantine") {
+            return {
+              error: `Cannot promote "${input.id}" — entry is quarantined (trust: ${existing.trustScore.toFixed(1)}). Quarantined entries require user confirmation to promote.`,
+              quarantined: true,
+            };
+          }
           const ok = manager.promote(input.id);
           if (!ok)
             return {

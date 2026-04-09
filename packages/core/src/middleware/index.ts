@@ -43,6 +43,14 @@ export {
   recordApprovalDecision,
   getApprovalTracker,
 } from "./builtin/approval-friction.js";
+export { createQualitySignalsMiddleware } from "./builtin/quality-signals.js";
+export { createStopDetectionMiddleware } from "./builtin/stop-detection.js";
+export {
+  createFleetSignalsMiddleware,
+  getFleetDashboard,
+  pruneFleetState,
+} from "./builtin/fleet-signals.js";
+export { createConventionMonitorMiddleware } from "./builtin/convention-monitor.js";
 
 /**
  * Create a default middleware pipeline with all built-in middleware.
@@ -68,6 +76,10 @@ import { createToolContractMiddleware } from "./builtin/tool-contract-enforcemen
 import { createContentInjectionFilterMiddleware } from "./builtin/content-injection-filter.js";
 import { createApprovalFrictionMiddleware } from "./builtin/approval-friction.js";
 import { codeExtractionMiddleware } from "./code-extraction.js";
+import { createQualitySignalsMiddleware } from "./builtin/quality-signals.js";
+import { createStopDetectionMiddleware } from "./builtin/stop-detection.js";
+import { createFleetSignalsMiddleware } from "./builtin/fleet-signals.js";
+import { createConventionMonitorMiddleware } from "./builtin/convention-monitor.js";
 
 export function createDefaultMiddlewarePipeline(
   projectPath?: string,
@@ -92,8 +104,14 @@ export function createDefaultMiddlewarePipeline(
   pipeline.use(createToolOutputTruncationMiddleware());
   pipeline.use(createProactiveCompactionMiddleware(contextWindow));
   pipeline.use(createSecurityScanMiddleware());
+  // Quality observability (Stella Laurenzo lessons)
+  pipeline.use(createQualitySignalsMiddleware()); // Read:Edit ratio tracking
+  pipeline.use(createStopDetectionMiddleware()); // Premature stopping detection
+  pipeline.use(createFleetSignalsMiddleware()); // Fleet-level aggregation
+
   if (projectPath) {
     pipeline.use(createMemoryExtractionMiddleware(projectPath));
+    pipeline.use(createConventionMonitorMiddleware(projectPath)); // Convention drift
   }
   return pipeline;
 }

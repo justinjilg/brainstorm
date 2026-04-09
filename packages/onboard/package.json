@@ -9,7 +9,8 @@
   "dependencies": {
     "@brainst0rm/shared": "0.13.0",
     "@brainst0rm/ingest": "0.13.0",
-    "@brainst0rm/config": "0.13.0"
+    "@brainst0rm/config": "0.13.0",
+    "@brainst0rm/core": "0.13.0"
   },
   "devDependencies": {
     "tsup": "^8",

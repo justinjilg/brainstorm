@@ -101,6 +101,13 @@ export interface DaemonControllerOptions {
     /** True when budget is exhausted — daemon should stop. */
     shouldStop: boolean;
   };
+
+  /**
+   * Checkpoint daemon state before each tick for crash recovery.
+   * Write tickCount, totalCost, status to durable storage.
+   * On restart, restore from the last checkpoint.
+   */
+  onCheckpoint?: (state: DaemonState) => Promise<void>;
 }
 
 export interface ApprovalGateContext {

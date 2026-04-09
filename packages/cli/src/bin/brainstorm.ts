@@ -15,6 +15,7 @@ import {
 import { BrainstormRouter, CostTracker } from "@brainst0rm/router";
 import {
   createDefaultToolRegistry,
+  createWiredMemoryTool,
   configureSandbox,
   stopDockerSandbox,
 } from "@brainst0rm/tools";
@@ -3830,6 +3831,23 @@ program
                 console.log(`  ${f}`);
               }
             }
+
+            // Persist exploration results to project memory
+            try {
+              const { persistOnboardToMemory } =
+                await import("@brainst0rm/onboard");
+              const saved = persistOnboardToMemory(r, process.cwd());
+              if (saved > 0) {
+                console.log(
+                  `\n  ✓ ${saved} memory entries saved (conventions, domain concepts, etc.)`,
+                );
+              }
+            } catch (e) {
+              console.log(
+                `\n  ⚠ Failed to persist to memory: ${(e as Error).message}`,
+              );
+            }
+
             console.log(
               `\n  Next: Run \`storm chat\` to start working with agents that know your codebase.\n`,
             );
@@ -4995,6 +5013,54 @@ program
     console.log();
   });
 
+// ── IPC Command ─────────────────────────────────────────────────
+// Desktop app backend — communicates via stdin/stdout NDJSON, no HTTP.
+
+program
+  .command("ipc")
+  .description(
+    "Start Brainstorm in IPC mode (stdin/stdout NDJSON) for desktop app integration",
+  )
+  .action(async () => {
+    const { startIPCHandler } = await import("../ipc/handler.js");
+    const { MemoryManager } = await import("@brainst0rm/core");
+    const config = loadConfig();
+
+    // Resolve keys from env only (non-interactive — no TTY in IPC mode)
+    const envKeys = new Map<string, string>();
+    for (const name of PROVIDER_KEY_NAMES) {
+      const val = process.env[name];
+      if (val) envKeys.set(name, val);
+    }
+    const resolvedKeys: ResolvedKeys = {
+      get: (name: string) => envKeys.get(name) ?? null,
+    };
+
+    const registry = await createProviderRegistry(config, resolvedKeys);
+    const db = getDb();
+    const costTracker = new CostTracker(db, config.budget);
+    const tools = createDefaultToolRegistry();
+    const { frontmatter } = buildSystemPrompt(process.cwd());
+    const router = new BrainstormRouter(
+      config,
+      registry,
+      costTracker,
+      frontmatter,
+    );
+    const memoryManager = new MemoryManager(process.cwd());
+
+    await startIPCHandler({
+      db,
+      config,
+      registry,
+      router,
+      tools,
+      memoryManager,
+      version: CLI_VERSION,
+      projectPath: process.cwd(),
+    });
+  });
+
 // ── Serve Command ────────────────────────────────────────────────
 
 program
@@ -5051,6 +5117,15 @@ program
 
     const costTracker = new CostTracker(db, config.budget);
     const tools = createDefaultToolRegistry();
+
+    // Wire memory tool in IPC server mode
+    const { MemoryManager: ServerMemoryManager } =
+      await import("@brainst0rm/core");
+    const serverMemory = new ServerMemoryManager(process.cwd());
+    const wiredServerMemory = createWiredMemoryTool(serverMemory);
+    tools.unregister("memory");
+    tools.register(wiredServerMemory);
+
     const { frontmatter } = buildSystemPrompt(process.cwd());
     const router = new BrainstormRouter(
       config,
@@ -5230,6 +5305,15 @@ program
       const db = getDb();
       const projectPath = process.cwd();
       const tools = createDefaultToolRegistry({ daemon: opts.daemon });
+
+      // Wire memory tool — replace stub with MemoryManager-backed implementation
+      const { MemoryManager: ChatMemoryManager } =
+        await import("@brainst0rm/core");
+      const chatMemory = new ChatMemoryManager(projectPath);
+      const wiredMemoryTool = createWiredMemoryTool(chatMemory);
+      tools.unregister("memory");
+      tools.register(wiredMemoryTool);
+
       configureSandbox(
         config.shell.sandbox as any,
         projectPath,
@@ -5549,6 +5633,11 @@ program
           const daemonMemory = new MemoryManager(projectPath);
           const daemonSkills = loadSkills(projectPath);
 
+          // Wire memory tool in daemon mode — same as chat mode
+          const wiredDaemonMemory = createWiredMemoryTool(daemonMemory);
+          tools.unregister("memory");
+          tools.register(wiredDaemonMemory);
+
           const daemon = new DaemonController({
             config: config.daemon,
             sessionId: session.id,
@@ -5581,7 +5670,8 @@ program
             getDueTasks: () => triggerRunner.getDueTaskSummaries(),
             getMemorySummary: () => {
               const system = daemonMemory.listByTier("system");
-              if (system.length === 0) return "No active memories.";
+              if (system.length === 0)
+                return "No active memories. This project has not been onboarded. Consider running the onboard pipeline to build expertise before taking actions.";
               return system
                 .map((m: any) => `[${m.type}] ${m.name}: ${m.description}`)
                 .join("\n");
@@ -5597,6 +5687,13 @@ program
               return recent
                 .map((e) => `[${e.eventType}] ${e.content.slice(0, 100)}`)
                 .join("\n");
+            },
+            onCheckpoint: async (state) => {
+              sessRepo.updateDaemonState(session.id, {
+                tickCount: state.tickCount,
+                lastTickAt: Math.floor(Date.now() / 1000),
+                totalCost: state.totalCost,
+              });
             },
             onTickComplete: async (result) => {
               dailyLog.append(
