@@ -135,6 +135,20 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
 
   // Log to stderr so it doesn't pollute the NDJSON stdout channel
   const log = (msg: string) => process.stderr.write(`[ipc] ${msg}\n`);
+
+  // Catch unhandled errors so they don't silently kill the process
+  process.on("uncaughtException", (err) => {
+    log(`Uncaught exception: ${err.message}`);
+    log(err.stack ?? "");
+    // Send error to renderer
+    send({ event: "error", error: `IPC uncaught: ${err.message}` });
+  });
+  process.on("unhandledRejection", (reason) => {
+    const msg = reason instanceof Error ? reason.message : String(reason);
+    log(`Unhandled rejection: ${msg}`);
+    send({ event: "error", error: `IPC unhandled: ${msg}` });
+  });
+
   log(`Brainstorm IPC v${ctx.version} ready`);
 
   function maybeExit(): void {
