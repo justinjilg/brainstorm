@@ -9,7 +9,33 @@ const DEFAULT_BASE = "http://localhost:3100";
 
 export interface AgentEvent {
   type: string;
-  [key: string]: unknown;
+  // Routing
+  model?: { name: string; provider: string };
+  modelName?: string;
+  provider?: string;
+  strategy?: string;
+  // Text streaming
+  delta?: string;
+  text?: string;
+  content?: string;
+  // Tool calls
+  toolCallId?: string;
+  toolName?: string;
+  name?: string;
+  input?: unknown;
+  output?: unknown;
+  ok?: boolean;
+  durationMs?: number;
+  // Cost
+  cost?: number;
+  totalCost?: number;
+  // Context
+  percent?: number;
+  // Error
+  error?: string;
+  message?: string;
+  // Nested data (some events wrap in data field)
+  data?: Record<string, unknown>;
 }
 
 export interface ChatRequest {

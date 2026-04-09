@@ -167,10 +167,9 @@ export function StatusRail({
         <Divider />
 
         {/* Permission mode */}
-        <button
-          onClick={onPermissionClick}
+        <span
           data-testid="status-permission"
-          className="interactive px-2 py-1 rounded-md"
+          className="px-2 py-1 rounded-md"
           style={{
             color:
               permissionMode === "auto"
@@ -179,10 +178,10 @@ export function StatusRail({
                   ? "var(--ctp-yellow)"
                   : "var(--ctp-sky)",
           }}
-          title={`Permission mode: ${permissionMode} (click to cycle)`}
+          title={`Permission mode: ${permissionMode}`}
         >
           {permissionMode}
-        </button>
+        </span>
       </div>
     </div>
   );

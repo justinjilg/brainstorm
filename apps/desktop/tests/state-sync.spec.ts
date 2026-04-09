@@ -56,20 +56,12 @@ test.describe("State Sync — Cross-component state propagation", () => {
     expect(seen.size).toBeGreaterThan(2);
   });
 
-  test("permission click cycles through 3 modes", async ({ page }) => {
+  test("permission mode is displayed (read-only)", async ({ page }) => {
     await page.goto("/");
-    const btn = page.getByTestId("status-permission");
-    const values: string[] = [];
-    for (let i = 0; i < 4; i++) {
-      const text = await btn.textContent();
-      if (text) values.push(text);
-      await btn.click();
-    }
-    // Should cycle: confirm → plan → auto → confirm
-    expect(values[0]).toBe("confirm");
-    expect(values[1]).toBe("plan");
-    expect(values[2]).toBe("auto");
-    expect(values[3]).toBe("confirm");
+    const el = page.getByTestId("status-permission");
+    const text = await el.textContent();
+    // Default permission mode is "confirm"
+    expect(text).toBe("confirm");
   });
 
   test("add agent updates team count header", async ({ page }) => {

@@ -80,7 +80,7 @@ export function App() {
   // Listen for fatal backend errors (e.g., 3-retry exhaustion)
   useEffect(() => {
     if (!("brainstorm" in window)) return;
-    const unlisten = (window as any).brainstorm.onChatEvent((event: any) => {
+    const unlisten = window.brainstorm!.onChatEvent((event: any) => {
       if (event.type === "fatal-error") {
         setFatalError(event.error ?? "Backend process failed permanently");
       }
@@ -238,11 +238,8 @@ export function App() {
           recentProjects={[]}
           onProjectSelect={setCurrentProject}
           onOpenFolder={async () => {
-            if (
-              "brainstorm" in window &&
-              (window as any).brainstorm.openFolder
-            ) {
-              const path = await (window as any).brainstorm.openFolder();
+            if ("brainstorm" in window && window.brainstorm!.openFolder) {
+              const path = await window.brainstorm!.openFolder();
               if (path) setCurrentProject(path);
             } else {
               // Browser dev mode — prompt fallback
@@ -312,17 +309,16 @@ export function App() {
                               : event.type === "routing"
                                 ? "routing"
                                 : "error",
-                        toolName:
-                          (event as any).toolName ?? (event as any).name,
-                        toolArgs: (event as any).input
-                          ? JSON.stringify((event as any).input)
+                        toolName: event.toolName ?? event.name,
+                        toolArgs: event.input
+                          ? JSON.stringify(event.input)
                           : undefined,
-                        toolOutput: (event as any).output
-                          ? String((event as any).output)
+                        toolOutput: event.output
+                          ? String(event.output)
                           : undefined,
-                        toolDurationMs: (event as any).durationMs,
-                        toolSuccess: (event as any).ok !== false,
-                        cost: (event as any).cost,
+                        toolDurationMs: event.durationMs,
+                        toolSuccess: event.ok !== false,
+                        cost: event.cost,
                       };
                     setTraceEvents((prev) => [...prev.slice(-499), traceEvent]);
                   }
@@ -487,11 +483,9 @@ export function App() {
           const idx = strategies.indexOf(strategy);
           setStrategy(strategies[(idx + 1) % strategies.length]);
         }}
-        onPermissionClick={() =>
-          setPermissionMode((prev) =>
-            prev === "auto" ? "confirm" : prev === "confirm" ? "plan" : "auto",
-          )
-        }
+        onPermissionClick={() => {
+          // Permission mode is read-only — set from brainstorm config
+        }}
       />
     </div>
   );
