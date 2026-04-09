@@ -8,6 +8,7 @@
  */
 
 import { app, BrowserWindow, ipcMain, dialog, session } from "electron";
+import { autoUpdater } from "electron-updater";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, type ChildProcess } from "node:child_process";
@@ -285,6 +286,29 @@ app.whenReady().then(() => {
       },
     });
   });
+
+  // ── Auto-update ───────────────────────────────────────────────────
+  // Checks GitHub releases for new versions. Silent download, prompts to install.
+  if (app.isPackaged) {
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.on("update-available", (info) => {
+      console.log(`Update available: ${info.version}`);
+    });
+    autoUpdater.on("update-downloaded", (info) => {
+      console.log(`Update downloaded: ${info.version} — will install on quit`);
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send("chat-event", {
+          type: "update-available",
+          version: info.version,
+        });
+      }
+    });
+    autoUpdater.on("error", (err) => {
+      console.log(`Auto-update error: ${err.message}`);
+    });
+    autoUpdater.checkForUpdates().catch(() => {});
+  }
 
   spawnBackend();
   registerIPC();
