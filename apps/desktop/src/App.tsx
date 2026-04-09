@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { Navigator } from "./components/navigator/Navigator";
 import type { TeamAgent } from "./components/navigator/TeamBuilder";
 import { ChatView } from "./components/chat/ChatView";
@@ -87,7 +87,19 @@ export function App() {
     import("./components/trace/TraceView").TraceEvent[]
   >([]);
   const traceIdCounter = useRef(0);
+  const [fatalError, setFatalError] = useState<string | null>(null);
   const kairos = useKairos();
+
+  // Listen for fatal backend errors (e.g., 3-retry exhaustion)
+  useEffect(() => {
+    if (!("brainstorm" in window)) return;
+    const unlisten = (window as any).brainstorm.onChatEvent((event: any) => {
+      if (event.type === "fatal-error") {
+        setFatalError(event.error ?? "Backend process failed permanently");
+      }
+    });
+    return unlisten;
+  }, []);
 
   // Server connection + data
   const serverHealth = useServerHealth();
@@ -181,8 +193,24 @@ export function App() {
         </div>
       </div>
 
+      {/* Fatal error banner — backend failed permanently */}
+      {fatalError && (
+        <div
+          data-testid="fatal-error"
+          className="flex items-center justify-between px-4 py-3 shrink-0"
+          style={{
+            background: "rgba(243, 139, 168, 0.15)",
+            borderBottom: "2px solid var(--ctp-red)",
+            fontSize: "var(--text-sm)",
+            color: "var(--ctp-red)",
+          }}
+        >
+          <span>{fatalError}</span>
+        </div>
+      )}
+
       {/* Server disconnected banner */}
-      {!serverHealth.connected && !serverHealth.checking && (
+      {!fatalError && !serverHealth.connected && !serverHealth.checking && (
         <div
           data-testid="server-disconnected"
           className="flex items-center justify-between px-4 py-2 shrink-0"
