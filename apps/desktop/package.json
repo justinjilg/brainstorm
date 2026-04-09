@@ -26,17 +26,26 @@
       "electron/dist/**/*"
     ],
     "mac": {
-      "target": "dmg",
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "category": "public.app-category.developer-tools",
       "hardenedRuntime": true,
       "entitlements": "electron/entitlements.mac.plist",
       "entitlementsInherit": "electron/entitlements.mac.plist"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "justinjilg",
+      "repo": "brainstorm"
     }
   },
   "dependencies": {
     "@fontsource-variable/geist-mono": "^5.2.7",
     "@fontsource/geist": "^5.2.8",
     "@types/react-syntax-highlighter": "^15.5.13",
+    "electron-updater": "^6.8.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
