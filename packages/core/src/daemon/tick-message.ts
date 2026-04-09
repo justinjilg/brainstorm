@@ -25,6 +25,14 @@ export interface TickMessageContext {
   /** Available skill names for autonomous invocation. */
   availableSkills?: Array<{ name: string; description: string }>;
 
+  /** Fleet quality signals from quality observability middleware. */
+  fleetSummary?: {
+    activeSessions: number;
+    avgReadEditRatio: number;
+    totalFailures: number;
+    degradedSessions: string[];
+  };
+
   // ── Daemon Self-Awareness (KAIROS ↔ BR intelligence loop) ──
 
   /** Performance metrics from the router — makes the model aware of its own trajectory. */
@@ -113,6 +121,24 @@ export function formatTickMessage(ctx: TickMessageContext): string {
       parts.push(`    - ${skill.name}: ${skill.description}`);
     }
     parts.push(`  </available_skills>`);
+  }
+
+  // Fleet quality signals — aggregated from subagent quality observability
+  if (ctx.fleetSummary) {
+    const f = ctx.fleetSummary;
+    parts.push(
+      `  <fleet_quality sessions="${f.activeSessions}" avg_read_edit_ratio="${f.avgReadEditRatio}" failures="${f.totalFailures}">`,
+    );
+    if (f.degradedSessions.length > 0) {
+      parts.push(
+        `    <degraded count="${f.degradedSessions.length}" note="These sessions have Read:Edit ratio below 3.0 — agents are editing without sufficient research">`,
+      );
+      for (const sid of f.degradedSessions) {
+        parts.push(`      - ${sid}`);
+      }
+      parts.push(`    </degraded>`);
+    }
+    parts.push(`  </fleet_quality>`);
   }
 
   // Daemon self-awareness — performance metrics from the router

@@ -1,116 +1,188 @@
-# Assessment Evidence — Brainstorm Desktop App (2026-04-08 reassessment)
+# Assessment Evidence v6 — Brainstorm Platform (2026-04-09)
 
-Previous score: 3.2/10 → 4.0/10. This is the third assessment.
+Previous assessments focused on desktop app (3.2→4.0→3.43→4.68).
+This assessment: full platform readiness for the autonomous agent vision.
 
-## Code Inventory
+## Scope
 
-| Package               | Source Lines | Test Lines | Notes                             |
-| --------------------- | ------------ | ---------- | --------------------------------- |
-| packages/cli          | 15,308       | 1,987      | 13 test files, 170 tests passing  |
-| packages/core         | 18,745       | 2,069      | 9 test files, 149 pass / 1 fail   |
-| packages/shared       | 1,197        | 0          | No tests                          |
-| packages/config       | 849          | ~200       | 1 test file, 10 tests passing     |
-| packages/db           | 1,756        | ~300       | 1 test file, 9 tests passing      |
-| packages/router       | 2,135        | 0          | No tests                          |
-| packages/tools        | 7,051        | 0          | No tests in vitest                |
-| packages/providers    | 1,168        | 0          | No tests                          |
-| packages/godmode      | 4,460        | 0          | No tests                          |
-| packages/workflow     | 1,498        | 0          | No tests                          |
-| packages/agents       | 1,102        | 0          | No tests                          |
-| apps/desktop/src      | 8,956        | 0          | React frontend                    |
-| apps/desktop/electron | 326          | 0          | Electron main process             |
-| apps/desktop/tests    | 0            | 1,537      | 6 Playwright spec files, 79 tests |
-| **TOTAL**             | **~64,000**  | **~6,000** |                                   |
+Vision under assessment: "Attack large software projects, ingest them, document and become experts in the code, then call agents with skills from different models to concurrently work on projects for long periods using KAIROS and BR memory."
 
-## Test Results
+A 5-phase plan has been approved to wire the last mile (see /Users/justin/.claude/plans/linked-crunching-hamming.md).
 
-### CLI (170 tests — ALL PASS)
+Context: Stella Laurenzo report (anthropics/claude-code#42796) — 17,871 thinking blocks analyzed, Read:Edit ratio 6.6→2.0 degradation, 173 stop-hook violations, 80x API request increase from thrashing. Lessons inform Phase 4 (Quality Observability).
 
-- 22 IPC validation tests (Zod schema verification)
-- 13 IPC integration tests (real `brainstorm ipc` child process)
-- 20 SelectPrompt component tests
-- 16 keybinding tests
-- 15 input history tests
-- 14 ModeBar tests
-- 12 ToolCallDisplay tests
-- 10 ShortcutOverlay tests
-- 6 mode roundtrip integration tests
+## 1. Code Inventory (source lines / test lines)
 
-### Core (149 pass / 1 fail)
+| Package      | Source Lines | Test Lines | Test Ratio |
+| ------------ | ------------ | ---------- | ---------- |
+| core         | 20,820       | 2,069      | 9.9%       |
+| cli          | 12,683       | 948        | 7.5%       |
+| tools        | 8,159        | 1,108      | 13.6%      |
+| godmode      | 4,603        | 143        | 3.1%       |
+| router       | 2,949        | 814        | 27.6%      |
+| onboard      | 2,722        | 0          | 0%         |
+| db           | 1,964        | 208        | 10.6%      |
+| eval         | 1,944        | 367        | 18.9%      |
+| workflow     | 1,743        | 245        | 14.1%      |
+| ingest       | 1,379        | 0          | 0%         |
+| agents       | 1,262        | 160        | 12.7%      |
+| providers    | 1,242        | 74         | 6.0%       |
+| config       | 996          | 147        | 14.8%      |
+| hooks        | 894          | 187        | 20.9%      |
+| gateway      | 764          | 0          | 0%         |
+| vault        | 707          | 127        | 18.0%      |
+| scheduler    | 693          | 0          | 0%         |
+| docgen       | 625          | 0          | 0%         |
+| projects     | 576          | 0          | 0%         |
+| onboard      | 2,722        | 0          | 0%         |
+| orchestrator | 500          | 0          | 0%         |
+| mcp          | 452          | 48         | 10.6%      |
+| plugin-sdk   | 344          | 0          | 0%         |
+| shared       | 1,601        | 398        | 24.9%      |
+| vscode       | 326          | 0          | 0%         |
+| sdk          | 217          | 0          | 0%         |
+| **TOTAL**    | **71,420**   | **7,043**  | **9.9%**   |
 
-- 1 FAIL: `skills-loader.test.ts > buildRepoMap > ranks index files higher` (pre-existing)
+Packages with ZERO tests: onboard, ingest, docgen, gateway, scheduler, projects, orchestrator, plugin-sdk, vscode, sdk, server (11 of 26 packages).
 
-### Config (10 pass), DB (9 pass)
+## 2. Test Results
 
-### Playwright (79 pass — ALL PASS)
+**Passing:**
 
-- 39 DOM/interaction, 13 data flow, 7 error state, 8 state sync, 6 journey, 9 crash resilience
+- @brainst0rm/core: 9 test files, 150 tests passed
+- @brainst0rm/tools: 3 test files passed + 1 skipped, 80 passed + 21 skipped
+- @brainst0rm/router: 4 test files, 63 tests passed
+- @brainst0rm/shared: 2 test files, 23 tests passed
 
-## Wiring Audit
+**Failing:**
 
-### IPC Handler — 24 case branches for 22 allowed methods
+- @brainst0rm/gateway: vitest exits code 1 (no test files exist but test script defined)
+- @brainst0rm/db: test script fails (vitest exit 1 after passing 9 migration tests)
+- @brainst0rm/hooks: test script fails
+- @brainst0rm/plugin-sdk: test script fails
+- @brainst0rm/web: build fails (pnpm/npm workspace conflict)
 
-Methods with integration tests (real backend): health, tools.list, memory.list, memory.delete (validation), skills.list, models.list, conversations.list, config.get, kairos.status, workflow.presets, unknown method rejection, invalid params rejection, wrong types rejection, rapid sequential requests.
+**Not runnable / no test script:**
 
-Methods NOT integration tested: kairos.start/stop/pause/resume, chat.abort, security.redteam, workflow.run, memory.create/update (validation tested only), conversations.create/fork/handoff/messages (validation tested only).
+- Multiple packages have test scripts pointing to vitest but no test files
 
-### Desktop View Wiring
+Total verifiable: 316 tests pass, 21 skipped. Multiple packages fail due to vitest config, not test failures.
 
-- 9/10 views import ipc-client and use real data
-- TraceView (1/10) does NOT import ipc-client — receives events via App.tsx props only
-- ChatView always mounted (display: contents/none CSS toggle)
-- activeSkills lifted from SkillsView to App.tsx
+## 3. Wiring Audit — Critical Functions
 
-### Electron Main Process
+| Function                      | Defined In                              | Called From CLI/Entrypoint?             | Status        |
+| ----------------------------- | --------------------------------------- | --------------------------------------- | ------------- |
+| `createWiredMemoryTool()`     | tools/builtin/memory-tool.ts:79         | NO — only in own file + index.ts export | **NOT WIRED** |
+| `createMemoryTools()`         | tools/builtin/memory-tools.ts           | NO — only in own file + index.ts export | **NOT WIRED** |
+| `PhaseDispatcher` interface   | core/plan/orchestration-pipeline.ts:160 | NO — zero implementations exist         | **NOT WIRED** |
+| `SubagentPhaseDispatcher`     | does not exist                          | N/A                                     | **NOT BUILT** |
+| `persistOnboardToMemory()`    | does not exist                          | N/A                                     | **NOT BUILT** |
+| quality-signals middleware    | does not exist                          | N/A                                     | **NOT BUILT** |
+| stop-detection middleware     | does not exist                          | N/A                                     | **NOT BUILT** |
+| fleet-signals middleware      | does not exist                          | N/A                                     | **NOT BUILT** |
+| convention-monitor middleware | does not exist                          | N/A                                     | **NOT BUILT** |
+| memory-manager tests          | does not exist                          | N/A                                     | **NOT BUILT** |
+| kairos-full-loop tests        | does not exist                          | N/A                                     | **NOT BUILT** |
 
-- Backend spawned as child process: `brainstorm ipc`
-- backendReady set true only on stderr "ready" or successful response
-- Auto-respawn: 3 retries, 2s delay, resets on success
-- Pending cleanup: all promises rejected on backend exit
-- Stream timeout: 5-minute cap prevents permanent UI freeze
-- IPC allowlist: 22 methods
+## 4. Dependency Map — Orphan Packages
 
-## Security Features
+| Package        | Imported By N Other Packages |
+| -------------- | ---------------------------- |
+| shared         | 101 (hub)                    |
+| tools          | 31                           |
+| config         | 21                           |
+| ingest         | 19                           |
+| db             | 17                           |
+| providers      | 10                           |
+| core           | 8                            |
+| router         | 8                            |
+| gateway        | 6                            |
+| agents         | 5                            |
+| workflow       | 4                            |
+| projects       | 3                            |
+| godmode        | 3                            |
+| orchestrator   | 2                            |
+| eval           | 2                            |
+| docgen         | 2                            |
+| onboard        | 1                            |
+| hooks          | 1                            |
+| mcp            | 1                            |
+| scheduler      | 1                            |
+| vault          | 1                            |
+| server         | 1                            |
+| **cli**        | **0 (leaf — entrypoint)**    |
+| **plugin-sdk** | **0 (leaf — standalone)**    |
+| **vscode**     | **0 (leaf — standalone)**    |
+| **sdk**        | **0 (leaf — standalone)**    |
 
-- IPC method allowlist: 22 methods, unknown rejected
-- Zod param validation: 12 schemas, 22 unit tests
-- Config secret scrubbing: strips /key|secret|token/i
-- Pino→stderr in IPC mode
-- contextBridge isolation, nodeIntegration: false, contextIsolation: true
+## 5. Git Log (recent 20 commits)
 
-## Build & Distribution
+All 20 recent commits are desktop app focused:
 
-- Vite build: ✓ (1.1MB JS, 36KB CSS)
-- Electron main compile: ✓
-- DMG (unsigned): ✓ Brainstorm-0.1.0-arm64.dmg (112 MB)
-- DMG (signed): ✗ (Apple timestamp server timeout)
-- Notarization: ✗ (not configured)
+- ab8c10c fix(desktop): abortChat wired, crash handlers, structured logging
+- 4396ee7 fix(desktop): 19 TypeScript errors fixed
+- 195ccf7 feat(desktop): KAIROS start/stop buttons in Navigator
+- ae6268b fix(desktop): strategy read-only + hooks tests
+- e1bed5e feat(desktop): auto-update + vault/MCP test coverage
+- 3188f2a fix(desktop): zero as-any casts, zero hardcoded data
+- 616a0ed feat(desktop): real workflow execution
+- 572d36f fix(desktop): complete wiring audit
+- a0b23e8 feat(desktop): notarized DMG, CSP, 674 tests
+- 769375e fix(core): 4 bugs fixed, 643 tests zero failures
+- 8620c02 feat(desktop): Electron app with IPC backend — 4.0/10 → targeting 7.0
+- ... (all desktop)
 
-## Git Log (last 20)
+No recent commits to: memory system, onboard pipeline, orchestrator, quality observability, ingest pipeline, docgen.
 
-```
-8620c02 feat(desktop): Electron app with IPC backend — 4.0/10 → targeting 7.0
-3cb51ec fix(desktop): replace alert() with in-app hint banner
-1989823 fix(desktop): 14 broken interactions fixed
-611e30b feat(desktop): drag-and-drop skills onto agents
-79193de feat(desktop): wire Tauri dialog plugin
-16b1493 fix(desktop): un-suppress all state setters
-27e00dd fix(desktop): remove process.env.HOME crash
-...
-```
+## 6. What's Built vs What's Paper-Complete
 
-## Production State
+### BUILT AND WORKING (verified by tests or manual inspection)
 
-- LOCAL ONLY (Electron desktop app, not deployed)
-- CLI v0.14.0 installed locally
-- Chat E2E proven: real message → DeepSeek V3 → streaming response → $0.001
+- DaemonController (KAIROS tick loop, cost pacing, approval gates) — 13 tests pass
+- MemoryManager class (save, search, tiers, trust scoring, git versioning) — 840 lines, NO tests
+- Memory extraction middleware — tested in middleware pipeline (10 tests)
+- Semantic search (TF-IDF) — 9 tests pass
+- Router (heuristic classifier, 6 strategies, cost tracker) — 63 tests pass
+- Tool system (42+ tools, sandbox, permissions) — 80 tests pass
+- Agent profiles (14 roles, DB persistence) — code exists, 160 test lines
+- Subagent spawning (8 types, budget guards, privilege reduction) — code exists in loop integration tests
+- Ingest pipeline (dependency graphs, framework detection, complexity) — code exists, 0 tests
+- Docgen (architecture/module/API docs) — code exists, 0 tests
+- Style learner — code exists, tested within skills-loader tests
+- Repo map — code exists, no dedicated tests
+- Orchestration pipeline (9 phases, F1 scoring, trajectory capture) — code exists, 0 tests, NO dispatcher
+- Workflow engine (confidence escalation, kill gates) — 245 test lines
+- Onboard pipeline (convention inference, domain extraction) — code exists, 0 tests
+- Middleware pipeline (20 middlewares) — 10 tests for pipeline, individual middleware tests vary
+- Desktop app (Electron + React 19, KAIROS UI, IPC) — extensive recent work
 
-## Known Issues
+### NOT BUILT (required by plan)
 
-1. Core skills-loader test fails (pre-existing)
-2. TraceView not wired to ipc-client
-3. Code signing timeout
-4. kairos.start/stop/pause/resume not integration tested
-5. security.redteam, workflow.run not integration tested
-6. 9 packages have zero test files
-7. Pino logger in IPC mode: `process.argv.includes('ipc')` check happens at module load — works because Node.js has argv populated before any imports execute
+- SubagentPhaseDispatcher (connects orchestrator to subagents)
+- Onboard-to-memory bridge (persists analysis to memory)
+- Quality observability middlewares (Read:Edit, stop detection, convention, fleet)
+- ProjectMemoryRepository (CRUD for project_memory SQLite table)
+- Memory tool wiring in CLI entrypoints
+- MemoryManager test suite
+- KAIROS full-loop integration test
+
+## 7. Memory System Specifics
+
+- Storage: file-based markdown with YAML frontmatter in `~/.brainstorm/projects/<hash>/memory/`
+- Cap: 25KB total (MAX_MEMORY_BYTES) with LRU eviction
+- Trust scores: user_input (1.0), dream_consolidation (0.7), agent_extraction (0.5), web_fetch (0.2)
+- System prompt budget: 800 tokens for system-tier memories
+- The memory TOOL (agent-callable) is a stub — always returns error
+- The 4-tool set (memory_save/search/list/forget) is defined but never registered
+- MemoryManager class has 0 test files
+- Dream consolidation exists but subagent spawn may not resolve
+
+## 8. Key Architectural Constraints
+
+- ESM throughout, tsup bundling, .js extensions for inter-package imports
+- AI SDK v6 patterns (streamText, tool() with Zod inputSchema)
+- SQLite with WAL mode at ~/.brainstorm/brainstorm.db
+- Subagent spawning is SEQUENTIAL ONLY — no parallel subagent execution
+- Tool parallelism exists (parallel-safe classification) but only within a single agent
+- Scheduler has maxConcurrent=3 config but trigger execution is sequential
+- Context window management: proactive compaction middleware exists

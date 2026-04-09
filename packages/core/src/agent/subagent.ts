@@ -66,6 +66,7 @@ const SUBAGENT_TYPES: Record<SubagentType, SubagentTypeConfig> = {
       "task_create",
       "task_update",
       "task_list",
+      "memory",
     ],
     systemPrompt:
       "You are a planning subagent. Analyze the codebase and design an implementation approach. Create tasks to track the plan. You have read-only file tools plus task management. Return a structured plan.",
@@ -109,6 +110,7 @@ const SUBAGENT_TYPES: Record<SubagentType, SubagentTypeConfig> = {
       "task_create",
       "task_update",
       "task_list",
+      "memory",
     ],
     systemPrompt:
       "You are a focused subagent. Complete the given task concisely and return the result. Do not ask questions — make your best judgment. You cannot create or edit files directly — use shell commands if you need to modify files.",
@@ -402,17 +404,26 @@ export async function spawnSubagent(
   // Fork model: if parent segments are available, share the cacheable prefix.
   // The subagent gets cache hits on the stable portion (identity, tools, project context),
   // making parallel subagents nearly free in terms of input token costs.
-  const systemForAPI = options.parentSegments
-    ? segmentsToSystemArray([
-        // Reuse parent's cacheable prefix (gets Anthropic cache hits)
-        ...options.parentSegments.filter((s) => s.cacheable),
-        // Subagent's own behavioral instructions (dynamic, not cached)
-        {
-          text: `\n## Subagent Instructions\n\n${systemPrompt}`,
-          cacheable: false,
-        },
-      ])
-    : systemPrompt;
+  //
+  // SECURITY: external subagents do NOT inherit parent context segments.
+  // They receive only the type's system prompt + the task. This prevents
+  // exfiltration of project memory, credentials, or system prompt content
+  // via the LLM response text (external subagents have no tools but can
+  // still leak context through their output).
+  const systemForAPI =
+    type === "external"
+      ? systemPrompt
+      : options.parentSegments
+        ? segmentsToSystemArray([
+            // Reuse parent's cacheable prefix (gets Anthropic cache hits)
+            ...options.parentSegments.filter((s) => s.cacheable),
+            // Subagent's own behavioral instructions (dynamic, not cached)
+            {
+              text: `\n## Subagent Instructions\n\n${systemPrompt}`,
+              cacheable: false,
+            },
+          ])
+        : systemPrompt;
 
   const result = streamText({
     model: modelId,

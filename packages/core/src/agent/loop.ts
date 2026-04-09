@@ -33,6 +33,10 @@ import { createStreamFilter } from "./response-filter.js";
 import { normalizeInsightMarkers } from "./insights.js";
 import { parseGatewayHeaders } from "@brainst0rm/gateway";
 import type { MiddlewarePipeline } from "../middleware/pipeline.js";
+import {
+  syncTrustWindow,
+  flushTrustWindow,
+} from "../middleware/builtin/trust-propagation.js";
 import { TrajectoryRecorder } from "../session/trajectory.js";
 import {
   enterToolExecution,
@@ -261,6 +265,10 @@ export async function* runAgentLoop(
     } as AgentEvent);
   });
 
+  // Middleware metadata — hoisted so the tool wrapper closure can access it
+  // for trust propagation (syncTrustWindow/flushTrustWindow).
+  const mwMetadata: Record<string, unknown> = {};
+
   // Run middleware beforeAgent hook (if pipeline provided)
   if (options.middleware) {
     const mwState = {
@@ -268,7 +276,7 @@ export async function* runAgentLoop(
       messages: messages.map((m) => ({ role: m.role, content: m.content })),
       systemPrompt,
       toolNames: [],
-      metadata: {},
+      metadata: mwMetadata,
     };
     const mwResult = options.middleware.runBeforeAgent(mwState);
     if (mwResult.systemPrompt !== systemPrompt) {
@@ -459,8 +467,11 @@ export async function* runAgentLoop(
             name: toolName,
             input: input ?? {},
           };
+          // Sync trust window from per-session metadata before security checks
+          syncTrustWindow(mwMetadata);
           const wrapped = pipeline.runWrapToolCall(mwCall);
           if ("blocked" in wrapped && wrapped.blocked) {
+            flushTrustWindow(mwMetadata);
             return {
               error: `Blocked by security policy: ${wrapped.reason}`,
               blocked: true,
@@ -483,6 +494,8 @@ export async function* runAgentLoop(
             durationMs: Date.now() - startMs,
           };
           pipeline.runAfterToolResult(mwResult);
+          // Flush trust window back to per-session metadata after taint recording
+          flushTrustWindow(mwMetadata);
           return result;
         };
       }
@@ -511,6 +524,9 @@ export async function* runAgentLoop(
         ? { headers: { "x-br-metadata": metadataHeader } }
         : {}),
       ...(options.signal ? { abortSignal: options.signal } : {}),
+      // Retry on 429/503 with exponential backoff (1s, 2s, 4s).
+      // Without this, rate limits during long KAIROS runs crash the daemon.
+      maxRetries: 3,
       stopWhen: stepCountIs(
         shouldUseTools ? (options.maxSteps ?? config.general.maxSteps) : 1,
       ),

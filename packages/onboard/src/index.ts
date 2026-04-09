@@ -1,4 +1,5 @@
 export { runOnboardPipeline } from "./pipeline.js";
+export { persistOnboardToMemory } from "./memory-bridge.js";
 export { runStaticAnalysis } from "./phases/static-analysis.js";
 export { runVerification } from "./phases/verification.js";
 export { inferBudget, createBudgetTracker } from "./budget.js";

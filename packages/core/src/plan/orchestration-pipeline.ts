@@ -407,24 +407,29 @@ function buildPhasePrompt(
   phase: PipelinePhase,
   request: string,
   context: { spec: string; design: string; implementation: string },
+  memoryContext?: string,
 ): string {
+  // Prepend project memory so subagents have expertise context
+  const prefix = memoryContext
+    ? `## Project Context (from memory)\n\n${memoryContext}\n\n---\n\n`
+    : "";
   switch (phase) {
     case "spec":
-      return `Write a specification for the following request:\n\n${request}`;
+      return `${prefix}Write a specification for the following request:\n\n${request}`;
     case "architecture":
-      return `Design the technical implementation for this specification:\n\n${context.spec || request}`;
+      return `${prefix}Design the technical implementation for this specification:\n\n${context.spec || request}`;
     case "implementation":
-      return `Implement the following design:\n\n${context.design || context.spec || request}`;
+      return `${prefix}Implement the following design:\n\n${context.design || context.spec || request}`;
     case "review":
-      return `Review the code changes made for this task. Check for bugs, security issues, and style.\n\nOriginal request: ${request}\n\nSpec: ${context.spec?.slice(0, 500) || "N/A"}`;
+      return `${prefix}Review the code changes made for this task. Check for bugs, security issues, and style.\n\nOriginal request: ${request}\n\nSpec: ${context.spec?.slice(0, 500) || "N/A"}`;
     case "verify":
       return `Verify the build and tests pass.`;
     case "refactor":
-      return `Review the recently implemented code and suggest refactoring improvements without changing behavior.`;
+      return `${prefix}Review the recently implemented code and suggest refactoring improvements without changing behavior.`;
     case "deploy":
       return `Deploy the changes. Verify build first, then run deployment commands.`;
     case "document":
-      return `Generate documentation for the changes made.\n\nSpec: ${context.spec?.slice(0, 500) || "N/A"}\nDesign: ${context.design?.slice(0, 500) || "N/A"}`;
+      return `${prefix}Generate documentation for the changes made.\n\nSpec: ${context.spec?.slice(0, 500) || "N/A"}\nDesign: ${context.design?.slice(0, 500) || "N/A"}`;
     case "report":
       return `Produce an execution report summarizing what was accomplished, costs, findings, and next steps.\n\nOriginal request: ${request}`;
     default:

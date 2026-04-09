@@ -530,27 +530,48 @@ export class MemoryManager {
    * Entries with "[keep]" in their name are exempt from eviction.
    */
   private enforceCapacity(): void {
-    const files = readdirSync(this.memoryDir).filter(
-      (f) => f.endsWith(".md") && f !== "MEMORY.md",
-    );
+    // Scan ALL memory directories — root, system/, and quarantine/ — to prevent
+    // unbounded growth in subdirectories that were previously not counted.
+    const dirs: Array<{ dir: string; prefix: string }> = [
+      { dir: this.memoryDir, prefix: "" },
+      { dir: this.systemDir, prefix: "system/" },
+      { dir: this.quarantineDir, prefix: "quarantine/" },
+    ];
     let totalBytes = 0;
     const fileSizes: Array<{
       id: string;
       file: string;
+      dir: string;
       bytes: number;
       updatedAt: number;
     }> = [];
 
-    for (const file of files) {
-      const filePath = join(this.memoryDir, file);
+    for (const { dir, prefix } of dirs) {
+      let files: string[];
       try {
-        const bytes = statSync(filePath).size;
-        totalBytes += bytes;
-        const id = file.replace(".md", "");
-        const entry = this.entries.get(id);
-        fileSizes.push({ id, file, bytes, updatedAt: entry?.updatedAt ?? 0 });
+        files = readdirSync(dir).filter(
+          (f) => f.endsWith(".md") && f !== "MEMORY.md",
+        );
       } catch {
-        /* file may have been deleted concurrently */
+        continue; // Directory may not exist yet
+      }
+      for (const file of files) {
+        const filePath = join(dir, file);
+        try {
+          const bytes = statSync(filePath).size;
+          totalBytes += bytes;
+          const id = file.replace(".md", "");
+          const entry = this.entries.get(id);
+          fileSizes.push({
+            id,
+            file: prefix + file,
+            dir,
+            bytes,
+            updatedAt: entry?.updatedAt ?? 0,
+          });
+        } catch {
+          /* file may have been deleted concurrently */
+        }
       }
     }
 
@@ -571,7 +592,7 @@ export class MemoryManager {
       // Don't evict [keep] entries
       if (this.entries.get(entry.id)?.name.includes("[keep]")) continue;
 
-      const filePath = join(this.memoryDir, entry.file);
+      const filePath = join(entry.dir, entry.file.split("/").pop()!);
       try {
         unlinkSync(filePath);
         this.entries.delete(entry.id);
@@ -642,13 +663,17 @@ export class MemoryManager {
     writeFileSync(this.indexPath, lines.join("\n") + "\n", "utf-8");
   }
 
-  /** Promote an entry to system tier (always in prompt). Quarantined entries require explicit trust override. */
-  promote(id: string): boolean {
+  /** Promote an entry to system tier (always in prompt). Quarantined entries cannot be promoted without explicit user trust override. */
+  promote(id: string, userConfirmed = false): boolean {
     const entry = this.entries.get(id);
     if (!entry || entry.tier === "system") return false;
-    // Quarantined entries get trust bumped on explicit promotion
+    // Quarantined entries cannot be auto-promoted — requires user confirmation
+    // to prevent memory poisoning: web fetch → agent_extraction → promote → system tier
+    if (entry.tier === "quarantine" && !userConfirmed) return false;
     const trustOverride =
-      entry.tier === "quarantine" ? Math.max(entry.trustScore, 0.6) : undefined;
+      entry.tier === "quarantine" && userConfirmed
+        ? Math.max(entry.trustScore, 0.6)
+        : undefined;
     return !!this.save({ ...entry, tier: "system", trustScore: trustOverride });
   }
 

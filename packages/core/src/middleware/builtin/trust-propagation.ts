@@ -36,7 +36,7 @@ export function createTrustPropagationMiddleware(): AgentMiddleware {
     name: "trust-propagation",
 
     beforeAgent(state: MiddlewareState): MiddlewareState {
-      // Initialize trust window if not present
+      // Initialize trust window if not present — each session gets its own
       if (!state.metadata[TRUST_WINDOW_KEY]) {
         state.metadata[TRUST_WINDOW_KEY] = createTrustWindow();
       }
@@ -46,8 +46,10 @@ export function createTrustPropagationMiddleware(): AgentMiddleware {
     wrapToolCall(
       call: MiddlewareToolCall,
     ): MiddlewareToolCall | MiddlewareBlock | void {
-      // Access trust window from middleware state via closure
-      const window = _currentWindow;
+      // Read trust window from _activeWindow (set by syncTrustWindow per tool call).
+      // This is per-session: loop.ts calls syncTrustWindow(sessionMetadata)
+      // before each tool execution, scoping trust to the calling session.
+      const window = _activeWindow;
       if (!window) return;
 
       const check = checkToolTrust(window, call.name);
@@ -70,47 +72,46 @@ export function createTrustPropagationMiddleware(): AgentMiddleware {
     },
 
     afterToolResult(result: MiddlewareToolResult): MiddlewareToolResult | void {
-      // Record the trust level of this tool's output
-      if (_currentWindow) {
-        _currentWindow = recordToolTrust(_currentWindow, result.name);
+      // Record the trust level of this tool's output into the active window
+      if (_activeWindow) {
+        _activeWindow = recordToolTrust(_activeWindow, result.name);
       }
     },
   };
 }
 
-// Module-level state for the current trust window.
-// KNOWN LIMITATION: shared across all middleware instances in the same process.
-// In multi-session deployments, concurrent sessions must call syncTrustWindow/
-// flushTrustWindow around each hook invocation to prevent cross-session corruption.
-// The middleware pipeline's tool wrapping in loop.ts calls these synchronously
-// within each tool execution, which is safe for single-threaded Node.js but
-// would need per-session scoping for true concurrent isolation.
-let _currentWindow: TrustWindow | null = null;
+// Per-tool-call active window. Set by syncTrustWindow() before each tool
+// execution and flushed back to per-session metadata by flushTrustWindow().
+// This is NOT shared across sessions — each session's metadata holds its own
+// TrustWindow, and sync/flush bracket each tool call in loop.ts.
+let _activeWindow: TrustWindow | null = null;
 
 /**
- * Set the active trust window from middleware state metadata.
- * Called by the middleware pipeline before running hooks.
+ * Set the active trust window from per-session middleware metadata.
+ * Called by loop.ts before runWrapToolCall() for each tool execution.
  */
 export function syncTrustWindow(metadata: Record<string, unknown>): void {
-  _currentWindow =
+  _activeWindow =
     (metadata[TRUST_WINDOW_KEY] as TrustWindow) ?? createTrustWindow();
 }
 
 /**
- * Write the trust window back to middleware state metadata.
- * Called by the middleware pipeline after running hooks.
+ * Write the active trust window back to per-session middleware metadata.
+ * Called by loop.ts after runAfterToolResult() for each tool execution.
  */
 export function flushTrustWindow(metadata: Record<string, unknown>): void {
-  if (_currentWindow) {
-    metadata[TRUST_WINDOW_KEY] = _currentWindow;
+  if (_activeWindow) {
+    metadata[TRUST_WINDOW_KEY] = _activeWindow;
   }
+  _activeWindow = null; // Clear between tool calls to prevent cross-session leakage
 }
 
 /**
  * Clear taint on the current window (e.g., after human approves a tool call).
+ * Must be called within a sync/flush bracket.
  */
 export function clearCurrentTaint(): void {
-  if (_currentWindow) {
-    _currentWindow = clearTaint();
+  if (_activeWindow) {
+    _activeWindow = clearTaint();
   }
 }

@@ -43,6 +43,9 @@ export class DaemonController {
   private lastGateTick = 0;
   private costAtLastGate = 0;
   private toolCallsSinceGate: string[] = [];
+  /** Consecutive tick failure count for circuit breaker. */
+  private consecutiveFailures = 0;
+  private static readonly MAX_CONSECUTIVE_FAILURES = 3;
 
   constructor(options: DaemonControllerOptions) {
     this.options = options;
@@ -123,8 +126,45 @@ export class DaemonController {
         break;
       }
 
-      // 5. Build and run tick
-      const tickResult = await this.runTick();
+      // 5. Checkpoint state before tick (survives crash/kill)
+      if (this.options.onCheckpoint) {
+        await this.options.onCheckpoint(this.state).catch((e) => {
+          log.warn({ err: e }, "State checkpoint failed (non-fatal)");
+        });
+      }
+
+      // 5. Build and run tick (with circuit breaker)
+      let tickResult: TickResult;
+      try {
+        tickResult = await this.runTick();
+        this.consecutiveFailures = 0; // Reset on success
+      } catch (e) {
+        this.consecutiveFailures++;
+        log.error(
+          {
+            err: e,
+            consecutive: this.consecutiveFailures,
+            max: DaemonController.MAX_CONSECUTIVE_FAILURES,
+          },
+          "Tick failed",
+        );
+        if (
+          this.consecutiveFailures >= DaemonController.MAX_CONSECUTIVE_FAILURES
+        ) {
+          log.error(
+            "Circuit breaker tripped — stopping daemon after consecutive failures",
+          );
+          this.state.status = "stopped";
+          yield {
+            type: "daemon-stopped",
+            reason: `Circuit breaker: ${this.consecutiveFailures} consecutive tick failures. Last error: ${(e as Error).message}`,
+          } as unknown as AgentEvent;
+          break;
+        }
+        // Back off before retrying
+        await this.sleepFor(Math.min(5000 * this.consecutiveFailures, 30_000));
+        continue;
+      }
       yield* this.emitTickEvents(tickResult);
 
       // Fire DaemonTick hook
