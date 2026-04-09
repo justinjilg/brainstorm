@@ -15,9 +15,74 @@
  */
 
 import { createInterface } from "node:readline";
+import { z } from "zod";
 import type { Database } from "better-sqlite3";
 import type { BrainstormConfig } from "@brainst0rm/config";
 import type { BrainstormRouter } from "@brainst0rm/router";
+
+// ── IPC Param Schemas ─────────────────────────────────────────────
+// Every method with params gets a Zod schema. Methods with no params
+// (tools.list, memory.list, etc.) use z.object({}).
+
+const MemoryCreateParams = z.object({
+  name: z.string().min(1),
+  content: z.string().min(1),
+  type: z.enum(["user", "feedback", "project", "reference"]).optional(),
+  source: z.string().optional(),
+});
+
+const MemoryUpdateParams = z.object({
+  id: z.string().min(1),
+  tier: z.enum(["system", "archive", "quarantine"]).optional(),
+  content: z.string().optional(),
+});
+
+const MemoryDeleteParams = z.object({
+  id: z.string().min(1),
+});
+
+const ConversationsListParams = z.object({
+  project: z.string().optional(),
+});
+
+const ConversationsCreateParams = z.object({
+  projectPath: z.string().optional(),
+  name: z.string().optional(),
+  description: z.string().optional(),
+  modelOverride: z.string().optional(),
+});
+
+const ConversationsForkParams = z.object({
+  id: z.string().min(1),
+  name: z.string().optional(),
+});
+
+const ConversationsHandoffParams = z.object({
+  id: z.string().min(1),
+  modelId: z.string().min(1),
+});
+
+const ConversationsMessagesParams = z.object({
+  sessionId: z.string().min(1),
+});
+
+const ChatStreamParams = z.object({
+  message: z.string().min(1),
+  sessionId: z.string().optional(),
+  modelId: z.string().optional(),
+  role: z.string().optional(),
+  activeSkills: z.array(z.string()).optional(),
+});
+
+const SecurityRedteamParams = z.object({
+  generations: z.number().int().positive().optional(),
+  populationSize: z.number().int().positive().optional(),
+});
+
+const WorkflowRunParams = z.object({
+  workflowId: z.string().min(1),
+  request: z.string().min(1),
+});
 
 export interface IPCContext {
   db: Database;
@@ -60,6 +125,8 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
   const rl = createInterface({ input: process.stdin, terminal: false });
   let abortController: AbortController | null = null;
   let daemonController: any = null; // DaemonController instance
+  let pendingDispatches = 0;
+  let stdinClosed = false;
 
   // Pre-import core modules to avoid dynamic import deadlocks inside handlers
   const coreModule = await import("@brainst0rm/core");
@@ -69,6 +136,13 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
   // Log to stderr so it doesn't pollute the NDJSON stdout channel
   const log = (msg: string) => process.stderr.write(`[ipc] ${msg}\n`);
   log(`Brainstorm IPC v${ctx.version} ready`);
+
+  function maybeExit(): void {
+    if (stdinClosed && pendingDispatches === 0) {
+      log("stdin closed and all dispatches complete, exiting");
+      process.exit(0);
+    }
+  }
 
   rl.on("line", async (line: string) => {
     let req: IPCRequest;
@@ -84,18 +158,32 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
       return;
     }
 
+    pendingDispatches++;
     try {
       await dispatch(req, ctx);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      let msg: string;
+      if (err instanceof z.ZodError) {
+        // Format Zod validation errors clearly
+        const issues = err.issues
+          .map((i) => `${i.path.join(".")}: ${i.message}`)
+          .join("; ");
+        msg = `Validation error: ${issues}`;
+      } else {
+        msg = err instanceof Error ? err.message : String(err);
+      }
       sendError(req.id, msg);
       log(`Error handling ${req.method}: ${msg}`);
+    } finally {
+      pendingDispatches--;
+      maybeExit();
     }
   });
 
   rl.on("close", () => {
-    log("stdin closed, exiting");
-    process.exit(0);
+    stdinClosed = true;
+    log("stdin closed, waiting for pending dispatches...");
+    maybeExit();
   });
 
   async function dispatch(req: IPCRequest, ctx: IPCContext): Promise<void> {
@@ -121,12 +209,8 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
       }
 
       case "memory.create": {
-        const { name, content, type, source } = params as {
-          name: string;
-          content: string;
-          type?: string;
-          source?: string;
-        };
+        const { name, content, type, source } =
+          MemoryCreateParams.parse(params);
         await ctx.memoryManager.save({
           name,
           content,
@@ -142,11 +226,7 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
           id,
           tier,
           content: memContent,
-        } = params as {
-          id: string;
-          tier?: string;
-          content?: string;
-        };
+        } = MemoryUpdateParams.parse(params);
         if (tier === "system") {
           await ctx.memoryManager.promote(id);
         } else if (tier === "archive") {
@@ -162,7 +242,7 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
       }
 
       case "memory.delete": {
-        const { id: memId } = params as { id: string };
+        const { id: memId } = MemoryDeleteParams.parse(params);
         await ctx.memoryManager.delete(memId);
         sendResult(req.id, { ok: true });
         break;
@@ -211,53 +291,56 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
 
       // ── Conversations ────────────────────────────────────────
       case "conversations.list": {
+        const { project } = ConversationsListParams.parse(params);
         const { ConversationRepository } = dbModule;
         const repo = new ConversationRepository(ctx.db);
-        const convs = repo.list(params.project as string | undefined);
+        const convs = repo.list(project);
         sendResult(req.id, convs);
         break;
       }
 
       case "conversations.create": {
+        const { projectPath, name, description, modelOverride } =
+          ConversationsCreateParams.parse(params);
         const { ConversationRepository } = dbModule;
         const repo = new ConversationRepository(ctx.db);
-        const conv = repo.create(
-          (params.projectPath as string) ?? ctx.projectPath,
-          {
-            name: (params.name as string) ?? "Untitled",
-            description: params.description as string | undefined,
-            modelOverride: params.modelOverride as string | undefined,
-          },
-        );
+        const conv = repo.create(projectPath ?? ctx.projectPath, {
+          name: name ?? "Untitled",
+          description,
+          modelOverride,
+        });
         sendResult(req.id, conv);
         break;
       }
 
       case "conversations.fork": {
+        const { id: forkId, name: forkName } =
+          ConversationsForkParams.parse(params);
         const { ConversationRepository } = dbModule;
         const repo = new ConversationRepository(ctx.db);
-        const conv = repo.fork(
-          params.id as string,
-          params.name as string | undefined,
-        );
+        const conv = repo.fork(forkId, forkName);
         sendResult(req.id, conv);
         break;
       }
 
       case "conversations.handoff": {
+        const { id: handoffId, modelId: handoffModel } =
+          ConversationsHandoffParams.parse(params);
         const { ConversationRepository } = dbModule;
         const repo = new ConversationRepository(ctx.db);
-        const conv = repo.update(params.id as string, {
-          modelOverride: params.modelId as string,
+        const conv = repo.update(handoffId, {
+          modelOverride: handoffModel,
         });
         sendResult(req.id, conv);
         break;
       }
 
       case "conversations.messages": {
+        const { sessionId: msgSessionId } =
+          ConversationsMessagesParams.parse(params);
         const { MessageRepository } = dbModule;
         const repo = new MessageRepository(ctx.db);
-        const messages = repo.listBySession(params.sessionId as string);
+        const messages = repo.listBySession(msgSessionId);
         sendResult(req.id, messages);
         break;
       }
@@ -267,12 +350,22 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
         const { loadConfig: loadCfg } =
           await import("@brainst0rm/config"); /* config only used once */
         const config = loadCfg();
-        // Scrub secrets — only send safe settings to renderer
-        const safeProviders = (config.providers ?? []).map((p: any) => ({
-          name: p.name,
-          enabled: p.enabled,
-          // Strip apiKey, apiKeyName, secret, token fields
-        }));
+        // Scrub secrets — providers is an object keyed by name (gateway, ollama, etc.)
+        // Strip any fields containing key/secret/token values
+        const providers = config.providers ?? {};
+        const safeProviders: Record<string, Record<string, unknown>> = {};
+        for (const [name, providerCfg] of Object.entries(providers)) {
+          const safe: Record<string, unknown> = {};
+          for (const [k, v] of Object.entries(
+            providerCfg as Record<string, unknown>,
+          )) {
+            // Skip sensitive fields
+            if (/key|secret|token/i.test(k)) continue;
+            safe[k] = v;
+          }
+          safe.name = name;
+          safeProviders[name] = safe;
+        }
         sendResult(req.id, {
           general: config.general,
           budget: config.budget,
@@ -399,6 +492,7 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
 
       // ── Chat (streaming) ─────────────────────────────────────
       case "chat.stream": {
+        const chatParams = ChatStreamParams.parse(params);
         const {
           runAgentLoop,
           buildSystemPrompt,
@@ -409,17 +503,15 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
         let { frontmatter } = buildSystemPrompt(ctx.projectPath);
 
         // Inject role-specific prompt if role is set
-        const role = params.role as string | undefined;
-        if (role) {
-          frontmatter = `You are acting as a ${role} agent. Prioritize ${role}-related tasks and expertise.\n\n${frontmatter}`;
+        if (chatParams.role) {
+          frontmatter = `You are acting as a ${chatParams.role} agent. Prioritize ${chatParams.role}-related tasks and expertise.\n\n${frontmatter}`;
         }
 
         // Inject active skills into system prompt
-        const activeSkills = params.activeSkills as string[] | undefined;
-        if (activeSkills && activeSkills.length > 0) {
+        if (chatParams.activeSkills && chatParams.activeSkills.length > 0) {
           const allSkills = loadStreamSkills(ctx.projectPath);
           const selected = allSkills.filter((s: any) =>
-            activeSkills.includes(s.name),
+            chatParams.activeSkills!.includes(s.name),
           );
           if (selected.length > 0) {
             const skillBlock = selected
@@ -430,15 +522,14 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
         }
 
         abortController = new AbortController();
-        const chatSessionId =
-          (params.sessionId as string) ?? `session-${Date.now()}`;
+        const chatSessionId = chatParams.sessionId ?? `session-${Date.now()}`;
         const costTracker = new ChatCT(ctx.db, ctx.config.budget);
 
         sendEvent(req.id, "session", { sessionId: chatSessionId });
 
         // Build messages array — user message
         const chatMessages = [
-          { role: "user" as const, content: params.message as string },
+          { role: "user" as const, content: chatParams.message },
         ];
 
         try {
@@ -451,7 +542,7 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
             sessionId: chatSessionId,
             projectPath: ctx.projectPath,
             systemPrompt: frontmatter,
-            preferredModelId: params.modelId as string | undefined,
+            preferredModelId: chatParams.modelId,
             signal: abortController.signal,
           })) {
             sendEvent(req.id, (event as any).type ?? "event", event);
@@ -483,11 +574,13 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
 
       // ── Security ─────────────────────────────────────────────
       case "security.redteam": {
-        const { RedTeamEngine } = coreModule;
-        const engine = new RedTeamEngine();
-        const scorecard = await engine.run({
-          generations: (params.generations as number) ?? 5,
-          populationSize: (params.populationSize as number) ?? 30,
+        const redteamParams = SecurityRedteamParams.parse(params);
+        const { runRedTeamSimulation, createDefaultMiddlewarePipeline } =
+          coreModule;
+        const pipeline = createDefaultMiddlewarePipeline();
+        const scorecard = runRedTeamSimulation(pipeline, {
+          generations: redteamParams.generations ?? 5,
+          populationSize: redteamParams.populationSize ?? 30,
         });
         sendResult(req.id, scorecard);
         break;
@@ -509,12 +602,12 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
       }
 
       case "workflow.run": {
+        const { workflowId, request: userRequest } =
+          WorkflowRunParams.parse(params);
         const { runWorkflow, getPresetWorkflow } =
           await import("@brainst0rm/workflow");
         const { AgentManager } = await import("@brainst0rm/agents");
 
-        const workflowId = params.workflowId as string;
-        const userRequest = params.request as string;
         const definition = getPresetWorkflow(workflowId);
 
         if (!definition) {

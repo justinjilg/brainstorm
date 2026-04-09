@@ -2,6 +2,8 @@
   "name": "@brainst0rm/desktop",
   "version": "0.1.0",
   "private": true,
+  "description": "Brainstorm Desktop — governed AI control plane",
+  "author": "Brainstorm <justinjilg@users.noreply.github.com>",
   "type": "module",
   "main": "electron/dist/main.js",
   "scripts": {
@@ -10,7 +12,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "npx playwright test",
-    "dist": "vite build && tsc -p electron/tsconfig.json && electron-builder"
+    "dist": "vite build && tsc -p electron/tsconfig.json && electron-builder",
+    "dist:unsigned": "vite build && tsc -p electron/tsconfig.json && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder"
   },
   "build": {
     "appId": "com.brainstorm.desktop",
@@ -43,7 +46,7 @@
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.0",
     "autoprefixer": "^10.4.0",
-    "electron": "^41.2.0",
+    "electron": "41.2.0",
     "electron-builder": "^26.8.1",
     "postcss": "^8.4.0",
     "tailwindcss": "^4.0.0",

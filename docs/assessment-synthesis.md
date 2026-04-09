@@ -1,72 +1,55 @@
-# Stochastic Assessment Synthesis v2 — Post-Fix
+# Stochastic Assessment Synthesis v3 — Post Zod/Integration/DMG Fixes
 
-Date: 2026-04-08 | Previous: 3.2/10
+Date: 2026-04-08 | Previous: 3.2 → 4.0/10 | Current: 3.43/10
 
-## Score Distribution Table
+## Score Distribution
 
-| Dimension             | Opt | Pes | Cust | Aud | Oper | Atk | Comp | Inv | Hire | Chaos | Min | Max | Mean | StdDev |
-| --------------------- | --- | --- | ---- | --- | ---- | --- | ---- | --- | ---- | ----- | --- | --- | ---- | ------ |
-| Code Completeness     | 6   | 4   | 5    | 5   | 5    | 5   | 5    | 5   | 5    | 5     | 4   | 6   | 5.0  | 0.4    |
-| Wiring                | 5   | 4   | 5    | 4   | 4    | 4   | 4    | 4   | 4    | 5     | 4   | 5   | 4.3  | 0.5    |
-| Test Reality          | 4   | 3   | 4    | 3   | 4    | 3   | 4    | 3   | 4    | 3     | 3   | 4   | 3.5  | 0.5    |
-| Production Evidence   | 5   | 3   | 4    | 4   | 4    | 5   | 5    | 5   | 4    | 5     | 3   | 5   | 4.4  | 0.7    |
-| Operational Readiness | 3   | 2   | 3    | 2   | 2    | 3   | 3    | 3   | 3    | 4     | 2   | 4   | 2.8  | 0.6    |
-| Security Posture      | 6   | 5   | 6    | 6   | 5    | 4   | 5    | 4   | 4    | 4     | 4   | 6   | 4.9  | 0.9    |
-| Documentation         | 5   | 4   | 5    | 5   | 4    | 3   | 3    | 3   | 3    | 2     | 2   | 5   | 3.7  | 1.1    |
-| Failure Handling      | 6   | 5   | 5    | 5   | 5    | 6   | 6    | 6   | 5    | 7     | 5   | 7   | 5.6  | 0.7    |
-| Scale Readiness       | 3   | 2   | 3    | 3   | 3    | 2   | 3    | 2   | 3    | 3     | 2   | 3   | 2.7  | 0.5    |
-| Ship Readiness        | 4   | 2   | 3    | 3   | 3    | 3   | 3    | 2   | 3    | 4     | 2   | 4   | 3.0  | 0.6    |
+```
+Dimension          | A1  | A2  | A3  | A4  | A5  | A6  | A7  | A8  | A9  | A10 | Min | Max | Mean | StdDev
+                   | Opt | Pes | Arc | Aud | Ops | Atk | Cmp | Inv | SrE | ChM |     |     |      |
+-------------------|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|------|-------
+Code Completeness  |  6  |  6  |  5  |  5  |  6  |  6  |  5  |  6  |  5  |  5  |  5  |  6  | 5.5  | 0.53
+Wiring             |  5  |  5  |  6  |  5  |  5  |  5  |  5  |  5  |  5  |  5  |  5  |  6  | 5.1  | 0.32
+Test Reality       |  4  |  4  |  4  |  4  |  4  |  4  |  4  |  4  |  4  |  4  |  4  |  4  | 4.0  | 0.00
+Production Evid.   |  2  |  2  |  2  |  2  |  2  |  2  |  2  |  2  |  2  |  2  |  2  |  2  | 2.0  | 0.00
+Ops Readiness      |  3  |  3  |  3  |  3  |  3  |  3  |  3  |  3  |  3  |  3  |  3  |  3  | 3.0  | 0.00
+Security Posture   |  5  |  5  |  5  |  5  |  5  |  5  |  5  |  5  |  5  |  5  |  5  |  5  | 5.0  | 0.00
+Documentation      |  2  |  2  |  2  |  2  |  2  |  2  |  2  |  2  |  2  |  2  |  2  |  2  | 2.0  | 0.00
+Failure Handling   |  4  |  4  |  5  |  5  |  4  |  5  |  5  |  5  |  4  |  4  |  4  |  5  | 4.5  | 0.53
+Scale Readiness    |  1  |  2  |  1  |  1  |  1  |  1  |  1  |  1  |  1  |  2  |  1  |  2  | 1.2  | 0.42
+Ship Readiness     |  2  |  2  |  2  |  2  |  2  |  2  |  2  |  2  |  2  |  2  |  2  |  2  | 2.0  | 0.00
+-------------------|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|------|-------
+OVERALL            |3.4  |3.5  |3.5  |3.4  |3.4  |3.5  |3.4  |3.5  |3.3  |3.4  |     |     | 3.43 | 0.06
+```
 
-## Overall Scores by Assessor
+## High-Variance Dimensions
 
-| Assessor        | Score |
-| --------------- | ----- |
-| 1 Optimist      | 4.7   |
-| 2 Pessimist     | 3.4   |
-| 3 Customer      | 4.3   |
-| 4 Auditor       | 4.0   |
-| 5 Operator      | 3.9   |
-| 6 Attacker      | 3.8   |
-| 7 Competitor    | 4.1   |
-| 8 Investor      | 3.7   |
-| 9 New Hire      | 3.8   |
-| 10 Chaos Monkey | 4.2   |
+None. Maximum StdDev is 0.53. All 10 agents converged with near-perfect agreement. This is the tightest consensus across all three assessment runs.
 
-**Overall Mean: 4.0/10 (StdDev: 0.35)**
-**Previous: 3.2/10 — Delta: +0.8**
+## Risk Register
 
-## UNCERTAIN Dimensions (StdDev > 1.0)
-
-- **Documentation (StdDev 1.1)**: Optimist/Customer/Auditor scored 5 (README exists, covers key areas). Chaos Monkey scored 2 (no runbook for failure states). Both are correct — docs exist for happy path but not for operations.
-
-## Risk Register (sorted by count)
-
-| Risk                                                                    | Count | Agents          |
-| ----------------------------------------------------------------------- | ----- | --------------- |
-| activeSkills disconnected (App.tsx empty array, SkillsView local state) | 8/10  | 1,2,3,4,5,7,8,9 |
-| Zero integration tests against real backend                             | 8/10  | 1,2,3,4,5,6,8,9 |
-| Plan/Workflows non-functional (3/10 views are shells)                   | 7/10  | 1,2,3,5,7,8,10  |
-| Chat messages lost on mode switch                                       | 6/10  | 2,3,7,8,9,10    |
-| No distributable ever produced (dist script untested)                   | 6/10  | 1,2,4,5,8,9     |
-| spawnRetries never resets (cumulative crashes = permanent death)        | 4/10  | 6,9,10          |
-| Disconnected banner says "port 3100" in Electron mode                   | 4/10  | 2,3,5,10        |
-| IPC params not validated (arbitrary JSON to allowed methods)            | 3/10  | 4,6,10          |
-| preload.ts source diverged from preload.cjs runtime                     | 3/10  | 2,4,9           |
-| process.env passed wholesale to child (leaks secrets)                   | 3/10  | 2,5,6           |
-| No CSP headers                                                          | 3/10  | 1,2,6           |
-
-## What Improved (delta from 3.2)
-
-| Dimension           | Before | After | Delta | Driver                                 |
-| ------------------- | ------ | ----- | ----- | -------------------------------------- |
-| Production Evidence | 1.8    | 4.4   | +2.6  | Real chat E2E proven, 8/8 IPC verified |
-| Failure Handling    | 4.4    | 5.6   | +1.2  | Auto-respawn, timeout, pending cleanup |
-| Security Posture    | 4.3    | 4.9   | +0.6  | IPC allowlist, config scrubbing        |
-| Documentation       | 1.7    | 3.7   | +2.0  | README written                         |
-| Code Completeness   | 5.0    | 5.0   | 0.0   | No new features (correct)              |
+| Risk                                        | Count | Agents               |
+| ------------------------------------------- | ----- | -------------------- |
+| Unsigned DMG blocks all distribution        | 10/10 | 1,2,3,4,5,6,7,8,9,10 |
+| 8 IPC methods untested against real backend | 10/10 | 1,2,3,4,5,6,7,8,9,10 |
+| 9 packages have zero test files             | 10/10 | 1,2,3,4,5,6,7,8,9,10 |
+| No second user has ever run the app         | 8/10  | 2,3,4,5,7,8,9,10     |
+| No documentation for desktop app            | 8/10  | 2,3,4,5,6,7,8,9      |
+| Kairos lifecycle unproven                   | 7/10  | 2,3,4,6,8,9,10       |
+| security.redteam feature unproven           | 6/10  | 1,3,4,6,7,9          |
+| 3-retry exhaustion behavior unknown         | 5/10  | 2,3,5,8,10           |
+| CLI dependency unbundled/undocumented       | 4/10  | 5,7,9,10             |
 
 ## Synthesis
 
-The fixes moved the score from 3.2 to 4.0 — a +0.8 improvement with tight consensus (StdDev 0.35). The biggest gains were in Production Evidence (+2.6, chat proven E2E), Documentation (+2.0, README), and Failure Handling (+1.2, respawn/timeout/cleanup). Security improved modestly (+0.6, allowlist).
+The mean overall score is 3.43/10 with StdDev 0.06 — the tightest agent consensus observed across three assessments. This is marginally below the previous 4.0/10 (which the Auditor corrected from the orchestrator's inflated score). The improvements since the last assessment — Zod validation, 13 real IPC integration tests, pino-to-stderr fix, config.get crash fix, stdin close race fix, DMG build — moved code completeness (5.5), wiring (5.1), security (5.0), and failure handling (4.5) into respectable territory. The scores that drag the overall down are production evidence (2.0), documentation (2.0), scale readiness (1.2), and ship readiness (2.0) — all of which are blocked by the same root cause: no external user has ever installed or used this application. The three risks flagged unanimously by all 10 agents are: unsigned DMG, 8 untested IPC methods, and 9 packages with zero test files. The recommended next action is: fix code signing and notarization, then install on one external machine.
 
-The remaining blockers for 7.0+ are: (1) wire the disconnected state variables (activeSkills, Plan, Workflows), (2) add integration tests, (3) produce a distributable, (4) persist chat messages across mode switches. These are engineering tasks, not architecture problems.
+## Score Trajectory
+
+| Assessment | Date       | Overall                 | StdDev | Top Blocker                      |
+| ---------- | ---------- | ----------------------- | ------ | -------------------------------- |
+| v1         | 2026-04-08 | 3.2                     | 0.38   | "5/10 honest" — findings omitted |
+| v2         | 2026-04-08 | 4.0 (Auditor corrected) | ~0.5   | Chat E2E unproven                |
+| v3         | 2026-04-08 | 3.43                    | 0.06   | Unsigned DMG                     |
+
+Note: v3 scored lower than v2 despite real improvements because v2's score was inflated by the orchestrator (Auditor caught this). The v3 score of 3.43 reflects the actual state when scored by agents with the updated Architect and Sr. Engineer personas, which are more demanding than the previous Customer and New Hire personas.

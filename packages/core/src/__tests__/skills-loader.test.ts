@@ -81,7 +81,7 @@ describe("buildRepoMap", () => {
   it("ranks index files higher", () => {
     const map = buildRepoMap(process.cwd(), 20);
 
-    // Index files should appear in top files
+    // Index files should appear in top files due to +2 ranking boost
     const indexInTop = map.topFiles.some((f) => f.includes("index."));
     expect(indexInTop).toBe(true);
   });
