@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { Navigator } from "./components/navigator/Navigator";
 import type { TeamAgent } from "./components/navigator/TeamBuilder";
 import { ChatView } from "./components/chat/ChatView";
@@ -23,6 +23,7 @@ import { RolePicker } from "./components/RolePicker";
 import { ModelSwitcher } from "./components/ModelSwitcher";
 import { useServerHealth } from "./hooks/useServerHealth";
 import { useConversations } from "./hooks/useConversations";
+import { useKairos } from "./hooks/useKairos";
 
 export type AppMode =
   | "chat"
@@ -81,10 +82,12 @@ export function App() {
     "auto" | "confirm" | "plan"
   >("confirm");
   const [activeRole, setActiveRole] = useState<string | null>(null);
-  const [kairosStatus, setKairosStatus] = useState<
-    "running" | "sleeping" | "paused" | "stopped"
-  >("stopped");
-  void setKairosStatus; // Set by KAIROS SSE events when daemon connects
+  const [activeSkills, setActiveSkills] = useState<string[]>([]);
+  const [traceEvents, setTraceEvents] = useState<
+    import("./components/trace/TraceView").TraceEvent[]
+  >([]);
+  const traceIdCounter = useRef(0);
+  const kairos = useKairos();
 
   // Server connection + data
   const serverHealth = useServerHealth();
@@ -136,12 +139,12 @@ export function App() {
   return (
     <div
       className="flex flex-col h-screen bg-[var(--ctp-crust)]"
+      data-testid="app-root"
       onKeyDown={handleKeyDown}
       tabIndex={-1}
     >
       {/* Title bar — 40px, native traffic lights on macOS */}
       <div
-        data-tauri-drag-region
         className="h-10 flex items-center justify-between shrink-0 bg-[var(--ctp-mantle)]"
         style={{ borderBottom: "1px solid var(--border-subtle)" }}
       >
@@ -178,6 +181,37 @@ export function App() {
         </div>
       </div>
 
+      {/* Server disconnected banner */}
+      {!serverHealth.connected && !serverHealth.checking && (
+        <div
+          data-testid="server-disconnected"
+          className="flex items-center justify-between px-4 py-2 shrink-0"
+          style={{
+            background: "var(--glow-red)",
+            borderBottom: "1px solid rgba(243, 139, 168, 0.2)",
+            fontSize: "var(--text-xs)",
+            color: "var(--ctp-red)",
+          }}
+        >
+          <span>
+            {"brainstorm" in window
+              ? "Backend process not responding"
+              : "BrainstormServer not running on port 3100"}
+          </span>
+          <span
+            className="font-mono"
+            style={{
+              fontSize: "var(--text-2xs)",
+              color: "var(--ctp-overlay0)",
+            }}
+          >
+            {"brainstorm" in window
+              ? "Restarting..."
+              : "brainstorm serve --port 3100 --cors"}
+          </span>
+        </div>
+      )}
+
       {/* Main content area */}
       <div className="flex flex-1 overflow-hidden">
         {/* Navigator */}
@@ -189,12 +223,16 @@ export function App() {
           recentProjects={[]}
           onProjectSelect={setCurrentProject}
           onOpenFolder={async () => {
-            try {
-              const { open } = await import("@tauri-apps/plugin-dialog");
-              const selected = await open({ directory: true, multiple: false });
-              if (selected) setCurrentProject(selected as string);
-            } catch {
-              // Tauri dialog not available in dev mode
+            if (
+              "brainstorm" in window &&
+              (window as any).brainstorm.openFolder
+            ) {
+              const path = await (window as any).brainstorm.openFolder();
+              if (path) setCurrentProject(path);
+            } else {
+              // Browser dev mode — prompt fallback
+              const path = prompt("Enter project path:");
+              if (path) setCurrentProject(path);
             }
           }}
           team={team}
@@ -204,7 +242,7 @@ export function App() {
           activeConversationId={activeConversationId}
           onConversationSelect={setActiveConversationId}
           onOpenPalette={() => setPaletteOpen(true)}
-          kairosStatus={kairosStatus}
+          kairosStatus={kairos.status}
           activeRole={activeRole}
           onNewConversation={async () => {
             const conv = await createConversation();
@@ -214,10 +252,14 @@ export function App() {
 
         {/* Main panel */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          {mode === "chat" && (
+          {/* Chat always mounted to preserve message history across mode switches */}
+          <div style={{ display: mode === "chat" ? "contents" : "none" }}>
             <ErrorBoundary fallbackLabel="Chat">
               <ChatView
                 conversationId={activeConversationId}
+                activeModelId={activeModel}
+                activeRole={activeRole}
+                activeSkills={activeSkills}
                 onCostUpdate={setSessionCost}
                 onModelUpdate={(model, provider) => {
                   setActiveModel(model);
@@ -230,9 +272,49 @@ export function App() {
                 }}
                 onModeChange={setMode}
                 onOpenPalette={() => setPaletteOpen(true)}
+                onAgentEvent={(event) => {
+                  // Capture events for trace view
+                  if (
+                    [
+                      "tool-call-start",
+                      "tool-result",
+                      "routing",
+                      "error",
+                    ].includes(event.type)
+                  ) {
+                    const traceEvent: import("./components/trace/TraceView").TraceEvent =
+                      {
+                        id: `trace-${traceIdCounter.current++}`,
+                        timestamp: Date.now(),
+                        agentRole: activeRole ?? "default",
+                        agentModel: activeModel,
+                        provider: activeProvider,
+                        type:
+                          event.type === "tool-call-start"
+                            ? "tool-call"
+                            : event.type === "tool-result"
+                              ? "tool-result"
+                              : event.type === "routing"
+                                ? "routing"
+                                : "error",
+                        toolName:
+                          (event as any).toolName ?? (event as any).name,
+                        toolArgs: (event as any).input
+                          ? JSON.stringify((event as any).input)
+                          : undefined,
+                        toolOutput: (event as any).output
+                          ? String((event as any).output)
+                          : undefined,
+                        toolDurationMs: (event as any).durationMs,
+                        toolSuccess: (event as any).ok !== false,
+                        cost: (event as any).cost,
+                      };
+                    setTraceEvents((prev) => [...prev.slice(-499), traceEvent]);
+                  }
+                }}
               />
             </ErrorBoundary>
-          )}
+          </div>
           {mode === "plan" && (
             <ErrorBoundary fallbackLabel="Plan">
               <PlanView
@@ -257,7 +339,7 @@ export function App() {
           {mode === "trace" && (
             <ErrorBoundary fallbackLabel="Trace">
               <TraceView
-                events={[]}
+                events={traceEvents}
                 onEventSelect={(event) => {
                   setDetailOpen(true);
                   setInspectorContext({ type: "trace-event", event });
@@ -294,7 +376,10 @@ export function App() {
           )}
           {mode === "skills" && (
             <ErrorBoundary fallbackLabel="Skills">
-              <SkillsView />
+              <SkillsView
+                activeSkills={activeSkills}
+                onActiveSkillsChange={setActiveSkills}
+              />
             </ErrorBoundary>
           )}
           {mode === "workflows" && (
@@ -381,7 +466,7 @@ export function App() {
         strategy={strategy}
         cost={sessionCost}
         contextPercent={contextPercent}
-        kairosStatus={kairosStatus}
+        kairosStatus={kairos.status}
         permissionMode={permissionMode}
         onRoleClick={() => setRolePickerOpen(true)}
         onModelClick={() => setModelSwitcherOpen(true)}

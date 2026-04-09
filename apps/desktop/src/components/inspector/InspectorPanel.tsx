@@ -39,6 +39,7 @@ interface InspectorPanelProps {
 export function InspectorPanel({ context, onClose }: InspectorPanelProps) {
   return (
     <div
+      data-testid="inspector-panel"
       className="flex flex-col overflow-hidden animate-slide-in-right"
       style={{
         width: 320,
@@ -52,6 +53,7 @@ export function InspectorPanel({ context, onClose }: InspectorPanelProps) {
         style={{ borderBottom: "1px solid var(--border-subtle)" }}
       >
         <span
+          data-testid="inspector-label"
           style={{
             fontSize: "var(--text-2xs)",
             color: "var(--ctp-overlay0)",
@@ -63,6 +65,7 @@ export function InspectorPanel({ context, onClose }: InspectorPanelProps) {
         </span>
         <button
           onClick={onClose}
+          data-testid="inspector-close"
           className="interactive px-2 py-1 rounded-md"
           style={{ fontSize: "var(--text-2xs)", color: "var(--ctp-overlay0)" }}
         >

@@ -216,16 +216,12 @@ export class BrainstormClient {
   async listTools(): Promise<
     Array<{ name: string; description: string; permission: string }>
   > {
-    try {
-      const res = await fetch(`${this.base}/api/v1/tools`);
-      if (!res.ok) return [];
-      const body = (await res.json()) as ApiEnvelope<
-        Array<{ name: string; description: string; permission: string }>
-      >;
-      return body.ok ? body.data : [];
-    } catch {
-      return [];
-    }
+    const res = await fetch(`${this.base}/api/v1/tools`);
+    if (!res.ok) return [];
+    const body = (await res.json()) as ApiEnvelope<
+      Array<{ name: string; description: string; permission: string }>
+    >;
+    return body.ok ? body.data : [];
   }
 
   // ── Models ──────────────────────────────────────────────────────
@@ -267,14 +263,10 @@ export class BrainstormClient {
       createdAt?: string;
     }>
   > {
-    try {
-      const res = await fetch(`${this.base}/api/v1/memory`);
-      if (!res.ok) return [];
-      const body = (await res.json()) as ApiEnvelope<any[]>;
-      return body.ok ? body.data : [];
-    } catch {
-      return [];
-    }
+    const res = await fetch(`${this.base}/api/v1/memory`);
+    if (!res.ok) return [];
+    const body = (await res.json()) as ApiEnvelope<any[]>;
+    return body.ok ? body.data : [];
   }
 
   async createMemory(entry: {
@@ -332,14 +324,10 @@ export class BrainstormClient {
       content: string;
     }>
   > {
-    try {
-      const res = await fetch(`${this.base}/api/v1/skills`);
-      if (!res.ok) return [];
-      const body = (await res.json()) as ApiEnvelope<any[]>;
-      return body.ok ? body.data : [];
-    } catch {
-      return [];
-    }
+    const res = await fetch(`${this.base}/api/v1/skills`);
+    if (!res.ok) return [];
+    const body = (await res.json()) as ApiEnvelope<any[]>;
+    return body.ok ? body.data : [];
   }
 
   // ── Security ────────────────────────────────────────────────────

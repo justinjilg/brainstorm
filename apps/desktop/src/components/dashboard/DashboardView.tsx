@@ -14,7 +14,12 @@ export function DashboardView({ sessionCost }: DashboardProps) {
   const [activeTab, setActiveTab] = useState<"routing" | "tools" | "cost">(
     "tools",
   );
-  const { grouped, count: toolCount, loading: toolsLoading } = useTools();
+  const {
+    grouped,
+    count: toolCount,
+    loading: toolsLoading,
+    error: toolsError,
+  } = useTools();
   const health = useHealthStats();
 
   return (
@@ -32,7 +37,7 @@ export function DashboardView({ sessionCost }: DashboardProps) {
         <Metric label="Tools" value={String(toolCount)} />
         <Metric
           label="God Mode"
-          value={`${health?.god_mode.connected ?? 0} systems`}
+          value={`${health?.god_mode?.connected ?? 0} systems`}
         />
         <Metric
           label="Server"
@@ -57,6 +62,7 @@ export function DashboardView({ sessionCost }: DashboardProps) {
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
+            data-testid={`dashboard-tab-${tab}`}
             className="interactive px-4 py-2 rounded-t-lg"
             style={{
               fontSize: "var(--text-xs)",
@@ -78,7 +84,11 @@ export function DashboardView({ sessionCost }: DashboardProps) {
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
         {activeTab === "tools" && (
-          <ToolsPanel grouped={grouped} loading={toolsLoading} />
+          <ToolsPanel
+            grouped={grouped}
+            loading={toolsLoading}
+            error={toolsError}
+          />
         )}
         {activeTab === "routing" && <RoutingPanel />}
         {activeTab === "cost" && <CostPanel sessionCost={sessionCost} />}
@@ -118,6 +128,7 @@ function formatUptime(seconds: number): string {
 function ToolsPanel({
   grouped,
   loading,
+  error,
 }: {
   grouped: Array<{
     category: string;
@@ -125,8 +136,20 @@ function ToolsPanel({
     count: number;
   }>;
   loading: boolean;
+  error: string | null;
 }) {
   const [expandedCat, setExpandedCat] = useState<string | null>(null);
+
+  if (error) {
+    return (
+      <div
+        data-testid="tools-error"
+        style={{ fontSize: "var(--text-sm)", color: "var(--ctp-red)" }}
+      >
+        {error}
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -149,7 +172,9 @@ function ToolsPanel({
           textTransform: "uppercase",
         }}
       >
-        Tool Registry ({grouped.reduce((s, g) => s + g.count, 0)})
+        <span data-testid="tool-count">
+          Tool Registry ({grouped.reduce((s, g) => s + g.count, 0)})
+        </span>
       </div>
 
       <div className="grid grid-cols-3 gap-3">
@@ -161,6 +186,7 @@ function ToolsPanel({
                 expandedCat === group.category ? null : group.category,
               )
             }
+            data-testid={`tool-category-${group.category}`}
             className="interactive text-left p-4 rounded-xl"
             style={{
               background:

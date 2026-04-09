@@ -2,10 +2,25 @@
  * Workflows View — plan trees, orchestration visualization.
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { request } from "../../lib/ipc-client";
+
+interface WorkflowPreset {
+  id: string;
+  name: string;
+  description: string;
+  steps: number;
+}
 
 export function WorkflowsView() {
   const [showHint, setShowHint] = useState(false);
+  const [presets, setPresets] = useState<WorkflowPreset[]>([]);
+
+  useEffect(() => {
+    request<WorkflowPreset[]>("workflow.presets")
+      .then(setPresets)
+      .catch(() => {});
+  }, []);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -15,6 +30,7 @@ export function WorkflowsView() {
         </span>
         <button
           onClick={() => setShowHint(true)}
+          data-testid="new-workflow"
           className="interactive text-[10px] px-3 py-1 rounded-lg bg-[var(--ctp-surface0)] text-[var(--ctp-overlay1)] hover:text-[var(--ctp-text)]"
         >
           + New Workflow
@@ -23,6 +39,7 @@ export function WorkflowsView() {
 
       {showHint && (
         <div
+          data-testid="workflow-hint"
           className="mx-4 mt-3 px-4 py-3 rounded-xl animate-fade-in flex items-center justify-between"
           style={{
             background: "var(--glow-mauve)",
@@ -32,11 +49,12 @@ export function WorkflowsView() {
           }}
         >
           <span>
-            Use the Plan view to create multi-phase workflows from natural
-            language prompts.
+            Workflows are coming soon. Define multi-phase execution plans in the
+            Plan view.
           </span>
           <button
             onClick={() => setShowHint(false)}
+            data-testid="dismiss-hint"
             className="interactive px-2 py-0.5 rounded-md ml-3 shrink-0"
             style={{ fontSize: "var(--text-2xs)" }}
           >
@@ -46,7 +64,65 @@ export function WorkflowsView() {
       )}
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {/* Plan tree */}
+        {/* Preset workflows from backend */}
+        {presets.length > 0 && (
+          <div>
+            <div
+              style={{
+                fontSize: "var(--text-2xs)",
+                color: "var(--ctp-overlay0)",
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                marginBottom: 8,
+              }}
+            >
+              Preset Workflows ({presets.length})
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {presets.map((preset) => (
+                <div
+                  key={preset.id}
+                  className="interactive px-4 py-3 rounded-xl"
+                  style={{
+                    background: "var(--ctp-surface0)",
+                    border: "1px solid var(--border-subtle)",
+                  }}
+                >
+                  <div
+                    className="font-medium mb-1"
+                    style={{
+                      fontSize: "var(--text-sm)",
+                      color: "var(--ctp-text)",
+                    }}
+                  >
+                    {preset.name}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "var(--text-2xs)",
+                      color: "var(--ctp-overlay0)",
+                    }}
+                  >
+                    {preset.description || `${preset.steps} steps`}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Execution history */}
+        <div
+          style={{
+            fontSize: "var(--text-2xs)",
+            color: "var(--ctp-overlay0)",
+            letterSpacing: "0.12em",
+            textTransform: "uppercase",
+            marginBottom: 8,
+          }}
+        >
+          Execution History
+        </div>
         <div className="space-y-2">
           <PlanNode
             level={0}

@@ -3,21 +3,33 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "electron/dist/main.js",
   "scripts": {
     "dev": "vite",
+    "dev:electron": "vite --port 1420 & sleep 2 && electron .",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "tauri": "tauri",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "test": "npx playwright test",
+    "dist": "vite build && tsc -p electron/tsconfig.json && electron-builder"
+  },
+  "build": {
+    "appId": "com.brainstorm.desktop",
+    "productName": "Brainstorm",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/dist/**/*"
+    ],
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.developer-tools"
+    }
   },
   "dependencies": {
     "@fontsource-variable/geist-mono": "^5.2.7",
     "@fontsource/geist": "^5.2.8",
-    "@tauri-apps/api": "^2.0.0",
-    "@tauri-apps/plugin-dialog": "^2.7.0",
-    "@tauri-apps/plugin-notification": "^2.0.0",
-    "@tauri-apps/plugin-shell": "^2.0.0",
     "@types/react-syntax-highlighter": "^15.5.13",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -26,11 +38,13 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.0.0",
+    "@playwright/test": "^1.59.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.0",
     "autoprefixer": "^10.4.0",
+    "electron": "^41.2.0",
+    "electron-builder": "^26.8.1",
     "postcss": "^8.4.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.0",

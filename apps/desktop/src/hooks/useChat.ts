@@ -6,7 +6,7 @@
  */
 
 import { useState, useCallback, useRef } from "react";
-import { getClient } from "../lib/api-client";
+import { streamChat, abortChat } from "../lib/ipc-client";
 
 export interface ChatMessage {
   id: string;
@@ -36,10 +36,16 @@ export interface UseChatReturn {
   currentModel: string | null;
   currentProvider: string | null;
   sessionCost: number;
+  contextPercent: number;
   activeTools: ToolCallInfo[];
   send: (
     text: string,
-    opts?: { modelId?: string; conversationId?: string },
+    opts?: {
+      modelId?: string;
+      conversationId?: string;
+      role?: string;
+      activeSkills?: string[];
+    },
   ) => void;
   abort: () => void;
   clear: () => void;
@@ -56,11 +62,17 @@ export function useChat(): UseChatReturn {
 
   const abortRef = useRef<AbortController | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  const [contextPercent, setContextPercent] = useState(0);
 
   const send = useCallback(
     async (
       text: string,
-      opts?: { modelId?: string; conversationId?: string },
+      opts?: {
+        modelId?: string;
+        conversationId?: string;
+        role?: string;
+        activeSkills?: string[];
+      },
     ) => {
       if (isProcessing) return;
 
@@ -79,7 +91,6 @@ export function useChat(): UseChatReturn {
       const controller = new AbortController();
       abortRef.current = controller;
 
-      const client = getClient();
       let accumulatedText = "";
       let turnCost = 0;
       let model: string | undefined;
@@ -88,107 +99,127 @@ export function useChat(): UseChatReturn {
       const toolCalls: ToolCallInfo[] = [];
 
       try {
-        for await (const event of client.chatStream(
+        await streamChat(
           {
             message: text,
-            sessionId: sessionIdRef.current ?? undefined,
             conversationId: opts?.conversationId,
             modelId: opts?.modelId,
+            role: opts?.role,
+            activeSkills: opts?.activeSkills,
+          } as any,
+          (event) => {
+            switch (event.type) {
+              case "session":
+                sessionIdRef.current = event.sessionId as string;
+                break;
+
+              case "routing": {
+                model =
+                  (event as any).model?.name ??
+                  (event as any).modelName ??
+                  (event as any).data?.model?.name;
+                provider =
+                  (event as any).model?.provider ??
+                  (event as any).provider ??
+                  (event as any).data?.model?.provider;
+                if (model) setCurrentModel(model);
+                if (provider) setCurrentProvider(provider);
+
+                const routeMsg: ChatMessage = {
+                  id: `msg-${Date.now()}-route`,
+                  role: "routing",
+                  content: `→ ${model} via ${(event as any).strategy ?? (event as any).data?.strategy ?? "auto"}`,
+                  timestamp: Date.now(),
+                };
+                setMessages((prev) => [...prev, routeMsg]);
+                break;
+              }
+
+              case "thinking":
+                reasoning =
+                  (event as any).text ??
+                  (event as any).content ??
+                  (event as any).data?.text;
+                break;
+
+              case "text-delta": {
+                const delta =
+                  (event as any).delta ??
+                  (event as any).text ??
+                  (event as any).data?.delta ??
+                  "";
+                accumulatedText += delta;
+                setStreamingText(accumulatedText);
+                break;
+              }
+
+              case "tool-call-start": {
+                const tool: ToolCallInfo = {
+                  id: (event as any).toolCallId ?? `tc-${Date.now()}`,
+                  name:
+                    (event as any).toolName ?? (event as any).name ?? "unknown",
+                  status: "running",
+                  input: (event as any).input,
+                };
+                toolCalls.push(tool);
+                setActiveTools([...toolCalls]);
+                break;
+              }
+
+              case "tool-result": {
+                const tcId = (event as any).toolCallId ?? (event as any).id;
+                const tc = toolCalls.find((t) => t.id === tcId);
+                if (tc) {
+                  tc.status = (event as any).ok === false ? "error" : "success";
+                  tc.durationMs = (event as any).durationMs;
+                  tc.output = (event as any).output;
+                  setActiveTools([...toolCalls]);
+                }
+                break;
+              }
+
+              case "cost": {
+                turnCost = (event as any).totalCost ?? (event as any).cost ?? 0;
+                setSessionCost(turnCost);
+                break;
+              }
+
+              case "done": {
+                turnCost =
+                  (event as any).totalCost ?? (event as any).cost ?? turnCost;
+                setSessionCost(turnCost);
+                break;
+              }
+
+              case "context-budget": {
+                const percent =
+                  (event as any).percent ?? (event as any).data?.percent ?? 0;
+                setContextPercent(percent);
+                break;
+              }
+
+              case "error": {
+                const errMsg: ChatMessage = {
+                  id: `msg-${Date.now()}-err`,
+                  role: "system",
+                  content: `Error: ${(event as any).error ?? (event as any).message ?? "Unknown error"}`,
+                  timestamp: Date.now(),
+                };
+                setMessages((prev) => [...prev, errMsg]);
+                break;
+              }
+            }
           },
           controller.signal,
-        )) {
-          switch (event.type) {
-            case "session":
-              sessionIdRef.current = event.sessionId as string;
-              break;
-
-            case "routing": {
-              model = (event as any).model?.name ?? (event as any).modelName;
-              provider =
-                (event as any).model?.provider ?? (event as any).provider;
-              if (model) setCurrentModel(model);
-              if (provider) setCurrentProvider(provider);
-
-              // Add routing message
-              const routeMsg: ChatMessage = {
-                id: `msg-${Date.now()}-route`,
-                role: "routing",
-                content: `→ ${model} via ${(event as any).strategy ?? "auto"}`,
-                timestamp: Date.now(),
-              };
-              setMessages((prev) => [...prev, routeMsg]);
-              break;
-            }
-
-            case "thinking":
-              reasoning = (event as any).text ?? (event as any).content;
-              break;
-
-            case "text-delta": {
-              const delta = (event as any).delta ?? (event as any).text ?? "";
-              accumulatedText += delta;
-              setStreamingText(accumulatedText);
-              break;
-            }
-
-            case "tool-call-start": {
-              const tool: ToolCallInfo = {
-                id: (event as any).toolCallId ?? `tc-${Date.now()}`,
-                name:
-                  (event as any).toolName ?? (event as any).name ?? "unknown",
-                status: "running",
-                input: (event as any).input,
-              };
-              toolCalls.push(tool);
-              setActiveTools([...toolCalls]);
-              break;
-            }
-
-            case "tool-result": {
-              const tcId = (event as any).toolCallId ?? (event as any).id;
-              const tc = toolCalls.find((t) => t.id === tcId);
-              if (tc) {
-                tc.status = (event as any).ok === false ? "error" : "success";
-                tc.durationMs = (event as any).durationMs;
-                tc.output = (event as any).output;
-                setActiveTools([...toolCalls]);
-              }
-              break;
-            }
-
-            case "cost": {
-              turnCost = (event as any).totalCost ?? (event as any).cost ?? 0;
-              setSessionCost(turnCost);
-              break;
-            }
-
-            case "done": {
-              turnCost =
-                (event as any).totalCost ?? (event as any).cost ?? turnCost;
-              setSessionCost(turnCost);
-              break;
-            }
-
-            case "error": {
-              const errMsg: ChatMessage = {
-                id: `msg-${Date.now()}-err`,
-                role: "system",
-                content: `Error: ${(event as any).error ?? (event as any).message ?? "Unknown error"}`,
-                timestamp: Date.now(),
-              };
-              setMessages((prev) => [...prev, errMsg]);
-              break;
-            }
-          }
-        }
+        );
       } catch (err: unknown) {
         if (err instanceof Error && err.name === "AbortError") {
-          // User aborted — that's fine
+          // User aborted
         } else {
           const errMsg: ChatMessage = {
             id: `msg-${Date.now()}-err`,
             role: "system",
-            content: `Connection error: ${err instanceof Error ? err.message : "Unknown error"}. Is BrainstormServer running on port 3100?`,
+            content: `Connection error: ${err instanceof Error ? err.message : "Unknown error"}`,
             timestamp: Date.now(),
           };
           setMessages((prev) => [...prev, errMsg]);
@@ -203,7 +234,7 @@ export function useChat(): UseChatReturn {
           content: accumulatedText,
           model,
           provider,
-          cost: turnCost > 0 ? turnCost - (sessionCost - turnCost) : undefined,
+          cost: turnCost > 0 ? turnCost : undefined,
           timestamp: Date.now(),
           toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
           reasoning,
@@ -221,6 +252,7 @@ export function useChat(): UseChatReturn {
 
   const abort = useCallback(() => {
     abortRef.current?.abort();
+    abortChat().catch(() => {});
   }, []);
 
   const clear = useCallback(() => {
@@ -237,6 +269,7 @@ export function useChat(): UseChatReturn {
     currentModel,
     currentProvider,
     sessionCost,
+    contextPercent,
     activeTools,
     send,
     abort,

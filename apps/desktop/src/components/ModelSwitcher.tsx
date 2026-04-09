@@ -114,12 +114,14 @@ export function ModelSwitcher({
   return (
     <div
       ref={panelRef}
+      data-testid="model-switcher"
       className="absolute bottom-8 left-[240px] w-80 bg-[var(--ctp-base)] border border-[var(--ctp-surface1)] rounded-xl shadow-2xl overflow-hidden z-50"
     >
       <div className="px-3 py-2 border-b border-[var(--ctp-surface0)]">
         <input
           type="text"
           value={filter}
+          data-testid="model-search"
           onChange={(e) => setFilter(e.target.value)}
           placeholder="Search models..."
           autoFocus
@@ -138,6 +140,7 @@ export function ModelSwitcher({
               .map((model) => (
                 <button
                   key={model.id}
+                  data-testid={`model-${model.id}`}
                   onClick={() => {
                     onSelect(model);
                     onClose();

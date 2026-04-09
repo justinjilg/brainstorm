@@ -35,6 +35,7 @@ export function ProjectSelector({
       {/* Current project button */}
       <button
         onClick={() => setExpanded(!expanded)}
+        data-testid="project-selector"
         className="interactive w-full flex items-center gap-2 px-3 py-2 rounded-xl"
         style={{
           background: "var(--ctp-surface0)",
@@ -157,6 +158,7 @@ export function ProjectSelector({
               onOpenFolder();
               setExpanded(false);
             }}
+            data-testid="open-folder"
             className="interactive w-full text-left px-3 py-2.5 flex items-center gap-2"
           >
             <span

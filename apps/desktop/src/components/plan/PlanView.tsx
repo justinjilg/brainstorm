@@ -4,7 +4,8 @@
  * cost tracking, and approval gates.
  */
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
+import { request } from "../../lib/ipc-client";
 
 export type PlanStatus =
   | "idle"
@@ -103,36 +104,123 @@ export function PlanView({
   onResume,
 }: PlanViewProps) {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [planInput, setPlanInput] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [presets, setPresets] = useState<
+    Array<{ id: string; name: string; description: string; steps: number }>
+  >([]);
+
+  // Load presets on first render
+  useState(() => {
+    request<
+      Array<{ id: string; name: string; description: string; steps: number }>
+    >("workflow.presets")
+      .then(setPresets)
+      .catch(() => {});
+  });
+
+  const runWorkflow = useCallback(
+    async (workflowId: string, userRequest: string) => {
+      setGenerating(true);
+      try {
+        await request("workflow.run", { workflowId, request: userRequest });
+      } catch (e) {
+        console.error("Workflow failed:", e);
+      }
+      setGenerating(false);
+    },
+    [],
+  );
 
   if (!plan) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-[var(--ctp-base)]">
-        <div className="text-center animate-fade-in">
-          <div
-            className="tracking-[0.2em] uppercase font-semibold mb-3"
-            style={{ fontSize: "var(--text-lg)", color: "var(--ctp-overlay1)" }}
-          >
-            Plan Execution
-          </div>
-          <div
-            className="mb-6 max-w-md"
-            style={{ fontSize: "var(--text-sm)", color: "var(--ctp-overlay0)" }}
-          >
-            Send a complex prompt in Chat to generate a multi-phase execution
-            plan. Your team will be assigned to phases automatically.
-          </div>
-          <div
-            className="flex items-center justify-center gap-2"
-            style={{
-              fontSize: "var(--text-2xs)",
-              color: "var(--ctp-overlay0)",
-            }}
-          >
-            <span>⌘1 Chat</span>
-            <span>·</span>
-            <span>Define team in Navigator</span>
-            <span>·</span>
-            <span>Type a complex request</span>
+      <div className="flex-1 flex flex-col overflow-hidden bg-[var(--ctp-base)]">
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center animate-fade-in max-w-lg">
+            <div
+              className="tracking-[0.2em] uppercase font-semibold mb-3"
+              style={{
+                fontSize: "var(--text-lg)",
+                color: "var(--ctp-overlay1)",
+              }}
+            >
+              Plan Execution
+            </div>
+            <div
+              className="mb-6"
+              style={{
+                fontSize: "var(--text-sm)",
+                color: "var(--ctp-overlay0)",
+              }}
+            >
+              Describe what you want to build. The workflow engine will break it
+              into phases, assign agents, and execute with approval gates.
+            </div>
+
+            {/* Plan input */}
+            <div className="mb-4">
+              <textarea
+                value={planInput}
+                onChange={(e) => setPlanInput(e.target.value)}
+                placeholder="Describe a complex task..."
+                rows={3}
+                className="w-full bg-transparent resize-none outline-none rounded-xl px-4 py-3"
+                style={{
+                  border: "1px solid var(--border-default)",
+                  color: "var(--ctp-text)",
+                  fontSize: "var(--text-sm)",
+                  background: "var(--ctp-surface0)",
+                }}
+              />
+            </div>
+
+            {/* Preset workflows */}
+            {presets.length > 0 && (
+              <div className="mb-4">
+                <div
+                  className="mb-2"
+                  style={{
+                    fontSize: "var(--text-2xs)",
+                    color: "var(--ctp-overlay0)",
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Preset Workflows
+                </div>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {presets.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() =>
+                        runWorkflow(p.id, planInput || p.description)
+                      }
+                      disabled={generating}
+                      className="interactive px-3 py-1.5 rounded-lg disabled:opacity-40"
+                      style={{
+                        fontSize: "var(--text-2xs)",
+                        border: "1px solid var(--border-default)",
+                        color: "var(--ctp-subtext1)",
+                      }}
+                    >
+                      {p.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {generating && (
+              <div
+                className="animate-pulse-glow"
+                style={{
+                  fontSize: "var(--text-sm)",
+                  color: "var(--ctp-mauve)",
+                }}
+              >
+                Executing workflow...
+              </div>
+            )}
           </div>
         </div>
       </div>

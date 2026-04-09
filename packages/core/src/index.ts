@@ -46,6 +46,7 @@ export {
 } from "./skills/loader.js";
 export {
   MemoryManager,
+  searchMemoriesBM25,
   type MemoryEntry,
   type MemoryTier,
   type MemorySource,

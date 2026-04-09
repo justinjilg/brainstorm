@@ -8,6 +8,9 @@ import { Markdown } from "./Markdown";
 
 interface ChatViewProps {
   conversationId: string | null;
+  activeModelId?: string;
+  activeRole?: string | null;
+  activeSkills?: string[];
   onCostUpdate: (cost: number) => void;
   onModelUpdate: (model: string, provider: string) => void;
   onContextUpdate: (percent: number) => void;
@@ -15,16 +18,23 @@ interface ChatViewProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onModeChange: (...args: any[]) => void;
   onOpenPalette: () => void;
+  onAgentEvent?: (event: any) => void;
 }
 
 export function ChatView({
   conversationId,
+  activeModelId,
+  activeRole,
+  activeSkills,
   onCostUpdate,
   onModelUpdate,
+  onContextUpdate,
   onNewConversation,
   onModeChange,
   onOpenPalette,
+  onAgentEvent: _onAgentEvent,
 }: ChatViewProps) {
+  void _onAgentEvent; // Events captured by App.tsx onAgentEvent prop
   const {
     messages,
     streamingText,
@@ -33,6 +43,7 @@ export function ChatView({
     currentProvider,
     sessionCost,
     activeTools,
+    contextPercent,
     send,
     abort,
   } = useChat();
@@ -40,10 +51,18 @@ export function ChatView({
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const onContextUpdateRef = useRef(onContextUpdate);
+  onContextUpdateRef.current = onContextUpdate;
 
   useEffect(() => {
     onCostUpdate(sessionCost);
   }, [sessionCost, onCostUpdate]);
+
+  useEffect(() => {
+    if (contextPercent > 0) {
+      onContextUpdateRef.current(contextPercent);
+    }
+  }, [contextPercent]);
 
   useEffect(() => {
     if (currentModel && currentProvider) {
@@ -61,8 +80,21 @@ export function ChatView({
     const text = input.trim();
     if (!text || isProcessing) return;
     setInput("");
-    send(text, { conversationId: conversationId ?? undefined });
-  }, [input, isProcessing, send, conversationId]);
+    send(text, {
+      conversationId: conversationId ?? undefined,
+      modelId: activeModelId,
+      role: activeRole ?? undefined,
+      activeSkills,
+    });
+  }, [
+    input,
+    isProcessing,
+    send,
+    conversationId,
+    activeModelId,
+    activeRole,
+    activeSkills,
+  ]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -95,7 +127,10 @@ export function ChatView({
         <div className="max-w-[720px] mx-auto px-6 py-8">
           {/* Empty state */}
           {messages.length === 0 && !isProcessing && (
-            <div className="flex items-center justify-center min-h-[60vh]">
+            <div
+              className="flex items-center justify-center min-h-[60vh]"
+              data-testid="empty-state"
+            >
               <div className="text-center animate-fade-in">
                 <div
                   className="tracking-[0.3em] uppercase font-semibold mb-3"
@@ -139,6 +174,7 @@ export function ChatView({
                     <button
                       key={action.label}
                       onClick={action.onClick}
+                      data-testid={`action-${action.label.toLowerCase().replace(/\s+/g, "-")}`}
                       className="interactive flex flex-col items-center gap-1.5 px-5 py-3 rounded-xl"
                       style={{
                         border: "1px solid var(--border-default)",
@@ -247,6 +283,7 @@ export function ChatView({
             <textarea
               ref={inputRef}
               value={input}
+              data-testid="chat-input"
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
               placeholder={
@@ -270,6 +307,7 @@ export function ChatView({
             {isProcessing ? (
               <button
                 onClick={abort}
+                data-testid="stop-button"
                 className="interactive shrink-0 w-8 h-8 rounded-full flex items-center justify-center"
                 style={{
                   background: "var(--ctp-red)",
@@ -283,6 +321,7 @@ export function ChatView({
               <button
                 onClick={handleSend}
                 disabled={!input.trim()}
+                data-testid="send-button"
                 className="interactive shrink-0 w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-20 disabled:cursor-not-allowed"
                 style={{
                   background: input.trim()

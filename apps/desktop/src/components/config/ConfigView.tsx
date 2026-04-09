@@ -2,11 +2,12 @@
  * Config View — wired to real server health data.
  */
 
-import { useHealthStats, useTools } from "../../hooks/useServerData";
+import { useHealthStats, useTools, useConfig } from "../../hooks/useServerData";
 
 export function ConfigView() {
   const health = useHealthStats();
   const { count: toolCount } = useTools();
+  const { config } = useConfig();
 
   return (
     <div
@@ -37,49 +38,70 @@ export function ConfigView() {
           <Row label="Tools" value={String(toolCount)} />
           <Row
             label="God Mode"
-            value={`${health?.god_mode.connected ?? 0} systems, ${health?.god_mode.tools ?? 0} tools`}
+            value={`${health?.god_mode?.connected ?? 0} systems, ${health?.god_mode?.tools ?? 0} tools`}
           />
           <Row
             label="Conversations"
-            value={String(health?.conversations.active ?? 0)}
+            value={String(health?.conversations?.active ?? 0)}
           />
         </Section>
 
         <Section title="Routing Strategy">
-          <Row label="Active strategy" value="combined" />
           <Row
-            label="Routing mode"
-            value="auto (Thompson sampling when data available)"
+            label="Active strategy"
+            value={config?.general?.defaultModel ? "manual" : "combined"}
           />
-          <Row label="Cost weight" value="0.25" />
-        </Section>
-
-        <Section title="Permissions">
           <Row
-            label="Mode"
-            value="confirm"
-            badge
-            badgeColor="var(--ctp-yellow)"
+            label="Default model"
+            value={config?.general?.defaultModel ?? "auto"}
           />
-          <Row label="Session TTL" value="30 minutes" />
+          <Row
+            label="Output style"
+            value={config?.general?.outputStyle ?? "default"}
+          />
         </Section>
 
         <Section title="KAIROS Daemon">
-          <Row label="Status" value="stopped" />
-          <Row label="Tick interval" value="30,000ms" />
-          <Row label="Max ticks/session" value="100" />
-          <Row label="Approval gate" value="every 25 ticks" />
+          <Row
+            label="Tick interval"
+            value={`${config?.daemon?.tickIntervalMs ?? 30000}ms`}
+          />
+          <Row
+            label="Max ticks/session"
+            value={String(config?.daemon?.maxTicksPerSession ?? 100)}
+          />
+          <Row
+            label="Approval gate"
+            value={
+              config?.daemon?.approvalGateInterval
+                ? `every ${config.daemon.approvalGateInterval} ticks`
+                : "disabled"
+            }
+          />
         </Section>
 
         <Section title="Budget">
-          <Row label="Session limit" value="$5.00" />
-          <Row label="Daily limit" value="$50.00" />
-          <Row label="Monthly limit" value="$500.00" />
+          <Row
+            label="Session limit"
+            value={`$${config?.budget?.sessionLimit?.toFixed(2) ?? "5.00"}`}
+          />
+          <Row
+            label="Daily limit"
+            value={`$${config?.budget?.dailyLimit?.toFixed(2) ?? "50.00"}`}
+          />
+          <Row
+            label="Monthly limit"
+            value={`$${config?.budget?.monthlyLimit?.toFixed(2) ?? "500.00"}`}
+          />
           <Row
             label="Hard limit"
-            value="enabled"
+            value={config?.budget?.hardLimit !== false ? "enabled" : "disabled"}
             badge
-            badgeColor="var(--ctp-red)"
+            badgeColor={
+              config?.budget?.hardLimit !== false
+                ? "var(--ctp-red)"
+                : "var(--ctp-green)"
+            }
           />
         </Section>
 
