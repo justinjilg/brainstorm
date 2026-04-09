@@ -3,6 +3,7 @@
  */
 
 import { useState } from "react";
+import { useModels } from "../../hooks/useServerData";
 
 interface ModelInfo {
   id: string;
@@ -15,7 +16,7 @@ interface ModelInfo {
   outputPrice: number;
 }
 
-const DEMO_MODELS: ModelInfo[] = [
+const FALLBACK_MODELS: ModelInfo[] = [
   {
     id: "claude-opus-4-6",
     name: "Claude Opus 4.6",
@@ -90,11 +91,29 @@ export function ModelsView({
 }: {
   onModelSelect?: (id: string, name: string, provider: string) => void;
 }) {
+  const { models: serverModels } = useModels();
   const [selected, setSelected] = useState<string | null>(null);
   const [compareMode, setCompareMode] = useState(false);
   const [compared, setCompared] = useState<Set<string>>(new Set());
 
-  const selectedModel = DEMO_MODELS.find((m) => m.id === selected);
+  // Use server models if available, fall back to demo data
+  const allModels: ModelInfo[] =
+    serverModels.length > 0
+      ? serverModels.map((m) => ({
+          id: m.id,
+          name: m.name,
+          provider: m.provider,
+          status: (m.status === "available" ? "available" : "unavailable") as
+            | "available"
+            | "unavailable",
+          quality: 80,
+          speed: 70,
+          inputPrice: m.pricing?.inputPer1MTokens ?? 0,
+          outputPrice: m.pricing?.outputPer1MTokens ?? 0,
+        }))
+      : FALLBACK_MODELS;
+
+  const selectedModel = allModels.find((m) => m.id === selected);
 
   const toggleCompare = (id: string) => {
     setCompared((prev) => {
@@ -111,9 +130,10 @@ export function ModelsView({
       <div className="w-[55%] border-r border-[var(--ctp-surface0)] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--ctp-surface0)]">
           <span className="text-xs font-medium text-[var(--ctp-overlay0)] uppercase tracking-wider">
-            Model Explorer ({DEMO_MODELS.length})
+            Model Explorer ({allModels.length})
           </span>
           <button
+            data-testid="compare-toggle"
             onClick={() => setCompareMode(!compareMode)}
             className={`text-[10px] px-2 py-0.5 rounded ${
               compareMode
@@ -126,9 +146,10 @@ export function ModelsView({
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {DEMO_MODELS.map((model) => (
+          {allModels.map((model) => (
             <div
               key={model.id}
+              data-testid={`model-row-${model.id}`}
               onClick={() =>
                 compareMode ? toggleCompare(model.id) : setSelected(model.id)
               }
@@ -254,6 +275,7 @@ function ModelDetail({
 
       <button
         onClick={() => onSelect?.(model.id, model.name, model.provider)}
+        data-testid="use-model"
         className="interactive w-full py-2 rounded-lg text-xs font-medium bg-[var(--ctp-mauve)] text-[var(--ctp-crust)] hover:brightness-110"
       >
         Use This Model

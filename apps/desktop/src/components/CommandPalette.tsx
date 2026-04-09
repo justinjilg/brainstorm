@@ -276,6 +276,7 @@ export function CommandPalette({
 
       {/* Palette */}
       <div
+        data-testid="command-palette"
         className="relative w-[520px] max-h-[420px] rounded-2xl overflow-hidden flex flex-col animate-fade-in"
         style={{
           background: "var(--surface-float)",
@@ -293,6 +294,7 @@ export function CommandPalette({
             ref={inputRef}
             type="text"
             value={query}
+            data-testid="palette-search"
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Type a command..."
@@ -321,6 +323,7 @@ export function CommandPalette({
                 return (
                   <button
                     key={cmd.id}
+                    data-testid={`cmd-${cmd.id}`}
                     onClick={() => executeCommand(cmd)}
                     className={`w-full flex items-center justify-between px-4 py-1.5 text-sm transition-colors ${
                       idx === selectedIndex

@@ -5,21 +5,27 @@
 import { useState } from "react";
 import { useSkills } from "../../hooks/useServerData";
 
-export function SkillsView() {
-  const { skills, loading } = useSkills();
-  const [selectedName, setSelectedName] = useState<string | null>(null);
-  const [activeSkills, setActiveSkills] = useState<Set<string>>(new Set());
+interface SkillsViewProps {
+  activeSkills?: string[];
+  onActiveSkillsChange?: (skills: string[]) => void;
+}
 
+export function SkillsView({
+  activeSkills: activeSkillsProp = [],
+  onActiveSkillsChange,
+}: SkillsViewProps) {
+  const { skills, loading, error } = useSkills();
+  const [selectedName, setSelectedName] = useState<string | null>(null);
+
+  const activeSet = new Set(activeSkillsProp);
   const selected = skills.find((s) => s.name === selectedName);
-  const activeCount = activeSkills.size;
+  const activeCount = activeSet.size;
 
   const toggleSkill = (name: string) => {
-    setActiveSkills((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
+    const next = new Set(activeSet);
+    if (next.has(name)) next.delete(name);
+    else next.add(name);
+    onActiveSkillsChange?.([...next]);
   };
 
   return (
@@ -46,7 +52,18 @@ export function SkillsView() {
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {loading ? (
+          {error ? (
+            <div
+              data-testid="skills-error"
+              className="p-4"
+              style={{
+                fontSize: "var(--text-sm)",
+                color: "var(--ctp-red)",
+              }}
+            >
+              {error}
+            </div>
+          ) : loading ? (
             <div
               className="p-4 animate-pulse-glow"
               style={{
@@ -70,6 +87,7 @@ export function SkillsView() {
             skills.map((skill) => (
               <div
                 key={skill.name}
+                data-testid={`skill-row-${skill.name}`}
                 draggable
                 onDragStart={(e) => {
                   e.dataTransfer.setData("skill", skill.name);
@@ -90,19 +108,20 @@ export function SkillsView() {
                     e.stopPropagation();
                     toggleSkill(skill.name);
                   }}
+                  data-testid={`skill-toggle-${skill.name}`}
                   className="interactive w-4 h-4 rounded border flex items-center justify-center shrink-0"
                   style={{
                     fontSize: "var(--text-2xs)",
-                    borderColor: activeSkills.has(skill.name)
+                    borderColor: activeSet.has(skill.name)
                       ? "var(--ctp-green)"
                       : "var(--ctp-surface2)",
-                    background: activeSkills.has(skill.name)
+                    background: activeSet.has(skill.name)
                       ? "var(--ctp-green)"
                       : "transparent",
                     color: "var(--ctp-crust)",
                   }}
                 >
-                  {activeSkills.has(skill.name) ? "✓" : ""}
+                  {activeSet.has(skill.name) ? "✓" : ""}
                 </button>
                 <div className="flex-1 min-w-0">
                   <div
@@ -178,15 +197,15 @@ export function SkillsView() {
                 className="px-2 py-0.5 rounded-md"
                 style={{
                   fontSize: "var(--text-2xs)",
-                  color: activeSkills.has(selected.name)
+                  color: activeSet.has(selected.name)
                     ? "var(--ctp-green)"
                     : "var(--ctp-overlay0)",
-                  background: activeSkills.has(selected.name)
+                  background: activeSet.has(selected.name)
                     ? "var(--glow-green)"
                     : "var(--ctp-surface0)",
                 }}
               >
-                {activeSkills.has(selected.name) ? "Active" : "Inactive"}
+                {activeSet.has(selected.name) ? "Active" : "Inactive"}
               </span>
             </div>
             <div

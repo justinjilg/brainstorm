@@ -3,7 +3,7 @@
  */
 
 import { useState, useCallback } from "react";
-import { getClient } from "../../lib/api-client";
+import { request } from "../../lib/ipc-client";
 
 interface CategoryScore {
   category: string;
@@ -30,14 +30,17 @@ export function SecurityView() {
   const runRedTeam = useCallback(async () => {
     setRunning(true);
     setError(null);
-    const client = getClient();
-    const result = await client.runRedTeam({
-      generations: 5,
-      populationSize: 30,
-    });
-    if (result !== null && result !== undefined) {
-      setScorecard(result);
-    } else {
+    try {
+      const result = await request<Scorecard>("security.redteam", {
+        generations: 5,
+        populationSize: 30,
+      });
+      if (result) {
+        setScorecard(result);
+      } else {
+        setError("Red team simulation failed — check server logs");
+      }
+    } catch {
       setError("Red team simulation failed — check server logs");
     }
     setRunning(false);
@@ -62,6 +65,7 @@ export function SecurityView() {
         <button
           onClick={runRedTeam}
           disabled={running}
+          data-testid="run-red-team"
           className="interactive px-4 py-1.5 rounded-lg disabled:opacity-40"
           style={{
             fontSize: "var(--text-xs)",
@@ -235,6 +239,7 @@ export function SecurityView() {
               ].map((layer, i) => (
                 <div
                   key={layer.name}
+                  data-testid={`pipeline-layer-${i}`}
                   className="flex items-center gap-3 px-4 py-2 rounded-xl"
                   style={{
                     background: "var(--ctp-surface0)",

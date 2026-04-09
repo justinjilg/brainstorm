@@ -17,8 +17,16 @@ const TIER_CONFIG: Record<
 };
 
 export function MemoryView() {
-  const { entries, loading, promote, quarantine, demote, remove, create } =
-    useMemory();
+  const {
+    entries,
+    loading,
+    error,
+    promote,
+    quarantine,
+    demote,
+    remove,
+    create,
+  } = useMemory();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeTier, setActiveTier] = useState<MemoryTier | "all">("all");
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -60,6 +68,7 @@ export function MemoryView() {
             <button
               key={tier}
               onClick={() => setActiveTier(tier)}
+              data-testid={`tier-${tier}`}
               className="interactive px-2 py-1 rounded-md"
               style={{
                 fontSize: "var(--text-2xs)",
@@ -80,7 +89,18 @@ export function MemoryView() {
 
         {/* Entries */}
         <div className="flex-1 overflow-y-auto">
-          {loading ? (
+          {error ? (
+            <div
+              data-testid="memory-error"
+              className="p-4"
+              style={{
+                fontSize: "var(--text-sm)",
+                color: "var(--ctp-red)",
+              }}
+            >
+              {error}
+            </div>
+          ) : loading ? (
             <div
               className="p-4 animate-pulse-glow"
               style={{
@@ -107,6 +127,7 @@ export function MemoryView() {
                 <div
                   key={entry.id}
                   onClick={() => setSelectedId(entry.id)}
+                  data-testid={`memory-entry-${entry.id}`}
                   className="interactive px-4 py-3"
                   style={{
                     borderBottom: "1px solid var(--border-subtle)",
@@ -150,6 +171,7 @@ export function MemoryView() {
         >
           <button
             onClick={() => setShowCreateForm(true)}
+            data-testid="new-entry"
             className="interactive px-2 py-1 rounded-lg"
             style={{
               fontSize: "var(--text-2xs)",
@@ -164,6 +186,7 @@ export function MemoryView() {
         {/* Create form */}
         {showCreateForm && (
           <div
+            data-testid="create-form"
             className="px-4 py-3 animate-fade-in"
             style={{
               borderTop: "1px solid var(--border-subtle)",
@@ -305,6 +328,7 @@ function MemoryDetail({
         {entry.tier !== "system" && (
           <button
             onClick={onPromote}
+            data-testid="promote"
             className="interactive px-3 py-1.5 rounded-lg"
             style={{
               fontSize: "var(--text-2xs)",
@@ -332,6 +356,7 @@ function MemoryDetail({
         {entry.tier !== "quarantine" && (
           <button
             onClick={onQuarantine}
+            data-testid="quarantine"
             className="interactive px-3 py-1.5 rounded-lg"
             style={{
               fontSize: "var(--text-2xs)",
@@ -345,6 +370,7 @@ function MemoryDetail({
         )}
         <button
           onClick={onDelete}
+          data-testid="delete-memory"
           className="interactive px-3 py-1.5 rounded-lg"
           style={{
             fontSize: "var(--text-2xs)",

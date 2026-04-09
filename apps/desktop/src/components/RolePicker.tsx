@@ -114,6 +114,7 @@ export function RolePicker({
   return (
     <div
       ref={panelRef}
+      data-testid="role-picker"
       className="absolute bottom-8 left-0 w-72 bg-[var(--ctp-base)] border border-[var(--ctp-surface1)] rounded-xl shadow-2xl overflow-hidden z-50"
     >
       <div className="px-3 py-2 border-b border-[var(--ctp-surface0)]">
@@ -131,6 +132,7 @@ export function RolePicker({
               onRoleSelect(null);
               onClose();
             }}
+            data-testid="role-clear"
             className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
               currentRole === null
                 ? "bg-[var(--ctp-surface0)] text-[var(--ctp-text)]"
@@ -143,6 +145,7 @@ export function RolePicker({
           {ROLES.map((role) => (
             <button
               key={role.id}
+              data-testid={`role-${role.id}`}
               onClick={() => {
                 onRoleSelect(role.id);
                 onClose();

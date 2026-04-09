@@ -62,6 +62,12 @@ export interface MemoryEntry {
   contentHash: string;
   /** Who created this entry (user, agent model ID, dream, import). */
   author?: string;
+  /** Temporal validity — when this fact became true. Omit for timeless entries. */
+  validFrom?: number;
+  /** Temporal validity — when this fact stopped being true. Omit if still current. */
+  validUntil?: number;
+  /** Project path this entry belongs to (for cross-project indexing). */
+  projectPath?: string;
 }
 
 /**
@@ -76,6 +82,12 @@ export interface MemoryEntry {
 const INDEX_DEBOUNCE_MS = 2000;
 /** Hard cap on total memory file size (excluding MEMORY.md index). */
 const MAX_MEMORY_BYTES = 25 * 1024; // 25KB — matches Claude Code's cap
+/** Token budget for system tier (always-loaded context). ~4 chars per token. */
+const SYSTEM_TIER_TOKEN_BUDGET = 800;
+/** Rough token estimation: ~4 characters per token. */
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
 
 export class MemoryManager {
   private memoryDir: string;
@@ -204,6 +216,9 @@ export class MemoryManager {
     ];
     if (memory.sourceUrl) fmLines.push(`sourceUrl: ${memory.sourceUrl}`);
     if (memory.author) fmLines.push(`author: ${memory.author}`);
+    if (memory.validFrom) fmLines.push(`validFrom: ${memory.validFrom}`);
+    if (memory.validUntil) fmLines.push(`validUntil: ${memory.validUntil}`);
+    if (memory.projectPath) fmLines.push(`projectPath: ${memory.projectPath}`);
     fmLines.push("---", "", memory.content);
     writeFileSync(filePath, fmLines.join("\n"), "utf-8");
 
@@ -275,21 +290,53 @@ export class MemoryManager {
    */
   getContextString(): string {
     const parts: string[] = [];
-    const systemEntries = this.list().filter((m) => m.tier === "system");
-    const archiveEntries = this.list().filter((m) => m.tier === "archive");
-    const quarantinedEntries = this.list().filter(
-      (m) => m.tier === "quarantine",
+    const now = Math.floor(Date.now() / 1000);
+
+    // Filter out expired entries (validUntil in the past)
+    const active = this.list().filter(
+      (m) => !m.validUntil || m.validUntil > now,
     );
 
+    const systemEntries = active.filter((m) => m.tier === "system");
+    const archiveEntries = active.filter((m) => m.tier === "archive");
+    const quarantinedEntries = active.filter((m) => m.tier === "quarantine");
+
+    // Token-budgeted system tier: sort by trust (highest first), include until budget exhausted
     if (systemEntries.length > 0) {
       parts.push("### Active Memory (always loaded)\n");
-      for (const m of systemEntries) {
-        const trustTag =
-          m.source !== "user_input"
-            ? ` [source: ${m.source}, trust: ${m.trustScore.toFixed(1)}]`
-            : "";
-        parts.push(`**${m.name}** (${m.type})${trustTag}: ${m.description}`);
-        parts.push(m.content);
+      const sorted = [...systemEntries].sort(
+        (a, b) => b.trustScore - a.trustScore,
+      );
+      let tokenBudget = SYSTEM_TIER_TOKEN_BUDGET;
+      let included = 0;
+      const overflowed: MemoryEntry[] = [];
+
+      for (const m of sorted) {
+        const block = `**${m.name}** (${m.type}): ${m.description}\n${m.content}\n`;
+        const tokens = estimateTokens(block);
+        if (tokenBudget - tokens >= 0) {
+          const trustTag =
+            m.source !== "user_input"
+              ? ` [source: ${m.source}, trust: ${m.trustScore.toFixed(1)}]`
+              : "";
+          parts.push(`**${m.name}** (${m.type})${trustTag}: ${m.description}`);
+          parts.push(m.content);
+          parts.push("");
+          tokenBudget -= tokens;
+          included++;
+        } else {
+          overflowed.push(m);
+        }
+      }
+
+      // Overflow entries shown as index-only (like archive)
+      if (overflowed.length > 0) {
+        parts.push(
+          `> ${overflowed.length} system entries exceeded token budget — showing as index:\n`,
+        );
+        for (const m of overflowed) {
+          parts.push(`- **${m.name}** — ${m.description}`);
+        }
         parts.push("");
       }
     }
@@ -434,6 +481,11 @@ export class MemoryManager {
     const storedHash = fm.match(/contentHash:\s*(.+)/)?.[1]?.trim();
     const sourceUrl = fm.match(/sourceUrl:\s*(.+)/)?.[1]?.trim();
     const author = fm.match(/author:\s*(.+)/)?.[1]?.trim();
+    const validFrom =
+      parseInt(fm.match(/validFrom:\s*(.+)/)?.[1]?.trim() ?? "") || undefined;
+    const validUntil =
+      parseInt(fm.match(/validUntil:\s*(.+)/)?.[1]?.trim() ?? "") || undefined;
+    const projectPath = fm.match(/projectPath:\s*(.+)/)?.[1]?.trim();
 
     // Integrity check: verify content hash if stored
     const computedHash = createHash("sha256")
@@ -464,6 +516,9 @@ export class MemoryManager {
       trustScore,
       contentHash: computedHash,
       author,
+      validFrom,
+      validUntil,
+      projectPath,
       createdAt: mtime,
       updatedAt: mtime,
     };
@@ -597,6 +652,25 @@ export class MemoryManager {
     return !!this.save({ ...entry, tier: "system", trustScore: trustOverride });
   }
 
+  /** Mark a memory entry as no longer current (sets validUntil to now). */
+  invalidate(id: string): boolean {
+    const entry = this.entries.get(id);
+    if (!entry) return false;
+    return !!this.save({
+      ...entry,
+      validUntil: Math.floor(Date.now() / 1000),
+    });
+  }
+
+  /** Query memories that were valid at a specific point in time. */
+  asOf(timestamp: number): MemoryEntry[] {
+    return this.list().filter((m) => {
+      if (m.validFrom && m.validFrom > timestamp) return false;
+      if (m.validUntil && m.validUntil < timestamp) return false;
+      return true;
+    });
+  }
+
   /** Demote a system entry to archive (index only). */
   demote(id: string): boolean {
     const entry = this.entries.get(id);
@@ -633,4 +707,133 @@ export class MemoryManager {
       log.warn({ err: e, file: filename }, "Failed to backup corrupt file");
     }
   }
+
+  /**
+   * Update the global cross-project memory index.
+   * Writes concept → project mappings to ~/.brainstorm/memory-index.json.
+   * Enables pattern discovery across projects ("auth" appears in 3 projects).
+   */
+  updateGlobalIndex(projectName: string): void {
+    const globalIndexPath = join(homedir(), ".brainstorm", "memory-index.json");
+    let index: Record<string, string[]> = {};
+    try {
+      if (existsSync(globalIndexPath)) {
+        index = JSON.parse(readFileSync(globalIndexPath, "utf-8"));
+      }
+    } catch {
+      index = {};
+    }
+
+    // Extract concepts from this project's memories
+    for (const entry of this.list()) {
+      // Use entry name + type as concept keys
+      const concepts = [
+        entry.name.toLowerCase(),
+        entry.type,
+        ...(entry.description ?? "")
+          .toLowerCase()
+          .split(/\s+/)
+          .filter((w: string) => w.length > 4),
+      ];
+      for (const concept of concepts) {
+        if (!index[concept]) index[concept] = [];
+        if (!index[concept].includes(projectName)) {
+          index[concept].push(projectName);
+        }
+      }
+    }
+
+    try {
+      writeFileSync(globalIndexPath, JSON.stringify(index, null, 2), "utf-8");
+    } catch (e) {
+      log.warn({ err: e }, "Failed to update global memory index");
+    }
+  }
+
+  /**
+   * Find concepts that appear across multiple projects (tunnels).
+   * Returns concepts sorted by how many projects share them.
+   */
+  static getCrossProjectConcepts(): Array<{
+    concept: string;
+    projects: string[];
+  }> {
+    const globalIndexPath = join(homedir(), ".brainstorm", "memory-index.json");
+    try {
+      if (!existsSync(globalIndexPath)) return [];
+      const index: Record<string, string[]> = JSON.parse(
+        readFileSync(globalIndexPath, "utf-8"),
+      );
+      return Object.entries(index)
+        .filter(([, projects]) => projects.length > 1)
+        .map(([concept, projects]) => ({ concept, projects }))
+        .sort((a, b) => b.projects.length - a.projects.length);
+    } catch {
+      return [];
+    }
+  }
+}
+
+/**
+ * Semantic search using TF-IDF with BM25 scoring.
+ * Significantly better than simple keyword matching for memory retrieval.
+ */
+export function searchMemoriesBM25(
+  entries: MemoryEntry[],
+  query: string,
+  k = 10,
+): MemoryEntry[] {
+  if (entries.length === 0 || !query.trim()) return [];
+
+  const queryTerms = query
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, " ")
+    .split(/\s+/)
+    .filter((t) => t.length > 1);
+
+  if (queryTerms.length === 0) return [];
+
+  // BM25 parameters
+  const k1 = 1.2;
+  const b = 0.75;
+
+  // Build document frequency map
+  const df: Record<string, number> = {};
+  const docs = entries.map((e) => {
+    const text = `${e.name} ${e.description} ${e.content}`.toLowerCase();
+    const terms = text.replace(/[^a-z0-9_]+/g, " ").split(/\s+/);
+    const tf: Record<string, number> = {};
+    for (const t of terms) {
+      tf[t] = (tf[t] ?? 0) + 1;
+      if (tf[t] === 1) df[t] = (df[t] ?? 0) + 1;
+    }
+    return { entry: e, tf, length: terms.length };
+  });
+
+  const avgDl = docs.reduce((s, d) => s + d.length, 0) / docs.length;
+  const N = docs.length;
+
+  const scored = docs.map(({ entry, tf, length }) => {
+    let score = 0;
+    for (const term of queryTerms) {
+      const termFreq = tf[term] ?? 0;
+      if (termFreq === 0) continue;
+      const idf = Math.log(
+        (N - (df[term] ?? 0) + 0.5) / ((df[term] ?? 0) + 0.5) + 1,
+      );
+      score +=
+        idf *
+        ((termFreq * (k1 + 1)) /
+          (termFreq + k1 * (1 - b + b * (length / avgDl))));
+    }
+    // Trust boost: higher trust entries rank slightly higher
+    score *= 0.8 + 0.2 * entry.trustScore;
+    return { entry, score };
+  });
+
+  return scored
+    .filter((s) => s.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, k)
+    .map((s) => s.entry);
 }

@@ -72,6 +72,7 @@ export function StatusRail({
         {role && (
           <button
             onClick={onRoleClick}
+            data-testid="status-role"
             className="interactive flex items-center gap-1 px-2 py-1 rounded-md"
             title="Change role"
           >
@@ -83,6 +84,7 @@ export function StatusRail({
 
         <button
           onClick={onModelClick}
+          data-testid="status-model"
           className="interactive flex items-center gap-1.5 px-2 py-1 rounded-md"
           title={`Model: ${model} (${provider})`}
         >
@@ -97,6 +99,7 @@ export function StatusRail({
 
         <button
           onClick={onStrategyClick}
+          data-testid="status-strategy"
           className="interactive px-2 py-1 rounded-md text-[var(--ctp-overlay1)]"
           title={`Routing strategy: ${strategy}`}
         >
@@ -109,6 +112,7 @@ export function StatusRail({
         {/* Cost */}
         <span
           className="font-mono px-2"
+          data-testid="status-cost"
           style={{ color: costColor(cost) }}
           title={`Session cost: $${cost.toFixed(4)}`}
         >
@@ -165,6 +169,7 @@ export function StatusRail({
         {/* Permission mode */}
         <button
           onClick={onPermissionClick}
+          data-testid="status-permission"
           className="interactive px-2 py-1 rounded-md"
           style={{
             color:

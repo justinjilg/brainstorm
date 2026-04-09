@@ -129,6 +129,7 @@ export function Navigator({
       <div className="px-3 pb-1">
         <div
           onClick={onOpenPalette}
+          data-testid="search-bar"
           className="interactive flex items-center gap-2 px-3 h-8 rounded-lg"
           style={{
             background: "var(--ctp-surface0)",
@@ -149,6 +150,7 @@ export function Navigator({
             <button
               key={mode}
               onClick={() => onModeChange(mode)}
+              data-testid={`mode-${mode}`}
               className="interactive px-2 py-1 rounded-md"
               style={{
                 fontSize: "var(--text-2xs)",
@@ -220,6 +222,7 @@ export function Navigator({
               <div
                 key={conv.id}
                 onClick={() => onConversationSelect(conv.id)}
+                data-testid={`conversation-${conv.id}`}
                 className="interactive flex items-center gap-2 px-3 py-2 rounded-xl mb-0.5"
                 style={{
                   background: isActive ? "var(--ctp-surface0)" : "transparent",
@@ -252,6 +255,7 @@ export function Navigator({
       >
         <div
           onClick={() => onModeChange("config")}
+          data-testid="kairos-widget"
           className="interactive flex items-center gap-2 px-3 py-2 rounded-xl"
           style={{
             background: "var(--ctp-surface0)",
@@ -286,6 +290,7 @@ export function Navigator({
       >
         <button
           onClick={onNewConversation}
+          data-testid="new-conversation"
           className="interactive w-full flex items-center justify-between px-3 py-2 rounded-xl"
           style={{
             border: "1px solid var(--border-default)",

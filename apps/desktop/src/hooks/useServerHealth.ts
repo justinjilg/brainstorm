@@ -4,7 +4,8 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { getClient, type HealthResponse } from "../lib/api-client";
+import { isBackendAlive } from "../lib/ipc-client";
+import type { HealthResponse } from "../lib/api-client";
 
 export interface ServerHealthState {
   connected: boolean;
@@ -27,16 +28,22 @@ export function useServerHealth(pollIntervalMs = 10_000): ServerHealthState & {
 
   const check = useCallback(async () => {
     setState((prev) => ({ ...prev, checking: true }));
-    const client = getClient();
-    const health = await client.health();
+    const alive = await isBackendAlive();
 
     setState({
-      connected: health !== null,
-      health,
+      connected: alive,
+      health: alive
+        ? {
+            status: "healthy",
+            version: "",
+            uptime_seconds: 0,
+            god_mode: { connected: 0, tools: 0 },
+            conversations: { active: 0 },
+          }
+        : null,
       checking: false,
       lastCheck: Date.now(),
-      error:
-        health === null ? "Cannot reach BrainstormServer on port 3100" : null,
+      error: alive ? null : "Backend process not responding",
     });
   }, []);
 

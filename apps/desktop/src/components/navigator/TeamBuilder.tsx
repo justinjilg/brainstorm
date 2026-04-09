@@ -192,6 +192,7 @@ export function TeamBuilder({
           {/* NL input */}
           <input
             value={nlInput}
+            data-testid="agent-nl-input"
             onChange={(e) => setNlInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && nlInput) {
@@ -217,6 +218,7 @@ export function TeamBuilder({
                 <button
                   key={role}
                   onClick={() => addAgent(role)}
+                  data-testid={`role-${role}`}
                   className="interactive px-2 py-1 rounded-lg"
                   style={{
                     fontSize: "var(--text-2xs)",
@@ -245,6 +247,7 @@ export function TeamBuilder({
         <div className="px-2 mt-2">
           <button
             onClick={() => setShowAddAgent(true)}
+            data-testid="add-agent"
             className="interactive w-full flex items-center justify-center gap-1 py-2 rounded-xl"
             style={{
               border: "1px solid var(--border-default)",
@@ -280,6 +283,7 @@ function AgentCard({
   return (
     <div
       className="interactive px-3 py-2.5 rounded-xl group"
+      data-testid={`agent-card-${agent.id}`}
       draggable
       onDragStart={(e) => {
         e.dataTransfer.setData("agent", JSON.stringify(agent));
@@ -327,6 +331,7 @@ function AgentCard({
             e.stopPropagation();
             onRemove();
           }}
+          data-testid={`remove-agent-${agent.id}`}
           className="opacity-0 group-hover:opacity-100 transition-opacity"
           style={{
             fontSize: "var(--text-2xs)",

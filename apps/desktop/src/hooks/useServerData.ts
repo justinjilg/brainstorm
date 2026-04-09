@@ -4,7 +4,8 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { getClient, type HealthResponse } from "../lib/api-client";
+import { request } from "../lib/ipc-client";
+import type { HealthResponse } from "../lib/api-client";
 
 // ── Tools ──────────────────────────────────────────────────────────
 
@@ -17,12 +18,17 @@ export interface ToolInfo {
 export function useTools() {
   const [tools, setTools] = useState<ToolInfo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    const client = getClient();
-    const data = await client.listTools();
-    setTools(data);
+    setError(null);
+    try {
+      const data = await request<ToolInfo[]>("tools.list");
+      setTools(data);
+    } catch {
+      setError("Failed to load tools");
+    }
     setLoading(false);
   }, []);
 
@@ -33,7 +39,7 @@ export function useTools() {
   // Group tools by category
   const grouped = groupTools(tools);
 
-  return { tools, grouped, loading, refresh, count: tools.length };
+  return { tools, grouped, loading, error, refresh, count: tools.length };
 }
 
 function groupTools(
@@ -79,10 +85,13 @@ export function useHealthStats(pollMs = 5000) {
   const [health, setHealth] = useState<HealthResponse | null>(null);
 
   useEffect(() => {
-    const client = getClient();
     const poll = async () => {
-      const h = await client.health();
-      setHealth(h);
+      try {
+        const h = await request<HealthResponse>("health");
+        setHealth(h);
+      } catch {
+        setHealth(null);
+      }
     };
     poll();
     const interval = setInterval(poll, pollMs);
@@ -110,19 +119,23 @@ export interface MemoryEntry {
 export function useMemory() {
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    const client = getClient();
-    const data = await client.listMemory();
-    setEntries(data as MemoryEntry[]);
+    setError(null);
+    try {
+      const data = await request<MemoryEntry[]>("memory.list");
+      setEntries(data);
+    } catch {
+      setError("Failed to load memory entries");
+    }
     setLoading(false);
   }, []);
 
   const promote = useCallback(
     async (id: string) => {
-      const client = getClient();
-      await client.updateMemory(id, { tier: "system" });
+      await request("memory.update", { id, tier: "system" });
       refresh();
     },
     [refresh],
@@ -130,8 +143,7 @@ export function useMemory() {
 
   const quarantine = useCallback(
     async (id: string) => {
-      const client = getClient();
-      await client.updateMemory(id, { tier: "quarantine" });
+      await request("memory.update", { id, tier: "quarantine" });
       refresh();
     },
     [refresh],
@@ -139,8 +151,7 @@ export function useMemory() {
 
   const demote = useCallback(
     async (id: string) => {
-      const client = getClient();
-      await client.updateMemory(id, { tier: "archive" });
+      await request("memory.update", { id, tier: "archive" });
       refresh();
     },
     [refresh],
@@ -148,8 +159,7 @@ export function useMemory() {
 
   const remove = useCallback(
     async (id: string) => {
-      const client = getClient();
-      await client.deleteMemory(id);
+      await request("memory.delete", { id });
       refresh();
     },
     [refresh],
@@ -157,8 +167,7 @@ export function useMemory() {
 
   const create = useCallback(
     async (name: string, content: string) => {
-      const client = getClient();
-      await client.createMemory({ name, content });
+      await request("memory.create", { name, content });
       refresh();
     },
     [refresh],
@@ -171,6 +180,7 @@ export function useMemory() {
   return {
     entries,
     loading,
+    error,
     refresh,
     promote,
     quarantine,
@@ -192,12 +202,17 @@ export interface SkillInfo {
 export function useSkills() {
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    const client = getClient();
-    const data = await client.listSkills();
-    setSkills(data);
+    setError(null);
+    try {
+      const data = await request<SkillInfo[]>("skills.list");
+      setSkills(data);
+    } catch {
+      setError("Failed to load skills");
+    }
     setLoading(false);
   }, []);
 
@@ -205,7 +220,7 @@ export function useSkills() {
     refresh();
   }, [refresh]);
 
-  return { skills, loading, refresh };
+  return { skills, loading, error, refresh };
 }
 
 // ── Models ─────────────────────────────────────────────────────────
@@ -218,15 +233,60 @@ export interface ModelInfo {
   pricing: { inputPer1MTokens: number; outputPer1MTokens: number };
 }
 
+// ── Config ────────────────────────────────────────────────────────
+
+export interface AppConfig {
+  general?: { defaultModel?: string; outputStyle?: string };
+  budget?: {
+    sessionLimit?: number;
+    dailyLimit?: number;
+    monthlyLimit?: number;
+    hardLimit?: boolean;
+  };
+  daemon?: {
+    tickIntervalMs?: number;
+    maxTicksPerSession?: number;
+    approvalGateInterval?: number;
+  };
+  providers?: Array<{ name: string; enabled: boolean }>;
+}
+
+export function useConfig() {
+  const [config, setConfig] = useState<AppConfig | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await request<AppConfig>("config.get");
+      setConfig(data);
+    } catch {
+      // Config not available
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { config, loading, refresh };
+}
+
+// ── Models ────────────────────────────────────────────────────────
+
 export function useModels() {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    const client = getClient();
-    const data = await client.listModels();
-    setModels(data);
+    try {
+      const data = await request<ModelInfo[]>("models.list");
+      setModels(data);
+    } catch {
+      // Models discovery failed — use empty list
+    }
     setLoading(false);
   }, []);
 
