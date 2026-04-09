@@ -42,18 +42,12 @@ test.describe("State Sync — Cross-component state propagation", () => {
     await expect(page.getByTestId("status-model")).toContainText("GPT-5.4");
   });
 
-  test("strategy click cycles through all values", async ({ page }) => {
+  test("strategy is displayed (read-only)", async ({ page }) => {
     await page.goto("/");
-    const btn = page.getByTestId("status-strategy");
-    const seen = new Set<string>();
-    // Click 6 times to cycle through all strategies
-    for (let i = 0; i < 6; i++) {
-      const text = await btn.textContent();
-      if (text) seen.add(text);
-      await btn.click();
-    }
-    // Should have seen multiple different values
-    expect(seen.size).toBeGreaterThan(2);
+    const el = page.getByTestId("status-strategy");
+    const text = await el.textContent();
+    // Default strategy is "combined"
+    expect(text).toBe("combined");
   });
 
   test("permission mode is displayed (read-only)", async ({ page }) => {

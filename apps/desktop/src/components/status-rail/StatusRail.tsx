@@ -97,14 +97,13 @@ export function StatusRail({
 
         <Divider />
 
-        <button
-          onClick={onStrategyClick}
+        <span
           data-testid="status-strategy"
-          className="interactive px-2 py-1 rounded-md text-[var(--ctp-overlay1)]"
+          className="px-2 py-1 rounded-md text-[var(--ctp-overlay1)]"
           title={`Routing strategy: ${strategy}`}
         >
           {strategy}
-        </button>
+        </span>
       </div>
 
       {/* Right: metering */}

@@ -472,16 +472,7 @@ export function App() {
         onRoleClick={() => setRolePickerOpen(true)}
         onModelClick={() => setModelSwitcherOpen(true)}
         onStrategyClick={() => {
-          const strategies = [
-            "auto",
-            "quality",
-            "cost",
-            "combined",
-            "learned",
-            "capability",
-          ];
-          const idx = strategies.indexOf(strategy);
-          setStrategy(strategies[(idx + 1) % strategies.length]);
+          // Strategy is determined by the router — read-only display
         }}
         onPermissionClick={() => {
           // Permission mode is read-only — set from brainstorm config
