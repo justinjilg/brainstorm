@@ -204,6 +204,8 @@ import { createToolSearchTool } from "./builtin/tool-search.js";
 import { daemonSleepTool } from "./builtin/sleep.js";
 import { memoryTool } from "./builtin/memory-tool.js";
 export { createWiredMemoryTool } from "./builtin/memory-tool.js";
+import { pipelineTool } from "./builtin/pipeline-tool.js";
+export { createWiredPipelineTool } from "./builtin/pipeline-tool.js";
 
 export function createDefaultToolRegistry(opts?: {
   daemon?: boolean;
@@ -275,9 +277,10 @@ export function createDefaultToolRegistry(opts?: {
   registry.register(memoryTool);
   // Tool search (1) — discovers and resolves deferred MCP tools
   registry.register(createToolSearchTool(registry));
-  // Daemon sleep — only registered when daemon mode is active
+  // Daemon-only tools — registered when daemon mode is active
   if (opts?.daemon) {
     registry.register(daemonSleepTool);
+    registry.register(pipelineTool); // Stub — wired at runtime with createWiredPipelineTool
   }
   return registry;
 }

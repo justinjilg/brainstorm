@@ -16,6 +16,7 @@ import { BrainstormRouter, CostTracker } from "@brainst0rm/router";
 import {
   createDefaultToolRegistry,
   createWiredMemoryTool,
+  createWiredPipelineTool,
   configureSandbox,
   stopDockerSandbox,
 } from "@brainst0rm/tools";
@@ -5637,6 +5638,49 @@ program
           const wiredDaemonMemory = createWiredMemoryTool(daemonMemory);
           tools.unregister("memory");
           tools.register(wiredDaemonMemory);
+
+          // Wire pipeline dispatch tool — enables daemon to invoke multi-phase orchestration
+          const { createPipelineDispatcher, runOrchestrationPipeline } =
+            await import("@brainst0rm/core");
+          const pipelineDispatcher = createPipelineDispatcher({
+            config,
+            registry,
+            router,
+            costTracker,
+            tools,
+            projectPath,
+          });
+          const wiredPipeline = createWiredPipelineTool(
+            async (request, opts) => {
+              const phases: Array<{
+                phase: string;
+                output: string;
+                cost: number;
+              }> = [];
+              let totalCost = 0;
+              for await (const event of runOrchestrationPipeline(
+                request,
+                pipelineDispatcher,
+                {
+                  projectPath,
+                  phases: opts?.phases as any,
+                  dryRun: opts?.dryRun,
+                },
+              )) {
+                if (event.type === "phase-completed") {
+                  phases.push({
+                    phase: event.result.phase,
+                    output: event.result.output ?? "",
+                    cost: event.result.cost ?? 0,
+                  });
+                  totalCost += event.result.cost ?? 0;
+                }
+              }
+              return { phases, totalCost };
+            },
+          );
+          tools.unregister("pipeline_dispatch");
+          tools.register(wiredPipeline);
 
           const daemon = new DaemonController({
             config: config.daemon,
