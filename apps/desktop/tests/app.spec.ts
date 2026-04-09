@@ -380,20 +380,18 @@ test.describe("Security", () => {
 // ── Workflows ────────────────────────────────────────────────────────
 
 test.describe("Workflows", () => {
-  test("New Workflow shows hint banner", async ({ page }) => {
+  test("New Workflow button is visible", async ({ page }) => {
     await page.goto("/");
     await page.getByTestId("mode-workflows").click();
-    await page.getByTestId("new-workflow").click();
-    await expect(page.getByTestId("workflow-hint")).toBeVisible();
+    await expect(page.getByTestId("new-workflow")).toBeVisible();
   });
 
-  test("hint dismisses", async ({ page }) => {
+  test("New Workflow switches to Plan view", async ({ page }) => {
     await page.goto("/");
     await page.getByTestId("mode-workflows").click();
     await page.getByTestId("new-workflow").click();
-    await expect(page.getByTestId("workflow-hint")).toBeVisible();
-    await page.getByTestId("dismiss-hint").click();
-    await expect(page.getByTestId("workflow-hint")).not.toBeVisible();
+    // Should switch to plan mode
+    await expect(page.locator("text=Plan Execution")).toBeVisible();
   });
 });
 
