@@ -37,19 +37,6 @@ export type AppMode =
   | "security"
   | "config";
 
-// @ts-expect-error — kept for reference, Navigator has its own mode list
-const _MODE_LABELS: Record<AppMode, { label: string; shortcut: string }> = {
-  // eslint-disable-line
-  chat: { label: "Chat", shortcut: "⌘1" },
-  dashboard: { label: "Dashboard", shortcut: "⌘2" },
-  models: { label: "Models", shortcut: "⌘3" },
-  memory: { label: "Memory", shortcut: "⌘4" },
-  skills: { label: "Skills", shortcut: "⌘5" },
-  workflows: { label: "Workflows", shortcut: "⌘6" },
-  security: { label: "Security", shortcut: "⌘7" },
-  config: { label: "Config", shortcut: "⌘8" },
-};
-
 export function App() {
   const [mode, setMode] = useState<AppMode>("chat");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -70,10 +57,10 @@ export function App() {
     null, // Set when user selects a project folder
   );
   const [team, setTeam] = useState<TeamAgent[]>([]);
-  const [totalBudget] = useState(5.0);
 
   // State from agent events
   const [activeModel, setActiveModel] = useState("Claude Opus 4.6");
+  const [activeModelId, setActiveModelId] = useState<string | null>(null);
   const [activeProvider, setActiveProvider] = useState("anthropic");
   const [strategy, setStrategy] = useState("combined");
   const [sessionCost, setSessionCost] = useState(0);
@@ -265,7 +252,7 @@ export function App() {
           }}
           team={team}
           onTeamChange={setTeam}
-          totalBudget={totalBudget}
+          totalBudget={5.0}
           conversations={conversations}
           activeConversationId={activeConversationId}
           onConversationSelect={setActiveConversationId}
@@ -285,7 +272,7 @@ export function App() {
             <ErrorBoundary fallbackLabel="Chat">
               <ChatView
                 conversationId={activeConversationId}
-                activeModelId={activeModel}
+                activeModelId={activeModelId}
                 activeRole={activeRole}
                 activeSkills={activeSkills}
                 onCostUpdate={setSessionCost}
@@ -346,20 +333,9 @@ export function App() {
           {mode === "plan" && (
             <ErrorBoundary fallbackLabel="Plan">
               <PlanView
-                plan={null}
                 onTaskSelect={(_taskId) => {
                   setDetailOpen(true);
-                  // TODO: find task from plan and set inspector context
                   setInspectorContext({ type: "none" });
-                }}
-                onApprove={(phaseId) => {
-                  console.log("Approve phase:", phaseId);
-                }}
-                onPause={() => {
-                  console.log("Plan paused");
-                }}
-                onResume={() => {
-                  console.log("Plan resumed");
                 }}
               />
             </ErrorBoundary>
@@ -372,11 +348,11 @@ export function App() {
                   setDetailOpen(true);
                   setInspectorContext({ type: "trace-event", event });
                 }}
-                onApprove={(eventId) => {
-                  console.log("Approved:", eventId);
+                onApprove={(_eventId) => {
+                  // Approval gates handled by workflow engine — no-op in trace view
                 }}
-                onDeny={(eventId) => {
-                  console.log("Denied:", eventId);
+                onDeny={(_eventId) => {
+                  // Denial gates handled by workflow engine — no-op in trace view
                 }}
               />
             </ErrorBoundary>
@@ -446,9 +422,10 @@ export function App() {
       <ModelSwitcher
         open={modelSwitcherOpen}
         onClose={() => setModelSwitcherOpen(false)}
-        currentModelId={null}
+        currentModelId={activeModelId}
         onSelect={(model) => {
           setActiveModel(model.name);
+          setActiveModelId(model.id);
           setActiveProvider(model.provider);
           setModelSwitcherOpen(false);
         }}

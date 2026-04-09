@@ -16,69 +16,6 @@ interface ModelInfo {
   outputPrice: number;
 }
 
-const FALLBACK_MODELS: ModelInfo[] = [
-  {
-    id: "claude-opus-4-6",
-    name: "Claude Opus 4.6",
-    provider: "anthropic",
-    status: "available",
-    quality: 95,
-    speed: 40,
-    inputPrice: 15,
-    outputPrice: 75,
-  },
-  {
-    id: "claude-sonnet-4-6",
-    name: "Claude Sonnet 4.6",
-    provider: "anthropic",
-    status: "available",
-    quality: 85,
-    speed: 70,
-    inputPrice: 3,
-    outputPrice: 15,
-  },
-  {
-    id: "gpt-5.4",
-    name: "GPT-5.4",
-    provider: "openai",
-    status: "available",
-    quality: 90,
-    speed: 60,
-    inputPrice: 10,
-    outputPrice: 30,
-  },
-  {
-    id: "gemini-3.1-pro",
-    name: "Gemini 3.1 Pro",
-    provider: "google",
-    status: "available",
-    quality: 88,
-    speed: 75,
-    inputPrice: 2.5,
-    outputPrice: 10,
-  },
-  {
-    id: "gemini-3.1-flash",
-    name: "Gemini 3.1 Flash",
-    provider: "google",
-    status: "available",
-    quality: 70,
-    speed: 95,
-    inputPrice: 0.075,
-    outputPrice: 0.3,
-  },
-  {
-    id: "deepseek-v3",
-    name: "DeepSeek V3",
-    provider: "deepseek",
-    status: "available",
-    quality: 82,
-    speed: 80,
-    inputPrice: 0.27,
-    outputPrice: 1.1,
-  },
-];
-
 const PROVIDER_COLORS: Record<string, string> = {
   anthropic: "var(--color-anthropic)",
   openai: "var(--color-openai)",
@@ -96,22 +33,19 @@ export function ModelsView({
   const [compareMode, setCompareMode] = useState(false);
   const [compared, setCompared] = useState<Set<string>>(new Set());
 
-  // Use server models if available, fall back to demo data
-  const allModels: ModelInfo[] =
-    serverModels.length > 0
-      ? serverModels.map((m) => ({
-          id: m.id,
-          name: m.name,
-          provider: m.provider,
-          status: (m.status === "available" ? "available" : "unavailable") as
-            | "available"
-            | "unavailable",
-          quality: 80,
-          speed: 70,
-          inputPrice: m.pricing?.inputPer1MTokens ?? 0,
-          outputPrice: m.pricing?.outputPer1MTokens ?? 0,
-        }))
-      : FALLBACK_MODELS;
+  // Map server models to view format — quality/speed derived from tier (lower tier = higher quality)
+  const allModels: ModelInfo[] = serverModels.map((m) => ({
+    id: m.id,
+    name: m.name,
+    provider: m.provider,
+    status: (m.status === "available" ? "available" : "unavailable") as
+      | "available"
+      | "unavailable",
+    quality: Math.max(10, 100 - (m.capabilities?.qualityTier ?? 3) * 15),
+    speed: Math.max(10, 100 - (m.capabilities?.speedTier ?? 3) * 15),
+    inputPrice: m.pricing?.inputPer1MTokens ?? 0,
+    outputPrice: m.pricing?.outputPer1MTokens ?? 0,
+  }));
 
   const selectedModel = allModels.find((m) => m.id === selected);
 

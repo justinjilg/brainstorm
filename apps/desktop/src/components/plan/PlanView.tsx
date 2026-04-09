@@ -4,7 +4,7 @@
  * cost tracking, and approval gates.
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { request } from "../../lib/ipc-client";
 
 export type PlanStatus =
@@ -89,20 +89,11 @@ const STATUS_ICONS: Record<string, { icon: string; color: string }> = {
 };
 
 interface PlanViewProps {
-  plan: Plan | null;
   onTaskSelect: (taskId: string) => void;
-  onApprove: (phaseId: string) => void;
-  onPause: () => void;
-  onResume: () => void;
 }
 
-export function PlanView({
-  plan,
-  onTaskSelect,
-  onApprove,
-  onPause,
-  onResume,
-}: PlanViewProps) {
+export function PlanView({ onTaskSelect }: PlanViewProps) {
+  const [plan, setPlan] = useState<Plan | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [planInput, setPlanInput] = useState("");
   const [generating, setGenerating] = useState(false);
@@ -110,26 +101,58 @@ export function PlanView({
     Array<{ id: string; name: string; description: string; steps: number }>
   >([]);
 
-  // Load presets on first render
-  useState(() => {
+  // Load presets on mount
+  useEffect(() => {
     request<
       Array<{ id: string; name: string; description: string; steps: number }>
     >("workflow.presets")
       .then(setPresets)
       .catch(() => {});
-  });
+  }, []);
 
   const runWorkflow = useCallback(
     async (workflowId: string, userRequest: string) => {
       setGenerating(true);
+      // Create a plan shell while workflow runs
+      const preset = presets.find((p) => p.id === workflowId);
+      const newPlan: Plan = {
+        id: `plan-${Date.now()}`,
+        name: preset?.name ?? workflowId,
+        description: userRequest,
+        status: "running",
+        phases: [
+          {
+            id: "exec",
+            name: preset?.name ?? "Execution",
+            status: "running",
+            tasks: [],
+            agentAssignments: {},
+          },
+        ],
+        totalCost: 0,
+        estimatedCost: 0,
+      };
+      setPlan(newPlan);
       try {
         await request("workflow.run", { workflowId, request: userRequest });
+        setPlan((prev) =>
+          prev
+            ? {
+                ...prev,
+                status: "completed",
+                phases: prev.phases.map((p) => ({
+                  ...p,
+                  status: "completed" as PhaseStatus,
+                })),
+              }
+            : null,
+        );
       } catch (e) {
-        console.error("Workflow failed:", e);
+        setPlan((prev) => (prev ? { ...prev, status: "failed" } : null));
       }
       setGenerating(false);
     },
-    [],
+    [presets],
   );
 
   if (!plan) {

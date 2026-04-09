@@ -98,7 +98,9 @@ async function httpFallback<T>(
   params?: Record<string, unknown>,
 ): Promise<T> {
   const urlMap: Record<string, { url: string; httpMethod: string }> = {
+    // Tools
     "tools.list": { url: "/api/v1/tools", httpMethod: "GET" },
+    // Memory
     "memory.list": { url: "/api/v1/memory", httpMethod: "GET" },
     "memory.create": { url: "/api/v1/memory", httpMethod: "POST" },
     "memory.update": {
@@ -109,17 +111,45 @@ async function httpFallback<T>(
       url: `/api/v1/memory/${params?.id ?? ""}`,
       httpMethod: "DELETE",
     },
+    // Skills
     "skills.list": { url: "/api/v1/skills", httpMethod: "GET" },
+    // Models
     "models.list": { url: "/api/v1/models", httpMethod: "GET" },
+    // Conversations
     "conversations.list": { url: "/api/v1/conversations", httpMethod: "GET" },
     "conversations.create": {
       url: "/api/v1/conversations",
       httpMethod: "POST",
     },
+    "conversations.fork": {
+      url: `/api/v1/conversations/${params?.id ?? ""}/fork`,
+      httpMethod: "POST",
+    },
+    "conversations.handoff": {
+      url: `/api/v1/conversations/${params?.id ?? ""}/handoff`,
+      httpMethod: "POST",
+    },
+    "conversations.messages": {
+      url: `/api/v1/conversations/${params?.sessionId ?? ""}/messages`,
+      httpMethod: "GET",
+    },
+    // Config
+    "config.get": { url: "/api/v1/config", httpMethod: "GET" },
+    // KAIROS
+    "kairos.status": { url: "/api/v1/kairos/status", httpMethod: "GET" },
+    "kairos.start": { url: "/api/v1/kairos/start", httpMethod: "POST" },
+    "kairos.stop": { url: "/api/v1/kairos/stop", httpMethod: "POST" },
+    "kairos.pause": { url: "/api/v1/kairos/pause", httpMethod: "POST" },
+    "kairos.resume": { url: "/api/v1/kairos/resume", httpMethod: "POST" },
+    // Security
     "security.redteam": {
       url: "/api/v1/security/red-team",
       httpMethod: "POST",
     },
+    // Workflows
+    "workflow.presets": { url: "/api/v1/workflows/presets", httpMethod: "GET" },
+    "workflow.run": { url: "/api/v1/workflows/run", httpMethod: "POST" },
+    // Health
     health: { url: "/health", httpMethod: "GET" },
   };
 
