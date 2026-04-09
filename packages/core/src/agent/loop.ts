@@ -550,6 +550,7 @@ export async function* runAgentLoop(
     const streamFilter = createStreamFilter();
     let textDeltaCount = 0;
     let toolCallCount = 0;
+    let accumulatedText = ""; // For afterModel middleware (stop-detection, etc.)
     let hasToolBlocked = false;
     let lastEventTime = Date.now();
     const toolCallResults: Array<{ name: string; ok: boolean }> = [];
@@ -594,6 +595,7 @@ export async function* runAgentLoop(
           textDeltaCount++;
           const raw = getPartText(part as Record<string, unknown>);
           if (raw.includes("[TOOL BLOCKED]")) hasToolBlocked = true;
+          accumulatedText += raw;
           const filtered = streamFilter.filter(raw);
           if (filtered)
             yield {
@@ -720,8 +722,21 @@ export async function* runAgentLoop(
 
     // Flush any remaining buffered content (critical for short responses < 80 chars)
     const remaining = streamFilter.flush();
-    if (remaining)
+    if (remaining) {
+      accumulatedText += remaining;
       yield { type: "text-delta", delta: normalizeInsightMarkers(remaining) };
+    }
+
+    // Run afterModel middleware (stop-detection, etc.) on the full response text
+    if (options.middleware && accumulatedText) {
+      const pipeline = options.middleware;
+      pipeline.runAfterModel({
+        text: accumulatedText,
+        toolCalls: [],
+        model: decision.model.id,
+        tokens: { input: 0, output: 0 }, // Actual tokens tracked via costTracker
+      });
+    }
 
     // ── Budget warning at 80% ──
     const budgetRemaining = costTracker.getRemainingBudget();

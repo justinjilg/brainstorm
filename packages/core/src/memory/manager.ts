@@ -81,9 +81,13 @@ export interface MemoryEntry {
  */
 const INDEX_DEBOUNCE_MS = 2000;
 /** Hard cap on total memory file size (excluding MEMORY.md index). */
-const MAX_MEMORY_BYTES = 25 * 1024; // 25KB — matches Claude Code's cap
-/** Token budget for system tier (always-loaded context). ~4 chars per token. */
-const SYSTEM_TIER_TOKEN_BUDGET = 800;
+// Default 100KB — raised from 25KB after assessment found it insufficient for
+// large codebases. Configurable via BRAINSTORM_MEMORY_CAP_KB env var.
+const MAX_MEMORY_BYTES =
+  (parseInt(process.env.BRAINSTORM_MEMORY_CAP_KB ?? "100", 10) || 100) * 1024;
+/** Token budget for system tier (always-loaded context). ~4 chars per token.
+ * Raised from 800 to 2000 to support richer project expertise from onboarding. */
+const SYSTEM_TIER_TOKEN_BUDGET = 2000;
 /** Rough token estimation: ~4 characters per token. */
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
