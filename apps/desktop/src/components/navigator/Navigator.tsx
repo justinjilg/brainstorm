@@ -33,6 +33,8 @@ interface NavigatorProps {
   onOpenPalette: () => void;
   // KAIROS
   kairosStatus: "running" | "sleeping" | "paused" | "stopped";
+  onKairosStart: () => void;
+  onKairosStop: () => void;
   activeRole: string | null;
 }
 
@@ -73,6 +75,8 @@ export function Navigator({
   onNewConversation,
   onOpenPalette,
   kairosStatus,
+  onKairosStart,
+  onKairosStop,
 }: NavigatorProps) {
   const kairosInfo = KAIROS_STATUS[kairosStatus];
 
@@ -254,32 +258,61 @@ export function Navigator({
         style={{ borderTop: "1px solid var(--border-subtle)" }}
       >
         <div
-          onClick={() => onModeChange("config")}
           data-testid="kairos-widget"
-          className="interactive flex items-center gap-2 px-3 py-2 rounded-xl"
+          className="flex items-center justify-between px-3 py-2 rounded-xl"
           style={{
             background: "var(--ctp-surface0)",
             border: "1px solid var(--border-subtle)",
           }}
         >
-          <span
-            className={`w-2 h-2 rounded-full ${kairosStatus === "running" ? "animate-pulse-glow" : ""}`}
-            style={{ background: kairosInfo.color }}
-          />
-          <span
-            className="font-medium"
-            style={{ fontSize: "var(--text-xs)", color: "var(--ctp-subtext1)" }}
-          >
-            KAIROS
-          </span>
-          <span
-            style={{
-              fontSize: "var(--text-2xs)",
-              color: kairosInfo.color,
-            }}
-          >
-            {kairosInfo.label}
-          </span>
+          <div className="flex items-center gap-2">
+            <span
+              className={`w-2 h-2 rounded-full ${kairosStatus === "running" ? "animate-pulse-glow" : ""}`}
+              style={{ background: kairosInfo.color }}
+            />
+            <span
+              className="font-medium"
+              style={{
+                fontSize: "var(--text-xs)",
+                color: "var(--ctp-subtext1)",
+              }}
+            >
+              KAIROS
+            </span>
+            <span
+              style={{
+                fontSize: "var(--text-2xs)",
+                color: kairosInfo.color,
+              }}
+            >
+              {kairosInfo.label}
+            </span>
+          </div>
+          {kairosStatus === "stopped" ? (
+            <button
+              onClick={onKairosStart}
+              data-testid="kairos-start"
+              className="interactive text-[10px] px-2 py-0.5 rounded"
+              style={{
+                background: "var(--ctp-green)",
+                color: "var(--ctp-crust)",
+              }}
+            >
+              Start
+            </button>
+          ) : (
+            <button
+              onClick={onKairosStop}
+              data-testid="kairos-stop"
+              className="interactive text-[10px] px-2 py-0.5 rounded"
+              style={{
+                color: "var(--ctp-red)",
+                border: "1px solid var(--ctp-red)",
+              }}
+            >
+              Stop
+            </button>
+          )}
         </div>
       </div>
 

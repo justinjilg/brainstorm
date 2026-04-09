@@ -10,6 +10,8 @@ interface SidebarProps {
   activeConversationId: string | null;
   onConversationSelect: (id: string | null) => void;
   kairosStatus: "running" | "sleeping" | "paused" | "stopped";
+  onKairosStart: () => void;
+  onKairosStop: () => void;
   activeRole: string | null;
   conversations: Conversation[];
   onNewConversation: () => void;
@@ -31,6 +33,8 @@ export function Sidebar({
   activeConversationId,
   onConversationSelect,
   kairosStatus,
+  onKairosStart,
+  onKairosStop,
   activeRole,
   conversations,
   onNewConversation,
@@ -189,8 +193,7 @@ export function Sidebar({
       <SectionHeader title="KAIROS" />
       <div className="px-3 pb-2">
         <div
-          onClick={() => onModeChange("config")}
-          className="interactive px-3 py-2.5 rounded-xl"
+          className="px-3 py-2.5 rounded-xl"
           style={{
             background: "var(--ctp-surface0)",
             border: "1px solid var(--border-subtle)",
@@ -209,6 +212,31 @@ export function Sidebar({
                 {kairosInfo.label}
               </span>
             </div>
+            {kairosStatus === "stopped" ? (
+              <button
+                onClick={onKairosStart}
+                data-testid="kairos-start"
+                className="interactive text-[10px] px-2 py-0.5 rounded"
+                style={{
+                  background: "var(--ctp-green)",
+                  color: "var(--ctp-crust)",
+                }}
+              >
+                Start
+              </button>
+            ) : (
+              <button
+                onClick={onKairosStop}
+                data-testid="kairos-stop"
+                className="interactive text-[10px] px-2 py-0.5 rounded"
+                style={{
+                  color: "var(--ctp-red)",
+                  border: "1px solid var(--ctp-red)",
+                }}
+              >
+                Stop
+              </button>
+            )}
           </div>
         </div>
       </div>
