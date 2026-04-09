@@ -67,7 +67,15 @@ export async function streamChat(
  * Abort the current chat stream.
  */
 export async function abortChat(): Promise<void> {
-  // Abort handled by AbortController signal
+  const runtime = getRuntime();
+  if (runtime === "electron") {
+    try {
+      (await window.brainstorm!.request("chat.abort")) as Promise<void>;
+    } catch {
+      // No active stream to abort
+    }
+  }
+  // Browser mode: abort handled by AbortController signal on the fetch
 }
 
 /**

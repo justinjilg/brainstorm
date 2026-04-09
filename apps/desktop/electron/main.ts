@@ -9,6 +9,8 @@
 
 import { app, BrowserWindow, ipcMain, dialog, session } from "electron";
 import { autoUpdater } from "electron-updater";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, type ChildProcess } from "node:child_process";
@@ -16,6 +18,31 @@ import { createInterface } from "node:readline";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+// ── Structured logging ──────────────────────────────────────────────
+
+const LOG_DIR = join(
+  process.platform === "darwin"
+    ? join(homedir(), "Library", "Logs", "Brainstorm")
+    : join(homedir(), ".brainstorm", "logs"),
+);
+
+try {
+  mkdirSync(LOG_DIR, { recursive: true });
+} catch {
+  // Log dir creation failed — fall back to console only
+}
+
+function logToFile(msg: string): void {
+  const timestamp = new Date().toISOString();
+  const line = `${timestamp} ${msg}\n`;
+  console.log(msg);
+  try {
+    appendFileSync(join(LOG_DIR, "brainstorm-desktop.log"), line);
+  } catch {
+    // File write failed — console only
+  }
+}
 
 // ── Backend process management ───────────────────────────────────
 
@@ -41,7 +68,7 @@ function spawnBackend(): void {
   });
 
   if (!backend.stdout || !backend.stdin) {
-    console.error("Failed to capture backend stdio");
+    logToFile("Failed to capture backend stdio");
     // Try npx fallback
     backend = spawn("npx", ["brainstorm", "ipc"], {
       stdio: ["pipe", "pipe", "pipe"],
@@ -94,12 +121,12 @@ function spawnBackend(): void {
 
   backend.stderr?.on("data", (chunk: Buffer) => {
     const text = chunk.toString().trim();
-    if (text) console.log(`[brainstorm] ${text}`);
+    if (text) logToFile(`[brainstorm] ${text}`);
     if (text.includes("ready")) backendReady = true;
   });
 
   backend.on("exit", (code) => {
-    console.log(`Backend exited with code ${code}`);
+    logToFile(`Backend exited with code ${code}`);
     backend = null;
     backendReady = false;
 
@@ -121,10 +148,10 @@ function spawnBackend(): void {
     // Auto-respawn after 2s (max 3 retries)
     if (spawnRetries < 3) {
       spawnRetries++;
-      console.log(`Respawning backend (attempt ${spawnRetries}/3)...`);
+      logToFile(`Respawning backend (attempt ${spawnRetries}/3)...`);
       setTimeout(() => spawnBackend(), 2000);
     } else {
-      console.error("Backend failed to stay alive after 3 attempts");
+      logToFile("Backend failed to stay alive after 3 attempts");
       // Notify renderer with unrecoverable error so UI shows permanent error state
       for (const win of BrowserWindow.getAllWindows()) {
         win.webContents.send("chat-event", {
@@ -136,7 +163,7 @@ function spawnBackend(): void {
     }
   });
 
-  console.log(`Brainstorm backend started (PID: ${backend.pid})`);
+  logToFile(`Brainstorm backend started (PID: ${backend.pid})`);
   // Don't set backendReady until first successful response or stderr "ready"
 }
 
@@ -298,10 +325,10 @@ app.whenReady().then(() => {
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.on("update-available", (info) => {
-      console.log(`Update available: ${info.version}`);
+      logToFile(`Update available: ${info.version}`);
     });
     autoUpdater.on("update-downloaded", (info) => {
-      console.log(`Update downloaded: ${info.version} — will install on quit`);
+      logToFile(`Update downloaded: ${info.version} — will install on quit`);
       for (const win of BrowserWindow.getAllWindows()) {
         win.webContents.send("chat-event", {
           type: "update-available",
@@ -310,7 +337,7 @@ app.whenReady().then(() => {
       }
     });
     autoUpdater.on("error", (err) => {
-      console.log(`Auto-update error: ${err.message}`);
+      logToFile(`Auto-update error: ${err.message}`);
     });
     autoUpdater.checkForUpdates().catch(() => {});
   }
