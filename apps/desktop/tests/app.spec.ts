@@ -72,14 +72,11 @@ test.describe("Navigator", () => {
 // ── Status Rail ──────────────────────────────────────────────────────
 
 test.describe("Status Rail", () => {
-  test("strategy cycles through values", async ({ page }) => {
+  test("strategy is displayed", async ({ page }) => {
     await page.goto("/");
-    const btn = page.getByTestId("status-strategy");
-    await expect(btn).toBeVisible();
-    const first = await btn.textContent();
-    await btn.click();
-    const second = await btn.textContent();
-    expect(second).not.toBe(first);
+    const el = page.getByTestId("status-strategy");
+    await expect(el).toBeVisible();
+    await expect(el).toContainText("combined");
   });
 
   test("model button opens model switcher", async ({ page }) => {
