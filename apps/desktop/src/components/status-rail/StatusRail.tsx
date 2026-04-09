@@ -51,8 +51,8 @@ export function StatusRail({
   permissionMode,
   onRoleClick,
   onModelClick,
-  onStrategyClick,
-  onPermissionClick,
+  onStrategyClick: _onStrategyClick,
+  onPermissionClick: _onPermissionClick,
 }: StatusRailProps) {
   const providerColor = PROVIDER_COLORS[provider] ?? "var(--ctp-text)";
 

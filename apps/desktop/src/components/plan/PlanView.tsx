@@ -117,8 +117,7 @@ export function PlanView({ onTaskSelect }: PlanViewProps) {
       const preset = presets.find((p) => p.id === workflowId);
       const newPlan: Plan = {
         id: `plan-${Date.now()}`,
-        name: preset?.name ?? workflowId,
-        description: userRequest,
+        title: preset?.name ?? workflowId,
         status: "running",
         phases: [
           {
@@ -126,11 +125,11 @@ export function PlanView({ onTaskSelect }: PlanViewProps) {
             name: preset?.name ?? "Execution",
             status: "running",
             tasks: [],
-            agentAssignments: {},
+            cost: 0,
           },
         ],
         totalCost: 0,
-        estimatedCost: 0,
+        budget: 0,
       };
       setPlan(newPlan);
       try {
@@ -249,6 +248,21 @@ export function PlanView({ onTaskSelect }: PlanViewProps) {
       </div>
     );
   }
+
+  // Plan control handlers — will be wired to workflow engine
+  const onPause = useCallback(() => {
+    setPlan((prev) =>
+      prev ? { ...prev, status: "paused" as PlanStatus } : null,
+    );
+  }, []);
+  const onResume = useCallback(() => {
+    setPlan((prev) =>
+      prev ? { ...prev, status: "running" as PlanStatus } : null,
+    );
+  }, []);
+  const onApprove = useCallback((_phaseId: string) => {
+    // Phase approval — will trigger next phase via workflow engine
+  }, []);
 
   const planStatus = STATUS_ICONS[plan.status] ?? STATUS_ICONS.idle;
   const completedPhases = plan.phases.filter(

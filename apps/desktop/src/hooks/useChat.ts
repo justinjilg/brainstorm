@@ -114,14 +114,17 @@ export function useChat(): UseChatReturn {
                 break;
 
               case "routing": {
+                const dataModel = event.data?.model as
+                  | Record<string, unknown>
+                  | undefined;
                 model =
                   event.model?.name ??
                   event.modelName ??
-                  event.data?.model?.name;
+                  (dataModel?.name as string | undefined);
                 provider =
                   event.model?.provider ??
                   event.provider ??
-                  event.data?.model?.provider;
+                  (dataModel?.provider as string | undefined);
                 if (model) setCurrentModel(model);
                 if (provider) setCurrentProvider(provider);
 
@@ -136,12 +139,18 @@ export function useChat(): UseChatReturn {
               }
 
               case "thinking":
-                reasoning = event.text ?? event.content ?? event.data?.text;
+                reasoning =
+                  event.text ??
+                  event.content ??
+                  (event.data?.text as string | undefined);
                 break;
 
               case "text-delta": {
                 const delta =
-                  event.delta ?? event.text ?? event.data?.delta ?? "";
+                  event.delta ??
+                  event.text ??
+                  (event.data?.delta as string | undefined) ??
+                  "";
                 accumulatedText += delta;
                 setStreamingText(accumulatedText);
                 break;
@@ -152,7 +161,7 @@ export function useChat(): UseChatReturn {
                   id: event.toolCallId ?? `tc-${Date.now()}`,
                   name: event.toolName ?? event.name ?? "unknown",
                   status: "running",
-                  input: event.input,
+                  input: event.input as Record<string, unknown> | undefined,
                 };
                 toolCalls.push(tool);
                 setActiveTools([...toolCalls]);
@@ -184,7 +193,10 @@ export function useChat(): UseChatReturn {
               }
 
               case "context-budget": {
-                const percent = event.percent ?? event.data?.percent ?? 0;
+                const percent =
+                  event.percent ??
+                  (event.data?.percent as number | undefined) ??
+                  0;
                 setContextPercent(percent);
                 break;
               }

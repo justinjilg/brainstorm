@@ -230,7 +230,12 @@ export interface ModelInfo {
   name: string;
   provider: string;
   status: string;
-  pricing: { inputPer1MTokens: number; outputPer1MTokens: number };
+  pricing?: { inputPer1MTokens: number; outputPer1MTokens: number };
+  capabilities?: {
+    qualityTier?: number;
+    speedTier?: number;
+    [key: string]: unknown;
+  };
 }
 
 // ── Config ────────────────────────────────────────────────────────

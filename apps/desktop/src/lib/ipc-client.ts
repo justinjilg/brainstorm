@@ -28,7 +28,7 @@ export async function request<T>(
   const runtime = getRuntime();
 
   if (runtime === "electron") {
-    return window.brainstorm!.request(method, params);
+    return window.brainstorm!.request(method, params) as Promise<T>;
   }
 
   return httpFallback<T>(method, params);

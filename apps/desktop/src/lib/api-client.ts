@@ -9,6 +9,8 @@ const DEFAULT_BASE = "http://localhost:3100";
 
 export interface AgentEvent {
   type: string;
+  // Generic identifier (e.g. tool-result correlation)
+  id?: string;
   // Routing
   model?: { name: string; provider: string };
   modelName?: string;
