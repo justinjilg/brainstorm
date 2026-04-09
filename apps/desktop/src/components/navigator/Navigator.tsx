@@ -161,7 +161,7 @@ export function Navigator({
                 background:
                   activeMode === mode ? "var(--ctp-surface0)" : "transparent",
               }}
-              title={`⌘${WORKSPACE_MODES.indexOf({ mode, label } as any) + 1}`}
+              title={`⌘${WORKSPACE_MODES.findIndex((m) => m.mode === mode) + 1}`}
             >
               {label}
             </button>

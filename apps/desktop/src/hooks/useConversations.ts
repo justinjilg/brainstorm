@@ -36,33 +36,9 @@ export function useConversations() {
     }
   }, []);
 
-  const fork = useCallback(async (id: string, name?: string) => {
-    try {
-      const conv = await request<Conversation>("conversations.fork", {
-        id,
-        name,
-      });
-      if (conv) {
-        setConversations((prev) => [conv, ...prev]);
-      }
-      return conv;
-    } catch {
-      return null;
-    }
-  }, []);
-
-  const handoff = useCallback(async (id: string, modelId: string) => {
-    try {
-      await request("conversations.handoff", { id, modelId });
-      return true;
-    } catch {
-      return false;
-    }
-  }, []);
-
   useEffect(() => {
     refresh();
   }, [refresh]);
 
-  return { conversations, loading, refresh, create, fork, handoff };
+  return { conversations, loading, refresh, create };
 }

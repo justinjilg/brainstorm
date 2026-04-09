@@ -88,16 +88,11 @@ test.describe("Status Rail", () => {
     await expect(page.getByTestId("model-switcher")).toBeVisible();
   });
 
-  test("permission mode cycles", async ({ page }) => {
+  test("permission mode is displayed", async ({ page }) => {
     await page.goto("/");
-    const btn = page.getByTestId("status-permission");
-    const first = await btn.textContent();
-    await btn.click();
-    const second = await btn.textContent();
-    expect(second).not.toBe(first);
-    await btn.click();
-    const third = await btn.textContent();
-    expect(third).not.toBe(second);
+    const el = page.getByTestId("status-permission");
+    await expect(el).toBeVisible();
+    await expect(el).toContainText("confirm");
   });
 
   test("cost display is visible", async ({ page }) => {

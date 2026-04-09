@@ -106,29 +106,29 @@ export function useChat(): UseChatReturn {
             modelId: opts?.modelId,
             role: opts?.role,
             activeSkills: opts?.activeSkills,
-          } as any,
+          },
           (event) => {
             switch (event.type) {
               case "session":
-                sessionIdRef.current = event.sessionId as string;
+                sessionIdRef.current = (event.data?.sessionId as string) ?? "";
                 break;
 
               case "routing": {
                 model =
-                  (event as any).model?.name ??
-                  (event as any).modelName ??
-                  (event as any).data?.model?.name;
+                  event.model?.name ??
+                  event.modelName ??
+                  event.data?.model?.name;
                 provider =
-                  (event as any).model?.provider ??
-                  (event as any).provider ??
-                  (event as any).data?.model?.provider;
+                  event.model?.provider ??
+                  event.provider ??
+                  event.data?.model?.provider;
                 if (model) setCurrentModel(model);
                 if (provider) setCurrentProvider(provider);
 
                 const routeMsg: ChatMessage = {
                   id: `msg-${Date.now()}-route`,
                   role: "routing",
-                  content: `→ ${model} via ${(event as any).strategy ?? (event as any).data?.strategy ?? "auto"}`,
+                  content: `→ ${model} via ${event.strategy ?? event.data?.strategy ?? "auto"}`,
                   timestamp: Date.now(),
                 };
                 setMessages((prev) => [...prev, routeMsg]);
@@ -136,18 +136,12 @@ export function useChat(): UseChatReturn {
               }
 
               case "thinking":
-                reasoning =
-                  (event as any).text ??
-                  (event as any).content ??
-                  (event as any).data?.text;
+                reasoning = event.text ?? event.content ?? event.data?.text;
                 break;
 
               case "text-delta": {
                 const delta =
-                  (event as any).delta ??
-                  (event as any).text ??
-                  (event as any).data?.delta ??
-                  "";
+                  event.delta ?? event.text ?? event.data?.delta ?? "";
                 accumulatedText += delta;
                 setStreamingText(accumulatedText);
                 break;
@@ -155,11 +149,10 @@ export function useChat(): UseChatReturn {
 
               case "tool-call-start": {
                 const tool: ToolCallInfo = {
-                  id: (event as any).toolCallId ?? `tc-${Date.now()}`,
-                  name:
-                    (event as any).toolName ?? (event as any).name ?? "unknown",
+                  id: event.toolCallId ?? `tc-${Date.now()}`,
+                  name: event.toolName ?? event.name ?? "unknown",
                   status: "running",
-                  input: (event as any).input,
+                  input: event.input,
                 };
                 toolCalls.push(tool);
                 setActiveTools([...toolCalls]);
@@ -167,33 +160,31 @@ export function useChat(): UseChatReturn {
               }
 
               case "tool-result": {
-                const tcId = (event as any).toolCallId ?? (event as any).id;
+                const tcId = event.toolCallId ?? event.id;
                 const tc = toolCalls.find((t) => t.id === tcId);
                 if (tc) {
-                  tc.status = (event as any).ok === false ? "error" : "success";
-                  tc.durationMs = (event as any).durationMs;
-                  tc.output = (event as any).output;
+                  tc.status = event.ok === false ? "error" : "success";
+                  tc.durationMs = event.durationMs;
+                  tc.output = event.output;
                   setActiveTools([...toolCalls]);
                 }
                 break;
               }
 
               case "cost": {
-                turnCost = (event as any).totalCost ?? (event as any).cost ?? 0;
+                turnCost = event.totalCost ?? event.cost ?? 0;
                 setSessionCost(turnCost);
                 break;
               }
 
               case "done": {
-                turnCost =
-                  (event as any).totalCost ?? (event as any).cost ?? turnCost;
+                turnCost = event.totalCost ?? event.cost ?? turnCost;
                 setSessionCost(turnCost);
                 break;
               }
 
               case "context-budget": {
-                const percent =
-                  (event as any).percent ?? (event as any).data?.percent ?? 0;
+                const percent = event.percent ?? event.data?.percent ?? 0;
                 setContextPercent(percent);
                 break;
               }
@@ -202,7 +193,7 @@ export function useChat(): UseChatReturn {
                 const errMsg: ChatMessage = {
                   id: `msg-${Date.now()}-err`,
                   role: "system",
-                  content: `Error: ${(event as any).error ?? (event as any).message ?? "Unknown error"}`,
+                  content: `Error: ${event.error ?? event.message ?? "Unknown error"}`,
                   timestamp: Date.now(),
                 };
                 setMessages((prev) => [...prev, errMsg]);

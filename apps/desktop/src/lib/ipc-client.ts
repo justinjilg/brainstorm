@@ -28,7 +28,7 @@ export async function request<T>(
   const runtime = getRuntime();
 
   if (runtime === "electron") {
-    return (window as any).brainstorm.request(method, params);
+    return window.brainstorm!.request(method, params);
   }
 
   return httpFallback<T>(method, params);
@@ -38,16 +38,22 @@ export async function request<T>(
  * Start a streaming chat and receive events via callback.
  */
 export async function streamChat(
-  params: { message: string; conversationId?: string; modelId?: string },
+  params: {
+    message: string;
+    conversationId?: string;
+    modelId?: string;
+    role?: string;
+    activeSkills?: string[];
+  },
   onEvent: (event: AgentEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
   const runtime = getRuntime();
 
   if (runtime === "electron") {
-    const unlisten = (window as any).brainstorm.onChatEvent(onEvent);
+    const unlisten = window.brainstorm!.onChatEvent(onEvent);
     try {
-      await (window as any).brainstorm.chatStream(params);
+      await window.brainstorm!.chatStream(params);
     } finally {
       unlisten();
     }
@@ -72,7 +78,7 @@ export async function isBackendAlive(): Promise<boolean> {
 
   if (runtime === "electron") {
     try {
-      await (window as any).brainstorm.request("health");
+      await window.brainstorm!.request("health");
       return true;
     } catch {
       return false;
