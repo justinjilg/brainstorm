@@ -12,8 +12,11 @@ interface WorkflowPreset {
   steps: number;
 }
 
-export function WorkflowsView() {
-  const [showHint, setShowHint] = useState(false);
+export function WorkflowsView({
+  onSwitchToPlan,
+}: {
+  onSwitchToPlan?: (workflowId?: string) => void;
+}) {
   const [presets, setPresets] = useState<WorkflowPreset[]>([]);
 
   useEffect(() => {
@@ -29,39 +32,13 @@ export function WorkflowsView() {
           Workflows
         </span>
         <button
-          onClick={() => setShowHint(true)}
+          onClick={() => onSwitchToPlan?.()}
           data-testid="new-workflow"
           className="interactive text-[10px] px-3 py-1 rounded-lg bg-[var(--ctp-surface0)] text-[var(--ctp-overlay1)] hover:text-[var(--ctp-text)]"
         >
           + New Workflow
         </button>
       </div>
-
-      {showHint && (
-        <div
-          data-testid="workflow-hint"
-          className="mx-4 mt-3 px-4 py-3 rounded-xl animate-fade-in flex items-center justify-between"
-          style={{
-            background: "var(--glow-mauve)",
-            border: "1px solid rgba(203, 166, 247, 0.2)",
-            fontSize: "var(--text-xs)",
-            color: "var(--ctp-mauve)",
-          }}
-        >
-          <span>
-            Workflows are coming soon. Define multi-phase execution plans in the
-            Plan view.
-          </span>
-          <button
-            onClick={() => setShowHint(false)}
-            data-testid="dismiss-hint"
-            className="interactive px-2 py-0.5 rounded-md ml-3 shrink-0"
-            style={{ fontSize: "var(--text-2xs)" }}
-          >
-            ✕
-          </button>
-        </div>
-      )}
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {/* Preset workflows from backend */}
@@ -80,9 +57,10 @@ export function WorkflowsView() {
             </div>
             <div className="grid grid-cols-2 gap-2">
               {presets.map((preset) => (
-                <div
+                <button
                   key={preset.id}
-                  className="interactive px-4 py-3 rounded-xl"
+                  onClick={() => onSwitchToPlan?.(preset.id)}
+                  className="interactive px-4 py-3 rounded-xl text-left"
                   style={{
                     background: "var(--ctp-surface0)",
                     border: "1px solid var(--border-subtle)",
@@ -105,7 +83,7 @@ export function WorkflowsView() {
                   >
                     {preset.description || `${preset.steps} steps`}
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           </div>
