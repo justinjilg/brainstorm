@@ -255,6 +255,8 @@ export function App() {
           onConversationSelect={setActiveConversationId}
           onOpenPalette={() => setPaletteOpen(true)}
           kairosStatus={kairos.status}
+          onKairosStart={kairos.start}
+          onKairosStop={kairos.stop}
           activeRole={activeRole}
           onNewConversation={async () => {
             const conv = await createConversation();
