@@ -45,7 +45,12 @@ export interface RepoMap {
 }
 
 // In-memory cache with TTL
-let _repoMapCache: { path: string; map: RepoMap; ts: number } | null = null;
+let _repoMapCache: {
+  path: string;
+  maxFiles: number;
+  map: RepoMap;
+  ts: number;
+} | null = null;
 const REPO_MAP_TTL_MS = 30_000;
 
 // Persistent entry cache keyed by file path → mtime for incremental updates
@@ -65,6 +70,7 @@ export function buildRepoMap(projectPath: string, maxFiles = 15): RepoMap {
   if (
     _repoMapCache &&
     _repoMapCache.path === projectPath &&
+    _repoMapCache.maxFiles === maxFiles &&
     Date.now() - _repoMapCache.ts < REPO_MAP_TTL_MS
   ) {
     return _repoMapCache.map;
@@ -116,7 +122,7 @@ export function buildRepoMap(projectPath: string, maxFiles = 15): RepoMap {
     generated: Date.now(),
   };
 
-  _repoMapCache = { path: projectPath, map, ts: Date.now() };
+  _repoMapCache = { path: projectPath, maxFiles, map, ts: Date.now() };
   return map;
 }
 
