@@ -380,18 +380,24 @@ test.describe("Security", () => {
 // ── Workflows ────────────────────────────────────────────────────────
 
 test.describe("Workflows", () => {
-  test("New Workflow button is visible", async ({ page }) => {
+  test("presets load from backend", async ({ page }) => {
     await page.goto("/");
     await page.getByTestId("mode-workflows").click();
-    await expect(page.getByTestId("new-workflow")).toBeVisible();
+    // Should show preset count
+    await expect(page.locator("text=Preset Workflows")).toBeVisible();
   });
 
-  test("New Workflow switches to Plan view", async ({ page }) => {
+  test("selecting preset shows prompt input", async ({ page }) => {
     await page.goto("/");
     await page.getByTestId("mode-workflows").click();
-    await page.getByTestId("new-workflow").click();
-    // Should switch to plan mode
-    await expect(page.locator("text=Plan Execution")).toBeVisible();
+    // Click first preset
+    const firstPreset = page
+      .locator("[data-testid^='workflow-preset-']")
+      .first();
+    await firstPreset.click();
+    // Should show prompt input and run button
+    await expect(page.getByTestId("workflow-prompt")).toBeVisible();
+    await expect(page.getByTestId("workflow-run")).toBeVisible();
   });
 });
 

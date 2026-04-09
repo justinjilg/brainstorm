@@ -388,7 +388,7 @@ export function App() {
           )}
           {mode === "workflows" && (
             <ErrorBoundary fallbackLabel="Workflows">
-              <WorkflowsView onSwitchToPlan={() => setMode("plan")} />
+              <WorkflowsView />
             </ErrorBoundary>
           )}
           {mode === "security" && (
