@@ -111,7 +111,7 @@ export function WorkflowsView() {
           </div>
         )}
 
-        {/* Execution history */}
+        {/* Execution history — empty state until workflows are run */}
         <div
           style={{
             fontSize: "var(--text-2xs)",
@@ -123,139 +123,12 @@ export function WorkflowsView() {
         >
           Execution History
         </div>
-        <div className="space-y-2">
-          <PlanNode
-            level={0}
-            icon="▼"
-            label="Phase 1: Foundation"
-            status="complete"
-            meta="5/5 tasks"
-          >
-            <PlanNode
-              level={1}
-              icon="▼"
-              label="Sprint 1: Scaffold"
-              status="complete"
-              meta="2/2"
-            >
-              <PlanNode
-                level={2}
-                icon="✓"
-                label="Tauri 2 scaffold"
-                status="complete"
-                meta="$0.00 · Claude Opus 4.6"
-              />
-              <PlanNode
-                level={2}
-                icon="✓"
-                label="Three-panel layout"
-                status="complete"
-                meta="$0.00 · Claude Opus 4.6"
-              />
-            </PlanNode>
-            <PlanNode
-              level={1}
-              icon="▼"
-              label="Sprint 2: Streaming"
-              status="complete"
-              meta="3/3"
-            >
-              <PlanNode
-                level={2}
-                icon="✓"
-                label="API client"
-                status="complete"
-                meta="$0.00"
-              />
-              <PlanNode
-                level={2}
-                icon="✓"
-                label="SSE hooks"
-                status="complete"
-                meta="$0.00"
-              />
-              <PlanNode
-                level={2}
-                icon="✓"
-                label="Chat view"
-                status="complete"
-                meta="$0.00"
-              />
-            </PlanNode>
-          </PlanNode>
-
-          <PlanNode
-            level={0}
-            icon="▼"
-            label="Phase 2: Intelligence"
-            status="in-progress"
-            meta="3/5 tasks"
-          >
-            <PlanNode
-              level={1}
-              icon="◐"
-              label="Dashboard"
-              status="in-progress"
-              meta=""
-            />
-            <PlanNode
-              level={1}
-              icon="✓"
-              label="Models view"
-              status="complete"
-              meta=""
-            />
-            <PlanNode
-              level={1}
-              icon="✓"
-              label="Memory view"
-              status="complete"
-              meta=""
-            />
-            <PlanNode
-              level={1}
-              icon="○"
-              label="Role system"
-              status="pending"
-              meta=""
-            />
-            <PlanNode
-              level={1}
-              icon="○"
-              label="Approval cards"
-              status="pending"
-              meta=""
-            />
-          </PlanNode>
-
-          <PlanNode
-            level={0}
-            icon="▶"
-            label="Phase 3: White-Box Memory"
-            status="pending"
-            meta="0/5"
-          />
-          <PlanNode
-            level={0}
-            icon="▶"
-            label="Phase 4: Multi-Agent"
-            status="pending"
-            meta="0/5"
-          />
-          <PlanNode
-            level={0}
-            icon="▶"
-            label="Phase 5: Operations"
-            status="pending"
-            meta="0/4"
-          />
-          <PlanNode
-            level={0}
-            icon="▶"
-            label="Phase 6: Polish"
-            status="pending"
-            meta="0/5"
-          />
+        <div
+          className="text-center py-8"
+          style={{ fontSize: "var(--text-xs)", color: "var(--ctp-overlay0)" }}
+        >
+          No workflow runs yet. Select a preset above or use the Plan view to
+          execute a workflow.
         </div>
       </div>
     </div>
