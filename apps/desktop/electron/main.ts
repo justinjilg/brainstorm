@@ -255,6 +255,11 @@ function createWindow(): BrowserWindow {
     },
   });
 
+  // Block navigation injection — prevents LLM responses with crafted links
+  // from navigating the renderer to arbitrary URLs
+  win.webContents.on("will-navigate", (e) => e.preventDefault());
+  win.setWindowOpenHandler(() => ({ action: "deny" }));
+
   if (isDev) {
     win.loadURL("http://localhost:1420");
   } else {

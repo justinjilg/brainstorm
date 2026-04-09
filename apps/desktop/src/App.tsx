@@ -62,10 +62,10 @@ export function App() {
   const [activeModel, setActiveModel] = useState("Claude Opus 4.6");
   const [activeModelId, setActiveModelId] = useState<string | null>(null);
   const [activeProvider, setActiveProvider] = useState("anthropic");
-  const [strategy, setStrategy] = useState("combined");
+  const [strategy, _setStrategy] = useState("combined");
   const [sessionCost, setSessionCost] = useState(0);
   const [contextPercent, setContextPercent] = useState(0);
-  const [permissionMode, setPermissionMode] = useState<
+  const [permissionMode, _setPermissionMode] = useState<
     "auto" | "confirm" | "plan"
   >("confirm");
   const [activeRole, setActiveRole] = useState<string | null>(null);
@@ -238,7 +238,7 @@ export function App() {
           recentProjects={[]}
           onProjectSelect={setCurrentProject}
           onOpenFolder={async () => {
-            if ("brainstorm" in window && window.brainstorm!.openFolder) {
+            if ("brainstorm" in window && window.brainstorm?.openFolder) {
               const path = await window.brainstorm!.openFolder();
               if (path) setCurrentProject(path);
             } else {
@@ -271,8 +271,8 @@ export function App() {
             <ErrorBoundary fallbackLabel="Chat">
               <ChatView
                 conversationId={activeConversationId}
-                activeModelId={activeModelId}
-                activeRole={activeRole}
+                activeModelId={activeModelId ?? undefined}
+                activeRole={activeRole ?? undefined}
                 activeSkills={activeSkills}
                 onCostUpdate={setSessionCost}
                 onModelUpdate={(model, provider) => {
