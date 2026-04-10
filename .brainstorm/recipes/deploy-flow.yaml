@@ -1,0 +1,29 @@
+name: Deploy Flow
+description: Implement, verify, and prepare for deployment
+communication: handoff
+maxIterations: 2
+steps:
+  - id: implement
+    role: coder
+    description: "Implement all changes in TypeScript with Turborepo-aware package modularization and ensure comprehensive test additions per domain and package"
+    output: code
+
+  - id: verify
+    role: qa
+    description: "Run turborepo build and Vitest tests across the monorepo including smoke and integration layers to guarantee deployment readiness"
+    input: [code]
+    output: test-result
+
+  - id: deploy-prep
+    role: devops
+    description: "Review deployment-related configuration files and scripts, validate CI/CD pipeline configurations and prepare a deployment plan ensuring safe rollbacks based on test outcomes"
+    input: [code, test-result]
+    output: deploy-plan
+
+  - id: review
+    role: code-reviewer
+    description: "Conduct a final review focused on deployment safety, error gracefully handling strategies, and adherence to conventional commits and project CI gating requirements"
+    input: [code, test-result, deploy-plan]
+    output: review
+    review: true
+    loopBack: implement

@@ -3769,7 +3769,59 @@ program
       );
       console.log();
 
-      for await (const event of runOnboardPipeline(options)) {
+      // Create LLM dispatcher for onboard phases (deep exploration, team assembly, etc.)
+      let dispatcher;
+      if (!opts.staticOnly) {
+        const config = loadConfig();
+        const db = getDb();
+        const envKeys = new Map<string, string>();
+        for (const name of PROVIDER_KEY_NAMES) {
+          const val = process.env[name];
+          if (val) envKeys.set(name, val);
+        }
+        const resolvedKeys: ResolvedKeys = {
+          get: (name: string) => envKeys.get(name) ?? null,
+        };
+        const registry = await createProviderRegistry(config, resolvedKeys);
+        const costTracker = new CostTracker(db, config.budget);
+        const { frontmatter } = buildSystemPrompt(absPath);
+        const router = new BrainstormRouter(
+          config,
+          registry,
+          costTracker,
+          frontmatter,
+        );
+
+        const { streamText } = await import("ai");
+        dispatcher = {
+          async explore(prompt: string, budget: number) {
+            const task = router.classify(prompt);
+            const decision = router.route(task, { preferCheap: true });
+            const modelId = registry.getProvider(decision.model.id);
+            const result = streamText({
+              model: modelId,
+              messages: [{ role: "user" as const, content: prompt }],
+              maxRetries: 3,
+            });
+            let text = "";
+            for await (const chunk of (result as any).textStream) {
+              text += chunk;
+            }
+            const usage = await (result as any).usage;
+            const cost =
+              ((usage?.inputTokens ?? 0) / 1_000_000) *
+                decision.model.pricing.inputPer1MTokens +
+              ((usage?.outputTokens ?? 0) / 1_000_000) *
+                decision.model.pricing.outputPer1MTokens;
+            return { text, cost };
+          },
+          async generate(prompt: string, budget: number) {
+            return this.explore(prompt, budget);
+          },
+        };
+      }
+
+      for await (const event of runOnboardPipeline(options, dispatcher)) {
         switch (event.type) {
           case "onboard-started":
             if (event.estimatedBudget > 0) {
