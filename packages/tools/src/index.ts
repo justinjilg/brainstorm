@@ -206,6 +206,14 @@ import { memoryTool } from "./builtin/memory-tool.js";
 export { createWiredMemoryTool } from "./builtin/memory-tool.js";
 import { pipelineTool } from "./builtin/pipeline-tool.js";
 export { createWiredPipelineTool } from "./builtin/pipeline-tool.js";
+import {
+  codeCallersTool,
+  codeCalleesTool,
+  codeDefinitionTool,
+  codeImpactTool,
+  codeStatsTool,
+} from "./builtin/code-graph-tools.js";
+export { createWiredCodeGraphTools } from "./builtin/code-graph-tools.js";
 
 export function createDefaultToolRegistry(opts?: {
   daemon?: boolean;
@@ -275,6 +283,12 @@ export function createDefaultToolRegistry(opts?: {
   registry.register(brHealthTool);
   // Memory (1) — read, write, search, promote, demote persistent memory
   registry.register(memoryTool);
+  // Code Graph (5) — structural queries via tree-sitter knowledge graph (stubs, wired at runtime)
+  registry.register(codeCallersTool);
+  registry.register(codeCalleesTool);
+  registry.register(codeDefinitionTool);
+  registry.register(codeImpactTool);
+  registry.register(codeStatsTool);
   // Tool search (1) — discovers and resolves deferred MCP tools
   registry.register(createToolSearchTool(registry));
   // Daemon-only tools — registered when daemon mode is active

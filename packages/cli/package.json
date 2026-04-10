@@ -35,6 +35,7 @@
   },
   "dependencies": {
     "@brainst0rm/agents": "0.13.0",
+    "@brainst0rm/code-graph": "0.13.0",
     "@brainst0rm/config": "0.13.0",
     "@brainst0rm/core": "0.13.0",
     "@brainst0rm/db": "0.13.0",
