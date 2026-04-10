@@ -276,6 +276,70 @@ describe("OrchestrationEngine.run", () => {
     expect(alphaResult?.cost).toBe(0);
   });
 
+  it("records run.status='partial' when some tasks fail", async () => {
+    insertProject(db, "alpha");
+    insertProject(db, "beta");
+    const engine = new OrchestrationEngine(db);
+
+    const events = await collect(
+      engine.run({
+        description: "partial status",
+        projectNames: ["alpha", "beta"],
+        executeTask: async (project) => {
+          if (project.name === "alpha") throw new Error("boom");
+          return { summary: "beta ok", cost: 0.1 };
+        },
+      }),
+    );
+
+    const final = events[events.length - 1];
+    if (final.type !== "orchestration-completed")
+      throw new Error("unreachable");
+    // Run status should reflect partial failure, not "completed" (which is a lie)
+    expect(final.run.status).toBe("partial");
+  });
+
+  it("records run.status='failed' when all tasks fail", async () => {
+    insertProject(db, "alpha");
+    insertProject(db, "beta");
+    const engine = new OrchestrationEngine(db);
+
+    const events = await collect(
+      engine.run({
+        description: "all failures",
+        projectNames: ["alpha", "beta"],
+        executeTask: async () => {
+          throw new Error("all broken");
+        },
+      }),
+    );
+
+    const types = events.map((e) => e.type);
+    expect(types).toContain("orchestration-failed");
+    const final = events[events.length - 1];
+    if (final.type !== "orchestration-failed") throw new Error("unreachable");
+    expect(final.run.status).toBe("failed");
+  });
+
+  it("records run.status='completed' only when all tasks succeed", async () => {
+    insertProject(db, "alpha");
+    insertProject(db, "beta");
+    const engine = new OrchestrationEngine(db);
+
+    const events = await collect(
+      engine.run({
+        description: "all good",
+        projectNames: ["alpha", "beta"],
+        executeTask: async () => ({ summary: "ok", cost: 0.05 }),
+      }),
+    );
+
+    const final = events[events.length - 1];
+    if (final.type !== "orchestration-completed")
+      throw new Error("unreachable");
+    expect(final.run.status).toBe("completed");
+  });
+
   it("throws when a project name does not resolve", async () => {
     insertProject(db, "alpha");
     const engine = new OrchestrationEngine(db);
