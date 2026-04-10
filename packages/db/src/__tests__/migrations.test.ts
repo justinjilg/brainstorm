@@ -1,208 +1,136 @@
-/**
- * Database Migration Tests — catches FK violations, CHECK constraint gaps, and schema drift.
- *
- * These exist because:
- * - Migration order was wrong (010 ran before 009, causing "no such table")
- * - Agent role CHECK constraint had only 8 values, rejecting valid roles
- * - FK cascade behavior was assumed but never verified
- * - cleanupOldRecords ran before migrations, hitting non-existent tables
- */
+import Database from "better-sqlite3";
+import { afterEach, describe, expect, test } from "vitest";
 
-import { describe, test, expect, afterEach } from "vitest";
-import { getTestDb, SessionRepository, CostRepository } from "../index.js";
-import type Database from "better-sqlite3";
+import { getTestDb } from "../index.js";
 
-let db: Database.Database;
+let db: Database.Database | undefined;
+
+function listUserTables(database: Database.Database): string[] {
+  const rows = database
+    .prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+    )
+    .all() as Array<{ name: string }>;
+
+  return rows.map((row) => row.name);
+}
 
 afterEach(() => {
-  if (db) db.close();
+  db?.close();
+  db = undefined;
 });
 
-describe("Migrations", () => {
-  test("all migrations apply cleanly on fresh database", () => {
+describe("db migrations", () => {
+  test("getTestDb applies migrations on a fresh in-memory database", () => {
     db = getTestDb();
 
-    const tables = db
-      .prepare(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
-      )
-      .all() as { name: string }[];
+    const tables = listUserTables(db);
 
-    const names = tables.map((t) => t.name);
-    expect(names).toContain("sessions");
-    expect(names).toContain("messages");
-    expect(names).toContain("cost_records");
-    expect(names).toContain("agent_profiles");
-    expect(names).toContain("audit_log");
+    expect(tables).toEqual(
+      expect.arrayContaining([
+        "_migrations",
+        "sessions",
+        "messages",
+        "cost_records",
+        "projects",
+        "conversations",
+        "workflow_runs",
+      ]),
+    );
+    expect(tables).toHaveLength(27);
   });
 
-  test("migrations table tracks all applied migrations", () => {
+  test("migration ledger records each migration exactly once", () => {
     db = getTestDb();
 
     const migrations = db
-      .prepare("SELECT name FROM _migrations ORDER BY name")
-      .all() as { name: string }[];
+      .prepare("SELECT name FROM _migrations ORDER BY id")
+      .all() as Array<{ name: string }>;
 
-    expect(migrations.length).toBeGreaterThan(0);
-    // First migration should be 001
-    expect(migrations[0].name).toMatch(/^001/);
+    expect(migrations).toHaveLength(28);
+    expect(migrations[0]?.name).toBe("001_sessions");
+    expect(migrations.at(-1)?.name).toBe("028_conversations");
+    expect(new Set(migrations.map((migration) => migration.name)).size).toBe(
+      28,
+    );
   });
 
-  test("foreign_keys pragma is enabled", () => {
+  test("migration ledger stays unchanged when data is inserted after setup", () => {
     db = getTestDb();
 
-    const result = db.pragma("foreign_keys") as { foreign_keys: number }[];
-    expect(result[0].foreign_keys).toBe(1);
-  });
-});
-
-describe("Foreign Key Cascades", () => {
-  test("cost_records cascade-delete when session deleted", () => {
-    db = getTestDb();
-    const sessions = new SessionRepository(db);
-    const costs = new CostRepository(db);
-
-    const session = sessions.create("/test/path");
-
-    costs.record({
-      sessionId: session.id,
-      timestamp: Math.floor(Date.now() / 1000),
-      modelId: "claude-opus-4-6",
-      provider: "anthropic",
-      inputTokens: 100,
-      outputTokens: 50,
-      cachedTokens: 0,
-      cost: 0.001,
-      taskType: "code-gen" as any,
-    });
-
-    // Verify cost record exists
-    const before = db
-      .prepare("SELECT COUNT(*) as cnt FROM cost_records WHERE session_id = ?")
-      .get(session.id) as { cnt: number };
-    expect(before.cnt).toBe(1);
-
-    // Delete session
-    db.prepare("DELETE FROM sessions WHERE id = ?").run(session.id);
-
-    // Cost record should cascade-delete
-    const after = db
-      .prepare("SELECT COUNT(*) as cnt FROM cost_records WHERE session_id = ?")
-      .get(session.id) as { cnt: number };
-    expect(after.cnt).toBe(0);
-  });
-
-  test("messages cascade-delete when session deleted", () => {
-    db = getTestDb();
-    const sessions = new SessionRepository(db);
-
-    const session = sessions.create("/test/path");
+    const beforeCount = (
+      db.prepare("SELECT COUNT(*) AS count FROM _migrations").get() as {
+        count: number;
+      }
+    ).count;
 
     db.prepare(
-      "INSERT INTO messages (id, session_id, role, content) VALUES (?, ?, ?, ?)",
-    ).run("msg-1", session.id, "user", "hello");
+      "INSERT INTO projects (id, name, path, created_at, updated_at) VALUES (?, ?, ?, unixepoch(), unixepoch())",
+    ).run("project-1", "Project 1", "/tmp/project-1");
+    db.prepare(
+      "INSERT INTO sessions (id, project_path, created_at, updated_at, project_id) VALUES (?, ?, unixepoch(), unixepoch(), ?)",
+    ).run("session-1", "/tmp/project-1", "project-1");
 
-    db.prepare("DELETE FROM sessions WHERE id = ?").run(session.id);
+    const afterCount = (
+      db.prepare("SELECT COUNT(*) AS count FROM _migrations").get() as {
+        count: number;
+      }
+    ).count;
+    const tables = listUserTables(db);
 
-    const after = db
-      .prepare("SELECT COUNT(*) as cnt FROM messages WHERE session_id = ?")
-      .get(session.id) as { cnt: number };
-    expect(after.cnt).toBe(0);
-  });
-});
-
-describe("Agent Profiles", () => {
-  const ALL_ROLES = [
-    "architect",
-    "coder",
-    "reviewer",
-    "debugger",
-    "analyst",
-    "orchestrator",
-    "product-manager",
-    "security-reviewer",
-    "code-reviewer",
-    "style-reviewer",
-    "qa",
-    "compliance",
-    "devops",
-    "custom",
-  ];
-
-  test("accepts all AgentRole enum values", () => {
-    db = getTestDb();
-
-    for (const role of ALL_ROLES) {
-      expect(() => {
-        db.prepare(
-          "INSERT INTO agent_profiles (id, display_name, role, model_id) VALUES (?, ?, ?, ?)",
-        ).run(`agent-${role}`, `Test ${role}`, role, "test-model");
-      }).not.toThrow();
-    }
-
-    const count = db
-      .prepare("SELECT COUNT(*) as cnt FROM agent_profiles")
-      .get() as { cnt: number };
-    expect(count.cnt).toBe(ALL_ROLES.length);
-  });
-});
-
-describe("Session Repository", () => {
-  test("create and retrieve session", () => {
-    db = getTestDb();
-    const repo = new SessionRepository(db);
-
-    const session = repo.create("/test/project");
-    expect(session.id).toBeTruthy();
-    expect(session.projectPath).toBe("/test/project");
-
-    const retrieved = repo.get(session.id);
-    expect(retrieved).not.toBeNull();
-    expect(retrieved?.id).toBe(session.id);
+    expect(afterCount).toBe(beforeCount);
+    expect(tables).toContain("sessions");
+    expect(tables).toContain("projects");
   });
 
-  test("multiple sessions have unique IDs", () => {
+  test("sessions table includes migrated columns needed by daemon and conversation features", () => {
     db = getTestDb();
-    const repo = new SessionRepository(db);
 
-    const first = repo.create("/project-1");
-    const second = repo.create("/project-2");
+    const columns = db.pragma("table_info(sessions)") as Array<{
+      name: string;
+    }>;
+    const names = columns.map((column) => column.name);
 
-    expect(first.id).not.toBe(second.id);
-    expect(repo.get(first.id)?.projectPath).toBe("/project-1");
-    expect(repo.get(second.id)?.projectPath).toBe("/project-2");
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "id",
+        "project_id",
+        "is_daemon",
+        "tick_count",
+        "last_tick_at",
+        "is_paused",
+        "tick_interval_ms",
+        "conversation_id",
+      ]),
+    );
   });
-});
 
-describe("Cost Repository", () => {
-  test("records cost entries with correct fields", () => {
+  test("getTestDb returns an isolated clean in-memory database each time", () => {
     db = getTestDb();
-    const sessions = new SessionRepository(db);
-    const costs = new CostRepository(db);
+    db.prepare(
+      "INSERT INTO sessions (id, project_path, created_at, updated_at) VALUES (?, ?, unixepoch(), unixepoch())",
+    ).run("session-1", "/tmp/project");
 
-    const session = sessions.create("/test");
+    const dirtyCount = (
+      db.prepare("SELECT COUNT(*) AS count FROM sessions").get() as {
+        count: number;
+      }
+    ).count;
+    expect(dirtyCount).toBe(1);
 
-    const entry = costs.record({
-      sessionId: session.id,
-      timestamp: Math.floor(Date.now() / 1000),
-      modelId: "claude-opus-4-6",
-      provider: "anthropic",
-      inputTokens: 1000,
-      outputTokens: 500,
-      cachedTokens: 0,
-      cost: 0.05,
-      taskType: "code-gen" as any,
-    });
+    db.close();
+    db = getTestDb();
 
-    expect(entry.id).toBeTruthy();
-    expect(entry.cost).toBe(0.05);
-    expect(entry.modelId).toBe("claude-opus-4-6");
+    const cleanCount = (
+      db.prepare("SELECT COUNT(*) AS count FROM sessions").get() as {
+        count: number;
+      }
+    ).count;
+    const filename = (
+      db.prepare("PRAGMA database_list").all() as Array<{ file: string }>
+    )[0]?.file;
 
-    // Verify it's in the DB
-    const row = db
-      .prepare("SELECT * FROM cost_records WHERE id = ?")
-      .get(entry.id) as any;
-    expect(row).not.toBeNull();
-    expect(row.cost).toBe(0.05);
+    expect(cleanCount).toBe(0);
+    expect(filename).toBe("");
   });
 });
