@@ -158,7 +158,7 @@ function collectCodeFiles(dir: string, maxDepth = 10): string[] {
   return files;
 }
 
-function extractImports(
+export function extractImports(
   content: string,
   ext: string,
 ): Array<{ specifier: string; type: "static" | "dynamic" | "require" }> {
@@ -186,7 +186,7 @@ function extractImports(
   return results;
 }
 
-function extractExports(content: string, ext: string): string[] {
+export function extractExports(content: string, ext: string): string[] {
   const exports: string[] = [];
   if ([".ts", ".tsx", ".js", ".jsx", ".mjs"].includes(ext)) {
     for (const m of content.matchAll(
