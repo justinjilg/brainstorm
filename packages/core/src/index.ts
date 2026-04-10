@@ -297,6 +297,7 @@ export {
 export {
   analyzeTrajectories,
   loadRoutingIntelligence,
+  toHistoricalStats,
   type RoutingIntelligence,
 } from "./session/trajectory-analyzer.js";
 export {
