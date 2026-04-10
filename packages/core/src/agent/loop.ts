@@ -38,6 +38,21 @@ import {
   flushTrustWindow,
 } from "../middleware/builtin/trust-propagation.js";
 import { TrajectoryRecorder } from "../session/trajectory.js";
+import { CircuitBreakerRegistry } from "../security/circuit-breaker.js";
+
+// Module-level registry of circuit breakers, one per model ID.
+// Protects the LLM call path against cascade failures: after 3 consecutive
+// failures from a specific model, the circuit opens for 60s and routes
+// the call to fallback models immediately. After cooldown, allows one
+// probe call; success closes the circuit, failure re-opens it.
+const llmCircuitRegistry = new CircuitBreakerRegistry();
+function getLLMCircuit(modelId: string) {
+  return llmCircuitRegistry.getBreaker({
+    name: `llm:${modelId}`,
+    failureThreshold: 3,
+    cooldownMs: 60_000,
+  });
+}
 import {
   enterToolExecution,
   exitToolExecution,
@@ -331,6 +346,32 @@ export async function* runAgentLoop(
     }
   } else {
     decision = router.route(task, conversationTokens);
+  }
+
+  // Circuit breaker check: if the chosen model has an open circuit, swap to
+  // the first available fallback with a closed circuit. This prevents
+  // cascade failures when a provider is degraded — instead of hitting the
+  // failed model 3 times per session, we skip it immediately after 3 total
+  // failures within the cooldown window.
+  const primaryCircuit = getLLMCircuit(decision.model.id);
+  if (!primaryCircuit.canExecute()) {
+    const openModelId = decision.model.id;
+    const fallbackWithClosedCircuit = decision.fallbacks?.find((f) =>
+      getLLMCircuit(f.id).canExecute(),
+    );
+    if (fallbackWithClosedCircuit) {
+      yield {
+        type: "loop-warning" as const,
+        message: `Circuit open for ${openModelId} — routing to ${fallbackWithClosedCircuit.id}`,
+      };
+      decision = {
+        ...decision,
+        model: fallbackWithClosedCircuit,
+        reason: `Circuit breaker: primary ${openModelId} is open, using fallback`,
+      };
+    }
+    // If no fallback has a closed circuit either, proceed anyway — we'll
+    // let streamText try and the failure will be recorded normally.
   }
 
   yield { type: "routing", decision };
@@ -758,6 +799,11 @@ export async function* runAgentLoop(
         streamErr.name !== "AI_TypeValidationError" &&
         !streamErr.message?.includes("Type validation failed")
       ) {
+        // Real error — record circuit breaker failure so repeated errors
+        // open the circuit and subsequent sessions skip this model.
+        getLLMCircuit(decision.model.id).recordFailure(
+          streamErr.message ?? "stream_error",
+        );
         throw streamErr; // Re-throw real errors
       }
     }
@@ -796,6 +842,16 @@ export async function* runAgentLoop(
 
     // ── Empty/blocked response detection + retry with fallback model ──
     const isEmpty = textDeltaCount === 0 && toolCallCount === 0;
+
+    // Record circuit breaker outcome for this model.
+    // Empty response = failure (the model gave us nothing).
+    // Non-empty = success (closes half-open circuits, resets consecutive failures).
+    const breaker = getLLMCircuit(decision.model.id);
+    if (isEmpty) {
+      breaker.recordFailure("empty_response");
+    } else {
+      breaker.recordSuccess();
+    }
     // Build fallback list: use decision.fallbacks, or generate from registry if empty
     let fallbacks = decision.fallbacks;
     if (fallbacks.length === 0 && isEmpty) {
