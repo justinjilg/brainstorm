@@ -2,8 +2,9 @@
  * Shared git command helper used by all git tools.
  * Centralizes exec options and error handling.
  */
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { getWorkspace } from "../workspace-context.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -26,15 +27,15 @@ export async function runGit(
   timeout = DEFAULT_TIMEOUT,
 ): Promise<GitResult> {
   try {
-    const { stdout, stderr } = await execFileAsync('git', args, {
-      cwd: cwd ?? process.cwd(),
+    const { stdout, stderr } = await execFileAsync("git", args, {
+      cwd: cwd ?? getWorkspace(),
       timeout,
       maxBuffer: MAX_OUTPUT,
     });
     return { stdout, stderr, exitCode: 0 };
   } catch (err: any) {
     return {
-      stdout: err.stdout ?? '',
+      stdout: err.stdout ?? "",
       stderr: err.stderr ?? err.message,
       exitCode: err.code ?? 1,
     };

@@ -1,13 +1,14 @@
-import { z } from 'zod';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { resolve, relative } from 'node:path';
-import { defineTool } from '../base.js';
+import { z } from "zod";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { resolve, relative } from "node:path";
+import { defineTool } from "../base.js";
+import { getWorkspace } from "../workspace-context.js";
 
 function ensureSafePath(filePath: string): string {
-  const cwd = process.cwd();
+  const cwd = getWorkspace();
   const resolved = resolve(cwd, filePath);
   const rel = relative(cwd, resolved);
-  if (rel.startsWith('..') || rel.startsWith('/')) {
+  if (rel.startsWith("..") || rel.startsWith("/")) {
     throw new Error(`Path traversal blocked: "${filePath}" escapes workspace`);
   }
   return resolved;
@@ -26,23 +27,42 @@ interface FileEditResult {
  * Partial success: files with valid edits are written even if other files fail.
  */
 export const batchEditTool = defineTool({
-  name: 'batch_edit',
-  description: 'Apply find-and-replace edits across multiple files in one operation. Each file gets its own list of edits. Reduces round-trips for multi-file refactors.',
-  permission: 'confirm',
+  name: "batch_edit",
+  description:
+    "Apply find-and-replace edits across multiple files in one operation. Each file gets its own list of edits. Reduces round-trips for multi-file refactors.",
+  permission: "confirm",
   inputSchema: z.object({
-    files: z.array(z.object({
-      path: z.string().describe('Path to the file'),
-      edits: z.array(z.object({
-        old_string: z.string().describe('Exact string to find (must be unique in the file)'),
-        new_string: z.string().describe('Replacement string'),
-      })).min(1),
-    })).min(1).describe('List of files, each with its own edits'),
+    files: z
+      .array(
+        z.object({
+          path: z.string().describe("Path to the file"),
+          edits: z
+            .array(
+              z.object({
+                old_string: z
+                  .string()
+                  .describe(
+                    "Exact string to find (must be unique in the file)",
+                  ),
+                new_string: z.string().describe("Replacement string"),
+              }),
+            )
+            .min(1),
+        }),
+      )
+      .min(1)
+      .describe("List of files, each with its own edits"),
   }),
   async execute({ files }) {
     const results: FileEditResult[] = [];
 
     for (const file of files) {
-      const fileResult: FileEditResult = { path: file.path, applied: 0, total: file.edits.length, errors: [] };
+      const fileResult: FileEditResult = {
+        path: file.path,
+        applied: 0,
+        total: file.edits.length,
+        errors: [],
+      };
 
       // Validate path
       let safePath: string;
@@ -60,17 +80,21 @@ export const batchEditTool = defineTool({
         continue;
       }
 
-      let content = readFileSync(safePath, 'utf-8');
+      let content = readFileSync(safePath, "utf-8");
 
       // Validate and apply each edit
       for (const edit of file.edits) {
         const count = content.split(edit.old_string).length - 1;
         if (count === 0) {
-          fileResult.errors.push(`Not found: "${edit.old_string.slice(0, 50)}${edit.old_string.length > 50 ? '...' : ''}"`);
+          fileResult.errors.push(
+            `Not found: "${edit.old_string.slice(0, 50)}${edit.old_string.length > 50 ? "..." : ""}"`,
+          );
           continue;
         }
         if (count > 1) {
-          fileResult.errors.push(`${count} occurrences: "${edit.old_string.slice(0, 50)}${edit.old_string.length > 50 ? '...' : ''}" — must be unique`);
+          fileResult.errors.push(
+            `${count} occurrences: "${edit.old_string.slice(0, 50)}${edit.old_string.length > 50 ? "..." : ""}" — must be unique`,
+          );
           continue;
         }
         content = content.replace(edit.old_string, edit.new_string);
@@ -79,10 +103,10 @@ export const batchEditTool = defineTool({
 
       // Write if any edits succeeded
       if (fileResult.applied > 0) {
-        const { getCheckpointManager } = await import('../checkpoint.js');
+        const { getCheckpointManager } = await import("../checkpoint.js");
         const cp = getCheckpointManager();
         if (cp) cp.snapshot(safePath);
-        writeFileSync(safePath, content, 'utf-8');
+        writeFileSync(safePath, content, "utf-8");
       }
 
       results.push(fileResult);

@@ -8,6 +8,7 @@ import {
 } from "./git-safety.js";
 import { checkSandbox, type SandboxLevel } from "./sandbox.js";
 import { DockerSandbox } from "../sandbox/docker-sandbox.js";
+import { getWorkspace } from "../workspace-context.js";
 
 const DEFAULT_TIMEOUT = 120_000;
 const BACKGROUND_TIMEOUT = 600_000; // 10 minutes max for background tasks
@@ -278,7 +279,7 @@ export const shellTool = defineTool({
       const taskId = `bg-${nextTaskId++}`;
       const timeoutMs = timeout ?? BACKGROUND_TIMEOUT;
       const child = spawn("/bin/sh", ["-c", command], {
-        cwd: cwd ?? process.cwd(),
+        cwd: cwd ?? getWorkspace(),
         stdio: ["ignore", "pipe", "pipe"],
       });
 
@@ -347,7 +348,7 @@ export const shellTool = defineTool({
       const stderr = new OutputCollector();
 
       const child = spawn("/bin/sh", ["-c", command], {
-        cwd: cwd ?? process.cwd(),
+        cwd: cwd ?? getWorkspace(),
         stdio: ["ignore", "pipe", "pipe"],
       });
 
