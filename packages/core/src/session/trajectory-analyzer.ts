@@ -39,6 +39,7 @@ import {
   readdirSync,
   readFileSync,
   writeFileSync,
+  renameSync,
   existsSync,
   mkdirSync,
   statSync,
@@ -456,7 +457,11 @@ export function analyzeTrajectories(opts?: {
   const outputDir = join(homedir(), ".brainstorm");
   if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
 
-  writeFileSync(outputPath, JSON.stringify(intelligence, null, 2), "utf-8");
+  // Atomic write: write to temp file then rename, so parallel sessions
+  // don't corrupt routing-intelligence.json by interleaving writes.
+  const tmpPath = `${outputPath}.${process.pid}.tmp`;
+  writeFileSync(tmpPath, JSON.stringify(intelligence, null, 2), "utf-8");
+  renameSync(tmpPath, outputPath);
   log.info({ outputPath }, "Routing intelligence updated");
 
   return intelligence;

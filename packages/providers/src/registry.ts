@@ -99,6 +99,7 @@ export async function createProviderRegistry(
       name: "deepseek",
       baseURL: "https://api.deepseek.com/v1",
       headers: { Authorization: `Bearer ${deepseekKey}` },
+      includeUsage: true,
     });
   }
   const moonshotKey = getKey("MOONSHOT_API_KEY");
@@ -108,6 +109,7 @@ export async function createProviderRegistry(
       name: "moonshot",
       baseURL: "https://api.moonshot.ai/v1",
       headers: { Authorization: `Bearer ${moonshotKey}` },
+      includeUsage: true,
     });
   }
 
