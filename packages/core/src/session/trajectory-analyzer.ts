@@ -202,7 +202,16 @@ function analyzeTrajectoryFile(filePath: string): SessionSummary | null {
 
         case "session-end":
           sessionEndTime = new Date(event.timestamp).getTime();
-          summary.success = !summary.hadErrors && summary.toolCalls > 0;
+          // Success means: no errors, at least one LLM call completed, and the
+          // model produced output. Tool use is orthogonal — conversational
+          // sessions (storm run without --tools) are valid successes when the
+          // LLM actually answers the question. Previously this required
+          // toolCalls > 0, which counted every non-tool session as a failure
+          // and poisoned the Thompson sampling priors with false negatives.
+          summary.success =
+            !summary.hadErrors &&
+            summary.totalLLMCalls > 0 &&
+            summary.totalOutputTokens > 0;
           break;
 
         case "llm-call":

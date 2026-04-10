@@ -1540,17 +1540,21 @@ program
         systemPrompt,
         systemSegments,
         disableTools: !opts.tools,
+        // Model selection: honor --model flag, otherwise let the router decide.
+        // Community-tier users without their own keys fall through to the hosted
+        // brainstormrouter/auto endpoint. Everyone else goes through the router,
+        // which respects config.general.defaultStrategy (combined by default,
+        // auto-upgraded to capability when eval data is available).
         preferredModelId:
           opts.model ??
-          (resolvedKeys.get("MOONSHOT_API_KEY")
-            ? "moonshot/kimi-k2.5"
-            : isCommunityTier &&
-                !resolvedKeys.get("DEEPSEEK_API_KEY") &&
-                !resolvedKeys.get("ANTHROPIC_API_KEY") &&
-                !resolvedKeys.get("OPENAI_API_KEY") &&
-                !resolvedKeys.get("GOOGLE_GENERATIVE_AI_API_KEY")
-              ? "brainstormrouter/auto"
-              : undefined),
+          (isCommunityTier &&
+          !resolvedKeys.get("DEEPSEEK_API_KEY") &&
+          !resolvedKeys.get("ANTHROPIC_API_KEY") &&
+          !resolvedKeys.get("OPENAI_API_KEY") &&
+          !resolvedKeys.get("GOOGLE_GENERATIVE_AI_API_KEY") &&
+          !resolvedKeys.get("MOONSHOT_API_KEY")
+            ? "brainstormrouter/auto"
+            : undefined),
         maxSteps: parseInt(opts.maxSteps ?? "1"),
         compaction: buildCompactionCallbacks(sessionManager),
         permissionCheck: (tool, args) => permissionManager.check(tool, args),
@@ -5616,12 +5620,18 @@ program
         !!resolvedKeys.get("OPENAI_API_KEY") ||
         !!resolvedKeys.get("GOOGLE_GENERATIVE_AI_API_KEY") ||
         !!resolvedKeys.get("MOONSHOT_API_KEY");
-      // Default model: Kimi K2.5 when key available, otherwise router decides
-      let preferredModelId: string | undefined = resolvedKeys.get(
-        "MOONSHOT_API_KEY",
-      )
-        ? "moonshot/kimi-k2.5"
-        : isCommunityTier && !hasDirectProviderKeys
+      // Model selection: let the router decide unless the user explicitly pins
+      // via --model or /model. Community-tier users without their own keys fall
+      // through to the hosted brainstormrouter/auto endpoint.
+      //
+      // Previously this force-pinned moonshot/kimi-k2.5 whenever MOONSHOT_API_KEY
+      // was set, which bypassed the router entirely and prevented task-type-aware
+      // model selection. The capability strategy will still pick Kimi for
+      // code-generation work (it has the highest capability score in that
+      // category) but will now pick Gemini Flash for simple tasks, Haiku for
+      // conversations, etc. — the whole fleet gets used.
+      let preferredModelId: string | undefined =
+        isCommunityTier && !hasDirectProviderKeys
           ? "brainstormrouter/auto"
           : undefined;
 
