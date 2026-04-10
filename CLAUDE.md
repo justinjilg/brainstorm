@@ -47,7 +47,7 @@ Turborepo monorepo with 20 TypeScript packages:
 - `packages/plugin-sdk` — SDK for building Brainstorm plugins
 - `packages/projects` — Project registry, context builder, budgets
 - `packages/scheduler` — Cron-based task scheduling with safety layer
-- `packages/orchestrator` — 9-phase pipeline engine, trajectory capture for BrainstormLLM v2
+- `packages/orchestrator` — Multi-project task fan-out (sequential execution per project, cost tracking, SQLite persistence). The 9-phase pipeline engine with trajectory capture lives in `packages/core/src/plan/orchestration-pipeline.ts`, not here.
 - `packages/vscode` — VS Code extension integration
 
 ## Build & Run
