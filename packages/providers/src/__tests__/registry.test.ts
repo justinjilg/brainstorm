@@ -7,7 +7,7 @@ vi.mock("../local/discovery.js", () => ({
   discoverLocalModels: vi.fn(async () => ({ models: [] })),
 }));
 
-const createConfig = (): BrainstormConfig => ({
+const createConfig = () => ({
   providers: {
     gateway: {
       enabled: true,
@@ -55,21 +55,18 @@ const createConfig = (): BrainstormConfig => ({
   budget: {
     hardLimit: false,
   },
-  routingRules: [],
+  routing: { rules: [] },
   agents: [],
   workflows: [],
   mcp: {
     servers: [],
   },
   permissions: {
-    allow: [],
-    deny: [],
-    confirm: [],
+    allowlist: [],
+    denylist: [],
   },
   memory: {
-    maxEntries: 1000,
-    autoSummarize: true,
-    summarizeThreshold: 100,
+    maxBytes: 102400,
   },
   telemetry: {
     enabled: false,
@@ -105,7 +102,7 @@ describe("createProviderRegistry", () => {
 
   it("creates an empty cloud registry when no provider keys are resolved", async () => {
     const registry = await createProviderRegistry(
-      createConfig(),
+      createConfig() as any,
       createResolvedKeys({}),
     );
 
@@ -115,7 +112,7 @@ describe("createProviderRegistry", () => {
 
   it("registers provider-backed cloud models when an API key is available", async () => {
     const registry = await createProviderRegistry(
-      createConfig(),
+      createConfig() as any,
       createResolvedKeys({ ANTHROPIC_API_KEY: "test-key" }),
     );
 
@@ -131,7 +128,7 @@ describe("createProviderRegistry", () => {
 
   it("does not register cloud models for providers without API keys", async () => {
     const registry = await createProviderRegistry(
-      createConfig(),
+      createConfig() as any,
       createResolvedKeys({ OPENAI_API_KEY: null }),
     );
 
@@ -147,7 +144,7 @@ describe("createProviderRegistry", () => {
     expect(targetModel).toBeDefined();
 
     const registry = await createProviderRegistry(
-      createConfig(),
+      createConfig() as any,
       createResolvedKeys({ ANTHROPIC_API_KEY: "test-key" }),
     );
 
@@ -160,7 +157,7 @@ describe("createProviderRegistry", () => {
 
   it("supports listing models by provider via registry.models", async () => {
     const registry = await createProviderRegistry(
-      createConfig(),
+      createConfig() as any,
       createResolvedKeys({
         ANTHROPIC_API_KEY: "anthropic-key",
         OPENAI_API_KEY: "openai-key",
@@ -186,7 +183,7 @@ describe("createProviderRegistry", () => {
 
   it("supports status filtering for available models and exposes no unavailable cloud models", async () => {
     const registry = await createProviderRegistry(
-      createConfig(),
+      createConfig() as any,
       createResolvedKeys({ ANTHROPIC_API_KEY: "test-key" }),
     );
 

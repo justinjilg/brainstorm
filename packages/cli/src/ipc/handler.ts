@@ -403,7 +403,7 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
           runAgentLoop: runLoop,
         } = coreModule;
         const { CostTracker: CT } = routerModule;
-        const { frontmatter: fp } = buildSP(ctx.projectPath);
+        const { prompt: fp } = buildSP(ctx.projectPath);
         const skills = loadSk(ctx.projectPath);
         const costTracker = new CT(ctx.db, ctx.config.budget);
 
@@ -514,11 +514,12 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
         } = coreModule;
         const { CostTracker: ChatCT } = routerModule;
 
-        let { frontmatter } = buildSystemPrompt(ctx.projectPath);
+        const buildResult = buildSystemPrompt(ctx.projectPath);
+        let systemPrompt = buildResult.prompt;
 
         // Inject role-specific prompt if role is set
         if (chatParams.role) {
-          frontmatter = `You are acting as a ${chatParams.role} agent. Prioritize ${chatParams.role}-related tasks and expertise.\n\n${frontmatter}`;
+          systemPrompt = `You are acting as a ${chatParams.role} agent. Prioritize ${chatParams.role}-related tasks and expertise.\n\n${systemPrompt}`;
         }
 
         // Inject active skills into system prompt
@@ -531,7 +532,7 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
             const skillBlock = selected
               .map((s: any) => `## Skill: ${s.name}\n${s.content}`)
               .join("\n\n");
-            frontmatter += `\n\n# Active Skills\n\n${skillBlock}`;
+            systemPrompt += `\n\n# Active Skills\n\n${skillBlock}`;
           }
         }
 
@@ -555,7 +556,7 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
             tools: ctx.tools,
             sessionId: chatSessionId,
             projectPath: ctx.projectPath,
-            systemPrompt: frontmatter,
+            systemPrompt,
             preferredModelId: chatParams.modelId,
             signal: abortController.signal,
           })) {

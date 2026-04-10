@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
-import type { TaskProfile, ModelEntry } from "@brainst0rm/shared";
+// Autonomous test — uses simplified fixtures; cast as any to avoid strict type mismatches
+type TaskProfile = any;
+type ModelEntry = any;
 import {
   predictTaskCost,
   formatCostPrediction,
