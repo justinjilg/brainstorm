@@ -224,9 +224,9 @@ export const CLOUD_MODELS: ModelEntry[] = [
   },
   // ── Google ─────────────────────────────────────────────────────────
   {
-    id: "google/gemini-3.1-pro",
+    id: "google/gemini-3.1-pro-preview",
     provider: "google",
-    name: "Gemini 3.1 Pro",
+    name: "Gemini 3.1 Pro (Preview)",
     capabilities: {
       toolCalling: true,
       streaming: true,
@@ -263,9 +263,9 @@ export const CLOUD_MODELS: ModelEntry[] = [
     lastHealthCheck: 0,
   },
   {
-    id: "google/gemini-3.1-flash",
+    id: "google/gemini-2.5-flash",
     provider: "google",
-    name: "Gemini 3.1 Flash",
+    name: "Gemini 2.5 Flash",
     capabilities: {
       toolCalling: true,
       streaming: true,

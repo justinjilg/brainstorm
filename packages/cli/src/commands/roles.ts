@@ -141,8 +141,8 @@ export const ROLES: Record<RoleId, RoleDefinition> = {
       },
       { modelId: "openai/gpt-5.4", label: "GPT-5.4", cost: "$2.50/$10" },
       {
-        modelId: "google/gemini-3.1-pro",
-        label: "Gemini 3.1 Pro",
+        modelId: "google/gemini-3.1-pro-preview",
+        label: "Gemini 3.1 Pro (Preview)",
         cost: "$1.25/$5",
       },
       {
@@ -180,8 +180,8 @@ export const ROLES: Record<RoleId, RoleDefinition> = {
       },
       { modelId: "openai/gpt-5.4", label: "GPT-5.4", cost: "$2.50/$10" },
       {
-        modelId: "google/gemini-3.1-pro",
-        label: "Gemini 3.1 Pro",
+        modelId: "google/gemini-3.1-pro-preview",
+        label: "Gemini 3.1 Pro (Preview)",
         cost: "$1.25/$5",
       },
     ],
@@ -211,8 +211,8 @@ export const ROLES: Record<RoleId, RoleDefinition> = {
         cost: "$0.27/$1.10",
       },
       {
-        modelId: "google/gemini-3.1-pro",
-        label: "Gemini 3.1 Pro",
+        modelId: "google/gemini-3.1-pro-preview",
+        label: "Gemini 3.1 Pro (Preview)",
         cost: "$1.25/$5",
       },
     ],
@@ -241,8 +241,8 @@ export const ROLES: Record<RoleId, RoleDefinition> = {
         cost: "$0.40/$1.60",
       },
       {
-        modelId: "google/gemini-3.1-flash",
-        label: "Gemini 3.1 Flash",
+        modelId: "google/gemini-2.5-flash",
+        label: "Gemini 2.5 Flash",
         cost: "$0.15/$0.60",
       },
       {
@@ -273,8 +273,8 @@ export const ROLES: Record<RoleId, RoleDefinition> = {
       },
       { modelId: "openai/gpt-5.4", label: "GPT-5.4", cost: "$2.50/$10" },
       {
-        modelId: "google/gemini-3.1-pro",
-        label: "Gemini 3.1 Pro",
+        modelId: "google/gemini-3.1-pro-preview",
+        label: "Gemini 3.1 Pro (Preview)",
         cost: "$1.25/$5",
       },
       {

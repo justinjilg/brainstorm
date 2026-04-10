@@ -166,8 +166,8 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   "anthropic/claude-haiku-4-5-20251001": { input: 0.8, output: 4 },
   "openai/gpt-5.4": { input: 2.5, output: 10 },
   "openai/gpt-4.1-mini": { input: 0.4, output: 1.6 },
-  "google/gemini-3.1-pro": { input: 1.25, output: 5 },
-  "google/gemini-3.1-flash": { input: 0.15, output: 0.6 },
+  "google/gemini-3.1-pro-preview": { input: 1.25, output: 5 },
+  "google/gemini-2.5-flash": { input: 0.15, output: 0.6 },
   "deepseek/deepseek-chat": { input: 0.27, output: 1.1 },
   "moonshot/kimi-k2.5": { input: 0.6, output: 2.4 },
 };

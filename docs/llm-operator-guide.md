@@ -367,7 +367,7 @@ brainstorm introspect       # auth section shows resolved key status
 
 ### Safe Tools (no `--lfg` needed)
 
-All tools with `permission: "auto"` work in `brainstorm run` without `--lfg`. This includes: file*read, glob, grep, list_dir, git_status, git_diff, git_log, task*_, scratchpad\__, br\_\*, tool_search, cost_estimate.
+All tools with `permission: "auto"` work in `brainstorm run` without `--lfg`. This includes: file*read, glob, grep, list_dir, git_status, git_diff, git_log, task*\_, scratchpad\_\_, br\_\*, tool_search, cost_estimate.
 
 ### Unsafe Tools
 
@@ -412,8 +412,8 @@ brainstorm run --json --unattended --max-steps 20 "fix the failing test"
 | Claude Sonnet 4.6 | `claude-sonnet-4-6`         | Anthropic |
 | Claude Haiku 4.5  | `claude-haiku-4-5-20251001` | Anthropic |
 | GPT-5.4           | `gpt-5.4`                   | OpenAI    |
-| Gemini 3.1 Pro    | `gemini-3.1-pro`            | Google    |
-| Gemini 3.1 Flash  | `gemini-3.1-flash`          | Google    |
+| Gemini 3.1 Pro    | `gemini-3.1-pro-preview`    | Google    |
+| Gemini 2.5 Flash  | `gemini-2.5-flash`          | Google    |
 
 ### Related Files
 
