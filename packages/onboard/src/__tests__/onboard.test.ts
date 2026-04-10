@@ -5,9 +5,10 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { inferBudget, createBudgetTracker } from "../budget.js";
 import { persistOnboardToMemory } from "../memory-bridge.js";
+import { MemoryManager } from "@brainst0rm/core";
 import { join } from "node:path";
 import { tmpdir, homedir } from "node:os";
-import { rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { createHash } from "node:crypto";
 import type { OnboardResult } from "../types.js";
 
@@ -17,6 +18,10 @@ function getMemoryDir(projectPath: string): string {
     .digest("hex")
     .slice(0, 16);
   return join(homedir(), ".brainstorm", "projects", hash, "memory");
+}
+
+function createProjectPath(prefix: string): string {
+  return mkdtempSync(join(tmpdir(), `${prefix}-`));
 }
 
 describe("Budget", () => {
@@ -89,20 +94,15 @@ describe("Budget", () => {
 describe("Memory Bridge", () => {
   const cleanupPaths: string[] = [];
 
-  afterEach(() => {
-    for (const p of cleanupPaths) {
-      try {
-        rmSync(getMemoryDir(p), { recursive: true, force: true });
-      } catch {}
-    }
-    cleanupPaths.length = 0;
-  });
-
-  it("persists exploration results to memory", () => {
-    const projectPath = join(tmpdir(), `brainstorm-onboard-test-${Date.now()}`);
+  function trackProjectPath(projectPath: string): string {
     cleanupPaths.push(projectPath);
+    return projectPath;
+  }
 
-    const result: OnboardResult = {
+  function createResult(
+    overrides?: Partial<NonNullable<OnboardResult["context"]["exploration"]>>,
+  ): OnboardResult {
+    return {
       context: {
         analysis: {} as any,
         exploration: {
@@ -146,6 +146,7 @@ describe("Memory Bridge", () => {
           ],
           projectPurpose:
             "AI-governed control plane for multi-product infrastructure",
+          ...overrides,
         },
       },
       filesWritten: [],
@@ -154,17 +155,136 @@ describe("Memory Bridge", () => {
       phasesRun: ["static-analysis", "deep-exploration"],
       phasesSkipped: [],
     };
+  }
+
+  afterEach(() => {
+    for (const p of cleanupPaths) {
+      try {
+        rmSync(p, { recursive: true, force: true });
+      } catch {}
+      try {
+        rmSync(getMemoryDir(p), { recursive: true, force: true });
+      } catch {}
+    }
+    cleanupPaths.length = 0;
+  });
+
+  it("persists exploration results to memory", () => {
+    const projectPath = trackProjectPath(
+      createProjectPath("brainstorm-onboard-test"),
+    );
+    const result = createResult();
 
     const saved = persistOnboardToMemory(result, projectPath);
-    expect(saved).toBeGreaterThanOrEqual(5); // conventions, domain-concepts, project-purpose, git-workflow, ci-cd-profile, key-files
+    const manager = new MemoryManager(projectPath);
+
+    expect(saved).toBe(6);
+    expect(manager.list().map((entry) => entry.name)).toEqual(
+      expect.arrayContaining([
+        "conventions",
+        "domain-concepts",
+        "project-purpose",
+        "git-workflow",
+        "ci-cd-profile",
+        "key-files-digest",
+      ]),
+    );
+  });
+
+  it("persists partial exploration data with only conventions and project purpose", () => {
+    const projectPath = trackProjectPath(
+      createProjectPath("brainstorm-onboard-partial"),
+    );
+    const result = createResult({
+      domainConcepts: [],
+      gitWorkflow: undefined as any,
+      cicdSetup: undefined as any,
+      keyFiles: [],
+    });
+
+    const saved = persistOnboardToMemory(result, projectPath);
+    const manager = new MemoryManager(projectPath);
+    const entryNames = manager.list().map((entry) => entry.name);
+
+    expect(saved).toBe(2);
+    expect(entryNames).toEqual(
+      expect.arrayContaining(["conventions", "project-purpose"]),
+    );
+    expect(entryNames).not.toContain("domain-concepts");
+    expect(entryNames).not.toContain("git-workflow");
+    expect(entryNames).not.toContain("ci-cd-profile");
+    expect(entryNames).not.toContain("key-files-digest");
+  });
+
+  it("handles a non-directory project path gracefully by still hashing the path for storage", () => {
+    const parentPath = trackProjectPath(
+      createProjectPath("brainstorm-onboard-non-directory-parent"),
+    );
+    const fileProjectPath = join(parentPath, "project-file.txt");
+    const result = createResult({
+      domainConcepts: [],
+      gitWorkflow: undefined as any,
+      cicdSetup: undefined as any,
+      keyFiles: [],
+      projectPurpose: undefined as any,
+    });
+
+    const saved = persistOnboardToMemory(result, fileProjectPath);
+    const manager = new MemoryManager(fileProjectPath);
+    const entries = manager.list();
+
+    expect(saved).toBe(1);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.name).toBe("conventions");
+  });
+
+  it("persists very long content without truncation", () => {
+    const projectPath = trackProjectPath(
+      createProjectPath("brainstorm-onboard-long-content"),
+    );
+    const longPurpose = "A".repeat(5500);
+    const result = createResult({
+      projectPurpose: longPurpose,
+      domainConcepts: [],
+      gitWorkflow: undefined as any,
+      cicdSetup: undefined as any,
+      keyFiles: [],
+      conventions: undefined as any,
+    });
+
+    const saved = persistOnboardToMemory(result, projectPath);
+    const manager = new MemoryManager(projectPath);
+    const purposeEntry = manager.get("project-purpose");
+
+    expect(saved).toBe(1);
+    expect(purposeEntry?.content).toBe(longPurpose);
+    expect(purposeEntry?.content.length).toBeGreaterThan(5000);
+  });
+
+  it("skips empty keyFiles and domainConcepts arrays", () => {
+    const projectPath = trackProjectPath(
+      createProjectPath("brainstorm-onboard-empty-arrays"),
+    );
+    const result = createResult({
+      domainConcepts: [],
+      keyFiles: [],
+      gitWorkflow: undefined as any,
+      cicdSetup: undefined as any,
+      projectPurpose: undefined as any,
+    });
+
+    const saved = persistOnboardToMemory(result, projectPath);
+    const manager = new MemoryManager(projectPath);
+    const entryNames = manager.list().map((entry) => entry.name);
+
+    expect(saved).toBe(1);
+    expect(entryNames).toEqual(["conventions"]);
   });
 
   it("returns 0 when no exploration results", () => {
-    const projectPath = join(
-      tmpdir(),
-      `brainstorm-onboard-test-empty-${Date.now()}`,
+    const projectPath = trackProjectPath(
+      createProjectPath("brainstorm-onboard-test-empty"),
     );
-    cleanupPaths.push(projectPath);
 
     const result: OnboardResult = {
       context: { analysis: {} as any },
