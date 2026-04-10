@@ -171,17 +171,9 @@ export function computeComplexity(projectPath: string): ComplexityReport {
   };
 }
 
-function analyzeFile(
-  filePath: string,
-  projectPath: string,
-): FileComplexity | null {
-  let content: string;
-  try {
-    content = readFileSync(filePath, "utf-8");
-  } catch {
-    return null;
-  }
-
+export function calculateComplexity(
+  content: string,
+): Omit<FileComplexity, "path"> | null {
   const lines = content.split("\n");
   const nonBlank = lines.filter((l) => l.trim().length > 0).length;
   if (nonBlank === 0) return null;
@@ -222,11 +214,30 @@ function analyzeFile(
   );
 
   return {
-    path: relative(projectPath, filePath),
     lines: nonBlank,
     branchCount,
     maxNesting,
     functionCount,
     score: Math.min(100, score),
+  };
+}
+
+function analyzeFile(
+  filePath: string,
+  projectPath: string,
+): FileComplexity | null {
+  let content: string;
+  try {
+    content = readFileSync(filePath, "utf-8");
+  } catch {
+    return null;
+  }
+
+  const metrics = calculateComplexity(content);
+  if (!metrics) return null;
+
+  return {
+    path: relative(projectPath, filePath),
+    ...metrics,
   };
 }

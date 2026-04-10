@@ -221,7 +221,7 @@ function scanFile(
   }
 }
 
-function inferMethod(text: string): string {
+export function inferMethod(text: string): string {
   const l = text.toLowerCase();
   if (l.includes(".get") || l.includes("@get")) return "GET";
   if (l.includes(".post") || l.includes("@post")) return "POST";
@@ -231,7 +231,7 @@ function inferMethod(text: string): string {
   return "ANY";
 }
 
-function inferPathFromFile(relPath: string): string {
+export function inferPathFromFile(relPath: string): string {
   const parts = relPath.replace(/\\/g, "/").split("/");
   const apiIdx = parts.indexOf("api");
   if (apiIdx >= 0) {
