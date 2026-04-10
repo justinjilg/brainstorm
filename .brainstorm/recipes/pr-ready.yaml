@@ -1,0 +1,30 @@
+name: PR Ready
+description: Full workflow from plan to review-ready PR
+communication: handoff
+maxIterations: 2
+steps:
+  - id: plan
+    role: architect
+    description: "Analyze the task to create a detailed implementation plan including the required file changes within the Turborepo structure"
+    output: spec
+    outputSchema: implementation-spec
+
+  - id: implement
+    role: coder
+    description: "Implement the planned changes in TypeScript following project conventions, ensuring placement of new code and tests in appropriate packages and __tests__ folders"
+    input: [spec]
+    output: code
+
+  - id: test
+    role: qa
+    description: "Run Vitest tests, including unit, integration, and smoke tests, using turborepo pipelines with filters to exclude heavier packages, and verify correctness via test results"
+    input: [spec, code]
+    output: test-result
+
+  - id: review
+    role: code-reviewer
+    description: "Perform a thorough review for correctness, adherence to TypeScript and Turborepo conventions, comprehensive testing coverage including fast-check property tests, and appropriate error handling patterns"
+    input: [spec, code, test-result]
+    output: review
+    review: true
+    loopBack: implement
