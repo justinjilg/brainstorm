@@ -1,0 +1,295 @@
+import { afterEach, describe, expect, it } from "vitest";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { CodeGraph, indexProject, parseFile } from "../index.js";
+
+const tempDirs: string[] = [];
+const graphs: CodeGraph[] = [];
+
+function makeTempDir(name: string): string {
+  const dir = mkdtempSync(join(tmpdir(), `${name}-`));
+  tempDirs.push(dir);
+  return dir;
+}
+
+function writeProjectFile(
+  projectDir: string,
+  relativePath: string,
+  content: string,
+): string {
+  const filePath = join(projectDir, relativePath);
+  mkdirSync(join(filePath, ".."), { recursive: true });
+  writeFileSync(filePath, content);
+  return filePath;
+}
+
+function createGraph(projectDir: string): CodeGraph {
+  const graph = new CodeGraph({ dbPath: join(projectDir, "graph.db") });
+  graphs.push(graph);
+  return graph;
+}
+
+afterEach(() => {
+  while (graphs.length > 0) {
+    graphs.pop()?.close();
+  }
+});
+
+describe("@brainst0rm/code-graph", () => {
+  it("parseFile extracts exported functions, classes, methods, calls, and imports", () => {
+    const projectDir = makeTempDir("code-graph-parser");
+    const filePath = writeProjectFile(
+      projectDir,
+      "sample.ts",
+      [
+        'import Foo, { helper as renamedHelper, named } from "./dep";',
+        "",
+        "export async function runTask(value: string) {",
+        "    renamedHelper(value);",
+        "    Foo();",
+        "}",
+        "",
+        "export class Worker {",
+        "    static async execute() {",
+        "        named();",
+        "    }",
+        "}",
+      ].join("\n"),
+    );
+
+    const parsed = parseFile(filePath);
+
+    expect(parsed.functions).toEqual([
+      expect.objectContaining({
+        name: "runTask",
+        file: filePath,
+        isExported: true,
+        isAsync: true,
+      }),
+    ]);
+    expect(parsed.classes).toEqual([
+      expect.objectContaining({
+        name: "Worker",
+        file: filePath,
+        isExported: true,
+      }),
+    ]);
+    expect(parsed.methods).toEqual([
+      expect.objectContaining({
+        name: "execute",
+        className: "Worker",
+        isStatic: true,
+        isAsync: true,
+      }),
+    ]);
+    expect(parsed.callSites).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          callerName: "runTask",
+          calleeName: "renamedHelper",
+        }),
+        expect.objectContaining({
+          callerName: "runTask",
+          calleeName: "Foo",
+        }),
+        expect.objectContaining({
+          callerName: "Worker.execute",
+          calleeName: "named",
+        }),
+      ]),
+    );
+    expect(parsed.imports).toEqual([
+      {
+        file: filePath,
+        source: "./dep",
+        names: ["Foo", "helper", "named"],
+        isDefault: true,
+      },
+    ]);
+  });
+
+  it("parseFile records assigned arrow functions as non-exported functions", () => {
+    const projectDir = makeTempDir("code-graph-arrow");
+    const filePath = writeProjectFile(
+      projectDir,
+      "arrow.ts",
+      ["export const localTask = async () => {", "    helper();", "};"].join(
+        "\n",
+      ),
+    );
+
+    const parsed = parseFile(filePath);
+
+    expect(parsed.functions).toEqual([
+      expect.objectContaining({
+        name: "localTask",
+        isExported: false,
+        isAsync: true,
+      }),
+    ]);
+    expect(parsed.callSites).toEqual([
+      expect.objectContaining({
+        callerName: "localTask",
+        calleeName: "helper",
+      }),
+    ]);
+  });
+
+  it("CodeGraph stores definitions, callers, callees, and stats for parsed files", () => {
+    const projectDir = makeTempDir("code-graph-storage");
+    const filePath = writeProjectFile(
+      projectDir,
+      "flow.ts",
+      [
+        "function alpha() {",
+        "    beta();",
+        "}",
+        "",
+        "function beta() {}",
+        "",
+        "class Worker {",
+        "    run() {",
+        "        alpha();",
+        "    }",
+        "}",
+      ].join("\n"),
+    );
+    const parsed = parseFile(filePath);
+    const graph = createGraph(projectDir);
+
+    graph.upsertFile(parsed);
+
+    expect(graph.findCallers("alpha")).toEqual([
+      {
+        caller: "Worker.run",
+        file: filePath,
+        line: 9,
+      },
+    ]);
+    expect(graph.findCallees("alpha")).toEqual([
+      {
+        callee: "beta",
+        file: filePath,
+        line: 2,
+      },
+    ]);
+    expect(graph.findDefinition("Worker")).toEqual([
+      expect.objectContaining({
+        kind: "class",
+        name: "Worker",
+        file: filePath,
+      }),
+    ]);
+    expect(graph.stats()).toEqual({
+      files: 1,
+      functions: 2,
+      classes: 1,
+      methods: 1,
+      callEdges: 2,
+    });
+  });
+
+  it("CodeGraph impactAnalysis walks transitive callers with depth limits", () => {
+    const projectDir = makeTempDir("code-graph-impact");
+    const filePath = writeProjectFile(
+      projectDir,
+      "impact.ts",
+      [
+        "function leaf() {}",
+        "function mid() {",
+        "    leaf();",
+        "}",
+        "function top() {",
+        "    mid();",
+        "}",
+      ].join("\n"),
+    );
+    const graph = createGraph(projectDir);
+
+    graph.upsertFile(parseFile(filePath));
+
+    expect(graph.impactAnalysis("leaf", 1)).toEqual([
+      {
+        name: "mid",
+        depth: 1,
+        file: filePath,
+      },
+    ]);
+    expect(graph.impactAnalysis("leaf", 2)).toEqual([
+      {
+        name: "mid",
+        depth: 1,
+        file: filePath,
+      },
+      {
+        name: "top",
+        depth: 2,
+        file: filePath,
+      },
+    ]);
+  });
+
+  it("indexProject indexes supported files, skips ignored paths, and reports progress", () => {
+    const projectDir = makeTempDir("code-graph-indexer");
+    writeProjectFile(
+      projectDir,
+      "src/kept.ts",
+      ["export function kept() {", "    helper();", "}"].join("\n"),
+    );
+    writeProjectFile(
+      projectDir,
+      "src/view.tsx",
+      [
+        "export function View() {",
+        "    return <button onClick={() => kept()}>Go</button>;",
+        "}",
+      ].join("\n"),
+    );
+    writeProjectFile(
+      projectDir,
+      "src/types.d.ts",
+      "export interface Ignored {}\n",
+    );
+    writeProjectFile(
+      projectDir,
+      "node_modules/skip.ts",
+      "export function skipped() {}\n",
+    );
+    writeProjectFile(projectDir, ".hidden.ts", "export function hidden() {}\n");
+
+    const progressEvents: Array<{
+      filesScanned: number;
+      filesIndexed: number;
+    }> = [];
+    const graph = createGraph(projectDir);
+
+    const { progress } = indexProject(projectDir, {
+      graph,
+      maxFiles: 2,
+      onProgress(current) {
+        progressEvents.push({
+          filesScanned: current.filesScanned,
+          filesIndexed: current.filesIndexed,
+        });
+      },
+    });
+
+    expect(progress).toMatchObject({
+      filesScanned: 2,
+      filesIndexed: 2,
+      errors: 0,
+    });
+    expect(progress.elapsedMs).toBeGreaterThanOrEqual(0);
+    expect(progressEvents).toEqual([]);
+    expect(graph.stats()).toEqual({
+      files: 2,
+      functions: 2,
+      classes: 0,
+      methods: 0,
+      callEdges: 2,
+    });
+    expect(graph.findDefinition("skipped")).toEqual([]);
+    expect(graph.findDefinition("hidden")).toEqual([]);
+  });
+});
