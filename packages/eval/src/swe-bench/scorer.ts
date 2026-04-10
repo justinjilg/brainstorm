@@ -194,7 +194,7 @@ function scorePatchWithDocker(
           image,
           "bash",
           "-c",
-          detectTestCommand(instance.repo),
+          buildTestCommand(instance),
         ],
         {
           timeout: 600000, // 10 min max — astropy and similar need time to install
@@ -295,9 +295,26 @@ function detectTestImage(repo: string): string {
   return "python:3.11-slim"; // Default for SWE-bench (mostly Python)
 }
 
-function detectTestCommand(repo: string): string {
-  // SWE-bench repos are primarily Python — install + run tests
-  return 'pip install -e ".[test,dev]" 2>/dev/null; pip install -e . 2>/dev/null; python -m pytest --tb=short -q 2>&1 || python -m unittest discover -s tests 2>&1';
+/**
+ * Build the test command for a SWE-bench instance. If FAIL_TO_PASS is
+ * provided, run only those specific tests (proper SWE-bench scoring). Without
+ * it, fall back to running the full test suite (coarse but useful signal).
+ */
+function buildTestCommand(instance: SWEBenchInstance): string {
+  const install =
+    'pip install -q -e ".[test,dev]" 2>&1 || pip install -q -e . 2>&1; pip install -q pytest 2>&1';
+
+  if (instance.failToPass && instance.failToPass.length > 0) {
+    // Run only the FAIL_TO_PASS tests. Pass each as a positional argument.
+    // Escape single quotes in test IDs for shell safety.
+    const testIds = instance.failToPass
+      .map((t) => `'${t.replace(/'/g, "'\\''")}'`)
+      .join(" ");
+    return `${install}; python -m pytest --tb=short -v ${testIds} 2>&1`;
+  }
+
+  // Fallback: whole suite (legacy behavior)
+  return `${install}; python -m pytest --tb=short -q 2>&1 || python -m unittest discover -s tests 2>&1`;
 }
 
 function isDockerAvailable(): boolean {
