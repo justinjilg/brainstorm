@@ -187,8 +187,8 @@ describe("OrchestrationEngine.run", () => {
 
     // Each call should receive budgetLimit / N = 1.0
     for (const call of runTask.mock.calls) {
-      const [, , opts] = call;
-      expect(opts.budget).toBe(1.0);
+      const opts = (call as any)[2];
+      expect(opts?.budget).toBe(1.0);
     }
   });
 

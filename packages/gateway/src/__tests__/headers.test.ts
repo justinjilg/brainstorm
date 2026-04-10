@@ -13,12 +13,11 @@ describe("Gateway Headers", () => {
 
   it("formats feedback payload", () => {
     const feedback = formatGatewayFeedback({
-      sessionId: "test-session",
-      modelId: "anthropic/claude-sonnet-4.6",
-      success: true,
-      latencyMs: 500,
-      inputTokens: 100,
-      outputTokens: 50,
+      guardianStatus: "passed",
+      estimatedCost: 0.05,
+      actualCost: 0.04,
+      selectedModel: "anthropic/claude-sonnet-4-6",
+      requestId: "req-123",
     });
     expect(feedback).toBeDefined();
     expect(typeof feedback).toBe("string");

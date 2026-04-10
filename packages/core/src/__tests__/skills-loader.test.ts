@@ -20,7 +20,7 @@ describe("loadSkills", () => {
     const skills = loadSkills("/nonexistent/path");
     // Builtin skills always load regardless of project path
     expect(skills.length).toBeGreaterThan(0);
-    expect(skills.some((s) => s.source === "builtin")).toBe(true);
+    expect(skills.some((s) => (s.source as string) === "builtin")).toBe(true);
   });
 
   it("skills have required fields", () => {

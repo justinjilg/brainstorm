@@ -108,7 +108,7 @@ describe("Plugin SDK", () => {
         name: "dup-tools",
         version: "1.0.0",
         description: "plugin with dup tools",
-        tools: [dupTool, dupTool],
+        tools: [dupTool, dupTool] as any,
       }),
     ).toThrow(/duplicate tool name "same"/);
 

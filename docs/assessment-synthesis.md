@@ -1,97 +1,69 @@
-# Stochastic Assessment Synthesis v6 — Full Platform (2026-04-09)
+# Stochastic Assessment Synthesis v7 — 2026-04-10
 
-Previous: 3.2 → 4.0 → 3.43 → 4.68 (desktop focused). This assessment: full platform readiness for autonomous agent vision.
+Previous: v6 scored 3.95/10. This session: routing fleet fix, 740 tests, autonomous storm runs.
 
-## Score Distribution Matrix
+## Overall Score: 5.35 / 10 (StdDev: 0.77)
 
-| Dimension                | A1 Optimist | A2 Pessimist | A3 Architect | A4 Auditor | A5 Operator | A6 Attacker | A7 Competitor | A8 Investor | A9 Sr.Eng | A10 Chaos | Min | Max |   Mean   | StdDev |
-| ------------------------ | :---------: | :----------: | :----------: | :--------: | :---------: | :---------: | :-----------: | :---------: | :-------: | :-------: | :-: | :-: | :------: | :----: |
-| 1. Code Completeness     |      6      |      5       |      6       |     6      |      5      |      5      |       6       |      6      |     5     |     5     |  5  |  6  | **5.5**  |  0.5   |
-| 2. Wiring                |      2      |      2       |      3       |     4      |      4      |      3      |       4       |      5      |     3     |     3     |  2  |  5  | **3.3**  |  0.9   |
-| 3. Test Reality          |      3      |      3       |      4       |     4      |      3      |      4      |       5       |      4      |     3     |     4     |  3  |  5  | **3.7**  |  0.7   |
-| 4. Production Evidence   |      2      |      1       |      2       |     3      |      2      |      2      |       4       |      3      |     3     |     3     |  1  |  4  | **2.5**  |  0.8   |
-| 5. Operational Readiness |      3      |      3       |      4       |     5      |      4      |      3      |       5       |      4      |     4     |     4     |  3  |  5  | **3.9**  |  0.7   |
-| 6. Security Posture      |      4      |      4       |      5       |     7      |      6      |      6      |       6       |      5      |     6     |     6     |  4  |  7  | **5.5**  |  0.9   |
-| 7. Documentation         |      4      |      3       |      4       |     5      |      6      |      5      |       6       |      5      |     6     |     6     |  3  |  6  | **5.0**  |  1.0   |
-| 8. Failure Handling      |      3      |      3       |      4       |     5      |      5      |      6      |       5       |      5      |     5     |     4     |  3  |  6  | **4.5**  |  0.9   |
-| 9. Scale Readiness       |      2      |      2       |      2       |     3      |      3      |      2      |       3       |      3      |     3     |     3     |  2  |  3  | **2.6**  |  0.5   |
-| 10. Ship Readiness       |      2      |      2       |      3       |     3      |      3      |      3      |       4       |      4      |     3     |     3     |  2  |  4  | **3.0**  |  0.6   |
-| **OVERALL**              |   **3.1**   |   **2.8**    |   **3.7**    |  **4.5**   |   **4.1**   |   **3.9**   |    **4.8**    |   **4.4**   |  **4.1**  |  **4.1**  |     |     | **3.95** |        |
+Delta from v6: **+1.40 points.** Range: 4.1 (Optimist) to 6.5 (Competitor).
 
-**Mean Overall: 3.95 / 10**
-**Range: 2.8 (Pessimist) — 4.8 (Competitor)**
-**StdDev across agents: 0.6**
+## Agent Scores
 
-## High-Variance Dimensions (StdDev > 1.0)
+| #   | Agent        | Mean | Range | Key Finding                                    |
+| --- | ------------ | ---- | ----- | ---------------------------------------------- |
+| 1   | Optimist     | 4.1  | 2-7   | Mock-heavy = false confidence                  |
+| 2   | Pessimist    | 4.3  | 2-6   | Not survivable at 3am                          |
+| 3   | Architect    | 5.1  | 3.5-7 | Thompson sampling is real innovation           |
+| 4   | Auditor      | 5.6  | 3-7   | CI is RED; routing-intelligence.json missing   |
+| 5   | Operator     | 6.2  | 4-8   | Infrastructure built but dormant               |
+| 6   | Attacker     | 5.5  | 3-7   | MCP tool shadowing; trust window evasion       |
+| 7   | Competitor   | 6.5  | 2-9   | Governance moat (9/10); zero benchmarks (2/10) |
+| 8   | Investor     | 5.0  | 2-8   | Real data ($29.51); multi-agent unproven       |
+| 9   | Sr. Engineer | 6.2  | 4-7   | 1,002 test cases; godmode untested             |
+| 10  | Chaos Monkey | 5.0  | 3-7   | Trust singleton concurrency bug                |
 
-| Dimension     | StdDev | Interpretation                                                                                                       |
-| ------------- | ------ | -------------------------------------------------------------------------------------------------------------------- |
-| Documentation | 1.0    | Agents disagree on whether existing docs (CLAUDE.md, platform-contract) are sufficient vs. missing runbooks/API refs |
+## Risk Register (sorted by consensus)
 
-No dimension exceeded the 1.5 threshold for "UNCERTAIN — agents disagree significantly." The 10 agents broadly agree on the diagnosis. Variance is low because the evidence is unambiguous.
+| Risk                                           | Agents      | Count |
+| ---------------------------------------------- | ----------- | ----- |
+| Mock-heavy tests (80.5%) give false confidence | 1,2,3,4,8,9 | 6/10  |
+| CI broken/inactive on main                     | 2,4,5,8,10  | 5/10  |
+| No e2e test for primary pipeline               | 1,2,3,8,9   | 5/10  |
+| No external benchmark (SWE-bench)              | 4,7,8       | 3/10  |
+| Multi-agent orchestration unproven             | 3,7,8       | 3/10  |
+| routing-intelligence.json missing              | 4,8,10      | 3/10  |
+| CircuitBreaker unwired                         | 6,10        | 2/10  |
+| Trust propagation concurrency bug              | 6,10        | 2/10  |
+| MCP tool shadowing                             | 6,7         | 2/10  |
 
-## Risk Register (sorted by agent count)
+## Auditor Corrections
 
-| Risk                                                                | Count     | Agents             |
-| ------------------------------------------------------------------- | --------- | ------------------ |
-| Memory tool is a stub — agents cannot read/write memory             | **10/10** | ALL                |
-| Sequential-only subagent execution blocks concurrent vision         | **9/10**  | 1,2,3,4,5,7,8,9,10 |
-| MemoryManager (840 lines) has zero tests                            | **8/10**  | 1,2,3,4,5,8,9,10   |
-| 25KB memory cap insufficient for large codebases                    | **5/10**  | 3,7,8,9,10         |
-| @brainst0rm/db test exits code 1 despite passing tests              | **3/10**  | 2,4,9              |
-| @brainst0rm/web build broken                                        | **3/10**  | 2,4,7              |
-| No 429/503 retry in LLM provider layer                              | **3/10**  | 9,10,8             |
-| Trust propagation dead in production (syncTrustWindow never called) | **2/10**  | 6,9                |
-| KAIROS crash loses all state (no checkpoint to SQLite)              | **2/10**  | 10,5               |
-| execFileSync in memory/git.ts has no timeout                        | **2/10**  | 9,10               |
-| Memory poisoning via promote() with no human gate                   | **1/10**  | 6                  |
-| enforceCapacity() misses system/quarantine subdirectories           | **1/10**  | 9                  |
-| Sentry DSN not in 1Password — error tracking silently inactive      | **1/10**  | 5                  |
+Three claims from the evidence document were contradicted:
 
-## Evidence Corrections (discovered during assessment)
+1. **"CI not active"** — FALSE. CI IS active and RED for 20+ consecutive runs.
+2. **"Learning loop closed"** — PARTIAL. Loop fires but routing-intelligence.json missing from disk.
+3. **"740 tests passing"** — ASTERISK. Core exits code 1 (unhandled async errors + 1 FAIL).
 
-| Original Claim                                   | Correction                                                                                                           | Found By                                   |
-| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| "PhaseDispatcher has no concrete implementation" | **FALSE** — `pipeline-dispatcher.ts` (103 lines) exists, implements PhaseDispatcher, wired in CLI at lines 2539/2570 | Auditor (A4), Operator (A5), Investor (A8) |
-| "runOrchestrationPipeline is not wired"          | **FALSE** — IS wired in the `pipeline` CLI command                                                                   | Auditor (A4), Operator (A5)                |
-| "dream consolidation spawn may not resolve"      | **FALSE** — `brainstorm.ts:6190` calls spawnSubagent correctly                                                       | Auditor (A4)                               |
-| Plan Phase 3a "create SubagentPhaseDispatcher"   | **PARTIALLY DONE** — `createPipelineDispatcher` exists; work is wiring into chat/daemon, not building from scratch   | Auditor (A4)                               |
+## What Improved (verified)
 
-## Synthesis
+- Routing: single model → 5 models / 4 providers organic (DB-verified $29.51 real spend)
+- Tests: ~300 → 740 across all 27 packages
+- Learning loop: wired, trajectories accumulating, analyzer runs at session end
+- 10+ real bugs found and fixed by autonomous test system
+- Kimi streaming usage fixed
+- Atomic write for parallel sessions
 
-### The Diagnosis (unanimous across 10 agents)
+## What Didn't Change
 
-Brainstorm has 71,420 lines of TypeScript across 26 packages. The architecture is sound. The router (63 tests, Thompson sampling), DaemonController (13 tests, cost pacing), tool system (80 tests, Docker sandbox), and security middleware stack (trust propagation, egress monitoring, content injection filtering) are real, tested, production-grade subsystems.
+- Multi-agent orchestration (Transformation 2 — not started)
+- No production deployment (CLI tool)
+- No monitoring/alerting/runbooks
+- No SWE-bench score
+- No e2e integration test
 
-The platform cannot execute its stated vision because:
+## Recommended One-Week Plan
 
-1. **The memory tool always errors** (10/10 agents flagged). `createWiredMemoryTool()` exists at `memory-tool.ts:79` and is fully implemented, but is called from zero entrypoints. Every agent attempt to read or write memory fails silently. This is a 3-5 line fix per call site.
-
-2. **Subagent execution is sequential** (9/10 agents flagged). The vision requires concurrent agents. `spawnParallel` exists and uses `Promise.allSettled`, and `createPipelineDispatcher` is wired in the `pipeline` command — but chat and daemon modes dispatch sequentially.
-
-3. **Critical persistence has zero tests** (8/10 agents flagged). MemoryManager (840 lines) has 0 test files. The most important stateful subsystem has no regression protection.
-
-### What the Plan Gets Right
-
-The 5-phase plan correctly identifies the wiring gaps and provides exact file paths, line numbers, and function names. It was wrong about one thing (PhaseDispatcher already exists), which means Phase 3 is smaller than estimated.
-
-### What the Plan Misses (found by agents)
-
-- **429/503 retry handling** in the LLM provider layer (Chaos Monkey, Sr. Engineer, Investor)
-- **KAIROS state checkpoint** to SQLite before each tick — crash = total state loss (Chaos Monkey, Operator)
-- **Trust propagation is dead** — `syncTrustWindow` never called from loop.ts (Attacker, Sr. Engineer)
-- **Memory poisoning via promote()** — no human gate on tier elevation (Attacker)
-- **enforceCapacity() bug** — misses system/quarantine subdirectories (Sr. Engineer)
-- **writeFileSync blocks event loop** in memory save path (Sr. Engineer)
-- **Sentry DSN missing** from 1Password — error tracking silently inactive (Operator)
-- **execFileSync in git.ts has no timeout** — git lock = process hang (Chaos Monkey, Sr. Engineer)
-
-### The One-Week Consensus
-
-All 10 agents independently concluded the same priority: **Wire the memory system first.** Phase 1 of the plan is the universal recommendation. Every agent provided a day-by-day schedule starting with `createWiredMemoryTool` at the 3 CLI sites.
-
-### Competitive Position
-
-Brainstorm has three capabilities no competitor offers: multi-provider Thompson sampling router, God Mode infrastructure control plane, and governed ChangeSets with blast-radius assessment. These are real, tested subsystems — not plans. The gap is that none of them are demonstrable to an external user because the memory system (the connective tissue) is broken.
-
-**Verdict: 3.95/10. The architecture is ~7/10. The wiring is ~3/10. Fix the wiring.**
+1. **Fix CI** (RED on main — #1 gap, cited by 5 agents)
+2. **Fix core test exit code** (11 unhandled errors + 1 FAIL)
+3. **Persist routing-intelligence.json** (verify learning loop output exists)
+4. **Add one e2e test** (prompt → route → model → response → trajectory)
+5. **Run SWE-bench Lite** (300 instances — external validation)

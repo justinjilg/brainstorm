@@ -8,9 +8,8 @@
 import { describe, it, expect } from "vitest";
 import { createHmac } from "node:crypto";
 
-// Import the JWT functions directly from godmode — the auth boundary for God Mode API
-// Using relative path since verifyJWT is not exported from the package index
-import { verifyJWT, extractBearerToken } from "../../../godmode/src/jwt.js";
+// Import JWT functions from godmode package
+import { verifyJWT, extractBearerToken } from "@brainst0rm/godmode";
 
 // Test secret — never use in production
 const TEST_SECRET = "test-jwt-secret-for-unit-tests-only";

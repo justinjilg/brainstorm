@@ -6,7 +6,10 @@ import {
 } from "../confidence.js";
 import type { Artifact } from "@brainst0rm/shared";
 
-function makeArtifact(content: string, contentType: string = "text"): Artifact {
+function makeArtifact(
+  content: string,
+  contentType: Artifact["contentType"] = "text",
+): Artifact {
   return {
     id: "test-artifact",
     stepId: "step-1",
@@ -15,6 +18,9 @@ function makeArtifact(content: string, contentType: string = "text"): Artifact {
     contentType,
     iteration: 0,
     timestamp: Date.now(),
+    metadata: {},
+    confidence: 1.0,
+    cost: 0,
   };
 }
 

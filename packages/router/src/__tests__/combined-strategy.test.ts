@@ -235,7 +235,7 @@ describe("combinedStrategy", () => {
       // Complexity is "complex", which would normally land in quality-first.
       // But learned threshold is met and budget pressure is low → learned.
       const task = makeTask({
-        type: "summarization",
+        type: "summarization" as any,
         complexity: "complex",
       });
       const result = strategy.select(task, models, makeContext());
@@ -259,7 +259,7 @@ describe("combinedStrategy", () => {
       ];
 
       const task = makeTask({
-        type: "classification",
+        type: "classification" as any,
         complexity: "expert",
       });
       const result = strategy.select(task, models, makeContext());

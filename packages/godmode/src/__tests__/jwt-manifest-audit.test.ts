@@ -143,10 +143,11 @@ describe("JWT Verification", () => {
   });
 
   it("rejects tokens missing both sub and platform_tenant_id", () => {
-    const payload: JWTPayload = {
+    // Intentionally invalid payload — missing required 'sub' to test rejection
+    const payload = {
       email: "test@example.com",
       exp: Math.floor(Date.now() / 1000) + 3600,
-    };
+    } as JWTPayload;
     const token = createToken(payload);
 
     const result = verifyJWT(token, JWT_SECRET);

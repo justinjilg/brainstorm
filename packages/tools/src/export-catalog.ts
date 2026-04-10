@@ -242,6 +242,6 @@ if (stdoutMode) {
   process.stdout.write(json);
 } else {
   writeFileSync(DOCS_PATH, json);
-  const toolCount = Object.keys(catalog.static.tools).length;
+  const toolCount = Object.keys((catalog as any).static.tools).length;
   console.log(`Wrote docs/tool-catalog.json (${toolCount} tools)`);
 }
