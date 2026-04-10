@@ -33,6 +33,10 @@ jobs:
           npm run --workspace=@brainst0rm/tools export-catalog
           git diff --exit-code docs/tool-catalog.json || echo "::warning::Tool catalog drifted — run: npm run --workspace=@brainst0rm/tools export-catalog"
 
+      # Create ~/.brainstorm directory structure for tests that reference it
+      - name: Prepare test environment
+        run: mkdir -p ~/.brainstorm/projects
+
       # Tests MUST pass. No --passWithNoTests at the turbo level.
       # Individual packages that legitimately have no tests use it in their package.json.
       - name: Run tests
