@@ -17,6 +17,7 @@ import {
   createDefaultToolRegistry,
   createWiredMemoryTool,
   createWiredPipelineTool,
+  createWiredCodeGraphTools,
   configureSandbox,
   stopDockerSandbox,
 } from "@brainst0rm/tools";
@@ -1341,13 +1342,38 @@ program
       const registry = await createProviderRegistry(config, resolvedKeys);
       const costTracker = new CostTracker(db, config.budget);
       const tools = createDefaultToolRegistry();
+      const runProjectPath = process.cwd();
+
+      // Wire memory tool for run command
+      {
+        const { MemoryManager: RunMemoryManager } =
+          await import("@brainst0rm/core");
+        const runMemory = new RunMemoryManager(runProjectPath);
+        const wiredRunMemory = createWiredMemoryTool(runMemory);
+        tools.unregister("memory");
+        tools.register(wiredRunMemory);
+      }
+
+      // Wire code graph tools for run command
+      try {
+        const { CodeGraph } = await import("@brainst0rm/code-graph");
+        const codeGraph = new CodeGraph({ projectPath: runProjectPath });
+        const wiredCodeGraphTools = createWiredCodeGraphTools(codeGraph);
+        for (const tool of wiredCodeGraphTools) {
+          tools.unregister(tool.name);
+          tools.register(tool);
+        }
+      } catch (e) {
+        // code-graph package may not be built — tools stay as stubs
+      }
+
       await connectMCPServers(
         tools,
         config,
         resolvedKeys.get("BRAINSTORM_API_KEY"),
       );
       const sessionManager = new SessionManager(db);
-      const projectPath = process.cwd();
+      const projectPath = runProjectPath;
       configureSandbox(
         config.shell.sandbox as any,
         projectPath,
@@ -5366,6 +5392,19 @@ program
       const wiredMemoryTool = createWiredMemoryTool(chatMemory);
       tools.unregister("memory");
       tools.register(wiredMemoryTool);
+
+      // Wire code graph tools — tree-sitter knowledge graph for structural queries
+      try {
+        const { CodeGraph } = await import("@brainst0rm/code-graph");
+        const codeGraph = new CodeGraph({ projectPath });
+        const wiredCodeGraphTools = createWiredCodeGraphTools(codeGraph);
+        for (const tool of wiredCodeGraphTools) {
+          tools.unregister(tool.name);
+          tools.register(tool);
+        }
+      } catch (e) {
+        // code-graph package may not be built — tools stay as stubs
+      }
 
       configureSandbox(
         config.shell.sandbox as any,
