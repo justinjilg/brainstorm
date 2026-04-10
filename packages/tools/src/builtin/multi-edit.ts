@@ -5,9 +5,10 @@ import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { defineTool } from "../base.js";
 import { applyEdits } from "./edit-common.js";
+import { getWorkspace } from "../workspace-context.js";
 
 function ensureSafePath(filePath: string): string {
-  const cwd = process.cwd();
+  const cwd = getWorkspace();
   const resolved = resolve(cwd, filePath);
   const home = homedir();
   const BLOCKED = [

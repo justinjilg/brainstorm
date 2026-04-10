@@ -6,6 +6,7 @@ import {
   type ToolRegistry,
   setDockerSandbox,
   DockerSandbox,
+  withWorkspace,
 } from "@brainst0rm/tools";
 import { serializeRoutingMetadata, createLogger } from "@brainst0rm/shared";
 import type { SystemPromptSegment } from "./context.js";
@@ -234,6 +235,13 @@ export interface SubagentOptions {
    * If not provided, the subagent type's allowedTools are used as-is (legacy behavior).
    */
   parentToolNames?: string[];
+  /**
+   * Explicit model pin — when provided, bypasses the subagent's internal
+   * routing and uses this model directly. Parent loops can propagate their
+   * own preferredModelId through to subagents so --model flags honor
+   * transitively through spawnSubagent.
+   */
+  preferredModelId?: string;
 }
 
 export interface SubagentResult {
@@ -296,7 +304,29 @@ export async function spawnSubagent(
   // >60% budget used → prefer cheap, regardless of type hint
   const preferCheap = typeConfig.modelHint === "cheap" || budgetPressure > 0.6;
 
-  const decision = router.route(taskProfile, { preferCheap });
+  // If parent explicitly pinned a model, honor it and skip the subagent's
+  // internal routing. Without this, --model flags passed to commands like
+  // eval-swe-bench get ignored at the subagent level because the subagent
+  // re-routes from scratch via capability strategy.
+  let decision;
+  if (options.preferredModelId) {
+    const pinnedModel = registry.getModel(options.preferredModelId);
+    if (pinnedModel) {
+      decision = {
+        ...router.route(taskProfile, { preferCheap }),
+        model: pinnedModel,
+        reason: `Model pin (from parent): ${options.preferredModelId}`,
+      };
+    } else {
+      log.warn(
+        { requested: options.preferredModelId },
+        "Parent pinned model not found in registry — falling back to router",
+      );
+      decision = router.route(taskProfile, { preferCheap });
+    }
+  } else {
+    decision = router.route(taskProfile, { preferCheap });
+  }
 
   const modelId = registry.getProvider(decision.model.id);
   const systemPrompt = options.systemPrompt ?? typeConfig.systemPrompt;
@@ -465,14 +495,21 @@ export async function spawnSubagent(
     },
   });
 
+  // Wrap stream consumption in withWorkspace so path-based tools
+  // (file_read, file_write, file_edit, glob, grep, shell, git, etc.)
+  // resolve paths relative to the subagent's projectPath instead of the
+  // parent CLI's process.cwd(). This fixes SWE-bench runs where the agent
+  // would write into the brainstorm repo instead of the cloned target.
   try {
-    for await (const part of result.fullStream) {
-      if (part.type === "text-delta") {
-        fullText += (part as any).delta ?? (part as any).text ?? "";
-      } else if (part.type === "tool-call") {
-        toolCallNames.push(part.toolName);
+    await withWorkspace(projectPath, async () => {
+      for await (const part of result.fullStream) {
+        if (part.type === "text-delta") {
+          fullText += (part as any).delta ?? (part as any).text ?? "";
+        } else if (part.type === "tool-call") {
+          toolCallNames.push(part.toolName);
+        }
       }
-    }
+    });
   } catch (err: any) {
     // AbortError from budget enforcement is expected — not an error
     if (err.name !== "AbortError") throw err;

@@ -3,11 +3,15 @@ import { writeFileSync, mkdirSync, renameSync, unlinkSync } from "node:fs";
 import { dirname, resolve, relative } from "node:path";
 import { randomUUID } from "node:crypto";
 import { defineTool } from "../base.js";
+import { getWorkspace } from "../workspace-context.js";
 
 import { homedir } from "node:os";
 
 function ensureSafePath(filePath: string): string {
-  const cwd = process.cwd();
+  // Use the subagent's workspace context if set, else fall back to cwd.
+  // This fixes SWE-bench / orchestration runs where the agent should write
+  // into a cloned repo, not the parent CLI's working directory.
+  const cwd = getWorkspace();
   const resolved = resolve(cwd, filePath);
   const home = homedir();
 

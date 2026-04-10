@@ -14,6 +14,7 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { defineTool } from "../base.js";
+import { getWorkspace } from "../workspace-context.js";
 
 function detectBuildCommand(cwd: string): string | null {
   if (existsSync(join(cwd, "go.mod"))) return "go vet ./...";
@@ -77,7 +78,7 @@ export const buildVerifyTool = defineTool({
       .describe("Working directory. Defaults to current directory."),
   }),
   async execute({ command, cwd }) {
-    const workDir = resolve(cwd ?? process.cwd());
+    const workDir = resolve(cwd ?? getWorkspace());
 
     const buildCmd = command ?? detectBuildCommand(workDir);
     if (!buildCmd) {

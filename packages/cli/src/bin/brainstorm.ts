@@ -344,18 +344,25 @@ program
               // 3. Run Brainstorm agent on the issue
               process.stderr.write(` solving...`);
               const issuePrompt = [
-                `You are solving a GitHub issue in this repository.`,
+                `You are solving a GitHub issue in a cloned repository at \`${repoDir}\`.`,
                 ``,
                 `## Problem`,
                 instance.issue,
                 instance.hints ? `\n## Hints\n${instance.hints}` : "",
                 ``,
-                `## Instructions`,
-                `1. Read the relevant source files to understand the codebase`,
-                `2. Identify the root cause of the issue`,
-                `3. Make the minimal code changes needed to fix it`,
-                `4. Do NOT modify test files`,
-                `5. Verify your changes make sense by re-reading the modified files`,
+                `## Required Output`,
+                `You MUST modify source files in this repo to fix the issue.`,
+                `An empty diff counts as a failure. Your job is to edit code.`,
+                ``,
+                `## Steps`,
+                `1. Use glob/grep/file_read to find the relevant source files`,
+                `2. Identify the root cause by reading the actual code`,
+                `3. Use file_edit or file_write to apply the fix (this step is REQUIRED)`,
+                `4. Do NOT modify test files — only source files`,
+                `5. Verify your changes by re-reading the modified files`,
+                `6. Report what files you changed and why`,
+                ``,
+                `If you finish without calling file_edit or file_write at least once, you have failed the task.`,
               ].join("\n");
 
               const result = await spawnSubagent(issuePrompt, {
@@ -366,9 +373,12 @@ program
                 tools,
                 projectPath: repoDir,
                 type: "code",
-                maxSteps: 15,
+                maxSteps: 40, // SWE-bench issues need room for exploration + edits + verification
                 budgetLimit: 3.0,
                 permissionCheck: () => "allow", // unattended — auto-approve everything
+                // Honor --model flag if provided — otherwise subagent
+                // re-routes internally and ignores parent's preference.
+                preferredModelId: opts.model,
               });
 
               // 4. Capture the diff (what the agent actually changed)
@@ -402,6 +412,12 @@ program
               process.stderr.write(
                 ` ${status} ($${result.cost.toFixed(3)}, ${result.modelUsed})\n`,
               );
+              // Diagnostic: on no-changes, dump the first 500 chars of what
+              // the subagent said it did. This helps debug empty-patch runs.
+              if (!success && patch.length === 0) {
+                const preview = result.text.slice(0, 500).replace(/\n/g, " ");
+                process.stderr.write(`    agent said: ${preview}\n`);
+              }
 
               return {
                 instanceId: instance.instanceId,
