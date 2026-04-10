@@ -41,7 +41,7 @@ const CREDENTIAL_PATTERNS: Array<{ name: string; pattern: RegExp }> = [
   {
     name: "Generic Credential",
     pattern:
-      /(?:password|secret|token|api_key|apikey)\s*[:=]\s*['"]?([A-Za-z0-9/+_.~-]{8,})['"]?/gi,
+      /(?<=(?:password|secret|token|api_key|apikey)\s*[:=]\s*['"]?)([A-Za-z0-9/+_.~-]{8,})['"]?/gi,
   },
   {
     name: "JWT",
