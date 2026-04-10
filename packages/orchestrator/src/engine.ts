@@ -187,11 +187,34 @@ export class OrchestrationEngine {
       }
     }
 
-    // Mark orchestration complete
-    this.runs.updateStatus(orchestrationRun.id, "completed", totalCost);
+    // Determine run status based on per-task outcomes:
+    // - "completed": all tasks succeeded
+    // - "partial": some tasks succeeded, some failed
+    // - "failed": all tasks failed
+    // Previously this always set "completed" regardless of failures, which
+    // was a silent-failure anti-pattern flagged in the v7 assessment.
+    const failedCount = results.filter((r) =>
+      r.summary.startsWith("FAILED:"),
+    ).length;
+    const finalStatus =
+      failedCount === 0
+        ? "completed"
+        : failedCount === results.length
+          ? "failed"
+          : "partial";
+
+    this.runs.updateStatus(orchestrationRun.id, finalStatus, totalCost);
     const updatedRun = this.runs.getById(orchestrationRun.id)!;
 
-    yield { type: "orchestration-completed", run: updatedRun, results };
+    if (finalStatus === "failed") {
+      yield {
+        type: "orchestration-failed",
+        run: updatedRun,
+        error: `All ${results.length} tasks failed`,
+      };
+    } else {
+      yield { type: "orchestration-completed", run: updatedRun, results };
+    }
   }
 
   /** Get run details with all tasks. */

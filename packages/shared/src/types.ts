@@ -684,6 +684,7 @@ export type OrchestrationStatus =
   | "pending"
   | "running"
   | "completed"
+  | "partial" // some tasks succeeded, some failed
   | "failed"
   | "cancelled";
 export type OrchTaskStatus =
