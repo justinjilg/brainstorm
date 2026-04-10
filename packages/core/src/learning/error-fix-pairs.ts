@@ -23,13 +23,13 @@ export interface ErrorFixPair {
 export function normalizeErrorSignature(errorMessage: string): string {
   return (
     errorMessage
+      // Strip timestamps first so time doesn't get caught by line numbers
+      .replace(/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}/g, "<timestamp>")
       // Strip file paths (they vary between projects)
-      .replace(/\/[\w./\-]+\.\w{1,5}/g, "<path>")
+      .replace(/(?:\.\/|\/)[\w./\-]+\.\w{1,5}/g, "<path>")
       // Strip line numbers
       .replace(/:\d+:\d+/g, ":<line>")
       .replace(/line \d+/gi, "line <N>")
-      // Strip timestamps
-      .replace(/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}/g, "<timestamp>")
       // Normalize whitespace
       .replace(/\s+/g, " ")
       .trim()
