@@ -6,6 +6,11 @@
  * `/` prefix and routes here instead of sending to the agent loop.
  */
 
+import {
+  loadRoutingIntelligence,
+  type RoutingIntelligence,
+} from "@brainst0rm/core";
+
 export interface SlashContext {
   /** Switch the active model (name or provider:model format) */
   setModel?: (model: string) => void;
@@ -126,6 +131,7 @@ const commands: SlashCommand[] = [
         "Intelligence",
         "  /recommend [type]  Get model recommendation from BR",
         "  /stats             Session analytics + BR usage",
+        "  /models-stats      Routing intelligence per model/task",
         "",
         "God Mode",
         "  /godmode           Control plane status",
@@ -1179,7 +1185,7 @@ commands.push({
 
     const lines = [
       "Session Stats",
-      `  Cost:     $${cost.toFixed(4)}`,
+      `  Cost:     ${cost.toFixed(4)}`,
       `  Tokens:   ${tokens.input.toLocaleString()} in / ${tokens.output.toLocaleString()} out`,
       `  Model:    ${model}`,
       `  Strategy: ${strategy}`,
@@ -1194,20 +1200,107 @@ commands.push({
           lines.push("");
           lines.push("BrainstormRouter (today)");
           lines.push(`  Requests: ${summary.total_requests ?? 0}`);
-          lines.push(
-            `  Cost:     $${(summary.total_cost_usd ?? 0).toFixed(4)}`,
-          );
+          lines.push(`  Cost:     ${(summary.total_cost_usd ?? 0).toFixed(4)}`);
           if (summary.by_model?.length > 0) {
             lines.push("  By model:");
             for (const m of summary.by_model.slice(0, 5)) {
               lines.push(
-                `    ${m.model}: $${m.cost_usd?.toFixed(4) ?? "0"} (${m.request_count ?? 0} reqs)`,
+                `    ${m.model}: ${m.cost_usd?.toFixed(4) ?? "0"} (${m.request_count ?? 0} reqs)`,
               );
             }
           }
         }
       } catch {
         // BR data unavailable — skip silently
+      }
+    }
+
+    return lines.join("\n");
+  },
+});
+
+commands.push({
+  name: "models-stats",
+  aliases: ["ms"],
+  description: "Show routing intelligence statistics per model and task type",
+  usage: "/models-stats",
+  execute: async (_args, _ctx) => {
+    const intel = loadRoutingIntelligence();
+    if (!intel || intel.sessionsAnalyzed === 0) {
+      return "No routing intelligence data available yet. Complete some sessions to build statistics.";
+    }
+
+    const lines: string[] = [
+      "Routing Intelligence Statistics",
+      `Updated: ${new Date(intel.updatedAt).toLocaleString()}`,
+      `Sessions analyzed: ${intel.sessionsAnalyzed}`,
+      "",
+    ];
+
+    // Model Statistics
+    lines.push("Model Performance");
+    lines.push("─".repeat(60));
+
+    const modelEntries = Object.entries(intel.models).sort(
+      (a, b) => b[1].totalSessions - a[1].totalSessions,
+    );
+
+    if (modelEntries.length === 0) {
+      lines.push("  No model data available.");
+    } else {
+      for (const [modelId, stats] of modelEntries) {
+        const successRate = (stats.successRate * 100).toFixed(1);
+        lines.push(`  ${modelId}`);
+        lines.push(
+          `    Sessions: ${stats.totalSessions} | Success: ${successRate}% (${stats.successCount}/${stats.totalSessions})`,
+        );
+        lines.push(
+          `    Avg cost: ${stats.avgCostPerSession.toFixed(4)} | Read/Edit: ${stats.avgReadEditRatio === Infinity ? "∞" : stats.avgReadEditRatio.toFixed(1)}`,
+        );
+        if (stats.avgToolSuccessRate > 0) {
+          lines.push(
+            `    Tool success: ${(stats.avgToolSuccessRate * 100).toFixed(1)}%`,
+          );
+        }
+      }
+    }
+
+    lines.push("");
+
+    // Task Type Statistics
+    lines.push("Task Type Performance");
+    lines.push("─".repeat(60));
+
+    const taskEntries = Object.entries(intel.taskTypes).sort(
+      (a, b) => b[1].totalSamples - a[1].totalSamples,
+    );
+
+    if (taskEntries.length === 0) {
+      lines.push("  No task type data available.");
+    } else {
+      for (const [taskType, taskStats] of taskEntries) {
+        const bestRate = (taskStats.bestModelSuccessRate * 100).toFixed(1);
+        lines.push(`  ${taskType}`);
+        lines.push(
+          `    Total samples: ${taskStats.totalSamples} | Best model: ${taskStats.bestModel ?? "n/a"}`,
+        );
+        if (taskStats.bestModel) {
+          lines.push(`    Best model success rate: ${bestRate}%`);
+        }
+
+        // Show per-model breakdown for this task type
+        for (const [modelId, modelStats] of modelEntries) {
+          const byTask = modelStats.byTaskType[taskType];
+          if (byTask) {
+            const total = byTask.successes + byTask.failures;
+            if (total > 0) {
+              const rate = ((byTask.successes / total) * 100).toFixed(1);
+              lines.push(
+                `      ${modelId}: ${rate}% (${byTask.successes}/${total}) — avg ${byTask.avgCost.toFixed(4)}`,
+              );
+            }
+          }
+        }
       }
     }
 
