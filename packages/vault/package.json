@@ -18,6 +18,7 @@
     "@noble/hashes": "^1"
   },
   "devDependencies": {
+    "fast-check": "^4.6.0",
     "tsup": "^8",
     "typescript": "^5.7"
   },

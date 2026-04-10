@@ -29,6 +29,7 @@
   },
   "devDependencies": {
     "@types/pdf-parse": "^1.1.5",
+    "fast-check": "^4.6.0",
     "tsup": "^8",
     "typescript": "^5.7"
   },
