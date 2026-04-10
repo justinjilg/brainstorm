@@ -295,6 +295,11 @@ export {
   type RoutingDecisionData,
 } from "./session/trajectory.js";
 export {
+  analyzeTrajectories,
+  loadRoutingIntelligence,
+  type RoutingIntelligence,
+} from "./session/trajectory-analyzer.js";
+export {
   predictTaskCost,
   formatCostPrediction,
   type CostPrediction,
