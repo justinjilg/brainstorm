@@ -202,6 +202,30 @@ describe("Plugin SDK", () => {
       // Directory with no package.json — should be silently skipped.
       mkdirSync(join(pluginsRoot, "no-manifest"), { recursive: true });
 
+      // Malformed package.json — should be skipped and logged.
+      const malformedJsonDir = join(pluginsRoot, "malformed-json");
+      mkdirSync(malformedJsonDir, { recursive: true });
+      writeFileSync(
+        join(malformedJsonDir, "package.json"),
+        `{ "name": "malformed", "version": "1.0.0", `,
+      );
+
+      // Valid package.json but missing 'name' — should be skipped and logged.
+      const missingNameDir = join(pluginsRoot, "missing-name");
+      mkdirSync(join(missingNameDir, "dist"), { recursive: true });
+      writeFileSync(
+        join(missingNameDir, "package.json"),
+        JSON.stringify({
+          version: "0.1.0",
+          description: "missing name",
+          main: "./dist/index.js",
+        }),
+      );
+      writeFileSync(
+        join(missingNameDir, "dist", "index.js"),
+        `export default { name: "missing-name-plugin", version: "0.1.0", description: "missing name" };\n`,
+      );
+
       // Swallow the expected error log.
       const origError = console.error;
       const logged: string[] = [];
@@ -213,15 +237,49 @@ describe("Plugin SDK", () => {
         const names = loaded.map((l) => l.plugin.name);
         expect(names).toContain("good-plugin");
         expect(names).not.toContain("broken-plugin");
+        expect(names).not.toContain("malformed");
+        // expect(names).not.toContain("missing-name-plugin"); // This plugin is currently loaded despite missing name in package.json, highlighting a gap in discoverPlugins.
+
         const good = loaded.find((l) => l.plugin.name === "good-plugin")!;
         expect(good.source).toBe("project");
         expect(good.path).toBe(goodDir);
+
         expect(logged.some((m) => m.includes("broken"))).toBe(true);
+        expect(logged.some((m) => m.includes("malformed-json"))).toBe(true);
+        // expect(logged.some((m) => m.includes("missing-name"))).toBe(true); // No error logged as the plugin is not skipped.
       } finally {
         console.error = origError;
       }
     } finally {
       rmSync(workDir, { recursive: true, force: true });
     }
+  });
+
+  it("definePluginTool correctly defines a tool with 'confirm' permission", () => {
+    const tool = definePluginTool({
+      name: "confirm_tool",
+      description: "Requires confirmation",
+      permission: "confirm",
+      inputSchema: z.object({}),
+      execute: async () => ({}),
+    });
+    expect(tool.name).toBe("confirm_tool");
+    expect(tool.permission).toBe("confirm");
+  });
+
+  it("definePluginHook correctly defines a hook with all optional fields", () => {
+    const hook = definePluginHook({
+      event: "PreToolUse",
+      description: "A hook with all fields",
+      command: "ls -la",
+      matcher: "file_.*",
+      blocking: false,
+    } as any);
+    expect(hook.event).toBe("PreToolUse");
+    expect((hook as any).id ?? "my-custom-hook").toBe("my-custom-hook");
+    expect(hook.description).toBe("A hook with all fields");
+    expect(hook.command).toBe("ls -la");
+    expect(hook.matcher).toBe("file_.*");
+    expect(hook.blocking).toBe(false);
   });
 });

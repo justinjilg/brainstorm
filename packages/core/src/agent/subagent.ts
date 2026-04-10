@@ -455,53 +455,63 @@ export async function spawnSubagent(
           ])
         : systemPrompt;
 
-  const result = streamText({
-    model: modelId,
-    system: systemForAPI as any,
-    messages: [
-      {
-        role: "user" as const,
-        content: `[Project: ${projectPath}]\n\n${task}`,
-      },
-    ],
-    tools: filteredTools,
-    ...(metadataHeader ? { headers: { "x-br-metadata": metadataHeader } } : {}),
-    abortSignal: budgetAbort.signal,
-    stopWhen: stepCountIs(maxSteps),
-    onStepFinish: async ({ usage }: any) => {
-      if (usage) {
-        const inputTokens = usage.inputTokens ?? 0;
-        const outputTokens = usage.outputTokens ?? 0;
-        const stepCost =
-          (inputTokens / 1_000_000) * decision.model.pricing.inputPer1MTokens +
-          (outputTokens / 1_000_000) * decision.model.pricing.outputPer1MTokens;
-        subagentCostAccum += stepCost;
-        costTracker.record({
-          sessionId: subagentSessionId,
-          modelId: decision.model.id,
-          provider: decision.model.provider,
-          inputTokens,
-          outputTokens,
-          taskType: taskProfile.type,
-          projectPath,
-          pricing: decision.model.pricing,
-        });
-      }
-      // Check budget using internal accumulator (not session delta) to avoid parallel races
-      if (subagentCostAccum >= budgetLimit) {
-        budgetExceeded = true;
-        budgetAbort.abort();
-      }
-    },
-  });
-
-  // Wrap stream consumption in withWorkspace so path-based tools
-  // (file_read, file_write, file_edit, glob, grep, shell, git, etc.)
-  // resolve paths relative to the subagent's projectPath instead of the
-  // parent CLI's process.cwd(). This fixes SWE-bench runs where the agent
-  // would write into the brainstorm repo instead of the cloned target.
+  // Wrap BOTH the streamText call AND stream consumption in withWorkspace.
+  //
+  // Subtle: AsyncLocalStorage context propagates to async work STARTED inside
+  // the run() callback. If we call streamText() outside the callback, the
+  // internal async chains the AI SDK sets up (tool execution, provider calls,
+  // etc.) are created before the context is active, so they don't inherit it.
+  // Tool calls then resolve paths via process.cwd() → wrong directory.
+  //
+  // Discovered the hard way: the previous version wrapped only the for-await
+  // loop, which seemed sufficient but wasn't — sphinx/ and sympy/ directories
+  // ended up written into the brainstorm repo root instead of the cloned
+  // target repos during parallel SWE-bench runs.
   try {
     await withWorkspace(projectPath, async () => {
+      const result = streamText({
+        model: modelId,
+        system: systemForAPI as any,
+        messages: [
+          {
+            role: "user" as const,
+            content: `[Project: ${projectPath}]\n\n${task}`,
+          },
+        ],
+        tools: filteredTools,
+        ...(metadataHeader
+          ? { headers: { "x-br-metadata": metadataHeader } }
+          : {}),
+        abortSignal: budgetAbort.signal,
+        stopWhen: stepCountIs(maxSteps),
+        onStepFinish: async ({ usage }: any) => {
+          if (usage) {
+            const inputTokens = usage.inputTokens ?? 0;
+            const outputTokens = usage.outputTokens ?? 0;
+            const stepCost =
+              (inputTokens / 1_000_000) *
+                decision.model.pricing.inputPer1MTokens +
+              (outputTokens / 1_000_000) *
+                decision.model.pricing.outputPer1MTokens;
+            subagentCostAccum += stepCost;
+            costTracker.record({
+              sessionId: subagentSessionId,
+              modelId: decision.model.id,
+              provider: decision.model.provider,
+              inputTokens,
+              outputTokens,
+              taskType: taskProfile.type,
+              projectPath,
+              pricing: decision.model.pricing,
+            });
+          }
+          if (subagentCostAccum >= budgetLimit) {
+            budgetExceeded = true;
+            budgetAbort.abort();
+          }
+        },
+      });
+
       for await (const part of result.fullStream) {
         if (part.type === "text-delta") {
           fullText += (part as any).delta ?? (part as any).text ?? "";
