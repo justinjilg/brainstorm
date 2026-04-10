@@ -466,3 +466,46 @@ export function loadRoutingIntelligence(): RoutingIntelligence | null {
     return null;
   }
 }
+
+/**
+ * Convert RoutingIntelligence to the format BrainstormRouter.loadStats() expects.
+ * This is the bridge that closes the learning loop: trajectories → analyzer →
+ * intelligence → router priors → next session's decisions.
+ */
+export function toHistoricalStats(intelligence: RoutingIntelligence): Array<{
+  taskType: string;
+  modelId: string;
+  successes: number;
+  failures: number;
+  avgLatencyMs: number;
+  avgCost: number;
+  samples: number;
+}> {
+  const stats: Array<{
+    taskType: string;
+    modelId: string;
+    successes: number;
+    failures: number;
+    avgLatencyMs: number;
+    avgCost: number;
+    samples: number;
+  }> = [];
+
+  for (const [modelId, model] of Object.entries(intelligence.models)) {
+    for (const [taskType, t] of Object.entries(model.byTaskType)) {
+      const samples = t.successes + t.failures;
+      if (samples === 0) continue;
+      stats.push({
+        taskType,
+        modelId,
+        successes: t.successes,
+        failures: t.failures,
+        avgLatencyMs: 0, // Not yet tracked per task-type
+        avgCost: t.avgCost,
+        samples,
+      });
+    }
+  }
+
+  return stats;
+}

@@ -6,6 +6,9 @@ import type {
   StrategyName,
 } from "@brainst0rm/shared";
 import { createLogger } from "@brainst0rm/shared";
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
 import type { BrainstormConfig, StormFrontmatter } from "@brainst0rm/config";
 import type { ProviderRegistry } from "@brainst0rm/providers";
 import { classifyTask } from "./classifier.js";
@@ -64,13 +67,18 @@ export class BrainstormRouter {
       auto: autoStrategy,
     };
 
-    // Load historical routing outcomes for Thompson sampling
-    if (historicalStats && historicalStats.length > 0) {
-      loadStats(historicalStats);
+    // Load historical routing outcomes for Thompson sampling.
+    // Priority: explicit historicalStats > routing-intelligence.json (auto-loaded)
+    let statsToLoad = historicalStats;
+    if (!statsToLoad || statsToLoad.length === 0) {
+      statsToLoad = loadRoutingIntelligenceFromDisk();
+    }
+    if (statsToLoad && statsToLoad.length > 0) {
+      loadStats(statsToLoad);
       log.info(
         {
-          entries: historicalStats.length,
-          totalSamples: historicalStats.reduce((n, s) => n + s.samples, 0),
+          entries: statsToLoad.length,
+          totalSamples: statsToLoad.reduce((n, s) => n + s.samples, 0),
         },
         "Loaded historical routing outcomes for Thompson sampling",
       );
@@ -296,5 +304,53 @@ export class BrainstormRouter {
       },
       recentFailures: this.recentFailures,
     };
+  }
+}
+
+/**
+ * Load routing intelligence from ~/.brainstorm/routing-intelligence.json and
+ * convert to the format loadStats() expects. Returns [] if file missing/invalid.
+ *
+ * This closes the learning loop: trajectory analyzer writes the file after each
+ * session, the router reads it on startup. Every session makes the next smarter.
+ */
+function loadRoutingIntelligenceFromDisk(): Array<{
+  taskType: string;
+  modelId: string;
+  successes: number;
+  failures: number;
+  avgLatencyMs: number;
+  avgCost: number;
+  samples: number;
+}> {
+  const path = join(homedir(), ".brainstorm", "routing-intelligence.json");
+  if (!existsSync(path)) return [];
+
+  try {
+    const data = JSON.parse(readFileSync(path, "utf-8"));
+    if (!data.models || typeof data.models !== "object") return [];
+
+    const stats: Array<any> = [];
+    for (const [modelId, model] of Object.entries(data.models as any)) {
+      const m = model as any;
+      if (!m.byTaskType) continue;
+      for (const [taskType, t] of Object.entries(m.byTaskType as any)) {
+        const tt = t as any;
+        const samples = (tt.successes ?? 0) + (tt.failures ?? 0);
+        if (samples === 0) continue;
+        stats.push({
+          taskType,
+          modelId,
+          successes: tt.successes ?? 0,
+          failures: tt.failures ?? 0,
+          avgLatencyMs: 0,
+          avgCost: tt.avgCost ?? 0,
+          samples,
+        });
+      }
+    }
+    return stats;
+  } catch {
+    return [];
   }
 }

@@ -1002,7 +1002,7 @@ export async function* runAgentLoop(
     setToolOutputHandler(null);
     setBackgroundEventHandler(null);
 
-    // Submit trajectory to BR Intelligence API (fire-and-forget)
+    // Submit trajectory + update routing intelligence (fire-and-forget)
     if (trajectory) {
       trajectory.recordSessionEnd({
         totalCost: costTracker.getSessionCost(),
@@ -1010,7 +1010,16 @@ export async function* runAgentLoop(
         durationMs: Date.now() - sessionStartTime,
       });
 
-      // TODO: Wire trajectory submission to BR Intelligence API when gateway endpoints are active
+      // Update routing intelligence — closes the learning loop.
+      // Fire-and-forget: analyzer reads fresh trajectories, writes intelligence file,
+      // next router startup picks it up as Thompson sampling priors.
+      try {
+        const { analyzeTrajectories } =
+          await import("../session/trajectory-analyzer.js");
+        analyzeTrajectories();
+      } catch {
+        // Best-effort: don't fail the session over analyzer errors
+      }
     }
   }
 }
