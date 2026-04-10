@@ -183,5 +183,169 @@ describe("HookManager", () => {
       expect(results).toHaveLength(1);
       expect(results[0].blocked).toBeFalsy();
     });
+
+    it("blocking PreToolUse failure short-circuits subsequent hooks", async () => {
+      manager.register({
+        event: "PreToolUse",
+        type: "command",
+        command: "false",
+        blocking: true,
+      });
+      manager.register({
+        event: "PreToolUse",
+        type: "command",
+        command: "echo should-not-run",
+      });
+      const results = await manager.fire("PreToolUse", {
+        toolName: "shell",
+      });
+      // The blocking failure should break the loop — second hook never runs
+      expect(results).toHaveLength(1);
+      expect(results[0].blocked).toBe(true);
+    });
+  });
+
+  describe("variable expansion", () => {
+    it("expands $FILE and $TOOL in command with shell-escaped values", async () => {
+      manager.register({
+        event: "PreToolUse",
+        type: "command",
+        command: "echo tool=$TOOL file=$FILE",
+      });
+      const results = await manager.fire("PreToolUse", {
+        toolName: "shell",
+        filePath: "/tmp/safe.txt",
+      });
+      expect(results).toHaveLength(1);
+      expect(results[0].success).toBe(true);
+      expect(results[0].output).toBe("tool=shell file=/tmp/safe.txt");
+    });
+
+    it("shell-escapes $FILE to prevent command injection", async () => {
+      // A malicious file path attempting to inject a second command.
+      // If escaping works, the whole string becomes a literal argument to echo
+      // and no injected command runs.
+      manager.register({
+        event: "PreToolUse",
+        type: "command",
+        command: "echo $FILE",
+      });
+      const results = await manager.fire("PreToolUse", {
+        toolName: "shell",
+        filePath: "foo'; echo pwned; echo '",
+      });
+      expect(results).toHaveLength(1);
+      expect(results[0].success).toBe(true);
+      // The literal should be echoed verbatim; "pwned" must NOT appear on its own line
+      expect(results[0].output).toContain("foo");
+      expect(results[0].output).toContain("pwned");
+      // Critical: the output must be a single echoed line containing the
+      // full literal payload — not two separate echo invocations.
+      const lines = (results[0].output ?? "").split("\n");
+      expect(lines).toHaveLength(1);
+    });
+  });
+
+  describe("permission decisions", () => {
+    it("parses PERMISSION:deny from stdout and sets blocked=true on PreToolUse", async () => {
+      manager.register({
+        event: "PreToolUse",
+        type: "command",
+        command: "echo PERMISSION:deny",
+      });
+      manager.register({
+        event: "PreToolUse",
+        type: "command",
+        command: "echo should-not-run",
+      });
+      const results = await manager.fire("PreToolUse", { toolName: "shell" });
+      // Short-circuit: only the first hook runs
+      expect(results).toHaveLength(1);
+      expect(results[0].success).toBe(true);
+      expect(results[0].permissionDecision).toBe("deny");
+      expect(results[0].blocked).toBe(true);
+      expect(manager.isBlocked(results)).toBe(true);
+    });
+
+    it("getPermissionDecision prioritizes deny > ask > allow", () => {
+      const results = [
+        {
+          hookId: "a",
+          event: "PreToolUse" as const,
+          success: true,
+          durationMs: 0,
+          permissionDecision: "allow" as const,
+        },
+        {
+          hookId: "b",
+          event: "PreToolUse" as const,
+          success: true,
+          durationMs: 0,
+          permissionDecision: "ask" as const,
+        },
+        {
+          hookId: "c",
+          event: "PreToolUse" as const,
+          success: true,
+          durationMs: 0,
+          permissionDecision: "deny" as const,
+        },
+      ];
+      expect(manager.getPermissionDecision(results)).toBe("deny");
+
+      // ask beats allow
+      expect(manager.getPermissionDecision(results.slice(0, 2))).toBe("ask");
+
+      // allow alone
+      expect(manager.getPermissionDecision([results[0]])).toBe("allow");
+
+      // no decisions -> undefined
+      expect(
+        manager.getPermissionDecision([
+          {
+            hookId: "x",
+            event: "Stop",
+            success: true,
+            durationMs: 0,
+          },
+        ]),
+      ).toBeUndefined();
+    });
+  });
+
+  describe("subagent matcher", () => {
+    it("matches against subagentType (not toolName) for SubagentStart events", async () => {
+      manager.register({
+        event: "SubagentStart",
+        type: "command",
+        command: "echo matched",
+        matcher: "^explore$",
+      });
+
+      const matched = await manager.fire("SubagentStart", {
+        subagentType: "explore",
+      });
+      expect(matched).toHaveLength(1);
+      expect(matched[0].success).toBe(true);
+
+      const unmatched = await manager.fire("SubagentStart", {
+        subagentType: "plan",
+      });
+      expect(unmatched).toHaveLength(0);
+    });
+  });
+
+  describe("prompt hook type", () => {
+    it("returns a failed result without executing anything", async () => {
+      manager.register({
+        event: "SessionStart",
+        type: "prompt",
+        command: "Summarize the session.",
+      });
+      const results = await manager.fire("SessionStart");
+      expect(results).toHaveLength(1);
+      expect(results[0].success).toBe(false);
+      expect(results[0].error).toMatch(/not yet implemented/i);
+    });
   });
 });
