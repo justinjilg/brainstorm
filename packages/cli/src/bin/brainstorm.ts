@@ -1419,9 +1419,14 @@ program
         !!resolvedKeys.get("MOONSHOT_API_KEY");
       if (opts.strategy) {
         router.setStrategy(opts.strategy as any);
-      } else if (!isCommunityTier || hasDirectKeys) {
-        router.setStrategy("quality-first");
       }
+      // Otherwise: respect config.general.defaultStrategy (set by router constructor).
+      // Previously this code force-overrode to quality-first when the user had their
+      // own API keys. That defeated cost-aware routing — every task routed to the
+      // single highest-quality model, starving the learning loop and ignoring the
+      // task classifier. The "combined" default already escalates complex/expert
+      // tasks to quality-first internally; simple/moderate tasks should benefit
+      // from cost-first or weighted scoring.
 
       // God Mode: connect if any connector key is present
       const runHasConnectorKey = !!(
@@ -5480,12 +5485,16 @@ program
         !!resolvedKeys.get("GOOGLE_GENERATIVE_AI_API_KEY");
       if (opts.strategy) {
         router.setStrategy(opts.strategy as any);
-      } else if (
-        (!isCommunityTier || hasOwnKeys) &&
-        router.getActiveStrategy() !== "capability"
-      ) {
-        router.setStrategy("quality-first");
       }
+      // Otherwise: respect config.general.defaultStrategy (set by router constructor).
+      // Previously this code force-overrode to quality-first when the user had their
+      // own API keys. That defeated cost-aware routing — every task routed to the
+      // single highest-quality model (Sonnet 4.6 every time), starving the learning
+      // loop and ignoring the task classifier. The "combined" default already
+      // escalates complex/expert tasks to quality-first internally; simple/moderate
+      // tasks should benefit from cost-first or weighted scoring.
+      // The auto-activated "capability" strategy (when eval data exists) is also
+      // preserved, since it's a deliberate signal that better data exists.
 
       // Register the subagent tool (model can spawn focused subagents)
       const subagentTool = createSubagentTool({
