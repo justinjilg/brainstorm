@@ -206,7 +206,7 @@ export interface AgentLoopOptions {
   middleware?: MiddlewarePipeline;
   /** Repository for persisting routing outcomes (Thompson sampling). */
   routingOutcomeRepo?: RoutingOutcomeRepository;
-  /** Enable trajectory recording to JSONL. */
+  /** Enable trajectory recording to JSONL. Default: true (enables learning loop). */
   trajectoryEnabled?: boolean;
   /** Session checkpointer for crash recovery. */
   checkpointer?: { saveIfNeeded: (data: any) => boolean };
@@ -227,9 +227,11 @@ export async function* runAgentLoop(
   const { router, costTracker, tools, config, sessionId } = options;
   let { systemPrompt } = options;
 
-  // Initialize trajectory recorder if enabled
+  // Initialize trajectory recorder — enabled by default for learning loop.
+  // Explicitly opt out with trajectoryEnabled: false.
   const sessionStartTime = Date.now();
-  const trajectory = options.trajectoryEnabled
+  const trajectoryEnabled = options.trajectoryEnabled !== false;
+  const trajectory = trajectoryEnabled
     ? new TrajectoryRecorder(sessionId)
     : null;
   trajectory?.recordSessionStart({
@@ -485,20 +487,38 @@ export async function* runAgentLoop(
           }
           // Execute the tool
           const startMs = Date.now();
+          // Record tool-call event to trajectory
+          trajectory?.recordToolCall({
+            name: toolName,
+            input: input ?? {},
+            durationMs: 0,
+          });
           const result = await originalExecute(input, opts);
+          const durationMs = Date.now() - startMs;
           // Post-execution: run afterToolResult for taint tracking
+          const isOk = !(
+            result &&
+            typeof result === "object" &&
+            (result.error || result.ok === false)
+          );
           const mwResult = {
             toolCallId: mwCall.id,
             name: toolName,
-            ok: !(
-              result &&
-              typeof result === "object" &&
-              (result.error || result.ok === false)
-            ),
+            ok: isOk,
             output: result,
-            durationMs: Date.now() - startMs,
+            durationMs,
           };
           pipeline.runAfterToolResult(mwResult);
+          // Record tool-result event to trajectory
+          trajectory?.recordToolResult({
+            name: toolName,
+            ok: isOk,
+            error:
+              !isOk && typeof result === "object" && result !== null
+                ? (result as any).error
+                : undefined,
+            durationMs,
+          });
           // Flush trust window back to per-session metadata after taint recording
           flushTrustWindow(mwMetadata);
           return result;
@@ -537,15 +557,32 @@ export async function* runAgentLoop(
       ),
       onStepFinish: async ({ usage }: any) => {
         if (usage) {
+          const inputTokens = usage.inputTokens ?? 0;
+          const outputTokens = usage.outputTokens ?? 0;
           costTracker.record({
             sessionId,
             modelId: decision.model.id,
             provider: decision.model.provider,
-            inputTokens: usage.inputTokens ?? 0,
-            outputTokens: usage.outputTokens ?? 0,
+            inputTokens,
+            outputTokens,
             taskType: task.type,
             projectPath: options.projectPath,
             pricing: decision.model.pricing,
+          });
+          // Record LLM call to trajectory for learning loop
+          const stepCost =
+            (inputTokens / 1_000_000) *
+              decision.model.pricing.inputPer1MTokens +
+            (outputTokens / 1_000_000) *
+              decision.model.pricing.outputPer1MTokens;
+          trajectory?.recordLLMCall({
+            model: decision.model.id,
+            provider: decision.model.provider,
+            inputTokens,
+            outputTokens,
+            latencyMs: 0, // AI SDK doesn't expose per-step latency
+            cost: stepCost,
+            strategy: decision.strategy ?? "unknown",
           });
         }
       },
