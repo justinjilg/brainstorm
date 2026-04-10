@@ -312,21 +312,29 @@ program
               process.stderr.write(
                 `  [${instanceNum}/${instances.length}] ${shortId} — cloning...`,
               );
+              // Use --filter=blob:none to avoid pulling full history while
+              // still allowing checkout of any commit. --depth 100 was too
+              // shallow for SWE-bench's historical commits.
               execGit(
                 "git",
                 [
                   "clone",
-                  "--depth",
-                  "100",
+                  "--filter=blob:none",
+                  "--no-checkout",
                   `https://github.com/${instance.repo}.git`,
                   "repo",
                 ],
                 {
                   cwd: workDir,
-                  timeout: 120000,
+                  timeout: 180000,
                   stdio: ["ignore", "pipe", "pipe"],
                 },
               );
+              execGit("git", ["fetch", "origin", instance.baseCommit], {
+                cwd: repoDir,
+                timeout: 60000,
+                stdio: ["ignore", "pipe", "pipe"],
+              });
               execGit("git", ["checkout", instance.baseCommit], {
                 cwd: repoDir,
                 timeout: 30000,
