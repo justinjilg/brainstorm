@@ -5,10 +5,10 @@
  * captures patches. Uses Docker for isolation.
  */
 
-import { execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
+import { execFileSync } from "node:child_process";
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
 
 export interface SWEBenchInstance {
   instanceId: string;
@@ -17,6 +17,10 @@ export interface SWEBenchInstance {
   issue: string;
   hints?: string;
   testPatch: string;
+  /** Tests that must pass AFTER the fix (fail BEFORE). JSON-encoded string[]. */
+  failToPass?: string[];
+  /** Tests that must still pass AFTER the fix (regression check). JSON-encoded string[]. */
+  passToPass?: string[];
 }
 
 export interface SWEBenchPatch {
@@ -29,7 +33,7 @@ export interface SWEBenchPatch {
   success: boolean;
 }
 
-const EVAL_DIR = join(homedir(), '.brainstorm', 'eval', 'swe-bench');
+const EVAL_DIR = join(homedir(), ".brainstorm", "eval", "swe-bench");
 
 /**
  * Run SWE-bench evaluation on a set of instances.
@@ -58,15 +62,16 @@ export async function runSWEBench(
     );
 
     for (const result of batchResults) {
-      if (result.status === 'fulfilled') {
+      if (result.status === "fulfilled") {
         results.push(result.value);
       } else {
         // Record failed instance
         results.push({
-          instanceId: batch[batchResults.indexOf(result)]?.instanceId ?? 'unknown',
-          patch: '',
-          model: '',
-          strategy: '',
+          instanceId:
+            batch[batchResults.indexOf(result)]?.instanceId ?? "unknown",
+          patch: "",
+          model: "",
+          strategy: "",
           cost: 0,
           latencyMs: 0,
           success: false,
@@ -85,12 +90,29 @@ export async function runSWEBench(
 /**
  * Load SWE-bench instances from a JSONL file.
  */
-export function loadInstances(path: string, limit?: number): SWEBenchInstance[] {
-  const content = readFileSync(path, 'utf-8');
-  const lines = content.trim().split('\n').filter(Boolean);
+export function loadInstances(
+  path: string,
+  limit?: number,
+): SWEBenchInstance[] {
+  const content = readFileSync(path, "utf-8");
+  const lines = content.trim().split("\n").filter(Boolean);
 
   const instances: SWEBenchInstance[] = lines.map((line) => {
     const data = JSON.parse(line);
+    // FAIL_TO_PASS / PASS_TO_PASS arrive as JSON-encoded strings in the
+    // parquet dataset; parse them into arrays.
+    const parseTestList = (raw: unknown): string[] | undefined => {
+      if (!raw) return undefined;
+      if (Array.isArray(raw)) return raw as string[];
+      if (typeof raw === "string") {
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return undefined;
+        }
+      }
+      return undefined;
+    };
     return {
       instanceId: data.instance_id,
       repo: data.repo,
@@ -98,6 +120,8 @@ export function loadInstances(path: string, limit?: number): SWEBenchInstance[] 
       issue: data.problem_statement,
       hints: data.hints_text,
       testPatch: data.test_patch,
+      failToPass: parseTestList(data.FAIL_TO_PASS),
+      passToPass: parseTestList(data.PASS_TO_PASS),
     };
   });
 
