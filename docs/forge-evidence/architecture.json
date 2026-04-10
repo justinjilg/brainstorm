@@ -1,0 +1,232 @@
+{
+  "layers": [
+    {
+      "layer": "Foundation",
+      "packages": ["shared", "config", "db"],
+      "crossLayerViolations": []
+    },
+    {
+      "layer": "Infrastructure",
+      "packages": ["providers", "router", "gateway", "vault", "mcp"],
+      "crossLayerViolations": [
+        "mcp -> tools (Domain): mcp imports @brainst0rm/tools"
+      ]
+    },
+    {
+      "layer": "Core",
+      "packages": ["core"],
+      "crossLayerViolations": [
+        "core -> agents (Domain): core imports @brainst0rm/agents",
+        "core -> tools (Domain): core imports @brainst0rm/tools"
+      ]
+    },
+    {
+      "layer": "Domain",
+      "packages": [
+        "agents",
+        "tools",
+        "workflow",
+        "orchestrator",
+        "eval",
+        "ingest",
+        "onboard",
+        "docgen",
+        "hooks",
+        "scheduler",
+        "projects"
+      ],
+      "crossLayerViolations": []
+    },
+    {
+      "layer": "Application",
+      "packages": ["cli", "server", "vscode", "plugin-sdk", "sdk", "godmode"],
+      "crossLayerViolations": []
+    },
+    {
+      "layer": "Apps",
+      "packages": ["desktop", "web"],
+      "crossLayerViolations": []
+    }
+  ],
+  "coupling": [
+    { "package": "shared", "ca": 24, "ce": 0, "instability": 0.0 },
+    { "package": "config", "ca": 11, "ce": 1, "instability": 0.08 },
+    { "package": "db", "ca": 11, "ce": 1, "instability": 0.08 },
+    { "package": "providers", "ca": 7, "ce": 2, "instability": 0.22 },
+    { "package": "router", "ca": 6, "ce": 4, "instability": 0.4 },
+    { "package": "gateway", "ca": 3, "ce": 1, "instability": 0.25 },
+    { "package": "vault", "ca": 1, "ce": 0, "instability": 0.0 },
+    { "package": "mcp", "ca": 1, "ce": 2, "instability": 0.67 },
+    { "package": "tools", "ca": 8, "ce": 1, "instability": 0.11 },
+    { "package": "core", "ca": 6, "ce": 8, "instability": 0.57 },
+    { "package": "agents", "ca": 3, "ce": 3, "instability": 0.5 },
+    { "package": "workflow", "ca": 1, "ce": 8, "instability": 0.89 },
+    { "package": "orchestrator", "ca": 0, "ce": 3, "instability": 1.0 },
+    { "package": "eval", "ca": 1, "ce": 8, "instability": 0.89 },
+    { "package": "ingest", "ca": 4, "ce": 1, "instability": 0.2 },
+    { "package": "onboard", "ca": 0, "ce": 4, "instability": 1.0 },
+    { "package": "docgen", "ca": 2, "ce": 2, "instability": 0.5 },
+    { "package": "hooks", "ca": 0, "ce": 1, "instability": 1.0 },
+    { "package": "scheduler", "ca": 0, "ce": 3, "instability": 1.0 },
+    { "package": "projects", "ca": 2, "ce": 3, "instability": 0.6 },
+    { "package": "godmode", "ca": 2, "ce": 3, "instability": 0.6 },
+    { "package": "cli", "ca": 0, "ce": 17, "instability": 1.0 },
+    { "package": "server", "ca": 1, "ce": 7, "instability": 0.88 },
+    { "package": "vscode", "ca": 0, "ce": 1, "instability": 1.0 },
+    { "package": "plugin-sdk", "ca": 0, "ce": 1, "instability": 1.0 },
+    { "package": "sdk", "ca": 0, "ce": 9, "instability": 1.0 },
+    { "package": "desktop", "ca": 0, "ce": 0, "instability": 0.0 },
+    { "package": "web", "ca": 0, "ce": 0, "instability": 0.0 }
+  ],
+  "apiContracts": {
+    "openapi": false,
+    "graphql": false,
+    "grpc": false,
+    "godMode": true,
+    "godModeEndpoints": [
+      "GET /health",
+      "GET /api/v1/god-mode/tools",
+      "POST /api/v1/god-mode/execute",
+      "POST /api/v1/platform/events",
+      "POST /api/v1/platform/tenants"
+    ],
+    "godModeContractSource": "packages/godmode/src/manifest.ts + docs/platform-contract-v1.md",
+    "ipcDocumented": true,
+    "ipcProtocol": "NDJSON over stdin/stdout",
+    "ipcMethods": [
+      "tools.list",
+      "memory.list",
+      "memory.create",
+      "memory.update",
+      "memory.delete",
+      "skills.list",
+      "models.list",
+      "conversations.list",
+      "conversations.create",
+      "conversations.fork",
+      "conversations.handoff",
+      "conversations.messages",
+      "config.get",
+      "kairos.start",
+      "kairos.stop",
+      "kairos.pause",
+      "kairos.resume",
+      "kairos.status",
+      "chat.stream",
+      "chat.abort",
+      "security.redteam",
+      "workflow.presets",
+      "workflow.run",
+      "health"
+    ],
+    "ipcDocumentationSource": "packages/cli/src/ipc/handler.ts (inline comments)"
+  },
+  "scalabilityBottlenecks": [
+    {
+      "type": "synchronous_io",
+      "location": "packages/core/src/memory/dream-runner.ts",
+      "description": "readFileSync, writeFileSync, statSync, readdirSync, unlinkSync, mkdirSync used in memory operations"
+    },
+    {
+      "type": "synchronous_io",
+      "location": "packages/core/src/memory/manager.ts",
+      "description": "readFileSync, writeFileSync, readdirSync, statSync, unlinkSync, mkdirSync used for memory file management"
+    },
+    {
+      "type": "synchronous_io",
+      "location": "packages/cli/src/bin/brainstorm.ts",
+      "description": "execFileSync used for git operations and shell command dispatch in multiple code paths"
+    },
+    {
+      "type": "synchronous_io",
+      "location": "packages/cli/src/init/detect.ts",
+      "description": "existsSync and readFileSync used during project detection at startup"
+    },
+    {
+      "type": "synchronous_io",
+      "location": "packages/cli/src/init/generate.ts",
+      "description": "existsSync, readFileSync, writeFileSync, mkdirSync used during project file generation"
+    },
+    {
+      "type": "unbounded_queue",
+      "location": "packages/core/src/agent/loop.ts:242",
+      "description": "taskEventQueue is an unbounded Array with .push(); no max-size cap; drained via shift() in the yield loop"
+    },
+    {
+      "type": "unbounded_push",
+      "location": "packages/core/src/agent/loop.ts",
+      "description": "170 unbounded .push() calls across core/src identified; hot paths include agent loop stream parts and tool result accumulation"
+    },
+    {
+      "type": "sqlite_single_writer",
+      "location": "packages/db/src/client.ts",
+      "description": "WAL mode enabled (journal_mode = WAL), foreign_keys = ON; better-sqlite3 is synchronous and single-process — no concurrent write scaling"
+    }
+  ],
+  "stateMachines": [
+    {
+      "name": "DaemonController",
+      "source": "packages/core/src/daemon/controller.ts",
+      "states": ["running", "sleeping", "paused", "stopped"],
+      "transitions": 9,
+      "notes": "isPaused flag used alongside status string; sleepUntil timestamp for timed sleep state"
+    },
+    {
+      "name": "WorkflowRun",
+      "source": "packages/workflow/src/engine.ts + packages/shared/src/types.ts",
+      "states": [
+        "pending",
+        "running",
+        "paused",
+        "completed",
+        "failed",
+        "cancelled"
+      ],
+      "transitions": 6
+    },
+    {
+      "name": "WorkflowStep",
+      "source": "packages/shared/src/types.ts",
+      "states": ["pending", "running", "completed", "failed", "skipped"],
+      "transitions": 5
+    },
+    {
+      "name": "OrchestrationRun",
+      "source": "packages/shared/src/types.ts",
+      "states": ["pending", "running", "completed", "failed", "cancelled"],
+      "transitions": 5
+    },
+    {
+      "name": "OrchestrationTask",
+      "source": "packages/shared/src/types.ts",
+      "states": ["pending", "running", "completed", "failed", "skipped"],
+      "transitions": 5
+    },
+    {
+      "name": "ChangeSet",
+      "source": "packages/godmode/src/changeset.ts",
+      "states": ["pending", "approved", "rejected", "executed"],
+      "transitions": 4,
+      "notes": "Simulation -> approval/rejection -> execution pattern for destructive actions"
+    },
+    {
+      "name": "ScheduledTask",
+      "source": "packages/shared/src/types.ts",
+      "states": ["active", "paused", "expired", "deleted"],
+      "transitions": 4
+    },
+    {
+      "name": "TaskRun",
+      "source": "packages/shared/src/types.ts",
+      "states": [
+        "pending",
+        "running",
+        "completed",
+        "failed",
+        "skipped",
+        "timeout"
+      ],
+      "transitions": 6
+    }
+  ]
+}

@@ -1,0 +1,194 @@
+[
+  {
+    "challengeId": 1,
+    "dimension": "WIRING",
+    "defendant": "Agent 1 (Optimist)",
+    "claimedScore": 8,
+    "challengerScore": 4,
+    "challengerAgent": "Agent 2 (Pessimist), confirmed by R2 Pair 1",
+    "challengeStatement": "R2 Pair 1 established that the wiring audit covers 12 of an unspecified total. Static analysis confirms 17 dead tool exports in the tools package and 5 dead routing strategy exports in the router package — 22 confirmed dead exports. The Optimist's score of 8 treats 12 confirmed wired points as sufficient without accounting for the confirmed dead surface. Under UNPROVEN rules, a wiring score cannot reach 8 when the total wired fraction of the exported API is unaudited and 22 exports are confirmed unreachable.",
+    "defenseRequirement": "Defender must prove either: (A) the 22 dead exports are intentionally excluded SDK surface and do not reduce wiring score, OR (B) total confirmed wired exports exceed the 22 dead exports such that the wired-to-dead ratio supports an 8.",
+    "defenseAttempt": {
+      "claim": "The 12 audited wiring points resolve to specific file:line call sites. Dead exports in tools and router are leaf-package surface, not hub failures. The load-bearing hubs (shared importedByCount=106, tools importedByCount=31, db importedByCount=17) confirm the dependency graph is connected. plugin-sdk, sdk, and vscode have importedByCount=0 but are intentional leaf nodes.",
+      "evidenceCited": [
+        "static-analysis.json wiringAudit: all 12 wired=true with specific callSite references",
+        "static-analysis.json dependencyGraph: shared.importedByCount=106, tools.importedByCount=31",
+        "static-analysis.json deadCode: tools.unusedExports lists 17 items, router.unusedExports lists 5 items"
+      ]
+    },
+    "defenseEvaluation": {
+      "verdict": "FAILS",
+      "reasoning": "The defense does not satisfy either required proof path. (A) is not demonstrated: the 17 dead tool exports include ghReviewTool, ghActionsTool, ghReleaseTool, ghSearchTool, ghSecurityTool, ghRepoTool, gitBranchTool, gitStashTool — GitHub and git tools that are not SDK surface, they are operational tools that were presumably intended for agent use. The Optimist's own top-3-risks in R1 explicitly flagged '5 of 6 router strategies are dead exports — the routing differentiator is untested in production and may be non-functional.' Acknowledging this as a top risk contradicts claiming the score supports 8. (B) is not satisfied: the 12 audited functions are the only wired confirmations in evidence. With 22 confirmed dead exports and only 12 confirmed wired entries, no ratio evidence supports an 8. The R2 Pair 1 joint finding explicitly states: 'Per UNPROVEN rule, wiring cannot score above 6 when 17 tools are confirmed dead and the total tool count is unaudited.' The 5 dead router strategies represent 5 of 6 routing strategies — 83% of the router package's primary public API is dead code, a fact the Optimist itself flagged as a top risk.",
+      "controllingEvidence": [
+        "static-analysis.json deadCode tools: 17 unused exports — CONFIRMED",
+        "static-analysis.json deadCode router: costFirstStrategy, qualityFirstStrategy, createRuleBasedStrategy, createCombinedStrategy, capabilityStrategy — 5 of 6 strategies are dead exports — CONFIRMED",
+        "R2 Pair 1 jointFinding: 'wiring cannot score above 6 when 17 tools are confirmed dead and the total tool count is unaudited'",
+        "Agent 1 top3Risks: '5 of 6 router strategies are dead exports' — defender's own filing concedes this risk"
+      ]
+    },
+    "finalScore": 5,
+    "finalScoreRationale": "The 12 confirmed wired call sites with specific file:line citations are real positive evidence that prevents a floor of 3 (UNPROVEN minimum). However, 22 confirmed dead exports — including 5 of 6 routing strategies — cannot be reconciled with a score of 8. The R2 Pair 1 consensus established 6 as the ceiling under UNPROVEN rules given the confirmed dead ratio. Score reduced to 5 rather than the rule-maximum of 6, because the dead routing strategies represent the stated primary differentiator of the router package being non-functional as exported. A score of 5 reflects: 12 real wired points (positive), load-bearing hub connectivity confirmed (positive), 22 dead exports including 5 of 6 routing strategies and 10 GitHub/git tools (negative), and no process-boundary integration test (negative).",
+    "status": "SCORE_REVISED"
+  },
+  {
+    "challengeId": 2,
+    "dimension": "CODE_COMPLETENESS",
+    "defendant": "Agent 9 (Senior Engineer)",
+    "claimedScore": 7,
+    "challengerScore": 5,
+    "challengerAgent": "Multiple agents; R2 Pair 1 agreed score of 5",
+    "challengeStatement": "11 of 26 packages have 0 test lines — 42% of the package surface is behaviorally unverified. The untested packages include docgen (625 lines), ingest (1379 lines), and onboard (2900 lines). Agent 9 scored CODE_COMPLETENESS at 7 despite acknowledging the 17 dead tool exports. The R2 Pair 1 joint finding resolved Optimist(7) vs Pessimist(4) at a consensus of 5. Under UNPROVEN rules, code that is present but behaviorally unverified cannot be scored as complete.",
+    "defenseRequirement": "Defender must prove that code completeness can score 7 when 42% of packages have no tests and three of the untested packages (ingest at 1379 lines, onboard at 2900 lines, server at 1450 lines) are operationally critical.",
+    "defenseAttempt": {
+      "claim": "The wiring audit confirms 12 real call sites including runOrchestrationPipeline, createWiredMemoryTool, and DaemonController. Dead code in tools is a separate concern from completeness — the critical path from CLI entry through core agent loop is verified wired with specific file:line citations. 77,909 src lines across 26 packages with confirmed wiring justifies a completeness score above the Pessimist's floor.",
+      "evidenceCited": [
+        "static-analysis.json wiringAudit: runOrchestrationPipeline at brainstorm.ts:2641, createWiredMemoryTool at brainstorm.ts:5126",
+        "static-analysis.json codeInventory: 26 packages totaling 77,909 src lines",
+        "dynamic-testing.json totals: passed=661, failed=0"
+      ]
+    },
+    "defenseEvaluation": {
+      "verdict": "FAILS",
+      "reasoning": "The defense conflates wiring confirmation with code completeness. Wiring audit confirming 12 call sites does not establish that the code at those sites — let alone the 42% of packages with no tests — is complete or correct. Agent 9's own evidence citation for CODE_COMPLETENESS reads: 'tools package has 17 unused exports including ghReviewTool, ghActionsTool — 10 GitHub/git tools are exported but never imported.' The R2 Pair 1 joint finding for CODE_COMPLETENESS is explicit: 'Both agents accept the factual evidence. 42% of packages have 0 test lines, including gateway (billing), server (HTTP), and onboard (user setup)... agreedScore: 5.' Agent 9 scored CODE_COMPLETENESS at 5 in its own filing (R1), not 7 — the 7 claimed in the challenge header is actually Agent 1 (Optimist)'s R1 score. The R2 consensus overrides both: 42% untested packages is a confirmed fact that neither agent disputed. A score of 7 for completeness requires evidence that the code is not merely present but behaviorally verified. With 11 packages at 0 test lines and three of those (server=1450 lines, onboard=2900 lines, ingest=1379 lines) being operationally critical, completeness at 7 is unsupportable.",
+      "controllingEvidence": [
+        "static-analysis.json codeInventory: 11 packages with testLines=0 — docgen, gateway, ingest, onboard, orchestrator, plugin-sdk, projects, scheduler, sdk, server, vscode — CONFIRMED",
+        "dynamic-testing.json: 11 packages with files=0, passed=0 — CONFIRMED independently",
+        "R2 Pair 1 jointFinding CODE_COMPLETENESS: agreedScore=5, rationale cites '42% untested' as controlling fact",
+        "Agent 9 (Senior Engineer) R1 score for CODE_COMPLETENESS: 5 (not 7 — the challenge correctly targets the Optimist's 7)"
+      ]
+    },
+    "finalScore": 5,
+    "finalScoreRationale": "The R2 Pair 1 consensus of 5 stands and is the correct adjudicated score. The 7 claimed by Agent 1 (Optimist) is not defensible against the confirmed 42% package surface with zero behavioral verification. 77,909 src lines and 12 wiring points are real positive signals (preventing a floor below 5), but code that is wired without tests cannot be scored as complete. Score 5 reflects: codebase assembles and has verified critical path (positive), 42% of packages have zero behavioral verification including three operationally critical packages (negative), 661 tests pass but cover only 15 of 26 packages (partial positive).",
+    "status": "SCORE_REVISED"
+  },
+  {
+    "challengeId": 3,
+    "dimension": "DEPENDENCY_HEALTH",
+    "defendant": "Agent 1 (Optimist)",
+    "claimedScore": 9,
+    "challengerScore": 8,
+    "challengerAgent": "R2 Pair 4 (Attacker + Senior Engineer joint finding)",
+    "challengeStatement": "The R2 Pair 4 joint finding reduced DEPENDENCY_HEALTH from 9 (Attacker opening) to 8 by consensus because no automated dependency update tooling (Dependabot or Renovate) was found in evidence. The Optimist's score of 9 implies active dependency management. A 0-CVE result is a point-in-time snapshot: a new CVE disclosed after the audit date is undetected until a manual npm audit is run. The challenge is whether 9 can stand without evidence of automated maintenance.",
+    "defenseRequirement": "Defender must prove that automated dependency maintenance exists (Dependabot, Renovate, or equivalent CI step), OR concede to 8.",
+    "defenseAttempt": {
+      "claim": "0 vulnerabilities total across all severity levels is the cleanest possible npm audit result. No critical, high, moderate, or low findings across 26 packages. This is a binary factual result. The Optimist's own improvementPlus2 field noted: 'Add a Dependabot or Renovate configuration to maintain this 0-vuln status automatically rather than relying on manual audit runs.' The score of 9 reflects the current state — clean audit — not the maintenance posture.",
+      "evidenceCited": [
+        "static-analysis.json vulnerabilities: total=0, critical=0, high=0, moderate=0, low=0",
+        "security.json dependencyAudit: total=0 — confirmed in both evidence streams"
+      ]
+    },
+    "defenseEvaluation": {
+      "verdict": "CONCEDES TO 8",
+      "reasoning": "The defense confirms the 0-CVE result is a point-in-time snapshot and that the Optimist's own improvementPlus2 recommendation was to add Dependabot/Renovate — implicitly acknowledging it does not exist. The R2 Pair 4 joint finding by the Attacker and Senior Engineer explicitly resolved: 'Both agents agree: 0 CVEs is factual, binary, clean. The Attacker's initial 9 is reduced by one point on consensus because no automated dependency update tooling (Dependabot/Renovate) is evidenced — the 0-CVE state is not automatically maintained. Agreed score: 8.' The defense cannot produce evidence of automated maintenance because the Attacker opening in Pair 4 stated: 'I accept that no automated Dependabot or Renovate configuration was found in evidence.' The defense correctly identifies that 9 reflects current state, not maintenance posture — but a score of 9 on a dimension called DEPENDENCY_HEALTH implies the health is maintained, not merely current. The R2 Pair 4 consensus is the controlling adjudication.",
+      "controllingEvidence": [
+        "R2 Pair 4 DEPENDENCY_HEALTH jointFinding: agreedScore=8, rationale: 'no automated dependency update tooling evidenced — 0-CVE state is not automatically maintained'",
+        "R2 Pair 4 attackerRebuttal: 'I accept that no automated Dependabot or Renovate configuration was found in evidence'",
+        "Agent 1 improvementPlus2 for DEPENDENCY_HEALTH: 'Add a Dependabot or Renovate configuration' — implicit acknowledgment it is absent",
+        "security.json: no Dependabot or Renovate configuration found — CONFIRMED absence"
+      ]
+    },
+    "finalScore": 8,
+    "finalScoreRationale": "Defender concedes to 8 as established by R2 Pair 4. The 0-CVE result across all severity levels in both static-analysis.json and security.json is a confirmed, binary, positive fact that fully supports 8. The one-point reduction from 9 reflects the absence of automated dependency maintenance: the clean state is current but not continuously verified. No evidence of Dependabot, Renovate, or equivalent automated CVE-scanning CI step exists in any evidence stream. Score 8 is the correct and consensus-backed adjudicated score.",
+    "status": "SCORE_REVISED"
+  },
+  {
+    "challengeId": 4,
+    "dimension": "SECURITY_POSTURE",
+    "defendant": "Agent 9 (Senior Engineer)",
+    "claimedScore": 7,
+    "challengerScore": 5,
+    "challengerAgent": "Agent 6 (Attacker), R2 Pair 4 joint finding at 5/6 contested",
+    "challengeStatement": "The server package has 1450 src lines and 0 test lines — the entire HTTP attack surface (GET /health, GET /api/v1/god-mode/tools, POST /api/v1/god-mode/execute) has never been tested. Empty jwtSecret logs a startup warning but does not abort — a silent misconfiguration path to unauthenticated server operation exists. red-team.test.ts has testsErrors=false, meaning the adversarial test file does not assert on blocked outcomes. The wiring audit's 12 confirmed functions include zero security middlewares — middleware registration is not equivalent to middleware invocation evidence. R2 Pair 4 resolved at 5 (Attacker) vs 6 (Senior Engineer), contested, with an agreed floor of 5.",
+    "defenseRequirement": "Defender must prove that security posture can score 7 when: (A) the HTTP server has zero test coverage, (B) empty jwtSecret allows server startup, and (C) the adversarial test file does not assert on blocked outcomes.",
+    "defenseAttempt": {
+      "claim": "22 security middlewares are registered with distinct non-overlapping purposes (security.json securityMiddlewares). AES-256-GCM with Argon2id at OWASP parameters is cryptographically correct. JWT validation uses timingSafeEqual, enforces exp claim, and rejects non-HS256 (security.json owaspFindings A07). Egress-monitor blocks base64-pipe-to-curl, reverse shells, DNS exfiltration. Trust-propagation prevents tainted context from triggering shell. These are not placeholder names — each has a documented security purpose.",
+      "evidenceCited": [
+        "security.json securityMiddlewares: 22 entries all registered=true",
+        "security.json vaultSystem: AES-256-GCM, Argon2id memory=65536KB, iterations=3 — OWASP recommended",
+        "security.json owaspFindings A07: timingSafeEqual, exp enforcement, non-HS256 rejection"
+      ]
+    },
+    "defenseEvaluation": {
+      "verdict": "FAILS",
+      "reasoning": "The defense cites middleware registration and cryptographic correctness, but both points were already fully credited in the R2 Pair 4 debate. The Senior Engineer's own Pair 4 opening position stated: 'the wiring audit confirms pipeline dispatch and memory are wired, but does not confirm the security middleware chain executes on every tool call.' The defense cannot prove middleware invocation from registration alone — this was the central contested point. On the three required proof paths: (A) The defense does not produce any test for server.ts — the 0-test-line fact is uncontested and the defense does not address it. (B) The defense does not address the jwtSecret soft-failure — security.json A05 explicitly documents 'SERVER EXPOSED WITHOUT AUTH' as a startup warning, not exit. (C) The defense credits red-team tests but dynamic-testing.json confirms red-team.test.ts testsErrors=false — the adversarial tests do not assert blocked outcomes. The Senior Engineer's own R2 Pair 4 position already reduced its opening score in response to the Attacker: 'I lower my position to 5 on this basis.' A score of 7 exceeds what the defending agent itself found defensible after debate. The R2 Pair 4 joint finding at a contested 5/6 with an agreed floor of 5 is the controlling adjudication.",
+      "controllingEvidence": [
+        "static-analysis.json codeInventory: server srcLines=1450, testLines=0 — CONFIRMED, HTTP attack surface untested",
+        "security.json owaspFindings A05: 'SERVER EXPOSED WITHOUT AUTH' warning at startup, server.ts line 113 — empty jwtSecret does not abort — CONFIRMED",
+        "dynamic-testing.json testQuality: red-team.test.ts testsErrors=false — adversarial test does not assert blocked outcomes — CONFIRMED",
+        "static-analysis.json wiringAudit: 0 of 12 audited functions are security middlewares — middleware invocation unconfirmed",
+        "R2 Pair 4 SECURITY_POSTURE jointFinding: agreedScore=5.5, contested=true, attackerScore=5, srEngineerScore=6, 'agreed floor is 5'",
+        "Agent 9 Pair 4 srEngineerRebuttal: 'I lower my position to 5 on this basis' — the defending agent conceded during debate"
+      ]
+    },
+    "finalScore": 5,
+    "finalScoreRationale": "Score revised to 5 per the R2 Pair 4 agreed floor. The defense cannot produce evidence that satisfies any of the three required proof paths. The 7 is not defensible: it exceeds the score the defending agent itself held after the Pair 4 debate. The positive evidence (22 registered security middlewares, OWASP-compliant cryptography, zero CVEs, egress-monitor, trust-propagation) is real and substantial — it prevents a lower score. But server.ts 0 test lines is a confirmed, unaddressed gap covering the primary external attack surface. The empty-jwtSecret soft-failure is a confirmed deployment misconfiguration path. red-team.test.ts testsErrors=false is a confirmed test quality failure for the adversarial coverage. Score 5 is both the R2 Pair 4 agreed floor and the maximum defensible score against the confirmed evidence gaps.",
+    "status": "SCORE_REVISED"
+  },
+  {
+    "challengeId": 5,
+    "dimension": "PROPERTY_CORRECTNESS",
+    "defendant": "Agent 1 (Optimist)",
+    "claimedScore": 3,
+    "challengerScore": 1,
+    "challengerAgent": "Agent 4 (Auditor), R2 Pair 3 contested at 1 vs 3",
+    "challengeStatement": "propertyBasedTests=0 is a confirmed count field in dynamic-testing.json, not an absence of evidence. The Auditor (Agent 4) argues a confirmed zero is different from 'absence of evidence' under UNPROVEN rules — a confirmed zero is the strongest possible negative evidence and should score 1, not 3. The Optimist claims partial conventional test coverage (vault/crypto.test.ts testsErrors=true, red-team tests) supports a 3 under UNPROVEN rules. The R2 Pair 3 joint finding left this CONTESTED at 1 vs 3.",
+    "defenseRequirement": "This challenge requires a conceptual resolution: is propertyBasedTests=0 a confirmed negative (score floor = 1) or an absence of evidence (UNPROVEN max = 3)? Defender must prove that conventional tests with error coverage constitute partial property correctness evidence, OR accept 1 as the correct floor for a confirmed zero count.",
+    "defenseAttempt": {
+      "claim": "The UNPROVEN rule says maximum score is 3 when evidence does not exist. propertyBasedTests=0 means the property-based testing methodology is absent. But property correctness is broader than property-based testing methodology. vault/crypto.test.ts has testsErrors=true — it tests encryption error conditions at specific inputs. router/router.test.ts has testsErrors=true. These provide partial correctness verification at known inputs even without generative techniques. The red-team.test.ts and red-team-engine.test.ts represent intentional correctness probing.",
+      "evidenceCited": [
+        "dynamic-testing.json testQuality: vault/crypto.test.ts testsErrors=true",
+        "dynamic-testing.json testQuality: router/router.test.ts testsErrors=true",
+        "dynamic-testing.json testQuality: red-team.test.ts exists",
+        "dynamic-testing.json: propertyBasedTests=0 — field value is zero"
+      ]
+    },
+    "defenseEvaluation": {
+      "verdict": "CONTESTED — resolved at 2",
+      "reasoning": "The resolution question is: does a confirmed zero count as 'evidence does not exist' (UNPROVEN, max 3) or as 'evidence of absence' (confirmed negative, floor 1)? The Auditor's argument is stronger on strict evidentiary grounds: propertyBasedTests is a count field. A count of 0 is not 'no evidence' — it is a direct measurement confirming zero property-based tests exist. This is meaningfully different from a dimension where evidence was simply not searched. The Optimist's defense is partially valid: conventional tests with error coverage do provide partial correctness evidence at specific inputs. However, the Auditor's R2 Pair 3 rebuttal correctly identifies the distinction: testsErrors=true in a conventional test file verifies specific known-input error cases, not behavioral invariants across the input space. The red-team.test.ts counterevidence is undermined by the confirmed fact that it has testsErrors=false — adversarial tests without error assertions do not contribute to property correctness. The R2 Pair 3 joint finding explicitly states: 'The Auditor's more precise reading — that propertyBasedTests=0 is a confirmed count field, not an absence of evidence — supports 1 as the correct floor.' However, the joint finding also acknowledges that vault/crypto.test.ts (testsErrors=true) and router/router.test.ts (testsErrors=true) provide 'partial correctness for specific known inputs only.' A strict reading of the evidence supports 1. A reading that credits partial conventional coverage at known invariant-sensitive inputs supports 2. The R2 Pair 3 notes 2 as 'a reasonable consensus if the agents needed to converge.' Score 2 reflects: confirmed zero property-based and mutation tests (below UNPROVEN baseline), partial conventional coverage of correctness-sensitive code at known inputs (above floor 1), adversarial test file with testsErrors=false (does not add to correctness evidence).",
+      "controllingEvidence": [
+        "dynamic-testing.json: propertyBasedTests=0 — direct count field, CONFIRMED zero, not absence of search",
+        "dynamic-testing.json: mutationTestingAvailable=false — CONFIRMED",
+        "dynamic-testing.json testQuality: red-team.test.ts testsErrors=false — adversarial test does not assert blocked outcomes, does not contribute to property correctness",
+        "dynamic-testing.json testQuality: vault/crypto.test.ts testsErrors=true — partial correctness at specific known inputs only",
+        "R2 Pair 3 PROPERTY_CORRECTNESS jointFinding: CONTESTED at 1 vs 3, '2 as a reasonable consensus', 'Auditor's evidentiary standard is stricter and more defensible'",
+        "R2 Pair 3 auditor_rebuttal_2: red-team.test.ts testsErrors=false — 'adversarial test without error assertions' confirmed"
+      ]
+    },
+    "finalScore": 2,
+    "finalScoreRationale": "Score set at 2 as the cross-examination consensus resolution of the R2 Pair 3 CONTESTED finding. The Optimist's 3 is not fully defensible because: (A) the UNPROVEN rule's max-3 cap is the ceiling when evidence is absent — but here evidence is confirmed absent via a direct count field (propertyBasedTests=0), which is stronger than mere absence; (B) red-team.test.ts testsErrors=false means the adversarial tests do not contribute to property correctness; (C) the vault and router testsErrors=true conventional coverage provides partial correctness signal at known inputs but does not address the input-space coverage gap. Score 2 (below the 3 UNPROVEN maximum) reflects a confirmed-zero count rather than an unmeasured gap, while crediting that the vault and router packages have conventional error-condition tests that partially address the property correctness surface.",
+    "status": "SCORE_REVISED"
+  },
+  {
+    "challengeId": 6,
+    "dimension": "SCALE_READINESS",
+    "defendant": "Agent 1 (Optimist)",
+    "claimedScore": 4,
+    "challengerScore": 2,
+    "challengerAgent": "R2 Pair 5 (Operator + Investor joint finding at 2)",
+    "challengeStatement": "R2 Pair 5 reached a consensus of 2 with both the Operator and Investor scoring independently. The evidence is all-negative: 5 synchronous IO hot paths in the agent loop and memory manager (dream-runner.ts, manager.ts) block the event loop on every file operation. The taskEventQueue at loop.ts:242 is an unbounded Array with 170 unbounded .push() calls across core/src — confirmed OOM vector. SQLite is a single synchronous writer with no multi-session write scaling. 21 Docker sandbox tests are skipped in CI. Zero load tests, zero throughput measurements, zero concurrency tests exist in any evidence stream. The Optimist scored 4 in R1; the challenge is whether any evidence supports exceeding 2.",
+    "defenseRequirement": "Defender must produce evidence that scale readiness exceeds 2. Acceptable evidence: load test results, concurrency measurements, throughput benchmarks, or an architectural constraint that limits the scope of the synchronous IO bottlenecks to non-hot-path code.",
+    "defenseAttempt": {
+      "claim": "The Optimist's R1 score of 4 was itself marked as UNVERIFIABLE from assigned evidence (Stream A only). From Stream A: the dependency graph shows shared (importedByCount=106) and tools (importedByCount=31) as the load-bearing hubs — this reflects a well-connected architecture. The router package's Thompson sampling strategy is the active routing mechanism. The dead routing strategies could be activated if needed.",
+      "evidenceCited": [
+        "static-analysis.json dependencyGraph: shared importedByCount=106, tools importedByCount=31",
+        "Agent 1 R1 SCALE_READINESS rationale: 'UNVERIFIABLE from assigned evidence. No load test data in Stream A.'"
+      ]
+    },
+    "defenseEvaluation": {
+      "verdict": "FAILS",
+      "reasoning": "The defense does not produce any of the required evidence categories. The Optimist's own R1 filing stated the score was 'UNVERIFIABLE from assigned evidence' with 'LOW' confidence — the defending agent itself did not claim to have scale readiness evidence. The dependency graph importedByCount values describe static coupling, not runtime scale. The claim about activating dead routing strategies is speculative — R2 Pair 1 joint finding confirmed '5 dead routing strategies make the router's differentiating claim UNPROVEN.' The R2 Pair 5 joint finding is controlling: both Operator and Investor independently scored 2 based on concrete architectural evidence from architecture.json. The scalability bottlenecks are not contested: (1) 5 synchronous IO locations in hot paths are confirmed (architecture.json scalabilityBottlenecks with specific file locations: dream-runner.ts, manager.ts, brainstorm.ts, detect.ts, generate.ts); (2) unbounded taskEventQueue at loop.ts:242 with 170 unbounded .push() calls is confirmed; (3) SQLite single-writer is confirmed; (4) 21 Docker tests skipped is confirmed; (5) zero load test data exists across all evidence streams. All five scale indicators point to 2. The Optimist's R1 score of 4 was explicitly self-labeled as UNVERIFIABLE — a self-labeled UNVERIFIABLE score cannot survive cross-examination.",
+      "controllingEvidence": [
+        "architecture.json scalabilityBottlenecks: 5 synchronous_io entries — dream-runner.ts, manager.ts, brainstorm.ts, detect.ts, generate.ts — CONFIRMED hot-path blocking",
+        "architecture.json scalabilityBottlenecks: unbounded_queue at loop.ts:242, 170 unbounded .push() calls — CONFIRMED OOM vector",
+        "architecture.json scalabilityBottlenecks: sqlite_single_writer — CONFIRMED synchronous single-process",
+        "dynamic-testing.json totals: skipped=21 in brainst0rm/tools — Docker sandbox tests not run in CI — CONFIRMED",
+        "No load test data in any evidence stream — CONFIRMED absence across static-analysis.json, dynamic-testing.json, security.json, architecture.json, operational-readiness.json",
+        "R2 Pair 5 SCALE_READINESS jointFinding: agreedScore=2, contested=false — both Operator and Investor",
+        "Agent 1 R1 SCALE_READINESS confidence: 'LOW', rationale: 'UNVERIFIABLE from assigned evidence' — self-labeled unverifiable"
+      ]
+    },
+    "finalScore": 2,
+    "finalScoreRationale": "Score revised to 2 per the R2 Pair 5 consensus. The defense fails on all required proof paths — no load evidence, no throughput data, no concurrency measurements, and no architectural scope limitation for the confirmed synchronous IO bottlenecks. The Optimist's own R1 filing self-labeled the score as UNVERIFIABLE with LOW confidence, which means the R1 score of 4 was always an estimate without evidence support. Under cross-examination, an UNVERIFIABLE self-labeled score defaults to the maximum UNPROVEN score of 3 if partially evidenced, or lower if the available evidence is actively negative. Here all evidence is negative: every scale indicator (synchronous IO, unbounded queue, single-writer DB, skipped sandbox tests, zero load tests) points to a constraint. Score 2 is the correct floor for a dimension where all evidence confirms scaling barriers and zero evidence supports scaling capability.",
+    "status": "SCORE_REVISED"
+  }
+]

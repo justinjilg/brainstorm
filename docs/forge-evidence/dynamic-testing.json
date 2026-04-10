@@ -1,0 +1,504 @@
+{
+  "testResults": [
+    {
+      "package": "@brainst0rm/shared",
+      "files": 2,
+      "passed": 23,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 498
+    },
+    {
+      "package": "@brainst0rm/db",
+      "files": 1,
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 578
+    },
+    {
+      "package": "@brainst0rm/hooks",
+      "files": 1,
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 716
+    },
+    {
+      "package": "@brainst0rm/config",
+      "files": 1,
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 469
+    },
+    {
+      "package": "@brainst0rm/tools",
+      "files": 3,
+      "passed": 80,
+      "failed": 0,
+      "skipped": 21,
+      "durationMs": 3160
+    },
+    {
+      "package": "@brainst0rm/agents",
+      "files": 2,
+      "passed": 20,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 462
+    },
+    {
+      "package": "@brainst0rm/providers",
+      "files": 1,
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 505
+    },
+    {
+      "package": "@brainst0rm/mcp",
+      "files": 1,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 368
+    },
+    {
+      "package": "@brainst0rm/godmode",
+      "files": 1,
+      "passed": 11,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 520
+    },
+    {
+      "package": "@brainst0rm/router",
+      "files": 4,
+      "passed": 63,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 726
+    },
+    {
+      "package": "@brainst0rm/core",
+      "files": 11,
+      "passed": 174,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 4660
+    },
+    {
+      "package": "@brainst0rm/workflow",
+      "files": 2,
+      "passed": 31,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 537
+    },
+    {
+      "package": "@brainst0rm/eval",
+      "files": 1,
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 584
+    },
+    {
+      "package": "@brainst0rm/cli",
+      "files": 13,
+      "passed": 180,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 1350
+    },
+    {
+      "package": "@brainst0rm/vault",
+      "files": 1,
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 17730
+    },
+    {
+      "package": "@brainst0rm/gateway",
+      "files": 0,
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 0
+    },
+    {
+      "package": "@brainst0rm/plugin-sdk",
+      "files": 0,
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 0
+    },
+    {
+      "package": "@brainst0rm/projects",
+      "files": 0,
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 0
+    },
+    {
+      "package": "@brainst0rm/scheduler",
+      "files": 0,
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 0
+    },
+    {
+      "package": "@brainst0rm/orchestrator",
+      "files": 0,
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 0
+    },
+    {
+      "package": "@brainst0rm/server",
+      "files": 0,
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 0
+    }
+  ],
+  "totals": {
+    "passed": 661,
+    "failed": 0,
+    "skipped": 21
+  },
+  "testQuality": [
+    {
+      "file": "packages/tools/src/__tests__/progressive.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/tools/src/__tests__/shell-sandbox.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/tools/src/__tests__/gh-integration.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/tools/src/__tests__/gh-tools.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": true,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/core/src/__tests__/response-filter.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/core/src/__tests__/skills-loader.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/core/src/__tests__/semantic-search.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": false
+    },
+    {
+      "file": "packages/core/src/__tests__/memory-manager.test.ts",
+      "usesMocks": false,
+      "usesRealIO": true,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/core/src/__tests__/middleware-pipeline.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": true,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/core/src/__tests__/red-team.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/core/src/__tests__/kairos-integration.test.ts",
+      "usesMocks": false,
+      "usesRealIO": true,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/core/src/__tests__/loop.integration.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/core/src/__tests__/evolution-pressure.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/core/src/__tests__/kairos-br-loop.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/core/src/__tests__/red-team-engine.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/godmode/src/__tests__/signing.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": true,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/config/src/__tests__/schema.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": true,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/providers/src/__tests__/cloud-models.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/agents/src/__tests__/role-skills.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/agents/src/__tests__/nl-parser.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/mcp/src/__tests__/builtin-servers.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/shared/src/__tests__/telemetry.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": true,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/shared/src/__tests__/errors.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": true,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/cli/src/__tests__/logic/input-history.test.ts",
+      "usesMocks": true,
+      "usesRealIO": true,
+      "testsErrors": false,
+      "isUnitTest": false
+    },
+    {
+      "file": "packages/cli/src/__tests__/logic/keybindings.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/cli/src/__tests__/ipc/integration.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": true,
+      "isUnitTest": false
+    },
+    {
+      "file": "packages/cli/src/__tests__/ipc/validation.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": true,
+      "isUnitTest": false
+    },
+    {
+      "file": "packages/hooks/src/__tests__/manager.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": true,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/workflow/src/__tests__/confidence.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": true,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/workflow/src/__tests__/presets.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/db/src/__tests__/migrations.test.ts",
+      "usesMocks": false,
+      "usesRealIO": true,
+      "testsErrors": true,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/eval/src/__tests__/scorer.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/vault/src/__tests__/crypto.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": true,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/router/src/__tests__/classifier.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/router/src/__tests__/capability-strategy.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/router/src/__tests__/cost-tracker.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/router/src/__tests__/router.test.ts",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": true,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/cli/src/__tests__/components/KeyHint.test.tsx",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/cli/src/__tests__/components/SelectPrompt.test.tsx",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/cli/src/__tests__/components/Autocomplete.test.tsx",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/cli/src/__tests__/integration/mode-roundtrip.test.tsx",
+      "usesMocks": true,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/cli/src/__tests__/components/ShortcutOverlay.test.tsx",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/cli/src/__tests__/components/StreamingMessage.test.tsx",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/cli/src/__tests__/components/ToolCallDisplay.test.tsx",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/cli/src/__tests__/components/ModeBar.test.tsx",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": true
+    },
+    {
+      "file": "packages/cli/src/__tests__/components/PlanningMode.test.tsx",
+      "usesMocks": false,
+      "usesRealIO": false,
+      "testsErrors": false,
+      "isUnitTest": true
+    }
+  ],
+  "coverageEnabled": false,
+  "propertyBasedTests": 0,
+  "mutationTestingAvailable": false
+}

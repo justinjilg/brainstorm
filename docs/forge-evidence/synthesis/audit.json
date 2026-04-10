@@ -1,0 +1,322 @@
+{
+  "meta": {
+    "auditorId": 11,
+    "auditorRole": "Bias Auditor",
+    "auditDate": "2026-04-09",
+    "subjectFile": "docs/forge-evidence/synthesis/scores.json",
+    "auditScope": "Phase 3 synthesis output — score matrix, risk register, maturity placement, synthesis statement"
+  },
+  "checksFailed": [],
+  "checksWarnings": [],
+  "findingCategories": {
+    "SOFTENED": {
+      "count": 0,
+      "findings": []
+    },
+    "OMITTED": {
+      "count": 0,
+      "findings": [],
+      "note": "Verified: all 10 agents' R1 scores are represented in the matrix. All 5 R2 pair results applied. All 6 cross-exam challenges applied. Risk register captures all major risks from all 10 agents' top3Risks sections."
+    },
+    "INFLATED": {
+      "count": 0,
+      "findings": [],
+      "note": "Verified: DEPENDENCY_HEALTH final 7.3 is consistent with agent scores [8,7,7,9,8,8,6,7,8,5]. No dimension mean was rounded up inappropriately."
+    },
+    "REFRAMED": {
+      "count": 0,
+      "findings": []
+    },
+    "ADDED_OPTIMISM": {
+      "count": 0,
+      "findings": [],
+      "note": "Synthesis statement contains no optimistic qualifiers. Does not describe test pass rate as evidence of quality without noting coverageEnabled=false. Does not frame 0 CVEs as a hygiene achievement without noting absence of automation."
+    },
+    "CHERRY_PICKED": {
+      "count": 0,
+      "findings": [],
+      "note": "Synthesis includes negative signals (dead exports, 42% untested packages, null MTTR) alongside positive signals (661 tests, 0 CVEs, 12 wired points). Risk register includes 38 risks across all agents."
+    },
+    "BANNED_WORD_VIOLATION": {
+      "count": 0,
+      "bannedWords": [
+        "impressive",
+        "solid",
+        "strong",
+        "great",
+        "good progress",
+        "foundation",
+        "promising",
+        "notable",
+        "significant",
+        "robust",
+        "well-structured",
+        "comprehensive",
+        "thorough"
+      ],
+      "scannedTexts": [
+        "synthesisStatement in scores.json",
+        "all risk titles and descriptions in risks.json"
+      ],
+      "finding": "No banned words found in synthesis or risk register text."
+    },
+    "EVIDENCE_FABRICATION": {
+      "count": 0,
+      "findings": [],
+      "note": "All score citations traceable to specific evidence files and fields. No score was invented without evidence citation in the debate record."
+    }
+  },
+  "mathVerification": {
+    "overallMeanCalculation": {
+      "dimensionScores": {
+        "CODE_COMPLETENESS": 5.0,
+        "WIRING": 5.4,
+        "TEST_REALITY": 4.4,
+        "PROPERTY_CORRECTNESS": 2.9,
+        "PRODUCTION_EVIDENCE": 1.4,
+        "OPERATIONAL_READINESS": 2.9,
+        "SECURITY_POSTURE": 5.0,
+        "DOCUMENTATION": 3.7,
+        "FAILURE_HANDLING": 4.9,
+        "RESILIENCE": 3.1,
+        "SCALE_READINESS": 2.2,
+        "ARCHITECTURE_QUALITY": 5.2,
+        "API_CONTRACT_INTEGRITY": 4.4,
+        "DEPENDENCY_HEALTH": 7.3,
+        "SHIP_READINESS": 3.2
+      },
+      "sum": 61.0,
+      "count": 15,
+      "calculatedMean": 4.067,
+      "reportedMean": 4.07,
+      "verdict": "PASS — rounding to 2 decimal places is consistent"
+    },
+    "sampleDimensionVerification": {
+      "RESILIENCE": {
+        "finalScores": [3, 3, 3, 3, 3, 3, 3, 3, 4, 3],
+        "sum": 31,
+        "count": 10,
+        "calculatedMean": 3.1,
+        "reportedMean": 3.1,
+        "verdict": "PASS"
+      },
+      "DEPENDENCY_HEALTH": {
+        "finalScores": [8, 7, 7, 9, 8, 8, 6, 7, 8, 5],
+        "sum": 73,
+        "count": 10,
+        "calculatedMean": 7.3,
+        "reportedMean": 7.3,
+        "verdict": "PASS"
+      },
+      "PRODUCTION_EVIDENCE": {
+        "finalScores": [2, 1, 1, 1, 1, 1, 2, 1, 3, 1],
+        "sum": 14,
+        "count": 10,
+        "calculatedMean": 1.4,
+        "reportedMean": 1.4,
+        "verdict": "PASS"
+      },
+      "SCALE_READINESS": {
+        "finalScores": [2, 2, 3, 2, 2, 2, 2, 2, 3, 2],
+        "sum": 22,
+        "count": 10,
+        "calculatedMean": 2.2,
+        "reportedMean": 2.2,
+        "verdict": "PASS"
+      }
+    },
+    "r3RevisionVerification": {
+      "A1_WIRING": {
+        "r1": 8,
+        "r3Applied": 5,
+        "crossExamChallenge": 1,
+        "verdict": "PASS — cross-exam challenge 1 finalScore=5 applied"
+      },
+      "A1_PROPERTY_CORRECTNESS": {
+        "r1": 3,
+        "r3Applied": 2,
+        "crossExamChallenge": 5,
+        "verdict": "PASS — cross-exam challenge 5 finalScore=2 applied"
+      },
+      "A1_SCALE_READINESS": {
+        "r1": 4,
+        "r3Applied": 2,
+        "crossExamChallenge": 6,
+        "verdict": "PASS — cross-exam challenge 6 finalScore=2 applied"
+      },
+      "A1_DEPENDENCY_HEALTH": {
+        "r1": 9,
+        "r2Applied": 8,
+        "crossExamChallenge": 3,
+        "verdict": "PASS — both R2 Pair4 and cross-exam challenge 3 agree on 8"
+      },
+      "A9_SECURITY_POSTURE": {
+        "r1": 5,
+        "crossExamChallenge": 4,
+        "verdict": "PASS — A9 was already at 5 in R1; cross-exam confirmed floor=5"
+      }
+    },
+    "stddevVerification": {
+      "PROPERTY_CORRECTNESS": {
+        "scores": [2, 2, 2, 1, 2, 5, 4, 4, 4, 3],
+        "mean": 2.9,
+        "deviationsSquared": [
+          0.81, 0.81, 0.81, 3.61, 0.81, 4.41, 1.21, 1.21, 1.21, 0.01
+        ],
+        "sumDeviationsSquared": 14.9,
+        "variance": 1.49,
+        "stddev": 1.22,
+        "reportedStddev": 1.22,
+        "verdict": "PASS"
+      },
+      "WIRING": {
+        "scores": [5, 4, 6, 7, 4, 6, 5, 6, 7, 4],
+        "mean": 5.4,
+        "deviationsSquared": [
+          0.16, 1.96, 0.36, 2.56, 1.96, 0.36, 0.16, 0.36, 2.56, 1.96
+        ],
+        "sumDeviationsSquared": 12.4,
+        "variance": 1.24,
+        "stddev": 1.11,
+        "reportedStddev": 1.11,
+        "verdict": "PASS"
+      }
+    }
+  },
+  "agentRepresentationCheck": {
+    "allAgentsInMatrix": true,
+    "agentsWithZeroScoreInfluence": [],
+    "highOutlierAgentsChecked": {
+      "A2_Pessimist_SECURITY_POSTURE": {
+        "score": 7,
+        "note": "Agent 2 scored SECURITY_POSTURE at 7 — the highest R1 score for that dimension. This outlier was NOT suppressed. It remains in the matrix and pulls the mean from 4.6 to 5.0. Retaining outliers is correct; the mean should reflect the full distribution.",
+        "verdict": "CORRECTLY RETAINED"
+      },
+      "A6_Attacker_PROPERTY_CORRECTNESS": {
+        "score": 5,
+        "note": "Agent 6 (Attacker) scored PROPERTY_CORRECTNESS at 5 — citing AES-256-GCM cryptographic property correctness as evidence. This is the highest R1 score for that dimension. The Attacker was assessing vault crypto correctness, not generative tests. This outlier was NOT suppressed. It pulls the mean from 2.6 to 2.9.",
+        "verdict": "CORRECTLY RETAINED — different interpretive frame, evidence cited, not fabricated"
+      }
+    }
+  },
+  "maturityPlacementAudit": {
+    "cncfSANDBOX": {
+      "verdict": "CORRECT",
+      "rationale": "CNCF Sandbox requires production use by 2+ organizations. This project has 0 confirmed production deployments. SANDBOX or below is the only defensible placement."
+    },
+    "doraLOW": {
+      "verdict": "CORRECT",
+      "rationale": "DORA Low tier: median lead time 112 hours (4.7 days) vs Elite < 1 hour. MTTR=null. Commit frequency measured as development velocity, not deployment frequency. DORA Low is the correct tier."
+    }
+  },
+  "synthesisStatementAudit": {
+    "measuredClaims": [
+      {
+        "claim": "26-package TypeScript monorepo with 77,909 source lines",
+        "verified": true,
+        "source": "static-analysis.json codeInventory sum"
+      },
+      {
+        "claim": "788 commits",
+        "verified": true,
+        "source": "preflight.json gitInfo.commits"
+      },
+      {
+        "claim": "1 contributor",
+        "verified": true,
+        "source": "preflight.json gitInfo.contributors"
+      },
+      {
+        "claim": "661 passing tests across 15 of 26 packages",
+        "verified": true,
+        "source": "dynamic-testing.json totals.passed=661; 15 packages with files>0"
+      },
+      {
+        "claim": "12 specific call sites",
+        "verified": true,
+        "source": "static-analysis.json wiringAudit: 12 entries, all wired=true"
+      },
+      {
+        "claim": "22 dead exports (17 tool, 5 routing strategies representing 83%)",
+        "verified": true,
+        "source": "static-analysis.json deadCode: tools 17 entries, router 5 entries; router has 6 total exports in deadCode = 5/6 = 83%"
+      },
+      {
+        "claim": "coverage measurement disabled",
+        "verified": true,
+        "source": "dynamic-testing.json coverageEnabled=false"
+      },
+      {
+        "claim": "11 of 26 packages (42%) zero test files",
+        "verified": true,
+        "source": "dynamic-testing.json: 11 packages with files=0"
+      },
+      {
+        "claim": "vault test 17,730ms — 3.8x next-slowest",
+        "verified": true,
+        "source": "dynamic-testing.json: vault=17730ms, core=4660ms, 17730/4660=3.8x"
+      },
+      {
+        "claim": "Argon2id KDF at OWASP parameters, 30-minute session lock",
+        "verified": true,
+        "source": "security.json vaultSystem"
+      },
+      {
+        "claim": "22 registered security middlewares",
+        "verified": true,
+        "source": "security.json securityMiddlewares: 22 entries"
+      },
+      {
+        "claim": "server package zero tests",
+        "verified": true,
+        "source": "static-analysis.json codeInventory: server testLines=0"
+      },
+      {
+        "claim": "empty jwtSecret produces startup warning rather than process exit",
+        "verified": true,
+        "source": "security.json owaspFindings A05"
+      },
+      {
+        "claim": "3 of 8 PRR criteria",
+        "verified": true,
+        "source": "operational-readiness.json prr: monitoring=true, rollback=true, alerting=true; runbooks=false, onCall=false, incidentResponse=false, slosDefined=false, dashboards=false"
+      },
+      {
+        "claim": "runbooks, on-call, incident response, SLO docs, dashboards absent by verified grep",
+        "verified": true,
+        "source": "operational-readiness.json prr fields with false values and explicit evidenceStrings"
+      },
+      {
+        "claim": "MTTR=null, no production deployment",
+        "verified": true,
+        "source": "operational-readiness.json dora.mttrHours=null"
+      },
+      {
+        "claim": "5 synchronous IO hot paths",
+        "verified": true,
+        "source": "architecture.json scalabilityBottlenecks: 5 synchronous_io entries"
+      },
+      {
+        "claim": "unbounded taskEventQueue with 170 unbounded push calls",
+        "verified": true,
+        "source": "architecture.json scalabilityBottlenecks: unbounded_queue and unbounded_push entries"
+      },
+      {
+        "claim": "single-writer synchronous SQLite",
+        "verified": true,
+        "source": "architecture.json scalabilityBottlenecks: sqlite_single_writer"
+      },
+      {
+        "claim": "zero CVEs, no secrets in git, no env files in git",
+        "verified": true,
+        "source": "security.json dependencyAudit and secretScanning"
+      }
+    ],
+    "unverifiedClaims": [],
+    "bannedWordsScan": "PASS — no banned words detected in synthesis statement"
+  },
+  "honestyScore": 9,
+  "honestyScoreRationale": "The synthesis accurately represents all 10 agents. Math is verified correct. No banned words appear. No findings from any of the 8 bias categories were triggered. All 20 measurable claims in the synthesis statement are traceable to specific evidence fields. Two potential concerns audited and cleared: (1) A2 SECURITY_POSTURE outlier at 7 was correctly retained in the matrix rather than suppressed; (2) A6 PROPERTY_CORRECTNESS outlier at 5 was correctly retained with its distinct evidential basis. The one point deducted from a perfect 10: the PROPERTY_CORRECTNESS mean of 2.9 is pulled notably by A6's score of 5, which used a different interpretive frame (cryptographic properties) than the intended dimension (generative/property-based testing). A fully honest synthesis would note this interpretive divergence explicitly. This is a documentation gap, not a calculation error — the score is mechanically correct but the underlying disagreement about what PROPERTY_CORRECTNESS measures warrants a footnote.",
+  "correctedSynthesisRequired": false,
+  "correctedSynthesisNote": "Honesty score of 9 exceeds the 7 threshold. No corrected synthesis is required. A minor addendum is recommended: PROPERTY_CORRECTNESS mean of 2.9 includes Agent 6 (Attacker) scoring 5 based on cryptographic property correctness of vault/JWT primitives, while all other agents scored 1-4 based on the absence of generative property-based tests (propertyBasedTests=0). If the intended scope of this dimension is generative testing methodology only, removing A6's outlier yields a mean of 2.56. The synthesis statement is honest either way; this note documents the interpretive variation."
+}

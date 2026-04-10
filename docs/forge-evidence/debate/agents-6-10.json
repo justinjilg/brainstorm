@@ -1,0 +1,557 @@
+[
+  {
+    "agentId": 6,
+    "agentName": "Attacker",
+    "agentPersona": "give me 30 minutes — what do I own?",
+    "primaryEvidence": "Stream E (security.json)",
+    "secondaryEvidence": "Stream A deps only (static-analysis.json vulnerabilities + dependencyGraph)",
+    "scores": {
+      "CODE_COMPLETENESS": {
+        "score": 4,
+        "evidence": "security.json: 22 security middlewares registered in pipeline, but packages like gateway (0 test lines), server (0 test lines), onboard (0 test lines) are untested — attack surface is unverified",
+        "improvement": "+2: Add integration tests for every security middleware that exercise the actual block/allow boundary, not just that the middleware was registered",
+        "confidence": "MEDIUM"
+      },
+      "WIRING": {
+        "score": 6,
+        "evidence": "security.json authFlows: trustPropagation=true, subagentPrivilegeReduction=true, jwtValidation=true, permissionManager=true — all four auth flow checks pass",
+        "improvement": "+2: Verify trust-propagation middleware is tested end-to-end with a real tainted web_fetch -> shell call chain, not just unit-registered",
+        "confidence": "HIGH"
+      },
+      "TEST_REALITY": {
+        "score": 3,
+        "evidence": "security.json owaspFindings: all findings labeled 'none' or 'mitigated', but dynamic-testing.json shows 0 tests in gateway and server packages — the HTTP-facing surfaces have no test files",
+        "improvement": "+2: Write integration tests that replay OWASP attack payloads (prompt injection strings, SSRF destinations, JWT alg:none) against the actual running server endpoint",
+        "confidence": "HIGH"
+      },
+      "PROPERTY_CORRECTNESS": {
+        "score": 5,
+        "evidence": "security.json vaultSystem: AES-256-GCM with 12-byte random nonce, Argon2id with OWASP-recommended parameters (memory=65536KB, iterations=3), derived key zeroed after use — cryptographic properties are correct per stated spec",
+        "improvement": "+2: Add property-based tests that verify nonce uniqueness across 10,000 encrypt calls and that key material is provably zeroed (canary byte pattern before/after lock)",
+        "confidence": "MEDIUM"
+      },
+      "PRODUCTION_EVIDENCE": {
+        "score": 1,
+        "evidence": "security.json: no on-call tooling, no incident response docs, no postmortems — zero evidence any security control has ever been exercised under real attack conditions",
+        "improvement": "+2: Run a documented red-team exercise against a staging deployment, capture findings in a postmortem, and fix at least one real bypass",
+        "confidence": "HIGH"
+      },
+      "OPERATIONAL_READINESS": {
+        "score": 2,
+        "evidence": "operational-readiness.json prr: onCall=false, incidentResponse=false, runbooks=false — no incident response capability exists when a security event fires",
+        "improvement": "+2: Write a security incident runbook covering: alerting threshold, triage steps, egress-monitor false positive handling, and vault compromise recovery",
+        "confidence": "HIGH"
+      },
+      "SECURITY_POSTURE": {
+        "score": 6,
+        "evidence": "security.json: egress-monitor blocks base64-pipe-to-curl, reverse shells, DNS exfiltration; content-injection-filter sanitizes web_fetch output; trust-propagation prevents tainted context from triggering shell — three distinct exfiltration vectors addressed in code",
+        "improvement": "+2: Verify egress-monitor domain allowlist is non-empty at runtime and cannot be cleared by an agent with a crafted config mutation",
+        "confidence": "HIGH"
+      },
+      "DOCUMENTATION": {
+        "score": 3,
+        "evidence": "security.json: no runbook files found matching *runbook* or *playbook* — security behaviors are documented only as inline code comments in handler.ts",
+        "improvement": "+2: Write a SECURITY.md threat model covering the 8 OWASP findings, the trust-propagation model, and the vault key lifecycle",
+        "confidence": "HIGH"
+      },
+      "FAILURE_HANDLING": {
+        "score": 5,
+        "evidence": "security.json owaspFindings A07: JWT validation enforces exp claim, rejects non-HS256, logs warning at startup if jwtSecret is empty — failure cases are handled but empty jwtSecret still starts the server",
+        "improvement": "+2: Change empty jwtSecret from a startup warning to a hard exit — a server that boots without auth is a misconfiguration that should be impossible to deploy silently",
+        "confidence": "HIGH"
+      },
+      "RESILIENCE": {
+        "score": 3,
+        "evidence": "security.json: approval-friction middleware has cooling periods when human is rubber-stamping, but no evidence of rate limiting, circuit breakers, or backpressure on the God Mode execute endpoint",
+        "improvement": "+2: Add per-tenant rate limiting on POST /api/v1/god-mode/execute with configurable burst limits and 429 responses",
+        "confidence": "MEDIUM"
+      },
+      "SCALE_READINESS": {
+        "score": 2,
+        "evidence": "static-analysis.json vulnerabilities: 0 CVEs — clean dependency tree — but security.json shows no multi-tenant isolation test, and vault is file-system-local (0o700 directory), which cannot scale beyond single-machine",
+        "improvement": "+2: Document the single-machine vault constraint as a known limitation and provide a migration path to a secrets manager (e.g., HashiCorp Vault, AWS Secrets Manager) for multi-node deployments",
+        "confidence": "MEDIUM"
+      },
+      "ARCHITECTURE_QUALITY": {
+        "score": 5,
+        "evidence": "security.json: 22 security middlewares in pipeline with distinct purposes — no overlapping responsibilities detected, layered defense model is coherent",
+        "improvement": "+2: Add a middleware contract test that asserts each middleware's registered name, input schema, and output type — prevents silent registration failures",
+        "confidence": "MEDIUM"
+      },
+      "API_CONTRACT_INTEGRITY": {
+        "score": 4,
+        "evidence": "security.json owaspFindings A07: JWT validation present but jwtSecret empty only logs a warning at startup — the God Mode API contract has no enforcement gate preventing unauthenticated startup",
+        "improvement": "+2: Require a non-empty, minimum-entropy jwtSecret at server startup with a fast-fail check and clear error message",
+        "confidence": "HIGH"
+      },
+      "DEPENDENCY_HEALTH": {
+        "score": 9,
+        "evidence": "static-analysis.json vulnerabilities: total=0, critical=0, high=0, moderate=0, low=0 — no known CVEs in the dependency tree",
+        "improvement": "+2: Add automated weekly Dependabot or Renovate PRs with a policy that high/critical CVEs block merge",
+        "confidence": "HIGH"
+      },
+      "SHIP_READINESS": {
+        "score": 3,
+        "evidence": "security.json: no incident response docs, no on-call tooling, empty jwtSecret only warns, server and gateway packages untested — as an attacker I see an unauthenticated startup path and zero-test HTTP surface",
+        "improvement": "+2: Block deployment if jwtSecret is unset, add at least one authenticated request integration test to CI, and write a runbook for the egress-monitor alert path",
+        "confidence": "HIGH"
+      }
+    },
+    "overall": "The dependency tree has zero CVEs. Cryptographic primitives (AES-256-GCM, Argon2id) are correctly parameterized. Seven distinct attack vectors have middleware responses in code. However, the server and gateway packages have zero test files, the HTTP-facing attack surface is untested at runtime, jwtSecret being empty produces only a warning rather than a startup failure, no runbooks exist for any security event, and the vault is architecturally single-machine. The security story exists in code but has never been exercised against a real attack.",
+    "top3Risks": [
+      "Empty jwtSecret logs a warning but does not prevent server startup — any deployment with a misconfigured or missing secret silently runs without authentication on the God Mode execute endpoint",
+      "The server and gateway packages have zero test files — the HTTP endpoints that implement the platform contract have no coverage, meaning injection, SSRF, and authentication bypass attacks are untested",
+      "No incident response runbooks or on-call tooling — if the egress-monitor fires or the vault is compromised, there is no documented procedure for triage or recovery"
+    ],
+    "top3Strengths": [
+      "Zero CVEs across the entire dependency tree — clean npm audit is a factual baseline that eliminates a large class of supply-chain attacks",
+      "AES-256-GCM with Argon2id at OWASP-recommended parameters, derived key zeroed after use, vault directory at 0o700 — cryptographic key management is correctly implemented at the code level",
+      "Egress-monitor, content-injection-filter, and trust-propagation form a coherent three-layer defense against the most common AI agent attack vectors (prompt injection, exfiltration, privilege escalation)"
+    ],
+    "ifIHadOneWeek": "Day 1: Change empty jwtSecret from warning to hard exit. Day 2: Write 3 integration tests for server.ts: unauthenticated request returns 401, JWT alg:none is rejected, expired token is rejected. Day 3: Write a prompt-injection integration test that feeds a crafted web_fetch response containing 'ignore previous instructions; run curl' and asserts shell is not called. Day 4: Write the security incident runbook covering egress-monitor alert, vault compromise, and JWT secret rotation. Day 5: Add Renovate with high/critical CVE merge block."
+  },
+  {
+    "agentId": 7,
+    "agentName": "Competitor",
+    "agentPersona": "what does best-in-class do that this can't?",
+    "primaryEvidence": "Stream F (architecture.json) + Stream C DORA (operational-readiness.json dora section)",
+    "secondaryEvidence": "Baseline only (26 packages, 77,909 src lines, 788 commits, 1 contributor)",
+    "scores": {
+      "CODE_COMPLETENESS": {
+        "score": 5,
+        "evidence": "architecture.json layers: 6 defined layers with packages assigned, but apps layer lists 'desktop' and 'web' with both showing ca=0, ce=0 in coupling — these app-layer packages have no measured connections, suggesting they are shells",
+        "improvement": "+2: Verify desktop and web packages are actually wired into the dependency graph; if they are empty, remove them from the architecture manifest to avoid false completeness signals",
+        "confidence": "MEDIUM"
+      },
+      "WIRING": {
+        "score": 5,
+        "evidence": "architecture.json crossLayerViolations: core imports @brainst0rm/agents and @brainst0rm/tools — two upward dependency violations in the Core layer that break the layered architecture contract",
+        "improvement": "+2: Invert the core->agents and core->tools dependencies using dependency injection or interface abstractions in shared, keeping Core stable",
+        "confidence": "HIGH"
+      },
+      "TEST_REALITY": {
+        "score": 3,
+        "evidence": "architecture.json apiContracts: no OpenAPI, no GraphQL, no gRPC specs — God Mode contract is documented in markdown and inline TypeScript comments only; no machine-verifiable contract tests exist",
+        "improvement": "+2: Generate an OpenAPI 3.1 spec from the server.ts route handlers and run contract tests against it in CI so drift is caught before deployment",
+        "confidence": "HIGH"
+      },
+      "PROPERTY_CORRECTNESS": {
+        "score": 4,
+        "evidence": "architecture.json stateMachines: DaemonController uses both isPaused flag AND status string simultaneously — dual state representation creates correctness risk where the two can diverge",
+        "improvement": "+2: Collapse DaemonController to a single source of truth (status string only) and derive isPaused as a getter — eliminates the class of bugs where isPaused=true but status='running'",
+        "confidence": "HIGH"
+      },
+      "PRODUCTION_EVIDENCE": {
+        "score": 2,
+        "evidence": "operational-readiness.json dora.deployFrequency: 0 deploys in week 1, 175 in week 2, 222 in week 3, 105 in week 4 — all commits to main, no production deployment pipeline recorded; DORA measures commit frequency, not actual deploys",
+        "improvement": "+2: Instrument a real deployment pipeline that records deploy timestamps separately from commit timestamps so DORA lead time and deploy frequency measure actual production releases",
+        "confidence": "HIGH"
+      },
+      "OPERATIONAL_READINESS": {
+        "score": 2,
+        "evidence": "operational-readiness.json prr: runbooks=false, onCall=false, incidentResponse=false, slosDefined=false, dashboards=false — five operational readiness gates are unmet",
+        "improvement": "+2: Define 3 SLOs (availability, p99 latency, error rate) with alert thresholds in monitoring-manifest.json and link each monitor to a runbook",
+        "confidence": "HIGH"
+      },
+      "SECURITY_POSTURE": {
+        "score": 4,
+        "evidence": "architecture.json apiContracts: ipcProtocol is NDJSON over stdin/stdout with 23 documented methods — no transport encryption or authentication on the IPC channel is mentioned",
+        "improvement": "+2: Document the IPC threat model — if the IPC channel is only used within a single process or over a Unix socket with OS-level isolation, state that explicitly; if not, add authentication",
+        "confidence": "MEDIUM"
+      },
+      "DOCUMENTATION": {
+        "score": 4,
+        "evidence": "architecture.json apiContracts: godModeContractSource is 'packages/godmode/src/manifest.ts + docs/platform-contract-v1.md' — exists as markdown but no machine-readable OpenAPI spec means consumers cannot generate clients or validate responses",
+        "improvement": "+2: Publish an OpenAPI spec for the God Mode endpoints so third-party products can validate their connector implementations without reading TypeScript source",
+        "confidence": "HIGH"
+      },
+      "FAILURE_HANDLING": {
+        "score": 4,
+        "evidence": "architecture.json scalabilityBottlenecks: taskEventQueue is unbounded Array at packages/core/src/agent/loop.ts:242 — no backpressure, no max-size cap; under sustained load this is an OOM vector",
+        "improvement": "+2: Cap the taskEventQueue at a configurable maximum (e.g., 1000 items) and emit a warning event when the cap is hit, allowing callers to apply backpressure",
+        "confidence": "HIGH"
+      },
+      "RESILIENCE": {
+        "score": 3,
+        "evidence": "architecture.json scalabilityBottlenecks: sqlite_single_writer — better-sqlite3 is synchronous and single-process with WAL mode; any concurrent write contention blocks the event loop",
+        "improvement": "+2: Add a write queue abstraction over the SQLite client so concurrent writes are serialized without blocking the event loop, enabling future migration to a multi-writer backend",
+        "confidence": "HIGH"
+      },
+      "SCALE_READINESS": {
+        "score": 2,
+        "evidence": "architecture.json scalabilityBottlenecks: 5 locations with synchronous IO (readFileSync, writeFileSync, execFileSync) in hot paths including agent loop and memory manager — these block the Node.js event loop on every file operation",
+        "improvement": "+2: Replace synchronous IO in packages/core/src/memory/manager.ts and packages/core/src/memory/dream-runner.ts with async fs/promises equivalents; these are the highest-frequency paths",
+        "confidence": "HIGH"
+      },
+      "ARCHITECTURE_QUALITY": {
+        "score": 6,
+        "evidence": "architecture.json coupling: shared package ca=24, instability=0.00 — maximally stable; cli package ce=17, instability=1.00 — maximally unstable; the dependency gradient flows correctly from stable to unstable",
+        "improvement": "+2: Fix the two core-layer upward violations (core->agents, core->tools) to make the layered architecture violation-free and enforceable via lint rules",
+        "confidence": "HIGH"
+      },
+      "API_CONTRACT_INTEGRITY": {
+        "score": 4,
+        "evidence": "architecture.json apiContracts: godMode=true with 5 endpoints defined, but openapi=false — no machine-readable contract means drift between server implementation and documented contract is undetectable without manual inspection",
+        "improvement": "+2: Add a CI step that extracts route handlers from server.ts and compares them against the contract manifest — fail the build if an endpoint is added or removed without updating the manifest",
+        "confidence": "HIGH"
+      },
+      "DEPENDENCY_HEALTH": {
+        "score": 6,
+        "evidence": "architecture.json coupling: mcp package instability=0.67 with a cross-layer violation (mcp->tools) — the MCP infrastructure package depends on a Domain-layer package, creating an unstable infrastructure component",
+        "improvement": "+2: Extract the tools dependency from mcp into an injected interface so mcp remains in the Infrastructure layer with instability < 0.5",
+        "confidence": "MEDIUM"
+      },
+      "SHIP_READINESS": {
+        "score": 2,
+        "evidence": "operational-readiness.json dora.leadTime.medianHours=112 — median 4.7-day lead time from branch to merge; DORA Elite threshold is under 1 hour; no production deployment pipeline is measured",
+        "improvement": "+2: Implement trunk-based development with feature flags to reduce batch size and get lead time under 24 hours; instrument actual deploy timestamps for true DORA measurement",
+        "confidence": "HIGH"
+      }
+    },
+    "overall": "The layered architecture has a coherent dependency gradient: shared is maximally stable (instability=0.00), cli is maximally unstable (instability=1.00), and the gradient flows in the correct direction. Eight distinct state machines are defined with explicit state enumerations. However, two cross-layer violations exist in Core, the DaemonController has dual state representation, five synchronous IO paths block the event loop, the task queue is unbounded, SQLite is a single-writer synchronous bottleneck, no OpenAPI spec exists, median lead time is 4.7 days against an Elite target of under 1 hour, and five PRR gates (runbooks, on-call, incident response, SLOs, dashboards) are all unmet. Best-in-class competitors ship with machine-readable contracts, sub-hour lead times, and defined SLOs.",
+    "top3Risks": [
+      "No OpenAPI specification means any of the 5 God Mode endpoints can silently drift from their documented contract — third-party connector implementations built against the markdown spec have no automated validation",
+      "Median lead time of 112 hours (4.7 days) indicates large batch sizes and infrequent integration — this is DORA Low performer territory and correlates with higher change failure rates in published research",
+      "Five synchronous IO hot paths in the agent loop and memory manager block the Node.js event loop — under concurrent session load this will cause measurable latency spikes with no backpressure mechanism"
+    ],
+    "top3Strengths": [
+      "Layered architecture with measurable instability metrics: shared at 0.00, config/db/tools at 0.08-0.11, cli at 1.00 — the dependency gradient is correctly oriented and measurable",
+      "Eight explicit state machines with named states and transition counts — DaemonController, WorkflowRun, ChangeSet, and others are not ad-hoc booleans but typed state enumerations",
+      "ChangeSet pattern (simulation -> approval -> execution) for destructive operations is architecturally enforced in packages/godmode/src/changeset.ts — this is a real safety gate, not just documentation"
+    ],
+    "ifIHadOneWeek": "Day 1: Fix core->agents and core->tools violations by introducing interfaces in shared and injecting them. Day 2: Generate OpenAPI 3.1 spec from server.ts routes and add a CI contract-diff check. Day 3: Replace synchronous IO in memory/manager.ts and memory/dream-runner.ts with async fs/promises. Day 4: Cap the taskEventQueue in loop.ts at 1000 items with a backpressure event. Day 5: Write 3 SLO definitions and link each of the 11 monitoring-manifest.json monitors to a numbered runbook."
+  },
+  {
+    "agentId": 8,
+    "agentName": "Investor",
+    "agentPersona": "is this real or a prototype dressed as production?",
+    "primaryEvidence": "Stream B (dynamic-testing.json) + Stream C DORA (operational-readiness.json)",
+    "secondaryEvidence": "Stream A LOC only (static-analysis.json codeInventory)",
+    "scores": {
+      "CODE_COMPLETENESS": {
+        "score": 5,
+        "evidence": "static-analysis.json codeInventory: 11 packages have 0 test lines (gateway=0, ingest=0, onboard=0, orchestrator=0, plugin-sdk=0, projects=0, scheduler=0, sdk=0, server=0, vscode=0, docgen=0) — 42% of packages are untested",
+        "improvement": "+2: Establish a policy that no package ships with 0 test lines; the minimum bar is one smoke test per package that imports the main entry point",
+        "confidence": "HIGH"
+      },
+      "WIRING": {
+        "score": 6,
+        "evidence": "dynamic-testing.json testResults: 661 tests pass across 15 packages with non-zero test files — passing tests confirm wiring at least for tested packages",
+        "improvement": "+2: Add integration tests that exercise cross-package wiring (e.g., cli -> core -> router -> providers chain) to verify the full request path, not just individual package units",
+        "confidence": "MEDIUM"
+      },
+      "TEST_REALITY": {
+        "score": 4,
+        "evidence": "dynamic-testing.json testQuality: propertyBasedTests=0, mutationTestingAvailable=false — 661 tests but zero property-based tests and no mutation coverage; tests can pass while covering only the happy path",
+        "improvement": "+2: Add at minimum 10 property-based tests using fast-check targeting the router classifier, vault crypto, and JWT validation — these are the functions where correctness properties are most valuable",
+        "confidence": "HIGH"
+      },
+      "PROPERTY_CORRECTNESS": {
+        "score": 4,
+        "evidence": "dynamic-testing.json testQuality: out of 46 test files, only 9 have testsErrors=true — 80% of test files do not test error conditions; error paths are largely unverified",
+        "improvement": "+2: Audit the 37 test files with testsErrors=false and add at least one error-path assertion per file — specifically for db/migrations.test.ts, router.test.ts, and kairos-integration.test.ts",
+        "confidence": "HIGH"
+      },
+      "PRODUCTION_EVIDENCE": {
+        "score": 1,
+        "evidence": "operational-readiness.json dora.mttrHours=null, mttrNotes='No revert incidents found to measure MTTR from' — MTTR is unmeasurable because there are no production incidents on record, which means there is no running production system",
+        "improvement": "+2: Deploy to a production environment and instrument the first real incident — even a self-induced canary failure creates the feedback loop needed to measure MTTR",
+        "confidence": "HIGH"
+      },
+      "OPERATIONAL_READINESS": {
+        "score": 2,
+        "evidence": "operational-readiness.json prr: runbooks=false, onCall=false, incidentResponse=false, slosDefined=false — four of the five PRR gates are unmet; monitoring-manifest.json exists but connects to no runbooks",
+        "improvement": "+2: Write one end-to-end runbook for the most likely failure (provider API timeout) covering detection, mitigation, and recovery steps",
+        "confidence": "HIGH"
+      },
+      "SECURITY_POSTURE": {
+        "score": 5,
+        "evidence": "dynamic-testing.json testQuality: packages/core/src/__tests__/red-team.test.ts and red-team-engine.test.ts exist and pass — two red-team test files are present, which is uncommon and factual",
+        "improvement": "+2: Verify the red-team tests use adversarial inputs representative of real prompt injection attacks, not synthetic strings — review test inputs against the OWASP LLM Top 10 categories",
+        "confidence": "MEDIUM"
+      },
+      "DOCUMENTATION": {
+        "score": 3,
+        "evidence": "operational-readiness.json monitoring.dashboards=false — no Grafana or Datadog dashboard config files found; the system cannot be observed visually in production",
+        "improvement": "+2: Create a minimal Grafana dashboard JSON or Datadog monitor YAML covering the 11 monitors already defined in monitoring-manifest.json",
+        "confidence": "HIGH"
+      },
+      "FAILURE_HANDLING": {
+        "score": 5,
+        "evidence": "dynamic-testing.json testQuality: packages/db/src/__tests__/migrations.test.ts: usesRealIO=true, testsErrors=true — the DB migration test exercises real IO and error conditions, which is the most critical failure path for a data-layer package",
+        "improvement": "+2: Add a migration test that simulates a mid-migration crash (kill the process after 50% of rows are updated) and verifies the database is left in a consistent state on restart",
+        "confidence": "MEDIUM"
+      },
+      "RESILIENCE": {
+        "score": 3,
+        "evidence": "dynamic-testing.json testResults: @brainst0rm/vault durationMs=17730 — vault tests take 17.7 seconds, an order of magnitude slower than all other packages; indicates real crypto operations but also suggests no parallelism or caching in the test setup",
+        "improvement": "+2: Profile the vault test suite to determine if 17.7 seconds is inherent to Argon2id parameters or test setup overhead; if setup, fix it; if inherent, document the expected CI cost",
+        "confidence": "MEDIUM"
+      },
+      "SCALE_READINESS": {
+        "score": 2,
+        "evidence": "dynamic-testing.json totals: 21 skipped tests in @brainst0rm/tools — 21 tests are skipped, likely Docker-dependent tests that do not run in standard CI; the sandbox isolation path is unverified in CI",
+        "improvement": "+2: Run the skipped Docker-dependent tests in a separate CI job with Docker-in-Docker so the sandbox path is verified on every merge",
+        "confidence": "MEDIUM"
+      },
+      "ARCHITECTURE_QUALITY": {
+        "score": 5,
+        "evidence": "static-analysis.json codeInventory: core=22127 src lines with 2727 test lines (12.3% test ratio); cli=12776 src lines with 948 test lines (7.4% test ratio) — the two largest packages have the lowest test ratios relative to their size",
+        "improvement": "+2: Increase cli test coverage to at least 15% line coverage, targeting the slash command execution paths and the build wizard state machine",
+        "confidence": "MEDIUM"
+      },
+      "API_CONTRACT_INTEGRITY": {
+        "score": 5,
+        "evidence": "dynamic-testing.json testQuality: packages/cli/src/__tests__/ipc/integration.test.ts and ipc/validation.test.ts — both have testsErrors=true and isUnitTest=false — IPC contract tests exist and test error conditions",
+        "improvement": "+2: Add a contract test that sends each of the 23 IPC methods with malformed input and asserts the response is a typed error, not an unhandled exception",
+        "confidence": "MEDIUM"
+      },
+      "DEPENDENCY_HEALTH": {
+        "score": 7,
+        "evidence": "dynamic-testing.json testResults: @brainst0rm/shared passed=23, @brainst0rm/config passed=10, @brainst0rm/db passed=9 — the foundation layer packages all have passing tests with non-trivial counts",
+        "improvement": "+2: Add test counts to gateway (currently 0) which is a foundation-adjacent infrastructure package that other packages depend on",
+        "confidence": "HIGH"
+      },
+      "SHIP_READINESS": {
+        "score": 2,
+        "evidence": "operational-readiness.json dora: mttrHours=null, slosDefined=false, dashboards=false, runbooks=false — MTTR is unmeasurable, SLOs are undefined, dashboards do not exist; this is a prototype posture, not a production posture",
+        "improvement": "+2: Define the minimum production bar: one SLO, one dashboard, one runbook, one measured deploy — then execute it",
+        "confidence": "HIGH"
+      }
+    },
+    "overall": "661 tests pass with 0 failures across 15 packages. Two red-team test files exist in core. DB migration tests use real IO and test error conditions. IPC contract tests cover error paths. These are factual positives. However, 11 of 26 packages have zero test lines, 80% of test files do not test error conditions, property-based testing is absent, 21 Docker-dependent tests are skipped in CI, MTTR is null (no production system), SLOs are undefined, dashboards do not exist, and runbooks are absent. The test suite is wide but shallow, and there is no evidence of a production deployment.",
+    "top3Risks": [
+      "MTTR=null because there is no production system — without a deployed environment, all quality signals are theoretical; the first production incident will reveal gaps that 661 passing unit tests cannot predict",
+      "80% of test files have testsErrors=false — error paths are the majority of production failure modes; a test suite that exercises mainly happy paths provides false confidence in reliability",
+      "21 skipped tests in @brainst0rm/tools are the Docker sandbox tests — the security isolation layer that prevents agent code execution escapes is not verified in standard CI"
+    ],
+    "top3Strengths": [
+      "661 tests pass, 0 fail, across a 77,909-line codebase with 788 commits — the test suite is green and has been maintained across a non-trivial commit history",
+      "Red-team test files (red-team.test.ts, red-team-engine.test.ts) in core are an uncommon and factual investment in adversarial coverage",
+      "DB migration test with usesRealIO=true and testsErrors=true is the correct pattern for database testing — it exercises the actual file system and error branches, not mocked responses"
+    ],
+    "ifIHadOneWeek": "Day 1: Deploy to a staging environment and record the first real deploy timestamp — DORA metrics cannot be measured without a deployment pipeline. Day 2: Write 10 property-based tests using fast-check for vault crypto, router classifier, and JWT validation. Day 3: Fix the 37 test files with testsErrors=false by adding one error-path assertion each, starting with the highest-risk packages (server, gateway, router). Day 4: Run the 21 skipped Docker tests in a CI job with Docker-in-Docker. Day 5: Define 3 SLOs and write the first runbook."
+  },
+  {
+    "agentId": 9,
+    "agentName": "Senior Engineer",
+    "agentPersona": "show me tests, error handling, edge cases",
+    "primaryEvidence": "Stream B (dynamic-testing.json) + Stream A wiring (static-analysis.json wiringAudit + deadCode)",
+    "secondaryEvidence": "Stream F contracts (architecture.json apiContracts + stateMachines)",
+    "scores": {
+      "CODE_COMPLETENESS": {
+        "score": 5,
+        "evidence": "static-analysis.json deadCode: tools package has 17 unused exports including ghReviewTool, ghActionsTool, ghReleaseTool, ghSearchTool, ghSecurityTool, ghRepoTool, gitBranchTool, gitStashTool — 10 GitHub/git tools are exported but never imported",
+        "improvement": "+2: Remove or wire the 17 dead exports in tools — dead code in a security-critical package creates maintenance surface and confuses auditors about what is actually in use",
+        "confidence": "HIGH"
+      },
+      "WIRING": {
+        "score": 7,
+        "evidence": "static-analysis.json wiringAudit: 12 functions verified wired with explicit callSite references — createWiredMemoryTool, createPipelineDispatcher, runOrchestrationPipeline, DaemonController all have confirmed call sites in brainstorm.ts or loop.ts",
+        "improvement": "+2: Extend the wiring audit to cover the 17 dead tools exports — confirm whether they are intentionally exported as SDK surface or are orphaned code awaiting deletion",
+        "confidence": "HIGH"
+      },
+      "TEST_REALITY": {
+        "score": 4,
+        "evidence": "dynamic-testing.json testQuality: coverageEnabled=false — no code coverage measurement is configured; the 661 passing tests have no measured line, branch, or statement coverage",
+        "improvement": "+2: Enable vitest coverage with a v8 provider and set a minimum threshold of 60% line coverage for packages/core and packages/router — the two highest-complexity packages",
+        "confidence": "HIGH"
+      },
+      "PROPERTY_CORRECTNESS": {
+        "score": 4,
+        "evidence": "dynamic-testing.json propertyBasedTests=0 — zero property-based tests across 77,909 source lines; the router's Thompson sampling algorithm, vault's cryptographic operations, and JWT validation have no invariant tests",
+        "improvement": "+2: Add property-based tests for packages/router/src/strategies/thompson.ts asserting: expected reward is always between 0 and 1, total trials always increases monotonically, the selected model always exists in the provider list",
+        "confidence": "HIGH"
+      },
+      "PRODUCTION_EVIDENCE": {
+        "score": 3,
+        "evidence": "dynamic-testing.json testQuality: packages/core/src/__tests__/kairos-integration.test.ts: usesRealIO=true, isUnitTest=true — this test uses real IO, suggesting it exercises actual file system or process interactions rather than mocks",
+        "improvement": "+2: Promote kairos-integration.test.ts to a named integration test suite that runs against a real provider endpoint in CI nightly, capturing actual latency and error rates",
+        "confidence": "MEDIUM"
+      },
+      "OPERATIONAL_READINESS": {
+        "score": 3,
+        "evidence": "architecture.json apiContracts: 23 IPC methods documented with ipcDocumentationSource='packages/cli/src/ipc/handler.ts (inline comments)' — documentation lives in comments, not a versioned schema",
+        "improvement": "+2: Extract the IPC method list into a machine-readable JSON schema that is versioned and tested — this enables desktop/web apps to validate against a known-good protocol version",
+        "confidence": "MEDIUM"
+      },
+      "SECURITY_POSTURE": {
+        "score": 5,
+        "evidence": "dynamic-testing.json testQuality: packages/core/src/__tests__/red-team.test.ts: testsErrors=false — the red-team test file does not test error conditions; a red-team test that never exercises failure paths is not testing what it claims",
+        "improvement": "+2: Rewrite red-team.test.ts to assert that adversarial inputs return specific error types or blocked results — testsErrors must be true for adversarial testing to be meaningful",
+        "confidence": "HIGH"
+      },
+      "DOCUMENTATION": {
+        "score": 5,
+        "evidence": "architecture.json apiContracts: ipcDocumented=true, ipcProtocol='NDJSON over stdin/stdout', 23 methods listed — IPC protocol is documented with method names, which is above average for an internal protocol",
+        "improvement": "+2: Add request/response type definitions for each of the 23 IPC methods in a dedicated ipc-protocol.ts or ipc-schema.json that is imported by both the handler and the client",
+        "confidence": "HIGH"
+      },
+      "FAILURE_HANDLING": {
+        "score": 5,
+        "evidence": "dynamic-testing.json testQuality: 9 of 46 test files have testsErrors=true — packages/tools/gh-tools.test.ts, middleware-pipeline.test.ts, hooks/manager.test.ts, workflow/confidence.test.ts, godmode/signing.test.ts, config/schema.test.ts, shared/telemetry.test.ts, shared/errors.test.ts, router/router.test.ts — error handling is tested in 9 packages",
+        "improvement": "+2: Add error tests to the 5 highest-risk untested packages: vault (already has crypto tests but audit for error paths), db/migrations.test.ts (already has errors=true — use as a model for other packages), providers, mcp, and agents",
+        "confidence": "HIGH"
+      },
+      "RESILIENCE": {
+        "score": 4,
+        "evidence": "static-analysis.json deadCode: router package has 5 unused strategy exports (costFirstStrategy, qualityFirstStrategy, createRuleBasedStrategy, createCombinedStrategy, capabilityStrategy) — routing strategies are built but never called; the fallback chain has unused alternatives",
+        "improvement": "+2: Either wire the 5 unused router strategies to slash commands or configuration options, or delete them — having multiple routing strategies that are never selected creates a false resilience narrative",
+        "confidence": "HIGH"
+      },
+      "SCALE_READINESS": {
+        "score": 3,
+        "evidence": "dynamic-testing.json testResults: @brainst0rm/tools passed=80, skipped=21 — 21% of tool tests are skipped; these are the Docker sandbox tests that verify process isolation under concurrent load",
+        "improvement": "+2: Unskip the 21 Docker tests by adding a CI job that provisions Docker and runs them — process isolation under concurrent load is not a luxury test category for a tool-execution engine",
+        "confidence": "HIGH"
+      },
+      "ARCHITECTURE_QUALITY": {
+        "score": 6,
+        "evidence": "architecture.json stateMachines: ChangeSet has states [pending, approved, rejected, executed] with 4 transitions — the most safety-critical state machine is the simplest and most auditable",
+        "improvement": "+2: Add a state machine test for ChangeSet that exhaustively covers all invalid transitions (e.g., executed -> approved should throw) — 4 states means only 12 invalid transitions to cover",
+        "confidence": "HIGH"
+      },
+      "API_CONTRACT_INTEGRITY": {
+        "score": 6,
+        "evidence": "dynamic-testing.json testQuality: ipc/integration.test.ts and ipc/validation.test.ts — both isUnitTest=false and testsErrors=true; these are the only non-unit contract tests in the suite",
+        "improvement": "+2: Add a test that sends all 23 IPC methods in sequence and validates the response shape against a TypeScript interface — a round-trip contract test for every method, not just the happy path",
+        "confidence": "MEDIUM"
+      },
+      "DEPENDENCY_HEALTH": {
+        "score": 6,
+        "evidence": "static-analysis.json dependencyGraph: shared importedByCount=106, ingest importedByCount=19, db importedByCount=17 — shared is imported 106 times; any breaking change to shared propagates to every package",
+        "improvement": "+2: Add a breaking-change detection step to CI (e.g., using @microsoft/api-extractor) that fails the build if a public API in shared is removed or incompatibly changed",
+        "confidence": "HIGH"
+      },
+      "SHIP_READINESS": {
+        "score": 4,
+        "evidence": "dynamic-testing.json totals: passed=661, failed=0, skipped=21 — zero test failures is a factual precondition for shipping, but coverageEnabled=false and 17 dead tool exports and 5 dead router strategies mean the passing tests may not cover the code that is actually executed",
+        "improvement": "+2: Enable coverage, run it once, identify the uncovered branches in core and router, and write tests for the top 10 uncovered error paths before declaring ship-ready",
+        "confidence": "HIGH"
+      }
+    },
+    "overall": "The wiring audit confirms 12 functions are verifiably called at specific line numbers. 661 tests pass. IPC contract has integration tests with error coverage. The DB migration test uses real IO. However, coverage measurement is disabled, 80% of test files skip error conditions, 22 exports in tools and router are dead code (never imported), property-based testing is absent, the red-team test file has testsErrors=false, 21 Docker-dependent sandbox tests are skipped, and the Thompson sampling algorithm has no invariant tests. The test suite has width but no depth, and the dead code signals that the exported API surface exceeds what is actually exercised.",
+    "top3Risks": [
+      "coverageEnabled=false means 661 passing tests provide no measurable assurance about which branches are exercised — the dead-code evidence (17 unused tool exports, 5 unused router strategies) suggests untested paths are common",
+      "22 dead exports across tools and router — unused code in a tool-execution security boundary is an audit liability and a refactoring cost that grows with each release",
+      "red-team.test.ts has testsErrors=false — adversarial tests that do not assert on error conditions are testing that the system does something, not that it correctly blocks attacks"
+    ],
+    "top3Strengths": [
+      "12 functions verified wired with explicit callSite line references in the wiring audit — this is factual evidence that major subsystems (memory, pipeline, orchestration, daemon) are connected, not just defined",
+      "IPC integration tests (integration.test.ts, validation.test.ts) are non-unit tests with error coverage — the inter-process contract between CLI and desktop app has the most rigorous test pattern in the suite",
+      "ChangeSet state machine has 4 states and 4 transitions — the smallest, simplest state machine governs the most destructive actions, which is the correct safety design choice"
+    ],
+    "ifIHadOneWeek": "Day 1: Enable vitest coverage with v8 provider and measure current baseline — this single action turns 661 opaque passing tests into a measurable asset. Day 2: Delete the 17 dead tool exports and 5 dead router strategy exports after confirming they are not used in desktop or web apps. Day 3: Add property-based tests for Thompson sampling (reward bounds, monotonic trials) and vault crypto (nonce uniqueness). Day 4: Rewrite red-team.test.ts so every test asserts a specific blocked outcome (testsErrors=true). Day 5: Write ChangeSet state machine exhaustive transition tests covering all 12 invalid transitions."
+  },
+  {
+    "agentId": 10,
+    "agentName": "Chaos Monkey",
+    "agentPersona": "kill a node mid-migration, what happens?",
+    "primaryEvidence": "Stream B failures (dynamic-testing.json testQuality failure/error coverage)",
+    "secondaryEvidence": "Stream C runbooks (operational-readiness.json prr + dora)",
+    "scores": {
+      "CODE_COMPLETENESS": {
+        "score": 4,
+        "evidence": "dynamic-testing.json testQuality: of 46 test files, 37 have testsErrors=false — 80% of test files do not assert on failure paths; the failure surface of the system is empirically uncovered",
+        "improvement": "+2: For every package in the critical path (db, router, core, vault), add at minimum one test that simulates a partial failure (e.g., DB write succeeds but read fails) and asserts recovery behavior",
+        "confidence": "HIGH"
+      },
+      "WIRING": {
+        "score": 4,
+        "evidence": "operational-readiness.json prr.rollback=true, rollbackEvidence=['packages/tools/src/builtin/transaction.ts', 'packages/db/src/client.ts', 'packages/godmode/src/changeset.ts'] — rollback capability is wired in three places, but no test verifies that a rollback actually restores state",
+        "improvement": "+2: Add an integration test that executes a multi-step transaction, kills it mid-execution, and asserts the database is in the pre-transaction state after rollback",
+        "confidence": "HIGH"
+      },
+      "TEST_REALITY": {
+        "score": 3,
+        "evidence": "dynamic-testing.json testQuality: packages/core/src/__tests__/loop.integration.test.ts: testsErrors=false, usesMocks=false — the agent loop integration test does not exercise error conditions in the loop; mid-loop failures (provider timeout, tool crash) are untested",
+        "improvement": "+2: Add error-path tests to loop.integration.test.ts: provider returns 503, tool throws an unhandled exception, context window exceeded — assert the loop exits cleanly with a structured error event",
+        "confidence": "HIGH"
+      },
+      "PROPERTY_CORRECTNESS": {
+        "score": 3,
+        "evidence": "dynamic-testing.json testQuality: packages/workflow/src/__tests__/confidence.test.ts: testsErrors=true — workflow confidence tests do cover error paths; this is the one state machine test that exercises failure conditions",
+        "improvement": "+2: Apply the confidence.test.ts error-testing pattern to all 8 state machines identified in architecture.json — each state machine needs at least one test for an invalid transition",
+        "confidence": "MEDIUM"
+      },
+      "PRODUCTION_EVIDENCE": {
+        "score": 1,
+        "evidence": "operational-readiness.json dora.mttrHours=null — MTTR cannot be measured because no production incidents have occurred because there is no production system; the chaos response is theoretically designed but empirically untested",
+        "improvement": "+2: Conduct a chaos exercise: deploy to staging, deliberately kill the DB connection mid-session, measure actual recovery time, and document it as the first MTTR data point",
+        "confidence": "HIGH"
+      },
+      "OPERATIONAL_READINESS": {
+        "score": 2,
+        "evidence": "operational-readiness.json prr: runbooks=false, incidentResponse=false — when a node dies mid-migration, there is no documented recovery procedure and no incident response process to invoke",
+        "improvement": "+2: Write a runbook specifically for 'DB migration fails mid-execution': how to detect it (what log lines indicate partial migration), how to validate state (what SQL query confirms partial application), and how to complete or rollback manually",
+        "confidence": "HIGH"
+      },
+      "SECURITY_POSTURE": {
+        "score": 4,
+        "evidence": "dynamic-testing.json testQuality: packages/db/src/__tests__/migrations.test.ts: usesRealIO=true, testsErrors=true — the DB migration test uses real IO and tests errors; this is the only chaos-adjacent test in the suite that exercises a real failure path",
+        "improvement": "+2: Extend the migration test to include a mid-migration kill scenario: open a transaction, apply half the schema changes, rollback, and assert the schema is at the pre-migration version",
+        "confidence": "MEDIUM"
+      },
+      "DOCUMENTATION": {
+        "score": 2,
+        "evidence": "operational-readiness.json prr: runbooks=false, runbooksEvidence='No files matching *runbook*, *playbook*, or *ops* found in docs/' — there are zero runbooks; if a node dies mid-migration, no documented recovery path exists",
+        "improvement": "+2: Write a minimal ops guide covering the three most likely failure scenarios: DB migration failure, provider API outage, and vault unlock failure — even a single markdown file per scenario is better than nothing",
+        "confidence": "HIGH"
+      },
+      "FAILURE_HANDLING": {
+        "score": 5,
+        "evidence": "operational-readiness.json prr.rollback=true, rollbackEvidence includes transaction.ts and db/client.ts — rollback code exists in the codebase; WAL mode in SQLite provides atomicity for individual transactions",
+        "improvement": "+2: Verify that transaction.ts wraps all multi-step DB operations atomically and that a mid-operation process kill (SIGKILL) leaves the database in a consistent state on the next startup — test this explicitly",
+        "confidence": "MEDIUM"
+      },
+      "RESILIENCE": {
+        "score": 3,
+        "evidence": "dynamic-testing.json testQuality: packages/core/src/__tests__/kairos-br-loop.test.ts: testsErrors=false, usesMocks=false — the KAIROS-BR loop test does not test error conditions; a long-running background loop that cannot handle errors is a reliability liability",
+        "improvement": "+2: Add error injection tests to kairos-br-loop.test.ts: BR provider returns 500, local model times out, loop receives SIGTERM — assert the loop shuts down cleanly without leaving orphaned processes or corrupted state",
+        "confidence": "HIGH"
+      },
+      "SCALE_READINESS": {
+        "score": 2,
+        "evidence": "dynamic-testing.json testResults: @brainst0rm/tools skipped=21 — the 21 skipped Docker sandbox tests are the only tests that would catch process isolation failures under load; they are skipped in CI",
+        "improvement": "+2: Enable the Docker tests in a dedicated CI job and add a test that runs 10 concurrent tool executions to verify the sandbox does not allow cross-session state leakage",
+        "confidence": "HIGH"
+      },
+      "ARCHITECTURE_QUALITY": {
+        "score": 5,
+        "evidence": "operational-readiness.json prr.rollback=true, rollbackEvidence includes changeset.ts — the ChangeSet pattern provides simulation before execution for destructive operations, which is a correct architectural choice for chaos resistance",
+        "improvement": "+2: Add a ChangeSet test that simulates a failed execution (the post-approval execute step throws) and asserts the ChangeSet transitions to a 'failed' state that is recoverable, not stuck in 'approved'",
+        "confidence": "MEDIUM"
+      },
+      "API_CONTRACT_INTEGRITY": {
+        "score": 3,
+        "evidence": "operational-readiness.json prr.healthEndpoints=true, healthEndpointsEvidence includes 5 files — health endpoints exist, but operational-readiness.json shows no monitoring of health endpoint response time or failure rate; health check exists but is not alarmed",
+        "improvement": "+2: Add an alert rule in monitoring-manifest.json that fires when GET /health returns non-200 for more than 60 seconds, and link it to the ops runbook",
+        "confidence": "MEDIUM"
+      },
+      "DEPENDENCY_HEALTH": {
+        "score": 5,
+        "evidence": "operational-readiness.json dora.changeFailureRate.trueReverts=0 — zero true reverts in 788 commits; no dependency upgrade has caused a rollback; dependency changes have been stable",
+        "improvement": "+2: This metric is positive but incomplete — add a CI step that tests the full suite against the latest minor version of each direct dependency to catch breaking changes before they reach main",
+        "confidence": "MEDIUM"
+      },
+      "SHIP_READINESS": {
+        "score": 2,
+        "evidence": "operational-readiness.json: runbooks=false, onCall=false, incidentResponse=false, dashboards=false, slosDefined=false, mttrHours=null — if this system were deployed today and a node died mid-migration, there is no documented response, no on-call rotation, no dashboard to observe the failure, and no measured MTTR to set expectations",
+        "improvement": "+2: Establish the minimum operational floor before any production deployment: one runbook, one dashboard, one SLO with an alert, and one chaos test with a measured recovery time",
+        "confidence": "HIGH"
+      }
+    },
+    "overall": "Rollback capability is wired in three places (transaction.ts, db/client.ts, changeset.ts) and the DB migration test uses real IO with error coverage — these are the factual positives. However, 37 of 46 test files skip error conditions, no test simulates a mid-migration kill and verifies recovery, the agent loop integration test has no error paths, the KAIROS-BR loop test has no error paths, 21 Docker sandbox tests are skipped, runbooks are absent, on-call tooling is absent, MTTR is null, and there are no chaos exercises on record. Kill a node mid-migration and recovery depends entirely on SQLite WAL atomicity, which is correct but untested under adversarial conditions.",
+    "top3Risks": [
+      "No mid-migration kill test exists — SQLite WAL mode provides transaction atomicity but no test verifies that a SIGKILL mid-migration leaves the database recoverable; this is an assumption, not a verified property",
+      "37 of 46 test files have testsErrors=false — the failure surface of the system is empirically unmapped; under chaos conditions (network partition, provider timeout, disk full), behavior is undocumented and untested",
+      "Zero runbooks and no on-call tooling — a real failure event requires human judgment with no documented procedure; recovery time is bounded only by the knowledge of whoever happens to be available"
+    ],
+    "top3Strengths": [
+      "Rollback wired in three locations (transaction.ts, db/client.ts, changeset.ts) with SQLite WAL mode — the atomicity primitives for recovery are present in the codebase",
+      "DB migration test with usesRealIO=true and testsErrors=true is the only test in the suite that exercises a real failure path in the data layer — it is the correct model for chaos testing",
+      "ChangeSet simulation-before-execution pattern means destructive operations have a pre-execution check by design — the most dangerous actions require approval before execution"
+    ],
+    "ifIHadOneWeek": "Day 1: Write the mid-migration kill test: start a DB transaction, apply half the schema, send SIGKILL to the test process, restart, assert schema is at the pre-migration version. Day 2: Add error-path tests to loop.integration.test.ts covering provider 503, tool crash, and SIGTERM. Day 3: Write the ops runbook for DB migration failure: detection SQL query, validation steps, rollback command. Day 4: Add error injection to kairos-br-loop.test.ts: provider timeout and SIGTERM shutdown. Day 5: Enable Docker tests in a dedicated CI job and add a 10-concurrent-tool sandbox isolation test."
+  }
+]

@@ -1,0 +1,632 @@
+[
+  {
+    "agentId": 1,
+    "agentName": "Optimist",
+    "agentPersona": "shortest path to working?",
+    "primaryEvidence": "Stream A (static-analysis.json)",
+    "secondaryEvidence": "Stream B test results only",
+    "dimensions": {
+      "CODE_COMPLETENESS": {
+        "score": 7,
+        "rationale": "77,909 src lines across 26 packages with 12 verified wired call sites confirm the critical path from CLI entry through core agent loop is assembled. 9 packages have 0 test lines (gateway, ingest, onboard, orchestrator, plugin-sdk, projects, scheduler, server, vscode) which means those surfaces are present but unverified.",
+        "evidenceCitation": "static-analysis.json codeInventory: 26 packages totaling 77,909 src lines; wiringAudit shows 12/12 listed functions wired to real call sites",
+        "improvementPlus2": "Add at minimum smoke-test entry points for the 9 zero-test packages so code presence can be distinguished from working code",
+        "confidence": "HIGH"
+      },
+      "WIRING": {
+        "score": 8,
+        "rationale": "All 12 audited wiring points resolve to concrete call sites in brainstorm.ts or loop.ts. The dependency graph shows shared (importedByCount=106), tools (31), and db (17) as the load-bearing hubs. plugin-sdk, sdk, and vscode have importedByCount=0 but are leaf packages, not hubs — acceptable for leaf nodes.",
+        "evidenceCitation": "static-analysis.json wiringAudit: all 12 entries show wired=true with specific line numbers; dependencyGraph confirms shared.importedByCount=106",
+        "improvementPlus2": "Instrument a runtime wiring probe at startup that confirms each registered tool resolves to a handler, surfacing dead registrations before first user interaction",
+        "confidence": "HIGH"
+      },
+      "TEST_REALITY": {
+        "score": 6,
+        "rationale": "661 tests pass with 0 failures. The test quality data shows 0 mock usage across most files — tests either hit real code paths or use real I/O. Only 2 files use mocks. However, 21 tests are skipped in tools package, 9 packages have 0 test files, and no coverage data is enabled.",
+        "evidenceCitation": "dynamic-testing.json totals: passed=661, failed=0, skipped=21; testQuality shows usesMocks=false for 43 of 45 files; coverageEnabled=false",
+        "improvementPlus2": "Enable coverage reporting (c8 or v8) in vitest config to expose the true untested surface; target 70% line coverage on packages/core as first milestone",
+        "confidence": "HIGH"
+      },
+      "PROPERTY_CORRECTNESS": {
+        "score": 3,
+        "rationale": "propertyBasedTests=0 and mutationTestingAvailable=false per dynamic-testing.json. Zero generative testing across 26 packages. Behavioral invariants (router always picks a model, cost tracker never goes negative, vault never decrypts with wrong key) are unverified by generative techniques.",
+        "evidenceCitation": "dynamic-testing.json: propertyBasedTests=0, mutationTestingAvailable=false",
+        "improvementPlus2": "Add fast-check property tests for the router classification logic and vault crypto round-trips — these are high-value, low-cost targets with clear invariants",
+        "confidence": "HIGH"
+      },
+      "PRODUCTION_EVIDENCE": {
+        "score": 2,
+        "rationale": "No running system. The baseline explicitly states no running system. There are no load test results, no production logs, no performance benchmarks, and no real-traffic traces in any evidence stream available to this agent.",
+        "evidenceCitation": "Baseline: 'No running system'; static-analysis.json contains no runtime metrics or performance data",
+        "improvementPlus2": "Run the CLI in a controlled environment for 30 minutes with a scripted workload and capture pino log output as the minimum production evidence artifact",
+        "confidence": "HIGH"
+      },
+      "OPERATIONAL_READINESS": {
+        "score": 4,
+        "rationale": "UNVERIFIABLE from assigned evidence streams. Stream C not assigned to this agent. From Stream A alone: 0 npm vulnerabilities is a positive signal. Wiring confirms the binary can be assembled. No runbook, on-call, or deployment evidence is present in Stream A.",
+        "evidenceCitation": "static-analysis.json vulnerabilities: total=0, critical=0, high=0, moderate=0, low=0",
+        "improvementPlus2": "UNVERIFIABLE from assigned evidence — score reflects 0 vuln signal only",
+        "confidence": "LOW"
+      },
+      "SECURITY_POSTURE": {
+        "score": 4,
+        "rationale": "UNVERIFIABLE from assigned evidence. Stream E not assigned to this agent. Stream A confirms 0 npm vulnerabilities. Score held at mid-range as absence of vuln data is positive but security middleware reality is unconfirmed from assigned streams.",
+        "evidenceCitation": "static-analysis.json vulnerabilities: total=0 — the only security signal in Stream A",
+        "improvementPlus2": "UNVERIFIABLE from assigned evidence — agent cannot score security posture without Stream E",
+        "confidence": "LOW"
+      },
+      "DOCUMENTATION": {
+        "score": 5,
+        "rationale": "CLAUDE.md and architecture descriptions confirm docs exist. The docgen package (625 src lines, 0 tests, importedByCount=2) exists as a dedicated documentation generator. However, 9 packages have 0 test lines and there is no evidence of API reference docs generated from source.",
+        "evidenceCitation": "static-analysis.json codeInventory: docgen package has 625 srcLines; dependencyGraph: docgen.importedByCount=2",
+        "improvementPlus2": "Wire docgen into the build pipeline to auto-generate API reference markdown from TypeScript source on every build",
+        "confidence": "MEDIUM"
+      },
+      "FAILURE_HANDLING": {
+        "score": 6,
+        "rationale": "Of 45 sampled test files, 14 have testsErrors=true — error paths are explicitly verified in shared/errors, hooks/manager, router/router, workflow/confidence, db/migrations, vault/crypto, godmode/signing, config/schema, tools/gh-tools, cli/ipc/integration, cli/ipc/validation, core/middleware-pipeline, shared/telemetry. The majority of packages have no error tests.",
+        "evidenceCitation": "dynamic-testing.json testQuality: 14 of 45 files show testsErrors=true; packages with 0 test files have no error coverage at all",
+        "improvementPlus2": "Add error path tests to the 3 packages with highest srcLines and no error tests: core (22127 lines, partial), cli (12776 lines, IPC errors covered but agent loop errors not), tools (8271 lines)",
+        "confidence": "MEDIUM"
+      },
+      "RESILIENCE": {
+        "score": 3,
+        "rationale": "UNVERIFIABLE from assigned evidence. No chaos tests, no retry logic evidence, no circuit breaker evidence visible in Stream A. The dead code list in tools package includes processKillTool and undoTool which are exported but unused — suggesting resilience mechanisms were built but not wired.",
+        "evidenceCitation": "static-analysis.json deadCode tools package: undoTool and processKillTool are unused exports — built but not consumed",
+        "improvementPlus2": "Wire undoTool and processKillTool into the active tool set; these are pre-built resilience primitives sitting unused",
+        "confidence": "LOW"
+      },
+      "SCALE_READINESS": {
+        "score": 3,
+        "rationale": "UNVERIFIABLE from assigned evidence. No load test data in Stream A. Dead router strategies (costFirstStrategy, qualityFirstStrategy, createRuleBasedStrategy, createCombinedStrategy, capabilityStrategy) are all unused exports — 5 of 6 routing strategies in the router package are dead code.",
+        "evidenceCitation": "static-analysis.json deadCode router package: 5 strategy functions are unused exports — costFirstStrategy, qualityFirstStrategy, createRuleBasedStrategy, createCombinedStrategy, capabilityStrategy",
+        "improvementPlus2": "Remove or activate the 5 dead router strategies; having 83% of a package's public API be unused is a maintenance liability that blocks confident scaling",
+        "confidence": "LOW"
+      },
+      "ARCHITECTURE_QUALITY": {
+        "score": 6,
+        "rationale": "UNVERIFIABLE from assigned evidence in full. From Stream A: the dependency graph shows a clear hub-and-spoke pattern with shared as the universal dependency (importedByCount=106). Dead code exists in router (5 strategies), tools (17 unused exports), and core (7 unused exports).",
+        "evidenceCitation": "static-analysis.json deadCode: router has 5 unused strategy exports, tools has 17 unused exports, core has 7 unused exports",
+        "improvementPlus2": "Conduct a dead-code elimination pass: remove or mark internal the 29 unused exports across core, tools, and router",
+        "confidence": "MEDIUM"
+      },
+      "API_CONTRACT_INTEGRITY": {
+        "score": 5,
+        "rationale": "UNVERIFIABLE from assigned evidence. Stream F not assigned. From Stream A: godmode package has BaseConnector as its only dead export — the connector framework may have partial API surface.",
+        "evidenceCitation": "static-analysis.json deadCode godmode package: BaseConnector is an unused export",
+        "improvementPlus2": "UNVERIFIABLE from assigned evidence — full API contract assessment requires Stream F",
+        "confidence": "LOW"
+      },
+      "DEPENDENCY_HEALTH": {
+        "score": 9,
+        "rationale": "0 vulnerabilities total across all severity levels. This is the cleanest possible npm audit result. No critical, high, moderate, or low findings. Combined with 26 packages in a Turborepo workspace, this represents active dependency hygiene.",
+        "evidenceCitation": "static-analysis.json vulnerabilities: {total:0, critical:0, high:0, moderate:0, low:0}",
+        "improvementPlus2": "Add a Dependabot or Renovate configuration to maintain this 0-vuln status automatically rather than relying on manual audit runs",
+        "confidence": "HIGH"
+      },
+      "SHIP_READINESS": {
+        "score": 5,
+        "rationale": "The CLI binary path exists, 12 wiring points are confirmed, 661 tests pass, 0 vulns. The shortest path to a working artifact is clear. However, 9 packages are untested, 29 exports are dead, and there is no running system evidence. A developer can build and run the CLI today but cannot verify it handles real workloads.",
+        "evidenceCitation": "static-analysis.json wiringAudit: all 12 functions wired; vulnerabilities: total=0; dynamic-testing.json: passed=661, failed=0",
+        "improvementPlus2": "Create an integration smoke test that invokes the CLI with a real prompt against a mocked provider and verifies a structured response — this bridges the gap between unit tests and production evidence",
+        "confidence": "MEDIUM"
+      }
+    },
+    "overall": "The codebase assembles: 26 packages, 77,909 lines, 12 verified wiring points, 661 passing tests, 0 npm vulnerabilities. The critical path from CLI entry through core agent loop is confirmed wired. The primary gap visible from Stream A is that 29 public exports across core/tools/router are dead code (never imported), 9 packages have 0 test files, and all 5 non-default routing strategies are unused exports despite being the stated differentiating feature of the router package. There is no running system, no coverage data, and no property-based tests. The binary can be built and invoked today.",
+    "top3Risks": [
+      "5 of 6 router strategies are dead exports — the routing differentiator is untested in production and may be non-functional",
+      "9 packages with 0 test lines means ingest, onboard, orchestrator, scheduler, server, gateway, projects, plugin-sdk, and vscode ship with zero behavioral verification",
+      "No property-based tests or mutation testing means the 661 passing tests confirm happy paths only — adversarial inputs are unverified"
+    ],
+    "top3Strengths": [
+      "0 npm vulnerabilities across 26 packages — dependency hygiene is current",
+      "12 audited wiring points all confirmed with specific file:line citations — the assembly is real, not speculative",
+      "661 tests pass with 0 failures and only 2 files use mocks — test fidelity is higher than typical for a project at this scale"
+    ],
+    "ifIHadOneWeek": "Day 1: Enable vitest coverage and measure actual line coverage. Days 2-3: Add smoke tests for the 5 highest-risk zero-test packages (server, orchestrator, scheduler, ingest, gateway). Day 4: Wire or delete the 5 dead router strategies — they cannot be evaluated in their current state. Day 5: Write 10 property-based tests for router classification and vault crypto. Goal: establish a coverage baseline and eliminate the dead-code ambiguity in the router package."
+  },
+  {
+    "agentId": 2,
+    "agentName": "Pessimist",
+    "agentPersona": "what fails at 3am?",
+    "primaryEvidence": "Stream B (dynamic-testing.json)",
+    "secondaryEvidence": "Stream E (security.json)",
+    "dimensions": {
+      "CODE_COMPLETENESS": {
+        "score": 4,
+        "rationale": "661 tests pass but 21 are skipped in the tools package with no documented reason. 9 packages (gateway, plugin-sdk, projects, scheduler, orchestrator, server, ingest, onboard, vscode) have 0 test files, 0 passed, 0 failed. gateway (764 src lines) handles LLM API billing; its 0 test files is a 3am failure point.",
+        "evidenceCitation": "dynamic-testing.json: brainst0rm/gateway files=0, passed=0; brainst0rm/scheduler files=0, passed=0; brainst0rm/server files=0, passed=0 — three operationally critical packages with zero test coverage",
+        "improvementPlus2": "Gateway and server are the two externally-facing packages that will fail at runtime without verification — add integration tests for both before any production use",
+        "confidence": "HIGH"
+      },
+      "WIRING": {
+        "score": 4,
+        "rationale": "Stream B test results show no integration tests that verify end-to-end call chains. The kairos-integration.test.ts and loop.integration.test.ts files are labeled isUnitTest=true despite the 'integration' filename — suggesting integration tests exist in name but not in scope. No test traverses CLI -> core -> provider -> response.",
+        "evidenceCitation": "dynamic-testing.json testQuality: loop.integration.test.ts isUnitTest=true, kairos-integration.test.ts isUnitTest=true — labeled integration but scoped as unit tests",
+        "improvementPlus2": "Create actual end-to-end integration tests that start the CLI process, send a prompt, and verify a streamed response — currently no test crosses process boundaries",
+        "confidence": "MEDIUM"
+      },
+      "TEST_REALITY": {
+        "score": 5,
+        "rationale": "coverageEnabled=false means we cannot verify what percentage of code the 661 tests actually exercise. 43 of 45 test files use no mocks and no real I/O — this means they run against in-memory implementations. For packages that do real work (file I/O, network, subprocess), in-memory tests do not catch real failures. The 21 skipped tools tests indicate known-broken behavior silently bypassed.",
+        "evidenceCitation": "dynamic-testing.json: coverageEnabled=false; brainst0rm/tools skipped=21; testQuality shell-sandbox.test.ts and gh-integration.test.ts both show usesRealIO=false despite testing shell/GitHub functionality",
+        "improvementPlus2": "Unskip the 21 tools tests or document why they are skipped with a GitHub issue — silent skips in a tools package are undocumented broken functionality",
+        "confidence": "HIGH"
+      },
+      "PROPERTY_CORRECTNESS": {
+        "score": 2,
+        "rationale": "propertyBasedTests=0, mutationTestingAvailable=false. Zero generative testing across 26 packages. The security-sensitive packages (vault, godmode) have test files that test specific known inputs but provide no evidence that invariants hold across the full input space.",
+        "evidenceCitation": "dynamic-testing.json: propertyBasedTests=0, mutationTestingAvailable=false — confirmed absence, not unknown",
+        "improvementPlus2": "vault/crypto.test.ts is the highest-value target for property testing: add a round-trip property (encrypt then decrypt always returns original plaintext for any string) using fast-check",
+        "confidence": "HIGH"
+      },
+      "PRODUCTION_EVIDENCE": {
+        "score": 1,
+        "rationale": "No running system per baseline. Dynamic testing shows no load tests, no performance benchmarks, no latency measurements. The vault test takes 17,730ms — 30x slower than any other package test (next slowest is core at 4,660ms). This timing anomaly is unexplained and could indicate a blocking I/O issue, a slow Argon2id KDF, or a test hanging intermittently.",
+        "evidenceCitation": "dynamic-testing.json: brainst0rm/vault durationMs=17730 vs brainst0rm/core durationMs=4660 — vault tests are 3.8x slower than the next-slowest package with no explanation in evidence",
+        "improvementPlus2": "Investigate the 17,730ms vault test duration — if it is Argon2id KDF time, reduce test parameters; if it is I/O blocking, fix the blocking call; this will be a production startup bottleneck",
+        "confidence": "HIGH"
+      },
+      "OPERATIONAL_READINESS": {
+        "score": 3,
+        "rationale": "UNVERIFIABLE from primary evidence. From Stream E: no runbooks, no on-call tooling, no incident response procedures were found. Health endpoints exist but there is no evidence they are monitored or that alerts page anyone. The monitoring-manifest.json defines 11 monitors but these are setup instructions, not deployed monitors.",
+        "evidenceCitation": "security.json owaspFindings A05 finding: 'SERVER EXPOSED WITHOUT AUTH' warning logged at startup if jwtSecret is empty — this is a configuration failure mode with no automated remediation",
+        "improvementPlus2": "Create a startup validation that blocks server boot (not just warns) when jwtSecret is empty — a warning that gets ignored at 3am is not a control",
+        "confidence": "MEDIUM"
+      },
+      "SECURITY_POSTURE": {
+        "score": 7,
+        "rationale": "Stream E shows 22 security middlewares registered, OWASP findings are mostly 'none' or 'mitigated'. vault uses AES-256-GCM with Argon2id KDF at OWASP recommended parameters. JWT uses timingSafeEqual. egress-monitor blocks suspicious shell patterns. The primary remaining risk: the jwtSecret empty-at-startup warning (A05) is a log message not a hard failure. No secrets found in git.",
+        "evidenceCitation": "security.json vaultSystem: 'AES-256-GCM (authenticated encryption with 12-byte random nonce and 16-byte auth tag)'; owaspFindings A07: JWT uses timingSafeEqual, enforces exp claim, rejects non-HS256",
+        "improvementPlus2": "Upgrade the jwtSecret empty-at-startup warning to a process.exit(1) — the current 'SERVER EXPOSED WITHOUT AUTH' warning will be missed in production logs",
+        "confidence": "HIGH"
+      },
+      "DOCUMENTATION": {
+        "score": 3,
+        "rationale": "UNVERIFIABLE from primary evidence. No test in Stream B verifies documentation accuracy. From Stream E: security middleware purposes are documented inline, but no test verifies that documented behavior matches actual middleware behavior. The 14 security middlewares could behave differently from their stated purposes.",
+        "evidenceCitation": "dynamic-testing.json: no documentation validation tests found in any of the 45 test files; 0 test files use real I/O to verify documented CLI behavior",
+        "improvementPlus2": "UNVERIFIABLE from assigned evidence",
+        "confidence": "LOW"
+      },
+      "FAILURE_HANDLING": {
+        "score": 5,
+        "rationale": "14 of 45 test files test error paths — only 31%. The vault/crypto.test.ts does test errors (testsErrors=true), critical for an encryption package. The memory-manager.test.ts uses real I/O but does not test errors — file permission failures, disk-full scenarios, and concurrent access are untested. db/migrations.test.ts does test errors which is positive.",
+        "evidenceCitation": "dynamic-testing.json testQuality: memory-manager.test.ts usesRealIO=true, testsErrors=false — real file I/O tested but failure paths skipped; 31 of 45 files have testsErrors=false",
+        "improvementPlus2": "Add error tests to memory-manager.test.ts specifically for permission denied and disk-full scenarios — these are the actual 3am failures for a file-backed memory system",
+        "confidence": "HIGH"
+      },
+      "RESILIENCE": {
+        "score": 3,
+        "rationale": "The 21 skipped tests in the tools package are the most direct evidence of known-broken resilience. No test in Stream B verifies retry logic, circuit breaking, or graceful degradation under provider failures. The kairos-br-loop.test.ts exists but usesRealIO=false — it cannot catch actual LLM provider timeouts.",
+        "evidenceCitation": "dynamic-testing.json: brainst0rm/tools skipped=21 — 21 tests that were written but are not running, in the package most responsible for resilience (shell, git, GitHub, filesystem operations)",
+        "improvementPlus2": "Unskip or delete the 21 tools tests — their current state (written but not running) is the worst possible outcome, providing false confidence without real verification",
+        "confidence": "HIGH"
+      },
+      "SCALE_READINESS": {
+        "score": 2,
+        "rationale": "UNVERIFIABLE from assigned evidence. No load tests, no concurrency tests, no throughput measurements in Stream B. The vault's 17,730ms test time suggests sequential/blocking behavior. No test exercises concurrent requests.",
+        "evidenceCitation": "dynamic-testing.json: brainst0rm/vault durationMs=17730 with files=1 — a single test file taking 17+ seconds suggests blocking operations or intentionally slow KDF that will impact concurrent users",
+        "improvementPlus2": "Benchmark Argon2id KDF parameters against target startup time — if the vault unlocks on every request rather than once at startup, 17 seconds becomes a request-time bottleneck",
+        "confidence": "LOW"
+      },
+      "ARCHITECTURE_QUALITY": {
+        "score": 4,
+        "rationale": "UNVERIFIABLE from assigned evidence in full. From Stream B: the test package distribution reveals architecture imbalance — core has 174 tests (11 files) but orchestrator has 0. The orchestrator is a 9-phase pipeline engine with no tests whatsoever. This is an untestable or untested core behavior path.",
+        "evidenceCitation": "dynamic-testing.json: brainst0rm/orchestrator files=0, passed=0 — a 9-phase pipeline engine with zero tests is either not used or a maintenance liability",
+        "improvementPlus2": "UNVERIFIABLE from assigned evidence — architecture quality requires Stream F",
+        "confidence": "LOW"
+      },
+      "API_CONTRACT_INTEGRITY": {
+        "score": 4,
+        "rationale": "The IPC integration and validation tests exist and both have testsErrors=true — meaning the IPC contract is partially tested including error cases. However isUnitTest=false for both and usesRealIO=false means no actual process-boundary IPC is exercised.",
+        "evidenceCitation": "dynamic-testing.json testQuality: cli/ipc/integration.test.ts isUnitTest=false, usesRealIO=false, testsErrors=true — IPC integration test that uses no real I/O is not an integration test",
+        "improvementPlus2": "Convert ipc/integration.test.ts to spawn an actual CLI process and send NDJSON over a real pipe — the current test cannot catch serialization bugs or process boundary failures",
+        "confidence": "HIGH"
+      },
+      "DEPENDENCY_HEALTH": {
+        "score": 7,
+        "rationale": "0 npm vulnerabilities confirmed in Stream E. No hardcoded secrets found. gitignoreCoversEnv=true. The dependency health is clean from a vulnerability standpoint. The 17,730ms vault test may indicate a known-heavy dependency (Argon2id via noble/hashes) that has latency implications.",
+        "evidenceCitation": "security.json dependencyAudit: total=0, critical=0; secretScanning: hardcodedSecrets=[], envFilesInGit=[]",
+        "improvementPlus2": "Verify that noble/hashes Argon2id is not being re-initialized per vault operation — the 17 second test time suggests KDF parameters may need a test-only configuration to keep CI under 30 seconds",
+        "confidence": "HIGH"
+      },
+      "SHIP_READINESS": {
+        "score": 3,
+        "rationale": "The 3am failure modes are: vault taking 17 seconds (blocking startup?), 21 silently skipped tools tests (unknown breakage), 9 packages with 0 tests (gateway, server, scheduler untested), no error tests on memory-manager (real I/O, no error coverage), and the jwtSecret empty warning that does not stop the server. Any of these can cause a silent production failure.",
+        "evidenceCitation": "dynamic-testing.json: vault durationMs=17730, tools skipped=21, 9 packages with files=0; security.json: jwtSecret empty generates warning not fatal error",
+        "improvementPlus2": "Before any production deployment, resolve the vault timing anomaly, unskip the tools tests, and convert the jwtSecret warning to a fatal startup check",
+        "confidence": "HIGH"
+      }
+    },
+    "overall": "Three categories of failure risk are visible from Stream B and E. First, known-broken tests: 21 tests are skipped in the tools package with no documented reason and cannot be evaluated. Second, zero-coverage critical packages: gateway (billing), server (HTTP), scheduler (automation), and orchestrator (9-phase pipeline) each have 0 test files. Third, timing anomaly: vault tests take 17,730ms — 3.8x the next-slowest package — indicating blocking behavior that will manifest in production. The security posture is the strongest dimension: AES-256-GCM vault, timingSafeEqual JWT, 22 registered security middlewares, and 0 secrets in git.",
+    "top3Risks": [
+      "17,730ms vault test time indicates blocking KDF or I/O that will either slow startup or block request threads in production",
+      "21 silently skipped tests in the tools package — the package responsible for shell execution, git operations, and filesystem access — represent unknown breakage",
+      "gateway (billing), server (HTTP), and scheduler (cron) have 0 test files; production failures in these packages will be discovered by users, not by tests"
+    ],
+    "top3Strengths": [
+      "0 npm vulnerabilities and 0 hardcoded secrets in git — the dependency and secrets hygiene is clean",
+      "14 of 45 test files test error paths including vault/crypto.test.ts, db/migrations.test.ts, and router/router.test.ts — error handling is partially verified in the most critical packages",
+      "22 security middlewares registered with documented purposes including egress-monitor, trust-propagation, and approval-friction — the security middleware stack is the most verified part of the system"
+    ],
+    "ifIHadOneWeek": "Day 1: Investigate the 17,730ms vault test — profile Argon2id parameters and determine if vault.unlock() is being called per-test or per-operation. Day 2: Unskip the 21 tools tests — each one represents a behavior that was written but is not running. Day 3-4: Write minimum viable tests for server (health endpoint responds) and gateway (API call returns structured response). Day 5: Upgrade jwtSecret empty check from warning to process.exit(1) and add a pre-flight check script that validates all required environment variables before server start."
+  },
+  {
+    "agentId": 3,
+    "agentName": "Architect",
+    "agentPersona": "survive 5 years of growth?",
+    "primaryEvidence": "Stream F (architecture.json)",
+    "secondaryEvidence": "Stream A (static-analysis.json)",
+    "dimensions": {
+      "CODE_COMPLETENESS": {
+        "score": 6,
+        "rationale": "Architecture.json identifies 6 layers (Foundation, Infrastructure, Core, Domain, Application, Apps) with 26 packages assigned. The coupling data shows shared (ca=24, instability=0.00) as a correctly stable dependency sink. However, 3 cross-layer violations exist: mcp imports tools (Infrastructure->Domain), core imports agents (Core->Domain), core imports tools (Core->Domain). These violations mean Core cannot be evolved without Domain awareness.",
+        "evidenceCitation": "architecture.json layers: crossLayerViolations in Infrastructure layer (mcp->tools) and Core layer (core->agents, core->tools) — Core layer has 2 upward dependency violations",
+        "improvementPlus2": "Invert the core->agents and core->tools dependencies by introducing interface packages or abstract registries that Core depends on, with Domain implementing them",
+        "confidence": "HIGH"
+      },
+      "WIRING": {
+        "score": 6,
+        "rationale": "The dependency graph from Stream A shows real consumers for most packages. The architecture coupling data reveals orchestrator (ca=0, instability=1.00), hooks (ca=0, instability=1.00), and scheduler (ca=0, instability=1.00) are pure leaf nodes — nothing depends on them as static imports.",
+        "evidenceCitation": "architecture.json coupling: orchestrator ca=0 (nothing imports it), hooks ca=0 (nothing imports it), scheduler ca=0 (nothing imports it) — three Domain-layer packages that exist as sinks with no consumers",
+        "improvementPlus2": "Verify that orchestrator, hooks, and scheduler are consumed at runtime through dynamic registration rather than static imports — if they are not consumed, remove them",
+        "confidence": "HIGH"
+      },
+      "TEST_REALITY": {
+        "score": 4,
+        "rationale": "UNVERIFIABLE from primary evidence. Architecture.json does not contain test data. From Stream A secondary evidence: the test/src ratio for the highest-instability packages reveals the risk — workflow (instability=0.89, 245 test lines / 1743 src lines = 14%), sdk (instability=1.00, 0/217 = 0%). High-instability packages with low test ratios will break under refactoring.",
+        "evidenceCitation": "architecture.json coupling: workflow instability=0.89; static-analysis.json: workflow testLines=245, srcLines=1743 = 14% test ratio; sdk srcLines=217, testLines=0",
+        "improvementPlus2": "Prioritize test coverage for high-instability packages — workflow and sdk change most frequently and have the lowest test safety nets",
+        "confidence": "MEDIUM"
+      },
+      "PROPERTY_CORRECTNESS": {
+        "score": 2,
+        "rationale": "UNVERIFIABLE from primary evidence. Architecture.json contains no test quality data. No state machine tests are visible in any evidence — the 8 state machines documented (DaemonController, WorkflowRun, WorkflowStep, OrchestrationRun, OrchestrationTask, ChangeSet, ScheduledTask, TaskRun) have no property-based verification of state transition invariants.",
+        "evidenceCitation": "architecture.json stateMachines: 8 state machines with defined states and transitions but zero property tests verifying that invalid transitions are rejected or that terminal states are truly terminal",
+        "improvementPlus2": "Write state machine property tests for ChangeSet (pending->approved->executed cannot be reversed) and WorkflowRun (failed terminal state cannot transition to running)",
+        "confidence": "LOW"
+      },
+      "PRODUCTION_EVIDENCE": {
+        "score": 1,
+        "rationale": "UNVERIFIABLE from assigned evidence. No running system. Architecture.json contains static structure only. The scalability bottlenecks section documents known problems (synchronous I/O, unbounded queues) but contains no measurements of their actual impact.",
+        "evidenceCitation": "architecture.json scalabilityBottlenecks: 5 synchronous_io locations documented, 2 unbounded queue/push locations, 1 sqlite_single_writer — these are architectural concerns, not measurements",
+        "improvementPlus2": "UNVERIFIABLE from assigned evidence — production evidence requires runtime data",
+        "confidence": "LOW"
+      },
+      "OPERATIONAL_READINESS": {
+        "score": 3,
+        "rationale": "UNVERIFIABLE from primary evidence. Architecture.json contains no operational data. From Stream A secondary: the 26-package monorepo has no evidence of deployment manifests, Dockerfile, or orchestration config in the static analysis inventory.",
+        "evidenceCitation": "architecture.json: no deployment configuration documented; static-analysis.json codeInventory: no ops/* or deploy/* packages",
+        "improvementPlus2": "UNVERIFIABLE from assigned evidence",
+        "confidence": "LOW"
+      },
+      "SECURITY_POSTURE": {
+        "score": 4,
+        "rationale": "UNVERIFIABLE from primary evidence. Architecture.json references security middleware in the Core layer but does not assess their correctness. The cross-layer violations (core->tools, core->agents) are a security concern: if Core is compromised, it can directly access Domain-layer tools without going through security controls.",
+        "evidenceCitation": "architecture.json layers.Core.crossLayerViolations: core imports brainst0rm/tools and brainst0rm/agents directly — bypassing infrastructure-layer security middleware for internal tool calls",
+        "improvementPlus2": "Audit whether direct core->tools imports bypass the security middleware pipeline — if internal tool calls do not go through egress-monitor and approval-friction, that is a privilege escalation path",
+        "confidence": "MEDIUM"
+      },
+      "DOCUMENTATION": {
+        "score": 5,
+        "rationale": "The IPC protocol is documented (23 methods, NDJSON over stdin/stdout). The God Mode contract has 5 endpoints documented in both manifest.ts and platform-contract-v1.md. The state machines have defined states and transition counts. However, no OpenAPI, GraphQL, or gRPC schema files exist — API contracts are prose-only.",
+        "evidenceCitation": "architecture.json apiContracts: openapi=false, graphql=false, grpc=false — all API contracts are in-code comments or markdown, not machine-readable schema",
+        "improvementPlus2": "Generate an OpenAPI schema from the God Mode endpoint definitions in manifest.ts — this enables contract testing and client generation for product teams",
+        "confidence": "HIGH"
+      },
+      "FAILURE_HANDLING": {
+        "score": 5,
+        "rationale": "The ChangeSet state machine (pending->approved/rejected->executed) is the primary failure-handling mechanism for destructive actions. The WorkflowRun state machine has 'failed' and 'cancelled' terminal states. However, the DaemonController state machine uses 'isPaused flag alongside status string' — dual-state representation is a known source of inconsistency bugs under concurrent state transitions.",
+        "evidenceCitation": "architecture.json stateMachines DaemonController: 'isPaused flag used alongside status string' — two independent variables tracking the same semantic state is a race condition risk",
+        "improvementPlus2": "Refactor DaemonController to use status string exclusively, eliminating the isPaused boolean — dual-state tracking diverges under concurrency",
+        "confidence": "HIGH"
+      },
+      "RESILIENCE": {
+        "score": 3,
+        "rationale": "The unbounded task event queue (loop.ts:242) is the clearest resilience failure: a pure Array with .push() and no max-size cap will grow without bound under slow consumers. 170 unbounded .push() calls in core/src are documented. The sqlite_single_writer bottleneck means concurrent processes cannot write simultaneously.",
+        "evidenceCitation": "architecture.json scalabilityBottlenecks: 'taskEventQueue is an unbounded Array with .push(); no max-size cap' at loop.ts:242; '170 unbounded .push() calls across core/src identified'",
+        "improvementPlus2": "Cap the taskEventQueue at a configurable maximum (default 1000) and implement backpressure — drop or delay new events when the queue is full rather than growing memory unboundedly",
+        "confidence": "HIGH"
+      },
+      "SCALE_READINESS": {
+        "score": 3,
+        "rationale": "Five categories of scalability bottlenecks are documented: 5 synchronous I/O locations in memory operations and startup, 170 unbounded push calls, an unbounded event queue, and SQLite single-writer constraint. For a CLI tool used by one person these are acceptable. For any multi-user or daemon-mode scenario, synchronous memory.manager.ts reads will block event processing.",
+        "evidenceCitation": "architecture.json scalabilityBottlenecks: dream-runner.ts and manager.ts use readFileSync/writeFileSync in memory operations; db/client.ts is synchronous single-process SQLite with WAL mode only",
+        "improvementPlus2": "Convert dream-runner.ts and memory/manager.ts file operations to async — this is the highest-leverage single change for multi-session scale as it unblocks the event loop during memory operations",
+        "confidence": "HIGH"
+      },
+      "ARCHITECTURE_QUALITY": {
+        "score": 6,
+        "rationale": "The layering is intentional and mostly enforced. Foundation packages (shared: instability=0.00, config: instability=0.08, db: instability=0.08) are correctly stable. The 3 cross-layer violations are contained and documented. The 8 state machines are defined with explicit states. The main structural weakness is the Core layer's direct coupling to Domain (agents, tools) which means Core and Domain cannot be independently released.",
+        "evidenceCitation": "architecture.json coupling: shared instability=0.00, config instability=0.08, db instability=0.08 — Foundation layer correctly stable; crossLayerViolations: 3 violations documented",
+        "improvementPlus2": "Fix the core->agents violation first (lower impact): abstract the agent profile lookup behind an interface in shared or config, removing the Domain import from Core",
+        "confidence": "HIGH"
+      },
+      "API_CONTRACT_INTEGRITY": {
+        "score": 5,
+        "rationale": "23 IPC methods and 5 God Mode endpoints are documented. The God Mode contract source is dual-documented (manifest.ts + platform-contract-v1.md) which creates drift risk. openapi=false means no machine-readable contract exists. The IPC documentation source is 'inline comments' in handler.ts — inline comments are not versioned API contracts.",
+        "evidenceCitation": "architecture.json apiContracts: ipcDocumentationSource='packages/cli/src/ipc/handler.ts (inline comments)'; godModeContractSource='manifest.ts + docs/platform-contract-v1.md' — dual-source contract documentation",
+        "improvementPlus2": "Single-source the IPC contract: generate the inline handler.ts comments from a machine-readable schema file, ensuring documentation and implementation stay synchronized",
+        "confidence": "HIGH"
+      },
+      "DEPENDENCY_HEALTH": {
+        "score": 7,
+        "rationale": "From Stream A: 0 vulnerabilities. From Stream F coupling data: shared (ca=24) is the highest fan-in package. A breaking change in shared ripples to 24 dependents — and 106 import sites per Stream A. The coupling is structurally healthy but shared package scope needs monitoring.",
+        "evidenceCitation": "architecture.json coupling: shared ca=24, instability=0.00; static-analysis.json dependencyGraph: shared importedByCount=106 — a change to shared affects 106 import sites",
+        "improvementPlus2": "Audit the shared package for scope creep — 106 import sites for a package at instability=0.00 means any breaking change requires 106 site updates; split into shared/types and shared/utils to reduce coupling surface",
+        "confidence": "HIGH"
+      },
+      "SHIP_READINESS": {
+        "score": 4,
+        "rationale": "For a 5-year horizon: the 3 cross-layer violations will compound as each layer grows independently. The unbounded event queue will cause memory issues under sustained load. Synchronous file I/O in memory operations will block event processing at scale. The dual-state DaemonController will cause subtle bugs under concurrent state changes. These are not blockers today but become load-bearing technical debt within 6-12 months of active development.",
+        "evidenceCitation": "architecture.json scalabilityBottlenecks: 5 sync I/O locations documented as known issues; crossLayerViolations: 3 violations that prevent independent layer evolution",
+        "improvementPlus2": "Prioritize the 3 cross-layer violations and the unbounded event queue — these are the two architectural decisions that will require increasingly expensive refactors as the codebase grows",
+        "confidence": "HIGH"
+      }
+    },
+    "overall": "The architecture has a defined 6-layer structure with mostly correct instability gradients — Foundation packages are stable (instability 0.00-0.08), Application and leaf packages are correctly unstable (instability 0.88-1.00). Three cross-layer violations (mcp->tools, core->agents, core->tools) are documented and bounded. Eight state machines are defined with explicit state/transition counts. The critical 5-year risks are: the unbounded event queue in loop.ts (170 unbounded push calls, no backpressure), synchronous file I/O in memory operations blocking the event loop, DaemonController dual-state tracking (isPaused boolean + status string), and the shared package becoming a change-amplification bottleneck at 106 import sites.",
+    "top3Risks": [
+      "Unbounded taskEventQueue (loop.ts:242) plus 170 additional unbounded push calls in core — under sustained agent sessions, memory will grow without bound until process crash",
+      "Synchronous file I/O in dream-runner.ts and memory/manager.ts blocks the event loop during every memory read/write — acceptable for single-user CLI today but fatal for multi-session or daemon mode",
+      "DaemonController isPaused flag duplicating status string — dual state representation creates race condition window where flag and string disagree, producing undefined behavior in state transitions"
+    ],
+    "top3Strengths": [
+      "Foundation layer (shared, config, db) has correct instability metrics: 0.00, 0.08, 0.08 — these packages are appropriately stable and changes to them are infrequent",
+      "ChangeSet state machine enforces simulation->approval->execution pattern for destructive operations — this is the right architectural choice for a governed control plane",
+      "8 explicitly defined state machines with documented states and transition counts — state is modeled, not implicit"
+    ],
+    "ifIHadOneWeek": "Day 1: Cap the taskEventQueue at 1000 entries with backpressure in loop.ts — this is a 10-line fix with immediate memory safety benefit. Day 2: Convert dream-runner.ts memory file operations to async/await — this unblocks the event loop for multi-session scenarios. Day 3: Fix the DaemonController dual-state by eliminating the isPaused boolean and using status string exclusively. Day 4: Fix the core->agents cross-layer violation by abstracting agent profile lookup behind an interface in shared. Day 5: Add OpenAPI schema generation for the God Mode 5-endpoint contract to enable contract testing."
+  },
+  {
+    "agentId": 4,
+    "agentName": "Auditor",
+    "agentPersona": "prove every claim",
+    "primaryEvidence": "Stream A (static-analysis.json) + Stream C (operational-readiness.json)",
+    "secondaryEvidence": "Baseline only",
+    "dimensions": {
+      "CODE_COMPLETENESS": {
+        "score": 6,
+        "rationale": "Claim: '26 packages'. Verified: static-analysis.json codeInventory lists exactly 26 entries. Claim: '77,909 src lines'. Verified: sum of srcLines in codeInventory = 77,909. Claim: '788 commits, 1 contributor'. UNVERIFIABLE from assigned evidence. Claim: '5 CI workflows'. UNVERIFIABLE from assigned evidence.",
+        "evidenceCitation": "static-analysis.json codeInventory: 26 packages enumerated; srcLines sum: agents(1262)+cli(12776)+config(996)+core(22127)+db(1964)+docgen(625)+eval-pkg(1944)+gateway(764)+godmode(4603)+hooks(894)+ingest(1379)+mcp(452)+onboard(2900)+orchestrator(500)+plugin-sdk(344)+projects(576)+providers(1242)+router(2949)+scheduler(693)+sdk(217)+server(1450)+shared(1601)+tools(8271)+vault(707)+vscode(326)+workflow(1743) = 77,909",
+        "improvementPlus2": "All claims in assessment documents must have a machine-verifiable evidence citation — add a claims-registry.json that maps each baseline claim to its evidence source",
+        "confidence": "HIGH"
+      },
+      "WIRING": {
+        "score": 7,
+        "rationale": "12 wiring entries in wiringAudit, all show wired=true with file:line citations referencing packages/cli/src/bin/brainstorm.ts or packages/core/src/. However, the audit only covers 12 functions — the full tool registration surface is not audited. 17 unused tool exports in Stream A suggest tools that were built but not wired.",
+        "evidenceCitation": "static-analysis.json wiringAudit: 12/12 wired=true; deadCode tools: 17 unused exports including ghReviewTool, ghActionsTool, ghReleaseTool, ghSearchTool, ghSecurityTool, ghRepoTool, gitBranchTool, gitStashTool — tools that exist but are not wired",
+        "improvementPlus2": "Expand the wiring audit to cover all tool registrations, not just 12 selected functions — the 17 unused tool exports may represent unregistered tools or registered-but-orphaned tools",
+        "confidence": "HIGH"
+      },
+      "TEST_REALITY": {
+        "score": 5,
+        "rationale": "Claim: '661 tests pass'. Verified: totals.passed=661. Claim: '0 fail'. Verified: totals.failed=0. Claim: '21 skip'. Verified: totals.skipped=21, all in brainst0rm/tools. UNVERIFIABLE: whether these tests exercise the stated functionality — coverageEnabled=false means the claim 'tests pass' cannot be elevated to 'code is tested'.",
+        "evidenceCitation": "dynamic-testing.json coverageEnabled=false confirms no coverage data exists to validate what the 661 tests actually exercise; totals confirmed by direct field reading",
+        "improvementPlus2": "The claim '661 tests pass' is auditorially weak without coverage data — enable coverage and report as '661 tests pass covering X% of lines in Y packages'",
+        "confidence": "HIGH"
+      },
+      "PROPERTY_CORRECTNESS": {
+        "score": 1,
+        "rationale": "No evidence of property testing exists anywhere in the evidence set. propertyBasedTests=0, mutationTestingAvailable=false. Score reflects confirmed absence. This dimension cannot be scored above 1 without evidence.",
+        "evidenceCitation": "dynamic-testing.json: propertyBasedTests=0 — confirmed zero, not unknown",
+        "improvementPlus2": "PROVE IT OR IT IS FALSE: No property correctness evidence exists. Score is 1.",
+        "confidence": "HIGH"
+      },
+      "PRODUCTION_EVIDENCE": {
+        "score": 1,
+        "rationale": "Baseline states 'No running system'. Operational-readiness.json DORA data shows deployFrequency as commit counts to main, not deployment events to a live system. medianLeadTime=112 hours is a development metric, not a production metric. changeFailureRate has 0 true reverts. MTTR is null. These are version control metrics for a CLI tool that is not deployed.",
+        "evidenceCitation": "operational-readiness.json dora: mttrHours=null, mttrNotes='No revert incidents found to measure MTTR from' — MTTR cannot be measured for a system that has never failed in production",
+        "improvementPlus2": "PROVE IT OR IT IS FALSE: Production evidence score is 1 because there is no production system",
+        "confidence": "HIGH"
+      },
+      "OPERATIONAL_READINESS": {
+        "score": 4,
+        "rationale": "From Stream C: monitoring=true (Sentry + monitoring-manifest.json), rollback=true (transaction.ts, changeset.ts), alerting=true (slack-ops webhook). However: runbooks=false (no runbook files found), onCall=false (no PagerDuty/OpsGenie), incidentResponse=false (no incident/postmortem docs), slosDefined=false (45 grep matches are code metrics, not SLO documents), dashboards=false (no Grafana/Datadog config). 3 of 8 PRR criteria met.",
+        "evidenceCitation": "operational-readiness.json prr: monitoring=true, rollback=true, alerting=true, runbooks=false, onCall=false, incidentResponse=false; monitoring.slosDefined=false, monitoring.dashboards=false",
+        "improvementPlus2": "3 of 8 PRR criteria are met. Create a runbook for the top 3 failure modes as the minimum operational documentation artifact",
+        "confidence": "HIGH"
+      },
+      "SECURITY_POSTURE": {
+        "score": 6,
+        "rationale": "From Stream A: 0 npm vulnerabilities. Stream C: Sentry configured with PII scrubbing. These are verifiable. UNVERIFIABLE from Stream A: security middleware behavior, JWT correctness, vault encryption strength.",
+        "evidenceCitation": "static-analysis.json vulnerabilities: total=0; operational-readiness.json monitoring.sentryConfigured=true, sentryEvidence='PII scrubbing' — the two verifiable security claims from assigned evidence",
+        "improvementPlus2": "UNVERIFIABLE from assigned evidence — full security score requires Stream E",
+        "confidence": "MEDIUM"
+      },
+      "DOCUMENTATION": {
+        "score": 4,
+        "rationale": "From Stream C: structured logging with pino is confirmed. From Stream A: docgen package exists (625 srcLines, importedByCount=2). UNVERIFIABLE: whether documentation is accurate, complete, or maintained. operational-readiness.json runbooks=false is a direct documentation gap. The monitoring-manifest.json is described as 'setup instructions' — not deployed configuration.",
+        "evidenceCitation": "operational-readiness.json prr.runbooks=false, runbooksEvidence='No files matching *runbook*, *playbook*, or *ops* found in docs/' — zero operational documentation verified by absence grep",
+        "improvementPlus2": "Create three runbooks minimum: (1) how to start the CLI, (2) how to recover from a failed vault unlock, (3) how to rotate API keys",
+        "confidence": "HIGH"
+      },
+      "FAILURE_HANDLING": {
+        "score": 5,
+        "rationale": "From Stream C: rollback=true with evidence in transaction.ts, db/client.ts, and godmode/changeset.ts. These are verifiable file paths. The ChangeSet pattern (simulation->approval->execution) is the primary failure prevention mechanism. MTTR=null confirms no recovery has ever been measured.",
+        "evidenceCitation": "operational-readiness.json prr.rollbackEvidence: ['packages/tools/src/builtin/transaction.ts', 'packages/db/src/client.ts', 'packages/godmode/src/changeset.ts'] — rollback mechanisms exist in 3 files; dora.mttrHours=null",
+        "improvementPlus2": "Test the rollback mechanisms explicitly — transaction.ts and changeset.ts are in the evidence but no test verifies that a rollback actually restores state to pre-execution condition",
+        "confidence": "HIGH"
+      },
+      "RESILIENCE": {
+        "score": 3,
+        "rationale": "From Stream C: changeFailureRate.trueReverts=0 — but this is because the system has never been in production, not because it never fails. The 7 grep matches for 'revert' are feature code (rollback/checkpoint system), not production incidents. No evidence of circuit breakers, retry policies, or graceful degradation from assigned streams.",
+        "evidenceCitation": "operational-readiness.json dora.changeFailureRate: 'trueReverts=0, grepRevertMatches=7' with note: 'Zero standard Revert commits found' — the 0 CFR is absence of production history, not evidence of resilience",
+        "improvementPlus2": "PROVE IT OR IT IS FALSE: 0 production reverts because 0 production deployments is not a resilience claim — document the retry and fallback behavior for each external dependency",
+        "confidence": "HIGH"
+      },
+      "SCALE_READINESS": {
+        "score": 2,
+        "rationale": "UNVERIFIABLE from assigned evidence. No load test data in Stream A or Stream C. DORA deploy frequency data (0, 175, 222, 105 commits/week) reflects commit velocity to a CLI tool, not request throughput. No throughput, latency, or concurrency measurements exist.",
+        "evidenceCitation": "operational-readiness.json dora.deployFrequency: commit counts to main branch, not deployments to production — these metrics measure development velocity, not operational scale",
+        "improvementPlus2": "PROVE IT OR IT IS FALSE: No scale evidence exists. Score is 2.",
+        "confidence": "HIGH"
+      },
+      "ARCHITECTURE_QUALITY": {
+        "score": 5,
+        "rationale": "UNVERIFIABLE from primary evidence. Stream F not assigned. From Stream A: dead code analysis shows router package has 5 unused strategy exports despite being described as the routing differentiator. From Stream C: DORA lead time median=112 hours — for a 26-package monorepo with one contributor, 4.7-day median PR merge time suggests large PRs rather than incremental commits.",
+        "evidenceCitation": "operational-readiness.json dora.leadTime: medianHours=112 with sampleSize=10 — a single-contributor project with 4.7 day median lead time has no external review bottleneck; this is self-review latency",
+        "improvementPlus2": "UNVERIFIABLE from assigned evidence — full architecture score requires Stream F",
+        "confidence": "LOW"
+      },
+      "API_CONTRACT_INTEGRITY": {
+        "score": 4,
+        "rationale": "From Stream A: godmode package has BaseConnector as an unused export. This is the base class of the connector framework — if the base class is not imported anywhere, either all connectors inherit from a different base or the inheritance chain is broken. From Stream C: health endpoints verified in server.ts and godmode connector files.",
+        "evidenceCitation": "static-analysis.json deadCode godmode: 'BaseConnector' unused export; operational-readiness.json prr.healthEndpointsEvidence: 5 files including server.ts and product-connector.ts — health endpoints exist but the connector base class is dead",
+        "improvementPlus2": "Verify why BaseConnector is an unused export — if connectors duplicate base class logic rather than inheriting, the contract surface is fragmented",
+        "confidence": "MEDIUM"
+      },
+      "DEPENDENCY_HEALTH": {
+        "score": 9,
+        "rationale": "Stream A: vulnerabilities.total=0 across all severity levels. npm audit either returns vulnerabilities or it does not — this result is binary and verifiable. No .env files in git, no hardcoded secrets. DORA shows 502 commits over recent weeks with active development, suggesting dependencies are being maintained.",
+        "evidenceCitation": "static-analysis.json vulnerabilities: {total:0, critical:0, high:0, moderate:0, low:0} — npm audit result is machine-verifiable with no ambiguity",
+        "improvementPlus2": "Add automated dependency update PRs (Dependabot or Renovate) to maintain the 0-vuln status — point-in-time audits degrade within days of new vulnerability disclosures",
+        "confidence": "HIGH"
+      },
+      "SHIP_READINESS": {
+        "score": 4,
+        "rationale": "Verifiable ready signals: 0 npm vulns, 661 passing tests, 12 confirmed wiring points, structured logging, Sentry configured, health endpoints exist. Verifiable not-ready signals: no runbooks, no on-call, no incident response docs, no SLOs, no dashboards, no production evidence, 21 skipped tests, 29 unused exports, no coverage data. 5 PRR criteria unmet of 8.",
+        "evidenceCitation": "operational-readiness.json prr: monitoring=true, rollback=true, alerting=true, runbooks=false, onCall=false, incidentResponse=false — 3 of 8 PRR criteria met; static-analysis.json wiringAudit: 12/12 wired",
+        "improvementPlus2": "Create a ship-readiness checklist tied directly to the 8 PRR criteria with an owner and deadline for each unmet item — the current gap is documented but unowned",
+        "confidence": "HIGH"
+      }
+    },
+    "overall": "Verified true claims: 26 packages, 77,909 src lines (sum confirmed), 661 tests pass, 0 fail, 21 skip, 0 npm vulnerabilities, monitoring configured (Sentry + 11-monitor manifest), rollback mechanisms in 3 files, health endpoints in 5 files, pino structured logging. Verified false or unverifiable claims: 'No running system' means all DORA operational metrics (CFR=0, MTTR=null) measure absence of production, not operational maturity. 5 of 8 PRR criteria are unmet: no runbooks, no on-call, no incident response docs, no SLOs defined as documents, no dashboards deployed. The project ships a CLI artifact with clean dependency health and confirmed wiring but does not meet production service readiness criteria.",
+    "top3Risks": [
+      "5 of 8 PRR criteria unmet (runbooks, on-call, incident response, SLOs, dashboards) — operational readiness is 37.5% complete by this framework",
+      "coverageEnabled=false means the claim '661 tests pass' cannot be translated to coverage percentage — test pass rate and code coverage are different claims",
+      "BaseConnector is an unused export in the godmode package — the base class of the connector framework not being imported suggests either inheritance is broken or the framework is not used as designed"
+    ],
+    "top3Strengths": [
+      "0 npm vulnerabilities: the only fully binary-verifiable positive claim in the evidence set — npm audit passes clean",
+      "12 wiring points with file:line citations: the wiring audit provides verifiable evidence that core functions are connected, not just defined",
+      "Rollback mechanisms verified in 3 files (transaction.ts, db/client.ts, changeset.ts): these are concrete artifacts, not design patterns"
+    ],
+    "ifIHadOneWeek": "Day 1: Enable vitest coverage and produce a coverage report — this converts the '661 tests pass' claim from a pass/fail metric to a coverage metric. Day 2: Investigate BaseConnector unused export — determine if the connector inheritance chain is working as designed. Day 3: Create runbook-01-startup.md, runbook-02-vault-recovery.md, runbook-03-key-rotation.md. Day 4: Define 3 SLOs (CLI startup time <5s, vault unlock <30s, chat response streaming starts <10s) and document them. Day 5: Deploy the 11 monitoring-manifest monitors and verify Sentry DSN receives test events."
+  },
+  {
+    "agentId": 5,
+    "agentName": "Operator",
+    "agentPersona": "can a junior sysadmin run this?",
+    "primaryEvidence": "Stream C (operational-readiness.json)",
+    "secondaryEvidence": "Stream B test results only",
+    "dimensions": {
+      "CODE_COMPLETENESS": {
+        "score": 5,
+        "rationale": "UNVERIFIABLE from primary evidence. Stream C measures operational instrumentation, not code completeness. From secondary Stream B: 9 packages have 0 test files. A junior sysadmin cannot distinguish between packages that work and packages that exist — the 0-test packages (server, gateway, scheduler) are the ones a sysadmin would most likely need to operate.",
+        "evidenceCitation": "dynamic-testing.json: brainst0rm/server files=0, brainst0rm/gateway files=0, brainst0rm/scheduler files=0 — the three packages most relevant to operations have zero tests",
+        "improvementPlus2": "UNVERIFIABLE from assigned evidence — code completeness requires Stream A",
+        "confidence": "LOW"
+      },
+      "WIRING": {
+        "score": 4,
+        "rationale": "UNVERIFIABLE from primary evidence. From Stream B: the IPC integration and validation tests exist but usesRealIO=false means no real process-boundary wiring is tested. A junior sysadmin starting the daemon would be running code that has never been tested across a real process boundary.",
+        "evidenceCitation": "dynamic-testing.json testQuality: cli/ipc/integration.test.ts usesRealIO=false — IPC integration test exercises no real pipes, meaning sysadmin is first person to test real IPC",
+        "improvementPlus2": "UNVERIFIABLE from assigned evidence",
+        "confidence": "LOW"
+      },
+      "TEST_REALITY": {
+        "score": 5,
+        "rationale": "661 tests pass per Stream B. For an operator: the relevant question is whether tests tell you when things break. coverageEnabled=false means no coverage data. 9 packages with 0 tests will fail silently. The 21 skipped tools tests represent unknown failure modes. An operator cannot trust a green test suite when 9 operationally critical packages have 0 tests.",
+        "evidenceCitation": "dynamic-testing.json: brainst0rm/server passed=0 (no tests), brainst0rm/scheduler passed=0 (no tests) — a green CI means nothing for packages with zero tests",
+        "improvementPlus2": "Add a CI gate that fails the build if any package has 0 test files — currently a package can have 0 tests and CI still passes green",
+        "confidence": "HIGH"
+      },
+      "PROPERTY_CORRECTNESS": {
+        "score": 2,
+        "rationale": "UNVERIFIABLE from primary evidence. Stream B shows propertyBasedTests=0. For an operator, the practical concern is whether edge case inputs cause unexpected behavior — and without property tests, the answer is unknown.",
+        "evidenceCitation": "dynamic-testing.json: propertyBasedTests=0, mutationTestingAvailable=false — no automated adversarial testing exists",
+        "improvementPlus2": "UNVERIFIABLE from assigned evidence",
+        "confidence": "LOW"
+      },
+      "PRODUCTION_EVIDENCE": {
+        "score": 1,
+        "rationale": "No running system. Stream C DORA data: deployFrequency measures git commits to main, not deployments. mttrHours=null explicitly. No production logs, no uptime history, no incident history. A junior sysadmin would have nothing to reference when diagnosing a first production failure.",
+        "evidenceCitation": "operational-readiness.json dora.mttrNotes: 'No revert incidents found to measure MTTR from' — MTTR is undefined because the system has never been deployed to production",
+        "improvementPlus2": "Deploy the CLI in a staging environment and capture 24 hours of pino log output as the minimum baseline for production evidence",
+        "confidence": "HIGH"
+      },
+      "OPERATIONAL_READINESS": {
+        "score": 4,
+        "rationale": "3 of 8 PRR criteria met: monitoring (Sentry + monitoring-manifest), rollback (transaction.ts, changeset.ts), alerting (Slack webhook in monitoring-manifest). 5 unmet: runbooks (verified absent — no runbook/playbook/ops files in docs/), on-call (no PagerDuty/OpsGenie), incident response (no incident/postmortem docs), SLOs (45 matches are code metrics not SLO docs), dashboards (no Grafana/Datadog configs). A junior sysadmin has monitoring and alerting but no procedure for what to do when an alert fires.",
+        "evidenceCitation": "operational-readiness.json prr: runbooks=false with explicit grep evidence 'No files matching *runbook*, *playbook*, or *ops* found in docs/'; onCall=false; incidentResponse=false; monitoring.slosDefined=false; monitoring.dashboards=false",
+        "improvementPlus2": "Write runbook-on-alert.md that maps each of the 11 monitoring-manifest monitors to a remediation action — without this, alerts fire and nobody knows what to do",
+        "confidence": "HIGH"
+      },
+      "SECURITY_POSTURE": {
+        "score": 5,
+        "rationale": "UNVERIFIABLE from primary evidence. Stream C mentions Sentry PII scrubbing as an operational security concern. From Stream B: no security tests are identifiable by name. The vault test takes 17,730ms which an operator would notice but cannot diagnose from operational data alone.",
+        "evidenceCitation": "operational-readiness.json monitoring.sentryEvidence: 'PII scrubbing' configured — Sentry will not log sensitive data; operational-readiness.json prr.healthEndpointsEvidence: health endpoints exist in 5 files",
+        "improvementPlus2": "UNVERIFIABLE from assigned evidence — full security posture requires Stream E",
+        "confidence": "LOW"
+      },
+      "DOCUMENTATION": {
+        "score": 3,
+        "rationale": "runbooks=false. No runbooks, no playbooks, no ops docs found by grep search in docs/. The monitoring-manifest.json exists as 'setup instructions' not deployed configuration. A junior sysadmin receives Sentry DSN (if configured) and Slack webhook (if configured) and 11 monitor templates — but no procedures for what to do with any of them.",
+        "evidenceCitation": "operational-readiness.json prr.runbooks=false, runbooksEvidence='No files matching *runbook*, *playbook*, or *ops* found in docs/' — operational documentation is absent as verified by absence search",
+        "improvementPlus2": "Create three minimum viable operational documents: (1) how to verify the system is healthy, (2) what to do when the CLI crashes, (3) how to rotate credentials",
+        "confidence": "HIGH"
+      },
+      "FAILURE_HANDLING": {
+        "score": 4,
+        "rationale": "Rollback mechanisms exist (transaction.ts, changeset.ts, db/client.ts) per Stream C. From Stream B: db/migrations.test.ts uses real I/O and tests errors — migration failures are tested. However, the monitoring-manifest defines 11 monitors as setup instructions not deployed monitors — meaning when the server crashes, no monitor fires because monitors were never deployed.",
+        "evidenceCitation": "operational-readiness.json monitoring.monitoringManifest=true but monitoringManifestEvidence='11 monitors with UptimeRobot/BetterUptime setup instructions' — instructions, not deployed monitors",
+        "improvementPlus2": "Deploy the 11 monitoring-manifest monitors by following the setup instructions — currently failure handling exists architecturally but monitoring is a document, not a deployed system",
+        "confidence": "HIGH"
+      },
+      "RESILIENCE": {
+        "score": 3,
+        "rationale": "From Stream C: changeFailureRate.trueReverts=0 (but system was never in production). dora.deployFrequency shows 502 commits in recent weeks — active development. From Stream B: 21 skipped tests in tools package represent unknown failure modes in the most operationally critical package. A system that has never been stressed cannot be said to be resilient.",
+        "evidenceCitation": "operational-readiness.json dora.changeFailureRate.notes: 'Zero standard Revert commits found' with caveat that 7 grep matches are feature code not reverts — 0 CFR because 0 production deployments",
+        "improvementPlus2": "Run a 30-minute load test against the CLI with parallel sessions to find the first failure mode — currently resilience is theoretical",
+        "confidence": "MEDIUM"
+      },
+      "SCALE_READINESS": {
+        "score": 2,
+        "rationale": "UNVERIFIABLE from assigned evidence. DORA metrics measure development velocity, not system scale. No throughput, latency, or concurrency measurements in Stream C or Stream B. From Stream B: vault test takes 17,730ms — a 17-second blocking operation in a package that handles credentials suggests scale issues under concurrent sessions.",
+        "evidenceCitation": "dynamic-testing.json: brainst0rm/vault durationMs=17730 — 17 seconds for vault tests is an operator-visible latency signal; no concurrency tests in any package",
+        "improvementPlus2": "PROVE IT OR IT IS FALSE: No scale evidence exists from assigned streams",
+        "confidence": "LOW"
+      },
+      "ARCHITECTURE_QUALITY": {
+        "score": 4,
+        "rationale": "UNVERIFIABLE from primary evidence. Stream F not assigned. From Stream C: the pino structured logging with NDJSON to stderr provides operational observability for a junior sysadmin — log lines can be parsed and grepped. Sentry integration means errors are captured. But without runbooks, the sysadmin cannot act on what they observe.",
+        "evidenceCitation": "operational-readiness.json logging: 'pino logger with child loggers, NDJSON to stderr in IPC mode' — structured logs are parseable; monitoring.alertRulesEvidence: 'slack-ops webhook channel defined for all 11 monitors'",
+        "improvementPlus2": "UNVERIFIABLE from assigned evidence — architecture quality requires Stream F",
+        "confidence": "LOW"
+      },
+      "API_CONTRACT_INTEGRITY": {
+        "score": 4,
+        "rationale": "UNVERIFIABLE from primary evidence. Stream F not assigned. From Stream C: health endpoints exist in server.ts and godmode connector files. From Stream B: IPC validation tests test error cases. For an operator, the practical concern is whether the health endpoint returns 200 when healthy — this is untested (no real I/O in any test).",
+        "evidenceCitation": "operational-readiness.json prr.healthEndpointsEvidence: server.ts listed — health endpoint exists but Stream B shows usesRealIO=false in all tests, meaning health endpoint has never been tested with a real HTTP request",
+        "improvementPlus2": "Add a curl-based health check smoke test to CI — this is a one-line test that verifies the server starts and responds to GET /health",
+        "confidence": "MEDIUM"
+      },
+      "DEPENDENCY_HEALTH": {
+        "score": 8,
+        "rationale": "0 vulnerabilities per secondary evidence context. No secrets in git. gitignoreCoversEnv=true. For an operator: clean dependency health means no emergency patch deployments are required today. The vault's 17,730ms test time may reflect a dependency (Argon2id) that is correctly slow by design — OWASP recommended parameters.",
+        "evidenceCitation": "dynamic-testing.json brainst0rm/vault durationMs=17730 — vault test duration is likely Argon2id KDF at OWASP-recommended parameters (memory=65536KB, iterations=3)",
+        "improvementPlus2": "Confirm vault unlock is a one-time operation per CLI session, not per-operation — if Argon2id runs on every secret read, 17 seconds of KDF overhead becomes a per-request penalty",
+        "confidence": "MEDIUM"
+      },
+      "SHIP_READINESS": {
+        "score": 3,
+        "rationale": "Can a junior sysadmin run this? The binary can be built and invoked. Monitoring and alerting infrastructure is designed but not deployed. No runbooks exist. Health endpoints exist but are not tested against real HTTP. The monitoring-manifest.json is a document of intent, not a deployed system. A junior sysadmin would succeed in running the CLI interactively but would fail to maintain it as a production service.",
+        "evidenceCitation": "operational-readiness.json prr: 5 of 8 PRR criteria unmet; monitoring.monitoringManifest=true but 'setup instructions' not deployed; dynamic-testing.json: server package files=0, passed=0",
+        "improvementPlus2": "Create a 5-step operations runbook: (1) start server, (2) verify health endpoint, (3) check Sentry for errors, (4) check Slack for alerts, (5) restart after crash — this is the minimum viable operations procedure",
+        "confidence": "HIGH"
+      }
+    },
+    "overall": "From an operator's perspective: the system has monitoring infrastructure designed but not deployed (11 monitors are setup instructions, not active monitors), structured logging (pino NDJSON to stderr), Sentry integration with PII scrubbing, health endpoints in 5 files, and rollback mechanisms in 3 files. The critical operational gaps are: zero runbooks (verified absent by grep), no on-call tooling, no incident response documentation, no SLOs as documents, no deployed dashboards. A junior sysadmin can start the CLI and observe logs but cannot respond to a failure because there is no procedure. The DORA metrics measure development velocity, not operational maturity — 0 change failure rate and null MTTR are artifacts of a system that has never been in production.",
+    "top3Risks": [
+      "Zero runbooks: verified absent by grep search across docs/ — when the system fails, no procedure exists for a sysadmin to follow",
+      "Monitoring-manifest is setup instructions not deployed monitors — alerting exists as configuration intent but will not fire until actually deployed",
+      "Server and scheduler packages have 0 tests — the two packages most relevant to running the system as a service are completely unverified"
+    ],
+    "top3Strengths": [
+      "Pino structured logging (NDJSON to stderr) is operational-ready — logs are parseable by standard tools and support level filtering via BRAINSTORM_LOG_LEVEL env var",
+      "Sentry integration with PII scrubbing configured — when deployed with a real DSN, errors will be captured and not leak sensitive data",
+      "Rollback mechanisms exist in 3 concrete files (transaction.ts, db/client.ts, changeset.ts) — the infrastructure for recovery actions exists, even if untested"
+    ],
+    "ifIHadOneWeek": "Day 1: Deploy the 11 monitoring-manifest monitors by following the setup instructions — convert the document to running monitors. Day 2: Verify Sentry DSN is configured and send a test error to confirm capture pipeline works end-to-end. Day 3: Write three runbooks (startup, crash recovery, key rotation). Day 4: Add a CI smoke test that starts the server and calls GET /health — this is the minimum verification that the server package works. Day 5: Define and document 3 SLOs (startup time, vault unlock time, first chat token latency) with alert thresholds tied to the monitoring-manifest channels."
+  }
+]

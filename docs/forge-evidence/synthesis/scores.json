@@ -1,0 +1,304 @@
+{
+  "meta": {
+    "project": "brainstorm",
+    "assessmentDate": "2026-04-09",
+    "phase": "synthesis",
+    "agentCount": 10,
+    "dimensionCount": 15,
+    "totalScores": 150,
+    "r2PairsCount": 5,
+    "r3CrossExamRevisions": 5
+  },
+  "r1RawMatrix": {
+    "note": "R1 scores before any overrides. Agents: [A1_Optimist, A2_Pessimist, A3_Architect, A4_Auditor, A5_Operator, A6_Attacker, A7_Competitor, A8_Investor, A9_SrEngineer, A10_ChaosMonkey]",
+    "CODE_COMPLETENESS": [7, 4, 6, 6, 5, 4, 5, 5, 5, 4],
+    "WIRING": [8, 4, 6, 7, 4, 6, 5, 6, 7, 4],
+    "TEST_REALITY": [6, 5, 4, 5, 5, 3, 3, 4, 4, 3],
+    "PROPERTY_CORRECTNESS": [3, 2, 2, 1, 2, 5, 4, 4, 4, 3],
+    "PRODUCTION_EVIDENCE": [2, 1, 1, 1, 1, 1, 2, 1, 3, 1],
+    "OPERATIONAL_READINESS": [4, 3, 3, 4, 4, 2, 2, 2, 3, 2],
+    "SECURITY_POSTURE": [4, 7, 4, 6, 5, 6, 4, 5, 5, 4],
+    "DOCUMENTATION": [5, 3, 5, 4, 3, 3, 4, 3, 5, 2],
+    "FAILURE_HANDLING": [6, 5, 5, 5, 4, 5, 4, 5, 5, 5],
+    "RESILIENCE": [3, 3, 3, 3, 3, 3, 3, 3, 4, 3],
+    "SCALE_READINESS": [3, 2, 3, 2, 2, 2, 2, 2, 3, 2],
+    "ARCHITECTURE_QUALITY": [6, 4, 6, 5, 4, 5, 6, 5, 6, 5],
+    "API_CONTRACT_INTEGRITY": [5, 4, 5, 4, 4, 4, 4, 5, 6, 3],
+    "DEPENDENCY_HEALTH": [9, 7, 7, 9, 8, 9, 6, 7, 6, 5],
+    "SHIP_READINESS": [5, 3, 4, 4, 3, 3, 2, 2, 4, 2]
+  },
+  "r2Overrides": {
+    "Pair1_A1_A2": {
+      "CODE_COMPLETENESS": {
+        "A1": { "from": 7, "to": 5 },
+        "A2": { "from": 4, "to": 5 },
+        "basis": "joint agreed score=5, confirmed 42% packages have 0 test lines"
+      }
+    },
+    "Pair2_A3_A10": {
+      "RESILIENCE": {
+        "A3": { "from": 3, "to": 3 },
+        "A10": { "from": 3, "to": 3 },
+        "basis": "already identical, confirmed agreed=3"
+      },
+      "FAILURE_HANDLING": {
+        "A3": { "from": 5, "to": 5 },
+        "A10": { "from": 5, "to": 5 },
+        "basis": "already identical, confirmed agreed=5"
+      }
+    },
+    "Pair3_A4_A7": {
+      "TEST_REALITY": {
+        "A4": { "from": 5, "to": 5 },
+        "A7": { "from": 3, "to": 5 },
+        "basis": "agreed=5 — shell/gh tests not real IO, coverage disabled"
+      }
+    },
+    "Pair4_A6_A9": {
+      "DEPENDENCY_HEALTH": {
+        "A6": { "from": 9, "to": 8 },
+        "A9": { "from": 6, "to": 8 },
+        "basis": "agreed=8 — 0 CVEs but no Dependabot/Renovate"
+      },
+      "API_CONTRACT_INTEGRITY": {
+        "A6": { "from": 4, "to": 5 },
+        "A9": { "from": 6, "to": 5 },
+        "basis": "agreed=5 — IPC tested, God Mode HTTP untested, BaseConnector dead"
+      }
+    },
+    "Pair5_A5_A8": {
+      "DOCUMENTATION": {
+        "A5": { "from": 3, "to": 3 },
+        "A8": { "from": 3, "to": 3 },
+        "basis": "both already 3, confirmed agreed=3 — 0 runbooks, 0 dashboards, 0 SLO docs"
+      },
+      "SCALE_READINESS": {
+        "A5": { "from": 2, "to": 2 },
+        "A8": { "from": 2, "to": 2 },
+        "basis": "both already 2, confirmed agreed=2 — 5 sync IO paths, unbounded queue, SQLite single-writer"
+      }
+    }
+  },
+  "r3CrossExamRevisions": {
+    "challenge1_WIRING_A1": {
+      "agent": "A1_Optimist",
+      "from": 8,
+      "to": 5,
+      "basis": "defense FAILS — 22 confirmed dead exports including 5/6 routing strategies; R2 Pair1 established max 6 under UNPROVEN rule; finalScore=5"
+    },
+    "challenge2_CODE_COMPLETENESS_A1": {
+      "agent": "A1_Optimist",
+      "note": "Target was A1 R1=7, already overridden to 5 by R2 Pair1; no additional change"
+    },
+    "challenge3_DEPENDENCY_HEALTH_A1": {
+      "agent": "A1_Optimist",
+      "from": 9,
+      "to": 8,
+      "basis": "defense CONCEDES — no automated Dependabot/Renovate; R2 Pair4 agreed=8"
+    },
+    "challenge4_SECURITY_POSTURE_A9": {
+      "agent": "A9_SrEngineer",
+      "from": 5,
+      "to": 5,
+      "basis": "already at 5 per R1; finalScore=5 confirmed by cross-exam per R2 Pair4 agreed floor"
+    },
+    "challenge5_PROPERTY_CORRECTNESS_A1": {
+      "agent": "A1_Optimist",
+      "from": 3,
+      "to": 2,
+      "basis": "CONTESTED resolved at 2 — propertyBasedTests=0 is confirmed count not absence; red-team.test.ts testsErrors=false undermines defense"
+    },
+    "challenge6_SCALE_READINESS_A1": {
+      "agent": "A1_Optimist",
+      "from": 4,
+      "to": 2,
+      "basis": "defense FAILS — all 5 scale indicators negative; R2 Pair5 agreed=2; self-labeled UNVERIFIABLE"
+    }
+  },
+  "finalAdjustedMatrix": {
+    "note": "All R1, R2, and R3 overrides applied",
+    "CODE_COMPLETENESS": [5, 5, 6, 6, 5, 4, 5, 5, 5, 4],
+    "WIRING": [5, 4, 6, 7, 4, 6, 5, 6, 7, 4],
+    "TEST_REALITY": [6, 5, 4, 5, 5, 3, 5, 4, 4, 3],
+    "PROPERTY_CORRECTNESS": [2, 2, 2, 1, 2, 5, 4, 4, 4, 3],
+    "PRODUCTION_EVIDENCE": [2, 1, 1, 1, 1, 1, 2, 1, 3, 1],
+    "OPERATIONAL_READINESS": [4, 3, 3, 4, 4, 2, 2, 2, 3, 2],
+    "SECURITY_POSTURE": [4, 7, 4, 6, 5, 6, 4, 5, 5, 4],
+    "DOCUMENTATION": [5, 3, 5, 4, 3, 3, 4, 3, 5, 2],
+    "FAILURE_HANDLING": [6, 5, 5, 5, 4, 5, 4, 5, 5, 5],
+    "RESILIENCE": [3, 3, 3, 3, 3, 3, 3, 3, 4, 3],
+    "SCALE_READINESS": [2, 2, 3, 2, 2, 2, 2, 2, 3, 2],
+    "ARCHITECTURE_QUALITY": [6, 4, 6, 5, 4, 5, 6, 5, 6, 5],
+    "API_CONTRACT_INTEGRITY": [5, 4, 5, 4, 4, 5, 4, 5, 5, 3],
+    "DEPENDENCY_HEALTH": [8, 7, 7, 9, 8, 8, 6, 7, 8, 5],
+    "SHIP_READINESS": [5, 3, 4, 4, 3, 3, 2, 2, 4, 2]
+  },
+  "dimensionStats": {
+    "CODE_COMPLETENESS": {
+      "min": 4,
+      "max": 6,
+      "mean": 5.0,
+      "median": 5.0,
+      "stddev": 0.63,
+      "finalScore": 5.0,
+      "uncertain": false,
+      "contested": false
+    },
+    "WIRING": {
+      "min": 4,
+      "max": 7,
+      "mean": 5.4,
+      "median": 5.5,
+      "stddev": 1.11,
+      "finalScore": 5.4,
+      "uncertain": false,
+      "contested": true,
+      "contestedNote": "R2 Pair1 CONTESTED (8 vs 4), R3 cross-exam reduced A1 from 8 to 5"
+    },
+    "TEST_REALITY": {
+      "min": 3,
+      "max": 6,
+      "mean": 4.4,
+      "median": 4.5,
+      "stddev": 0.92,
+      "finalScore": 4.4,
+      "uncertain": false,
+      "contested": false
+    },
+    "PROPERTY_CORRECTNESS": {
+      "min": 1,
+      "max": 5,
+      "mean": 2.9,
+      "median": 2.5,
+      "stddev": 1.22,
+      "finalScore": 2.9,
+      "uncertain": false,
+      "contested": true,
+      "contestedNote": "R2 Pair3 CONTESTED (1 vs 3), R3 cross-exam resolved at 2 for A1"
+    },
+    "PRODUCTION_EVIDENCE": {
+      "min": 1,
+      "max": 3,
+      "mean": 1.4,
+      "median": 1.0,
+      "stddev": 0.66,
+      "finalScore": 1.4,
+      "uncertain": false,
+      "contested": false
+    },
+    "OPERATIONAL_READINESS": {
+      "min": 2,
+      "max": 4,
+      "mean": 2.9,
+      "median": 3.0,
+      "stddev": 0.83,
+      "finalScore": 2.9,
+      "uncertain": false,
+      "contested": true,
+      "contestedNote": "R2 Pair5 CONTESTED (4 vs 3); no consensus override"
+    },
+    "SECURITY_POSTURE": {
+      "min": 4,
+      "max": 7,
+      "mean": 5.0,
+      "median": 5.0,
+      "stddev": 1.0,
+      "finalScore": 5.0,
+      "uncertain": false,
+      "contested": true,
+      "contestedNote": "R2 Pair4 CONTESTED (5 vs 6), R3 cross-exam confirmed floor=5"
+    },
+    "DOCUMENTATION": {
+      "min": 2,
+      "max": 5,
+      "mean": 3.7,
+      "median": 3.5,
+      "stddev": 1.0,
+      "finalScore": 3.7,
+      "uncertain": false,
+      "contested": false
+    },
+    "FAILURE_HANDLING": {
+      "min": 4,
+      "max": 6,
+      "mean": 4.9,
+      "median": 5.0,
+      "stddev": 0.54,
+      "finalScore": 4.9,
+      "uncertain": false,
+      "contested": false
+    },
+    "RESILIENCE": {
+      "min": 3,
+      "max": 4,
+      "mean": 3.1,
+      "median": 3.0,
+      "stddev": 0.3,
+      "finalScore": 3.1,
+      "uncertain": false,
+      "contested": false
+    },
+    "SCALE_READINESS": {
+      "min": 2,
+      "max": 3,
+      "mean": 2.2,
+      "median": 2.0,
+      "stddev": 0.4,
+      "finalScore": 2.2,
+      "uncertain": false,
+      "contested": false
+    },
+    "ARCHITECTURE_QUALITY": {
+      "min": 4,
+      "max": 6,
+      "mean": 5.2,
+      "median": 5.0,
+      "stddev": 0.75,
+      "finalScore": 5.2,
+      "uncertain": false,
+      "contested": false
+    },
+    "API_CONTRACT_INTEGRITY": {
+      "min": 3,
+      "max": 5,
+      "mean": 4.4,
+      "median": 4.5,
+      "stddev": 0.66,
+      "finalScore": 4.4,
+      "uncertain": false,
+      "contested": false
+    },
+    "DEPENDENCY_HEALTH": {
+      "min": 5,
+      "max": 9,
+      "mean": 7.3,
+      "median": 7.5,
+      "stddev": 1.1,
+      "finalScore": 7.3,
+      "uncertain": false,
+      "contested": false
+    },
+    "SHIP_READINESS": {
+      "min": 2,
+      "max": 5,
+      "mean": 3.2,
+      "median": 3.0,
+      "stddev": 0.98,
+      "finalScore": 3.2,
+      "uncertain": false,
+      "contested": true,
+      "contestedNote": "R2 Pair1 CONTESTED (5 vs 3); no consensus override"
+    }
+  },
+  "overallFinalScore": 4.1,
+  "overallCalculation": "Mean of 15 dimension finalScores: (5.0+5.4+4.4+2.9+1.4+2.9+5.0+3.7+4.9+3.1+2.2+5.2+4.4+7.3+3.2) / 15 = 61.0 / 15 = 4.07",
+  "noUncertainDimensions": "No dimension reached StdDev > 1.5 after R2/R3 revisions. PROPERTY_CORRECTNESS was highest at 1.22 (contested, resolved).",
+  "maturityPlacement": {
+    "cncfLevel": "SANDBOX",
+    "cncfRationale": "No production deployment, no operator community, no multi-contributor governance, no published artifact adoption metrics. Codebase assembles and has CI; CNCF Sandbox requires only 'used successfully in production by at least 2 organizations'. This project has 0 confirmed production deployments.",
+    "doraTier": "LOW",
+    "doraRationale": "Median lead time 112 hours (4.7 days) vs Elite < 1 hour. Deploy frequency measures commits to main, not production deploys — DORA metrics are development-velocity metrics, not operational metrics. MTTR=null. Change failure rate=0 because there is no production system.",
+    "preProductionNote": "Project is pre-production. DORA and CNCF classifications reflect the pre-deployment state."
+  },
+  "synthesisStatement": "Brainstorm is a 26-package TypeScript monorepo with 77,909 source lines, 788 commits, 1 contributor, and 661 passing tests across 15 of 26 packages. The wiring audit confirms 12 specific call sites in brainstorm.ts and loop.ts; 22 dead exports across tools and router (17 tool exports, 5 routing strategies representing 83% of the router package's primary public API) are confirmed unreachable. Code coverage measurement is disabled. 11 of 26 packages (42%) have zero test files including server (1450 lines, the HTTP attack surface), gateway (764 lines, LLM billing), and onboard (2900 lines). Property-based testing count is zero; mutation testing is unavailable. The vault test takes 17,730ms — 3.8x the next-slowest package — attributable to Argon2id KDF at OWASP parameters with a 30-minute session lock. Security middleware stack contains 22 registered middlewares with documented purposes; the server package carrying the God Mode execute endpoint has zero tests; empty jwtSecret produces a startup warning rather than a process exit. Operational readiness meets 3 of 8 PRR criteria (monitoring, rollback, alerting); runbooks, on-call tooling, incident response procedures, SLO documents, and dashboards are absent by verified grep. DORA metrics reflect git commit velocity to main (median lead time 112 hours); MTTR is null because no production deployment exists. Five synchronous IO hot paths in the agent loop and memory manager, an unbounded taskEventQueue with 170 unbounded push calls in core, and a single-writer synchronous SQLite backend constrain scale. Dependency health is the highest-scoring dimension at 7.3/10: zero CVEs across all severity levels, no secrets in git, no env files in git, no automated CVE maintenance tooling present."
+}

@@ -1,0 +1,420 @@
+{
+  "meta": {
+    "project": "brainstorm",
+    "assessmentDate": "2026-04-09",
+    "totalRisksIdentified": 38,
+    "riskCategories": [
+      "TESTING",
+      "ARCHITECTURE",
+      "SECURITY",
+      "OPERATIONS",
+      "SCALE",
+      "COMPLETENESS"
+    ]
+  },
+  "risks": [
+    {
+      "id": "R01",
+      "title": "22 confirmed dead exports across tools and router packages",
+      "category": "COMPLETENESS",
+      "severity": "HIGH",
+      "agentCount": 9,
+      "evidence": "static-analysis.json deadCode: tools package 17 unused exports (ghReviewTool, ghActionsTool, ghReleaseTool, ghSearchTool, ghSecurityTool, ghRepoTool, gitBranchTool, gitStashTool, costEstimateTool, createToolSearchTool, planPreviewTool, processSpawnTool, processKillTool, undoTool, checkSandbox, multiEditTool, batchEditTool, createTimeoutController); router package 5 unused exports (costFirstStrategy, qualityFirstStrategy, createRuleBasedStrategy, createCombinedStrategy, capabilityStrategy) = 83% of router's primary routing API is dead code",
+      "dimensions": ["WIRING", "CODE_COMPLETENESS", "SHIP_READINESS"],
+      "remediation": "Delete or wire the 22 dead exports. For routing strategies, confirm whether Thompson sampling alone is intended or if multi-strategy fallback is a planned feature. Cannot defer — dead code in a security-critical tool package is an audit liability."
+    },
+    {
+      "id": "R02",
+      "title": "11 of 26 packages (42%) have zero test files",
+      "category": "TESTING",
+      "severity": "HIGH",
+      "agentCount": 10,
+      "evidence": "static-analysis.json codeInventory: gateway(0), ingest(0), onboard(0), orchestrator(0), plugin-sdk(0), projects(0), scheduler(0), sdk(0), server(0), vscode(0), docgen(0) all have testLines=0. dynamic-testing.json confirms all 11 have files=0, passed=0.",
+      "dimensions": ["CODE_COMPLETENESS", "TEST_REALITY", "SHIP_READINESS"],
+      "remediation": "Add minimum smoke tests for server (health endpoint), gateway (structured response from API call), and scheduler (job registers and triggers). These three are highest operational risk."
+    },
+    {
+      "id": "R03",
+      "title": "server.ts (1450 lines, HTTP attack surface) has zero tests",
+      "category": "SECURITY",
+      "severity": "CRITICAL",
+      "agentCount": 8,
+      "evidence": "static-analysis.json codeInventory: server srcLines=1450, testLines=0. POST /api/v1/god-mode/execute — the primary externally-consumed endpoint — has never been tested for authentication bypass, injection, or SSRF.",
+      "dimensions": [
+        "SECURITY_POSTURE",
+        "API_CONTRACT_INTEGRITY",
+        "SHIP_READINESS"
+      ],
+      "remediation": "Add 3 integration tests to server.ts: (1) unauthenticated request returns 401, (2) JWT alg:none rejected, (3) expired token rejected. Must cross process boundary with usesRealIO=true."
+    },
+    {
+      "id": "R04",
+      "title": "Empty jwtSecret produces startup warning instead of process exit",
+      "category": "SECURITY",
+      "severity": "HIGH",
+      "agentCount": 7,
+      "evidence": "security.json owaspFindings A05: 'packages/server/src/server.ts line 113: explicit warn logged if jwtSecret is empty at startup — message references SERVER EXPOSED WITHOUT AUTH'. Server starts and God Mode execute endpoint accepts requests when jwtSecret is unset.",
+      "dimensions": ["SECURITY_POSTURE", "OPERATIONAL_READINESS"],
+      "remediation": "Change server.ts line 113 from console.warn to process.exit(1). Add a CI pre-flight check that validates required environment variables before server start."
+    },
+    {
+      "id": "R05",
+      "title": "No production deployment — MTTR=null, all DORA metrics are commit-velocity not operational",
+      "category": "OPERATIONS",
+      "severity": "HIGH",
+      "agentCount": 10,
+      "evidence": "operational-readiness.json dora.mttrHours=null, mttrNotes='No revert incidents found to measure MTTR from'. deployFrequency.notes='All commits to main via first-parent' — not deployment events. Median lead time 112 hours is DORA Low tier.",
+      "dimensions": [
+        "PRODUCTION_EVIDENCE",
+        "OPERATIONAL_READINESS",
+        "SHIP_READINESS"
+      ],
+      "remediation": "Deploy to staging environment. Record first real deploy timestamp. Instrument actual deployment pipeline separate from git commit timestamps. MTTR requires at least one measured recovery event."
+    },
+    {
+      "id": "R06",
+      "title": "Unbounded taskEventQueue at loop.ts:242 — 170 unbounded push calls in core",
+      "category": "ARCHITECTURE",
+      "severity": "HIGH",
+      "agentCount": 8,
+      "evidence": "architecture.json scalabilityBottlenecks: 'taskEventQueue is an unbounded Array with .push(); no max-size cap; drained via shift() in the yield loop' at packages/core/src/agent/loop.ts:242. '170 unbounded .push() calls across core/src identified; hot paths include agent loop stream parts and tool result accumulation'.",
+      "dimensions": ["RESILIENCE", "SCALE_READINESS", "FAILURE_HANDLING"],
+      "remediation": "Cap taskEventQueue at configurable maximum (default 1000). Emit a backpressure event when cap is hit. This is a 10-line fix with immediate memory safety impact."
+    },
+    {
+      "id": "R07",
+      "title": "Zero runbooks — verified absent by grep across docs/",
+      "category": "OPERATIONS",
+      "severity": "HIGH",
+      "agentCount": 9,
+      "evidence": "operational-readiness.json prr.runbooks=false, runbooksEvidence='No files matching *runbook*, *playbook*, or *ops* found in docs/'. 788 commits and 0 operational procedures.",
+      "dimensions": ["DOCUMENTATION", "OPERATIONAL_READINESS"],
+      "remediation": "Write 3 minimum runbooks: (1) startup and health verification, (2) vault unlock failure recovery, (3) API key rotation. Each should reference the monitoring-manifest.json monitor that fires for the scenario."
+    },
+    {
+      "id": "R08",
+      "title": "property-based tests = 0 and mutation testing unavailable",
+      "category": "TESTING",
+      "severity": "MEDIUM",
+      "agentCount": 10,
+      "evidence": "dynamic-testing.json: propertyBasedTests=0, mutationTestingAvailable=false. Thompson sampling algorithm, vault cryptographic operations, and JWT validation have no invariant tests across the input space.",
+      "dimensions": ["PROPERTY_CORRECTNESS", "TEST_REALITY"],
+      "remediation": "Add fast-check property tests for: (1) router Thompson sampling — expected reward always [0,1], total trials monotonically increases; (2) vault round-trip — decrypt(encrypt(x)) === x for any string; (3) JWT — alg:none always rejected."
+    },
+    {
+      "id": "R09",
+      "title": "21 Docker-dependent tool tests skipped in CI",
+      "category": "TESTING",
+      "severity": "MEDIUM",
+      "agentCount": 7,
+      "evidence": "dynamic-testing.json totals: skipped=21, all in @brainst0rm/tools. These are the Docker sandbox isolation tests — the security boundary preventing agent code execution escapes is not verified in standard CI.",
+      "dimensions": ["SCALE_READINESS", "SECURITY_POSTURE", "RESILIENCE"],
+      "remediation": "Add a separate CI job with Docker-in-Docker enabled that runs the 21 skipped tests. Process isolation under concurrent load is not a luxury test for a tool-execution engine."
+    },
+    {
+      "id": "R10",
+      "title": "5 synchronous IO hot paths block the Node.js event loop",
+      "category": "SCALE",
+      "severity": "HIGH",
+      "agentCount": 7,
+      "evidence": "architecture.json scalabilityBottlenecks: (1) packages/core/src/memory/dream-runner.ts — readFileSync, writeFileSync, statSync, readdirSync, unlinkSync, mkdirSync; (2) packages/core/src/memory/manager.ts — same; (3) packages/cli/src/bin/brainstorm.ts — execFileSync for git; (4) packages/cli/src/init/detect.ts — existsSync, readFileSync; (5) packages/cli/src/init/generate.ts — existsSync, readFileSync, writeFileSync, mkdirSync.",
+      "dimensions": ["SCALE_READINESS", "RESILIENCE"],
+      "remediation": "Convert dream-runner.ts and memory/manager.ts file operations to async fs/promises. These are the highest-frequency paths in multi-session scenarios. CLI init paths (detect.ts, generate.ts) are startup-time and lower priority."
+    },
+    {
+      "id": "R11",
+      "title": "Code coverage measurement disabled — 661 tests provide no measurable line coverage",
+      "category": "TESTING",
+      "severity": "MEDIUM",
+      "agentCount": 9,
+      "evidence": "dynamic-testing.json: coverageEnabled=false. 661 passing tests confirm behavior at tested paths only; which branches are exercised is unknown.",
+      "dimensions": ["TEST_REALITY", "CODE_COMPLETENESS"],
+      "remediation": "Enable vitest coverage with v8 provider. Set minimum thresholds: 60% line coverage for packages/core and packages/router as first milestone. Run once to establish baseline before setting targets."
+    },
+    {
+      "id": "R12",
+      "title": "3 cross-layer architecture violations constrain independent layer evolution",
+      "category": "ARCHITECTURE",
+      "severity": "MEDIUM",
+      "agentCount": 6,
+      "evidence": "architecture.json layers: (1) mcp -> tools (Infrastructure imports Domain), (2) core -> agents (Core imports Domain), (3) core -> tools (Core imports Domain). Core and Domain cannot be independently released. core->tools creates a potential security concern: internal tool calls may bypass the security middleware pipeline.",
+      "dimensions": ["ARCHITECTURE_QUALITY", "SECURITY_POSTURE"],
+      "remediation": "Fix core->agents first: abstract agent profile lookup behind an interface in shared, removing the Domain import from Core. Then fix core->tools. Fix mcp->tools last. Each fix is independent."
+    },
+    {
+      "id": "R13",
+      "title": "DaemonController uses isPaused flag AND status string — dual state representation",
+      "category": "ARCHITECTURE",
+      "severity": "MEDIUM",
+      "agentCount": 5,
+      "evidence": "architecture.json stateMachines DaemonController: 'isPaused flag used alongside status string; sleepUntil timestamp for timed sleep state'. Concurrent state transitions can diverge these two representations, producing undefined shutdown behavior.",
+      "dimensions": ["ARCHITECTURE_QUALITY", "RESILIENCE", "FAILURE_HANDLING"],
+      "remediation": "Eliminate the isPaused boolean. Use status string exclusively and derive isPaused as a getter. Eliminates the class of bugs where isPaused=true but status='running'."
+    },
+    {
+      "id": "R14",
+      "title": "BaseConnector is an unused export in godmode — connector base class has no importers",
+      "category": "COMPLETENESS",
+      "severity": "MEDIUM",
+      "agentCount": 5,
+      "evidence": "static-analysis.json deadCode godmode: ['BaseConnector']. The declared base class of the connector framework has 0 importers. Either connectors do not extend it (fragmented contract) or the framework was redesigned without removing the base class.",
+      "dimensions": ["API_CONTRACT_INTEGRITY", "WIRING"],
+      "remediation": "Investigate why BaseConnector has 0 importers. If connectors extend a different base, update the class hierarchy or delete BaseConnector. If the framework is not used as designed, document the actual connector pattern."
+    },
+    {
+      "id": "R15",
+      "title": "SQLite single-writer synchronous backend constrains concurrent write scaling",
+      "category": "SCALE",
+      "severity": "MEDIUM",
+      "agentCount": 6,
+      "evidence": "architecture.json scalabilityBottlenecks: 'WAL mode enabled (journal_mode = WAL), foreign_keys = ON; better-sqlite3 is synchronous and single-process — no concurrent write scaling'. Any multi-session daemon mode will serialize all writes through a single event loop.",
+      "dimensions": ["SCALE_READINESS", "RESILIENCE"],
+      "remediation": "Add a write queue abstraction over the SQLite client so concurrent writes are serialized without blocking the event loop. This enables future migration to a multi-writer backend without changing consumer code."
+    },
+    {
+      "id": "R16",
+      "title": "red-team.test.ts has testsErrors=false — adversarial tests do not assert blocked outcomes",
+      "category": "SECURITY",
+      "severity": "MEDIUM",
+      "agentCount": 5,
+      "evidence": "dynamic-testing.json testQuality: packages/core/src/__tests__/red-team.test.ts testsErrors=false, packages/core/src/__tests__/red-team-engine.test.ts testsErrors=false. An adversarial test file that never asserts on error conditions is testing that the system does something, not that it correctly blocks attacks.",
+      "dimensions": ["SECURITY_POSTURE", "TEST_REALITY"],
+      "remediation": "Rewrite red-team.test.ts so every test case asserts a specific blocked outcome (testsErrors must be true). Test should confirm that adversarial input produces a specific error type or blocked result, not just that it runs without crashing."
+    },
+    {
+      "id": "R17",
+      "title": "Monitoring manifest is setup instructions, not deployed monitors",
+      "category": "OPERATIONS",
+      "severity": "MEDIUM",
+      "agentCount": 6,
+      "evidence": "operational-readiness.json monitoring.monitoringManifestEvidence: '11 monitors with UptimeRobot/BetterUptime setup instructions, Slack webhook alerting'. The manifest documents what to deploy but no evidence any monitor is active.",
+      "dimensions": ["OPERATIONAL_READINESS", "DOCUMENTATION"],
+      "remediation": "Deploy the 11 monitoring-manifest monitors following the existing setup instructions. Verify the Slack webhook URL is active by sending a test alert. Verify Sentry DSN is configured and receiving events."
+    },
+    {
+      "id": "R18",
+      "title": "No SLO definition documents — 45 code metric matches are not SLO documents",
+      "category": "OPERATIONS",
+      "severity": "MEDIUM",
+      "agentCount": 5,
+      "evidence": "operational-readiness.json monitoring.slosDefined=false, slosEvidence='SLO grep returned 45 files but matches are metric/threshold names in code, not SLO definition documents'.",
+      "dimensions": ["OPERATIONAL_READINESS", "DOCUMENTATION"],
+      "remediation": "Define 3 SLO documents (not code comments): CLI startup time < 5s, vault unlock < 30s per session, first chat token latency < 10s. Link each SLO to a monitor in monitoring-manifest.json."
+    },
+    {
+      "id": "R19",
+      "title": "IPC documentation lives in inline comments, not a versioned schema",
+      "category": "COMPLETENESS",
+      "severity": "LOW",
+      "agentCount": 5,
+      "evidence": "architecture.json apiContracts: ipcDocumentationSource='packages/cli/src/ipc/handler.ts (inline comments)'. 23 IPC methods have no standalone versioned schema. Desktop/web app consumers cannot detect drift.",
+      "dimensions": ["API_CONTRACT_INTEGRITY", "DOCUMENTATION"],
+      "remediation": "Extract IPC method list to a standalone ipc-schema.json or ipc-protocol.ts with request/response type definitions. Import this from both handler.ts and the desktop IPC client."
+    },
+    {
+      "id": "R20",
+      "title": "No automated dependency update tooling — 0-CVE state is point-in-time only",
+      "category": "SECURITY",
+      "severity": "LOW",
+      "agentCount": 6,
+      "evidence": "Cross-exam challenge 3: 'no automated Dependabot or Renovate configuration found in evidence'. The 0-CVE state from npm audit will decay as new CVEs are disclosed without automated scanning.",
+      "dimensions": ["DEPENDENCY_HEALTH"],
+      "remediation": "Add Dependabot or Renovate configuration with a policy that high/critical CVE PRs block merge. This maintains the current 0-CVE status automatically."
+    },
+    {
+      "id": "R21",
+      "title": "God Mode contract dual-sourced in manifest.ts and platform-contract-v1.md with no drift detection",
+      "category": "COMPLETENESS",
+      "severity": "LOW",
+      "agentCount": 4,
+      "evidence": "architecture.json apiContracts: godModeContractSource='packages/godmode/src/manifest.ts + docs/platform-contract-v1.md'. openapi=false means drift between implementation and documentation is undetectable without manual inspection.",
+      "dimensions": ["API_CONTRACT_INTEGRITY", "DOCUMENTATION"],
+      "remediation": "Add a CI step that compares route handlers in server.ts against the contract manifest and fails if endpoints are added or removed without updating the manifest."
+    },
+    {
+      "id": "R22",
+      "title": "No on-call tooling and no incident response documentation",
+      "category": "OPERATIONS",
+      "severity": "MEDIUM",
+      "agentCount": 7,
+      "evidence": "operational-readiness.json prr.onCall=false, onCallEvidence='No pagerduty or opsgenie references found'. prr.incidentResponse=false, incidentResponseEvidence='No files matching *incident* or *postmortem* found in docs/'.",
+      "dimensions": ["OPERATIONAL_READINESS"],
+      "remediation": "At minimum, define a contact rotation document and link it to the monitoring-manifest Slack channel. Write one postmortem template for future incidents."
+    },
+    {
+      "id": "R23",
+      "title": "vault test takes 17,730ms — 3.8x the next-slowest package",
+      "category": "SCALE",
+      "severity": "LOW",
+      "agentCount": 4,
+      "evidence": "dynamic-testing.json testResults: @brainst0rm/vault durationMs=17730 vs @brainst0rm/core durationMs=4660. Likely Argon2id KDF at OWASP parameters. security.json vaultSystem.autoLock='30-minute inactivity timer' suggests session-scoped not per-request.",
+      "dimensions": ["SCALE_READINESS", "PRODUCTION_EVIDENCE"],
+      "remediation": "Verify vault unlock is called once per session, not per-request. If KDF is per-session, the 17s is acceptable. If per-request, reduce test parameters or add KDF parameter override for test environments."
+    },
+    {
+      "id": "R24",
+      "title": "shared package has 106 import sites — any breaking change requires 106 updates",
+      "category": "ARCHITECTURE",
+      "severity": "LOW",
+      "agentCount": 3,
+      "evidence": "static-analysis.json dependencyGraph: shared importedByCount=106. architecture.json coupling: shared ca=24, instability=0.00.",
+      "dimensions": ["ARCHITECTURE_QUALITY", "DEPENDENCY_HEALTH"],
+      "remediation": "Audit shared package for scope creep. Consider splitting into shared/types and shared/utils to reduce per-change blast radius. Add @microsoft/api-extractor to CI to detect breaking changes."
+    },
+    {
+      "id": "R25",
+      "title": "IPC integration tests labeled isUnitTest=false but use no real IO — no process-boundary test exists",
+      "category": "TESTING",
+      "severity": "MEDIUM",
+      "agentCount": 5,
+      "evidence": "dynamic-testing.json testQuality: packages/cli/src/__tests__/ipc/integration.test.ts isUnitTest=false, usesRealIO=false. A test labeled integration that crosses no process boundary and uses no real IO cannot catch serialization bugs or process-start failures.",
+      "dimensions": ["API_CONTRACT_INTEGRITY", "TEST_REALITY"],
+      "remediation": "Convert ipc/integration.test.ts to spawn an actual CLI process and send NDJSON over a real pipe. Current test cannot detect IPC protocol drift."
+    },
+    {
+      "id": "R26",
+      "title": "80% of test files (37/46) do not test error conditions",
+      "category": "TESTING",
+      "severity": "HIGH",
+      "agentCount": 8,
+      "evidence": "dynamic-testing.json testQuality: 37 of 46 files have testsErrors=false. The agent loop integration test (loop.integration.test.ts), KAIROS-BR loop test (kairos-br-loop.test.ts), and kairos-integration.test.ts all have testsErrors=false.",
+      "dimensions": ["FAILURE_HANDLING", "RESILIENCE", "TEST_REALITY"],
+      "remediation": "Add error-path tests to loop.integration.test.ts covering provider 503, tool crash, and context overflow scenarios. Add SIGTERM shutdown tests to kairos-br-loop.test.ts."
+    },
+    {
+      "id": "R27",
+      "title": "No mid-migration kill test — SQLite WAL atomicity under SIGKILL is assumed not verified",
+      "category": "TESTING",
+      "severity": "MEDIUM",
+      "agentCount": 3,
+      "evidence": "No test exercises: open transaction, apply partial schema change, SIGKILL, restart, verify pre-migration state. Rollback code exists in transaction.ts and db/client.ts but the adversarial scenario is untested.",
+      "dimensions": ["FAILURE_HANDLING", "RESILIENCE"],
+      "remediation": "Write the mid-migration kill test: start DB transaction, apply half the schema changes, send SIGKILL, restart, assert schema is at the pre-migration version. This validates the WAL atomicity guarantee under adversarial conditions."
+    },
+    {
+      "id": "R28",
+      "title": "orchestrator, hooks, and scheduler have ca=0 — no static import confirmation of runtime registration",
+      "category": "COMPLETENESS",
+      "severity": "LOW",
+      "agentCount": 3,
+      "evidence": "architecture.json coupling: orchestrator ca=0, hooks ca=0, scheduler ca=0. The wiring audit confirms runOrchestrationPipeline and DaemonController by call site; hooks lifecycle system (PreToolUse, PostToolUse, SessionStart) is not in the 12-function wiring audit.",
+      "dimensions": ["WIRING", "CODE_COMPLETENESS"],
+      "remediation": "Add HookManager registration to the wiring audit. Confirm that lifecycle hooks fire at runtime by adding one integration test that registers a hook and verifies it executes on a tool call."
+    },
+    {
+      "id": "R29",
+      "title": "No OpenAPI specification for God Mode endpoints",
+      "category": "COMPLETENESS",
+      "severity": "LOW",
+      "agentCount": 5,
+      "evidence": "architecture.json apiContracts: openapi=false, graphql=false, grpc=false. Third-party product connector implementations must read TypeScript source to understand the contract. Silent drift is undetectable.",
+      "dimensions": ["API_CONTRACT_INTEGRITY", "DOCUMENTATION"],
+      "remediation": "Generate OpenAPI 3.1 spec from server.ts route handlers. Add a CI step that fails if route signatures change without updating the spec."
+    },
+    {
+      "id": "R30",
+      "title": "DORA lead time 112 hours (4.7 days) — DORA Low tier",
+      "category": "OPERATIONS",
+      "severity": "LOW",
+      "agentCount": 3,
+      "evidence": "operational-readiness.json dora.leadTime.medianHours=112. DORA Elite threshold is < 1 hour. Single-contributor project — this is self-review latency, not bottleneck from external review. Indicates large PRs with multi-day batch sizes.",
+      "dimensions": ["OPERATIONAL_READINESS", "SHIP_READINESS"],
+      "remediation": "Reduce PR batch size. Aim for multiple small commits per day rather than large multi-day batches. Instrument actual deployment timestamps to get real DORA metrics."
+    },
+    {
+      "id": "R31",
+      "title": "8 state machines defined — ChangeSet has no test for executed->failed invalid transition",
+      "category": "TESTING",
+      "severity": "LOW",
+      "agentCount": 3,
+      "evidence": "architecture.json stateMachines: ChangeSet has 4 states (pending, approved, rejected, executed). workflow/confidence.test.ts testsErrors=true but ChangeSet itself has no invalid-transition test. A ChangeSet stuck in 'approved' after a failed execute has no recovery path tested.",
+      "dimensions": ["FAILURE_HANDLING", "PROPERTY_CORRECTNESS"],
+      "remediation": "Write ChangeSet state machine tests covering all invalid transitions (12 invalid pairs for 4 states). Specifically test: approved->executed throws on execution failure, leaving ChangeSet in a recoverable state."
+    },
+    {
+      "id": "R32",
+      "title": "egress-monitor domain allowlist content unverified at runtime",
+      "category": "SECURITY",
+      "severity": "LOW",
+      "agentCount": 2,
+      "evidence": "security.json owaspFindings A10: 'egress-monitor enforces domain allowlist for POST/upload operations. Non-allowlisted domain POSTs blocked.' No evidence the allowlist is non-empty at runtime or cannot be cleared via crafted config mutation.",
+      "dimensions": ["SECURITY_POSTURE"],
+      "remediation": "Add a startup check that verifies egress-monitor domain allowlist is non-empty when configured. Add a test that verifies a crafted config mutation cannot clear the allowlist."
+    },
+    {
+      "id": "R33",
+      "title": "No deployed dashboards — operational observability is blind",
+      "category": "OPERATIONS",
+      "severity": "MEDIUM",
+      "agentCount": 5,
+      "evidence": "operational-readiness.json monitoring.dashboards=false, dashboardsEvidence='No Grafana, Datadog, or other dashboard config files found'.",
+      "dimensions": ["OPERATIONAL_READINESS", "DOCUMENTATION"],
+      "remediation": "Create a minimal Grafana dashboard JSON or Datadog monitor YAML covering the 11 monitors already defined in monitoring-manifest.json. Even a single dashboard is better than none."
+    },
+    {
+      "id": "R34",
+      "title": "mcp package has cross-layer violation (Infrastructure imports Domain) and instability=0.67",
+      "category": "ARCHITECTURE",
+      "severity": "LOW",
+      "agentCount": 3,
+      "evidence": "architecture.json layers Infrastructure crossLayerViolations: 'mcp -> tools (Domain): mcp imports @brainst0rm/tools'. architecture.json coupling: mcp instability=0.67 — an Infrastructure package should have low instability.",
+      "dimensions": ["ARCHITECTURE_QUALITY"],
+      "remediation": "Extract the tools dependency from mcp into an injected interface so mcp remains in the Infrastructure layer with instability < 0.5."
+    },
+    {
+      "id": "R35",
+      "title": "Vault test 17.7s — if vault.unlock() is called per-operation rather than per-session, KDF becomes request-time overhead",
+      "category": "SCALE",
+      "severity": "LOW",
+      "agentCount": 3,
+      "evidence": "dynamic-testing.json: @brainst0rm/vault durationMs=17730. security.json vaultSystem.autoLock='30-minute inactivity timer' implies session-scoped, but this assumption is unverified in tests.",
+      "dimensions": ["SCALE_READINESS"],
+      "remediation": "Add a test that calls vault.get('key') twice in the same session and asserts the second call does not re-derive the key (< 100ms for second call). Documents the per-session KDF contract explicitly."
+    },
+    {
+      "id": "R36",
+      "title": "no-mock test pattern across 43/45 files — test assumptions depend on real implementations that may not exist in CI",
+      "category": "TESTING",
+      "severity": "LOW",
+      "agentCount": 2,
+      "evidence": "dynamic-testing.json testQuality: 43 of 45 files show usesMocks=false. Tests that use no mocks and no real IO may be testing in-memory stubs that do not reflect production behavior.",
+      "dimensions": ["TEST_REALITY"],
+      "remediation": "Audit the 43 no-mock files to confirm they test real code paths. The combination of no-mocks AND no-real-IO is only valid when the test exercises actual logic without external dependencies."
+    },
+    {
+      "id": "R37",
+      "title": "subagent privilege reduction is present in code but has no test verifying ceiling enforcement under adversarial tool requests",
+      "category": "SECURITY",
+      "severity": "LOW",
+      "agentCount": 2,
+      "evidence": "security.json owaspFindings A01: 'allowedTools intersected with parent's available tools (privilege ceiling at line ~233). MUTATING_TYPES (code, general) downgraded to read-only without explicit permissionCheck'. No test sends an adversarial tool request that attempts to exceed the subagent's privilege ceiling.",
+      "dimensions": ["SECURITY_POSTURE"],
+      "remediation": "Add a test that creates a subagent, attempts to invoke a tool not in the parent's allowed set, and asserts the request is rejected with a privilege-ceiling error."
+    },
+    {
+      "id": "R38",
+      "title": "Dead code in core package — 7 unused exports including LoopDetector and SessionPatternLearner",
+      "category": "COMPLETENESS",
+      "severity": "LOW",
+      "agentCount": 2,
+      "evidence": "static-analysis.json deadCode core: ['normalizeInsightMarkers', 'LoopDetector', 'SessionPatternLearner', 'FileWatcher', 'classifyPlanTask', 'estimateTaskCost', 'loadIgnorePatterns'].",
+      "dimensions": ["CODE_COMPLETENESS"],
+      "remediation": "Review and remove or mark internal the 7 unused core exports. LoopDetector and SessionPatternLearner are named features that should either be wired or removed with a note explaining why they were deprecated."
+    }
+  ],
+  "riskSummaryBySeverity": {
+    "CRITICAL": 1,
+    "HIGH": 11,
+    "MEDIUM": 15,
+    "LOW": 11
+  },
+  "riskSummaryByCategory": {
+    "TESTING": 10,
+    "SECURITY": 7,
+    "OPERATIONS": 8,
+    "ARCHITECTURE": 6,
+    "COMPLETENESS": 5,
+    "SCALE": 5
+  },
+  "top5ImmediateRisks": ["R03", "R04", "R06", "R02", "R26"]
+}

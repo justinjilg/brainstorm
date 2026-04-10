@@ -1,0 +1,479 @@
+[
+  {
+    "pairId": 1,
+    "title": "SHIP READINESS — Optimist (Agent 1) vs Pessimist (Agent 2)",
+    "dimensions": ["SHIP_READINESS", "CODE_COMPLETENESS", "WIRING"],
+    "r1Scores": {
+      "agent1_Optimist": {
+        "SHIP_READINESS": 5,
+        "CODE_COMPLETENESS": 7,
+        "WIRING": 8
+      },
+      "agent2_Pessimist": {
+        "SHIP_READINESS": 3,
+        "CODE_COMPLETENESS": 4,
+        "WIRING": 4
+      }
+    },
+    "debate": {
+      "SHIP_READINESS": {
+        "optimist_position": {
+          "score": 5,
+          "claim": "The CLI binary can be assembled and invoked today. 12 wiring points confirmed at specific file:line references in brainstorm.ts and loop.ts. 661 tests pass with 0 failures. 0 npm vulnerabilities. These are binary facts: the artifact exists and passes its test suite.",
+          "evidenceCited": [
+            "static-analysis.json wiringAudit: 12/12 wired=true, e.g. createWiredMemoryTool at brainstorm.ts:5126",
+            "dynamic-testing.json totals: passed=661, failed=0",
+            "static-analysis.json vulnerabilities: total=0, critical=0"
+          ]
+        },
+        "pessimist_rebuttal": {
+          "claim": "A CLI you can invoke is not a CLI you can ship. Gateway (764 src lines, billing surface) has 0 test files. Server (1450 src lines, HTTP surface) has 0 test files. Scheduler (693 src lines, automation surface) has 0 test files. The jwtSecret empty check produces a log warning and does not abort. The vault test takes 17,730ms — 3.8x the next-slowest package — indicating blocking Argon2id KDF that could stall startup. The IPC integration test is labeled isUnitTest=true and usesRealIO=false despite the filename. No test crosses a process boundary.",
+          "evidenceCited": [
+            "dynamic-testing.json: @brainst0rm/gateway files=0, @brainst0rm/server files=0, @brainst0rm/scheduler files=0",
+            "security.json owaspFindings A05: 'SERVER EXPOSED WITHOUT AUTH' warning logged at startup if jwtSecret is empty",
+            "dynamic-testing.json: @brainst0rm/vault durationMs=17730 vs @brainst0rm/core durationMs=4660",
+            "dynamic-testing.json testQuality: loop.integration.test.ts isUnitTest=true, usesRealIO=false"
+          ]
+        },
+        "optimist_counter": {
+          "claim": "The 0-test packages (gateway, server, scheduler) are either leaf nodes or not on the critical path for CLI invocation. The wiring audit confirms the critical path: createWiredMemoryTool, createPipelineDispatcher, DaemonController, runOrchestrationPipeline — all wired. The vault timing is almost certainly Argon2id KDF intentional parameters, not a bug. A user running 'brainstorm chat' today gets a working tool.",
+          "evidenceCited": [
+            "static-analysis.json wiringAudit: runOrchestrationPipeline wired at brainstorm.ts:2641, DaemonController wired at brainstorm.ts:5685",
+            "static-analysis.json dependencyGraph: gateway importedByCount=6 (not zero, not critical path for chat)"
+          ]
+        },
+        "pessimist_counter": {
+          "claim": "The 17 unused tool exports in the tools package — including ghReviewTool, ghActionsTool, ghReleaseTool — mean the shipped binary exports functionality that is never called. That is not a ship-ready state; that is a prototype with dead surface area. Additionally, the CLAIMED routing differentiator — 5 routing strategies — are all dead exports: costFirstStrategy, qualityFirstStrategy, createRuleBasedStrategy, createCombinedStrategy, capabilityStrategy. The shipped product's stated differentiator is not exercised by any call site.",
+          "evidenceCited": [
+            "static-analysis.json deadCode tools: ghReviewTool, ghActionsTool, ghReleaseTool, ghSearchTool, ghSecurityTool, ghRepoTool, gitBranchTool, gitStashTool — 8 tools exported but unused",
+            "static-analysis.json deadCode router: costFirstStrategy, qualityFirstStrategy, createRuleBasedStrategy, createCombinedStrategy, capabilityStrategy — 5 of 6 routing strategies are dead exports"
+          ]
+        },
+        "jointFinding": {
+          "agreedScore": null,
+          "agentScores": {
+            "Optimist": 5,
+            "Pessimist": 3
+          },
+          "CONTESTED": true,
+          "rationale": "Agents agree on the factual record — 661 tests pass, 12 wiring points confirmed, gateway/server/scheduler have 0 tests, 5 routing strategies are dead exports — but disagree on what 'ship-ready' means for a CLI vs a service. Optimist is scoring against a CLI artifact standard (does it build and run?). Pessimist is scoring against a production service standard (are critical surfaces tested?). The 5 dead routing strategies are the deciding split: the stated technical differentiator of the router package is unexercised in any call site, which is a factual gap neither agent disputes. The absence of any process-boundary test is also uncontested.",
+          "agreedFacts": [
+            "661 tests pass, 0 fail — CONFIRMED",
+            "12 wiring points with file:line citations — CONFIRMED",
+            "gateway, server, scheduler: 0 test files — CONFIRMED",
+            "5 of 6 router strategies: dead exports — CONFIRMED",
+            "vault durationMs=17730 vs core durationMs=4660 — CONFIRMED anomaly, cause unresolved",
+            "jwtSecret empty = warning only, server still starts — CONFIRMED"
+          ],
+          "blockers": [
+            "5 dead routing strategies make the router's differentiating claim UNPROVEN (max score 3 per rules)",
+            "gateway and server with 0 tests ship untested HTTP and billing surfaces",
+            "no process-boundary integration test exists — no test traverses CLI->provider->response across real pipes"
+          ]
+        }
+      },
+      "CODE_COMPLETENESS": {
+        "optimist_position": {
+          "score": 7,
+          "claim": "77,909 src lines verified by summing codeInventory. 26 packages confirmed by enumeration. 12 wiring points confirmed with file:line citations. The critical path from CLI entry to agentic loop is assembled and demonstrated by passing tests.",
+          "evidenceCited": [
+            "static-analysis.json codeInventory: 26 packages, srcLines sum = 77,909 (verified by Agent 4)",
+            "static-analysis.json wiringAudit: 12/12 wired=true with specific callSite entries"
+          ]
+        },
+        "pessimist_rebuttal": {
+          "claim": "Code presence is not code completeness. 11 of 26 packages have 0 test lines: docgen, gateway, ingest, onboard, orchestrator, plugin-sdk, projects, scheduler, sdk, server, vscode. That is 42% of the package surface with zero behavioral verification. gateway handles LLM API billing. server handles HTTP. onboard handles user setup. These are not edge cases — they are operational necessities. Lines of code without tests are untested assertions about behavior.",
+          "evidenceCited": [
+            "static-analysis.json codeInventory: gateway testLines=0, server testLines=0, onboard testLines=0, orchestrator testLines=0, scheduler testLines=0",
+            "dynamic-testing.json: @brainst0rm/gateway files=0, passed=0; @brainst0rm/server files=0, passed=0"
+          ]
+        },
+        "jointFinding": {
+          "agreedScore": 5,
+          "CONTESTED": false,
+          "rationale": "Both agents accept the factual evidence. The debate resolves to a scoring question: 42% of packages have 0 test lines, including gateway (billing), server (HTTP), and onboard (user setup). The Optimist's score of 7 presupposes that untested-but-wired code counts as complete. The Pessimist's score of 4 treats 0-test packages as incomplete regardless of wiring. Joint score of 5 reflects that the codebase has verifiable line counts and wiring evidence (upside) but over 40% of packages are behaviorally unverified (downside). Neither side disputes the 42% figure.",
+          "agreedFacts": [
+            "77,909 src lines verified by summation — CONFIRMED",
+            "26 packages enumerated — CONFIRMED",
+            "11 packages with 0 test lines (42%) — CONFIRMED",
+            "gateway, server, onboard have 0 test lines and are operationally critical — CONFIRMED"
+          ]
+        }
+      },
+      "WIRING": {
+        "optimist_position": {
+          "score": 8,
+          "claim": "All 12 audited wiring points resolve to concrete call sites with file:line numbers. shared is imported by 106 call sites. The dependency graph shows db (importedByCount=17), tools (importedByCount=31), and shared (importedByCount=106) as load-bearing hubs with real consumers.",
+          "evidenceCited": [
+            "static-analysis.json wiringAudit: all 12 wired=true, e.g. syncTrustWindow at loop.ts:471, flushTrustWindow at loop.ts:474",
+            "static-analysis.json dependencyGraph: shared importedByCount=106, tools importedByCount=31"
+          ]
+        },
+        "pessimist_rebuttal": {
+          "claim": "The wiring audit covers 12 functions out of how many total registered tools and handlers? The static-analysis.json reports 17 unused tool exports — ghReviewTool, ghActionsTool, ghReleaseTool, ghSearchTool, ghSecurityTool, ghRepoTool, gitBranchTool, gitStashTool — these are exported but not imported. A wiring audit that confirms 12 out of N functions while leaving 17 known dead exports unresolved is an incomplete audit, not a wiring confirmation. Additionally, the IPC integration test has usesRealIO=false — the inter-process boundary between CLI and desktop app has never been tested against a real pipe.",
+          "evidenceCited": [
+            "static-analysis.json deadCode tools: 17 unused exports confirmed",
+            "dynamic-testing.json testQuality: cli/ipc/integration.test.ts usesRealIO=false — no real IPC pipe tested",
+            "dynamic-testing.json testQuality: loop.integration.test.ts isUnitTest=true despite name"
+          ]
+        },
+        "jointFinding": {
+          "agreedScore": null,
+          "agentScores": {
+            "Optimist": 8,
+            "Pessimist": 4
+          },
+          "CONTESTED": true,
+          "rationale": "The gap of 4 points (8 vs 4) is the largest in Pair 1. The factual dispute: the Optimist counts 12 confirmed wiring points as positive evidence and stops there. The Pessimist counts 17 confirmed dead exports as negative evidence of incomplete wiring. Both are citing real data. The key contested claim is whether '12 wired' dominates '17 dead' or vice versa. The rules state: if evidence does not exist for a claim, score is UNPROVEN (max 3). The wiring audit covers 12 of an unspecified total — no evidence confirms the remaining tool registrations are wired. The 17 dead tool exports are confirmed absent from any call site. Per UNPROVEN rule, wiring cannot score above 6 when 17 tools are confirmed dead and the total tool count is unaudited. Optimist's 8 is not supportable by the evidence set. Pessimist's 4 undersells the 12 confirmed positive wire points.",
+          "agreedFacts": [
+            "12 wiring points confirmed with file:line citations — CONFIRMED",
+            "17 unused tool exports in tools package — CONFIRMED",
+            "5 unused routing strategy exports in router package — CONFIRMED",
+            "IPC integration test usesRealIO=false — CONFIRMED, no real pipe tested",
+            "orchestrator ca=0 in architecture.json — nothing statically imports it"
+          ]
+        }
+      }
+    }
+  },
+  {
+    "pairId": 2,
+    "title": "RESILIENCE — Architect (Agent 3) vs Chaos Monkey (Agent 10)",
+    "dimensions": ["RESILIENCE", "ARCHITECTURE_QUALITY", "FAILURE_HANDLING"],
+    "r1Scores": {
+      "agent3_Architect": {
+        "RESILIENCE": 3,
+        "ARCHITECTURE_QUALITY": 6,
+        "FAILURE_HANDLING": 5
+      },
+      "agent10_ChaosMonkey": {
+        "RESILIENCE": 3,
+        "ARCHITECTURE_QUALITY": 5,
+        "FAILURE_HANDLING": 5
+      }
+    },
+    "debate": {
+      "RESILIENCE": {
+        "architect_position": {
+          "score": 3,
+          "claim": "The unbounded taskEventQueue at loop.ts:242 is the primary resilience failure. It is a pure Array with .push() and no max-size cap. architecture.json documents 170 unbounded .push() calls across core/src. SQLite is a single-writer synchronous backend — concurrent writes block the event loop. These are structural, not operational deficiencies. Resilience cannot be built on an unbounded event queue.",
+          "evidenceCited": [
+            "architecture.json scalabilityBottlenecks: 'taskEventQueue is an unbounded Array with .push(); no max-size cap' at loop.ts:242",
+            "architecture.json scalabilityBottlenecks: '170 unbounded .push() calls across core/src identified'",
+            "architecture.json scalabilityBottlenecks: sqlite_single_writer — synchronous WAL-mode SQLite"
+          ]
+        },
+        "chaosMonkey_rebuttal": {
+          "claim": "The unbounded queue is a resilience risk I agree with. But the more immediate resilience failure is that 37 of 46 test files have testsErrors=false — the failure surface of the system is empirically unmapped. The loop.integration.test.ts has testsErrors=false: the agent loop has no tests for provider 503, tool crash, or context overflow. The kairos-br-loop.test.ts has testsErrors=false and usesMocks=false — a long-running background process with no error-path tests. If you kill a node mid-migration, the response is unknown because no test covers it. rollback capability exists in transaction.ts, db/client.ts, and changeset.ts per operational-readiness.json — but no test verifies a rollback actually restores state.",
+          "evidenceCited": [
+            "dynamic-testing.json testQuality: packages/core/src/__tests__/loop.integration.test.ts testsErrors=false",
+            "dynamic-testing.json testQuality: packages/core/src/__tests__/kairos-br-loop.test.ts testsErrors=false, usesMocks=false",
+            "dynamic-testing.json: 37 of 46 test files have testsErrors=false",
+            "operational-readiness.json prr.rollbackEvidence: transaction.ts, db/client.ts, changeset.ts — rollback code exists but no test verifies restoration"
+          ]
+        },
+        "architect_counter": {
+          "claim": "The rollback primitives are real. SQLite WAL mode provides atomic commit semantics — a SIGKILL between writes does not corrupt the database. The ChangeSet pattern (pending->approved->executed) is structurally enforced in changeset.ts. These are architectural guarantees, not runtime tests. The missing tests confirm the guarantee is untested, not that the guarantee is absent.",
+          "evidenceCited": [
+            "architecture.json stateMachines: ChangeSet states=[pending, approved, rejected, executed] with 4 transitions",
+            "operational-readiness.json prr.rollback=true, rollbackEvidence includes packages/db/src/client.ts with WAL mode"
+          ]
+        },
+        "chaosMonkey_counter": {
+          "claim": "Architectural guarantees that are never exercised are assumptions, not properties. The 21 skipped tests in @brainst0rm/tools — the package responsible for shell execution, git operations, and filesystem access — are directly the resilience surface under chaos. They are written but not running. That is confirmed broken coverage, not a gap in a test plan. The KAIROS-BR loop test with testsErrors=false means the primary operational feature (KAIROS background loop) has never been tested under failure. This is not an architecture question — it is a testing question that directly determines resilience posture.",
+          "evidenceCited": [
+            "dynamic-testing.json: @brainst0rm/tools skipped=21 — written tests that are not running",
+            "dynamic-testing.json testQuality: packages/core/src/__tests__/kairos-br-loop.test.ts testsErrors=false — KAIROS loop has no error path tests"
+          ]
+        },
+        "jointFinding": {
+          "agreedScore": 3,
+          "CONTESTED": false,
+          "rationale": "Both agents independently scored RESILIENCE at 3 and the debate confirms convergence. The two attack vectors are different but additive: the Architect identifies structural resilience failures (unbounded queue at loop.ts:242, 170 unbounded push calls, SQLite single-writer). The Chaos Monkey identifies behavioral resilience failures (37/46 test files skip error paths, loop.integration.test.ts has no error tests, 21 tools tests skipped). Both are confirmed by direct evidence citations with no disputed facts. The rollback primitives exist in code (transaction.ts, changeset.ts) but no test verifies restoration — confirmed by both agents. Score 3 is correct: resilience mechanisms are present in architecture but untested and have known structural bottlenecks.",
+          "agreedFacts": [
+            "taskEventQueue is an unbounded Array at loop.ts:242 — CONFIRMED",
+            "170 unbounded .push() calls across core/src — CONFIRMED",
+            "21 tools tests skipped — CONFIRMED",
+            "37 of 46 test files testsErrors=false — CONFIRMED",
+            "loop.integration.test.ts testsErrors=false — CONFIRMED",
+            "kairos-br-loop.test.ts testsErrors=false — CONFIRMED",
+            "rollback code in transaction.ts, changeset.ts — CONFIRMED present; restoration behavior UNPROVEN",
+            "SQLite WAL mode provides atomicity — CONFIRMED; adversarial SIGKILL behavior UNPROVEN"
+          ]
+        }
+      },
+      "ARCHITECTURE_QUALITY": {
+        "architect_position": {
+          "score": 6,
+          "claim": "The layered architecture has correct instability gradients. Foundation: shared instability=0.00, config instability=0.08, db instability=0.08 — these are appropriately stable. Application/leaf packages are correctly unstable (cli instability=1.00). Three cross-layer violations are documented and bounded: mcp->tools (Infrastructure->Domain), core->agents (Core->Domain), core->tools (Core->Domain). Eight state machines are defined with explicit state enumerations. The violations are real but contained.",
+          "evidenceCited": [
+            "architecture.json coupling: shared ca=24, instability=0.00; cli ce=17, instability=1.00",
+            "architecture.json layers.Core.crossLayerViolations: core imports @brainst0rm/agents and @brainst0rm/tools",
+            "architecture.json stateMachines: 8 machines including ChangeSet, WorkflowRun, DaemonController"
+          ]
+        },
+        "chaosMonkey_rebuttal": {
+          "claim": "From a chaos perspective, the DaemonController dual-state representation is more dangerous than the cross-layer violations. architecture.json explicitly documents that DaemonController uses 'isPaused flag used alongside status string' — two independent variables tracking the same semantic state. Under concurrent state transitions (SIGTERM while paused, resume request during shutdown), the flag and string can diverge. Diverged state in the daemon controller means undefined shutdown behavior under pressure. Additionally, orchestrator has ca=0 — nothing imports it — and hooks has ca=0, scheduler has ca=0. These Domain-layer packages are architectural orphans that cannot be chaos-tested because they are never called by static analysis.",
+          "evidenceCited": [
+            "architecture.json stateMachines DaemonController: 'isPaused flag used alongside status string — dual state representation'",
+            "architecture.json coupling: orchestrator ca=0 (nothing imports it statically), hooks ca=0, scheduler ca=0"
+          ]
+        },
+        "architect_counter": {
+          "claim": "The DaemonController dual-state is a known documented risk — it is in the evidence, not hidden. The three packages with ca=0 (orchestrator, hooks, scheduler) are consumed via dynamic registration at runtime, not static import. The wiring audit confirms runOrchestrationPipeline is called at brainstorm.ts:2641. The DaemonController is called at brainstorm.ts:5685. Static import count of 0 does not mean these packages are unreachable at runtime.",
+          "evidenceCited": [
+            "static-analysis.json wiringAudit: runOrchestrationPipeline wired at brainstorm.ts:2641",
+            "static-analysis.json wiringAudit: DaemonController wired at brainstorm.ts:5685"
+          ]
+        },
+        "chaosMonkey_counter": {
+          "claim": "The wiring audit confirms 12 functions. hooks has ca=0 in architecture.json and the wiring audit does not list any hook function as a confirmed call site. The hooks package (894 src lines, HookManager lifecycle events) has no wiring confirmation in the 12-entry audit and ca=0. If HookManager is not statically or dynamically confirmed wired, the entire lifecycle hook system — PreToolUse, PostToolUse, SessionStart — is potentially dead in production. Under chaos, a hook that is supposed to fire on PreToolUse does not fire, and no alert exists because the monitoring-manifest has 0 deployed monitors.",
+          "evidenceCited": [
+            "static-analysis.json dependencyGraph: hooks importedByCount — needs verification; architecture.json coupling: hooks ca=0",
+            "dynamic-testing.json: @brainst0rm/hooks files=1, passed=14 — hooks are tested but their runtime registration is not wired in the 12-function audit"
+          ]
+        },
+        "jointFinding": {
+          "agreedScore": null,
+          "agentScores": {
+            "Architect": 6,
+            "ChaosMonkey": 5
+          },
+          "CONTESTED": false,
+          "rationale": "Scores differ by 1.0 — below the 1.5 CONTESTED threshold. Both agents agree on the positive evidence: correct instability gradient, 8 defined state machines, ChangeSet as the safety-critical pattern. Both agree on the negative evidence: 3 cross-layer violations, DaemonController dual-state, unbounded event queue. The Chaos Monkey's additional concern about hooks ca=0 and potential dead lifecycle hooks is the primary distinguishing evidence. hooks is tested (14 passing tests) but its runtime registration is not in the 12-function wiring audit. The Architect grants that runtime dynamic registration explains ca=0 for orchestrator and scheduler but the same argument requires evidence for hooks specifically. The 1-point gap reflects this unresolved question about hook registration confirmation. Joint finding accepts both scores as defensible with the hooks registration being the key unresolved gap.",
+          "agreedFacts": [
+            "instability gradient correct: shared=0.00, config=0.08, cli=1.00 — CONFIRMED",
+            "3 cross-layer violations documented — CONFIRMED",
+            "DaemonController dual-state (isPaused + status string) — CONFIRMED documented risk",
+            "8 state machines with explicit states — CONFIRMED",
+            "orchestrator ca=0, hooks ca=0, scheduler ca=0 — CONFIRMED static; runtime registration UNCONFIRMED for hooks",
+            "unbounded taskEventQueue at loop.ts:242 — CONFIRMED"
+          ]
+        }
+      },
+      "FAILURE_HANDLING": {
+        "architect_position": {
+          "score": 5,
+          "claim": "The ChangeSet state machine is the primary failure-handling mechanism for destructive actions — it enforces simulation->approval->execution with explicit states [pending, approved, rejected, executed]. WorkflowRun has 'failed' and 'cancelled' terminal states. The DaemonController dual-state is the primary failure handling concern: isPaused flag alongside status string creates a divergence window under concurrent state transitions.",
+          "evidenceCited": [
+            "architecture.json stateMachines: ChangeSet transitions=4, states=[pending, approved, rejected, executed]",
+            "architecture.json stateMachines: WorkflowRun includes 'failed' and 'cancelled' terminal states",
+            "architecture.json stateMachines: DaemonController 'isPaused flag used alongside status string'"
+          ]
+        },
+        "chaosMonkey_rebuttal": {
+          "claim": "The failure handling architecture is present but empirically unverified under adverse conditions. The workflow/confidence.test.ts has testsErrors=true — this is the one state machine test with error coverage. But the ChangeSet itself has no test that exercises the executed->failed path or verifies that an approved->executed failure leaves the ChangeSet in a recoverable state. No test simulates a mid-execution kill. The rollback evidence in operational-readiness.json lists transaction.ts, db/client.ts, changeset.ts as rollback-capable files — but no test verifies a partial execution leaves the database at the pre-execution state.",
+          "evidenceCited": [
+            "dynamic-testing.json testQuality: packages/workflow/src/__tests__/confidence.test.ts testsErrors=true — only workflow state machine with error coverage",
+            "operational-readiness.json dora.mttrHours=null — no measured recovery in production",
+            "dynamic-testing.json testQuality: packages/db/src/__tests__/migrations.test.ts usesRealIO=true, testsErrors=true — only test with real IO and error paths"
+          ]
+        },
+        "architect_counter": {
+          "claim": "The db/migrations.test.ts is exactly the right model: usesRealIO=true, testsErrors=true — it tests real file system access and error conditions. This is the data layer, which is the correct place to anchor failure handling guarantees. The ChangeSet architectural constraint (cannot move from executed back to approved) is enforced by the state enumeration itself — invalid transitions are type-level constraints in TypeScript, not just runtime checks.",
+          "evidenceCited": [
+            "dynamic-testing.json testQuality: packages/db/src/__tests__/migrations.test.ts usesRealIO=true, testsErrors=true",
+            "architecture.json stateMachines: ChangeSet states enumerated — 4 valid transitions, reversal not in transition list"
+          ]
+        },
+        "chaosMonkey_counter": {
+          "claim": "Type-level constraints do not survive runtime chaos. A TypeScript type error is a compile-time check, not a runtime guarantee against concurrent state mutation, database corruption, or mid-flight SIGKILL. The db/migrations.test.ts is the correct model — it uses real IO and tests errors. The gap is that this model has not been applied to the ChangeSet execution path, the agent loop, or the KAIROS-BR background loop. 80% of test files do not test error conditions. The system has a correct failure-handling architecture with inadequate failure-handling test coverage.",
+          "evidenceCited": [
+            "dynamic-testing.json: 37 of 46 test files testsErrors=false",
+            "dynamic-testing.json testQuality: loop.integration.test.ts testsErrors=false, usesMocks=false — agent loop with no error coverage"
+          ]
+        },
+        "jointFinding": {
+          "agreedScore": 5,
+          "CONTESTED": false,
+          "rationale": "Both agents independently scored FAILURE_HANDLING at 5 and the debate confirms this is the correct joint score. The Architect's view (correct state machine architecture, ChangeSet enforced) and the Chaos Monkey's view (80% of tests skip error paths, loop has no error coverage) are additive descriptions of the same system: failure handling is architecturally present and partially tested, but the critical paths (agent loop, KAIROS-BR loop, ChangeSet execution) have no error-path tests. The db/migrations.test.ts is the highest-fidelity test in the suite and is the agreed reference point for what failure handling testing should look like. Score 5 reflects: mechanisms exist (transaction.ts, changeset.ts, WAL mode), partial error coverage in 14/46 test files, but critical paths (loop, KAIROS, ChangeSet execution) have no error-path verification.",
+          "agreedFacts": [
+            "ChangeSet state machine: 4 states, 4 transitions — CONFIRMED",
+            "db/migrations.test.ts: usesRealIO=true, testsErrors=true — CONFIRMED as highest-fidelity failure test",
+            "37 of 46 test files testsErrors=false — CONFIRMED",
+            "loop.integration.test.ts testsErrors=false — CONFIRMED gap in most critical path",
+            "kairos-br-loop.test.ts testsErrors=false — CONFIRMED gap in background process",
+            "rollback in transaction.ts, db/client.ts, changeset.ts — CONFIRMED present; adversarial restoration UNPROVEN"
+          ]
+        }
+      }
+    }
+  },
+  {
+    "pairId": 3,
+    "title": "CLAIMS vs EVIDENCE — Auditor (Agent 4) vs Optimist (Agent 1)",
+    "dimensions": [
+      "TEST_REALITY",
+      "PRODUCTION_EVIDENCE",
+      "PROPERTY_CORRECTNESS"
+    ],
+    "r1Scores": {
+      "agent4_Auditor": {
+        "TEST_REALITY": 5,
+        "PRODUCTION_EVIDENCE": 1,
+        "PROPERTY_CORRECTNESS": 1
+      },
+      "agent1_Optimist": {
+        "TEST_REALITY": 6,
+        "PRODUCTION_EVIDENCE": 2,
+        "PROPERTY_CORRECTNESS": 3
+      }
+    },
+    "debate": {
+      "TEST_REALITY": {
+        "auditor_position": {
+          "score": 5,
+          "claim": "The claim '661 tests pass' is verified. The claim '0 failures' is verified. The claim '21 skipped' is verified, all in @brainst0rm/tools. UNVERIFIABLE: what percentage of code the 661 tests exercise — coverageEnabled=false is a confirmed fact. The test pass claim cannot be elevated to 'code is tested' without coverage data. kairos-integration.test.ts and loop.integration.test.ts are labeled integration tests but classified isUnitTest=true in the evidence — their scope is unit, not integration, despite the filename.",
+          "evidenceCited": [
+            "dynamic-testing.json coverageEnabled=false — confirmed, not inferred",
+            "dynamic-testing.json totals: passed=661, failed=0, skipped=21 — directly verified",
+            "dynamic-testing.json testQuality: loop.integration.test.ts isUnitTest=true, kairos-integration.test.ts isUnitTest=true"
+          ]
+        },
+        "optimist_rebuttal": {
+          "claim": "The test quality data supports higher confidence than the Auditor grants. 43 of 45 sampled test files show usesMocks=false — meaning the tests run against real code, not stubbed implementations. This is higher fidelity than a mock-heavy test suite that achieves high coverage numbers against fake implementations. Zero mock usage is a positive signal about test authenticity that coverageEnabled=false does not negate.",
+          "evidenceCited": [
+            "dynamic-testing.json testQuality: usesMocks=false for 43 of 45 test files — tests run against real implementations",
+            "dynamic-testing.json totals: passed=661, failed=0 — no test regressions"
+          ]
+        },
+        "auditor_rebuttal": {
+          "claim": "usesMocks=false means the tests do not use mocking libraries. It does not mean they exercise real I/O, real network, or real processes. The test quality data shows usesRealIO=true for only a subset of files. The shell-sandbox.test.ts and gh-integration.test.ts both show usesRealIO=false despite testing shell and GitHub functionality — they run against real code paths but not real system interactions. The distinction between usesMocks=false and usesRealIO=true is load-bearing. The kairos-integration test has usesRealIO=true but isUnitTest=true — contradictory classification that cannot be resolved without reading the test source.",
+          "evidenceCited": [
+            "dynamic-testing.json testQuality: shell-sandbox.test.ts usesRealIO=false — shell test with no real shell",
+            "dynamic-testing.json testQuality: gh-integration.test.ts usesRealIO=false — GitHub integration test with no real GitHub",
+            "dynamic-testing.json testQuality: kairos-integration.test.ts isUnitTest=true AND usesRealIO=true — contradictory classification"
+          ]
+        },
+        "optimist_counter": {
+          "claim": "The Auditor correctly identifies the usesMocks vs usesRealIO distinction, but the net signal is still positive: 0 failures across 661 tests with low mock usage is better than the industry baseline for a 77,909-line codebase. The concern is calibration, not a binary failure. The 661 tests provide real signal; they just cannot be fully quantified without coverage data.",
+          "evidenceCited": [
+            "dynamic-testing.json: @brainst0rm/router files=4, passed=63, failed=0 — router package has strongest test density",
+            "static-analysis.json codeInventory: core testLines=2727 — highest absolute test line count"
+          ]
+        },
+        "jointFinding": {
+          "agreedScore": 5,
+          "CONTESTED": false,
+          "rationale": "The 1-point gap (Auditor=5, Optimist=6) resolves through the Auditor's stronger evidentiary standard. The key facts are uncontested: coverageEnabled=false is confirmed, the two 'integration' tests are classified isUnitTest=true, shell-sandbox and gh-integration tests use no real I/O. The Optimist's usesMocks=false argument has merit but does not override the Auditor's central point: a test that passes without coverage data, without real I/O for shell/GitHub tests, and with integration tests classified as unit tests cannot be scored above 5. Score 5 reflects: tests are green and largely non-mocked (positive), but coverage is unmeasured, two critical integration surfaces (shell, GitHub) test against real code without real I/O, and the 21 skipped tools tests represent confirmed absent coverage.",
+          "agreedFacts": [
+            "661 tests pass, 0 fail, 21 skip — CONFIRMED",
+            "coverageEnabled=false — CONFIRMED, no coverage baseline exists",
+            "43 of 45 test files usesMocks=false — CONFIRMED",
+            "loop.integration.test.ts isUnitTest=true — CONFIRMED misclassification",
+            "kairos-integration.test.ts isUnitTest=true AND usesRealIO=true — CONFIRMED contradictory classification",
+            "shell-sandbox.test.ts usesRealIO=false — CONFIRMED; shell tests exercise no real shell",
+            "gh-integration.test.ts usesRealIO=false — CONFIRMED; GitHub integration tests exercise no real GitHub"
+          ]
+        }
+      },
+      "PRODUCTION_EVIDENCE": {
+        "auditor_position": {
+          "score": 1,
+          "claim": "The baseline states 'No running system' — this is the controlling fact. DORA data in operational-readiness.json measures git commits to main, not deployments to a live system. dora.mttrHours=null with the explicit note 'No revert incidents found to measure MTTR from' — MTTR is undefined because the system has never experienced a production incident because it has never been in production. changeFailureRate.trueReverts=0 is an absence of production history, not a resilience signal. Scoring above 1 requires production evidence that does not exist in any assigned evidence stream.",
+          "evidenceCited": [
+            "operational-readiness.json dora.mttrHours=null, mttrNotes='No revert incidents found to measure MTTR from'",
+            "operational-readiness.json dora.deployFrequency: described as commit counts to main, not production deploys",
+            "Baseline: 'No running system' — controlling fact"
+          ]
+        },
+        "optimist_rebuttal": {
+          "claim": "A CLI tool is not a service deployment. 'No running system' for a service is a critical gap. For a CLI distributed as an npm package, the relevant evidence is that the binary can be built and invoked. The 788 commits, the passing test suite, and the confirmed wiring points constitute evidence that the CLI has been exercised in development. Requiring production deployment evidence for a CLI tool applies a service-readiness framework incorrectly.",
+          "evidenceCited": [
+            "static-analysis.json wiringAudit: 12 functions confirmed with file:line citations — evidence of real development invocation",
+            "dynamic-testing.json totals: 661 passing tests — evidence of repeatable execution"
+          ]
+        },
+        "auditor_rebuttal": {
+          "claim": "The Optimist conflates development invocation with production evidence. Wiring audit citations confirm code is wired at compile time, not that the CLI has been run by a user against real LLM providers. The Brainstorm platform contract specifies 5 God Mode endpoints and claims to connect to BrainstormMSP, BrainstormVM, BrainstormGTM, BrainstormShield, and BrainstormOps. No evidence in any stream shows any of these 5 endpoints returning data in a live session. The assessment baseline explicitly says 'No running system.' The Optimist is substituting development artifacts for runtime evidence — which the evidence framework explicitly prohibits by the UNPROVEN rule.",
+          "evidenceCited": [
+            "architecture.json apiContracts: godMode=true, 5 endpoints defined — but no evidence of live call to any endpoint",
+            "operational-readiness.json prr.healthEndpoints=true, healthEndpointsEvidence includes server.ts — health endpoints exist in code, not evidence they have been called"
+          ]
+        },
+        "optimist_counter": {
+          "claim": "The Auditor is applying a binary standard: production evidence or nothing. A score of 2 reflects that the artifact is functional but unvalidated against real traffic — this is the appropriate acknowledgment of development-stage maturity without penalizing to 1, which implies completely no evidence. The 661 passing tests and 0 failed tests across a real codebase do constitute minimum evidence that the code executes.",
+          "evidenceCited": [
+            "dynamic-testing.json: 661 tests pass — tests exercise real code execution, not a static artifact",
+            "dynamic-testing.json testQuality: packages/db/src/__tests__/migrations.test.ts usesRealIO=true — confirms real IO execution in at least one package"
+          ]
+        },
+        "jointFinding": {
+          "agreedScore": null,
+          "agentScores": {
+            "Auditor": 1,
+            "Optimist": 2
+          },
+          "CONTESTED": false,
+          "rationale": "Scores differ by 1.0 — below the 1.5 CONTESTED threshold. The substantive debate is resolved: both agents agree there is no running production system and no live traffic evidence. The 1-point gap reduces to a definitional question: does 'production evidence' require live traffic (Auditor) or does extensive local test execution count as minimum evidence (Optimist)? The UNPROVEN rule (max score 3 without evidence) caps this dimension at 3 regardless; the real question is 1 vs 2. The controlling evidence — mttrHours=null, deployFrequency=commit-counts-not-deploys, 'No running system' in baseline — supports 1 as the more rigorous score. The Optimist's argument that passing tests constitute minimum evidence has merit but does not rise to production evidence by any standard definition. Joint finding records both scores as the gap is defensible, with the Auditor's score of 1 the more technically precise under strict evidentiary standards.",
+          "agreedFacts": [
+            "dora.mttrHours=null — CONFIRMED",
+            "No production deployment pipeline instrumented — CONFIRMED",
+            "deployFrequency measures git commits, not production deploys — CONFIRMED by dora notes",
+            "trueReverts=0 because no production incidents exist — CONFIRMED",
+            "No live God Mode API calls in evidence — CONFIRMED absence",
+            "'No running system' — CONFIRMED controlling baseline fact"
+          ]
+        }
+      },
+      "PROPERTY_CORRECTNESS": {
+        "auditor_position": {
+          "score": 1,
+          "claim": "propertyBasedTests=0. This is a confirmed count, not an estimate. mutationTestingAvailable=false. These are directly readable fields in dynamic-testing.json. The score cannot exceed 1 when the evidence confirms zero generative tests exist. Behavioral invariants of the router Thompson sampling algorithm, vault AES-256-GCM encryption, JWT validation, and all 8 state machines are unverified by any property-based or mutation technique.",
+          "evidenceCited": [
+            "dynamic-testing.json: propertyBasedTests=0 — direct field, confirmed zero",
+            "dynamic-testing.json: mutationTestingAvailable=false — direct field, confirmed absent",
+            "architecture.json stateMachines: 8 state machines with defined transitions — none have property-based invariant tests"
+          ]
+        },
+        "optimist_rebuttal": {
+          "claim": "The Auditor's score of 1 treats zero property-based tests as a near-zero correctness score. But property correctness is also evidenced by conventional tests that exercise specific invariant-relevant cases. The vault/crypto.test.ts has testsErrors=true — it tests the encryption package's error conditions. The router/router.test.ts has testsErrors=true. The db/migrations.test.ts has usesRealIO=true and testsErrors=true. These provide partial property evidence at specific known inputs even without generative testing.",
+          "evidenceCited": [
+            "dynamic-testing.json testQuality: vault/crypto.test.ts testsErrors=true — encryption package tests error conditions",
+            "dynamic-testing.json testQuality: router/router.test.ts testsErrors=true — router tests error conditions",
+            "dynamic-testing.json testQuality: packages/db/src/__tests__/migrations.test.ts usesRealIO=true, testsErrors=true"
+          ]
+        },
+        "auditor_rebuttal": {
+          "claim": "testsErrors=true in a conventional test file means the test asserts specific known-input error cases. Property correctness means behavioral invariants hold across the full input space. The vault/crypto.test.ts testing a specific wrong-key decryption attempt is not equivalent to a property test that verifies: for all plaintexts P, decrypt(encrypt(P, K), K) == P AND decrypt(encrypt(P, K1), K2) always fails when K1 != K2. The Thompson sampling algorithm has an invariant: selected model always exists in the provider list. This has never been tested with a generative input. The 0 in propertyBasedTests=0 is not a soft signal — it is a count field that returns zero.",
+          "evidenceCited": [
+            "dynamic-testing.json: propertyBasedTests=0 — the field name is self-describing; the value is zero",
+            "No evidence in any stream of Thompson sampling invariant testing",
+            "No evidence in any stream of vault round-trip property verification across arbitrary inputs"
+          ]
+        },
+        "optimist_counter": {
+          "claim": "The Auditor's score of 1 implies near-total absence of correctness evidence. A score of 3 acknowledges that conventional tests provide partial correctness evidence at known inputs while confirming that the full input space is unverified. The red-team.test.ts and red-team-engine.test.ts in core exist — two test files focused on adversarial inputs. These are not property-based but they represent intentional correctness probing beyond the happy path.",
+          "evidenceCited": [
+            "dynamic-testing.json testQuality: packages/core/src/__tests__/red-team.test.ts — adversarial test file exists",
+            "dynamic-testing.json testQuality: packages/core/src/__tests__/red-team-engine.test.ts — adversarial engine test exists"
+          ]
+        },
+        "auditor_rebuttal_2": {
+          "claim": "The red-team.test.ts has testsErrors=false per Agent 9's evidence — an adversarial test file that does not assert on error conditions is testing that the system does something in response to adversarial inputs, not that it correctly blocks them. This directly undermines the Optimist's argument: the two adversarial test files are confirmed to have testsErrors=false, meaning they do not verify that the attack is blocked or that an error is returned. They exercise adversarial inputs but do not assert adversarial outcomes.",
+          "evidenceCited": [
+            "dynamic-testing.json testQuality: packages/core/src/__tests__/red-team.test.ts testsErrors=false — adversarial test without error assertions (Agent 9 evidence)"
+          ]
+        },
+        "jointFinding": {
+          "agreedScore": null,
+          "agentScores": {
+            "Auditor": 1,
+            "Optimist": 3
+          },
+          "CONTESTED": true,
+          "rationale": "The 2-point gap (Auditor=1, Optimist=3) exceeds the 1.5 CONTESTED threshold. The factual record is uncontested: propertyBasedTests=0, mutationTestingAvailable=false, red-team.test.ts testsErrors=false. The dispute is purely a scoring question: does propertyBasedTests=0 force a score of 1 (Auditor) or does partial conventional test coverage of correctness-sensitive code warrant a 3 (Optimist)? The rules state 'if evidence does not exist for a claim, score is UNPROVEN (max 3).' Property correctness is the dimension being scored. The evidence for property correctness is confirmed to be zero generative tests and zero mutation tests. Per the rules, this dimension caps at 3 (UNPROVEN). The Auditor's score of 1 is technically within the rules. The Optimist's score of 3 is at the maximum allowed under the UNPROVEN rule. The Auditor's more precise reading — that propertyBasedTests=0 is a confirmed count field, not an absence of evidence — supports 1 as the correct floor. The Optimist's argument about partial coverage from conventional tests supporting a 3 applies an overly broad definition of 'property correctness.' Joint finding: CONTESTED at 1 vs 3, with 2 as a reasonable consensus if the agents needed to converge — but they do not: the Auditor's evidentiary standard is stricter and more defensible against the rules.",
+          "agreedFacts": [
+            "propertyBasedTests=0 — CONFIRMED direct field value",
+            "mutationTestingAvailable=false — CONFIRMED direct field value",
+            "red-team.test.ts testsErrors=false — CONFIRMED (Agent 9 evidence)",
+            "vault/crypto.test.ts testsErrors=true — CONFIRMED, partial correctness for specific known inputs only",
+            "Thompson sampling invariant testing: NONE in evidence",
+            "Vault round-trip property verification across arbitrary inputs: NONE in evidence",
+            "8 state machine invariant tests: NONE in evidence"
+          ]
+        }
+      }
+    }
+  }
+]

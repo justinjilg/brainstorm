@@ -1,0 +1,70 @@
+{
+  "dora": {
+    "deployFrequency": {
+      "perWeek": [0, 175, 222, 105],
+      "total": 502,
+      "notes": "Weeks are oldest-to-newest over last 4 weeks. Week 1 (4 weeks ago) = 0 (possibly pre-history boundary), Week 2 = 175, Week 3 = 222, Week 4 (most recent) = 105. All commits to main via first-parent."
+    },
+    "leadTime": {
+      "medianHours": 112,
+      "sampleSize": 10,
+      "samples": [120, 113, 112, 112, 112, 112, 112, 111, 110, 95],
+      "notes": "Measured as hours from first commit on feature branch (^2 of merge) to merge commit timestamp. All 10 sampled merges were PR merges."
+    },
+    "changeFailureRate": {
+      "trueReverts": 0,
+      "grepRevertMatches": 7,
+      "notes": "git log --grep=revert -i returned 7 matches but all are rollback/checkpoint feature commits (e.g. 'transaction rollback', 'checkpoint and revert system'), not actual code reverts. Zero standard 'Revert \"...\"' commits found."
+    },
+    "mttrHours": null,
+    "mttrNotes": "No revert incidents found to measure MTTR from."
+  },
+  "prr": {
+    "monitoring": true,
+    "monitoringEvidence": [
+      "packages/shared/src/sentry.ts",
+      "docs/internal/monitoring-manifest.json"
+    ],
+    "runbooks": false,
+    "runbooksEvidence": "No files matching *runbook*, *playbook*, or *ops* found in docs/",
+    "rollback": true,
+    "rollbackEvidence": [
+      "packages/tools/src/builtin/transaction.ts",
+      "packages/db/src/client.ts",
+      "packages/godmode/src/changeset.ts"
+    ],
+    "onCall": false,
+    "onCallEvidence": "No pagerduty or opsgenie references found. 'on.call' pattern matched loop.ts and orchestrator engine but as code method names, not on-call tooling.",
+    "incidentResponse": false,
+    "incidentResponseEvidence": "No files matching *incident* or *postmortem* found in docs/",
+    "healthEndpoints": true,
+    "healthEndpointsEvidence": [
+      "packages/server/src/server.ts",
+      "packages/godmode/src/product-connector.ts",
+      "packages/godmode/src/manifest.ts",
+      "packages/godmode/src/connectors/vm/client.ts",
+      "packages/godmode/src/connectors/msp/client.ts"
+    ],
+    "alerting": true,
+    "alertingEvidence": [
+      "docs/internal/monitoring-manifest.json — slack-ops webhook channel defined for all 11 monitors"
+    ]
+  },
+  "monitoring": {
+    "slosDefined": false,
+    "slosEvidence": "SLO grep returned 45 files but matches are metric/threshold names in code, not SLO definition documents.",
+    "alertRules": true,
+    "alertRulesEvidence": "docs/internal/monitoring-manifest.json defines alertChannels per monitor (slack-ops webhook)",
+    "dashboards": false,
+    "dashboardsEvidence": "No Grafana, Datadog, or other dashboard config files found.",
+    "monitoringManifest": true,
+    "monitoringManifestEvidence": "docs/internal/monitoring-manifest.json — 11 monitors with UptimeRobot/BetterUptime setup instructions, Slack webhook alerting",
+    "sentryConfigured": true,
+    "sentryEvidence": "packages/shared/src/sentry.ts — full Sentry Node SDK integration with DSN from env/1Password, PII scrubbing, error capture helpers"
+  },
+  "logging": {
+    "framework": "pino",
+    "structured": true,
+    "evidence": "packages/shared/src/logger.ts — pino logger with child loggers, NDJSON to stderr in IPC mode, pino-pretty for debug, BRAINSTORM_LOG_LEVEL env control"
+  }
+}

@@ -240,12 +240,16 @@ export async function* runAgentLoop(
   // Reset task state and wire event handlers for this invocation
   clearTasks();
   const taskEventQueue: AgentEvent[] = [];
+  const TASK_QUEUE_CAP = 1000; // Prevent OOM from unbounded push — Forge R06
   setTaskEventHandler((type, task) => {
-    taskEventQueue.push({ type, task } as AgentEvent);
+    if (taskEventQueue.length < TASK_QUEUE_CAP) {
+      taskEventQueue.push({ type, task } as AgentEvent);
+    }
   });
 
   // Wire background task completion events into the same queue
   setBackgroundEventHandler((event) => {
+    if (taskEventQueue.length >= TASK_QUEUE_CAP) return;
     taskEventQueue.push({
       type: "background-complete",
       taskId: event.taskId,
@@ -258,6 +262,7 @@ export async function* runAgentLoop(
 
   // Wire tool output streaming into the same queue
   setToolOutputHandler((event) => {
+    if (taskEventQueue.length >= TASK_QUEUE_CAP) return;
     taskEventQueue.push({
       type: "tool-output-partial",
       toolName: event.toolName,

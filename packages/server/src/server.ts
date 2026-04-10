@@ -105,13 +105,16 @@ export class BrainstormServer {
   async start(): Promise<{ url: string }> {
     const { port, host } = this.opts;
 
-    // Security: warn if no auth on non-loopback interface
+    // Security: refuse to start without auth on non-loopback interface.
+    // POST /api/v1/god-mode/execute runs arbitrary operations on managed infrastructure —
+    // exposing it without JWT auth is a critical security violation.
     if (!this.opts.jwtSecret) {
       if (host !== "127.0.0.1" && host !== "localhost" && host !== "::1") {
-        log.warn(
+        log.fatal(
           { host, port },
-          "SERVER EXPOSED WITHOUT AUTH — set jwtSecret or bind to 127.0.0.1",
+          "REFUSING TO START — jwtSecret required for non-loopback bind. Set BRAINSTORM_JWT_SECRET or bind to 127.0.0.1.",
         );
+        process.exit(1);
       } else {
         log.info("Running in dev mode (no JWT auth) — localhost only");
       }
