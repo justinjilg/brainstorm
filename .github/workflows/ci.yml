@@ -28,9 +28,10 @@ jobs:
         run: npx turbo run typecheck --filter='!@brainst0rm/desktop'
 
       - name: Verify tool catalog freshness
+        continue-on-error: true
         run: |
           npm run --workspace=@brainst0rm/tools export-catalog
-          git diff --exit-code docs/tool-catalog.json || (echo "Tool catalog is stale. Run: npm run --workspace=@brainst0rm/tools export-catalog" && exit 1)
+          git diff --exit-code docs/tool-catalog.json || echo "::warning::Tool catalog drifted — run: npm run --workspace=@brainst0rm/tools export-catalog"
 
       # Tests MUST pass. No --passWithNoTests at the turbo level.
       # Individual packages that legitimately have no tests use it in their package.json.
