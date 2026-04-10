@@ -477,6 +477,15 @@ program
       console.log(`  Errored:   ${scorecard.errored}`);
       console.log(`  Cost:      $${scorecard.totalCost.toFixed(4)}`);
       console.log(`  Avg Lat:   ${scorecard.avgLatencyMs}ms`);
+
+      // Print individual errors to help diagnose scorer failures
+      const erroredScores = scores.filter((s: any) => s.error);
+      if (erroredScores.length > 0) {
+        console.log(`\n  Scoring errors (${erroredScores.length}):`);
+        for (const s of erroredScores) {
+          console.log(`    ${s.instanceId}: ${s.error}`);
+        }
+      }
       console.log();
     },
   );

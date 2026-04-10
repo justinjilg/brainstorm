@@ -86,24 +86,31 @@ function scorePatchWithDocker(
   const workDir = mkdtempSync(join(tmpdir(), "swe-bench-"));
 
   try {
-    // 1. Clone repo at baseCommit
+    // 1. Clone repo — use --filter=blob:none + fetch since SWE-bench base
+    // commits are often deeper than 100 commits and fail with --depth.
     execFileSync(
       "git",
       [
         "clone",
-        "--depth",
-        "100",
+        "--filter=blob:none",
+        "--no-checkout",
         `https://github.com/${instance.repo}.git`,
         "repo",
       ],
       {
         cwd: workDir,
-        timeout: 120000,
+        timeout: 180000,
         stdio: ["ignore", "pipe", "pipe"],
       },
     );
 
     const repoDir = join(workDir, "repo");
+
+    execFileSync("git", ["fetch", "origin", instance.baseCommit], {
+      cwd: repoDir,
+      timeout: 60000,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
 
     execFileSync("git", ["checkout", instance.baseCommit], {
       cwd: repoDir,
@@ -163,6 +170,12 @@ function scorePatchWithDocker(
       );
 
     try {
+      // Note: network is enabled because SWE-bench repos require pip install
+      // of their own dependencies. Without network, pip cannot fetch deps and
+      // every run errors. For stricter isolation, use a prebuilt Docker image
+      // per repo (the official SWE-bench approach) — that's a separate infra
+      // task. For this simplified scorer, network:bridge + memory/cpu limits
+      // + 10-minute timeout is the practical compromise.
       const output = execFileSync(
         "docker",
         [
@@ -174,8 +187,6 @@ function scorePatchWithDocker(
           `${repoDir}:/workspace`,
           "-w",
           "/workspace",
-          "--network",
-          "none",
           "--memory",
           "4g",
           "--cpus",
@@ -186,7 +197,7 @@ function scorePatchWithDocker(
           detectTestCommand(instance.repo),
         ],
         {
-          timeout: 300000, // 5 min max
+          timeout: 600000, // 10 min max — astropy and similar need time to install
           encoding: "utf-8",
           stdio: ["ignore", "pipe", "pipe"],
         },
@@ -209,7 +220,7 @@ function scorePatchWithDocker(
         testsRun: 0,
         testsPassed: 0,
         testsFailed: 0,
-        error: `Test execution failed: ${(stderr || e.message || "").slice(0, 200)}`,
+        error: `Test execution failed: ${(stderr || e.message || "").slice(0, 800)}`,
       };
     }
   } catch (e: any) {
