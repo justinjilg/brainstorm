@@ -1,0 +1,336 @@
+[
+  {
+    "pairId": 4,
+    "label": "SECURITY",
+    "attacker": {
+      "agentId": 6,
+      "agentName": "Attacker",
+      "persona": "give me 30 minutes — what do I own?"
+    },
+    "srEngineer": {
+      "agentId": 9,
+      "agentName": "Senior Engineer",
+      "persona": "show me tests, error handling, edge cases"
+    },
+    "dimensions": [
+      {
+        "dimension": "SECURITY_POSTURE",
+        "attackerOpening": {
+          "score": 6,
+          "position": "Seven attack vectors have middleware responses in code. But the HTTP-facing attack surface has never been tested. server package: 1450 src lines, 0 test lines (static-analysis.json codeInventory). gateway package: 764 src lines, 0 test lines. The server that implements GET /health, GET /api/v1/god-mode/tools, POST /api/v1/god-mode/execute has no test file — ever. JWT validation exists in packages/godmode/src/jwt.ts with timingSafeEqual and non-HS256 rejection (security.json owaspFindings A07), but the startup misconfiguration in server.ts line 113 logs 'SERVER EXPOSED WITHOUT AUTH' as a warning, not a hard exit. An operator who misconfigures jwtSecret gets a running unauthenticated service. The egress-monitor domain allowlist (security.json A10: 'enforces domain allowlist for POST/upload') has no evidence the allowlist is non-empty at runtime or cannot be cleared via crafted config mutation. Red-team tests exist (dynamic-testing.json: red-team.test.ts, red-team-engine.test.ts) but red-team.test.ts has testsErrors=false — an adversarial test that never asserts on a blocked outcome is not testing what it claims.",
+          "evidenceCitations": [
+            "static-analysis.json codeInventory: server srcLines=1450, testLines=0; gateway srcLines=764, testLines=0",
+            "security.json owaspFindings A05: 'SERVER EXPOSED WITHOUT AUTH' warning logged at startup if jwtSecret is empty — not a hard failure",
+            "security.json owaspFindings A10: egress-monitor 'enforces domain allowlist for POST/upload' — allowlist emptiness unverified",
+            "dynamic-testing.json testQuality: red-team.test.ts testsErrors=false"
+          ]
+        },
+        "srEngineerOpening": {
+          "score": 5,
+          "position": "The security architecture is real but the test coverage of it is not. 22 middlewares are registered (security.json securityMiddlewares) with distinct, non-overlapping responsibilities: trust-propagation, content-injection-filter, egress-monitor, approval-friction, security-scan. AES-256-GCM with Argon2id at OWASP parameters (memory=65536KB, iterations=3) is cryptographically correct. These are not placeholder names — each has a documented purpose. However, the wiring audit covers 12 functions (static-analysis.json wiringAudit) and none of them are security middlewares. The audit confirms pipeline dispatch and memory are wired, but does not confirm the security middleware chain executes on every tool call. red-team.test.ts has testsErrors=false — a red-team test that does not assert a blocked outcome has unknown behavioral coverage. The subagent privilege reduction exists at packages/core/src/agent/subagent.ts (security.json A01: 'allowedTools intersected with parent's available tools') but no test verifies privilege ceiling enforcement under adversarial tool request patterns.",
+          "evidenceCitations": [
+            "security.json securityMiddlewares: 22 entries all registered=true with distinct purposes",
+            "security.json vaultSystem: AES-256-GCM, Argon2id memory=65536KB, iterations=3 — OWASP recommended",
+            "static-analysis.json wiringAudit: 12/12 wired — none of the 12 are security middlewares",
+            "dynamic-testing.json testQuality: red-team.test.ts testsErrors=false"
+          ]
+        },
+        "attackerRebuttal": {
+          "position": "The Sr. Engineer defends the cryptographic correctness of vault, but the attack surface is the HTTP server, not the vault. vault package has ca=1, instability=0.00 (architecture.json coupling) — it is imported by exactly 1 other package and has no outward coupling. The threat model for a CLI tool is not 'crack the vault', it is 'call POST /api/v1/god-mode/execute without a valid JWT because jwtSecret is empty at startup'. That path requires zero cryptographic capability. The empty jwtSecret produces a console.warn, the server starts, and the God Mode execute endpoint accepts arbitrary tool execution requests. The Sr. Engineer points to correct middleware registration but registration is not invocation — the wiring audit does not include any security middleware in its 12 audited functions. There is no test that sends an unauthenticated request to POST /api/v1/god-mode/execute and asserts a 401 response.",
+          "evidenceCitations": [
+            "security.json owaspFindings A05: line 113 server.ts — warn logged if jwtSecret empty, server still starts",
+            "architecture.json coupling: vault ca=1 — only 1 package imports it; the HTTP surface is server.ts, not vault",
+            "static-analysis.json wiringAudit: no security middleware in any of the 12 audited wiring points"
+          ]
+        },
+        "srEngineerRebuttal": {
+          "position": "The Attacker's empty-jwtSecret finding is valid and is a deployment configuration gap, not a code architecture gap. The JWT validation logic in packages/godmode/src/jwt.ts is correct (timingSafeEqual, exp enforcement, non-HS256 rejection). The failure is that the server should exit(1) rather than warn when jwtSecret is absent. This is one line of code to fix, not a systemic security failure. I agree with the Attacker that server.ts has 0 test lines and this is the primary unresolved risk: an HTTP surface with zero test coverage means injection, SSRF, and authentication bypass attacks are empirically untested. The score floor is constrained by the absence of server tests, not by weak cryptography.",
+          "evidenceCitations": [
+            "security.json owaspFindings A07: JWT uses timingSafeEqual, enforces exp claim, rejects non-HS256 — logic is correct",
+            "static-analysis.json codeInventory: server srcLines=1450, testLines=0 — zero test coverage of the HTTP attack surface"
+          ]
+        },
+        "jointFinding": {
+          "agreedScore": 5.5,
+          "contested": true,
+          "attackerScore": 5,
+          "srEngineerScore": 6,
+          "rationale": "Both agents agree on the facts: 22 security middlewares registered, cryptographic primitives correctly parameterized, zero CVEs, but server.ts (1450 src lines) and gateway (764 src lines) have zero test lines — the HTTP-facing attack surface is empirically untested. Both agents agree the empty-jwtSecret soft-failure is a real misconfiguration risk. The Attacker scores lower (5) weighting the untested HTTP surface and the unverified allowlist state. The Sr. Engineer scores higher (6) crediting the correct cryptographic implementation and documented middleware chain. The contested point is whether correct registration without invocation tests constitutes mitigated risk. The agreed floor is 5: security controls exist in code and are correctly implemented, but the absence of any server-layer test means no claim of runtime security behavior is evidenced.",
+          "keyFindings": [
+            "CRITICAL GAP: server package 1450 src lines, 0 test lines — POST /api/v1/god-mode/execute has never been tested for authentication bypass",
+            "CONFIRMED RISK: empty jwtSecret produces a startup warning, not a hard exit — silent misconfiguration deployment path exists (security.json A05, server.ts line 113)",
+            "VERIFIED STRENGTH: AES-256-GCM + Argon2id at OWASP recommended parameters, derived key zeroed after use (security.json vaultSystem)",
+            "UNVERIFIED CLAIM: egress-monitor domain allowlist enforcement — allowlist non-empty state at runtime is not tested (security.json A10)",
+            "ADVERSARIAL TEST GAP: red-team.test.ts testsErrors=false — adversarial tests do not assert on blocked outcomes (dynamic-testing.json testQuality)"
+          ],
+          "actionRequired": "Change empty jwtSecret from startup warning to process.exit(1). Add 3 integration tests to server.ts: unauthenticated request returns 401, JWT alg:none rejected, expired token rejected."
+        }
+      },
+      {
+        "dimension": "DEPENDENCY_HEALTH",
+        "attackerOpening": {
+          "score": 9,
+          "position": "0 vulnerabilities total: critical=0, high=0, moderate=0, low=0 (security.json dependencyAudit, confirmed also by static-analysis.json vulnerabilities). No .env files in git, no hardcoded secrets found by scan (security.json secretScanning). gitignoreCoversEnv=true. This is a factual binary result from npm audit — either there are CVEs or there are not. There are not. The dependency tree is clean. The supply-chain attack surface is minimal. I have no finding to attack on this dimension.",
+          "evidenceCitations": [
+            "security.json dependencyAudit: total=0, critical=0, high=0, moderate=0, low=0",
+            "security.json secretScanning: envFilesInGit=[], hardcodedSecrets=[], gitignoreCoversEnv=true"
+          ]
+        },
+        "srEngineerOpening": {
+          "score": 6,
+          "position": "0 CVEs is the point-in-time clean state. The structural dependency health concern is the shared package: ca=24, instability=0.00, importedByCount=106 (architecture.json coupling, static-analysis.json dependencyGraph). Any breaking change to shared — even a minor type rename — requires updates across 106 import sites. No breaking-change detection step is in CI. The mcp package has instability=0.67 with a cross-layer violation (mcp->tools), meaning an Infrastructure-layer package depends on a Domain-layer package. This is not a CVE, but it creates structural dependency brittleness: a change to tools ripples unpredictably through mcp's consumers. The 0-CVE result is fully credited, but the fan-in architecture of shared is a dependency health risk that npm audit cannot detect.",
+          "evidenceCitations": [
+            "architecture.json coupling: shared ca=24, instability=0.00; mcp ce=2, instability=0.67",
+            "static-analysis.json dependencyGraph: shared importedByCount=106",
+            "architecture.json layers Infrastructure crossLayerViolations: mcp -> tools (Domain)"
+          ]
+        },
+        "attackerRebuttal": {
+          "position": "The Sr. Engineer's shared-package fan-in concern is a valid architectural risk but it is not a dependency health risk in the CVE/supply-chain sense. The 0-CVE result stands. The mcp->tools cross-layer violation is an architecture coupling violation, not a vulnerable dependency. If the scope of DEPENDENCY_HEALTH is supply-chain security and known-CVE exposure, the score is 9. If it includes structural coupling brittleness, it drops. I accept that no automated Dependabot or Renovate configuration was found in evidence — the 0-CVE state is current but not automatically maintained.",
+          "evidenceCitations": [
+            "security.json dependencyAudit: total=0 — no automated maintenance evidence in security.json"
+          ]
+        },
+        "srEngineerRebuttal": {
+          "position": "I accept the 9 on CVE grounds. My concern about shared fan-in is an ARCHITECTURE_QUALITY issue more than DEPENDENCY_HEALTH strictly defined. The one remaining DEPENDENCY_HEALTH gap: no Dependabot or Renovate configuration found in evidence — the 0-CVE state is a point-in-time snapshot, not a maintained guarantee. A new CVE disclosed tomorrow would be undetected until the next manual npm audit.",
+          "evidenceCitations": [
+            "security.json: no automated dependency update tool configuration found",
+            "static-analysis.json vulnerabilities: total=0 — point-in-time only"
+          ]
+        },
+        "jointFinding": {
+          "agreedScore": 8,
+          "contested": false,
+          "rationale": "Both agents agree: 0 CVEs across all severity levels is a factual, binary, clean result. The Attacker's initial 9 is reduced by one point on consensus because no automated dependency update tooling (Dependabot/Renovate) is evidenced — the 0-CVE state is not automatically maintained. The Sr. Engineer's architectural coupling concerns are credited as ARCHITECTURE_QUALITY issues, not DEPENDENCY_HEALTH. Agreed score: 8.",
+          "keyFindings": [
+            "VERIFIED: 0 CVEs total, no .env files in git, no hardcoded secrets, gitignoreCoversEnv=true (security.json)",
+            "GAP: No Dependabot or Renovate configuration found — 0-CVE is a point-in-time snapshot, not an automated guarantee",
+            "ARCHITECTURAL NOTE (out of scope for this dimension): shared package ca=24, importedByCount=106 is a structural brittleness concern logged for ARCHITECTURE_QUALITY"
+          ],
+          "actionRequired": "Add Dependabot or Renovate configuration with a policy that high/critical CVEs block merge to maintain the 0-CVE state."
+        }
+      },
+      {
+        "dimension": "API_CONTRACT_INTEGRITY",
+        "attackerOpening": {
+          "score": 4,
+          "position": "The God Mode API contract has 5 endpoints (architecture.json apiContracts). openapi=false, graphql=false, grpc=false — no machine-readable contract exists. The contract is dual-sourced: manifest.ts and docs/platform-contract-v1.md. Dual-source contracts drift. The IPC protocol has 23 methods documented as inline comments in handler.ts — inline comments are not a versioned schema and do not prevent client/server divergence. The critical attack finding: jwtSecret empty at startup still allows the server to start (security.json A05) — the API contract enforcement gate (authentication) can be silently disabled. No test verifies that any of the 5 God Mode endpoints returns the correct response shape. gateway package (764 src lines, 0 test lines) touches the API surface without any behavioral verification.",
+          "evidenceCitations": [
+            "architecture.json apiContracts: openapi=false, graphql=false, grpc=false",
+            "architecture.json apiContracts: godModeContractSource='packages/godmode/src/manifest.ts + docs/platform-contract-v1.md' — dual-source",
+            "architecture.json apiContracts: ipcDocumentationSource='packages/cli/src/ipc/handler.ts (inline comments)'",
+            "security.json owaspFindings A05: empty jwtSecret still starts server — authentication gate is optional",
+            "static-analysis.json codeInventory: gateway srcLines=764, testLines=0"
+          ]
+        },
+        "srEngineerOpening": {
+          "score": 6,
+          "position": "The IPC contract has non-unit contract tests with error coverage: ipc/integration.test.ts and ipc/validation.test.ts, both isUnitTest=false and testsErrors=true (dynamic-testing.json testQuality). These are the only non-unit contract tests in the suite and they cover the IPC surface that desktop/web apps actually use. 23 IPC methods are documented with protocol (NDJSON over stdin/stdout). The God Mode contract is documented in two sources (manifest.ts + platform-contract-v1.md) which creates drift risk, but health endpoints are verified in 5 files (operational-readiness.json healthEndpointsEvidence). The gap is no test sends a real HTTP request to any God Mode endpoint — usesRealIO=false across all tests means health endpoint behavior is untested against a real HTTP server.",
+          "evidenceCitations": [
+            "dynamic-testing.json testQuality: ipc/integration.test.ts isUnitTest=false, testsErrors=true; ipc/validation.test.ts isUnitTest=false, testsErrors=true",
+            "architecture.json apiContracts: ipcMethods list of 23 methods documented",
+            "operational-readiness.json prr.healthEndpointsEvidence: 5 files including server.ts",
+            "dynamic-testing.json testQuality: no file shows usesRealIO=true for server-layer tests"
+          ]
+        },
+        "attackerRebuttal": {
+          "position": "The IPC integration tests are credit-worthy — isUnitTest=false with testsErrors=true is the correct test pattern. But IPC is an internal channel between CLI and desktop app, not the external API. The God Mode endpoints (POST /api/v1/god-mode/execute) are the externally-facing contract that third-party product connectors call. For those endpoints: no tests, no OpenAPI spec, no contract diff CI step. The BaseConnector class in godmode is an unused export (static-analysis.json deadCode godmode: BaseConnector). If the base class of the connector framework is never imported, the contract that connectors are supposed to implement may be fragmented or unused as designed.",
+          "evidenceCitations": [
+            "static-analysis.json deadCode: godmode package — BaseConnector unused export",
+            "architecture.json apiContracts: godMode=true but openapi=false — no machine-readable external contract",
+            "static-analysis.json codeInventory: server srcLines=1450, testLines=0"
+          ]
+        },
+        "srEngineerRebuttal": {
+          "position": "The Attacker's BaseConnector dead-export finding is an important signal I did not flag. If BaseConnector is the intended inheritance base for all product connectors and it is never imported, either product connectors bypass the base class or the connector pattern is implemented differently than the documentation implies. This is an audit finding, not a CVE, but it directly undermines the API contract claim. I lower my position to 5 on this basis. The IPC contract tests remain a positive signal but they do not cover the external God Mode surface.",
+          "evidenceCitations": [
+            "static-analysis.json deadCode godmode: BaseConnector — unused export in the connector framework base class",
+            "architecture.json apiContracts: godModeContractSource references manifest.ts — BaseConnector's absence from imports is unexplained"
+          ]
+        },
+        "jointFinding": {
+          "agreedScore": 5,
+          "contested": false,
+          "rationale": "Both agents converge at 5. The IPC contract tests (isUnitTest=false, testsErrors=true) are a genuine positive for the internal contract. Against this: openapi=false means no machine-readable external contract, server.ts 0 test lines means the HTTP surface of the contract is untested, BaseConnector is an unused export in godmode calling into question whether the connector framework operates as documented, and the dual-source God Mode contract (manifest.ts + platform-contract-v1.md) creates undetectable drift. Score 5 reflects: documented contract exists for both surfaces, one surface (IPC) has meaningful non-unit tests, the other surface (God Mode HTTP) has no runtime verification.",
+          "keyFindings": [
+            "VERIFIED POSITIVE: IPC contract has isUnitTest=false, testsErrors=true tests covering both integration and validation (dynamic-testing.json)",
+            "CRITICAL GAP: POST /api/v1/god-mode/execute has no test — the externally-consumed API surface has zero behavioral verification",
+            "ANOMALY: BaseConnector is an unused export in godmode/src — the declared base class of the connector framework has no importers (static-analysis.json deadCode)",
+            "DRIFT RISK: God Mode contract is dual-sourced in manifest.ts and platform-contract-v1.md with no CI drift detection",
+            "NO MACHINE CONTRACT: openapi=false, graphql=false, grpc=false — no spec for automated client generation or validation (architecture.json apiContracts)"
+          ],
+          "actionRequired": "Investigate why BaseConnector has 0 importers. Add one HTTP integration test for POST /api/v1/god-mode/execute that verifies 401 on unauthenticated request."
+        }
+      }
+    ]
+  },
+  {
+    "pairId": 5,
+    "label": "OPERATIONS",
+    "operator": {
+      "agentId": 5,
+      "agentName": "Operator",
+      "persona": "can a junior sysadmin run this?"
+    },
+    "investor": {
+      "agentId": 8,
+      "agentName": "Investor",
+      "persona": "is this real or a prototype dressed as production?"
+    },
+    "dimensions": [
+      {
+        "dimension": "OPERATIONAL_READINESS",
+        "operatorOpening": {
+          "score": 4,
+          "position": "3 of 8 PRR criteria met: monitoring (Sentry + monitoring-manifest.json), rollback (transaction.ts, changeset.ts, db/client.ts), alerting (Slack webhook in monitoring-manifest.json). 5 unmet: runbooks=false (verified by grep: 'No files matching *runbook*, *playbook*, or *ops* found in docs/'), onCall=false (no PagerDuty/OpsGenie), incidentResponse=false (no incident/postmortem docs), slosDefined=false (45 SLO grep matches are code metric names, not SLO documents), dashboards=false (no Grafana/Datadog config). A junior sysadmin has monitoring and alerting infrastructure — Sentry configured with PII scrubbing, 11 monitor definitions with Slack webhook — but no procedure for what to do when any alert fires. The monitoring-manifest.json is described as 'setup instructions' (operational-readiness.json monitoringManifestEvidence) — monitors are documented, not deployed.",
+          "evidenceCitations": [
+            "operational-readiness.json prr: monitoring=true, rollback=true, alerting=true, runbooks=false, onCall=false, incidentResponse=false",
+            "operational-readiness.json prr.runbooksEvidence: 'No files matching *runbook*, *playbook*, or *ops* found in docs/'",
+            "operational-readiness.json monitoring: slosDefined=false, dashboards=false",
+            "operational-readiness.json monitoring.monitoringManifestEvidence: '11 monitors with UptimeRobot/BetterUptime setup instructions' — instructions, not deployed"
+          ]
+        },
+        "investorOpening": {
+          "score": 2,
+          "position": "The PRR deficit is the same as the Operator sees. My framing: 3/8 PRR criteria met means 37.5% operational readiness. MTTR=null (operational-readiness.json dora.mttrHours=null, mttrNotes: 'No revert incidents found to measure MTTR from'). Null MTTR is not a good sign — it means no production incidents have occurred because there is no production system. Deploy frequency measures git commits to main (operational-readiness.json dora.deployFrequency notes: 'All commits to main via first-parent'), not deployments to a live environment. Median lead time 112 hours (operational-readiness.json dora.leadTime.medianHours=112) is DORA Low performer territory (Elite threshold: under 1 hour). The monitoring and rollback infrastructure is an investment in future readiness, but there is no evidence it has ever been used against a real failure. This is a prototype with correct operational scaffolding installed.",
+          "evidenceCitations": [
+            "operational-readiness.json dora.mttrHours=null, mttrNotes: 'No revert incidents found to measure MTTR from'",
+            "operational-readiness.json dora.deployFrequency.notes: 'All commits to main via first-parent' — not deployment events",
+            "operational-readiness.json dora.leadTime.medianHours=112 — DORA Low performer; Elite threshold < 1 hour",
+            "operational-readiness.json prr: 5 of 8 criteria unmet"
+          ]
+        },
+        "operatorRebuttal": {
+          "position": "The Investor scores 2 while I score 4. The difference is in what we credit. I credit 3 confirmed PRR positives: monitoring infrastructure exists with a real Sentry integration (packages/shared/src/sentry.ts) with PII scrubbing — when Sentry DSN is configured, this works today. Rollback is in 3 concrete files (transaction.ts, db/client.ts, changeset.ts) — these are not placeholder stubs, they are the WAL-backed transaction layer and the ChangeSet approval chain. Alerting is the Slack webhook channel in monitoring-manifest.json. These positives are real infrastructure artifacts. The Investor is correct that MTTR=null and DORA metrics measure commits not deploys — I agree those are meaningful gaps. But the score reflects what exists today, not what has been exercised. A score of 2 would mean operational readiness infrastructure is absent; I count 3 real infrastructure artifacts.",
+          "evidenceCitations": [
+            "operational-readiness.json prr.rollbackEvidence: packages/tools/src/builtin/transaction.ts, packages/db/src/client.ts, packages/godmode/src/changeset.ts — 3 concrete files",
+            "operational-readiness.json monitoring.sentryConfigured=true, sentryEvidence: 'PII scrubbing, error capture helpers'",
+            "operational-readiness.json prr.alerting=true, alertingEvidence: monitoring-manifest.json Slack webhook"
+          ]
+        },
+        "investorRebuttal": {
+          "position": "I accept the 3 PRR positives. Sentry, rollback files, and Slack webhook are real artifacts. I raise my score from 2 to 3. The remaining gap that prevents me from scoring 4: the monitoring-manifest.json is explicitly labeled 'setup instructions' — the Slack webhook may not be configured with a real incoming webhook URL, the monitors are not deployed to UptimeRobot/BetterUptime. An artifact that documents what to deploy is not the same as a deployed artifact. The Operator scores 4 based on infrastructure design; I score 3 based on deployed operational capability. The 1-point gap is the monitoring-manifest 'instructions vs deployed' distinction.",
+          "evidenceCitations": [
+            "operational-readiness.json monitoring.monitoringManifestEvidence: 'setup instructions' — explicit language distinguishing document from deployment",
+            "operational-readiness.json prr.alertingEvidence: 'slack-ops webhook channel defined for all 11 monitors' — defined, not verified active"
+          ]
+        },
+        "jointFinding": {
+          "agreedScore": null,
+          "contested": true,
+          "operatorScore": 4,
+          "investorScore": 3,
+          "rationale": "Operator scores 4 crediting 3 real PRR-positive infrastructure artifacts (Sentry, rollback files, Slack webhook definition) plus the fact that the monitoring-manifest.json, while undeployed, represents real operational design work. Investor scores 3, accepting the same 3 positives but discounting monitoring-manifest as 'setup instructions' rather than deployed capability, and weighting MTTR=null as the primary signal that the system has never operated under real failure conditions. The 1-point gap is the unresolved question of whether designed-but-undeployed monitoring infrastructure should count toward operational readiness. Both agents agree on the failure: 5 of 8 PRR criteria unmet with verified grep evidence.",
+          "keyFindings": [
+            "VERIFIED POSITIVES: monitoring=true (Sentry with PII scrubbing in packages/shared/src/sentry.ts), rollback=true (3 files: transaction.ts, db/client.ts, changeset.ts), alerting=true (Slack webhook defined in monitoring-manifest.json)",
+            "VERIFIED GAPS: runbooks=false (grep confirmed no runbook/playbook/ops files in docs/), onCall=false, incidentResponse=false, slosDefined=false, dashboards=false",
+            "CRITICAL SIGNAL: MTTR=null because no production incidents exist because there is no production system — operational readiness cannot be measured without a deployed environment",
+            "DORA CONCERN: deployFrequency measures commits to main, not production deploys — DORA metrics are development velocity metrics for this project, not operational metrics",
+            "MONITORING GAP: monitoring-manifest.json is 'setup instructions' — 11 monitors are documented but not deployed to UptimeRobot/BetterUptime"
+          ],
+          "actionRequired": "Write 3 runbooks (startup, vault failure, key rotation). Deploy the 11 monitoring-manifest monitors. Define 3 SLO documents (not code metrics)."
+        }
+      },
+      {
+        "dimension": "DOCUMENTATION",
+        "operatorOpening": {
+          "score": 3,
+          "position": "runbooks=false with explicit grep evidence: 'No files matching *runbook*, *playbook*, or *ops* found in docs/' (operational-readiness.json prr.runbooksEvidence). This is a verified absence, not an absence of evidence. The monitoring-manifest.json is described as 'setup instructions' (monitoringManifestEvidence) — it documents what to deploy, not how to operate. A junior sysadmin receives: pino NDJSON structured logs (parseable, positive), Sentry integration (positive when DSN is configured), 11 monitor templates (positive as design intent), and 0 runbooks (negative, verified). The IPC protocol has 23 methods documented as inline comments in handler.ts (architecture.json apiContracts.ipcDocumentationSource). Inline comments are not operational documentation. If handler.ts changes, the documentation changes silently with no version signal to the consumer. The docgen package (625 src lines, importedByCount=2, static-analysis.json) exists but has 0 test lines — documentation generation is not verified to produce correct output.",
+          "evidenceCitations": [
+            "operational-readiness.json prr.runbooks=false, runbooksEvidence: 'No files matching *runbook*, *playbook*, or *ops* found in docs/'",
+            "operational-readiness.json monitoring.monitoringManifestEvidence: 'setup instructions' — not operational procedures",
+            "architecture.json apiContracts.ipcDocumentationSource: 'packages/cli/src/ipc/handler.ts (inline comments)'",
+            "static-analysis.json codeInventory: docgen srcLines=625, testLines=0"
+          ]
+        },
+        "investorOpening": {
+          "score": 3,
+          "position": "From an investor's view: does the documentation enable someone who is not the author to operate, scale, or extend this system? Evidence says no. 0 runbooks verified by grep. 0 dashboard configs. SLO documents absent (45 grep matches are code metric names, not SLO definitions per operational-readiness.json monitoring.slosEvidence). The God Mode contract is documented in markdown + TypeScript inline comments — no machine-readable spec means a third-party product team building a connector must read TypeScript source to understand the contract. The IPC has 23 methods with inline comments — no request/response type schema in a standalone file. DORA lead time median=112 hours for a single contributor project suggests PRs are large, meaning each merge contains multi-day batches of change with no incremental documentation trail. A 788-commit project with 0 runbooks has systematically deferred operational documentation.",
+          "evidenceCitations": [
+            "operational-readiness.json prr.runbooks=false — verified absent",
+            "operational-readiness.json monitoring.slosEvidence: '45 grep matches are metric/threshold names in code, not SLO definition documents'",
+            "architecture.json apiContracts: openapi=false — no machine-readable contract for external consumers",
+            "operational-readiness.json dora.leadTime.medianHours=112 — 4.7-day median merge implies large PRs, minimal incremental documentation"
+          ]
+        },
+        "operatorRebuttal": {
+          "position": "The Investor and I agree on the score and the facts. Both of us land at 3. The only nuance I add: the structured logging infrastructure (pino NDJSON to stderr, BRAINSTORM_LOG_LEVEL env control, per operational-readiness.json logging) is documentation-adjacent in that it enables a sysadmin to reconstruct system state from logs when documentation is absent. This is not a substitute for runbooks, but it is an operational aid that is absent in many projects at this stage. I do not raise my score for this — runbooks absent by verified grep is a 3-ceiling finding. I agree with the Investor's 3.",
+          "evidenceCitations": [
+            "operational-readiness.json logging: pino logger, NDJSON to stderr in IPC mode, BRAINSTORM_LOG_LEVEL env control",
+            "operational-readiness.json prr.runbooks=false — neither agent disputes this finding"
+          ]
+        },
+        "investorRebuttal": {
+          "position": "Agreed. The structured logging is a real operational positive. It does not change the score — 0 runbooks, 0 dashboards, 0 SLO documents, and 0 OpenAPI specs are the controlling facts. Score 3 is our consensus.",
+          "evidenceCitations": [
+            "operational-readiness.json prr.runbooks=false, dashboards=false, slosDefined=false",
+            "architecture.json apiContracts: openapi=false"
+          ]
+        },
+        "jointFinding": {
+          "agreedScore": 3,
+          "contested": false,
+          "rationale": "Both agents independently scored 3 and converged without rebuttal adjustment. The controlling evidence is unambiguous: 0 runbooks verified by grep (not estimated), 0 dashboard configs, 0 SLO documents (45 grep matches are code-level metric names, not SLO documents), and IPC documentation lives in inline comments rather than a versioned schema. Positive signals (pino structured logging, Sentry with PII scrubbing, monitoring-manifest.json) represent infrastructure design but not operational documentation. Score 3 reflects: documentation exists for architecture (CLAUDE.md, platform-contract-v1.md) but operational documentation — the kind a junior sysadmin needs at 3am — is absent.",
+          "keyFindings": [
+            "VERIFIED ABSENCE: 0 runbooks, grep searched *runbook*, *playbook*, *ops* across docs/ — none found (operational-readiness.json)",
+            "VERIFIED ABSENCE: 0 deployed dashboards — no Grafana, Datadog config files found (operational-readiness.json monitoring.dashboards=false)",
+            "VERIFIED ABSENCE: 0 SLO definition documents — 45 code-level metric names are not SLO documents (operational-readiness.json monitoring.slosEvidence)",
+            "DOCUMENTATION FORMAT RISK: IPC contract in inline comments in handler.ts — no versioned schema file for the 23 IPC methods (architecture.json apiContracts.ipcDocumentationSource)",
+            "POSITIVE: pino structured logging (NDJSON, BRAINSTORM_LOG_LEVEL env control) provides log-based observability when docs are absent"
+          ],
+          "actionRequired": "Create minimum 3 runbooks. Extract IPC method schemas to a versioned ipc-protocol.ts or ipc-schema.json. Write 3 SLO documents (not code metrics)."
+        }
+      },
+      {
+        "dimension": "SCALE_READINESS",
+        "operatorOpening": {
+          "score": 2,
+          "position": "From an operator perspective: scale signals are absent from operational evidence. The DORA deployment frequency (0, 175, 222, 105 commits/week per operational-readiness.json) measures git commits to main, not deployments under load. No concurrency tests, no load test results, no throughput measurements exist in any evidence stream. The vault test takes 17,730ms (dynamic-testing.json brainst0rm/vault durationMs=17730) — 30x slower than any other package. If this is Argon2id KDF time at OWASP parameters (security.json vaultSystem: memory=65536KB, iterations=3), it is correct by design. But if vault unlock is invoked per-request rather than per-session, 17 seconds of KDF overhead becomes a per-operation latency penalty. The autoLock timer is 30 minutes (security.json vaultSystem.autoLock) — suggesting vault is session-scoped, not per-request, which would make the KDF cost acceptable. But this is unverified.",
+          "evidenceCitations": [
+            "operational-readiness.json dora.deployFrequency.notes: 'All commits to main via first-parent' — not deploy events",
+            "dynamic-testing.json testResults: brainst0rm/vault durationMs=17730 — 30x slower than next-slowest package",
+            "security.json vaultSystem: Argon2id memory=65536KB, iterations=3 — OWASP recommended, intentionally slow",
+            "security.json vaultSystem.autoLock: '30-minute inactivity timer' — suggests session-scoped not per-request"
+          ]
+        },
+        "investorOpening": {
+          "score": 2,
+          "position": "21 skipped tests in @brainst0rm/tools (dynamic-testing.json totals: skipped=21) are the Docker sandbox tests. The sandbox is the process isolation layer that prevents agent code execution from escaping containment. These tests do not run in standard CI. An investor asks: what is the maximum load under which the sandbox holds? The answer is: unknown, because the sandbox tests are skipped and there is no load test. Beyond the sandbox: architecture.json scalabilityBottlenecks documents 5 synchronous IO locations in hot paths (dream-runner.ts, manager.ts, brainstorm.ts, detect.ts, generate.ts), an unbounded taskEventQueue at loop.ts:242 (170 unbounded .push() calls across core/src), and SQLite as a single synchronous writer. For a single-user CLI tool these are acceptable. For any multi-session daemon mode, synchronous IO blocks the event loop on every file operation. The DORA metrics confirm this is a CLI tool without a deployment pipeline, so scale readiness is theoretical.",
+          "evidenceCitations": [
+            "dynamic-testing.json totals: skipped=21 in brainst0rm/tools — Docker sandbox tests not run in CI",
+            "architecture.json scalabilityBottlenecks: 5 synchronous_io entries across hot paths in core and cli",
+            "architecture.json scalabilityBottlenecks: unbounded_queue at loop.ts:242, unbounded_push 170 calls across core/src",
+            "architecture.json scalabilityBottlenecks: sqlite_single_writer — synchronous, single-process"
+          ]
+        },
+        "operatorRebuttal": {
+          "position": "The Investor and I both land at 2. The synchronous IO bottlenecks documented in architecture.json are the controlling architectural evidence. For the question 'can a junior sysadmin scale this?', the answer is no — not because of configuration gaps but because the event loop blocks on every memory file operation (dream-runner.ts, manager.ts) under concurrent sessions. The 21 skipped Docker tests mean the only scalability control (sandbox process isolation) is not verified in CI. I do not change my score.",
+          "evidenceCitations": [
+            "architecture.json scalabilityBottlenecks: dream-runner.ts and manager.ts — readFileSync/writeFileSync in memory operations",
+            "dynamic-testing.json totals: skipped=21 — sandbox isolation unverified"
+          ]
+        },
+        "investorRebuttal": {
+          "position": "Agreed on 2. The unbounded taskEventQueue (loop.ts:242, 170 unbounded .push() calls) is the most direct OOM vector under sustained load — no backpressure, no max-size cap. Synchronous IO compounds this by blocking the event loop when the queue processes events that require file reads. For a prototype intended as a CLI tool, this is expected and acceptable. For a product being evaluated for investment in production scale, it is a known architectural debt that must be resolved before multi-session deployment.",
+          "evidenceCitations": [
+            "architecture.json scalabilityBottlenecks: unbounded_queue location=packages/core/src/agent/loop.ts:242, description includes 'drained via shift() in the yield loop'",
+            "architecture.json scalabilityBottlenecks: unbounded_push 170 calls across core/src"
+          ]
+        },
+        "jointFinding": {
+          "agreedScore": 2,
+          "contested": false,
+          "rationale": "Both agents scored 2 independently and converged. The controlling evidence is architectural, not operational: architecture.json documents 5 synchronous IO locations in hot paths, an unbounded taskEventQueue at loop.ts:242 with 170 unbounded .push() calls across core, and SQLite single-writer as the write bottleneck. These are not configuration issues — they are code-level architectural constraints that block multi-session scale. Additionally, 21 Docker sandbox tests are skipped in CI, meaning the isolation layer under concurrent load is unverified. No load test, no throughput measurement, no concurrency test exists in any evidence stream. For a single-user CLI tool the current architecture is appropriate. For any production multi-session deployment, event-loop-blocking synchronous IO in the agent hot path is the binding constraint.",
+          "keyFindings": [
+            "ARCHITECTURAL CONSTRAINT: 5 synchronous IO locations in hot paths — dream-runner.ts, manager.ts (memory operations), brainstorm.ts, detect.ts, generate.ts — block event loop on every file operation (architecture.json scalabilityBottlenecks)",
+            "ARCHITECTURAL CONSTRAINT: unbounded taskEventQueue at packages/core/src/agent/loop.ts:242 with 170 unbounded .push() calls across core/src — OOM vector under sustained sessions (architecture.json scalabilityBottlenecks)",
+            "ARCHITECTURAL CONSTRAINT: SQLite single synchronous writer — no concurrent write scaling possible with better-sqlite3 (architecture.json scalabilityBottlenecks)",
+            "TEST GAP: 21 Docker sandbox tests skipped in CI — process isolation under concurrent load is unverified (dynamic-testing.json totals)",
+            "NO LOAD EVIDENCE: zero throughput, latency, or concurrency measurements in any evidence stream — scale readiness is theoretical"
+          ],
+          "actionRequired": "Cap taskEventQueue at 1000 entries with backpressure. Convert dream-runner.ts and memory/manager.ts to async fs/promises. Enable Docker tests in a dedicated CI job."
+        }
+      }
+    ]
+  }
+]

@@ -1,0 +1,365 @@
+{
+  "schema": "forge-results-v1",
+  "project": "brainstorm",
+  "assessmentDate": "2026-04-09",
+  "assessmentTier": "deep",
+  "completedPhases": [
+    "preflight",
+    "static-analysis",
+    "dynamic-testing",
+    "operational-readiness",
+    "security",
+    "architecture",
+    "debate-r1",
+    "debate-r2",
+    "debate-r3-cross-exam",
+    "synthesis",
+    "bias-audit",
+    "output"
+  ],
+  "auditor": {
+    "agentId": 11,
+    "role": "Bias Auditor",
+    "honestyScore": 9,
+    "correctedSynthesisRequired": false
+  },
+  "overallScore": {
+    "value": 4.1,
+    "scale": "1-10",
+    "method": "mean of 15 dimension final scores after R1/R2/R3 revisions",
+    "sum": 61.0,
+    "dimensionCount": 15
+  },
+  "dimensionScores": {
+    "CODE_COMPLETENESS": {
+      "finalScore": 5.0,
+      "stddev": 0.63,
+      "uncertain": false,
+      "contested": false,
+      "r1Mean": 5.0,
+      "agentScores": [5, 5, 6, 6, 5, 4, 5, 5, 5, 4]
+    },
+    "WIRING": {
+      "finalScore": 5.4,
+      "stddev": 1.11,
+      "uncertain": false,
+      "contested": true,
+      "contestedRound": "R2 Pair1 (8 vs 4); R3 cross-exam revised A1 from 8 to 5",
+      "agentScores": [5, 4, 6, 7, 4, 6, 5, 6, 7, 4]
+    },
+    "TEST_REALITY": {
+      "finalScore": 4.4,
+      "stddev": 0.92,
+      "uncertain": false,
+      "contested": false,
+      "agentScores": [6, 5, 4, 5, 5, 3, 5, 4, 4, 3]
+    },
+    "PROPERTY_CORRECTNESS": {
+      "finalScore": 2.9,
+      "stddev": 1.22,
+      "uncertain": false,
+      "contested": true,
+      "contestedRound": "R2 Pair3 (1 vs 3); R3 cross-exam resolved A1 at 2",
+      "note": "Mean includes A6 (Attacker) score of 5 based on cryptographic property correctness; all others scored 1-4 based on propertyBasedTests=0. Without A6 outlier, mean=2.56.",
+      "agentScores": [2, 2, 2, 1, 2, 5, 4, 4, 4, 3]
+    },
+    "PRODUCTION_EVIDENCE": {
+      "finalScore": 1.4,
+      "stddev": 0.66,
+      "uncertain": false,
+      "contested": false,
+      "agentScores": [2, 1, 1, 1, 1, 1, 2, 1, 3, 1]
+    },
+    "OPERATIONAL_READINESS": {
+      "finalScore": 2.9,
+      "stddev": 0.83,
+      "uncertain": false,
+      "contested": true,
+      "contestedRound": "R2 Pair5 (4 vs 3); no consensus override; mean reflects both positions",
+      "agentScores": [4, 3, 3, 4, 4, 2, 2, 2, 3, 2]
+    },
+    "SECURITY_POSTURE": {
+      "finalScore": 5.0,
+      "stddev": 1.0,
+      "uncertain": false,
+      "contested": true,
+      "contestedRound": "R2 Pair4 (5 vs 6); R3 cross-exam confirmed floor=5",
+      "agentScores": [4, 7, 4, 6, 5, 6, 4, 5, 5, 4]
+    },
+    "DOCUMENTATION": {
+      "finalScore": 3.7,
+      "stddev": 1.0,
+      "uncertain": false,
+      "contested": false,
+      "agentScores": [5, 3, 5, 4, 3, 3, 4, 3, 5, 2]
+    },
+    "FAILURE_HANDLING": {
+      "finalScore": 4.9,
+      "stddev": 0.54,
+      "uncertain": false,
+      "contested": false,
+      "agentScores": [6, 5, 5, 5, 4, 5, 4, 5, 5, 5]
+    },
+    "RESILIENCE": {
+      "finalScore": 3.1,
+      "stddev": 0.3,
+      "uncertain": false,
+      "contested": false,
+      "agentScores": [3, 3, 3, 3, 3, 3, 3, 3, 4, 3]
+    },
+    "SCALE_READINESS": {
+      "finalScore": 2.2,
+      "stddev": 0.4,
+      "uncertain": false,
+      "contested": false,
+      "agentScores": [2, 2, 3, 2, 2, 2, 2, 2, 3, 2]
+    },
+    "ARCHITECTURE_QUALITY": {
+      "finalScore": 5.2,
+      "stddev": 0.75,
+      "uncertain": false,
+      "contested": false,
+      "agentScores": [6, 4, 6, 5, 4, 5, 6, 5, 6, 5]
+    },
+    "API_CONTRACT_INTEGRITY": {
+      "finalScore": 4.4,
+      "stddev": 0.66,
+      "uncertain": false,
+      "contested": false,
+      "agentScores": [5, 4, 5, 4, 4, 5, 4, 5, 5, 3]
+    },
+    "DEPENDENCY_HEALTH": {
+      "finalScore": 7.3,
+      "stddev": 1.1,
+      "uncertain": false,
+      "contested": false,
+      "agentScores": [8, 7, 7, 9, 8, 8, 6, 7, 8, 5]
+    },
+    "SHIP_READINESS": {
+      "finalScore": 3.2,
+      "stddev": 0.98,
+      "uncertain": false,
+      "contested": true,
+      "contestedRound": "R2 Pair1 (5 vs 3); no consensus override",
+      "agentScores": [5, 3, 4, 4, 3, 3, 2, 2, 4, 2]
+    }
+  },
+  "maturityPlacement": {
+    "cncfLevel": "SANDBOX",
+    "cncfRationale": "No production deployment, 0 confirmed organizations using in production, single contributor, no published artifact adoption metrics.",
+    "doraTier": "LOW",
+    "doraMetrics": {
+      "deployFrequency": "commits to main only — no production deployment pipeline measured",
+      "leadTimeMedianHours": 112,
+      "changeFailureRate": "0 true reverts — not applicable; system has no production history",
+      "mttrHours": null
+    },
+    "doraRationale": "Median lead time 112 hours vs Elite < 1 hour. MTTR=null. Deployment frequency measures git commits, not production releases."
+  },
+  "topRisks": [
+    {
+      "id": "R03",
+      "title": "server.ts (1450 lines, HTTP attack surface) has zero tests — POST /api/v1/god-mode/execute never tested for auth bypass",
+      "severity": "CRITICAL"
+    },
+    {
+      "id": "R04",
+      "title": "Empty jwtSecret produces startup warning not process exit — silent misconfiguration path to unauthenticated server operation",
+      "severity": "HIGH"
+    },
+    {
+      "id": "R01",
+      "title": "22 confirmed dead exports — 17 tool exports and 5 of 6 routing strategies",
+      "severity": "HIGH"
+    },
+    {
+      "id": "R02",
+      "title": "42% of packages (11/26) have zero test files including server, gateway, and onboard",
+      "severity": "HIGH"
+    },
+    {
+      "id": "R06",
+      "title": "Unbounded taskEventQueue at loop.ts:242 — 170 unbounded push calls, confirmed OOM vector",
+      "severity": "HIGH"
+    },
+    {
+      "id": "R26",
+      "title": "80% of test files (37/46) skip error conditions — agent loop and KAIROS loop have no error path tests",
+      "severity": "HIGH"
+    },
+    {
+      "id": "R07",
+      "title": "Zero runbooks — verified absent by grep across docs/",
+      "severity": "HIGH"
+    },
+    {
+      "id": "R05",
+      "title": "No production deployment — MTTR=null, all DORA metrics are commit-velocity not operational",
+      "severity": "HIGH"
+    },
+    {
+      "id": "R10",
+      "title": "5 synchronous IO hot paths block Node.js event loop in agent loop and memory manager",
+      "severity": "HIGH"
+    },
+    {
+      "id": "R11",
+      "title": "Code coverage measurement disabled — 661 tests provide no measurable line coverage",
+      "severity": "MEDIUM"
+    }
+  ],
+  "strengths": [
+    {
+      "title": "Zero CVEs across all severity levels — npm audit passes clean",
+      "evidence": "security.json dependencyAudit: total=0, critical=0, high=0, moderate=0, low=0"
+    },
+    {
+      "title": "12 wiring points confirmed with specific file:line citations",
+      "evidence": "static-analysis.json wiringAudit: all 12 wired=true with callSite references"
+    },
+    {
+      "title": "AES-256-GCM + Argon2id at OWASP recommended parameters with derived key zeroed after use",
+      "evidence": "security.json vaultSystem: encryption and KDF correctly parameterized"
+    },
+    {
+      "title": "661 tests pass across 15 of 26 packages — 0 failures",
+      "evidence": "dynamic-testing.json totals: passed=661, failed=0"
+    },
+    {
+      "title": "ChangeSet state machine enforces simulation->approval->execution for all destructive actions",
+      "evidence": "architecture.json stateMachines: ChangeSet states=[pending, approved, rejected, executed]"
+    },
+    {
+      "title": "22 registered security middlewares with distinct non-overlapping purposes including egress-monitor, trust-propagation, and content-injection-filter",
+      "evidence": "security.json securityMiddlewares: 22 entries all registered=true"
+    },
+    {
+      "title": "Pino structured logging (NDJSON to stderr) with Sentry PII scrubbing configured",
+      "evidence": "operational-readiness.json logging and monitoring.sentryConfigured=true"
+    },
+    {
+      "title": "Foundation layer (shared, config, db) has correct instability metrics — 0.00, 0.08, 0.08",
+      "evidence": "architecture.json coupling: Foundation packages are correctly stable"
+    }
+  ],
+  "recommendations": {
+    "immediate": [
+      {
+        "action": "Change server.ts empty jwtSecret from console.warn to process.exit(1)",
+        "rationale": "R03 + R04: The unauthenticated server startup path requires one line of code to close. This is the highest severity finding with the lowest effort fix.",
+        "effort": "1 hour",
+        "riskIds": ["R03", "R04"]
+      },
+      {
+        "action": "Add 3 integration tests to server.ts: unauthenticated 401, JWT alg:none rejected, expired token rejected",
+        "rationale": "R03: POST /api/v1/god-mode/execute has never been tested. These 3 tests establish a minimum security gate for the primary attack surface.",
+        "effort": "4 hours",
+        "riskIds": ["R03"]
+      },
+      {
+        "action": "Cap taskEventQueue at 1000 entries in loop.ts:242 with backpressure event",
+        "rationale": "R06: 10-line fix that closes a confirmed OOM vector in the agent loop hot path.",
+        "effort": "2 hours",
+        "riskIds": ["R06"]
+      },
+      {
+        "action": "Enable vitest coverage with v8 provider — measure baseline before setting targets",
+        "rationale": "R11: This single action converts 661 opaque tests into a measurable asset. Run once to see actual coverage, then decide target thresholds.",
+        "effort": "2 hours",
+        "riskIds": ["R11"]
+      }
+    ],
+    "oneWeek": [
+      {
+        "action": "Write 3 minimum runbooks: (1) startup and health verification, (2) vault unlock failure recovery, (3) API key rotation",
+        "rationale": "R07: Zero runbooks is the single largest operational gap. These 3 documents cover the most likely failure modes a sysadmin would encounter.",
+        "effort": "1 day",
+        "riskIds": ["R07"]
+      },
+      {
+        "action": "Delete or wire the 22 dead exports across tools and router — start with the 5 dead routing strategies",
+        "rationale": "R01: 83% of the router package's primary API is dead code. Delete or activate. Dead code in a security-critical tool package cannot remain indefinitely.",
+        "effort": "2 days",
+        "riskIds": ["R01"]
+      },
+      {
+        "action": "Add error-path tests to loop.integration.test.ts: provider 503, tool crash, context overflow",
+        "rationale": "R26: The agent loop has no error-path tests despite being the most critical execution path.",
+        "effort": "1 day",
+        "riskIds": ["R26"]
+      },
+      {
+        "action": "Convert memory/dream-runner.ts and memory/manager.ts file operations to async fs/promises",
+        "rationale": "R10: These two files are the highest-frequency synchronous IO paths in the system. Converts blocking I/O to non-blocking without changing semantics.",
+        "effort": "1 day",
+        "riskIds": ["R10"]
+      },
+      {
+        "action": "Add 10 property-based tests using fast-check: router Thompson sampling invariants and vault crypto round-trip",
+        "rationale": "R08: These are the highest-value targets with clear invariants. Thompson sampling expected reward bounds and vault encrypt/decrypt round-trip.",
+        "effort": "1 day",
+        "riskIds": ["R08"]
+      }
+    ],
+    "oneMonth": [
+      {
+        "action": "Deploy to a staging environment — record first production deployment timestamp",
+        "rationale": "R05: All DORA metrics are meaningless without a deployed environment. MTTR=null and a DORA Low classification follow from having no production system.",
+        "effort": "3 days",
+        "riskIds": ["R05"]
+      },
+      {
+        "action": "Deploy the 11 monitoring-manifest monitors and verify Sentry DSN receives real events",
+        "rationale": "R17: Monitoring-manifest.json is setup instructions. Converting it to deployed monitors takes the alerting from designed to operational.",
+        "effort": "1 day",
+        "riskIds": ["R17"]
+      },
+      {
+        "action": "Add smoke tests for the 3 highest-risk zero-test packages: server (health endpoint), gateway (structured response), scheduler (job registers and fires)",
+        "rationale": "R02: 42% of packages have zero tests. These 3 packages are operationally critical and each needs only one smoke test as a minimum.",
+        "effort": "2 days",
+        "riskIds": ["R02"]
+      },
+      {
+        "action": "Write 3 SLO definition documents (not code metrics): CLI startup time, vault unlock per session, first chat token latency",
+        "rationale": "R18: SLO documents link operational targets to monitoring thresholds. Each SLO document should reference the monitoring-manifest.json monitor that detects its breach.",
+        "effort": "1 day",
+        "riskIds": ["R18"]
+      },
+      {
+        "action": "Fix the 3 cross-layer architecture violations: core->agents, core->tools, mcp->tools",
+        "rationale": "R12: These violations compound as each layer grows. The longer they persist, the more expensive each fix becomes. Fix core->agents first (lowest blast radius).",
+        "effort": "3 days",
+        "riskIds": ["R12"]
+      },
+      {
+        "action": "Add Dependabot or Renovate configuration with high/critical CVE merge block policy",
+        "rationale": "R20: The 0-CVE state is a point-in-time snapshot. Without automation, a new CVE disclosure goes undetected until the next manual npm audit.",
+        "effort": "2 hours",
+        "riskIds": ["R20"]
+      },
+      {
+        "action": "Enable the 21 skipped Docker sandbox tests in a dedicated CI job",
+        "rationale": "R09: The process isolation layer that prevents agent execution escapes is the only Docker-tested code path. It currently does not run in standard CI.",
+        "effort": "1 day",
+        "riskIds": ["R09"]
+      }
+    ]
+  },
+  "evidenceFiles": {
+    "preflight": "docs/forge-evidence/preflight.json",
+    "staticAnalysis": "docs/forge-evidence/static-analysis.json",
+    "dynamicTesting": "docs/forge-evidence/dynamic-testing.json",
+    "operationalReadiness": "docs/forge-evidence/operational-readiness.json",
+    "security": "docs/forge-evidence/security.json",
+    "architecture": "docs/forge-evidence/architecture.json",
+    "debateAgents1to5": "docs/forge-evidence/debate/agents-1-5.json",
+    "debateAgents6to10": "docs/forge-evidence/debate/agents-6-10.json",
+    "debatePairs1to3": "docs/forge-evidence/debate/pairs-1-3.json",
+    "debatePairs4to5": "docs/forge-evidence/debate/pairs-4-5.json",
+    "debateCrossExam": "docs/forge-evidence/debate/cross-exam.json",
+    "synthesisScores": "docs/forge-evidence/synthesis/scores.json",
+    "synthesisRisks": "docs/forge-evidence/synthesis/risks.json",
+    "synthesisAudit": "docs/forge-evidence/synthesis/audit.json"
+  }
+}

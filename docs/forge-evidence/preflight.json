@@ -1,0 +1,28 @@
+{
+  "project": "brainstorm",
+  "path": "/Users/justin/Projects/brainstorm",
+  "language": "typescript",
+  "framework": "turborepo monorepo (26 packages)",
+  "hasRunningSystem": false,
+  "hasCICD": true,
+  "hasTests": true,
+  "hasDocker": false,
+  "hasOpenAPI": false,
+  "detectedTestCommand": "npx turbo run test",
+  "detectedBuildCommand": "npx turbo run build",
+  "gitInfo": {
+    "branch": "main",
+    "commits": 788,
+    "contributors": 1,
+    "lastCommit": "2026-04-09T18:16:46-04:00"
+  },
+  "sourceFiles": 431,
+  "testFiles": 37,
+  "ciWorkflows": [
+    "ci.yml",
+    "codeql.yml",
+    "e2e.yml",
+    "npm-publish.yml",
+    "ai-review.yml"
+  ]
+}

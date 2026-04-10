@@ -1,0 +1,182 @@
+{
+  "codeInventory": [
+    { "package": "agents", "srcLines": 1262, "testLines": 160 },
+    { "package": "cli", "srcLines": 12776, "testLines": 948 },
+    { "package": "config", "srcLines": 996, "testLines": 147 },
+    { "package": "core", "srcLines": 22127, "testLines": 2727 },
+    { "package": "db", "srcLines": 1964, "testLines": 208 },
+    { "package": "docgen", "srcLines": 625, "testLines": 0 },
+    { "package": "eval", "srcLines": 1944, "testLines": 367 },
+    { "package": "gateway", "srcLines": 764, "testLines": 0 },
+    { "package": "godmode", "srcLines": 4603, "testLines": 143 },
+    { "package": "hooks", "srcLines": 894, "testLines": 187 },
+    { "package": "ingest", "srcLines": 1379, "testLines": 0 },
+    { "package": "mcp", "srcLines": 452, "testLines": 48 },
+    { "package": "onboard", "srcLines": 2900, "testLines": 0 },
+    { "package": "orchestrator", "srcLines": 500, "testLines": 0 },
+    { "package": "plugin-sdk", "srcLines": 344, "testLines": 0 },
+    { "package": "projects", "srcLines": 576, "testLines": 0 },
+    { "package": "providers", "srcLines": 1242, "testLines": 74 },
+    { "package": "router", "srcLines": 2949, "testLines": 814 },
+    { "package": "scheduler", "srcLines": 693, "testLines": 0 },
+    { "package": "sdk", "srcLines": 217, "testLines": 0 },
+    { "package": "server", "srcLines": 1450, "testLines": 0 },
+    { "package": "shared", "srcLines": 1601, "testLines": 398 },
+    { "package": "tools", "srcLines": 8271, "testLines": 1108 },
+    { "package": "vault", "srcLines": 707, "testLines": 127 },
+    { "package": "vscode", "srcLines": 326, "testLines": 0 },
+    { "package": "workflow", "srcLines": 1743, "testLines": 245 }
+  ],
+  "wiringAudit": [
+    {
+      "function": "createWiredMemoryTool",
+      "wired": true,
+      "callSite": "packages/cli/src/bin/brainstorm.ts:5126"
+    },
+    {
+      "function": "createPipelineDispatcher",
+      "wired": true,
+      "callSite": "packages/cli/src/bin/brainstorm.ts:2572"
+    },
+    {
+      "function": "createWiredPipelineTool",
+      "wired": true,
+      "callSite": "packages/cli/src/bin/brainstorm.ts:5653"
+    },
+    {
+      "function": "MemoryManager",
+      "wired": true,
+      "callSite": "packages/cli/src/bin/brainstorm.ts:3998"
+    },
+    {
+      "function": "DaemonController",
+      "wired": true,
+      "callSite": "packages/cli/src/bin/brainstorm.ts:5685"
+    },
+    {
+      "function": "runOrchestrationPipeline",
+      "wired": true,
+      "callSite": "packages/cli/src/bin/brainstorm.ts:2641"
+    },
+    {
+      "function": "syncTrustWindow",
+      "wired": true,
+      "callSite": "packages/core/src/agent/loop.ts:471"
+    },
+    {
+      "function": "flushTrustWindow",
+      "wired": true,
+      "callSite": "packages/core/src/agent/loop.ts:474"
+    },
+    {
+      "function": "createQualitySignalsMiddleware",
+      "wired": true,
+      "callSite": "packages/core/src/middleware/index.ts:108"
+    },
+    {
+      "function": "createStopDetectionMiddleware",
+      "wired": true,
+      "callSite": "packages/core/src/middleware/index.ts:109"
+    },
+    {
+      "function": "createFleetSignalsMiddleware",
+      "wired": true,
+      "callSite": "packages/core/src/middleware/index.ts:110"
+    },
+    {
+      "function": "persistOnboardToMemory",
+      "wired": true,
+      "callSite": "packages/cli/src/bin/brainstorm.ts:3840"
+    }
+  ],
+  "dependencyGraph": [
+    { "package": "agents", "importedByCount": 5 },
+    { "package": "cli", "importedByCount": 0 },
+    { "package": "config", "importedByCount": 21 },
+    { "package": "core", "importedByCount": 9 },
+    { "package": "db", "importedByCount": 17 },
+    { "package": "docgen", "importedByCount": 2 },
+    { "package": "eval", "importedByCount": 2 },
+    { "package": "gateway", "importedByCount": 6 },
+    { "package": "godmode", "importedByCount": 3 },
+    { "package": "hooks", "importedByCount": 1 },
+    { "package": "ingest", "importedByCount": 19 },
+    { "package": "mcp", "importedByCount": 1 },
+    { "package": "onboard", "importedByCount": 1 },
+    { "package": "orchestrator", "importedByCount": 2 },
+    { "package": "plugin-sdk", "importedByCount": 0 },
+    { "package": "projects", "importedByCount": 3 },
+    { "package": "providers", "importedByCount": 10 },
+    { "package": "router", "importedByCount": 8 },
+    { "package": "scheduler", "importedByCount": 1 },
+    { "package": "sdk", "importedByCount": 0 },
+    { "package": "server", "importedByCount": 1 },
+    { "package": "shared", "importedByCount": 106 },
+    { "package": "tools", "importedByCount": 31 },
+    { "package": "vault", "importedByCount": 1 },
+    { "package": "vscode", "importedByCount": 0 },
+    { "package": "workflow", "importedByCount": 4 }
+  ],
+  "deadCode": [
+    {
+      "package": "core",
+      "unusedExports": [
+        "normalizeInsightMarkers",
+        "LoopDetector",
+        "SessionPatternLearner",
+        "FileWatcher",
+        "classifyPlanTask",
+        "estimateTaskCost",
+        "loadIgnorePatterns"
+      ]
+    },
+    {
+      "package": "tools",
+      "unusedExports": [
+        "costEstimateTool",
+        "createToolSearchTool",
+        "planPreviewTool",
+        "processSpawnTool",
+        "processKillTool",
+        "undoTool",
+        "checkSandbox",
+        "ghReviewTool",
+        "ghActionsTool",
+        "ghReleaseTool",
+        "ghSearchTool",
+        "ghSecurityTool",
+        "ghRepoTool",
+        "gitBranchTool",
+        "gitStashTool",
+        "multiEditTool",
+        "batchEditTool",
+        "createTimeoutController"
+      ]
+    },
+    {
+      "package": "router",
+      "unusedExports": [
+        "costFirstStrategy",
+        "qualityFirstStrategy",
+        "createRuleBasedStrategy",
+        "createCombinedStrategy",
+        "capabilityStrategy"
+      ]
+    },
+    {
+      "package": "godmode",
+      "unusedExports": ["BaseConnector"]
+    },
+    {
+      "package": "cli",
+      "unusedExports": []
+    }
+  ],
+  "vulnerabilities": {
+    "total": 0,
+    "critical": 0,
+    "high": 0,
+    "moderate": 0,
+    "low": 0
+  }
+}

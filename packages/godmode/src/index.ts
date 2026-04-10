@@ -18,7 +18,8 @@ export {
   listChangeSets,
   registerExecutor,
 } from "./changeset.js";
-export { BaseConnector } from "./connector-base.js";
+// BaseConnector: abstract base for God Mode connectors.
+// Not re-exported — connectors implement GodModeConnector interface directly.
 export { ProductConnector } from "./product-connector.js";
 export { createProductConnectors } from "./product-factory.js";
 export {

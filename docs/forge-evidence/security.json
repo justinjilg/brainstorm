@@ -1,0 +1,183 @@
+{
+  "dependencyAudit": {
+    "total": 0,
+    "critical": 0,
+    "high": 0,
+    "moderate": 0,
+    "low": 0
+  },
+  "secretScanning": {
+    "envFilesInGit": [],
+    "hardcodedSecrets": [],
+    "gitignoreCoversEnv": true
+  },
+  "authFlows": {
+    "trustPropagation": true,
+    "subagentPrivilegeReduction": true,
+    "jwtValidation": true,
+    "permissionManager": true
+  },
+  "securityMiddlewares": [
+    {
+      "name": "trust-propagation",
+      "registered": true,
+      "purpose": "Taint tracking through agent pipeline; blocks high-risk tools when context is tainted by untrusted external content (e.g. web pages cannot directly trigger shell calls)"
+    },
+    {
+      "name": "content-injection-filter",
+      "registered": true,
+      "purpose": "Sanitizes HTML and scans web_fetch/web_search output for prompt injection patterns before content enters agent context window"
+    },
+    {
+      "name": "tool-contract-enforcement",
+      "registered": true,
+      "purpose": "Validates tool call arguments against contracts; catches dangerous argument patterns early"
+    },
+    {
+      "name": "tool-sequence-detector",
+      "registered": true,
+      "purpose": "Detects suspicious tool call sequences using trust-aware pattern matching"
+    },
+    {
+      "name": "egress-monitor",
+      "registered": true,
+      "purpose": "Monitors shell/process_spawn commands for exfiltration patterns (base64-pipe-to-curl, reverse shells, DNS exfiltration, webhooks); blocks shell after 3 warnings; enforces domain allowlist for POSTs"
+    },
+    {
+      "name": "approval-friction",
+      "registered": true,
+      "purpose": "Risk-proportional resistance to tool execution; tracks approval velocity; instruments high-risk tools (shell, git_push, agent_kill_switch) with cooling periods when human is rubber-stamping"
+    },
+    {
+      "name": "security-scan",
+      "registered": true,
+      "purpose": "Scans file writes (file_write, file_edit, multi_edit, batch_edit) for credential patterns; warns on git_commit if credentials were detected this session"
+    },
+    {
+      "name": "turn-context",
+      "registered": true,
+      "purpose": "Turn context tracking middleware"
+    },
+    {
+      "name": "tool-health",
+      "registered": true,
+      "purpose": "Tool health monitoring"
+    },
+    {
+      "name": "build-state",
+      "registered": true,
+      "purpose": "Build state tracking"
+    },
+    {
+      "name": "loop-detection",
+      "registered": true,
+      "purpose": "Detects agent loop patterns"
+    },
+    {
+      "name": "sentiment",
+      "registered": true,
+      "purpose": "Sentiment tracking"
+    },
+    {
+      "name": "subagent-limit",
+      "registered": true,
+      "purpose": "Limits subagent spawning"
+    },
+    {
+      "name": "trajectory-reduction",
+      "registered": true,
+      "purpose": "Trajectory reduction for context management"
+    },
+    {
+      "name": "auto-lint",
+      "registered": true,
+      "purpose": "Automatic lint checks on code writes"
+    },
+    {
+      "name": "tool-output-truncation",
+      "registered": true,
+      "purpose": "Truncates oversized tool outputs"
+    },
+    {
+      "name": "proactive-compaction",
+      "registered": true,
+      "purpose": "Proactive context compaction"
+    },
+    {
+      "name": "quality-signals",
+      "registered": true,
+      "purpose": "Read:Edit ratio tracking"
+    },
+    {
+      "name": "stop-detection",
+      "registered": true,
+      "purpose": "Detects premature stopping by the agent"
+    },
+    {
+      "name": "fleet-signals",
+      "registered": true,
+      "purpose": "Fleet-level signal aggregation"
+    },
+    {
+      "name": "convention-monitor",
+      "registered": true,
+      "purpose": "Monitors for convention drift (project-path-scoped)"
+    },
+    {
+      "name": "memory-extract",
+      "registered": true,
+      "purpose": "Extracts memory from sessions (project-path-scoped)"
+    }
+  ],
+  "owaspFindings": [
+    {
+      "category": "A03:2021 Injection",
+      "finding": "No execSync or eval usage found in packages/*/src. Shell execution mediated through tool layer with egress-monitor pre-scanning commands before execution. execFileSync used only in vault/backends/op-cli.ts with fixed arguments — no user-controlled input passed directly to subprocess.",
+      "severity": "none"
+    },
+    {
+      "category": "A03:2021 Injection — Prompt Injection",
+      "finding": "content-injection-filter middleware sanitizes all web_fetch/web_search output (strips dangerous HTML, detects injection patterns) before it enters the agent context. trust-propagation middleware prevents tainted context from accessing high-risk tools.",
+      "severity": "mitigated"
+    },
+    {
+      "category": "A07:2021 Identification and Authentication Failures",
+      "finding": "JWT verification in packages/godmode/src/jwt.ts uses timingSafeEqual for signature comparison (prevents timing attacks), enforces exp claim presence, rejects non-HS256 algorithms, requires platform_tenant_id or sub claim. Server logs warning at startup if jwtSecret is empty.",
+      "severity": "low"
+    },
+    {
+      "category": "A02:2021 Cryptographic Failures — XSS Sinks",
+      "finding": "Grep for unsafe HTML injection APIs (innerHTML assignment, React unsafe HTML prop) found zero matches across all packages/*/src TypeScript and TSX files.",
+      "severity": "none"
+    },
+    {
+      "category": "A09:2021 Security Logging and Monitoring Failures",
+      "finding": "console.log calls in packages/cli/src/bin/brainstorm.ts print key names and counts but not key values. No log statements found printing password values, secret values, or token values. pino structured logging used throughout via createLogger().",
+      "severity": "none"
+    },
+    {
+      "category": "A05:2021 Security Misconfiguration",
+      "finding": "packages/server/src/server.ts line 113: explicit warn logged if jwtSecret is empty at startup — message references SERVER EXPOSED WITHOUT AUTH. No default passwords found. Debug modes not detected in production paths.",
+      "severity": "low"
+    },
+    {
+      "category": "A01:2021 Broken Access Control",
+      "finding": "Subagent privilege reduction enforced in packages/core/src/agent/subagent.ts: allowedTools intersected with parent's available tools (privilege ceiling at line ~233). MUTATING_TYPES (code, general) downgraded to read-only without explicit permissionCheck (line ~328-340). PermissionManager class provides auto/confirm/plan modes.",
+      "severity": "none"
+    },
+    {
+      "category": "A10:2021 Server-Side Request Forgery",
+      "finding": "egress-monitor enforces domain allowlist for POST/upload operations. Non-allowlisted domain POSTs blocked. Shell suspended after 3 egress warnings.",
+      "severity": "mitigated"
+    }
+  ],
+  "vaultSystem": {
+    "encryption": "AES-256-GCM (authenticated encryption with 12-byte random nonce and 16-byte auth tag, atomically written via write-to-temp-then-rename, file mode 0o600)",
+    "kdf": "Argon2id (memory=65536 KB, iterations=3, parallelism=4, keyLen=32 — OWASP recommended interactive parameters; @noble/hashes/argon2 implementation; password bytes zeroed after derivation; plaintext key ring zeroed after decrypt/encrypt)",
+    "opBridge": true,
+    "envFallback": true,
+    "resolverChain": "local encrypted vault (lazy unlock, re-prompts on failure) → 1Password CLI via execFileSync (cached 5 min TTL) → environment variables",
+    "autoLock": "30-minute inactivity timer; derived key and decrypted keys cleared from memory on lock(); derivedKey buffer zeroed on lock",
+    "vaultDirectory": "~/.brainstorm/ created with mode 0o700"
+  }
+}
