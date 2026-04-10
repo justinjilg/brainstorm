@@ -25,7 +25,7 @@ jobs:
         run: npx turbo run build --filter='!@brainst0rm/desktop'
 
       - name: Type check
-        run: npx turbo run typecheck --filter='!@brainst0rm/desktop' --filter='!@brainst0rm/web'
+        run: npx turbo run typecheck --filter='!@brainst0rm/desktop'
 
       - name: Verify tool catalog freshness
         run: npm run --workspace=@brainst0rm/tools export-catalog:check
