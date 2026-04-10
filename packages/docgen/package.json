@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "tsup",
+    "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
