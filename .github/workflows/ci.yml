@@ -22,7 +22,7 @@ jobs:
         run: npm ci
 
       - name: Build all packages
-        run: npx turbo run build --filter='!@brainst0rm/web' --filter='!@brainst0rm/desktop'
+        run: npx turbo run build --filter='!@brainst0rm/desktop'
 
       - name: Type check
         run: npx turbo run typecheck --filter='!@brainst0rm/desktop' --filter='!@brainst0rm/web'
