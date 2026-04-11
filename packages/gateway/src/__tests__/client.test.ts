@@ -236,6 +236,252 @@ describe("BrainstormGateway", () => {
       else process.env.BRAINSTORM_GATEWAY_URL = savedUrl;
     }
   });
+
+  // ── Memory client extensions (Week 1 Phase 2) ─────────────────────
+  //
+  // These tests cover the new methods added to BrainstormGateway for the
+  // Week 1 sync wiring: project scope on existing memory calls, memory
+  // init from documents, shared/team memory, approval workflow.
+
+  it("storeMemory sends project scope when provided", async () => {
+    const { stub, calls } = makeFetchStub(() => ({ body: { ok: true } }));
+    vi.stubGlobal("fetch", stub);
+
+    const client = new BrainstormGateway({
+      apiKey: "k",
+      baseUrl: "https://example.test",
+    });
+    await client.storeMemory("semantic", "hello", "hawktalk");
+
+    const body = JSON.parse(calls[0].init.body as string);
+    expect(body).toEqual({
+      block: "semantic",
+      content: "hello",
+      project: "hawktalk",
+    });
+  });
+
+  it("storeMemory omits project field when not provided (backward compat)", async () => {
+    const { stub, calls } = makeFetchStub(() => ({ body: { ok: true } }));
+    vi.stubGlobal("fetch", stub);
+
+    const client = new BrainstormGateway({
+      apiKey: "k",
+      baseUrl: "https://example.test",
+    });
+    await client.storeMemory("semantic", "hello");
+
+    const body = JSON.parse(calls[0].init.body as string);
+    expect(body).toEqual({ block: "semantic", content: "hello" });
+    expect(body.project).toBeUndefined();
+  });
+
+  it("listMemory appends ?project= query param when provided", async () => {
+    const { stub, calls } = makeFetchStub(() => ({
+      body: { entries: [] },
+    }));
+    vi.stubGlobal("fetch", stub);
+
+    const client = new BrainstormGateway({
+      apiKey: "k",
+      baseUrl: "https://example.test",
+    });
+    await client.listMemory("hawktalk");
+
+    expect(calls[0].url).toBe(
+      "https://example.test/v1/memory/entries?project=hawktalk",
+    );
+  });
+
+  it("listMemory URL-encodes the project slug", async () => {
+    const { stub, calls } = makeFetchStub(() => ({ body: { entries: [] } }));
+    vi.stubGlobal("fetch", stub);
+
+    const client = new BrainstormGateway({
+      apiKey: "k",
+      baseUrl: "https://example.test",
+    });
+    await client.listMemory("my project/with slashes");
+
+    expect(calls[0].url).toContain("?project=my%20project%2Fwith%20slashes");
+  });
+
+  it("initMemoryFromDocs POSTs documents array", async () => {
+    const { stub, calls } = makeFetchStub(() => ({
+      body: {
+        status: "completed",
+        summary: "extracted 5 facts",
+        entries_after: 5,
+        entries: [],
+      },
+    }));
+    vi.stubGlobal("fetch", stub);
+
+    const client = new BrainstormGateway({
+      apiKey: "k",
+      baseUrl: "https://example.test",
+    });
+    const result = await client.initMemoryFromDocs([
+      { content: "user prefers TypeScript", source: "session-1" },
+      { content: "project uses Drizzle ORM" },
+    ]);
+
+    expect(calls[0].url).toBe("https://example.test/v1/memory/init");
+    expect(calls[0].init.method).toBe("POST");
+    const body = JSON.parse(calls[0].init.body as string);
+    expect(body.documents).toHaveLength(2);
+    expect(body.documents[0]).toEqual({
+      content: "user prefers TypeScript",
+      source: "session-1",
+    });
+    expect(result.status).toBe("completed");
+    expect(result.entries_after).toBe(5);
+  });
+
+  it("initMemoryFromDocs forwards optional model override", async () => {
+    const { stub, calls } = makeFetchStub(() => ({
+      body: { status: "completed", summary: "", entries_after: 0, entries: [] },
+    }));
+    vi.stubGlobal("fetch", stub);
+
+    const client = new BrainstormGateway({
+      apiKey: "k",
+      baseUrl: "https://example.test",
+    });
+    await client.initMemoryFromDocs(
+      [{ content: "x" }],
+      "google/gemini-2.5-flash",
+    );
+
+    const body = JSON.parse(calls[0].init.body as string);
+    expect(body.model).toBe("google/gemini-2.5-flash");
+  });
+
+  it("storeSharedMemory POSTs to /v1/memory/shared/store with fact+block", async () => {
+    const { stub, calls } = makeFetchStub(() => ({
+      body: { ok: true, entry: { id: "e1" } },
+    }));
+    vi.stubGlobal("fetch", stub);
+
+    const client = new BrainstormGateway({
+      apiKey: "k",
+      baseUrl: "https://example.test",
+    });
+    const result = await client.storeSharedMemory(
+      "team uses Drizzle ORM",
+      "project",
+    );
+
+    expect(calls[0].url).toBe("https://example.test/v1/memory/shared/store");
+    const body = JSON.parse(calls[0].init.body as string);
+    expect(body).toEqual({ fact: "team uses Drizzle ORM", block: "project" });
+    expect(result.ok).toBe(true);
+  });
+
+  it("storeSharedMemory surfaces pending approval response", async () => {
+    const { stub } = makeFetchStub(() => ({
+      status: 202,
+      body: { ok: true, status: "pending_approval", approvalId: "a-123" },
+    }));
+    vi.stubGlobal("fetch", stub);
+
+    const client = new BrainstormGateway({
+      apiKey: "k",
+      baseUrl: "https://example.test",
+    });
+    const result = await client.storeSharedMemory("needs approval");
+
+    expect(result.status).toBe("pending_approval");
+    expect(result.approvalId).toBe("a-123");
+  });
+
+  it("listSharedMemory returns entries + pendingApprovals count", async () => {
+    const { stub } = makeFetchStub(() => ({
+      body: {
+        entries: [
+          {
+            id: "e1",
+            fact: "shared fact",
+            block: "general",
+            createdAt: "2026-04-11T00:00:00Z",
+            createdBy: "api",
+          },
+        ],
+        total: 1,
+        pendingApprovals: 2,
+      },
+    }));
+    vi.stubGlobal("fetch", stub);
+
+    const client = new BrainstormGateway({
+      apiKey: "k",
+      baseUrl: "https://example.test",
+    });
+    const result = await client.listSharedMemory();
+
+    expect(result.entries).toHaveLength(1);
+    expect(result.total).toBe(1);
+    expect(result.pendingApprovals).toBe(2);
+  });
+
+  it("getApprovalConfig + setApprovalConfig roundtrip", async () => {
+    let stored: { requireApproval: boolean } = { requireApproval: false };
+    const { stub, calls } = makeFetchStub((url, init) => {
+      if (init.method === "PUT") {
+        stored = JSON.parse(init.body as string);
+        return { body: { ok: true } };
+      }
+      return { body: stored };
+    });
+    vi.stubGlobal("fetch", stub);
+
+    const client = new BrainstormGateway({
+      apiKey: "k",
+      baseUrl: "https://example.test",
+    });
+
+    const before = await client.getApprovalConfig();
+    expect(before.requireApproval).toBe(false);
+
+    await client.setApprovalConfig(true);
+
+    const after = await client.getApprovalConfig();
+    expect(after.requireApproval).toBe(true);
+    expect(calls).toHaveLength(3);
+  });
+
+  it("approvePendingMemory POSTs to the approve subpath", async () => {
+    const { stub, calls } = makeFetchStub(() => ({ body: { ok: true } }));
+    vi.stubGlobal("fetch", stub);
+
+    const client = new BrainstormGateway({
+      apiKey: "k",
+      baseUrl: "https://example.test",
+    });
+    await client.approvePendingMemory("approval-abc");
+
+    expect(calls[0].url).toBe(
+      "https://example.test/v1/memory/pending/approval-abc/approve",
+    );
+    expect(calls[0].init.method).toBe("POST");
+  });
+
+  it("rejectPendingMemory sends optional reason", async () => {
+    const { stub, calls } = makeFetchStub(() => ({ body: { ok: true } }));
+    vi.stubGlobal("fetch", stub);
+
+    const client = new BrainstormGateway({
+      apiKey: "k",
+      baseUrl: "https://example.test",
+    });
+    await client.rejectPendingMemory("approval-xyz", "not relevant");
+
+    expect(calls[0].url).toBe(
+      "https://example.test/v1/memory/pending/approval-xyz/reject",
+    );
+    const body = JSON.parse(calls[0].init.body as string);
+    expect(body).toEqual({ reason: "not relevant" });
+  });
 });
 
 describe("IntelligenceAPIClient", () => {

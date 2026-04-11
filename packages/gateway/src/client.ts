@@ -136,19 +136,126 @@ export class BrainstormGateway {
   }
 
   // ── Memory ──────────────────────────────────────────────────────────
+  //
+  // Core memory CRUD. All methods now accept an optional `project`
+  // parameter so entries are scoped to a project slug. Without scope,
+  // memory pollutes across projects (the spec-design concern from
+  // docs/br-capability-audit.md).
 
-  async storeMemory(block: string, content: string): Promise<void> {
-    await this.post("/v1/memory/entries", { block, content });
+  async storeMemory(
+    block: string,
+    content: string,
+    project?: string,
+  ): Promise<void> {
+    await this.post("/v1/memory/entries", {
+      block,
+      content,
+      ...(project ? { project } : {}),
+    });
   }
 
-  async queryMemory(query: string): Promise<MemoryEntry[]> {
-    const data = await this.post("/v1/memory/query", { query });
+  async queryMemory(query: string, project?: string): Promise<MemoryEntry[]> {
+    const data = await this.post("/v1/memory/query", {
+      query,
+      ...(project ? { project } : {}),
+    });
     return unwrapArray(data, "results", "entries");
   }
 
-  async listMemory(): Promise<MemoryEntry[]> {
-    const data = await this.get("/v1/memory/entries");
+  async listMemory(project?: string): Promise<MemoryEntry[]> {
+    const path = project
+      ? `/v1/memory/entries?project=${encodeURIComponent(project)}`
+      : "/v1/memory/entries";
+    const data = await this.get(path);
     return unwrapArray(data, "data", "entries");
+  }
+
+  /**
+   * Initialize memory from source documents. BR's agent reads the docs
+   * and extracts structured facts into memory blocks. This is the
+   * server-side equivalent of Letta Code's /init command — already
+   * shipped on BR, not yet exposed via brainstorm CLI.
+   *
+   * Use case: `brainstorm memory init --from <claude-code-session.jsonl>`
+   * — ingest prior Claude Code sessions so a new user's brainstorm
+   * agent starts with their existing context.
+   */
+  async initMemoryFromDocs(
+    documents: Array<{ content: string; source?: string }>,
+    model?: string,
+  ): Promise<{
+    status: string;
+    summary: string;
+    entries_after: number;
+    entries: Array<unknown>;
+  }> {
+    return this.post("/v1/memory/init", {
+      documents,
+      ...(model ? { model } : {}),
+    });
+  }
+
+  // ── Shared / Team Memory ──────────────────────────────────────────
+  //
+  // Shared memory is the team primitive — entries visible to every
+  // user in the tenant, gated by an optional approval workflow.
+  // See /v1/memory/shared/* and /v1/memory/pending/* in BR.
+
+  async storeSharedMemory(
+    fact: string,
+    block: string = "general",
+  ): Promise<{ ok: boolean; status?: string; approvalId?: string }> {
+    return this.post("/v1/memory/shared/store", { fact, block });
+  }
+
+  async listSharedMemory(): Promise<{
+    entries: Array<{
+      id: string;
+      fact: string;
+      block: string;
+      createdAt: string;
+      createdBy: string;
+    }>;
+    total: number;
+    pendingApprovals: number;
+  }> {
+    return this.get("/v1/memory/shared/entries");
+  }
+
+  async getApprovalConfig(): Promise<{ requireApproval: boolean }> {
+    return this.get("/v1/memory/approval-config");
+  }
+
+  async setApprovalConfig(requireApproval: boolean): Promise<void> {
+    await this.put("/v1/memory/approval-config", { requireApproval });
+  }
+
+  async listPendingMemory(): Promise<
+    Array<{
+      id: string;
+      type: string;
+      status: string;
+      summary: string;
+      details: Record<string, unknown>;
+      createdAt: string;
+      expiresAt: string;
+    }>
+  > {
+    const data = await this.get("/v1/memory/pending");
+    return unwrapArray(data, "data", "pending");
+  }
+
+  async approvePendingMemory(approvalId: string): Promise<void> {
+    await this.post(`/v1/memory/pending/${approvalId}/approve`, {});
+  }
+
+  async rejectPendingMemory(
+    approvalId: string,
+    reason?: string,
+  ): Promise<void> {
+    await this.post(`/v1/memory/pending/${approvalId}/reject`, {
+      ...(reason ? { reason } : {}),
+    });
   }
 
   // ── Governance ──────────────────────────────────────────────────────
