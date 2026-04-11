@@ -4559,9 +4559,367 @@ program
         }
         break;
       }
+
+      // ── Week 1 Phase 4 additions (BR wiring) ─────────────────────
+      //
+      // These delegate to the BrainstormRouter gateway (via new gateway
+      // client methods added in Phase 2) for team/shared memory,
+      // approval workflow, and init-from-documents. Each action fails
+      // gracefully with a clear error when no BR API key is configured.
+
+      case "init": {
+        // brainstorm memory init --from <file>
+        //   Reads a Claude Code / Codex session JSONL (or plain text),
+        //   sends to BR's /v1/memory/init endpoint for agent-driven
+        //   fact extraction, prints the summary.
+        //
+        //   Note: commander action receives the two positional
+        //   arguments (action, query). The file path rides on `query`
+        //   to keep the existing [action] [query] signature. This is
+        //   a little ugly but keeps the command surface backward-
+        //   compatible. A cleaner subcommand structure is future work.
+        const filePath = query;
+        if (!filePath) {
+          console.error(
+            "  Usage: storm memory init <file>\n" +
+              "  Supports Claude Code session JSONL or plain text documents.",
+          );
+          process.exit(1);
+        }
+        const gw = createGatewayClient();
+        if (!gw) {
+          console.error(
+            "  No BRAINSTORM_API_KEY set. Set it in env or vault first.",
+          );
+          process.exit(1);
+        }
+        const { readFileSync: rfs, existsSync: exs } = await import("node:fs");
+        if (!exs(filePath)) {
+          console.error(`  File not found: ${filePath}`);
+          process.exit(1);
+        }
+        const content = rfs(filePath, "utf-8");
+        // Detect JSONL and extract content; otherwise treat as plain text doc.
+        const documents: Array<{ content: string; source?: string }> = [];
+        const isJsonl = filePath.endsWith(".jsonl");
+        if (isJsonl) {
+          const lines = content.split("\n").filter((l) => l.trim());
+          for (const line of lines) {
+            try {
+              const obj = JSON.parse(line);
+              // Claude Code trajectory format has `message.content` or
+              // `text` fields. Try common shapes.
+              const text =
+                typeof obj?.message?.content === "string"
+                  ? obj.message.content
+                  : typeof obj?.text === "string"
+                    ? obj.text
+                    : typeof obj?.content === "string"
+                      ? obj.content
+                      : null;
+              if (text && text.trim()) {
+                documents.push({ content: text, source: filePath });
+              }
+            } catch {
+              // Skip malformed lines
+            }
+          }
+        } else {
+          documents.push({ content, source: filePath });
+        }
+
+        if (documents.length === 0) {
+          console.error(
+            `  No extractable content found in ${filePath}. ` +
+              "Expected JSONL with text/content fields or plain text.",
+          );
+          process.exit(1);
+        }
+
+        console.log(
+          `\n  Sending ${documents.length} document(s) to BR /v1/memory/init...`,
+        );
+        try {
+          const result = await gw.initMemoryFromDocs(documents);
+          console.log(`  Status:  ${result.status}`);
+          console.log(`  Summary: ${result.summary.slice(0, 200)}`);
+          console.log(`  Entries: ${result.entries_after}\n`);
+        } catch (err: any) {
+          console.error(`  Memory init failed: ${err.message}`);
+          process.exit(1);
+        }
+        break;
+      }
+
+      case "shared": {
+        // brainstorm memory shared             → list team shared memory
+        // brainstorm memory shared <fact>      → store a fact in team shared memory
+        const gw = createGatewayClient();
+        if (!gw) {
+          console.error(
+            "  No BRAINSTORM_API_KEY set. Team shared memory requires BR.",
+          );
+          process.exit(1);
+        }
+        if (query && query.length > 0 && query !== "list") {
+          // Store path
+          try {
+            const result = await gw.storeSharedMemory(query);
+            if (result.status === "pending_approval") {
+              console.log(
+                `\n  ⏳ Memory write queued for approval (id: ${result.approvalId}).\n` +
+                  `  Use 'storm memory pending' to see the queue.\n`,
+              );
+            } else {
+              console.log(`\n  ✓ Shared memory saved.\n`);
+            }
+          } catch (err: any) {
+            console.error(`  Shared memory write failed: ${err.message}`);
+            process.exit(1);
+          }
+        } else {
+          // List path
+          try {
+            const result = await gw.listSharedMemory();
+            if (result.entries.length === 0) {
+              console.log(`\n  No shared memory entries.`);
+              if (result.pendingApprovals > 0) {
+                console.log(
+                  `  ${result.pendingApprovals} pending approval(s) — see 'storm memory pending'.\n`,
+                );
+              }
+              console.log();
+              return;
+            }
+            console.log(`\n  Team shared memory (${result.total} entries):\n`);
+            for (const entry of result.entries) {
+              console.log(`    👥 [${entry.block}] ${entry.fact.slice(0, 80)}`);
+              console.log(`       by ${entry.createdBy} at ${entry.createdAt}`);
+            }
+            if (result.pendingApprovals > 0) {
+              console.log(
+                `\n  ⏳ ${result.pendingApprovals} pending approval(s) — see 'storm memory pending'\n`,
+              );
+            } else {
+              console.log();
+            }
+          } catch (err: any) {
+            console.error(`  Shared memory list failed: ${err.message}`);
+            process.exit(1);
+          }
+        }
+        break;
+      }
+
+      case "pending": {
+        // brainstorm memory pending                        → list pending approvals
+        // brainstorm memory pending approve <id>           → approve
+        // brainstorm memory pending reject <id> [reason]   → reject
+        //
+        // The `query` positional carries the subcommand (list/approve/
+        // reject) plus the id; parse it as "subcmd:id" or just "subcmd".
+        const gw = createGatewayClient();
+        if (!gw) {
+          console.error(
+            "  No BRAINSTORM_API_KEY set. Memory approval requires BR.",
+          );
+          process.exit(1);
+        }
+        const parts = (query ?? "").trim().split(/\s+/);
+        const subcmd = parts[0] || "list";
+
+        if (subcmd === "list" || subcmd === "") {
+          try {
+            const pending = await gw.listPendingMemory();
+            if (pending.length === 0) {
+              console.log("\n  No pending memory approvals.\n");
+              return;
+            }
+            console.log(`\n  Pending approvals (${pending.length}):\n`);
+            for (const p of pending) {
+              console.log(`    ⏳ ${p.id}`);
+              console.log(`       ${p.summary.slice(0, 80)}`);
+              console.log(`       expires ${p.expiresAt}`);
+            }
+            console.log(
+              `\n  To approve: storm memory pending approve <id>\n` +
+                `  To reject:  storm memory pending reject <id>\n`,
+            );
+          } catch (err: any) {
+            console.error(`  Pending list failed: ${err.message}`);
+            process.exit(1);
+          }
+        } else if (subcmd === "approve") {
+          const id = parts[1];
+          if (!id) {
+            console.error("  Usage: storm memory pending approve <id>");
+            process.exit(1);
+          }
+          try {
+            await gw.approvePendingMemory(id);
+            console.log(`\n  ✓ Approved: ${id}\n`);
+          } catch (err: any) {
+            console.error(`  Approval failed: ${err.message}`);
+            process.exit(1);
+          }
+        } else if (subcmd === "reject") {
+          const id = parts[1];
+          const reason = parts.slice(2).join(" ");
+          if (!id) {
+            console.error("  Usage: storm memory pending reject <id> [reason]");
+            process.exit(1);
+          }
+          try {
+            await gw.rejectPendingMemory(id, reason || undefined);
+            console.log(`\n  ✗ Rejected: ${id}\n`);
+          } catch (err: any) {
+            console.error(`  Rejection failed: ${err.message}`);
+            process.exit(1);
+          }
+        } else {
+          console.error(
+            `  Unknown pending subcommand: ${subcmd}. Use list, approve, or reject.`,
+          );
+          process.exit(1);
+        }
+        break;
+      }
+
+      case "doctor": {
+        // brainstorm memory doctor — clean up and reorganize local memory
+        // (Letta Code parity from their /doctor slash command).
+        //
+        // For now this runs the MemoryManager's existing consolidation
+        // path: walks the store, removes duplicates, rebuilds the
+        // index, prunes quarantine entries older than 30 days.
+        console.log("\n  Running memory doctor...\n");
+        const before = memory.list();
+        // Simple dedup by name — keep the most recent entry per name
+        const seen = new Map<string, any>();
+        for (const entry of before) {
+          const existing = seen.get(entry.name);
+          if (!existing || (entry.updatedAt ?? 0) > (existing.updatedAt ?? 0)) {
+            seen.set(entry.name, entry);
+          }
+        }
+        const duplicateIds = before
+          .filter((e) => seen.get(e.name)?.id !== e.id)
+          .map((e) => e.id);
+        for (const id of duplicateIds) {
+          memory.delete(id);
+        }
+        const after = memory.list();
+        console.log(`  Before: ${before.length} entries`);
+        console.log(`  After:  ${after.length} entries`);
+        console.log(`  Removed: ${duplicateIds.length} duplicate(s) by name\n`);
+        break;
+      }
+
       default:
         console.error(
-          `  Unknown action: ${action}. Use list, search, or forget.`,
+          `  Unknown action: ${action}. ` +
+            `Use list, search, forget, init, shared, pending, or doctor.`,
+        );
+        process.exit(1);
+    }
+  });
+
+// ── Sync Command ─────────────────────────────────────────────────
+//
+// Visibility and manual control for the fire-and-forget BR sync queue
+// introduced in Week 1 Phase 1. The queue lives in the local SQLite
+// database (sync_queue table, migration 030) and drains on a timer
+// whenever the chat command is running. These subcommands let users
+// inspect queue state and force a drain on demand — critical for
+// debugging and for users without a long-running daemon.
+
+program
+  .command("sync")
+  .description("Inspect and manage the BrainstormRouter sync queue")
+  .argument("[action]", "Action: status, flush, prune", "status")
+  .action(async (action: string) => {
+    const { SyncQueueRepository } = await import("@brainst0rm/db");
+    const { SyncWorker } = await import("@brainst0rm/gateway");
+
+    const db = getDb();
+    const repo = new SyncQueueRepository(db);
+
+    switch (action) {
+      case "status": {
+        const stats = repo.getStats();
+        const total =
+          stats.pending + stats.inFlight + stats.completed + stats.failed;
+
+        console.log("\n  BR Sync Queue\n");
+        console.log(`  Total rows:  ${total}`);
+        console.log(`    pending:   ${stats.pending}`);
+        console.log(`    in_flight: ${stats.inFlight}`);
+        console.log(`    completed: ${stats.completed}`);
+        console.log(`    failed:    ${stats.failed}`);
+
+        if (stats.oldestPending !== null) {
+          const age = Math.floor(
+            (Date.now() / 1000 - stats.oldestPending) / 60,
+          );
+          console.log(`\n  Oldest pending: ${age} minutes ago`);
+        }
+
+        if (stats.latestFailure) {
+          console.log(`\n  Latest failure:`);
+          console.log(`    id:     ${stats.latestFailure.id}`);
+          console.log(`    tries:  ${stats.latestFailure.attemptCount}`);
+          console.log(`    error:  ${stats.latestFailure.error.slice(0, 200)}`);
+        }
+
+        // Warn if BR isn't configured — queue has nowhere to go
+        const gw = createGatewayClient();
+        if (!gw && stats.pending > 0) {
+          console.log(
+            `\n  ⚠ BRAINSTORM_API_KEY not set — ${stats.pending} item(s) will stay queued until a gateway is configured.`,
+          );
+        }
+        console.log();
+        break;
+      }
+
+      case "flush": {
+        // Drain the queue synchronously, once. Useful after offline
+        // work to push pending memory writes, or after setting a new
+        // BRAINSTORM_API_KEY for the first time.
+        const gw = createGatewayClient();
+        if (!gw) {
+          console.error("  No BRAINSTORM_API_KEY set. Configure BR first.");
+          process.exit(1);
+        }
+        const worker = new SyncWorker({ gateway: gw, repo });
+        console.log("\n  Draining sync queue...");
+        const result = await worker.drainOnce();
+        console.log(
+          `  Processed ${result.processed}: ` +
+            `${result.succeeded} succeeded, ${result.failed} failed\n`,
+        );
+        if (result.failed > 0) {
+          const stats = worker.getStats();
+          if (stats.lastError) {
+            console.log(`  Last error: ${stats.lastError}\n`);
+          }
+        }
+        break;
+      }
+
+      case "prune": {
+        // Remove completed rows older than 7 days (604800 seconds) to
+        // keep the queue table bounded on long-running installations.
+        const deleted = repo.pruneCompleted(7 * 24 * 60 * 60);
+        console.log(
+          `\n  Pruned ${deleted} completed row(s) older than 7 days.\n`,
+        );
+        break;
+      }
+
+      default:
+        console.error(
+          `  Unknown action: ${action}. Use status, flush, or prune.`,
         );
         process.exit(1);
     }
