@@ -3084,6 +3084,185 @@ orchestrateCmd
   });
 
 orchestrateCmd
+  .command("parallel")
+  .argument("<request>", "High-level request to decompose into parallel tasks")
+  .option("--workers <n>", "Concurrent workers (default 3)", "3")
+  .option("--budget <amount>", "Budget cap for the entire run in dollars", "5")
+  .option(
+    "--no-merge",
+    "Do not auto-merge approved worktrees — leave for human review",
+  )
+  .option(
+    "--skip-build-verify",
+    "Skip per-worktree build verification (faster but less safe)",
+  )
+  .description(
+    "Plan → parallel workers → judge: decompose a request, run N workers in isolated worktrees, merge approved branches",
+  )
+  .action(
+    async (
+      request: string,
+      opts: {
+        workers: string;
+        budget: string;
+        merge?: boolean;
+        skipBuildVerify?: boolean;
+      },
+    ) => {
+      const { planMultiAgentRun, runWorkerPool, runJudge } =
+        await import("@brainst0rm/core");
+
+      const projectPath = process.cwd();
+      const concurrency = parseInt(opts.workers, 10);
+      const budgetLimit = parseFloat(opts.budget);
+      const autoMerge = opts.merge !== false;
+
+      console.log(`\n  Multi-Agent Parallel Orchestration\n`);
+      console.log(`  Request:  "${request.slice(0, 80)}"`);
+      console.log(`  Workers:  ${concurrency} concurrent`);
+      console.log(`  Budget:   $${budgetLimit.toFixed(2)}`);
+      console.log(`  Merge:    ${autoMerge ? "auto on approve" : "manual"}`);
+      console.log();
+
+      // Set up runtime — same pattern as other CLI commands
+      const config = loadConfig();
+      config.general.defaultPermissionMode = "auto"; // unattended
+      const db = getDb();
+      const resolvedKeys = await resolveProviderKeys();
+      const registry = await createProviderRegistry(config, resolvedKeys);
+      const costTracker = new CostTracker(db, config.budget);
+      const tools = createDefaultToolRegistry();
+      const { frontmatter } = buildSystemPrompt(projectPath);
+      const router = new BrainstormRouter(
+        config,
+        registry,
+        costTracker,
+        frontmatter,
+      );
+      router.setStrategy("capability");
+
+      // Resolve the project ID — orchestration_runs needs an FK target
+      const { ProjectManager } = await import("@brainst0rm/projects");
+      const pm = new ProjectManager(db);
+      const project = pm.projects.getByPath(projectPath);
+      if (!project) {
+        console.error(
+          `  No project registered for ${projectPath}. Run 'brainstorm projects add' first.\n`,
+        );
+        process.exit(1);
+      }
+
+      const sharedSubagentOptions: any = {
+        config,
+        registry,
+        router,
+        costTracker,
+        tools,
+        projectPath,
+        permissionCheck: () => "allow",
+        budgetLimit: budgetLimit / Math.max(1, concurrency * 2),
+      };
+
+      // ── Phase 1: Planner ────────────────────────────────────────────
+      console.log(`  [Planner] decomposing request...`);
+      let plan;
+      try {
+        plan = await planMultiAgentRun({
+          request,
+          projectId: project.id,
+          budgetLimit,
+          subagentOptions: sharedSubagentOptions,
+          db,
+        });
+      } catch (err: any) {
+        console.error(`  ✗ Planner failed: ${err.message}\n`);
+        process.exit(1);
+      }
+      console.log(
+        `  [Planner] done — ${plan.subtaskCount} subtasks, ${plan.totalDependencies} edges, $${plan.cost.toFixed(4)} (${plan.modelUsed})`,
+      );
+      console.log(`  [Planner] strategy: ${plan.summary.slice(0, 200)}\n`);
+
+      // ── Phase 2: Worker Pool ────────────────────────────────────────
+      console.log(`  [Workers] starting ${concurrency} workers...`);
+      let poolResult: any;
+      const eventGen = runWorkerPool({
+        runId: plan.runId,
+        db,
+        subagentOptions: sharedSubagentOptions,
+        concurrency,
+        preserveWorktrees: true,
+      });
+      while (true) {
+        const next = await eventGen.next();
+        if (next.done) {
+          poolResult = next.value;
+          break;
+        }
+        const event = next.value;
+        switch (event.type) {
+          case "worker-claimed":
+            console.log(
+              `  [${event.workerId}] claimed: ${event.task?.prompt.slice(0, 60)}...`,
+            );
+            break;
+          case "worker-completed":
+            console.log(
+              `  [${event.workerId}] ✓ ($${event.cost?.toFixed(4)}, ${event.filesTouched?.length ?? 0} files)`,
+            );
+            break;
+          case "worker-failed":
+            console.log(
+              `  [${event.workerId}] ✗ ${event.error?.slice(0, 80) ?? "failed"}`,
+            );
+            break;
+          case "pool-finished":
+            console.log(
+              `  [Workers] done — ${event.totalCompleted} completed, ${event.totalFailed} failed`,
+            );
+            break;
+        }
+      }
+
+      // ── Phase 3: Judge ──────────────────────────────────────────────
+      console.log(`\n  [Judge] verifying worktrees...`);
+      const verdict = await runJudge({
+        runId: plan.runId,
+        db,
+        projectPath,
+        skipBuildVerify: opts.skipBuildVerify ?? false,
+        autoMerge,
+      });
+
+      console.log(
+        `  [Judge] decision: ${verdict.decision.toUpperCase()} (${verdict.reason})`,
+      );
+      const conflicts = Object.keys(verdict.conflictMatrix);
+      if (conflicts.length > 0) {
+        console.log(`  [Judge] conflicts on ${conflicts.length} files:`);
+        for (const file of conflicts.slice(0, 10)) {
+          console.log(
+            `    ${file} (tasks: ${verdict.conflictMatrix[file].join(", ")})`,
+          );
+        }
+      }
+      if (verdict.mergedTaskIds.length > 0) {
+        console.log(
+          `  [Judge] merged ${verdict.mergedTaskIds.length} task branch(es) into ${projectPath}`,
+        );
+      }
+
+      console.log(
+        `\n  Total cost: $${(plan.cost + (poolResult?.totalCost ?? 0)).toFixed(4)}`,
+      );
+      console.log(`  Run id: ${plan.runId}`);
+      console.log();
+
+      process.exit(verdict.decision === "approve" ? 0 : 1);
+    },
+  );
+
+orchestrateCmd
   .command("status")
   .argument("<run-id>", "Orchestration run ID")
   .description("Show status of an orchestration run")
