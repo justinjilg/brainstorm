@@ -11,12 +11,19 @@ function ensureSafePath(filePath: string): string {
   const resolved = resolve(cwd, filePath);
   const home = homedir();
 
-  // Allow: paths within cwd OR within home directory
-  // Block: system paths (/etc, /usr, /var, /proc, /sys, /dev)
+  // Allow: paths within cwd OR within home directory OR safe tmp workspaces.
+  // macOS tmpdir lives at /var/folders/... so /var is not blanket-blocked.
+  const isSafeTmpVar =
+    resolved.startsWith("/var/folders/") ||
+    resolved.startsWith("/private/var/folders/") ||
+    resolved.startsWith("/var/tmp/") ||
+    resolved.startsWith("/private/var/tmp/");
+  if (!isSafeTmpVar && resolved.startsWith("/var")) {
+    throw new Error(`Path blocked: "${filePath}" is a protected system path`);
+  }
   const BLOCKED_PREFIXES = [
     "/etc",
     "/usr",
-    "/var",
     "/proc",
     "/sys",
     "/dev",
@@ -27,10 +34,9 @@ function ensureSafePath(filePath: string): string {
     throw new Error(`Path blocked: "${filePath}" is a protected system path`);
   }
 
-  // Allow absolute paths within home dir or within cwd
   const isInHome = resolved.startsWith(home);
   const isInCwd = !relative(cwd, resolved).startsWith("..");
-  if (!isInHome && !isInCwd) {
+  if (!isInHome && !isInCwd && !isSafeTmpVar) {
     throw new Error(
       `Path blocked: "${filePath}" is outside home directory and workspace`,
     );

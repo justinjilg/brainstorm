@@ -2,111 +2,111 @@
   {
     "id": "code-correct-01",
     "capability": "code-correctness",
-    "prompt": "Write a TypeScript function called 'isPrime' that takes a number and returns true if it's prime. Write it to a file called /tmp/brainstorm-eval-prime.ts",
+    "prompt": "Write a TypeScript function called 'isPrime' that takes a number and returns true if it's prime. Write it to a file called ./prime.ts",
     "verify": {
       "tool_calls_include": ["file_write"],
       "answer_contains": ["isPrime"],
       "code_compiles": true,
-      "max_steps": 3
+      "max_steps": 6
     }
   },
   {
     "id": "code-correct-02",
     "capability": "code-correctness",
-    "prompt": "Write a TypeScript function called 'debounce' that takes a function and a delay in milliseconds, and returns a debounced version. Write it to /tmp/brainstorm-eval-debounce.ts",
+    "prompt": "Write a TypeScript function called 'debounce' that takes a function and a delay in milliseconds, and returns a debounced version. Write it to ./debounce.ts",
     "verify": {
       "tool_calls_include": ["file_write"],
       "answer_contains": ["debounce"],
       "code_compiles": true,
-      "max_steps": 3
+      "max_steps": 6
     }
   },
   {
     "id": "code-correct-03",
     "capability": "code-correctness",
-    "prompt": "Write a TypeScript function called 'deepMerge' that recursively merges two objects. Arrays should be concatenated. Write to /tmp/brainstorm-eval-merge.ts",
+    "prompt": "Write a TypeScript function called 'deepMerge' that recursively merges two objects. Arrays should be concatenated. Write to ./merge.ts",
     "verify": {
       "tool_calls_include": ["file_write"],
       "answer_contains": ["deepMerge"],
       "code_compiles": true,
-      "max_steps": 3
+      "max_steps": 6
     }
   },
   {
     "id": "code-correct-04",
     "capability": "code-correctness",
-    "prompt": "Write a TypeScript function called 'retry' that takes an async function, maxRetries, and delayMs, retrying the function with exponential backoff on failure. Write to /tmp/brainstorm-eval-retry.ts",
+    "prompt": "Write a TypeScript function called 'retry' that takes an async function, maxRetries, and delayMs, retrying the function with exponential backoff on failure. Write to ./retry.ts",
     "verify": {
       "tool_calls_include": ["file_write"],
       "answer_contains": ["retry"],
       "code_compiles": true,
-      "max_steps": 3
+      "max_steps": 6
     }
   },
   {
     "id": "code-correct-05",
     "capability": "code-correctness",
-    "prompt": "Write a TypeScript function called 'parseCSV' that takes a CSV string and returns an array of objects using the first row as headers. Write to /tmp/brainstorm-eval-csv.ts",
+    "prompt": "Write a TypeScript function called 'parseCSV' that takes a CSV string and returns an array of objects using the first row as headers. Write to ./csv.ts",
     "verify": {
       "tool_calls_include": ["file_write"],
       "answer_contains": ["parseCSV"],
       "code_compiles": true,
-      "max_steps": 3
+      "max_steps": 6
     }
   },
   {
     "id": "code-correct-06",
     "capability": "code-correctness",
-    "prompt": "Write a TypeScript function called 'memoize' that caches function results based on serialized arguments. Write to /tmp/brainstorm-eval-memoize.ts",
+    "prompt": "Write a TypeScript function called 'memoize' that caches function results based on serialized arguments. Write to ./memoize.ts",
     "verify": {
       "tool_calls_include": ["file_write"],
       "answer_contains": ["memoize"],
       "code_compiles": true,
-      "max_steps": 3
+      "max_steps": 6
     }
   },
   {
     "id": "code-correct-07",
     "capability": "code-correctness",
-    "prompt": "Write a TypeScript class called 'LRUCache<K, V>' with get, set, and delete methods. Size is set in constructor. Write to /tmp/brainstorm-eval-lru.ts",
+    "prompt": "Write a TypeScript class called 'LRUCache<K, V>' with get, set, and delete methods. Size is set in constructor. Write to ./lru.ts",
     "verify": {
       "tool_calls_include": ["file_write"],
       "answer_contains": ["LRUCache"],
       "code_compiles": true,
-      "max_steps": 3
+      "max_steps": 6
     }
   },
   {
     "id": "code-correct-08",
     "capability": "code-correctness",
-    "prompt": "Write a TypeScript function called 'flatten' that takes a deeply nested array and returns a flat array. Use generics for type safety. Write to /tmp/brainstorm-eval-flatten.ts",
+    "prompt": "Write a TypeScript function called 'flatten' that takes a deeply nested array and returns a flat array. Use generics for type safety. Write to ./flatten.ts",
     "verify": {
       "tool_calls_include": ["file_write"],
       "answer_contains": ["flatten"],
       "code_compiles": true,
-      "max_steps": 3
+      "max_steps": 6
     }
   },
   {
     "id": "code-correct-09",
     "capability": "code-correctness",
-    "prompt": "Write a TypeScript function called 'groupBy' that takes an array and a key function, returning a Map of grouped items. Write to /tmp/brainstorm-eval-groupby.ts",
+    "prompt": "Write a TypeScript function called 'groupBy' that takes an array and a key function, returning a Map of grouped items. Write to ./groupby.ts",
     "verify": {
       "tool_calls_include": ["file_write"],
       "answer_contains": ["groupBy"],
       "code_compiles": true,
-      "max_steps": 3
+      "max_steps": 6
     }
   },
   {
     "id": "code-correct-10",
     "capability": "code-correctness",
-    "prompt": "Write a TypeScript function called 'pipe' that composes functions left-to-right with proper typing. pipe(f, g, h)(x) should equal h(g(f(x))). Write to /tmp/brainstorm-eval-pipe.ts",
+    "prompt": "Write a TypeScript function called 'pipe' that composes functions left-to-right with proper typing. pipe(f, g, h)(x) should equal h(g(f(x))). Write to ./pipe.ts",
     "verify": {
       "tool_calls_include": ["file_write"],
       "answer_contains": ["pipe"],
       "code_compiles": true,
-      "max_steps": 3
+      "max_steps": 6
     }
   }
 ]

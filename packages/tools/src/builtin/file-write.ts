@@ -15,25 +15,40 @@ function ensureSafePath(filePath: string): string {
   const resolved = resolve(cwd, filePath);
   const home = homedir();
 
-  // Block system paths
+  // Block system paths.
+  // Note: /var is NOT blocked because macOS tmpdir lives at /var/folders/...
+  // (symlinked from /private/var/folders). We explicitly allow /var/folders
+  // and /private/var/folders as temp workspaces; other /var/* stays blocked.
   const BLOCKED_PREFIXES = [
     "/etc",
     "/usr",
-    "/var",
     "/proc",
     "/sys",
     "/dev",
     "/sbin",
     "/boot",
   ];
+  // Extra /var handling: block unless inside /var/folders (macOS tmp)
+  // or /var/tmp (Linux-ish tmp).
+  const isSafeTmpVar =
+    resolved.startsWith("/var/folders/") ||
+    resolved.startsWith("/private/var/folders/") ||
+    resolved.startsWith("/var/tmp/") ||
+    resolved.startsWith("/private/var/tmp/");
+  if (!isSafeTmpVar && resolved.startsWith("/var")) {
+    throw new Error(`Path blocked: "${filePath}" is a protected system path`);
+  }
   if (BLOCKED_PREFIXES.some((p) => resolved.startsWith(p))) {
     throw new Error(`Path blocked: "${filePath}" is a protected system path`);
   }
 
-  // Allow within home dir or within cwd
+  // Allow within home dir, within cwd, or within a tmp workspace.
+  // macOS symlinks /var/folders → /private/var/folders, so resolve() may
+  // return either form depending on the OS resolver. Check both.
   const isInHome = resolved.startsWith(home);
   const isInCwd = !relative(cwd, resolved).startsWith("..");
-  if (!isInHome && !isInCwd) {
+  const isInTmp = isSafeTmpVar; // tmp workspaces are allowed too
+  if (!isInHome && !isInCwd && !isInTmp) {
     throw new Error(
       `Path blocked: "${filePath}" is outside home directory and workspace`,
     );
