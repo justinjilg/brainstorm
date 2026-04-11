@@ -1,22 +1,28 @@
 /**
- * SWE-bench Scorer — run gold tests against generated patches.
+ * SWE-bench Scorer — run FAIL_TO_PASS tests against generated patches
+ * using the official per-instance Docker images.
  *
- * Uses Docker for isolated execution:
- * 1. Clone repo at baseCommit
- * 2. Apply generated patch (git apply)
- * 3. Apply gold test patch
- * 4. Run test suite
- * 5. Parse results
+ * Each SWE-bench Lite instance has a pre-built image with:
+ *   - /testbed: repo pre-checked-out at baseCommit
+ *   - /opt/miniconda3/envs/testbed: conda env with all deps installed
+ *   - pytest available via `python -m pytest`
+ *
+ * Image naming:
+ *   instance_id "pytest-dev__pytest-11143"
+ *     → "swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-11143:latest"
+ *   (Docker tags cannot contain double-underscore, so `__` → `_1776_`.)
+ *
+ * Flow:
+ *   1. Resolve image tag from instance_id, pull if missing.
+ *   2. Write prediction patch + gold test patch to a temp dir.
+ *   3. Run container with patches dir mounted at /patches.
+ *   4. Inside container: activate testbed env, git apply both patches,
+ *      run pytest on FAIL_TO_PASS tests.
+ *   5. Parse pytest output and return score.
  */
 
 import { execFileSync } from "node:child_process";
-import {
-  mkdirSync,
-  writeFileSync,
-  existsSync,
-  mkdtempSync,
-  rmSync,
-} from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { SWEBenchInstance, SWEBenchPatch } from "./runner.js";
@@ -41,17 +47,27 @@ export interface SWEBenchScorecard {
   scores: SWEBenchScore[];
 }
 
+const IMAGE_PREFIX = "swebench/sweb.eval.x86_64.";
+const PULL_TIMEOUT_MS = 600_000; // 10 min — first pull of a 2GB image can be slow
+const RUN_TIMEOUT_MS = 900_000; // 15 min — FAIL_TO_PASS subsets usually finish in <5 min
+
+/** Convert a SWE-bench instance_id to its official Docker image tag. */
+export function instanceIdToImage(instanceId: string): string {
+  // Double underscore cannot appear in Docker tags — SWE-bench substitutes _1776_
+  const mangled = instanceId.replace(/__/g, "_1776_");
+  return `${IMAGE_PREFIX}${mangled}:latest`;
+}
+
 /**
- * Score a patch by applying it and running the gold tests in Docker.
+ * Score a patch by applying it inside the official SWE-bench image and
+ * running the FAIL_TO_PASS tests.
  *
- * If Docker is unavailable, falls back to heuristic scoring
- * (patch non-empty + agent reported success).
+ * Falls back to heuristic scoring if Docker is unavailable.
  */
 export function scorePatch(
   instance: SWEBenchInstance,
   patch: SWEBenchPatch,
 ): SWEBenchScore {
-  // No patch generated → automatic fail
   if (!patch.patch || patch.patch.length === 0) {
     return {
       instanceId: instance.instanceId,
@@ -63,69 +79,31 @@ export function scorePatch(
     };
   }
 
-  // Try Docker-based scoring
-  if (isDockerAvailable()) {
-    return scorePatchWithDocker(instance, patch);
+  if (!isDockerAvailable()) {
+    return {
+      instanceId: instance.instanceId,
+      passed: patch.success && patch.patch.length > 0,
+      testsRun: 0,
+      testsPassed: 0,
+      testsFailed: 0,
+      error: "Docker unavailable — heuristic scoring only",
+    };
   }
 
-  // Fallback: heuristic scoring (patch exists + agent success signal)
-  return {
-    instanceId: instance.instanceId,
-    passed: patch.success && patch.patch.length > 0,
-    testsRun: 0,
-    testsPassed: 0,
-    testsFailed: 0,
-    error: "Docker unavailable — heuristic scoring only",
-  };
+  return scorePatchWithDocker(instance, patch);
 }
 
 function scorePatchWithDocker(
   instance: SWEBenchInstance,
   patch: SWEBenchPatch,
 ): SWEBenchScore {
-  const workDir = mkdtempSync(join(tmpdir(), "swe-bench-"));
+  const image = instanceIdToImage(instance.instanceId);
 
-  try {
-    // 1. Clone repo — use --filter=blob:none + fetch since SWE-bench base
-    // commits are often deeper than 100 commits and fail with --depth.
-    execFileSync(
-      "git",
-      [
-        "clone",
-        "--filter=blob:none",
-        "--no-checkout",
-        `https://github.com/${instance.repo}.git`,
-        "repo",
-      ],
-      {
-        cwd: workDir,
-        timeout: 180000,
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
-
-    const repoDir = join(workDir, "repo");
-
-    execFileSync("git", ["fetch", "origin", instance.baseCommit], {
-      cwd: repoDir,
-      timeout: 60000,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    execFileSync("git", ["checkout", instance.baseCommit], {
-      cwd: repoDir,
-      timeout: 30000,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    // 2. Apply the generated patch
-    const patchFile = join(workDir, "prediction.patch");
-    writeFileSync(patchFile, patch.patch, "utf-8");
-
+  // Ensure image is available locally. Pull if missing.
+  if (!imageExistsLocally(image)) {
     try {
-      execFileSync("git", ["apply", "--allow-empty", patchFile], {
-        cwd: repoDir,
-        timeout: 30000,
+      execFileSync("docker", ["pull", image], {
+        timeout: PULL_TIMEOUT_MS,
         stdio: ["ignore", "pipe", "pipe"],
       });
     } catch (e: any) {
@@ -135,47 +113,24 @@ function scorePatchWithDocker(
         testsRun: 0,
         testsPassed: 0,
         testsFailed: 0,
-        error: `Patch apply failed: ${e.message?.slice(0, 200)}`,
+        error: `Docker pull failed for ${image}: ${(e.stderr?.toString() || e.message || "").slice(0, 300)}`,
       };
     }
+  }
 
-    // 3. Apply gold test patch
-    const testPatchFile = join(workDir, "test.patch");
-    writeFileSync(testPatchFile, instance.testPatch, "utf-8");
+  // Stage patches in a temp dir to mount into the container.
+  const patchDir = mkdtempSync(join(tmpdir(), "swe-bench-patches-"));
+  try {
+    writeFileSync(join(patchDir, "pred.patch"), patch.patch, "utf-8");
+    writeFileSync(join(patchDir, "test.patch"), instance.testPatch, "utf-8");
 
-    try {
-      execFileSync("git", ["apply", "--allow-empty", testPatchFile], {
-        cwd: repoDir,
-        timeout: 30000,
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-    } catch {
-      // Gold test patch may not apply cleanly — that's a prediction failure
-      return {
-        instanceId: instance.instanceId,
-        passed: false,
-        testsRun: 0,
-        testsPassed: 0,
-        testsFailed: 0,
-        error: "Gold test patch apply failed (prediction likely conflicts)",
-      };
-    }
+    const containerName = `swe-bench-${instance.instanceId
+      .replace(/[^a-z0-9-]/gi, "-")
+      .slice(0, 50)}-${Date.now()}`;
 
-    // 4. Run tests in Docker
-    const image = detectTestImage(instance.repo);
-    const containerName =
-      `swe-bench-${instance.instanceId.replace(/[^a-z0-9-]/gi, "-")}`.slice(
-        0,
-        60,
-      );
+    const script = buildContainerScript(instance);
 
     try {
-      // Note: network is enabled because SWE-bench repos require pip install
-      // of their own dependencies. Without network, pip cannot fetch deps and
-      // every run errors. For stricter isolation, use a prebuilt Docker image
-      // per repo (the official SWE-bench approach) — that's a separate infra
-      // task. For this simplified scorer, network:bridge + memory/cpu limits
-      // + 10-minute timeout is the practical compromise.
       const output = execFileSync(
         "docker",
         [
@@ -183,10 +138,10 @@ function scorePatchWithDocker(
           "--rm",
           "--name",
           containerName,
+          "--platform",
+          "linux/amd64",
           "-v",
-          `${repoDir}:/workspace`,
-          "-w",
-          "/workspace",
+          `${patchDir}:/patches:ro`,
           "--memory",
           "4g",
           "--cpus",
@@ -194,24 +149,52 @@ function scorePatchWithDocker(
           image,
           "bash",
           "-c",
-          buildTestCommand(instance),
+          script,
         ],
         {
-          timeout: 600000, // 10 min max — astropy and similar need time to install
+          timeout: RUN_TIMEOUT_MS,
           encoding: "utf-8",
           stdio: ["ignore", "pipe", "pipe"],
+          maxBuffer: 10 * 1024 * 1024,
         },
       );
 
-      // 5. Parse test results
-      return parseTestOutput(instance.instanceId, output);
+      return parseTestOutput(instance, output);
     } catch (e: any) {
-      const output = e.stdout?.toString() ?? "";
-      const stderr = e.stderr?.toString() ?? "";
+      const out = (e.stdout?.toString() ?? "") as string;
+      const err = (e.stderr?.toString() ?? "") as string;
+      const combined = out + "\n" + err;
 
-      // Tests may fail but still produce useful output
-      if (output.includes("FAILED") || output.includes("failed")) {
-        return parseTestOutput(instance.instanceId, output + "\n" + stderr);
+      // Distinguish patch-apply failures from test failures.
+      if (combined.includes("BRAINSTORM_PATCH_APPLY_FAILED")) {
+        return {
+          instanceId: instance.instanceId,
+          passed: false,
+          testsRun: 0,
+          testsPassed: 0,
+          testsFailed: 0,
+          error: "Prediction patch failed to apply to /testbed",
+        };
+      }
+      if (combined.includes("BRAINSTORM_TEST_PATCH_FAILED")) {
+        return {
+          instanceId: instance.instanceId,
+          passed: false,
+          testsRun: 0,
+          testsPassed: 0,
+          testsFailed: 0,
+          error:
+            "Gold test patch failed to apply (likely conflicts with prediction)",
+        };
+      }
+
+      // Pytest/unittest exit non-zero when tests fail. That's still a valid
+      // scored result if we can extract counts from the output.
+      if (
+        /\d+ (passed|failed|error)/.test(combined) ||
+        /Ran \d+ tests?/.test(combined)
+      ) {
+        return parseTestOutput(instance, combined);
       }
 
       return {
@@ -220,101 +203,179 @@ function scorePatchWithDocker(
         testsRun: 0,
         testsPassed: 0,
         testsFailed: 0,
-        error: `Test execution failed: ${(stderr || e.message || "").slice(0, 800)}`,
+        error: `Test execution failed: ${(err || e.message || "").slice(0, 800)}`,
       };
     }
-  } catch (e: any) {
-    return {
-      instanceId: instance.instanceId,
-      passed: false,
-      testsRun: 0,
-      testsPassed: 0,
-      testsFailed: 0,
-      error: `Scoring error: ${e.message?.slice(0, 200)}`,
-    };
   } finally {
-    // Cleanup
     try {
-      rmSync(workDir, { recursive: true, force: true });
+      rmSync(patchDir, { recursive: true, force: true });
     } catch {
       /* best effort */
     }
   }
 }
 
-function parseTestOutput(instanceId: string, output: string): SWEBenchScore {
+/**
+ * Build the bash script that runs inside the SWE-bench image.
+ *
+ * Uses sentinel markers (BRAINSTORM_PATCH_APPLY_FAILED,
+ * BRAINSTORM_TEST_PATCH_FAILED) so we can distinguish patch-apply failures
+ * from genuine test failures when parsing output.
+ */
+function buildContainerScript(instance: SWEBenchInstance): string {
+  const testCommand = buildTestCommand(instance);
+
+  // No `git clean` / `git reset` here — the `--rm` flag means each run gets a
+  // fresh container, and `git clean -fdx` would nuke gitignored generated
+  // files like setuptools_scm version stubs that the repo needs to import.
+  return [
+    `source /opt/miniconda3/etc/profile.d/conda.sh`,
+    `conda activate testbed`,
+    `cd /testbed`,
+    `(git apply -v /patches/pred.patch 2>&1 || (echo BRAINSTORM_PATCH_APPLY_FAILED; exit 2))`,
+    `(git apply -v /patches/test.patch 2>&1 || (echo BRAINSTORM_TEST_PATCH_FAILED; exit 3))`,
+    `${testCommand} 2>&1`,
+  ].join(" && ");
+}
+
+/**
+ * Resolve the right test command for a SWE-bench instance.
+ *
+ * Different repos use different test runners. The 12 SWE-bench Lite repos
+ * fall into three groups:
+ *
+ *   1. Django uses its own ./tests/runtests.py with dotted test paths.
+ *      Test IDs in FAIL_TO_PASS look like
+ *      "method (full.dotted.Class.method)" — we extract the dotted path.
+ *
+ *   2. Sympy uses its bin/test runner with file paths.
+ *
+ *   3. Everything else (astropy, sphinx, requests, pytest, pylint, seaborn,
+ *      scikit-learn, matplotlib, flask, xarray) uses pytest with the test
+ *      paths in standard pytest format.
+ */
+function buildTestCommand(instance: SWEBenchInstance): string {
+  const repo = instance.repo;
+  const tests = instance.failToPass ?? [];
+
+  if (repo === "django/django") {
+    // Django test IDs come as "name (full.dotted.path.name)"; extract the
+    // dotted path so the runner accepts it. Fall back to the raw ID if no
+    // parenthetical group is present.
+    const dotted = tests.map((t) => {
+      const m = t.match(/\(([^)]+)\)/);
+      return m ? m[1] : t;
+    });
+    const args = dotted.map((t) => `'${t.replace(/'/g, "'\\''")}'`).join(" ");
+    if (!args) {
+      return `./tests/runtests.py --verbosity 2 --settings=test_sqlite --parallel 1`;
+    }
+    return `./tests/runtests.py --verbosity 2 --settings=test_sqlite --parallel 1 ${args}`;
+  }
+
+  if (repo === "sympy/sympy") {
+    // Sympy's bin/test takes file paths, not test IDs. Strip ::TestClass::test
+    // suffixes and de-dupe to get the file list.
+    const files = Array.from(
+      new Set(tests.map((t) => t.split("::")[0]).filter(Boolean)),
+    );
+    const args = files.map((f) => `'${f.replace(/'/g, "'\\''")}'`).join(" ");
+    if (!args) return `bin/test -C --verbose`;
+    return `bin/test -C --verbose ${args}`;
+  }
+
+  // Default: pytest. Most SWE-bench repos use this, including astropy, sphinx,
+  // requests, pytest, pylint, seaborn, scikit-learn, matplotlib, flask, xarray.
+  if (tests.length === 0) {
+    return `python -m pytest --tb=short -q`;
+  }
+  const testIds = tests.map((t) => `'${t.replace(/'/g, "'\\''")}'`).join(" ");
+  return `python -m pytest --tb=short -v ${testIds}`;
+}
+
+function parseTestOutput(
+  instance: SWEBenchInstance,
+  output: string,
+): SWEBenchScore {
+  const instanceId = instance.instanceId;
   let testsRun = 0;
   let testsPassed = 0;
   let testsFailed = 0;
 
-  // pytest output: "X passed, Y failed, Z error"
-  const pytestMatch = output.match(/(\d+) passed/);
-  const pytestFailed = output.match(/(\d+) failed/);
-  const pytestError = output.match(/(\d+) error/);
+  const lastMatch = (pattern: string): number => {
+    const g = new RegExp(pattern, "g");
+    let match: RegExpExecArray | null;
+    let last = 0;
+    while ((match = g.exec(output)) !== null) last = parseInt(match[1], 10);
+    return last;
+  };
 
-  if (pytestMatch) {
-    testsPassed = parseInt(pytestMatch[1]);
-    testsFailed =
-      (pytestFailed ? parseInt(pytestFailed[1]) : 0) +
-      (pytestError ? parseInt(pytestError[1]) : 0);
-    testsRun = testsPassed + testsFailed;
+  // Django unittest output: "Ran N tests in X.Ys" + "OK" or "FAILED (failures=N, errors=M)"
+  if (instance.repo === "django/django") {
+    const ranMatch = lastMatch("Ran (\\d+) tests?");
+    if (ranMatch > 0) {
+      testsRun = ranMatch;
+      const failures = lastMatch("failures=(\\d+)");
+      const errors = lastMatch("errors=(\\d+)");
+      testsFailed = failures + errors;
+      testsPassed = testsRun - testsFailed;
+      const passed = /^OK\b/m.test(output) && testsFailed === 0;
+      return { instanceId, passed, testsRun, testsPassed, testsFailed };
+    }
   }
 
-  // Jest/Vitest: "Tests: X passed, Y failed, Z total"
-  const jestTotal = output.match(/Tests:\s+.*?(\d+) total/);
-  const jestPassed = output.match(/Tests:\s+.*?(\d+) passed/);
-  const jestFailed = output.match(/Tests:\s+.*?(\d+) failed/);
+  // Sympy bin/test output: "tests finished: N passed, M failed"
+  if (instance.repo === "sympy/sympy") {
+    const passedSym = lastMatch("(\\d+) passed");
+    const failedSym = lastMatch("(\\d+) failed");
+    if (passedSym > 0 || failedSym > 0) {
+      testsPassed = passedSym;
+      testsFailed = failedSym;
+      testsRun = testsPassed + testsFailed;
+      return {
+        instanceId,
+        passed: testsRun > 0 && testsFailed === 0,
+        testsRun,
+        testsPassed,
+        testsFailed,
+      };
+    }
+  }
 
-  if (jestTotal) {
-    testsRun = parseInt(jestTotal[1]);
-    testsPassed = jestPassed ? parseInt(jestPassed[1]) : 0;
-    testsFailed = jestFailed ? parseInt(jestFailed[1]) : 0;
+  // Default: pytest summary line. Use LAST occurrence so earlier warnings
+  // or partial reruns don't skew numbers.
+  testsPassed = lastMatch("(\\d+) passed");
+  const failed = lastMatch("(\\d+) failed");
+  const errored = lastMatch("(\\d+) error");
+  testsFailed = failed + errored;
+  testsRun = testsPassed + testsFailed;
+
+  // Jest/Vitest fallback (SWE-bench is ~all Python but keep as safety net)
+  if (testsRun === 0) {
+    const jestTotal = output.match(/Tests:\s+.*?(\d+) total/);
+    const jestPassed = output.match(/Tests:\s+.*?(\d+) passed/);
+    const jestFailed = output.match(/Tests:\s+.*?(\d+) failed/);
+    if (jestTotal) {
+      testsRun = parseInt(jestTotal[1], 10);
+      testsPassed = jestPassed ? parseInt(jestPassed[1], 10) : 0;
+      testsFailed = jestFailed ? parseInt(jestFailed[1], 10) : 0;
+    }
   }
 
   const passed = testsRun > 0 && testsFailed === 0;
-
   return { instanceId, passed, testsRun, testsPassed, testsFailed };
 }
 
-function detectTestImage(repo: string): string {
-  // Most SWE-bench instances are Python repos
-  if (
-    repo.includes("django") ||
-    repo.includes("flask") ||
-    repo.includes("scikit")
-  ) {
-    return "python:3.11-slim";
+function imageExistsLocally(image: string): boolean {
+  try {
+    execFileSync("docker", ["image", "inspect", image], {
+      timeout: 10_000,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return true;
+  } catch {
+    return false;
   }
-  if (
-    repo.includes("node") ||
-    repo.includes("express") ||
-    repo.includes("react")
-  ) {
-    return "node:22-slim";
-  }
-  return "python:3.11-slim"; // Default for SWE-bench (mostly Python)
-}
-
-/**
- * Build the test command for a SWE-bench instance. If FAIL_TO_PASS is
- * provided, run only those specific tests (proper SWE-bench scoring). Without
- * it, fall back to running the full test suite (coarse but useful signal).
- */
-function buildTestCommand(instance: SWEBenchInstance): string {
-  const install =
-    'pip install -q -e ".[test,dev]" 2>&1 || pip install -q -e . 2>&1; pip install -q pytest 2>&1';
-
-  if (instance.failToPass && instance.failToPass.length > 0) {
-    // Run only the FAIL_TO_PASS tests. Pass each as a positional argument.
-    // Escape single quotes in test IDs for shell safety.
-    const testIds = instance.failToPass
-      .map((t) => `'${t.replace(/'/g, "'\\''")}'`)
-      .join(" ");
-    return `${install}; python -m pytest --tb=short -v ${testIds} 2>&1`;
-  }
-
-  // Fallback: whole suite (legacy behavior)
-  return `${install}; python -m pytest --tb=short -q 2>&1 || python -m unittest discover -s tests 2>&1`;
 }
 
 function isDockerAvailable(): boolean {
