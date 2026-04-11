@@ -133,6 +133,21 @@ export {
   type JudgeVerdict,
 } from "./plan/multi-agent-judge.js";
 export {
+  FindingsStore,
+  type FindingsFilter,
+  type FindingsSummary,
+} from "./findings/store.js";
+export {
+  FINDING_MARKER,
+  serializeFinding,
+  parseFinding,
+  severityRank,
+  makeFindingId,
+  type CodebaseFinding,
+  type FindingSeverity,
+  type FindingCategory,
+} from "./findings/types.js";
+export {
   readMultimodalFile,
   isImageFile,
   isPdfFile,
