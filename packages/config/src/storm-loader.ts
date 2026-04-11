@@ -64,21 +64,57 @@ export function parseStormFile(content: string): {
   const body = fmMatch[2].trim();
 
   const parsed = parseSimpleYaml(rawYaml);
-  const result = stormFrontmatterSchema.safeParse(parsed);
 
-  if (!result.success) {
-    log.warn(
-      {
-        errors: result.error.issues.map(
-          (i) => `${i.path.join(".")}: ${i.message}`,
-        ),
-      },
-      "Invalid STORM.md frontmatter — ignoring structured data",
-    );
-    return { frontmatter: null, body };
+  // Try strict parse first. If ALL fields are valid, use the result.
+  const strict = stormFrontmatterSchema.safeParse(parsed);
+  if (strict.success) {
+    return { frontmatter: strict.data, body };
   }
 
-  return { frontmatter: result.data, body };
+  // Lenient fallback: peel off the failing fields one at a time and
+  // re-parse with whatever remains. Previously this code returned
+  // { frontmatter: null } on ANY validation failure, which meant one bad
+  // field (e.g., a free-text `deploy:` value that failed the enum) would
+  // silently discard ALL structured data from BRAINSTORM.md. Dogfood #1
+  // surfaced this — the onboard pipeline was generating valid-looking
+  // frontmatter whose `deploy` field was a free-text description, and
+  // every subsequent CLI invocation silently dropped the whole thing.
+  //
+  // Now we keep the valid fields and drop the invalid ones. If no fields
+  // survive, return null as before.
+  const working: Record<string, unknown> = { ...parsed };
+  const droppedFields: string[] = [];
+  const MAX_ATTEMPTS = 20; // Prevent infinite loop if schema is broken
+  for (let i = 0; i < MAX_ATTEMPTS; i++) {
+    const attempt = stormFrontmatterSchema.safeParse(working);
+    if (attempt.success) {
+      log.warn(
+        {
+          dropped: droppedFields,
+          kept: Object.keys(working),
+        },
+        "Partial STORM.md frontmatter — kept valid fields, dropped invalid ones",
+      );
+      return { frontmatter: attempt.data, body };
+    }
+    // Pick the top-level field name from the first error path and remove it.
+    const firstIssue = attempt.error.issues[0];
+    const topLevelKey = firstIssue?.path[0];
+    if (typeof topLevelKey !== "string" || !(topLevelKey in working)) break;
+    droppedFields.push(topLevelKey);
+    delete working[topLevelKey];
+  }
+
+  // Nothing survived — log and fall back to null.
+  log.warn(
+    {
+      errors: strict.error.issues.map(
+        (i) => `${i.path.join(".")}: ${i.message}`,
+      ),
+    },
+    "Invalid STORM.md frontmatter — ignoring structured data",
+  );
+  return { frontmatter: null, body };
 }
 
 /**

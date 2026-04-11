@@ -42,7 +42,18 @@ const WRITE_TOOLS = new Set([
 ]);
 
 const WARN_THRESHOLD = 3.0;
-const MIN_WRITES_BEFORE_WARNING = 3;
+
+// Sample-size gates so the Read:Edit warning only fires when the ratio is
+// statistically meaningful. Fixes Dogfood #1 Bug 3: previously the warning
+// fired at 1 read / 3 writes (ratio 0.33) which was a false positive —
+// the agent had barely started and its session-end ratio was 10:1.
+//
+// Raised MIN_WRITES from 3 → 5 and added MIN_TOTAL_CALLS = 10 so the
+// warning only fires once the agent has made meaningful progress. In
+// Dogfood #1, the first warning at write=3 was false; the second at
+// write=6 / total=21 is exactly the threshold this catches.
+const MIN_WRITES_BEFORE_WARNING = 5;
+const MIN_TOTAL_CALLS_BEFORE_WARNING = 10;
 
 export function createQualitySignalsMiddleware(): AgentMiddleware {
   let readCount = 0;
@@ -59,8 +70,12 @@ export function createQualitySignalsMiddleware(): AgentMiddleware {
         writeCount++;
       }
 
-      // Only warn after enough writes to make the ratio meaningful
+      // Sample-size gates: need enough writes AND enough total calls for
+      // the ratio to be meaningful. Without these, a session with 1 read
+      // and 3 writes triggers a false-positive warning on literally the
+      // first few tool calls.
       if (writeCount < MIN_WRITES_BEFORE_WARNING) return;
+      if (readCount + writeCount < MIN_TOTAL_CALLS_BEFORE_WARNING) return;
 
       const ratio = writeCount > 0 ? readCount / writeCount : Infinity;
 
