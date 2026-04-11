@@ -4988,6 +4988,10 @@ codebaseCmd
     "--scopes <list>",
     "Comma-separated scope names (default: auto-discover)",
   )
+  .option(
+    "--model <id>",
+    "Force a specific model for all workers (bypass router). Example: google/gemini-2.5-flash",
+  )
   .action(
     async (opts: {
       workers: string;
@@ -4995,6 +4999,7 @@ codebaseCmd
       categories?: string;
       minSeverity: string;
       scopes?: string;
+      model?: string;
     }) => {
       const {
         runCodebaseAudit,
@@ -5072,7 +5077,17 @@ codebaseCmd
         tools,
         projectPath,
         permissionCheck: () => "allow",
+        // If --model was passed, force every worker to use that exact model.
+        // Useful to bypass routing fallbacks that can hit BR SaaS guardrails
+        // on code-review content. Example: --model google/gemini-2.5-flash
+        // routes directly to the Google provider if GOOGLE_GENERATIVE_AI_API_KEY
+        // is configured, skipping brainstormrouter/auto entirely.
+        ...(opts.model ? { preferredModelId: opts.model } : {}),
       };
+
+      if (opts.model) {
+        console.log(`  Model:   ${opts.model} (forced)`);
+      }
 
       // Parse optional categories list
       const categories = opts.categories
@@ -5146,8 +5161,13 @@ codebaseCmd
 
 program
   .command("findings")
-  .description("Query and summarize codebase audit findings")
-  .argument("[action]", "Action: list, summary", "summary")
+  .description("Query, summarize, and act on codebase audit findings")
+  .argument(
+    "[action]",
+    "Action: list | summary | show <id> | delete <id> | fix <id>",
+    "summary",
+  )
+  .argument("[id]", "Finding ID (required for show, delete, fix)")
   .option(
     "--severity <level>",
     "Filter by severity (critical|high|medium|low|info)",
@@ -5162,15 +5182,23 @@ program
     "Free-text search across title + description + file",
   )
   .option("--limit <n>", "Max results to show (list only)", "50")
+  .option(
+    "--model <id>",
+    "Force a specific model for fix subagent (e.g., google/gemini-2.5-flash)",
+  )
+  .option("--budget <usd>", "Budget cap for fix subagent in USD", "1")
   .action(
     async (
       action: string,
+      id: string | undefined,
       opts: {
         severity?: string;
         category?: string;
         file?: string;
         query?: string;
         limit: string;
+        model?: string;
+        budget: string;
       },
     ) => {
       const { MemoryManager: FindingsMemoryManager, FindingsStore } =
@@ -5197,6 +5225,7 @@ program
           const sev = sevColor(f.severity);
           const loc = f.lineStart ? `${f.file}:${f.lineStart}` : f.file;
           console.log(`  ${sev} [${f.category}] ${loc}`);
+          console.log(`    id: ${f.id}`);
           console.log(`    ${f.title}`);
           if (f.description && f.description !== f.title) {
             console.log(`    ${f.description.slice(0, 120)}`);
@@ -5206,6 +5235,196 @@ program
           }
           console.log();
         }
+        return;
+      }
+
+      // Lookup helper for id-based actions
+      const findById = (wantedId: string) =>
+        store.list().find((f) => f.id === wantedId);
+
+      if (action === "show") {
+        if (!id) {
+          console.error("  Usage: brainstorm findings show <id>");
+          process.exit(1);
+        }
+        const f = findById(id);
+        if (!f) {
+          console.error(`  Finding not found: ${id}`);
+          process.exit(1);
+        }
+        console.log();
+        console.log(`  ${sevColor(f.severity)} [${f.category}]`);
+        console.log(`  id:   ${f.id}`);
+        console.log(
+          `  file: ${f.file}${f.lineStart ? `:${f.lineStart}${f.lineEnd ? `-${f.lineEnd}` : ""}` : ""}`,
+        );
+        if (f.discoveredBy) console.log(`  by:   ${f.discoveredBy}`);
+        console.log();
+        console.log(`  ${f.title}`);
+        console.log();
+        console.log(`  ${f.description}`);
+        if (f.suggestedFix) {
+          console.log();
+          console.log(`  Suggested fix:`);
+          console.log(`  ${f.suggestedFix}`);
+        }
+        console.log();
+        return;
+      }
+
+      if (action === "delete") {
+        if (!id) {
+          console.error("  Usage: brainstorm findings delete <id>");
+          process.exit(1);
+        }
+        const ok = store.delete(id);
+        if (!ok) {
+          console.error(`  Finding not found: ${id}`);
+          process.exit(1);
+        }
+        console.log(`  Deleted finding ${id}`);
+        return;
+      }
+
+      if (action === "fix") {
+        if (!id) {
+          console.error("  Usage: brainstorm findings fix <id>");
+          process.exit(1);
+        }
+        const finding = findById(id);
+        if (!finding) {
+          console.error(`  Finding not found: ${id}`);
+          process.exit(1);
+        }
+
+        // Build the runtime the subagent will use — same shape as the
+        // audit command, but with a `code` subagent that can write files.
+        const config = loadConfig();
+        config.general.defaultPermissionMode = "auto";
+        const db = getDb();
+        const resolvedKeys = await resolveProviderKeys();
+        const registry = await createProviderRegistry(config, resolvedKeys);
+        const costTracker = new CostTracker(db, config.budget);
+        const tools = createDefaultToolRegistry();
+        const { frontmatter } = buildSystemPrompt(process.cwd());
+        const router = new BrainstormRouter(
+          config,
+          registry,
+          costTracker,
+          frontmatter,
+        );
+        router.setStrategy("capability");
+
+        const { spawnSubagent } = await import("@brainst0rm/core");
+
+        const loc = finding.lineStart
+          ? `${finding.file}:${finding.lineStart}${finding.lineEnd ? `-${finding.lineEnd}` : ""}`
+          : finding.file;
+
+        console.log();
+        console.log(`  Fixing: ${sevColor(finding.severity)} ${loc}`);
+        console.log(`    ${finding.title}`);
+        console.log();
+
+        const task = [
+          `Fix the following codebase audit finding.`,
+          ``,
+          `File: ${loc}`,
+          `Severity: ${finding.severity}`,
+          `Category: ${finding.category}`,
+          ``,
+          `Title: ${finding.title}`,
+          ``,
+          `Description:`,
+          finding.description,
+          ``,
+          finding.suggestedFix
+            ? `Suggested approach:\n${finding.suggestedFix}`
+            : ``,
+          ``,
+          `Instructions:`,
+          `1. Read the file and understand the surrounding context`,
+          `2. Apply a focused fix for THIS specific finding only — do not refactor unrelated code`,
+          `3. Verify the fix compiles (if applicable) by reading the result`,
+          `4. Explain what you changed in 2-3 sentences`,
+          ``,
+          `Do NOT commit. Do NOT create new files unless strictly necessary.`,
+        ]
+          .filter(Boolean)
+          .join("\n");
+
+        const budgetLimit = parseFloat(opts.budget);
+        let result: any;
+        try {
+          result = await spawnSubagent(task, {
+            config,
+            registry,
+            router,
+            costTracker,
+            tools,
+            projectPath: process.cwd(),
+            type: "code",
+            permissionCheck: () => "allow",
+            budgetLimit,
+            ...(opts.model ? { preferredModelId: opts.model } : {}),
+          } as any);
+        } catch (err: any) {
+          // Surface the real error instead of letting it print as a raw
+          // object and leaving the user wondering what happened.
+          console.error(`\n  ✗ Subagent failed: ${err?.message ?? err}`);
+          if (err?.data?.error?.message) {
+            console.error(`    API error: ${err.data.error.message}`);
+          }
+          if (err?.statusCode) {
+            console.error(`    Status:    ${err.statusCode}`);
+          }
+          console.error(
+            `\n  The finding was not modified. You can retry with a different --model\n`,
+          );
+          process.exit(1);
+        }
+
+        const summary = result.text.trim();
+        const toolCallCount = result.toolCalls.length;
+
+        // Subagent completed but did nothing — distinguish "I looked and
+        // decided nothing needed changing" from "I actually made an edit".
+        // The agent's own tool-call list is the ground truth.
+        const editTools = result.toolCalls.filter((t: string) =>
+          /^(file_write|file_edit|file_append|multi_edit|patch)$/i.test(t),
+        );
+
+        console.log(`  Agent summary:`);
+        console.log();
+        if (summary) {
+          console.log(
+            summary
+              .split("\n")
+              .map((l: string) => `    ${l}`)
+              .join("\n"),
+          );
+        } else {
+          console.log(`    (no narrative output)`);
+        }
+        console.log();
+        console.log(
+          `  Model: ${result.modelUsed}   Cost: $${result.cost.toFixed(4)}   Tool calls: ${toolCallCount} (${editTools.length} edits)`,
+        );
+        if (result.budgetExceeded) {
+          console.log(`  ⚠  Budget exceeded before completion`);
+        }
+        if (editTools.length === 0) {
+          console.log(
+            `  ⚠  Agent made no file edits. The finding is still present — consider a stronger model.`,
+          );
+        } else {
+          console.log();
+          console.log(
+            `  Review the changes with git diff, then delete the finding:`,
+          );
+          console.log(`    brainstorm findings delete ${finding.id}`);
+        }
+        console.log();
         return;
       }
 

@@ -143,7 +143,7 @@ describe("buildAuditPrompt", () => {
       ["security"],
       "low",
     );
-    expect(prompt).toContain("not wrap it in markdown");
+    expect(prompt).toContain("Do not wrap in markdown code fences");
   });
 
   it("enforces read-only scope", () => {
