@@ -47,11 +47,11 @@ describe("db migrations", () => {
       .prepare("SELECT name FROM _migrations ORDER BY id")
       .all() as Array<{ name: string }>;
 
-    expect(migrations).toHaveLength(28);
+    expect(migrations).toHaveLength(29);
     expect(migrations[0]?.name).toBe("001_sessions");
-    expect(migrations.at(-1)?.name).toBe("028_conversations");
+    expect(migrations.at(-1)?.name).toBe("029_orchestration_workers");
     expect(new Set(migrations.map((migration) => migration.name)).size).toBe(
-      28,
+      29,
     );
   });
 

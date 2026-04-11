@@ -40,6 +40,12 @@ function rowToTask(row: any): OrchestrationTask {
     dependsOn: JSON.parse(row.depends_on || "[]"),
     startedAt: row.started_at ?? undefined,
     completedAt: row.completed_at ?? undefined,
+    // Worker-pool fields added in migration 029. Backward compatible —
+    // older databases without these columns return undefined for all four.
+    assignedWorker: row.assigned_worker ?? undefined,
+    worktreePath: row.worktree_path ?? undefined,
+    filesTouched: row.files_touched ? JSON.parse(row.files_touched) : undefined,
+    error: row.error ?? undefined,
   };
 }
 
@@ -174,5 +180,117 @@ export class OrchestrationTaskRepository {
         completedAt,
         id,
       );
+  }
+
+  /**
+   * Atomically claim a pending task whose dependencies are all completed.
+   * Returns the claimed task or undefined if nothing is claimable right now.
+   *
+   * The Planner/Worker/Judge pattern relies on this for safe concurrent
+   * worker access to a shared task board. SQLite's single-writer model +
+   * the WHERE status='pending' filter on the UPDATE makes the claim atomic
+   * within a single process. Cross-process claims would need explicit
+   * row locking — out of scope for the MVP.
+   */
+  claimNext(runId: string, workerId: string): OrchestrationTask | undefined {
+    const pendingRows = this.db
+      .prepare(
+        "SELECT * FROM orchestration_tasks WHERE run_id = ? AND status = 'pending'",
+      )
+      .all(runId) as any[];
+    if (pendingRows.length === 0) return undefined;
+
+    const completedIds = new Set(
+      (
+        this.db
+          .prepare(
+            "SELECT id FROM orchestration_tasks WHERE run_id = ? AND status = 'completed'",
+          )
+          .all(runId) as any[]
+      ).map((r) => r.id),
+    );
+
+    for (const row of pendingRows) {
+      const deps = JSON.parse(row.depends_on || "[]") as string[];
+      if (!deps.every((d) => completedIds.has(d))) continue;
+
+      const result = this.db
+        .prepare(
+          `UPDATE orchestration_tasks
+           SET status = 'in_progress',
+               assigned_worker = ?,
+               started_at = unixepoch()
+           WHERE id = ? AND status = 'pending'`,
+        )
+        .run(workerId, row.id);
+      if (result.changes === 1) {
+        return this.getById(row.id);
+      }
+      // Lost the race — try the next pending task.
+    }
+    return undefined;
+  }
+
+  /**
+   * Mark a task completed with worker-pool metadata (worktree path, files
+   * touched). Used by the Worker after the agent finishes successfully.
+   */
+  completeWithMetadata(
+    id: string,
+    data: {
+      resultSummary?: string;
+      cost?: number;
+      sessionId?: string;
+      worktreePath?: string;
+      filesTouched?: string[];
+    },
+  ): void {
+    this.db
+      .prepare(
+        `UPDATE orchestration_tasks
+         SET status = 'completed',
+             result_summary = COALESCE(?, result_summary),
+             cost = COALESCE(?, cost),
+             session_id = COALESCE(?, session_id),
+             worktree_path = COALESCE(?, worktree_path),
+             files_touched = COALESCE(?, files_touched),
+             completed_at = unixepoch()
+         WHERE id = ?`,
+      )
+      .run(
+        data.resultSummary ?? null,
+        data.cost ?? null,
+        data.sessionId ?? null,
+        data.worktreePath ?? null,
+        data.filesTouched ? JSON.stringify(data.filesTouched) : null,
+        id,
+      );
+  }
+
+  /** Mark a task as failed with an error message. */
+  failTask(id: string, error: string): void {
+    this.db
+      .prepare(
+        `UPDATE orchestration_tasks
+         SET status = 'failed', error = ?, completed_at = unixepoch()
+         WHERE id = ?`,
+      )
+      .run(error, id);
+  }
+
+  /**
+   * True when every task in the run has reached a terminal state
+   * (completed, failed, or skipped). Used by the orchestrator to know
+   * when the Judge phase should run.
+   */
+  allTasksFinished(runId: string): boolean {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS open
+         FROM orchestration_tasks
+         WHERE run_id = ? AND status IN ('pending', 'in_progress', 'running')`,
+      )
+      .get(runId) as { open: number };
+    return (row?.open ?? 0) === 0;
   }
 }

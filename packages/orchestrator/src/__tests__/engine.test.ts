@@ -67,7 +67,11 @@ const SCHEMA = `
     session_id TEXT REFERENCES sessions(id),
     depends_on TEXT NOT NULL DEFAULT '[]',
     started_at INTEGER,
-    completed_at INTEGER
+    completed_at INTEGER,
+    assigned_worker TEXT,
+    worktree_path TEXT,
+    files_touched TEXT NOT NULL DEFAULT '[]',
+    error TEXT
   );
 `;
 
