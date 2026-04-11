@@ -119,6 +119,8 @@ export {
 export {
   runWorkerPool,
   listFilesTouched,
+  wrapTaskWithSafetyPreamble,
+  detectUnauthorizedDepChanges,
   type WorkerPoolEvent,
   type WorkerPoolOptions,
   type WorkerPoolResult,
