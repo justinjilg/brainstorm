@@ -64,6 +64,70 @@ export class CostTracker {
     };
   }
 
+  /**
+   * Startup diagnostic: return a structured report of budget state that
+   * callers can present to the user BEFORE the session starts doing work.
+   *
+   * Fixes Dogfood #1 Bug 4: previously `checkBudget()` threw mid-tick when
+   * a daily/monthly cap had already been exceeded by PRIOR sessions. The
+   * user saw an opaque "Budget exceeded: daily — used $34 of $5" error on
+   * tick #1 and the daemon immediately circuit-broke. Much better to tell
+   * the user at startup so they can either raise the limit, clear the
+   * counter, or use `perSession` instead of `daily`.
+   *
+   * Returns null when the budget is healthy (nothing to warn about).
+   */
+  diagnoseBudgetAtStartup(): {
+    severity: "warn" | "error";
+    message: string;
+    details: {
+      dailyUsed: number;
+      dailyLimit?: number;
+      monthlyUsed: number;
+      monthlyLimit?: number;
+    };
+  } | null {
+    const state = this.getBudgetState();
+    const issues: string[] = [];
+    let severity: "warn" | "error" = "warn";
+
+    if (state.dailyLimit && state.dailyUsed >= state.dailyLimit) {
+      issues.push(
+        `daily cap already exceeded — $${state.dailyUsed.toFixed(2)} used of $${state.dailyLimit.toFixed(2)} limit`,
+      );
+      if (state.hardLimit) severity = "error";
+    } else if (state.dailyLimit && state.dailyUsed >= state.dailyLimit * 0.9) {
+      issues.push(
+        `daily usage at ${Math.round((state.dailyUsed / state.dailyLimit) * 100)}% — $${state.dailyUsed.toFixed(2)} of $${state.dailyLimit.toFixed(2)}`,
+      );
+    }
+
+    if (state.monthlyLimit && state.monthlyUsed >= state.monthlyLimit) {
+      issues.push(
+        `monthly cap already exceeded — $${state.monthlyUsed.toFixed(2)} used of $${state.monthlyLimit.toFixed(2)} limit`,
+      );
+      if (state.hardLimit) severity = "error";
+    }
+
+    if (issues.length === 0) return null;
+
+    const hint =
+      severity === "error"
+        ? " — session will fail on first tick. Raise the limit, use [budget] perSession, or clear today's counter."
+        : "";
+
+    return {
+      severity,
+      message: issues.join("; ") + hint,
+      details: {
+        dailyUsed: state.dailyUsed,
+        dailyLimit: state.dailyLimit,
+        monthlyUsed: state.monthlyUsed,
+        monthlyLimit: state.monthlyLimit,
+      },
+    };
+  }
+
   checkBudget(): void {
     const state = this.getBudgetState();
 

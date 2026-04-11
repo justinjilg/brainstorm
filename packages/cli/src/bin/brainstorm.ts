@@ -4491,8 +4491,18 @@ program
   .argument("[query]", "Search query or memory key to forget")
   .action(async (action: string, query?: string) => {
     const { MemoryManager } = await import("@brainst0rm/core");
-    const homePath = join(homedir(), ".brainstorm", "memory");
-    const memory = new MemoryManager(homePath);
+    // Bug fix (Dogfood #1 Bug 1): previously passed ~/.brainstorm/memory as
+    // the "projectPath" argument. MemoryManager internally hashes its arg to
+    // compute a project-scoped store at
+    // ~/.brainstorm/projects/<hash>/memory/. Hashing the literal string
+    // "~/.brainstorm/memory" produced a store that no other code ever wrote
+    // to, so `brainstorm memory list` always showed "No memory entries"
+    // even after `brainstorm onboard` wrote 6 entries to the real
+    // project-hashed store.
+    //
+    // The fix: pass process.cwd() so memory commands scope to the current
+    // project, matching what onboard and the agent loop write to.
+    const memory = new MemoryManager(process.cwd());
 
     switch (action) {
       case "list": {
@@ -5880,6 +5890,24 @@ program
 
       // Boot Phase D: final assembly (depends on everything above)
       const costTracker = new CostTracker(db, config.budget);
+
+      // Startup budget diagnostic: warn if the configured daily/monthly
+      // cap is already exceeded by prior sessions. Fixes Dogfood #1 Bug 4
+      // where the daemon would circuit-break on tick #1 with an opaque
+      // error. Now the user sees a clear warning BEFORE any work starts.
+      const budgetDiag = costTracker.diagnoseBudgetAtStartup();
+      if (budgetDiag) {
+        const prefix = budgetDiag.severity === "error" ? "✗" : "⚠";
+        process.stderr.write(`\n  ${prefix} Budget: ${budgetDiag.message}\n\n`);
+        if (budgetDiag.severity === "error" && config.budget.hardLimit) {
+          process.stderr.write(
+            `  Fix: raise the cap in ~/.brainstorm/config.toml, or switch to\n` +
+              `  [budget] perSession = N (hardLimit = true) so the daily total\n` +
+              `  doesn't block new sessions.\n\n`,
+          );
+        }
+      }
+
       const routingOutcomeRepo = new RoutingOutcomeRepository(db);
       const historicalStats = routingOutcomeRepo.loadAggregated();
       const router = new BrainstormRouter(
@@ -6875,8 +6903,23 @@ export function run() {
     flushSentry(1500).catch(() => {});
   };
 
-  // Catch unhandled errors and report to Sentry
+  // Catch unhandled errors and report to Sentry AND print to stderr.
+  //
+  // Without the stderr print, a thrown exception during startup causes the
+  // CLI to exit silently with code 1 and zero output — which is exactly
+  // what happened with the duplicate `doctor` command registration in this
+  // session (see commit c6c7445). Every brainstorm invocation died silently
+  // for an unknown duration because the handler ate the commander error.
+  //
+  // The fix is trivial: print the error message + stack to stderr before
+  // running cleanup. Sentry capture stays (no-op without DSN). Developers
+  // now get "Error: cannot add command 'doctor' as already have command
+  // 'doctor' ..." instead of bash-level "exit=1".
   process.on("uncaughtException", (err) => {
+    process.stderr.write(`\n  ⚠ Uncaught exception: ${err.message}\n`);
+    if (err.stack) {
+      process.stderr.write(`${err.stack}\n`);
+    }
     captureError(err, { source: "uncaughtException" });
     cleanup();
     process.exit(1);
@@ -6884,6 +6927,10 @@ export function run() {
 
   process.on("unhandledRejection", (reason) => {
     const err = reason instanceof Error ? reason : new Error(String(reason));
+    process.stderr.write(`\n  ⚠ Unhandled promise rejection: ${err.message}\n`);
+    if (err.stack) {
+      process.stderr.write(`${err.stack}\n`);
+    }
     captureError(err, { source: "unhandledRejection" });
   });
 
