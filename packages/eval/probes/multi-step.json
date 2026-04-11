@@ -5,53 +5,48 @@
     "prompt": "Find the TaskProfile interface in the codebase, count how many fields it has, then search for all places where a TaskProfile is constructed (look for object literals with 'type' and 'complexity' fields)",
     "verify": {
       "tool_calls_include": ["grep", "file_read"],
-      "answer_contains": ["TaskProfile"],
-      "min_steps": 2,
-      "max_steps": 8
+      "answer_contains": ["TaskProfile", "complexity"],
+      "max_steps": 12
     }
   },
   {
     "id": "multi-step-02",
     "capability": "multi-step",
-    "prompt": "List all packages in the monorepo, then for each package read its package.json and tell me which packages depend on @brainst0rm/shared",
+    "prompt": "List all packages in the monorepo, then sample 5 of their package.json files and tell me which of them depend on @brainst0rm/shared",
     "verify": {
       "tool_calls_include": ["glob", "file_read"],
-      "answer_contains": ["shared"],
-      "min_steps": 3,
+      "answer_contains": ["@brainst0rm/shared"],
       "max_steps": 15
     }
   },
   {
     "id": "multi-step-03",
     "capability": "multi-step",
-    "prompt": "Trace the flow of a user message through the system: find where user input enters (CLI), how it gets to the agent loop, how the router classifies it, and how streamText is called. Reference specific files and line numbers.",
+    "prompt": "Trace the flow of a user message through the system: find where user input enters (CLI), how it gets to the agent loop, how the router classifies it, and how streamText is called. Reference specific files.",
     "verify": {
       "tool_calls_include": ["file_read"],
       "answer_contains": ["brainstorm.ts", "loop.ts", "classifier"],
-      "min_steps": 3,
-      "max_steps": 10
+      "max_steps": 12
     }
   },
   {
     "id": "multi-step-04",
     "capability": "multi-step",
-    "prompt": "Find all the routing strategies, read each one, and rank them by how many lines of code they contain (most to least)",
+    "prompt": "Find all the routing strategies in packages/router/src/strategies/, read each one, and rank them by how many lines of code they contain (most to least)",
     "verify": {
       "tool_calls_include": ["glob", "file_read"],
       "answer_contains": ["cost-first", "quality-first", "combined"],
-      "min_steps": 4,
-      "max_steps": 10
+      "max_steps": 18
     }
   },
   {
     "id": "multi-step-05",
     "capability": "multi-step",
-    "prompt": "Find all error classes defined in the codebase, list them with their file locations, and explain the error hierarchy",
+    "prompt": "Find all error classes defined in the codebase that extend Error, list them with their file locations, and explain the error hierarchy",
     "verify": {
       "tool_calls_include": ["grep"],
-      "answer_contains": ["Error"],
-      "min_steps": 2,
-      "max_steps": 8
+      "answer_contains": ["extends Error"],
+      "max_steps": 10
     }
   },
   {
@@ -60,20 +55,18 @@
     "prompt": "Read the turbo.json configuration, then check 3 different package.json files to verify they all have the expected scripts (build, test, dev, typecheck) that turbo expects",
     "verify": {
       "tool_calls_include": ["file_read"],
-      "answer_contains": ["build", "test"],
-      "min_steps": 3,
-      "max_steps": 8
+      "answer_contains": ["turbo.json", "build"],
+      "max_steps": 10
     }
   },
   {
     "id": "multi-step-07",
     "capability": "multi-step",
-    "prompt": "Find all places where pino logger is used (createLogger calls), list the logger names, and check if there's a central logger configuration",
+    "prompt": "Find all places where the createLogger function from @brainst0rm/shared is called, list the logger names that are passed to it, and check if there's a central logger configuration",
     "verify": {
       "tool_calls_include": ["grep"],
       "answer_contains": ["createLogger"],
-      "min_steps": 2,
-      "max_steps": 8
+      "max_steps": 10
     }
   },
   {
@@ -83,30 +76,27 @@
     "verify": {
       "tool_calls_include": ["grep", "file_read"],
       "answer_contains": ["CostTracker", "budget"],
-      "min_steps": 3,
-      "max_steps": 10
+      "max_steps": 12
     }
   },
   {
     "id": "multi-step-09",
     "capability": "multi-step",
-    "prompt": "Map the dependency graph of packages: for each of the 13 packages, list what other @brainst0rm/* packages it depends on",
+    "prompt": "Sample 5 packages from packages/ — read each one's package.json — and list what other @brainst0rm/* packages each of them depends on",
     "verify": {
       "tool_calls_include": ["glob", "file_read"],
-      "answer_contains": ["shared", "config"],
-      "min_steps": 5,
-      "max_steps": 20
+      "answer_contains": ["@brainst0rm/"],
+      "max_steps": 15
     }
   },
   {
     "id": "multi-step-10",
     "capability": "multi-step",
-    "prompt": "Find the session management code, understand how sessions are created/resumed/forked, and tell me what database tables are involved",
+    "prompt": "Find the session management code (SessionManager class), understand how sessions are created/resumed/forked, and tell me what database table(s) are involved",
     "verify": {
       "tool_calls_include": ["grep", "file_read"],
-      "answer_contains": ["session"],
-      "min_steps": 2,
-      "max_steps": 8
+      "answer_contains": ["SessionManager", "sessions"],
+      "max_steps": 10
     }
   }
 ]

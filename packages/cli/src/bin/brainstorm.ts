@@ -438,10 +438,12 @@ program
         costTracker,
         frontmatter,
       );
-      if (opts.model) {
-        // Force specific model if requested
-      } else {
-        router.setStrategy("quality-first");
+      if (!opts.model) {
+        // Use the capability strategy so the router prefers models with
+        // measured eval scores over assumed ones. quality-first picks by
+        // qualityTier (a human guess) which can route to a model that
+        // measured DEAD LAST in our own evals.
+        router.setStrategy("capability");
       }
 
       const { execFileSync: execGit } = await import("node:child_process");
