@@ -1094,3 +1094,284 @@ export class ConversationRepository {
     };
   }
 }
+
+// ── Sync Queue Repository ──────────────────────────────────────────────
+//
+// Persistent retry queue for fire-and-forget BR pushes. When the gateway
+// client fails to deliver a request, it enqueues the request here and a
+// worker drains the queue with exponential backoff. Survives crashes and
+// restarts — the state machine lives in SQLite.
+//
+// Kind taxonomy (used for metrics + selective drain):
+//   "memory-entry"    — POST/PUT /v1/memory/entries
+//   "memory-shared"   — POST /v1/memory/shared/store
+//   "memory-approval" — POST /v1/memory/pending/*/approve|reject
+//   "project"         — POST/PUT /v1/projects
+//   "trajectory"      — POST /v1/agent/trajectories
+//   "capability"      — POST /v1/models/{id}/capabilities
+//   "generic"         — anything else
+//
+// Idempotency key: clients generate a stable key (e.g., hash of memory
+// entry id + updated_at). The sync worker sends it in the X-Idempotency-Key
+// header so BR can deduplicate server-side if a retry actually succeeded
+// on a previous attempt that failed before the response arrived.
+
+export interface SyncQueueRow {
+  id: string;
+  kind: string;
+  method: string;
+  path: string;
+  body: string | null;
+  idempotencyKey: string;
+  status: "pending" | "in_flight" | "completed" | "failed";
+  attemptCount: number;
+  maxAttempts: number;
+  nextAttemptAt: number;
+  lastError: string | null;
+  createdAt: number;
+  updatedAt: number;
+  completedAt: number | null;
+}
+
+export interface EnqueueOptions {
+  kind: string;
+  method: "POST" | "PUT" | "DELETE" | "PATCH";
+  path: string;
+  body?: unknown;
+  /** Stable idempotency key. If provided, duplicate enqueues with the
+   * same key are skipped (the existing pending row is returned). */
+  idempotencyKey?: string;
+  maxAttempts?: number;
+}
+
+export class SyncQueueRepository {
+  constructor(private db: Database.Database) {}
+
+  /**
+   * Enqueue a new sync item. If an item with the same idempotencyKey
+   * already exists in a non-terminal state, return that row instead of
+   * creating a duplicate.
+   */
+  enqueue(opts: EnqueueOptions): SyncQueueRow {
+    const idempotencyKey = opts.idempotencyKey ?? randomUUID();
+
+    // Dedupe: return existing non-terminal row if idempotencyKey matches
+    const existing = this.db
+      .prepare(
+        `SELECT * FROM sync_queue
+         WHERE idempotency_key = ? AND status IN ('pending', 'in_flight')
+         LIMIT 1`,
+      )
+      .get(idempotencyKey) as any;
+    if (existing) return mapSyncQueueRow(existing);
+
+    const id = randomUUID();
+    const body = opts.body != null ? JSON.stringify(opts.body) : null;
+    const maxAttempts = opts.maxAttempts ?? 10;
+
+    this.db
+      .prepare(
+        `INSERT INTO sync_queue
+         (id, kind, method, path, body, idempotency_key, status, max_attempts)
+         VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`,
+      )
+      .run(
+        id,
+        opts.kind,
+        opts.method,
+        opts.path,
+        body,
+        idempotencyKey,
+        maxAttempts,
+      );
+
+    return this.getById(id)!;
+  }
+
+  getById(id: string): SyncQueueRow | null {
+    const row = this.db
+      .prepare("SELECT * FROM sync_queue WHERE id = ?")
+      .get(id) as any;
+    return row ? mapSyncQueueRow(row) : null;
+  }
+
+  /**
+   * Claim a batch of pending items whose next_attempt_at is in the past.
+   * Returns them in creation order, oldest first. Marks them as in_flight
+   * so a concurrent worker doesn't pick up the same items.
+   */
+  claimBatch(limit: number = 10): SyncQueueRow[] {
+    const now = Math.floor(Date.now() / 1000);
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM sync_queue
+         WHERE status = 'pending' AND next_attempt_at <= ?
+         ORDER BY created_at ASC
+         LIMIT ?`,
+      )
+      .all(now, limit) as any[];
+
+    if (rows.length === 0) return [];
+
+    const ids = rows.map((r) => r.id);
+    const placeholders = ids.map(() => "?").join(",");
+    this.db
+      .prepare(
+        `UPDATE sync_queue SET status = 'in_flight', updated_at = unixepoch()
+         WHERE id IN (${placeholders})`,
+      )
+      .run(...ids);
+
+    return rows.map((r) => ({
+      ...mapSyncQueueRow(r),
+      status: "in_flight" as const,
+    }));
+  }
+
+  /** Mark a successfully-sent item as completed. */
+  markCompleted(id: string): void {
+    this.db
+      .prepare(
+        `UPDATE sync_queue
+         SET status = 'completed',
+             completed_at = unixepoch(),
+             updated_at = unixepoch()
+         WHERE id = ?`,
+      )
+      .run(id);
+  }
+
+  /**
+   * Mark a send failure. Increments attempt count, schedules the next
+   * retry using exponential backoff (base 5s, cap 1 hour). If max
+   * attempts exceeded, marks the row as permanently failed.
+   */
+  markFailed(id: string, error: string): void {
+    const row = this.getById(id);
+    if (!row) return;
+
+    const nextCount = row.attemptCount + 1;
+    if (nextCount >= row.maxAttempts) {
+      this.db
+        .prepare(
+          `UPDATE sync_queue
+           SET status = 'failed',
+               attempt_count = ?,
+               last_error = ?,
+               completed_at = unixepoch(),
+               updated_at = unixepoch()
+           WHERE id = ?`,
+        )
+        .run(nextCount, error.slice(0, 1000), id);
+      return;
+    }
+
+    // Exp backoff: 5s, 10s, 20s, 40s, 80s, 160s, 320s, 640s, 1280s, 2560s
+    // Capped at 3600s (1 hour). Adds up to 20% jitter to prevent thundering herd.
+    const baseDelay = Math.min(5 * Math.pow(2, nextCount - 1), 3600);
+    const jitter = Math.floor(baseDelay * (Math.random() * 0.2));
+    const nextAttemptAt = Math.floor(Date.now() / 1000) + baseDelay + jitter;
+
+    this.db
+      .prepare(
+        `UPDATE sync_queue
+         SET status = 'pending',
+             attempt_count = ?,
+             next_attempt_at = ?,
+             last_error = ?,
+             updated_at = unixepoch()
+         WHERE id = ?`,
+      )
+      .run(nextCount, nextAttemptAt, error.slice(0, 1000), id);
+  }
+
+  /** Stats for the `brainstorm sync status` command. */
+  getStats(): {
+    pending: number;
+    inFlight: number;
+    completed: number;
+    failed: number;
+    oldestPending: number | null;
+    latestFailure: { id: string; error: string; attemptCount: number } | null;
+  } {
+    const counts = this.db
+      .prepare(
+        `SELECT status, COUNT(*) as count FROM sync_queue GROUP BY status`,
+      )
+      .all() as Array<{ status: string; count: number }>;
+
+    const result = {
+      pending: 0,
+      inFlight: 0,
+      completed: 0,
+      failed: 0,
+      oldestPending: null as number | null,
+      latestFailure: null as {
+        id: string;
+        error: string;
+        attemptCount: number;
+      } | null,
+    };
+    for (const row of counts) {
+      if (row.status === "pending") result.pending = row.count;
+      else if (row.status === "in_flight") result.inFlight = row.count;
+      else if (row.status === "completed") result.completed = row.count;
+      else if (row.status === "failed") result.failed = row.count;
+    }
+
+    const oldest = this.db
+      .prepare(
+        `SELECT MIN(created_at) as ts FROM sync_queue WHERE status = 'pending'`,
+      )
+      .get() as { ts: number | null };
+    result.oldestPending = oldest?.ts ?? null;
+
+    const fail = this.db
+      .prepare(
+        `SELECT id, last_error, attempt_count FROM sync_queue
+         WHERE status = 'failed'
+         ORDER BY updated_at DESC LIMIT 1`,
+      )
+      .get() as any;
+    if (fail) {
+      result.latestFailure = {
+        id: fail.id,
+        error: fail.last_error ?? "(unknown)",
+        attemptCount: fail.attempt_count,
+      };
+    }
+
+    return result;
+  }
+
+  /** Drop completed rows older than the given age (for cleanup). */
+  pruneCompleted(olderThanSeconds: number): number {
+    const cutoff = Math.floor(Date.now() / 1000) - olderThanSeconds;
+    const result = this.db
+      .prepare(
+        `DELETE FROM sync_queue
+         WHERE status = 'completed' AND completed_at < ?`,
+      )
+      .run(cutoff);
+    return result.changes;
+  }
+}
+
+function mapSyncQueueRow(row: any): SyncQueueRow {
+  return {
+    id: row.id,
+    kind: row.kind,
+    method: row.method,
+    path: row.path,
+    body: row.body,
+    idempotencyKey: row.idempotency_key,
+    status: row.status,
+    attemptCount: row.attempt_count,
+    maxAttempts: row.max_attempts,
+    nextAttemptAt: row.next_attempt_at,
+    lastError: row.last_error,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    completedAt: row.completed_at,
+  };
+}

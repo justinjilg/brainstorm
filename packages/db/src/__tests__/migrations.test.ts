@@ -37,7 +37,9 @@ describe("db migrations", () => {
         "workflow_runs",
       ]),
     );
-    expect(tables).toHaveLength(27);
+    // +1 for sync_queue (migration 030)
+    expect(tables).toHaveLength(28);
+    expect(tables).toContain("sync_queue");
   });
 
   test("migration ledger records each migration exactly once", () => {
@@ -47,11 +49,11 @@ describe("db migrations", () => {
       .prepare("SELECT name FROM _migrations ORDER BY id")
       .all() as Array<{ name: string }>;
 
-    expect(migrations).toHaveLength(29);
+    expect(migrations).toHaveLength(30);
     expect(migrations[0]?.name).toBe("001_sessions");
-    expect(migrations.at(-1)?.name).toBe("029_orchestration_workers");
+    expect(migrations.at(-1)?.name).toBe("030_sync_queue");
     expect(new Set(migrations.map((migration) => migration.name)).size).toBe(
-      29,
+      30,
     );
   });
 
