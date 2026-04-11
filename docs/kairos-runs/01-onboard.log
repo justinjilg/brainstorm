@@ -1,0 +1,65 @@
+
+  storm onboard .
+
+{"level":40,"time":1775916278530,"pid":34725,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"storm","errors":["deploy: Invalid enum value. Expected 'vercel' | 'do-app-platform' | 'docker' | 'aws' | 'none', received 'none (build/test only in CI)'","entry_points: Expected array, received object"],"msg":"Invalid STORM.md frontmatter — ignoring structured data"}
+  Phase: Analyzing codebase structure ... done (0.2s)
+    671 files, 103,643 lines, 110 modules, TypeScript, Turborepo
+
+  Budget: $1.50 (estimated ~$0.94)
+
+  Phase: Reading key files, discovering conventions and domain concepts ...{"level":30,"time":1775916278667,"pid":34725,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"router","entries":44,"totalSamples":1180,"msg":"Loaded historical routing outcomes for Thompson sampling"}
+{"level":30,"time":1775916278667,"pid":34725,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"router","msg":"Auto-activated capability strategy (eval data available)"}
+ done (48.1s, $0.01)
+    16 conventions, 12 domain concepts, github flow workflow
+
+  Phase: Generating specialized agents with project-specific knowledge ...    → /Users/justin/Projects/brainstorm/.brainstorm/agents/architect.agent.md
+    → /Users/justin/Projects/brainstorm/.brainstorm/agents/code-reviewer.agent.md
+    → /Users/justin/Projects/brainstorm/.brainstorm/agents/api-expert.agent.md
+    → /Users/justin/Projects/brainstorm/.brainstorm/agents/qa.agent.md
+    → /Users/justin/Projects/brainstorm/.brainstorm/agents/devops.agent.md
+    → /Users/justin/Projects/brainstorm/.brainstorm/agents/security-reviewer.agent.md
+    → /Users/justin/Projects/brainstorm/.brainstorm/agents/packages-tools-src-builtin-expert.agent.md
+    → /Users/justin/Projects/brainstorm/.brainstorm/agents/apps-web-src-components-company-expert.agent.md
+    → /Users/justin/Projects/brainstorm/.brainstorm/agents/packages-core-src-middleware-builtin-expert.agent.md
+ done (33.7s, $0.00)
+    9 agents: architect, code-reviewer, api-expert, qa, devops, security-reviewer, packages-tools-src-builtin-expert, apps-web-src-components-company-expert, packages-core-src-middleware-builtin-expert
+
+  Phase: Creating task-to-agent routing rules ...    → /Users/justin/Projects/brainstorm/.brainstorm/routing.yaml
+ done (30.8s, $0.00)
+    24 routing rules
+
+  Phase: Building project-specific workflow recipes ...    → /Users/justin/Projects/brainstorm/.brainstorm/recipes/pr-ready.yaml
+    → /Users/justin/Projects/brainstorm/.brainstorm/recipes/deploy-flow.yaml
+ done (8.9s, $0.00)
+    2 recipes: pr-ready, deploy-flow
+
+  Phase: Generating enhanced BRAINSTORM.md with real conventions ...    → /Users/justin/Projects/brainstorm/BRAINSTORM.md
+ done (14.7s, $0.00)
+    Updated with conventions, domain glossary, architecture
+
+  Phase: Validating generated artifacts ... done (0.0s)
+    9 agents valid, 24 rules valid, 2 recipes valid, BRAINSTORM.md valid
+
+  ══════════════════════════════════════════════════
+   Onboarding Complete — $0.02 total, 136.3s
+  ══════════════════════════════════════════════════
+
+  /Users/justin/Projects/brainstorm/.brainstorm/agents/architect.agent.md
+  /Users/justin/Projects/brainstorm/.brainstorm/agents/code-reviewer.agent.md
+  /Users/justin/Projects/brainstorm/.brainstorm/agents/api-expert.agent.md
+  /Users/justin/Projects/brainstorm/.brainstorm/agents/qa.agent.md
+  /Users/justin/Projects/brainstorm/.brainstorm/agents/devops.agent.md
+  /Users/justin/Projects/brainstorm/.brainstorm/agents/security-reviewer.agent.md
+  /Users/justin/Projects/brainstorm/.brainstorm/agents/packages-tools-src-builtin-expert.agent.md
+  /Users/justin/Projects/brainstorm/.brainstorm/agents/apps-web-src-components-company-expert.agent.md
+  /Users/justin/Projects/brainstorm/.brainstorm/agents/packages-core-src-middleware-builtin-expert.agent.md
+  /Users/justin/Projects/brainstorm/.brainstorm/routing.yaml
+  /Users/justin/Projects/brainstorm/.brainstorm/recipes/pr-ready.yaml
+  /Users/justin/Projects/brainstorm/.brainstorm/recipes/deploy-flow.yaml
+  /Users/justin/Projects/brainstorm/BRAINSTORM.md
+{"level":30,"time":1775916415226,"pid":34725,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"onboard-memory-bridge","saved":6,"projectPath":"/Users/justin/Projects/brainstorm","msg":"Onboard results persisted to project memory"}
+
+  ✓ 6 memory entries saved (conventions, domain concepts, etc.)
+
+  Next: Run `storm chat` to start working with agents that know your codebase.
+
