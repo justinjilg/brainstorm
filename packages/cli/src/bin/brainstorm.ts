@@ -57,6 +57,9 @@ import { BrainstormVault, KeyResolver } from "@brainst0rm/vault";
 import { createInterface } from "node:readline";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { execFile as execFileCallback } from "node:child_process";
+import { promisify } from "node:util";
 import type { ResolvedKeys } from "@brainst0rm/providers";
 
 /** Known API key names that providers and connectors need at startup. */
@@ -150,6 +153,164 @@ async function connectMCPServers(
 }
 
 const program = new Command();
+const execFile = promisify(execFileCallback);
+
+interface DoctorCheckResult {
+  name: string;
+  status: "pass" | "fail" | "warn";
+  detail: string;
+}
+
+interface DoctorSection {
+  title: string;
+  results: DoctorCheckResult[];
+}
+
+function formatDoctorStatus(status: DoctorCheckResult["status"]): string {
+  return status === "pass" ? "✓" : status === "fail" ? "✗" : "○";
+}
+
+function parseEnvExampleKeys(content: string): string[] {
+  const keys = new Set<string>();
+
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const match = line.match(/^(?:export\s+)?([A-Z][A-Z0-9_]*?)\s*=/);
+    if (match?.[1]) keys.add(match[1]);
+  }
+
+  return [...keys];
+}
+
+async function runBuildDoctorCheck(cwd: string): Promise<DoctorSection> {
+  try {
+    await execFile("npx", ["turbo", "run", "build", "--summarize"], {
+      cwd,
+      timeout: 120000,
+      maxBuffer: 1024 * 1024 * 10,
+      env: process.env,
+    });
+    return {
+      title: "Build",
+      results: [
+        {
+          name: "workspace build",
+          status: "pass",
+          detail: "turbo run build completed successfully.",
+        },
+      ],
+    };
+  } catch (error: any) {
+    const detail =
+      error?.stderr?.trim() ||
+      error?.stdout?.trim() ||
+      error?.message ||
+      "Build failed.";
+    return {
+      title: "Build",
+      results: [
+        {
+          name: "workspace build",
+          status: "fail",
+          detail,
+        },
+      ],
+    };
+  }
+}
+
+function runEnvDoctorCheck(cwd: string): DoctorSection {
+  const envExamplePath = join(cwd, ".env.example");
+  if (!existsSync(envExamplePath)) {
+    return {
+      title: "Environment",
+      results: [
+        {
+          name: ".env.example",
+          status: "warn",
+          detail: "No .env.example found in the current workspace.",
+        },
+      ],
+    };
+  }
+
+  const envExample = readFileSync(envExamplePath, "utf-8");
+  const referencedKeys = parseEnvExampleKeys(envExample);
+  if (referencedKeys.length === 0) {
+    return {
+      title: "Environment",
+      results: [
+        {
+          name: ".env.example",
+          status: "warn",
+          detail: "No environment variables were declared in .env.example.",
+        },
+      ],
+    };
+  }
+
+  const missingKeys = referencedKeys.filter((key) => !process.env[key]);
+  return {
+    title: "Environment",
+    results: missingKeys.length
+      ? missingKeys.map((key) => ({
+          name: key,
+          status: "warn" as const,
+          detail:
+            "Referenced in .env.example but not present in the current environment.",
+        }))
+      : [
+          {
+            name: ".env.example",
+            status: "pass",
+            detail: `All ${referencedKeys.length} referenced variables are present in the current environment.`,
+          },
+        ],
+  };
+}
+
+async function runModelDoctorCheck(): Promise<DoctorSection> {
+  const config = loadConfig();
+  const registry = await createProviderRegistry(
+    config,
+    await resolveProviderKeys(),
+  );
+  const unreachable = registry.models.filter(
+    (model) => model.status !== "available",
+  );
+
+  if (unreachable.length > 0) {
+    return {
+      title: "Models",
+      results: unreachable.map((model) => ({
+        name: model.id,
+        status: "warn" as const,
+        detail: `Reported as ${model.status}.`,
+      })),
+    };
+  }
+
+  return {
+    title: "Models",
+    results: [
+      {
+        name: "registry",
+        status: "pass",
+        detail: `All ${registry.models.length} discovered models are currently marked available.`,
+      },
+    ],
+  };
+}
+
+function printDoctorSection(section: DoctorSection): void {
+  console.log(`\n  ${section.title}:`);
+  for (const result of section.results) {
+    console.log(
+      `    ${formatDoctorStatus(result.status)} ${result.name.padEnd(20)} ${result.detail}`,
+    );
+  }
+}
 
 // Read version from package.json at runtime (stays in sync with bump-version.mjs)
 import { readFileSync as readFileSyncVersion } from "node:fs";
@@ -489,6 +650,41 @@ program
       console.log();
     },
   );
+
+// ── Doctor Command ────────────────────────────────────────────────
+
+program
+  .command("doctor")
+  .description("Check project health, environment, and model availability")
+  .action(async () => {
+    const cwd = process.cwd();
+
+    console.log(`\n  Brainstorm Doctor`);
+    console.log(`  ─────────────────`);
+
+    const [buildResult, modelsResult] = await Promise.all([
+      runBuildDoctorCheck(cwd),
+      runModelDoctorCheck(),
+    ]);
+
+    const envResult = runEnvDoctorCheck(cwd);
+
+    printDoctorSection(buildResult);
+    printDoctorSection(envResult);
+    printDoctorSection(modelsResult);
+    console.log();
+
+    const allResults = [
+      ...buildResult.results,
+      ...envResult.results,
+      ...modelsResult.results,
+    ];
+    const hasFailures = allResults.some((r) => r.status === "fail");
+
+    if (hasFailures) {
+      process.exit(1);
+    }
+  });
 
 // ── Router Commands (BrainstormRouter Gateway) ───────────────────
 
@@ -6524,7 +6720,12 @@ export function run() {
     cleanup();
   });
 
-  program.parse();
+  if (process.argv.length <= 2) {
+    program.outputHelp();
+    process.exit(0);
+  } else {
+    program.parse();
+  }
 }
 
 run();
