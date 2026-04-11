@@ -81,15 +81,29 @@ export async function planMultiAgentRun(
 
   log.info({ request: request.slice(0, 120) }, "Starting plan decomposition");
 
-  // Spawn the planning subagent. The system prompt is the existing
-  // DECOMPOSITION_PROMPT which is already tuned for JSON output.
-  // We use type=plan if available, otherwise fall back to general.
+  // Spawn the planning subagent. We use the DECOMPOSITION_PROMPT as the
+  // system prompt, but also append a strong "no tools" directive because
+  // the "plan" subagent type ships with read-only tools (file_read, glob,
+  // grep) which the agent will happily use to explore the codebase
+  // instead of immediately returning JSON. Without this directive the
+  // agent burns its step budget on tool calls and returns an empty
+  // response. Discovered in Dogfood #2.
+  const plannerSystemPrompt =
+    DECOMPOSITION_PROMPT +
+    "\n\n## CRITICAL\n\n" +
+    "DO NOT call any tools. Respond immediately with ONLY the JSON object " +
+    "described above, with no preamble, no prose, no markdown fences, and " +
+    "no tool calls. The first character of your response must be `{` and " +
+    "the last must be `}`.";
+
   const result = await spawnSubagent(request, {
     ...subagentOptions,
     type: "plan",
-    systemPrompt: DECOMPOSITION_PROMPT,
+    systemPrompt: plannerSystemPrompt,
     // Decomposition is short — bound it tightly to keep cost predictable.
-    maxSteps: 5,
+    // Allow a couple steps in case the model produces tool calls despite
+    // the directive; it'll still have budget to correct and emit the JSON.
+    maxSteps: 3,
   });
 
   if (result.budgetExceeded) {
@@ -103,7 +117,9 @@ export async function planMultiAgentRun(
   const decomposition = parseDecomposition(result.text);
   if (!decomposition) {
     throw new Error(
-      `Planner returned unparseable response. First 500 chars: ${result.text.slice(0, 500)}`,
+      `Planner returned unparseable response. Model: ${result.modelUsed}. ` +
+        `Tool calls made: ${result.toolCalls.length}. ` +
+        `First 800 chars: ${result.text.slice(0, 800)}`,
     );
   }
 
