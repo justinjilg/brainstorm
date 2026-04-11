@@ -169,9 +169,18 @@ export async function* runWorkerPool(
           continue;
         }
 
+        // Wrap the task prompt with a safety preamble that biases the
+        // worker toward additive changes. Fixes Dogfood #2 Bug #2:
+        // workers were rewriting existing test files instead of adding
+        // new ones because the prompt "add a focused unit test" was
+        // interpreted as "the test file content." The preamble makes
+        // the additive semantics explicit and forbids dep changes
+        // (addresses Dogfood #2 Bug #3: unnecessary `npm install`).
+        const safeTaskPrompt = wrapTaskWithSafetyPreamble(claimed.prompt);
+
         // Spawn the subagent against the worktree (NOT the project root).
         try {
-          const result = await spawnSubagent(claimed.prompt, {
+          const result = await spawnSubagent(safeTaskPrompt, {
             ...subagentOptions,
             projectPath: worktreePath,
             type: claimed.subagentType as SubagentType,
@@ -196,6 +205,25 @@ export async function* runWorkerPool(
 
           // Capture what the agent actually changed.
           const filesTouched = listFilesTouched(worktreePath);
+
+          // Detect unauthorized dep changes. If the task didn't ask for
+          // a dep change but the worker modified package.json / lockfiles,
+          // log a warning on the completion event. We don't fail the task
+          // (the file change is still in the worktree and will be caught
+          // by the Judge), but the event gives operators visibility.
+          const unauthDepChanges = detectUnauthorizedDepChanges(
+            filesTouched,
+            claimed.prompt,
+          );
+          if (unauthDepChanges.length > 0) {
+            log.warn(
+              {
+                taskId: claimed.id,
+                changes: unauthDepChanges,
+              },
+              "Worker modified dep files without task authorization",
+            );
+          }
 
           taskRepo.completeWithMetadata(claimed.id, {
             resultSummary: result.text.slice(0, 1000),
@@ -325,4 +353,107 @@ export function listFilesTouched(worktreePath: string): string[] {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * File paths the worker pool considers "protected" — worker agents should
+ * never modify these unless the task explicitly asks for a dep change.
+ * Used by isUnauthorizedDepChange() to detect Dogfood #2 Bug #3.
+ */
+const PROTECTED_DEP_FILES = new Set([
+  "package.json",
+  "package-lock.json",
+  "yarn.lock",
+  "pnpm-lock.yaml",
+  "Cargo.toml",
+  "Cargo.lock",
+  "go.mod",
+  "go.sum",
+  "poetry.lock",
+  "pyproject.toml",
+  "requirements.txt",
+  "Gemfile",
+  "Gemfile.lock",
+]);
+
+/**
+ * Keywords in the task prompt that signal the user explicitly asked for a
+ * dependency change. When present, modifications to protected dep files
+ * are allowed; otherwise they're flagged.
+ */
+const DEP_CHANGE_KEYWORDS = [
+  "install",
+  "add dep",
+  "add dependency",
+  "upgrade",
+  "update package",
+  "bump version",
+  "add package",
+  "remove dep",
+];
+
+/**
+ * Check whether any of the files the worker modified are protected dep
+ * files AND the task prompt did not authorize a dep change. Returns the
+ * list of unauthorized changes, or empty array if all modifications are
+ * fine.
+ */
+export function detectUnauthorizedDepChanges(
+  filesTouched: string[],
+  taskPrompt: string,
+): string[] {
+  const lowerPrompt = taskPrompt.toLowerCase();
+  const taskAuthorizesDepChange = DEP_CHANGE_KEYWORDS.some((kw) =>
+    lowerPrompt.includes(kw),
+  );
+  if (taskAuthorizesDepChange) return [];
+
+  return filesTouched.filter((file) => {
+    // Match on basename so `packages/gateway/package.json` triggers on
+    // `package.json`. Also match on any path that ENDS with a protected
+    // filename.
+    const basename = file.split("/").pop() ?? file;
+    return PROTECTED_DEP_FILES.has(basename);
+  });
+}
+
+/**
+ * Safety preamble prepended to every worker task prompt. Biases the
+ * agent toward additive changes and blocks dep file modifications.
+ *
+ * Fixes Dogfood #2 Bug #2 (destructive prompt interpretation) and
+ * Bug #3 (unnecessary npm install). The preamble is prepended rather
+ * than appended so the model reads the safety rules BEFORE the task
+ * description.
+ */
+export function wrapTaskWithSafetyPreamble(taskPrompt: string): string {
+  return `## Safety rules for this task
+
+1. **Additive by default**: If the task says "add" something (a test, a
+   function, a config value), you must ADD it without modifying or
+   deleting existing code. When the target file already exists, append
+   your addition to it — do not rewrite the file. Preserve every
+   existing export, test, comment, and assertion unless the task
+   explicitly asks you to remove them.
+
+2. **Check before you write**: Before calling file_write on any path,
+   use file_read or glob to see whether the file already exists. If it
+   does, use file_edit to append/modify specific sections rather than
+   replacing the whole file.
+
+3. **No dep changes unless requested**: Do not run \`npm install\`,
+   \`pip install\`, \`cargo add\`, or any command that modifies
+   package.json, package-lock.json, yarn.lock, pnpm-lock.yaml,
+   Cargo.toml, Cargo.lock, requirements.txt, poetry.lock, go.mod,
+   or go.sum unless the task description explicitly asks you to change
+   dependencies. If a test fails because of a missing dep, report it
+   as a finding rather than installing the dep yourself.
+
+4. **One task, one scope**: Do not make changes outside the scope of
+   the specific task described below. If you notice unrelated issues
+   in the codebase, note them in your response but do not fix them.
+
+## Your task
+
+${taskPrompt}`;
 }
