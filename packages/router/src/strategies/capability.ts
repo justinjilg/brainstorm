@@ -87,7 +87,14 @@ function scoreModel(
     totalWeight += weight;
   }
 
-  return totalWeight > 0 ? totalScore / totalWeight : 0.5;
+  const base = totalWeight > 0 ? totalScore / totalWeight : 0.5;
+
+  // Measured scores get a small confidence boost (+0.05) so the router prefers
+  // evidence over assumption. Without this, assumed-optimistic static scores
+  // (0.88-0.97 range) beat measured-honest scores (which often land in the
+  // 0.4-0.7 range for hard probes), making every eval a routing regression.
+  const isMeasured = (model.capabilities as any).scoresAreMeasured === true;
+  return isMeasured ? Math.min(1.0, base + 0.05) : base;
 }
 
 function estimateCost(model: ModelEntry, task: TaskProfile): number {
@@ -124,6 +131,21 @@ export const capabilityStrategy: RoutingStrategy = {
         (m) => m.id !== "brainstormrouter/auto",
       );
       if (explicit.length > 0) available = explicit;
+    }
+
+    // Honest data wins: if ANY candidate has measured eval scores, prefer
+    // measured models over assumed ones. This prevents optimistic static
+    // scores (0.88-0.97 range, assigned by humans) from beating real
+    // measured scores (often 0.4-0.7 because probes are hard).
+    //
+    // The old behavior rewarded models that were never evaluated — they kept
+    // their assumed scores while evaluated models got their real (lower)
+    // numbers and lost the ranking. Rule of honest routing: data > guesses.
+    const measured = available.filter(
+      (m) => (m.capabilities as any).scoresAreMeasured === true,
+    );
+    if (measured.length > 0) {
+      available = measured;
     }
 
     const requirements = getRequiredCapabilities(task);
