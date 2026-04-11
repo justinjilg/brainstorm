@@ -4956,6 +4956,330 @@ program
     }
   });
 
+// ── Codebase Audit Command ─────────────────────────────────────────
+//
+// The "attack and document" primitive. Spawns a fleet of workers,
+// each scoped to a package/app, each emitting structured findings
+// to shared memory. Findings flow through the same sync path as
+// regular memory writes — team members see them from their own CLI
+// via `brainstorm findings list`.
+
+const codebaseCmd = program
+  .command("codebase")
+  .description("Codebase audit tools — fleet-agent documentation and analysis");
+
+codebaseCmd
+  .command("audit")
+  .description(
+    "Run a fleet of agents to audit this codebase and write findings to shared memory",
+  )
+  .option("--workers <n>", "Concurrent workers (default 3)", "3")
+  .option("--budget <usd>", "Total budget cap in USD", "5")
+  .option(
+    "--categories <list>",
+    "Comma-separated categories to emphasize (default: security,correctness,reliability,performance,maintainability,tech-debt,testing)",
+  )
+  .option(
+    "--min-severity <level>",
+    "Minimum severity to report: critical|high|medium|low|info",
+    "low",
+  )
+  .option(
+    "--scopes <list>",
+    "Comma-separated scope names (default: auto-discover)",
+  )
+  .action(
+    async (opts: {
+      workers: string;
+      budget: string;
+      categories?: string;
+      minSeverity: string;
+      scopes?: string;
+    }) => {
+      const {
+        runCodebaseAudit,
+        discoverScopes,
+        MemoryManager: AuditMemoryManager,
+      } = await import("@brainst0rm/core");
+
+      const projectPath = process.cwd();
+      const concurrency = parseInt(opts.workers, 10);
+      const budgetLimit = parseFloat(opts.budget);
+      const minSeverity = opts.minSeverity as
+        | "critical"
+        | "high"
+        | "medium"
+        | "low"
+        | "info";
+
+      console.log(`\n  Codebase Audit\n`);
+      console.log(`  Project: ${projectPath}`);
+      console.log(`  Workers: ${concurrency} concurrent`);
+      console.log(`  Budget:  $${budgetLimit.toFixed(2)}`);
+      console.log(`  Min severity: ${minSeverity}`);
+
+      // Discover scopes so we can show the plan before spending money
+      const allScopes = discoverScopes(projectPath);
+      const filteredScopes =
+        opts.scopes !== undefined
+          ? allScopes.filter((s) =>
+              opts
+                .scopes!.split(",")
+                .map((x) => x.trim())
+                .includes(s.name),
+            )
+          : allScopes;
+
+      if (filteredScopes.length === 0) {
+        console.error("\n  No scopes discovered. Aborting.\n");
+        process.exit(1);
+      }
+
+      console.log(`  Scopes:  ${filteredScopes.length}`);
+      for (const s of filteredScopes.slice(0, 10)) {
+        console.log(`    - ${s.name}`);
+      }
+      if (filteredScopes.length > 10) {
+        console.log(`    ... and ${filteredScopes.length - 10} more`);
+      }
+      console.log();
+
+      // Runtime setup — same pattern as orchestrate parallel
+      const config = loadConfig();
+      config.general.defaultPermissionMode = "auto";
+      const db = getDb();
+      const resolvedKeys = await resolveProviderKeys();
+      const registry = await createProviderRegistry(config, resolvedKeys);
+      const costTracker = new CostTracker(db, config.budget);
+      const tools = createDefaultToolRegistry();
+      const { frontmatter } = buildSystemPrompt(projectPath);
+      const router = new BrainstormRouter(
+        config,
+        registry,
+        costTracker,
+        frontmatter,
+      );
+      router.setStrategy("capability");
+
+      const auditGateway = createGatewayClient();
+      const memory = new AuditMemoryManager(projectPath, auditGateway);
+
+      const sharedSubagentOptions: any = {
+        config,
+        registry,
+        router,
+        costTracker,
+        tools,
+        projectPath,
+        permissionCheck: () => "allow",
+      };
+
+      // Parse optional categories list
+      const categories = opts.categories
+        ? (opts.categories.split(",").map((c) => c.trim()) as any)
+        : undefined;
+
+      const gen = runCodebaseAudit({
+        projectPath,
+        memory,
+        subagentOptions: sharedSubagentOptions,
+        scopes: filteredScopes,
+        categories,
+        concurrency,
+        budgetLimit,
+        minSeverity,
+      });
+
+      let result: any = null;
+      while (true) {
+        const next = await gen.next();
+        if (next.done) {
+          result = next.value;
+          break;
+        }
+        const ev = next.value;
+        switch (ev.type) {
+          case "audit-started":
+            console.log(
+              `  [Fleet] starting — $${ev.perScopeBudget.toFixed(3)}/scope\n`,
+            );
+            break;
+          case "worker-started":
+            console.log(`  [${ev.workerId}] ▶ ${ev.scope.name}`);
+            break;
+          case "worker-completed":
+            console.log(
+              `  [${ev.workerId}] ✓ ${ev.scope.name} — ${ev.findingsCount} findings ($${ev.cost.toFixed(4)})`,
+            );
+            break;
+          case "worker-failed":
+            console.log(
+              `  [${ev.workerId}] ✗ ${ev.scope.name} — ${ev.error.slice(0, 80)}`,
+            );
+            break;
+          case "finding-recorded": {
+            const sev = ev.finding.severity.toUpperCase().padEnd(8);
+            const loc = ev.finding.lineStart
+              ? `${ev.finding.file}:${ev.finding.lineStart}`
+              : ev.finding.file;
+            console.log(`    ${sev} ${loc} — ${ev.finding.title.slice(0, 80)}`);
+            break;
+          }
+          case "audit-completed":
+            console.log(
+              `\n  [Fleet] ${ev.totalFindings} findings in ${Math.round(ev.durationMs / 1000)}s ($${ev.totalCost.toFixed(4)})`,
+            );
+            break;
+        }
+      }
+
+      console.log(`  Run: brainstorm findings summary to aggregate\n`);
+      process.exit(result?.totalFindings > 0 ? 0 : 1);
+    },
+  );
+
+// ── Findings Command ──────────────────────────────────────────────
+//
+// Query the findings store produced by `brainstorm codebase audit`.
+// Findings live as memory entries with a [FINDING] envelope, so they
+// sync across machines via the same BR shared memory path.
+
+program
+  .command("findings")
+  .description("Query and summarize codebase audit findings")
+  .argument("[action]", "Action: list, summary", "summary")
+  .option(
+    "--severity <level>",
+    "Filter by severity (critical|high|medium|low|info)",
+  )
+  .option(
+    "--category <name>",
+    "Filter by category (e.g., security, performance)",
+  )
+  .option("--file <substring>", "Filter by file path substring")
+  .option(
+    "--query <text>",
+    "Free-text search across title + description + file",
+  )
+  .option("--limit <n>", "Max results to show (list only)", "50")
+  .action(
+    async (
+      action: string,
+      opts: {
+        severity?: string;
+        category?: string;
+        file?: string;
+        query?: string;
+        limit: string;
+      },
+    ) => {
+      const { MemoryManager: FindingsMemoryManager, FindingsStore } =
+        await import("@brainst0rm/core");
+
+      const memory = new FindingsMemoryManager(process.cwd());
+      const store = new FindingsStore(memory);
+
+      const filter = {
+        ...(opts.severity ? { severity: opts.severity as any } : {}),
+        ...(opts.category ? { category: opts.category as any } : {}),
+        ...(opts.file ? { file: opts.file } : {}),
+        ...(opts.query ? { query: opts.query } : {}),
+      };
+
+      if (action === "list") {
+        const findings = store.list(filter).slice(0, parseInt(opts.limit, 10));
+        if (findings.length === 0) {
+          console.log("\n  No findings match the filter.\n");
+          return;
+        }
+        console.log(`\n  Findings (${findings.length}):\n`);
+        for (const f of findings) {
+          const sev = sevColor(f.severity);
+          const loc = f.lineStart ? `${f.file}:${f.lineStart}` : f.file;
+          console.log(`  ${sev} [${f.category}] ${loc}`);
+          console.log(`    ${f.title}`);
+          if (f.description && f.description !== f.title) {
+            console.log(`    ${f.description.slice(0, 120)}`);
+          }
+          if (f.suggestedFix) {
+            console.log(`    Fix: ${f.suggestedFix.slice(0, 120)}`);
+          }
+          console.log();
+        }
+        return;
+      }
+
+      if (action === "summary") {
+        const summary = store.summary(filter);
+        if (summary.total === 0) {
+          console.log("\n  No findings recorded.");
+          console.log(
+            "  Run `brainstorm codebase audit` to populate findings.\n",
+          );
+          return;
+        }
+
+        console.log(`\n  Findings Summary — ${summary.total} total\n`);
+
+        console.log(`  By severity:`);
+        const sevOrder = ["critical", "high", "medium", "low", "info"] as const;
+        for (const sev of sevOrder) {
+          const count = summary.bySeverity[sev];
+          if (count > 0) {
+            console.log(`    ${sevColor(sev).padEnd(12)} ${count}`);
+          }
+        }
+
+        console.log(`\n  By category:`);
+        const sortedCats = Object.entries(summary.byCategory).sort(
+          (a, b) => b[1] - a[1],
+        );
+        for (const [cat, count] of sortedCats) {
+          console.log(`    ${cat.padEnd(18)} ${count}`);
+        }
+
+        if (summary.byFile.length > 0) {
+          console.log(`\n  Top files:`);
+          for (const { file, count } of summary.byFile.slice(0, 10)) {
+            console.log(`    ${count.toString().padStart(3)} ${file}`);
+          }
+        }
+
+        if (summary.topCritical.length > 0) {
+          console.log(`\n  Most urgent:`);
+          for (const f of summary.topCritical) {
+            const loc = f.lineStart ? `${f.file}:${f.lineStart}` : f.file;
+            console.log(`    ${sevColor(f.severity)} ${loc}`);
+            console.log(`      ${f.title}`);
+          }
+        }
+        console.log();
+        return;
+      }
+
+      console.error(`  Unknown action: ${action}. Use list or summary.`);
+      process.exit(1);
+    },
+  );
+
+/** Simple severity label with emoji for scanability. */
+function sevColor(severity: string): string {
+  switch (severity) {
+    case "critical":
+      return "🔴 CRITICAL";
+    case "high":
+      return "🟠 HIGH    ";
+    case "medium":
+      return "🟡 MEDIUM  ";
+    case "low":
+      return "🔵 LOW     ";
+    case "info":
+      return "⚪ INFO    ";
+    default:
+      return `   ${severity.toUpperCase().padEnd(8)}`;
+  }
+}
+
 // ── Sessions Command ───────────────────────────────────────────────
 
 program
