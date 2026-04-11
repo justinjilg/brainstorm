@@ -138,6 +138,15 @@ export {
   type FindingsSummary,
 } from "./findings/store.js";
 export {
+  runCodebaseAudit,
+  discoverScopes,
+  buildAuditPrompt,
+  extractFindings,
+  type AuditScope,
+  type AuditOptions,
+  type AuditEvent,
+} from "./plan/codebase-audit.js";
+export {
   FINDING_MARKER,
   serializeFinding,
   parseFinding,
