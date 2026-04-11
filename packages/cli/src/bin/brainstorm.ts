@@ -112,6 +112,37 @@ function buildCompactionCallbacks(
 }
 
 /**
+ * Start the sync queue drain worker if a BR gateway is configured.
+ * Returns the worker for later shutdown, or null if no gateway.
+ *
+ * Week 1.5: this is the wiring that actually activates the retry queue.
+ * Without it, Phase 1's sync_queue table and SyncWorker exist but never
+ * drain — every fire-and-forget push that fails sits forever.
+ *
+ * The worker self-schedules on a 15s interval. Callers that need to
+ * stop it (tests, graceful shutdown) can call the returned object's
+ * .stop() method.
+ */
+async function startSyncWorkerIfConfigured(
+  gateway: ReturnType<typeof createGatewayClient> | null,
+  db: any,
+): Promise<{ stop: () => void } | null> {
+  if (!gateway) return null;
+  try {
+    const { SyncWorker } = await import("@brainst0rm/gateway");
+    const { SyncQueueRepository } = await import("@brainst0rm/db");
+    const repo = new SyncQueueRepository(db);
+    const worker = new SyncWorker({ gateway, repo });
+    worker.start();
+    return worker;
+  } catch {
+    // Best effort — sync worker is optional. Missing package or init
+    // failure should never block the chat command from starting.
+    return null;
+  }
+}
+
+/**
  * Connect to MCP servers from config + BrainstormRouter gateway.
  * Loads user-configured servers from config.mcp.servers (populated from
  * config.toml and .brainstorm/mcp.json), plus the built-in gateway server.
@@ -6172,13 +6203,38 @@ program
       const projectPath = process.cwd();
       const tools = createDefaultToolRegistry({ daemon: opts.daemon });
 
+      // Construct the BR gateway client early so MemoryManager can receive
+      // it as a constructor arg and kick off the pull path. Without this,
+      // Week 1's pullFromGateway() is dead code on the chat path.
+      //
+      // Returns null if BRAINSTORM_API_KEY isn't set — that's fine,
+      // MemoryManager handles a null gateway gracefully (local-only mode).
+      const chatGateway = createGatewayClient();
+
       // Wire memory tool — replace stub with MemoryManager-backed implementation
       const { MemoryManager: ChatMemoryManager } =
         await import("@brainst0rm/core");
-      const chatMemory = new ChatMemoryManager(projectPath);
+      const chatMemory = new ChatMemoryManager(projectPath, chatGateway);
       const wiredMemoryTool = createWiredMemoryTool(chatMemory);
       tools.unregister("memory");
       tools.register(wiredMemoryTool);
+
+      // Fire pullFromGateway in the background — we don't block boot on a
+      // network round-trip, but the pull will complete before the first
+      // agent turn in most cases. Status visible via `brainstorm sync status`.
+      if (chatGateway) {
+        chatMemory.pullFromGateway().catch(() => {
+          // Errors captured into MemoryManager.getPullStatus()
+        });
+      }
+
+      // Start the sync queue drain worker if a gateway is configured.
+      // This is the missing link — without it, retry queue rows sit forever
+      // and the fire-and-forget push path stays broken.
+      let chatSyncWorker: Awaited<
+        ReturnType<typeof startSyncWorkerIfConfigured>
+      > = null;
+      chatSyncWorker = await startSyncWorkerIfConfigured(chatGateway, db);
 
       // Wire code graph tools — tree-sitter knowledge graph for structural queries
       try {
