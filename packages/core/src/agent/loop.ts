@@ -171,6 +171,90 @@ function getPartOutput(part: Record<string, unknown>): unknown {
   return part.output ?? part.result;
 }
 
+/**
+ * Provider-safety normalization for system-role messages.
+ *
+ * The conversation history can contain system-role messages — compaction
+ * injects 4-5 of them per cycle (preserved-context block, summary, scratchpad,
+ * compaction summary). The AI SDK passes these straight through to the
+ * provider. Anthropic and OpenAI tolerate mid-stream system messages, but
+ * Google's Gemini provider throws AI_UnsupportedFunctionalityError because
+ * Google's API only accepts system messages at the start of the conversation.
+ *
+ * This helper extracts every system-role message from the history and folds
+ * its content into the system field as additional segments. The model still
+ * sees the content; it just arrives via the system channel that every
+ * provider supports. The returned messages array contains only user/assistant
+ * turns.
+ */
+export function normalizeSystemMessagesForProvider(
+  systemForAPI:
+    | string
+    | Array<{
+        role: "system";
+        content: string;
+        providerOptions?: Record<string, any>;
+      }>,
+  messages: Array<{ role: string; content: string | unknown }>,
+): {
+  systemForApiNormalized:
+    | string
+    | Array<{
+        role: "system";
+        content: string;
+        providerOptions?: Record<string, any>;
+      }>;
+  messagesForApi: Array<{ role: string; content: string | unknown }>;
+} {
+  // Fast path: no system-role messages in history → no work needed.
+  const hasSystemInHistory = messages.some((m) => m.role === "system");
+  if (!hasSystemInHistory) {
+    return { systemForApiNormalized: systemForAPI, messagesForApi: messages };
+  }
+
+  // Slow path: extract system messages from the history and fold them in.
+  const extractedSystem: string[] = [];
+  const filtered: Array<{ role: string; content: string | unknown }> = [];
+  for (const msg of messages) {
+    if (msg.role === "system") {
+      const content =
+        typeof msg.content === "string" ? msg.content : String(msg.content);
+      extractedSystem.push(content);
+    } else {
+      filtered.push(msg);
+    }
+  }
+
+  // Append extracted system content as additional non-cacheable segments.
+  // We don't merge them into the existing cached prefix because that would
+  // bust the prompt cache; non-cacheable segments don't.
+  const additionalSegments = extractedSystem.map((content) => ({
+    role: "system" as const,
+    content,
+  }));
+
+  let systemForApiNormalized:
+    | string
+    | Array<{
+        role: "system";
+        content: string;
+        providerOptions?: Record<string, any>;
+      }>;
+
+  if (typeof systemForAPI === "string") {
+    systemForApiNormalized = [
+      { role: "system" as const, content: systemForAPI },
+      ...additionalSegments,
+    ];
+  } else if (Array.isArray(systemForAPI)) {
+    systemForApiNormalized = [...systemForAPI, ...additionalSegments];
+  } else {
+    systemForApiNormalized = additionalSegments;
+  }
+
+  return { systemForApiNormalized, messagesForApi: filtered };
+}
+
 export interface CompactionCallbacks {
   /** Current estimated token count of conversation history. */
   getTokenEstimate: () => number;
@@ -592,10 +676,24 @@ export async function* runAgentLoop(
       ? segmentsToSystemArray(options.systemSegments)
       : systemPrompt;
 
+    // Provider-safety normalization: extract any system-role messages from the
+    // history and fold them into the system field. Compaction injects 4-5
+    // system-role messages mid-stream (preserved-context block, summary,
+    // scratchpad, etc.). Anthropic + OpenAI tolerate this; Gemini's provider
+    // throws AI_UnsupportedFunctionalityError because Google's API only
+    // accepts system messages at the start of the conversation.
+    //
+    // We append extracted system content to the system field as additional
+    // segments so the model still sees it, just routed through the right
+    // channel. The remaining messages array contains only user/assistant
+    // turns — what every provider expects.
+    const { systemForApiNormalized, messagesForApi } =
+      normalizeSystemMessagesForProvider(systemForAPI, messages);
+
     const result = streamText({
       model: modelId,
-      system: systemForAPI as any,
-      messages: messages as any,
+      system: systemForApiNormalized as any,
+      messages: messagesForApi as any,
       ...(aiTools ? { tools: aiTools } : {}),
       ...(metadataHeader
         ? { headers: { "x-br-metadata": metadataHeader } }
