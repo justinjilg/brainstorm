@@ -5,25 +5,25 @@ maxIterations: 2
 steps:
   - id: plan
     role: architect
-    description: "Analyze the task to create a detailed implementation plan including the required file changes within the Turborepo structure"
+    description: "Analyze the task, considering Turborepo's multi-package structure, and create a detailed implementation plan including necessary TypeScript file changes, and outlining a testing strategy for Vitest and Playwright."
     output: spec
     outputSchema: implementation-spec
 
   - id: implement
     role: coder
-    description: "Implement the planned changes in TypeScript following project conventions, ensuring placement of new code and tests in appropriate packages and __tests__ folders"
+    description: "Implement the planned changes in TypeScript, adhering to project conventions, Turborepo's workspace structure, and incorporating robust error handling using try...catch blocks."
     input: [spec]
     output: code
 
   - id: test
     role: qa
-    description: "Run Vitest tests, including unit, integration, and smoke tests, using turborepo pipelines with filters to exclude heavier packages, and verify correctness via test results"
+    description: "Execute relevant Vitest unit and integration tests (`npx vitest run`) within the affected Turborepo packages. If applicable, run Playwright E2E tests for the desktop app (`npx playwright test apps/desktop/tests/app.spec.ts`) and ensure the `ci-wiring-check.mjs` passes."
     input: [spec, code]
     output: test-result
 
   - id: review
     role: code-reviewer
-    description: "Perform a thorough review for correctness, adherence to TypeScript and Turborepo conventions, comprehensive testing coverage including fast-check property tests, and appropriate error handling patterns"
+    description: "Conduct a comprehensive code review focusing on correctness, adherence to TypeScript conventions, Turborepo best practices, conventional commit style, and proper error handling (CLI console.error/process.exit, desktop logToFile, agent self-correction). Verify test coverage and CI readiness (linting, type-checking)."
     input: [spec, code, test-result]
     output: review
     review: true

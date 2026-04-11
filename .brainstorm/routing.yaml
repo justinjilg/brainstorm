@@ -8,59 +8,119 @@ rules:
   - match: "code-review"
     agent: code-reviewer
     model: capable
-    # Route code review tasks to the dedicated code-reviewer for quality feedback.
+    # Route review tasks to dedicated reviewer for quality assurance.
 
   - match: "architecture"
     agent: architect
     model: quality
-    # High-level design and architectural tasks require quality-tier reasoning.
+    # Design tasks need quality-tier reasoning due to their high impact.
 
   - match: "refactoring"
     agent: architect
     model: quality
-    # Refactoring tasks benefit from architectural insights to improve design coherence.
+    # Refactoring needs architectural awareness to maintain system integrity.
 
   - match: "api"
     agent: api-expert
     model: capable
-    # Tasks related to API routes should be handled by the API expert due to the presence of 3 API routes.
+    # Project has 5 API routes; use specialist for API-related tasks.
 
   - match: "endpoint"
     agent: api-expert
     model: capable
-    # Endpoint creation or modifications are best managed by the API expert.
+    # Endpoint creation/modification falls under API expertise.
 
   - match: "test"
     agent: qa
     model: capable
-    # Testing tasks, particularly those using Vitest, should be directed to QA.
+    # Test writing and debugging requires QA specialist knowledge (Vitest detected).
 
   - match: "security"
     agent: security-reviewer
     model: quality
-    # Security-related tasks require a thorough security review to ensure safety.
+    # Security tasks need thorough analysis from a quality-tier model due to high project complexity.
 
   - match: "audit"
     agent: security-reviewer
     model: quality
-    # Audit tasks are linked to security and need in-depth analysis.
+    # Code audits are security-adjacent and require a quality-tier model.
 
-  - match: "deploy|ci"
+  - match: "deploy"
     agent: devops
     model: capable
-    # Deployment and CI/CD pipeline tasks should be handled by DevOps (GitHub Actions integration detected).
+    # Deployment and infrastructure tasks require DevOps expertise (GitHub Actions detected).
 
-  - match: "packages/tools/src/builtin"
+  - match: "ci"
+    agent: devops
+    model: capable
+    # CI/CD pipeline tasks are best handled by the DevOps expert.
+
+  - match: "code-generation:packages/tools/src/builtin"
     agent: packages-tools-src-builtin-expert
     model: capable
-    # Module 'packages/tools/src/builtin' (45 files) requires specialized expertise.
+    # Route code generation tasks specific to the 'builtin' tools module to its expert.
 
-  - match: "apps/web/src/components/company"
+  - match: "bug-fix:packages/tools/src/builtin"
+    agent: packages-tools-src-builtin-expert
+    model: capable
+    # Route bug fixes specific to the 'builtin' tools module to its expert.
+
+  - match: "feature:packages/tools/src/builtin"
+    agent: packages-tools-src-builtin-expert
+    model: capable
+    # Route feature implementations specific to the 'builtin' tools module to its expert.
+
+  - match: "code-generation:apps/web/src/components/company"
     agent: apps-web-src-components-company-expert
     model: capable
-    # Module 'apps/web/src/components/company' (22 files) benefits from domain-specific expertise.
+    # Route code generation tasks specific to company web components to its expert.
 
-  - match: "packages/core/src/middleware/builtin"
+  - match: "bug-fix:apps/web/src/components/company"
+    agent: apps-web-src-components-company-expert
+    model: capable
+    # Route bug fixes specific to company web components to its expert.
+
+  - match: "feature:apps/web/src/components/company"
+    agent: apps-web-src-components-company-expert
+    model: capable
+    # Route feature implementations specific to company web components to its expert.
+
+  - match: "code-generation:packages/core/src/middleware/builtin"
     agent: packages-core-src-middleware-builtin-expert
     model: capable
-    # Module 'packages/core/src/middleware/builtin' (22 files) necessitates focused attention from a specialized expert.
+    # Route code generation tasks specific to core middleware to its expert.
+
+  - match: "bug-fix:packages/core/src/middleware/builtin"
+    agent: packages-core-src-middleware-builtin-expert
+    model: capable
+    # Route bug fixes specific to core middleware to its expert.
+
+  - match: "feature:packages/core/src/middleware/builtin"
+    agent: packages-core-src-middleware-builtin-expert
+    model: capable
+    # Route feature implementations specific to core middleware to its expert.
+
+  - match: "code-generation"
+    agent: api-expert
+    model: capable
+    # General code generation tasks can be handled by a capable coder when no specific module expert is matched.
+
+  - match: "feature-implementation"
+    agent: api-expert
+    model: capable
+    # General feature implementation tasks can be handled by a capable coder when no specific module expert is matched.
+
+  - match: "debugging"
+    agent: api-expert
+    model: capable
+    # General debugging tasks can be handled by a capable coder when no specific module expert is matched.
+
+  - match: "bug-fix"
+    agent: api-expert
+    model: capable
+    # General bug fixes can be handled by a capable coder when no specific module expert is matched.
+
+  - match: "simple-fix"
+    agent: api-expert
+    model: cheap
+    # For trivial code fixes, use a cheap model to conserve resources.

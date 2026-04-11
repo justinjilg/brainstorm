@@ -5,24 +5,24 @@ maxIterations: 2
 steps:
   - id: implement
     role: coder
-    description: "Implement all changes in TypeScript with Turborepo-aware package modularization and ensure comprehensive test additions per domain and package"
+    description: "Implement the necessary changes in TypeScript, ensuring adherence to project conventions and Turborepo's workspace structure, and considering potential deployment impacts while implementing robust error handling."
     output: code
 
   - id: verify
     role: qa
-    description: "Run turborepo build and Vitest tests across the monorepo including smoke and integration layers to guarantee deployment readiness"
+    description: "Execute a full verification sequence: run `npx turbo build` across all affected packages, perform type-checking, run linting, execute all Vitest unit/integration tests, run Playwright E2E tests for the desktop app, and confirm the `ci-wiring-check.mjs` passes to ensure deployment readiness."
     input: [code]
     output: test-result
 
   - id: deploy-prep
     role: devops
-    description: "Review deployment-related configuration files and scripts, validate CI/CD pipeline configurations and prepare a deployment plan ensuring safe rollbacks based on test outcomes"
+    description: "Review deployment configuration, dependencies, and environmental considerations for all affected Turborepo packages. Prepare detailed deployment steps, including any necessary database migrations or infrastructure changes, anticipating CI's deployment stage."
     input: [code, test-result]
     output: deploy-plan
 
   - id: review
     role: code-reviewer
-    description: "Conduct a final review focused on deployment safety, error gracefully handling strategies, and adherence to conventional commits and project CI gating requirements"
+    description: "Conduct a final pre-deployment review, verifying all CI stages (build, typecheck, lint, test) have passed, confirming error handling mechanisms (CLI console.error/process.exit, desktop logToFile, agent self-correction) are robust, and ensuring the deployment plan aligns with production requirements."
     input: [code, test-result, deploy-plan]
     output: review
     review: true
