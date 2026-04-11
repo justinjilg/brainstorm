@@ -10,10 +10,13 @@ export {
   DailyLogRepository,
   ChangeSetLogRepository,
   ConversationRepository,
+  SyncQueueRepository,
   type SessionPattern,
   type AggregatedRoutingStats,
   type CompactionCommit,
   type DailyLogEntry,
   type ChangeSetLogEntry,
   type Conversation,
+  type SyncQueueRow,
+  type EnqueueOptions,
 } from "./repositories.js";

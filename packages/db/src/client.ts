@@ -649,4 +649,45 @@ const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_orch_tasks_worker ON orchestration_tasks(assigned_worker);
     `,
   },
+  {
+    name: "030_sync_queue",
+    sql: `
+      CREATE TABLE IF NOT EXISTS sync_queue (
+        id TEXT PRIMARY KEY,
+        -- Kind categorizes the resource being synced. Used for metrics
+        -- and for selective drain (e.g., "memory entries only").
+        kind TEXT NOT NULL,
+        -- HTTP method + path this item will POST/PUT/DELETE against on BR.
+        -- Full path including /v1/ prefix, so the sync worker can call
+        -- arbitrary endpoints without wrapper code knowing about each one.
+        method TEXT NOT NULL,
+        path TEXT NOT NULL,
+        -- JSON-encoded request body (null for GET/DELETE).
+        body TEXT,
+        -- JSON-encoded idempotency metadata — prevents duplicate pushes
+        -- when the worker retries after a network blip that actually
+        -- succeeded upstream. Includes a client-generated idempotency key.
+        idempotency_key TEXT NOT NULL,
+        -- State machine: pending → in_flight → completed | failed
+        -- Only pending rows are eligible for the next drain cycle.
+        status TEXT NOT NULL DEFAULT 'pending',
+        -- Retry tracking with exponential backoff. next_attempt_at is
+        -- updated on failure; the worker skips rows where that's in the future.
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        max_attempts INTEGER NOT NULL DEFAULT 10,
+        next_attempt_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        last_error TEXT,
+        -- Timestamps for observability
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        completed_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_sync_queue_status_next
+        ON sync_queue(status, next_attempt_at);
+      CREATE INDEX IF NOT EXISTS idx_sync_queue_kind
+        ON sync_queue(kind);
+      CREATE INDEX IF NOT EXISTS idx_sync_queue_idempotency
+        ON sync_queue(idempotency_key);
+    `,
+  },
 ];

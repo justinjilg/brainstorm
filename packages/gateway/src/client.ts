@@ -231,6 +231,34 @@ export class BrainstormGateway {
       "X-CSRF-Token": this.csrfToken,
     });
   }
+
+  /**
+   * Raw request exposed for the sync worker. The worker replays queued
+   * requests verbatim (method, path, body) and needs to send an
+   * idempotency key header so BR can deduplicate retries server-side.
+   *
+   * Throws on non-2xx so the worker can catch and mark the queue row
+   * failed. Returns the parsed response body on success.
+   */
+  async requestRaw(
+    method: string,
+    path: string,
+    body: unknown,
+    idempotencyKey: string,
+  ): Promise<unknown> {
+    return gatewayRequest(
+      this.baseUrl,
+      this.apiKey,
+      method,
+      path,
+      body,
+      "Gateway",
+      {
+        "X-CSRF-Token": this.csrfToken,
+        "X-Idempotency-Key": idempotencyKey,
+      },
+    );
+  }
 }
 
 /**
