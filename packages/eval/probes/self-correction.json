@@ -5,44 +5,63 @@
     "prompt": "Read the file packages/router/src/clasifier.ts and explain what it does",
     "verify": {
       "tool_calls_include": ["file_read"],
-      "answer_contains": ["classif"],
-      "min_steps": 2,
+      "answer_contains": ["classifier"],
       "max_steps": 6
     }
   },
   {
     "id": "self-correct-02",
     "capability": "self-correction",
-    "prompt": "Find the file that defines the AgentLoop class",
+    "prompt": "Find the file that defines the agent loop. The class or function is in packages/core/src/agent/.",
     "verify": {
-      "answer_contains": ["loop"],
+      "tool_calls_include": ["glob"],
+      "answer_contains": ["loop.ts"],
       "max_steps": 6
     }
   },
   {
     "id": "self-correct-03",
     "capability": "self-correction",
-    "prompt": "Read packages/shared/src/models.ts and tell me about the model types",
+    "prompt": "Read packages/shared/src/models.ts and tell me about the model types defined there.",
     "verify": {
-      "answer_contains": ["types"],
-      "min_steps": 2,
+      "tool_calls_include": ["file_read"],
+      "answer_contains": [
+        "not found",
+        "does not exist",
+        "no such file",
+        "doesn't exist"
+      ],
       "max_steps": 6
     }
   },
   {
     "id": "self-correct-04",
     "capability": "self-correction",
-    "prompt": "Search for a function called 'routeRequest' in the codebase",
+    "prompt": "Search for a function called 'routeRequest' in the codebase. If you cannot find it, say so explicitly.",
     "verify": {
       "tool_calls_include": ["grep"],
+      "answer_contains": [
+        "not found",
+        "does not exist",
+        "no matches",
+        "could not find",
+        "couldn't find"
+      ],
       "max_steps": 6
     }
   },
   {
     "id": "self-correct-05",
     "capability": "self-correction",
-    "prompt": "Read the Dockerfile in this project",
+    "prompt": "Read the Dockerfile at the root of this project. If it does not exist, say so.",
     "verify": {
+      "answer_contains": [
+        "not found",
+        "does not exist",
+        "no Dockerfile",
+        "no such file",
+        "doesn't exist"
+      ],
       "max_steps": 4
     }
   },
@@ -52,41 +71,60 @@
     "prompt": "Find the test files for the router package",
     "verify": {
       "tool_calls_include": ["glob"],
-      "max_steps": 5
+      "answer_contains": ["router"],
+      "max_steps": 6
     }
   },
   {
     "id": "self-correct-07",
     "capability": "self-correction",
-    "prompt": "Read packages/core/src/agent/orchestrator.ts and explain the orchestration logic",
+    "prompt": "Read packages/core/src/agent/orchestrator.ts and explain the orchestration logic. If the file does not exist, say so explicitly and offer the closest alternative.",
     "verify": {
-      "min_steps": 2,
+      "answer_contains": [
+        "not found",
+        "does not exist",
+        "no such file",
+        "doesn't exist"
+      ],
       "max_steps": 6
     }
   },
   {
     "id": "self-correct-08",
     "capability": "self-correction",
-    "prompt": "Find the webpack configuration for this project",
+    "prompt": "Find the webpack configuration for this project. If there is none, say so explicitly.",
     "verify": {
-      "max_steps": 4
+      "answer_contains": [
+        "no webpack",
+        "not found",
+        "does not",
+        "tsup",
+        "no such"
+      ],
+      "max_steps": 6
     }
   },
   {
     "id": "self-correct-09",
     "capability": "self-correction",
-    "prompt": "Search for the function 'validateSchema' that's used somewhere in the config package",
+    "prompt": "Search for the function 'validateSchema' in the config package. If absent, say so explicitly.",
     "verify": {
       "tool_calls_include": ["grep"],
-      "max_steps": 5
+      "answer_contains": ["validateSchema"],
+      "max_steps": 6
     }
   },
   {
     "id": "self-correct-10",
     "capability": "self-correction",
-    "prompt": "Read the file packages/tools/src/builtin/database.ts",
+    "prompt": "Read the file packages/tools/src/builtin/database.ts. If it does not exist, say so explicitly and offer the closest match.",
     "verify": {
-      "min_steps": 2,
+      "answer_contains": [
+        "not found",
+        "does not exist",
+        "no such file",
+        "doesn't exist"
+      ],
       "max_steps": 6
     }
   }

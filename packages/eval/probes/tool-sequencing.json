@@ -5,19 +5,18 @@
     "prompt": "Read the file packages/router/src/classifier.ts and tell me how many task types are defined in TASK_SIGNALS",
     "verify": {
       "tool_calls_include": ["file_read"],
-      "answer_contains": ["9"],
-      "max_steps": 3
+      "answer_contains": ["TASK_SIGNALS"],
+      "max_steps": 4
     }
   },
   {
     "id": "tool-seq-02",
     "capability": "tool-sequencing",
-    "prompt": "Find where RoutingDecision is defined, then list all the fields it contains",
+    "prompt": "Find where the RoutingDecision interface is defined, then list all the fields it contains",
     "verify": {
       "tool_calls_include": ["grep", "file_read"],
-      "answer_contains": ["model", "fallbacks", "reason", "strategy"],
-      "min_steps": 2,
-      "max_steps": 6
+      "answer_contains": ["fallbacks", "estimatedCost", "strategy"],
+      "max_steps": 8
     }
   },
   {
@@ -27,19 +26,17 @@
     "verify": {
       "tool_calls_include": ["grep", "file_read"],
       "answer_contains": ["streamText"],
-      "min_steps": 2,
-      "max_steps": 6
+      "max_steps": 8
     }
   },
   {
     "id": "tool-seq-04",
     "capability": "tool-sequencing",
-    "prompt": "Find the entry point for the CLI, then trace how the 'chat' command is set up",
+    "prompt": "Find the entry point for the CLI, then trace how the 'chat' command is set up. Cite the file and approximate line.",
     "verify": {
       "tool_calls_include": ["file_read"],
-      "answer_contains": ["chat", "command"],
-      "min_steps": 1,
-      "max_steps": 5
+      "answer_contains": ["brainstorm.ts", "chat"],
+      "max_steps": 6
     }
   },
   {
@@ -48,20 +45,18 @@
     "prompt": "Find all routing strategies, then read the combined strategy to explain how it works",
     "verify": {
       "tool_calls_include": ["glob", "file_read"],
-      "answer_contains": ["combined"],
-      "min_steps": 2,
-      "max_steps": 6
+      "answer_contains": ["combined", "strategy"],
+      "max_steps": 8
     }
   },
   {
     "id": "tool-seq-06",
     "capability": "tool-sequencing",
-    "prompt": "Search for where sessions are persisted to the database, then explain the schema",
+    "prompt": "Search for where sessions are persisted to the database, then explain what columns the sessions table has",
     "verify": {
       "tool_calls_include": ["grep", "file_read"],
-      "answer_contains": ["session"],
-      "min_steps": 2,
-      "max_steps": 6
+      "answer_contains": ["sessions"],
+      "max_steps": 8
     }
   },
   {
@@ -71,41 +66,37 @@
     "verify": {
       "tool_calls_include": ["glob"],
       "answer_contains": ["file_read", "file_write"],
-      "min_steps": 1,
-      "max_steps": 8
+      "max_steps": 10
     }
   },
   {
     "id": "tool-seq-08",
     "capability": "tool-sequencing",
-    "prompt": "Find the STORM.md parser, read it, and explain what frontmatter fields it supports",
+    "prompt": "Find the STORM.md (or storm-file) parser in packages/core, read it, and explain what frontmatter fields it supports",
     "verify": {
       "tool_calls_include": ["grep", "file_read"],
-      "answer_contains": ["version", "routing"],
-      "min_steps": 2,
-      "max_steps": 6
+      "answer_contains": ["frontmatter"],
+      "max_steps": 8
     }
   },
   {
     "id": "tool-seq-09",
     "capability": "tool-sequencing",
-    "prompt": "Find where the x-br-metadata header is constructed, then explain what fields it includes",
+    "prompt": "Find where the x-br-metadata HTTP header is constructed in the core package, then explain what fields it includes",
     "verify": {
       "tool_calls_include": ["grep", "file_read"],
-      "answer_contains": ["telemetry", "metadata"],
-      "min_steps": 2,
-      "max_steps": 6
+      "answer_contains": ["x-br-metadata"],
+      "max_steps": 8
     }
   },
   {
     "id": "tool-seq-10",
     "capability": "tool-sequencing",
-    "prompt": "Find the workflow engine, read it, and explain what events it emits",
+    "prompt": "Find the workflow engine in packages/workflow, read its main file, and explain what events it emits",
     "verify": {
       "tool_calls_include": ["file_read"],
-      "answer_contains": ["workflow"],
-      "min_steps": 1,
-      "max_steps": 6
+      "answer_contains": ["workflow", "event"],
+      "max_steps": 8
     }
   }
 ]

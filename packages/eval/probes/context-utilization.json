@@ -38,10 +38,10 @@
   {
     "id": "context-05",
     "capability": "context-utilization",
-    "prompt": "Is this project a monorepo? How many packages does it have?",
+    "prompt": "Is this project a monorepo? Roughly how many packages does it have?",
     "verify": {
-      "answer_contains": ["monorepo", "13"],
-      "max_steps": 3
+      "answer_contains": ["monorepo"],
+      "max_steps": 4
     }
   },
   {

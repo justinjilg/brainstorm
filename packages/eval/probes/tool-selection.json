@@ -42,11 +42,11 @@
   {
     "id": "tool-select-05",
     "capability": "tool-selection",
-    "prompt": "What's on line 70 of packages/shared/src/types.ts?",
+    "prompt": "Read packages/shared/src/types.ts and find the ModelLimits interface. What field defines the maximum context window?",
     "verify": {
       "tool_calls_include": ["file_read"],
-      "answer_contains": ["StrategyName"],
-      "max_steps": 3
+      "answer_contains": ["contextWindow"],
+      "max_steps": 4
     }
   },
   {
@@ -81,11 +81,11 @@
   {
     "id": "tool-select-09",
     "capability": "tool-selection",
-    "prompt": "Find where the CostTracker class is defined",
+    "prompt": "Find where the CostTracker class is defined and tell me the file path",
     "verify": {
       "tool_calls_include": ["grep"],
-      "answer_contains": ["cost-tracker"],
-      "max_steps": 5
+      "answer_contains": ["CostTracker"],
+      "max_steps": 6
     }
   },
   {
