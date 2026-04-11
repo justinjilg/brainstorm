@@ -32,6 +32,7 @@ export interface OnboardOptions {
 
 export type OnboardPhase =
   | "static-analysis"
+  | "code-graph-build"
   | "deep-exploration"
   | "team-assembly"
   | "routing-rules"
@@ -41,6 +42,7 @@ export type OnboardPhase =
 
 export const ALL_PHASES: OnboardPhase[] = [
   "static-analysis",
+  "code-graph-build",
   "deep-exploration",
   "team-assembly",
   "routing-rules",
@@ -51,6 +53,7 @@ export const ALL_PHASES: OnboardPhase[] = [
 
 export const PHASE_LABELS: Record<OnboardPhase, string> = {
   "static-analysis": "Static Analysis",
+  "code-graph-build": "Code Graph",
   "deep-exploration": "Deep Exploration",
   "team-assembly": "Team Assembly",
   "routing-rules": "Routing Rules",

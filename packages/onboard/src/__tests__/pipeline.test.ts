@@ -173,14 +173,14 @@ describe("Pipeline Dispatcher", () => {
     const events = await collectEvents(generator);
 
     const completedEvents = events.filter((e) => e.type === "phase-completed");
-    // static, 5 LLM phases, verification = 7 total
-    expect(completedEvents.length).toBe(7);
+    // static, code-graph-build, 5 LLM phases, verification = 8 total
+    expect(completedEvents.length).toBe(8);
 
     const finalEvent = events.find(
       (e) => e.type === "onboard-completed",
     ) as any;
     expect(finalEvent).toBeDefined();
-    expect(finalEvent.result.phasesRun.length).toBe(7);
+    expect(finalEvent.result.phasesRun.length).toBe(8);
   });
 
   it("skips LLM phases if no dispatcher is provided", async () => {

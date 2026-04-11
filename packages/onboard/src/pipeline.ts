@@ -27,6 +27,7 @@ import {
   type BudgetTracker,
 } from "./budget.js";
 import { runStaticAnalysis } from "./phases/static-analysis.js";
+import { runCodeGraphBuild } from "./phases/code-graph-build.js";
 import { runVerification } from "./phases/verification.js";
 import { runDeepExploration } from "./phases/deep-exploration.js";
 import { runTeamAssembly } from "./phases/team-assembly.js";
@@ -122,6 +123,48 @@ export async function* runOnboardPipeline(
 
   if (!budget) {
     budget = createBudgetTracker(options.budget ?? 5.0);
+  }
+
+  // ── Phase 0.5: Code Graph Build (deterministic, zero cost) ─────────
+  // Builds tree-sitter knowledge graph at ~/.brainstorm/projects/<hash>/code-graph.db
+  // so the agent has structural query tools (code_callers, code_callees,
+  // code_definition, code_impact) available the moment chat starts.
+  if (phases.includes("code-graph-build")) {
+    const phaseStart = Date.now();
+    yield {
+      type: "phase-started",
+      phase: "code-graph-build",
+      description: "Building tree-sitter knowledge graph",
+    };
+
+    try {
+      const result = runCodeGraphBuild(options.projectPath);
+      // Stash on context so downstream phases / verification can reference it.
+      (context as any)._codeGraph = result;
+      phasesRun.push("code-graph-build");
+      const summary = [
+        `${result.stats.files} files`,
+        `${result.stats.functions} functions`,
+        `${result.stats.classes} classes`,
+        `${result.stats.callEdges.toLocaleString()} call edges`,
+      ].join(", ");
+      yield {
+        type: "phase-completed",
+        phase: "code-graph-build",
+        cost: 0,
+        durationMs: Date.now() - phaseStart,
+        summary,
+      };
+    } catch (error) {
+      // Code graph is best-effort — failure shouldn't block the rest of
+      // onboarding. Log and continue. The agent's code-graph tools will
+      // gracefully report "not indexed" if no DB is found.
+      yield {
+        type: "phase-failed",
+        phase: "code-graph-build",
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   // Emit pipeline start with estimated budget
