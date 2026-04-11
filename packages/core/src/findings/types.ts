@@ -120,9 +120,14 @@ function isValidFinding(obj: unknown): obj is CodebaseFinding {
   if (typeof f.title !== "string" || !f.title) return false;
   if (typeof f.description !== "string") return false;
   if (typeof f.file !== "string" || !f.file) return false;
-  if (typeof f.discoveredAt !== "number") return false;
   if (!isValidSeverity(f.severity)) return false;
   if (typeof f.category !== "string") return false; // allow unknown category
+  // discoveredAt is populated by the store at save-time if the agent
+  // didn't include it — so it's optional on the parse path. Coerce to
+  // "now" here so downstream consumers can always rely on the field.
+  if (typeof f.discoveredAt !== "number") {
+    (obj as CodebaseFinding).discoveredAt = Math.floor(Date.now() / 1000);
+  }
   return true;
 }
 

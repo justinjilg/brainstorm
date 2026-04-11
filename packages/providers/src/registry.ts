@@ -81,7 +81,10 @@ export async function createProviderRegistry(
   if (openaiKey) {
     providers.openai = createOpenAI({ apiKey: openaiKey });
   }
-  const googleKey = getKey("GOOGLE_GENERATIVE_AI_API_KEY");
+  // Accept either GOOGLE_GENERATIVE_AI_API_KEY (AI SDK convention) or
+  // GEMINI_API_KEY (Google's own convention, commonly already set in shells).
+  const googleKey =
+    getKey("GOOGLE_GENERATIVE_AI_API_KEY") ?? getKey("GEMINI_API_KEY");
   if (googleKey) {
     providers.google = createGoogleGenerativeAI({ apiKey: googleKey });
   }

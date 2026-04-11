@@ -11,7 +11,7 @@ const OP_ITEM_NAMES: Record<string, string> = {
   BRAINSTORM_API_KEY: "BrainstormRouter API Key",
   ANTHROPIC_API_KEY: "Anthropic API Key",
   OPENAI_API_KEY: "OpenAI API Key",
-  GOOGLE_GENERATIVE_AI_API_KEY: "Google AI API Key (server)",
+  GOOGLE_GENERATIVE_AI_API_KEY: "Gemini API Key",
   DEEPSEEK_API_KEY: "DeepSeek API Key",
   MOONSHOT_API_KEY: "Moonshot API Key",
   BRAINSTORM_ADMIN_KEY: "BrainstormRouter Admin Key",

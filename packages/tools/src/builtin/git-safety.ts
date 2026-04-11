@@ -1,13 +1,18 @@
 /**
- * Git safety layer — guards against destructive git operations.
+ * Git safety layer — guards against destructive git operations by
+ * pattern-matching the raw shell command string BEFORE it runs.
  *
- * Rules:
- * 1. Never force-push to main/master
- * 2. Never skip hooks (--no-verify, --no-gpg-sign)
- * 3. Prefer new commits over --amend
- * 4. Never use `git add -A` or `git add .` — stage specific files
- * 5. Scan staged files for credentials before commit
- * 6. Require confirmation for destructive ops (reset --hard, checkout --, clean -f)
+ * Rules enforced here:
+ * 1. Never force-push to protected branches (main/master/production/release)
+ * 2. Block destructive ops (reset --hard, checkout --, restore, clean -f)
+ * 3. Block hook-skipping flags (--no-verify, --no-gpg-sign)
+ * 4. Warn against --amend of already-pushed commits (prefer new commits)
+ * 5. Warn against `git add -A` / `git add .` — stage specific files instead
+ *
+ * Credential scanning on staged files is intentionally NOT handled here —
+ * that's a content-inspection concern owned by the secret-scanner in
+ * packages/core and the auto-verify hooks. This module is purely a
+ * command-pattern firewall that runs before the shell tool executes.
  */
 
 export interface GitSafetyViolation {
