@@ -1,0 +1,147 @@
+diff --git a/packages/gateway/package.json b/packages/gateway/package.json
+index 0823578..ef9c741 100644
+--- a/packages/gateway/package.json
++++ b/packages/gateway/package.json
+@@ -19,7 +19,8 @@
+   },
+   "devDependencies": {
+     "tsup": "^8",
+-    "typescript": "^5.7"
++    "typescript": "^5.7",
++    "vitest": "^2.0.0"
+   },
+   "description": "BrainstormRouter API client and intelligence API",
+   "license": "Apache-2.0",
+diff --git a/packages/gateway/src/__tests__/headers.test.ts b/packages/gateway/src/__tests__/headers.test.ts
+index 6cb2551..e619cf1 100644
+--- a/packages/gateway/src/__tests__/headers.test.ts
++++ b/packages/gateway/src/__tests__/headers.test.ts
+@@ -1,25 +1,108 @@
+-/**
+- * Gateway smoke test — first test for the gateway package.
+- */
+-
+ import { describe, it, expect } from "vitest";
+-import { parseGatewayHeaders, formatGatewayFeedback } from "../headers.js";
++import { parseGatewayHeaders } from "../headers";
++
++describe("parseGatewayHeaders", () => {
++  it("should parse headers from a Headers object correctly", () => {
++    const headers = new Headers();
++    headers.set("x-br-guardian-status", "success");
++    headers.set("x-br-estimated-cost", "0.001");
++    headers.set("x-br-actual-cost", "0.0005");
++    headers.set("x-br-efficiency", "0.9");
++    headers.set("x-br-guardian-overhead-ms", "10");
++    headers.set("x-br-cache", "hit");
++    headers.set("x-br-budget-remaining", "99.5");
++    headers.set("x-br-routed-model", "gpt-4");
++    headers.set("x-br-selection-method", "auto");
++    headers.set("x-br-complexity-score", "5.5");
++    headers.set("x-request-id", "test-request-id-1");
++
++    const feedback = parseGatewayHeaders(headers);
++
++    expect(feedback).toEqual({
++      guardianStatus: "success",
++      estimatedCost: 0.001,
++      actualCost: 0.0005,
++      efficiency: 0.9,
++      overheadMs: 10,
++      cacheHit: "hit",
++      budgetRemaining: 99.5,
++      selectedModel: "gpt-4",
++      selectionMethod: "auto",
++      complexityScore: 5.5,
++      requestId: "test-request-id-1",
++    });
++  });
++
++  it("should parse headers from a plain object correctly", () => {
++    const headers = {
++      "x-br-guardian-status": "failure",
++      "x-br-estimated-cost": "0.002",
++      "x-br-actual-cost": "0.001",
++      "x-br-efficiency": "0.8",
++      "x-br-guardian-overhead-ms": "20",
++      "x-br-cache": "miss",
++      "x-budget-remaining": "100.0", // Test x-budget-remaining
++      "x-br-routed-model": "claude-3",
++      "x-br-selection-method": "manual",
++      "x-br-complexity-score": "6.0",
++      "x-request-id": "test-request-id-2",
++    };
++
++    const feedback = parseGatewayHeaders(headers);
++
++    expect(feedback).toEqual({
++      guardianStatus: "failure",
++      estimatedCost: 0.002,
++      actualCost: 0.001,
++      efficiency: 0.8,
++      overheadMs: 20,
++      cacheHit: "miss",
++      budgetRemaining: 100.0,
++      selectedModel: "claude-3",
++      selectionMethod: "manual",
++      complexityScore: 6.0,
++      requestId: "test-request-id-2",
++    });
++  });
++
++  it("should handle missing headers gracefully", () => {
++    const headers = new Headers();
++    headers.set("x-request-id", "test-request-id-3"); // Only set request ID
++
++    const feedback = parseGatewayHeaders(headers);
+ 
+-describe("Gateway Headers", () => {
+-  it("parses empty headers without crashing", () => {
+-    const result = parseGatewayHeaders({});
+-    expect(result).toBeDefined();
++    expect(feedback).toEqual({
++      requestId: "test-request-id-3",
++    });
+   });
+ 
+-  it("formats feedback payload", () => {
+-    const feedback = formatGatewayFeedback({
+-      guardianStatus: "passed",
+-      estimatedCost: 0.05,
+-      actualCost: 0.04,
+-      selectedModel: "anthropic/claude-sonnet-4-6",
+-      requestId: "req-123",
++  it("should handle invalid numeric headers by returning undefined", () => {
++    const headers = {
++      "x-br-estimated-cost": "invalid-number",
++      "x-br-actual-cost": "0.abc",
++      "x-br-efficiency": "xyz",
++      "x-br-guardian-overhead-ms": "not-a-number",
++      "x-br-budget-remaining": "bad-budget",
++      "x-br-complexity-score": "bad-score",
++      "x-request-id": "test-request-id-4",
++    };
++
++    const feedback = parseGatewayHeaders(headers);
++
++    expect(feedback).toEqual({
++      requestId: "test-request-id-4",
+     });
+-    expect(feedback).toBeDefined();
+-    expect(typeof feedback).toBe("string");
+   });
+-});
++
++  it("should prioritize x-br-budget-remaining over x-budget-remaining if both exist", () => {
++    const headers = {
++      "x-budget-remaining": "50.0",
++      "x-br-budget-remaining": "25.0",
++      "x-request-id": "test-request-id-5",
++    };
++
++    const feedback = parseGatewayHeaders(headers);
++
++    expect(feedback.budgetRemaining).toEqual(25.0);
++  });
++});
+\ No newline at end of file
