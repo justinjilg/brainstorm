@@ -172,12 +172,16 @@ export async function createProviderRegistry(
     }
   }
 
-  // Overlay eval-derived capability scores (from `brainstorm eval`)
+  // Overlay eval-derived capability scores (from `brainstorm eval`) and mark
+  // them as measured. Models without eval data keep their static assumed
+  // scores but are flagged as unmeasured — the capability strategy prefers
+  // measured scores over assumed ones to avoid rewarding guesses.
   const evalScores = loadEvalCapabilityScores();
   for (const [modelId, entry] of Object.entries(evalScores)) {
     const model = allModels.find((m) => m.id === modelId);
     if (model) {
       model.capabilities.capabilityScores = entry.scores;
+      (model.capabilities as any).scoresAreMeasured = true;
     }
   }
 
