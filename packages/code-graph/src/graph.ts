@@ -259,7 +259,26 @@ export class CodeGraph {
       if (current.depth < maxDepth) {
         const callers = this.findCallers(current.name, { limit: 20 });
         for (const c of callers) {
-          if (c.caller && !visited.has(c.caller)) {
+          // Skip self-calls (recursive functions) to avoid infinite loops.
+          // For null callers (call site at module top-level or inside a node
+          // type the parser doesn't recognize as a function), record the
+          // file as a leaf impact site so we don't lose the signal entirely.
+          if (!c.caller) {
+            const fileLeafKey = `${c.file}#module`;
+            if (!visited.has(fileLeafKey)) {
+              visited.add(fileLeafKey);
+              if (current.depth + 1 <= maxDepth) {
+                result.push({
+                  name: "(module-level call site)",
+                  depth: current.depth + 1,
+                  file: c.file,
+                });
+              }
+            }
+            continue;
+          }
+          if (c.caller === current.name) continue; // self-recursion
+          if (!visited.has(c.caller)) {
             queue.push({ name: c.caller, depth: current.depth + 1 });
           }
         }
