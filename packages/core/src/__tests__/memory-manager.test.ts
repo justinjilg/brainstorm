@@ -367,4 +367,222 @@ describe("MemoryManager", () => {
       expect(entry).toBeUndefined();
     });
   });
+
+  // ── pullFromGateway (Week 1 Phase 3) ─────────────────────────────
+  //
+  // These tests exercise the BR pull path using a stub gateway. The
+  // merge semantics are: additive last-writer-wins by name, never
+  // delete local entries, skip quarantine tier.
+  describe("pullFromGateway", () => {
+    // Minimal gateway stub exposing only what pullFromGateway calls.
+    function stubGateway(entries: Array<Record<string, unknown>>): any {
+      return {
+        storeMemory: async () => {},
+        listMemory: async () => entries,
+      };
+    }
+
+    it("is a no-op when gateway is null", async () => {
+      const { manager: mgr, projectPath: pp } = createTestManager();
+      const result = await mgr.pullFromGateway();
+      expect(result).toEqual({ pulled: 0, created: 0, updated: 0, skipped: 0 });
+      cleanup(pp);
+    });
+
+    it("creates new entries from remote that don't exist locally", async () => {
+      const projectPath = join(
+        tmpdir(),
+        `brainstorm-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      );
+      const gateway = stubGateway([
+        {
+          id: "remote-1",
+          block: "project",
+          content: "[remote-convention] use semicolons",
+          created_at: new Date().toISOString(),
+        },
+        {
+          id: "remote-2",
+          block: "reference",
+          content: "[build-tool] tsup for all packages",
+          created_at: new Date().toISOString(),
+        },
+      ]);
+      const mgr = new MemoryManager(projectPath, gateway);
+
+      const result = await mgr.pullFromGateway();
+      expect(result.pulled).toBe(2);
+      expect(result.created).toBe(2);
+      expect(result.updated).toBe(0);
+
+      const convention = mgr.get("remote-convention");
+      expect(convention).toBeDefined();
+      expect(convention?.content).toBe("use semicolons");
+
+      const buildTool = mgr.get("build-tool");
+      expect(buildTool).toBeDefined();
+      cleanup(projectPath);
+    });
+
+    it("skips remote entries without a [name] prefix", async () => {
+      const projectPath = join(
+        tmpdir(),
+        `brainstorm-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      );
+      const gateway = stubGateway([
+        {
+          id: "r1",
+          block: "general",
+          content: "plain content with no name prefix",
+          created_at: new Date().toISOString(),
+        },
+      ]);
+      const mgr = new MemoryManager(projectPath, gateway);
+
+      const result = await mgr.pullFromGateway();
+      expect(result.pulled).toBe(1);
+      expect(result.created).toBe(0);
+      expect(result.skipped).toBe(1);
+      cleanup(projectPath);
+    });
+
+    it("updates local entry when remote is newer by timestamp", async () => {
+      const projectPath = join(
+        tmpdir(),
+        `brainstorm-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      );
+      const mgr = new MemoryManager(projectPath);
+
+      // Create a local entry with an old updatedAt — we'll mutate via save
+      mgr.save({
+        name: "shared-fact",
+        description: "old",
+        content: "old content",
+        type: "project",
+        source: "user_input",
+      });
+
+      // Simulate time passing
+      await new Promise((r) => setTimeout(r, 1100));
+
+      const gateway = stubGateway([
+        {
+          id: "r1",
+          block: "project",
+          content: "[shared-fact] new content from remote",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      ]);
+      // Replace gateway via a new manager that loads the existing store
+      const mgr2 = new MemoryManager(projectPath, gateway);
+
+      const result = await mgr2.pullFromGateway();
+      expect(result.updated).toBe(1);
+
+      const updated = mgr2.get("shared-fact");
+      expect(updated?.content).toBe("new content from remote");
+      cleanup(projectPath);
+    });
+
+    it("skips remote entries when local is newer", async () => {
+      const projectPath = join(
+        tmpdir(),
+        `brainstorm-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      );
+      // Remote entry has a timestamp from 1 hour ago
+      const oneHourAgo = new Date(Date.now() - 3600_000).toISOString();
+      const gateway = stubGateway([
+        {
+          id: "r1",
+          block: "project",
+          content: "[local-wins] stale remote content",
+          created_at: oneHourAgo,
+          updated_at: oneHourAgo,
+        },
+      ]);
+      const mgr = new MemoryManager(projectPath, gateway);
+
+      // Save a local entry NOW — newer than the remote
+      mgr.save({
+        name: "local-wins",
+        description: "local",
+        content: "fresh local content",
+        type: "project",
+        source: "user_input",
+      });
+
+      const result = await mgr.pullFromGateway();
+      // Remote was processed but skipped because local is newer
+      expect(result.updated).toBe(0);
+      expect(result.skipped).toBeGreaterThan(0);
+
+      const entry = mgr.get("local-wins");
+      expect(entry?.content).toBe("fresh local content");
+      cleanup(projectPath);
+    });
+
+    it("never deletes local-only entries during pull", async () => {
+      const projectPath = join(
+        tmpdir(),
+        `brainstorm-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      );
+      const gateway = stubGateway([]); // remote has nothing
+      const mgr = new MemoryManager(projectPath, gateway);
+
+      mgr.save({
+        name: "local-only",
+        description: "d",
+        content: "c",
+        type: "project",
+        source: "user_input",
+      });
+
+      await mgr.pullFromGateway();
+
+      // Local entry must still exist
+      expect(mgr.get("local-only")).toBeDefined();
+      cleanup(projectPath);
+    });
+
+    it("captures errors into getPullStatus without throwing", async () => {
+      const projectPath = join(
+        tmpdir(),
+        `brainstorm-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      );
+      const failingGateway: any = {
+        storeMemory: async () => {},
+        listMemory: async () => {
+          throw new Error("BR unavailable");
+        },
+      };
+      const mgr = new MemoryManager(projectPath, failingGateway);
+
+      const result = await mgr.pullFromGateway();
+      // Does not throw, returns zero counts
+      expect(result).toEqual({ pulled: 0, created: 0, updated: 0, skipped: 0 });
+
+      const status = mgr.getPullStatus();
+      expect(status.state).toBe("failed");
+      expect(status.lastError).toBe("BR unavailable");
+      cleanup(projectPath);
+    });
+
+    it("getPullStatus reflects successful pull", async () => {
+      const projectPath = join(
+        tmpdir(),
+        `brainstorm-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      );
+      const gateway = stubGateway([]);
+      const mgr = new MemoryManager(projectPath, gateway);
+
+      await mgr.pullFromGateway();
+
+      const status = mgr.getPullStatus();
+      expect(status.state).toBe("completed");
+      expect(status.lastError).toBeNull();
+      expect(status.lastPullAt).toBeGreaterThan(0);
+      cleanup(projectPath);
+    });
+  });
 });
