@@ -638,4 +638,15 @@ const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_sessions_conversation ON sessions(conversation_id);
     `,
   },
+  {
+    name: "029_orchestration_workers",
+    sql: `
+      ALTER TABLE orchestration_tasks ADD COLUMN assigned_worker TEXT;
+      ALTER TABLE orchestration_tasks ADD COLUMN worktree_path TEXT;
+      ALTER TABLE orchestration_tasks ADD COLUMN files_touched TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE orchestration_tasks ADD COLUMN error TEXT;
+      CREATE INDEX IF NOT EXISTS idx_orch_tasks_status ON orchestration_tasks(status);
+      CREATE INDEX IF NOT EXISTS idx_orch_tasks_worker ON orchestration_tasks(assigned_worker);
+    `,
+  },
 ];

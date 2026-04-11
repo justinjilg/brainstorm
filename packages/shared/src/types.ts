@@ -689,9 +689,11 @@ export type OrchestrationStatus =
   | "cancelled";
 export type OrchTaskStatus =
   | "pending"
+  | "in_progress"
   | "running"
   | "completed"
   | "failed"
+  | "blocked"
   | "skipped";
 
 export interface OrchestrationRun {
@@ -720,4 +722,14 @@ export interface OrchestrationTask {
   dependsOn: string[];
   startedAt?: number;
   completedAt?: number;
+  /** Worker process ID that has claimed this task. Set by claimNext().
+   * Added in migration 029 for the Planner/Worker/Judge MVP. */
+  assignedWorker?: string;
+  /** Path to the git worktree this task is operating in. */
+  worktreePath?: string;
+  /** Files this task has modified, captured at completion. Used by the
+   * Judge for conflict detection across parallel workers. */
+  filesTouched?: string[];
+  /** Error message if status === 'failed'. */
+  error?: string;
 }
