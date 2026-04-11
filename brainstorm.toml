@@ -1,0 +1,12 @@
+[budget]
+perSession = 3.0
+hardLimit = true
+
+[general]
+defaultStrategy = "capability"
+defaultPermissionMode = "auto"
+
+[daemon]
+tickIntervalMs = 30000
+maxTicksPerSession = 200
+sleepDefaultMs = 30000

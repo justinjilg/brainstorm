@@ -1,0 +1,233 @@
+{"level":40,"time":1775916687787,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"storm","errors":["deploy: Invalid enum value. Expected 'vercel' | 'do-app-platform' | 'docker' | 'aws' | 'none', received 'npm (packages), electron (desktop application)'"],"msg":"Invalid STORM.md frontmatter — ignoring structured data"}
+{"level":30,"time":1775916692932,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"router","entries":40,"totalSamples":171,"msg":"Loaded historical routing outcomes for Thompson sampling"}
+[godmode] Connected: BrainstormMsp (82 tools)
+
+  🧠 brainstorm v0.1.0
+  Strategy: capability | Models: 0 local, 11 cloud
+  Project: /Users/justin/Projects/brainstorm
+  Commands: /quit, /model <id>, /strategy <name>, /compact
+  DAEMON MODE: tick every 30s, max 200 ticks
+  Ctrl+C to interrupt, Ctrl+D to exit.
+
+{"level":30,"time":1775916693308,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"daemon","tickInterval":30000,"maxTicks":200,"msg":"Daemon starting"}
+  [wake: timer]
+{"level":30,"time":1775916713189,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"circuit-breaker","name":"llm:google/gemini-2.5-flash","msg":"Returning existing circuit breaker — options from first registration apply"}
+  [tick #1 | $0.0299]
+{"level":30,"time":1775916713409,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"trajectory-analyzer","sessionCount":1184,"filesScanned":1186,"msg":"Analyzed trajectories"}
+{"level":30,"time":1775916713412,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"trajectory-analyzer","outputPath":"/Users/justin/.brainstorm/routing-intelligence.json","msg":"Routing intelligence updated"}
+  [wake: timer]
+  [wake: user]
+  [Gemini 2.5 Flash]
+{"level":30,"time":1775916743422,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"circuit-breaker","name":"llm:google/gemini-2.5-flash","msg":"Returning existing circuit breaker — options from first registration apply"}
+UnsupportedFunctionalityError [AI_UnsupportedFunctionalityError]: 'system messages are only supported at the beginning of the conversation' functionality not supported.
+    at convertToGoogleGenerativeAIMessages (file:///Users/justin/Projects/brainstorm/node_modules/@ai-sdk/google/dist/index.mjs:525:17)
+    at GoogleGenerativeAILanguageModel.getArgs (file:///Users/justin/Projects/brainstorm/node_modules/@ai-sdk/google/dist/index.mjs:1079:45)
+    at async GoogleGenerativeAILanguageModel.doStream (file:///Users/justin/Projects/brainstorm/node_modules/@ai-sdk/google/dist/index.mjs:1278:53)
+    at async fn (file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:7217:27)
+    at async file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:2258:24
+    at async _retryWithExponentialBackoff (file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:2576:12)
+    at async streamStep (file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:7174:17)
+    at async fn (file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:7586:9)
+    at async file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:2258:24 {
+  cause: undefined,
+  functionality: 'system messages are only supported at the beginning of the conversation',
+  [Symbol(vercel.ai.error)]: true,
+  [Symbol(vercel.ai.error.AI_UnsupportedFunctionalityError)]: true
+}
+  [Kimi K2.5]
+{"level":30,"time":1775916743436,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"circuit-breaker","name":"llm:google/gemini-2.5-flash","msg":"Returning existing circuit breaker — options from first registration apply"}
+I'll analyze the three packages and add meaningful unit tests. Let me start by exploring their structure and current test coverage.
+  [tool: shell]
+{"level":40,"time":1775916753111,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"quality-signals","readCount":1,"writeCount":3,"ratio":"0.3","msg":"Read:Edit ratio below threshold — agent may be editing without sufficient research"}
+
+  [tool: shell]
+
+  [tool: file_read]
+
+  [tool: file_read]
+
+  [tool: file_read]
+
+  [tool: file_read]
+
+  [tool: file_read]
+
+  [tool: file_read]
+
+  [tool: file_read]
+
+  [tool: file_read]
+
+  [tool: file_read]
+
+  [tool: file_read]
+
+  [tool: file_read]
+
+  [tool: file_read]
+Let me explore the repositories and remaining code to identify gaps in test coverage:
+  [tool: file_read]
+
+  [tool: file_read]
+Now I'll run existing tests and then create comprehensive new tests:
+  [tool: shell]
+
+  [tool: shell]
+{"level":40,"time":1775916804450,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"quality-signals","readCount":15,"writeCount":6,"ratio":"2.5","msg":"Read:Edit ratio below threshold — agent may be editing without sufficient research"}
+
+  [tool: shell]
+
+  [tool: shell]
+
+  [tool: shell]
+All existing tests pass. Now I'll create comprehensive new tests. Let me start with the repository tests for `packages/db`:
+  [tool: file_read]
+{"level":30,"time":1775916823314,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"circuit-breaker","name":"llm:moonshot/kimi-k2.5","msg":"Returning existing circuit breaker — options from first registration apply"}
+
+  [$0.2817 session]
+UnsupportedFunctionalityError [AI_UnsupportedFunctionalityError]: 'system messages are only supported at the beginning of the conversation' functionality not supported.
+    at convertToGoogleGenerativeAIMessages (file:///Users/justin/Projects/brainstorm/node_modules/@ai-sdk/google/dist/index.mjs:525:17)
+    at GoogleGenerativeAILanguageModel.getArgs (file:///Users/justin/Projects/brainstorm/node_modules/@ai-sdk/google/dist/index.mjs:1079:45)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async GoogleGenerativeAILanguageModel.doStream (file:///Users/justin/Projects/brainstorm/node_modules/@ai-sdk/google/dist/index.mjs:1278:53)
+    at async fn (file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:7217:27)
+    at async file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:2258:24
+    at async _retryWithExponentialBackoff (file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:2576:12)
+    at async streamStep (file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:7174:17)
+    at async fn (file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:7586:9)
+    at async file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:2258:24 {
+  cause: undefined,
+  functionality: 'system messages are only supported at the beginning of the conversation',
+  [Symbol(vercel.ai.error)]: true,
+  [Symbol(vercel.ai.error.AI_UnsupportedFunctionalityError)]: true
+}
+UnsupportedFunctionalityError [AI_UnsupportedFunctionalityError]: 'system messages are only supported at the beginning of the conversation' functionality not supported.
+    at convertToGoogleGenerativeAIMessages (file:///Users/justin/Projects/brainstorm/node_modules/@ai-sdk/google/dist/index.mjs:525:17)
+    at GoogleGenerativeAILanguageModel.getArgs (file:///Users/justin/Projects/brainstorm/node_modules/@ai-sdk/google/dist/index.mjs:1079:45)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async GoogleGenerativeAILanguageModel.doStream (file:///Users/justin/Projects/brainstorm/node_modules/@ai-sdk/google/dist/index.mjs:1278:53)
+    at async fn (file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:7217:27)
+    at async file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:2258:24
+    at async _retryWithExponentialBackoff (file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:2576:12)
+    at async streamStep (file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:7174:17)
+    at async fn (file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:7586:9)
+    at async file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:2258:24 {
+  cause: undefined,
+  functionality: 'system messages are only supported at the beginning of the conversation',
+  [Symbol(vercel.ai.error)]: true,
+  [Symbol(vercel.ai.error.AI_UnsupportedFunctionalityError)]: true
+}
+{"level":30,"time":1775916823532,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"trajectory-analyzer","sessionCount":1184,"filesScanned":1186,"msg":"Analyzed trajectories"}
+{"level":30,"time":1775916823535,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"trajectory-analyzer","outputPath":"/Users/justin/.brainstorm/routing-intelligence.json","msg":"Routing intelligence updated"}
+{"level":30,"time":1775916823560,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"trajectory-analyzer","sessionCount":1184,"filesScanned":1186,"msg":"Analyzed trajectories"}
+{"level":30,"time":1775916823561,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"trajectory-analyzer","outputPath":"/Users/justin/.brainstorm/routing-intelligence.json","msg":"Routing intelligence updated"}
+{"level":30,"time":1775916823564,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"circuit-breaker","name":"llm:google/gemini-2.5-flash","msg":"Returning existing circuit breaker — options from first registration apply"}
+{"level":30,"time":1775916823572,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"circuit-breaker","name":"llm:google/gemini-2.5-flash","msg":"Returning existing circuit breaker — options from first registration apply"}
+{"level":30,"time":1775916823574,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"circuit-breaker","name":"llm:google/gemini-3.1-pro-preview","msg":"Returning existing circuit breaker — options from first registration apply"}
+{"level":30,"time":1775916874293,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"circuit-breaker","name":"llm:openai/gpt-5.4","msg":"Returning existing circuit breaker — options from first registration apply"}
+  [tick #2 | $1.1973]
+{"level":30,"time":1775916874427,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"trajectory-analyzer","sessionCount":1184,"filesScanned":1186,"msg":"Analyzed trajectories"}
+{"level":30,"time":1775916874430,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"trajectory-analyzer","outputPath":"/Users/justin/.brainstorm/routing-intelligence.json","msg":"Routing intelligence updated"}
+{"level":30,"time":1775916874453,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"trajectory-analyzer","sessionCount":1184,"filesScanned":1186,"msg":"Analyzed trajectories"}
+{"level":30,"time":1775916874455,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"trajectory-analyzer","outputPath":"/Users/justin/.brainstorm/routing-intelligence.json","msg":"Routing intelligence updated"}
+{"level":30,"time":1775916874479,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"trajectory-analyzer","sessionCount":1184,"filesScanned":1186,"msg":"Analyzed trajectories"}
+{"level":30,"time":1775916874480,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"trajectory-analyzer","outputPath":"/Users/justin/.brainstorm/routing-intelligence.json","msg":"Routing intelligence updated"}
+  [wake: timer]
+{"level":30,"time":1775916904487,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"circuit-breaker","name":"llm:google/gemini-2.5-flash","msg":"Returning existing circuit breaker — options from first registration apply"}
+UnsupportedFunctionalityError [AI_UnsupportedFunctionalityError]: 'system messages are only supported at the beginning of the conversation' functionality not supported.
+    at convertToGoogleGenerativeAIMessages (file:///Users/justin/Projects/brainstorm/node_modules/@ai-sdk/google/dist/index.mjs:525:17)
+    at GoogleGenerativeAILanguageModel.getArgs (file:///Users/justin/Projects/brainstorm/node_modules/@ai-sdk/google/dist/index.mjs:1079:45)
+    at async GoogleGenerativeAILanguageModel.doStream (file:///Users/justin/Projects/brainstorm/node_modules/@ai-sdk/google/dist/index.mjs:1278:53)
+    at async fn (file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:7217:27)
+    at async file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:2258:24
+    at async _retryWithExponentialBackoff (file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:2576:12)
+    at async streamStep (file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:7174:17)
+    at async fn (file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:7586:9)
+    at async file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:2258:24 {
+  cause: undefined,
+  functionality: 'system messages are only supported at the beginning of the conversation',
+  [Symbol(vercel.ai.error)]: true,
+  [Symbol(vercel.ai.error.AI_UnsupportedFunctionalityError)]: true
+}
+UnsupportedFunctionalityError [AI_UnsupportedFunctionalityError]: 'system messages are only supported at the beginning of the conversation' functionality not supported.
+    at convertToGoogleGenerativeAIMessages (file:///Users/justin/Projects/brainstorm/node_modules/@ai-sdk/google/dist/index.mjs:525:17)
+    at GoogleGenerativeAILanguageModel.getArgs (file:///Users/justin/Projects/brainstorm/node_modules/@ai-sdk/google/dist/index.mjs:1079:45)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async GoogleGenerativeAILanguageModel.doStream (file:///Users/justin/Projects/brainstorm/node_modules/@ai-sdk/google/dist/index.mjs:1278:53)
+    at async fn (file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:7217:27)
+    at async file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:2258:24
+    at async _retryWithExponentialBackoff (file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:2576:12)
+    at async streamStep (file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:7174:17)
+    at async fn (file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:7586:9)
+    at async file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:2258:24 {
+  cause: undefined,
+  functionality: 'system messages are only supported at the beginning of the conversation',
+  [Symbol(vercel.ai.error)]: true,
+  [Symbol(vercel.ai.error.AI_UnsupportedFunctionalityError)]: true
+}
+{"level":30,"time":1775916904490,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"circuit-breaker","name":"llm:google/gemini-2.5-flash","msg":"Returning existing circuit breaker — options from first registration apply"}
+{"level":30,"time":1775916904490,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"circuit-breaker","name":"llm:google/gemini-2.5-flash","from":"closed","to":"open","reason":"3 consecutive failures","msg":"Circuit state transition"}
+{"level":30,"time":1775916904491,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"circuit-breaker","name":"llm:google/gemini-3.1-pro-preview","msg":"Returning existing circuit breaker — options from first registration apply"}
+{"level":30,"time":1775916904493,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"circuit-breaker","name":"llm:google/gemini-3.1-pro-preview","msg":"Returning existing circuit breaker — options from first registration apply"}
+{"level":30,"time":1775916904494,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"circuit-breaker","name":"llm:openai/gpt-5.4","msg":"Returning existing circuit breaker — options from first registration apply"}
+{"level":30,"time":1775916953709,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"circuit-breaker","name":"llm:openai/gpt-5.4","msg":"Returning existing circuit breaker — options from first registration apply"}
+  [tick #3 | $1.0581]
+{"level":30,"time":1775916953843,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"trajectory-analyzer","sessionCount":1184,"filesScanned":1186,"msg":"Analyzed trajectories"}
+{"level":30,"time":1775916953846,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"trajectory-analyzer","outputPath":"/Users/justin/.brainstorm/routing-intelligence.json","msg":"Routing intelligence updated"}
+{"level":30,"time":1775916953873,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"trajectory-analyzer","sessionCount":1184,"filesScanned":1186,"msg":"Analyzed trajectories"}
+{"level":30,"time":1775916953874,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"trajectory-analyzer","outputPath":"/Users/justin/.brainstorm/routing-intelligence.json","msg":"Routing intelligence updated"}
+{"level":30,"time":1775916953901,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"trajectory-analyzer","sessionCount":1184,"filesScanned":1186,"msg":"Analyzed trajectories"}
+{"level":30,"time":1775916953903,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"trajectory-analyzer","outputPath":"/Users/justin/.brainstorm/routing-intelligence.json","msg":"Routing intelligence updated"}
+  [wake: timer]
+{"level":30,"time":1775916983911,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"circuit-breaker","name":"llm:google/gemini-2.5-flash","msg":"Returning existing circuit breaker — options from first registration apply"}
+UnsupportedFunctionalityError [AI_UnsupportedFunctionalityError]: 'system messages are only supported at the beginning of the conversation' functionality not supported.
+    at convertToGoogleGenerativeAIMessages (file:///Users/justin/Projects/brainstorm/node_modules/@ai-sdk/google/dist/index.mjs:525:17)
+    at GoogleGenerativeAILanguageModel.getArgs (file:///Users/justin/Projects/brainstorm/node_modules/@ai-sdk/google/dist/index.mjs:1079:45)
+    at async GoogleGenerativeAILanguageModel.doStream (file:///Users/justin/Projects/brainstorm/node_modules/@ai-sdk/google/dist/index.mjs:1278:53)
+    at async fn (file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:7217:27)
+    at async file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:2258:24
+    at async _retryWithExponentialBackoff (file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:2576:12)
+    at async streamStep (file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:7174:17)
+    at async fn (file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:7586:9)
+    at async file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:2258:24 {
+  cause: undefined,
+  functionality: 'system messages are only supported at the beginning of the conversation',
+  [Symbol(vercel.ai.error)]: true,
+  [Symbol(vercel.ai.error.AI_UnsupportedFunctionalityError)]: true
+}
+UnsupportedFunctionalityError [AI_UnsupportedFunctionalityError]: 'system messages are only supported at the beginning of the conversation' functionality not supported.
+    at convertToGoogleGenerativeAIMessages (file:///Users/justin/Projects/brainstorm/node_modules/@ai-sdk/google/dist/index.mjs:525:17)
+    at GoogleGenerativeAILanguageModel.getArgs (file:///Users/justin/Projects/brainstorm/node_modules/@ai-sdk/google/dist/index.mjs:1079:45)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async GoogleGenerativeAILanguageModel.doStream (file:///Users/justin/Projects/brainstorm/node_modules/@ai-sdk/google/dist/index.mjs:1278:53)
+    at async fn (file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:7217:27)
+    at async file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:2258:24
+    at async _retryWithExponentialBackoff (file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:2576:12)
+    at async streamStep (file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:7174:17)
+    at async fn (file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:7586:9)
+    at async file:///Users/justin/Projects/brainstorm/node_modules/ai/dist/index.mjs:2258:24 {
+  cause: undefined,
+  functionality: 'system messages are only supported at the beginning of the conversation',
+  [Symbol(vercel.ai.error)]: true,
+  [Symbol(vercel.ai.error.AI_UnsupportedFunctionalityError)]: true
+}
+{"level":30,"time":1775916983911,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"circuit-breaker","name":"llm:google/gemini-2.5-flash","from":"open","to":"half_open","reason":"Cooldown period elapsed","msg":"Circuit state transition"}
+{"level":30,"time":1775916983915,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"circuit-breaker","name":"llm:google/gemini-2.5-flash","msg":"Returning existing circuit breaker — options from first registration apply"}
+{"level":30,"time":1775916983915,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"circuit-breaker","name":"llm:google/gemini-2.5-flash","from":"half_open","to":"open","reason":"Probe failed: empty_response","msg":"Circuit state transition"}
+{"level":30,"time":1775916983916,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"circuit-breaker","name":"llm:google/gemini-3.1-pro-preview","msg":"Returning existing circuit breaker — options from first registration apply"}
+{"level":30,"time":1775916983917,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"circuit-breaker","name":"llm:google/gemini-3.1-pro-preview","msg":"Returning existing circuit breaker — options from first registration apply"}
+{"level":30,"time":1775916983917,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"circuit-breaker","name":"llm:google/gemini-3.1-pro-preview","from":"closed","to":"open","reason":"3 consecutive failures","msg":"Circuit state transition"}
+{"level":30,"time":1775916983919,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"circuit-breaker","name":"llm:openai/gpt-5.4","msg":"Returning existing circuit breaker — options from first registration apply"}
+{"level":30,"time":1775917022844,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"circuit-breaker","name":"llm:openai/gpt-5.4","msg":"Returning existing circuit breaker — options from first registration apply"}
+  [tick #4 | $0.7323]
+{"level":30,"time":1775917022965,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"trajectory-analyzer","sessionCount":1184,"filesScanned":1186,"msg":"Analyzed trajectories"}
+{"level":30,"time":1775917022968,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"trajectory-analyzer","outputPath":"/Users/justin/.brainstorm/routing-intelligence.json","msg":"Routing intelligence updated"}
+{"level":30,"time":1775917022990,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"trajectory-analyzer","sessionCount":1184,"filesScanned":1186,"msg":"Analyzed trajectories"}
+{"level":30,"time":1775917022992,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"trajectory-analyzer","outputPath":"/Users/justin/.brainstorm/routing-intelligence.json","msg":"Routing intelligence updated"}
+{"level":30,"time":1775917023016,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"trajectory-analyzer","sessionCount":1184,"filesScanned":1186,"msg":"Analyzed trajectories"}
+{"level":30,"time":1775917023017,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"trajectory-analyzer","outputPath":"/Users/justin/.brainstorm/routing-intelligence.json","msg":"Routing intelligence updated"}
+  [wake: timer]
+{"level":50,"time":1775917053021,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"daemon","err":{"type":"BudgetExceededError","message":"Budget exceeded: session — used $3.2695 of $3.00","stack":"BudgetExceededError: Budget exceeded: session — used $3.2695 of $3.00\n    at CostTracker.checkBudget (file:///Users/justin/Projects/brainstorm/packages/router/dist/index.js:1185:15)\n    at BrainstormRouter.route (file:///Users/justin/Projects/brainstorm/packages/router/dist/index.js:948:22)\n    at runAgentLoop (file:///Users/justin/Projects/brainstorm/packages/core/dist/index.js:3335:23)\n    at runAgentLoop.next (<anonymous>)\n    at _DaemonController.runTick (file:///Users/justin/Projects/brainstorm/packages/core/dist/index.js:15717:22)\n    at async _DaemonController.run (file:///Users/justin/Projects/brainstorm/packages/core/dist/index.js:15528:22)\n    at async Command.<anonymous> (file:///Users/justin/Projects/brainstorm/packages/cli/dist/brainstorm.js:5616:26)","code":"BUDGET_EXCEEDED","name":"BudgetExceededError","limit":"session","used":3.2694980000000005,"max":3},"consecutive":1,"max":3,"msg":"Tick failed"}
+{"level":50,"time":1775917058028,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"daemon","err":{"type":"BudgetExceededError","message":"Budget exceeded: session — used $3.2695 of $3.00","stack":"BudgetExceededError: Budget exceeded: session — used $3.2695 of $3.00\n    at CostTracker.checkBudget (file:///Users/justin/Projects/brainstorm/packages/router/dist/index.js:1185:15)\n    at BrainstormRouter.route (file:///Users/justin/Projects/brainstorm/packages/router/dist/index.js:948:22)\n    at runAgentLoop (file:///Users/justin/Projects/brainstorm/packages/core/dist/index.js:3335:23)\n    at runAgentLoop.next (<anonymous>)\n    at _DaemonController.runTick (file:///Users/justin/Projects/brainstorm/packages/core/dist/index.js:15717:22)\n    at async _DaemonController.run (file:///Users/justin/Projects/brainstorm/packages/core/dist/index.js:15528:22)\n    at async Command.<anonymous> (file:///Users/justin/Projects/brainstorm/packages/cli/dist/brainstorm.js:5616:26)","code":"BUDGET_EXCEEDED","name":"BudgetExceededError","limit":"session","used":3.2694980000000005,"max":3},"consecutive":2,"max":3,"msg":"Tick failed"}
+{"level":50,"time":1775917068036,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"daemon","err":{"type":"BudgetExceededError","message":"Budget exceeded: session — used $3.2695 of $3.00","stack":"BudgetExceededError: Budget exceeded: session — used $3.2695 of $3.00\n    at CostTracker.checkBudget (file:///Users/justin/Projects/brainstorm/packages/router/dist/index.js:1185:15)\n    at BrainstormRouter.route (file:///Users/justin/Projects/brainstorm/packages/router/dist/index.js:948:22)\n    at runAgentLoop (file:///Users/justin/Projects/brainstorm/packages/core/dist/index.js:3335:23)\n    at runAgentLoop.next (<anonymous>)\n    at _DaemonController.runTick (file:///Users/justin/Projects/brainstorm/packages/core/dist/index.js:15717:22)\n    at async _DaemonController.run (file:///Users/justin/Projects/brainstorm/packages/core/dist/index.js:15528:22)\n    at async Command.<anonymous> (file:///Users/justin/Projects/brainstorm/packages/cli/dist/brainstorm.js:5616:26)","code":"BUDGET_EXCEEDED","name":"BudgetExceededError","limit":"session","used":3.2694980000000005,"max":3},"consecutive":3,"max":3,"msg":"Tick failed"}
+{"level":50,"time":1775917068036,"pid":40033,"hostname":"Justins-MacBook-Pro.local","name":"brainstorm","module":"daemon","msg":"Circuit breaker tripped — stopping daemon after consecutive failures"}
