@@ -20,6 +20,7 @@
     "@brainst0rm/config": "0.13.0",
     "@brainst0rm/db": "0.13.0",
     "@brainst0rm/gateway": "0.13.0",
+    "@brainst0rm/orchestrator": "0.13.0",
     "@brainst0rm/providers": "0.13.0",
     "@brainst0rm/router": "0.13.0",
     "@brainst0rm/shared": "0.13.0",

@@ -110,6 +110,27 @@ export {
 } from "./plan/trajectory-capture.js";
 export { createPipelineDispatcher } from "./plan/pipeline-dispatcher.js";
 export {
+  planMultiAgentRun,
+  parseDecomposition,
+  type PlannedSubtask,
+  type PlanResult,
+  type PlanOptions,
+} from "./plan/multi-agent-planner.js";
+export {
+  runWorkerPool,
+  listFilesTouched,
+  type WorkerPoolEvent,
+  type WorkerPoolOptions,
+  type WorkerPoolResult,
+} from "./plan/multi-agent-worker-pool.js";
+export {
+  runJudge,
+  detectConflicts,
+  type JudgeDecision,
+  type JudgeOptions,
+  type JudgeVerdict,
+} from "./plan/multi-agent-judge.js";
+export {
   readMultimodalFile,
   isImageFile,
   isPdfFile,
