@@ -88,6 +88,16 @@ export interface RoutingIntelligence {
           successes: number;
           failures: number;
           avgCost: number;
+          /** Wilson lower bound on success rate at 95% confidence — penalizes
+           * low-sample claims. 100% on 3 trials gets a much lower bound than
+           * 99% on 1000 trials. Use this for ranking, not raw successRate.
+           * Optional for backward compatibility with pre-WLB intelligence files. */
+          wilsonLowerBound?: number;
+          /** Cost-adjusted score: wilsonLowerBound / (avgCost + epsilon).
+           * Higher is better. Lets a slightly-worse model that's 10x cheaper
+           * win over a marginally-better expensive model.
+           * Optional for backward compatibility. */
+          valuePerDollar?: number;
         }
       >;
     }
@@ -95,8 +105,17 @@ export interface RoutingIntelligence {
   taskTypes: Record<
     string,
     {
+      /** Highest Wilson-bound success rate, ignoring cost. */
       bestModel: string | null;
       bestModelSuccessRate: number;
+      /** Highest cost-adjusted score (Wilson bound / avg cost).
+       * Optional for backward compatibility. */
+      bestValueModel?: string | null;
+      bestValueScore?: number;
+      /** Lowest Wilson-bound success rate (with min sample size).
+       * Optional for backward compatibility. */
+      worstModel?: string | null;
+      worstModelSuccessRate?: number;
       totalSamples: number;
     }
   >;
@@ -108,6 +127,26 @@ export interface RoutingIntelligence {
       sessionsOnProject: number;
     }
   >;
+}
+
+/**
+ * Wilson score interval lower bound at 95% confidence.
+ *
+ * Penalizes low-sample claims — 100% success on 3 trials gets a much lower
+ * bound (~0.31) than 99% on 1000 trials (~0.98). Use for ranking when sample
+ * sizes vary widely. Reference: Edwin B. Wilson, 1927.
+ */
+export function wilsonLowerBound(
+  successes: number,
+  total: number,
+  z: number = 1.96,
+): number {
+  if (total === 0) return 0;
+  const p = successes / total;
+  const denom = 1 + (z * z) / total;
+  const center = p + (z * z) / (2 * total);
+  const margin = z * Math.sqrt((p * (1 - p) + (z * z) / (4 * total)) / total);
+  return Math.max(0, (center - margin) / denom);
 }
 
 const READ_TOOLS = new Set([
@@ -318,18 +357,56 @@ function aggregate(summaries: SessionSummary[]): RoutingIntelligence {
     }
   }
 
-  // Compute derived metrics and best models per task type
+  // Compute derived metrics and best/worst/best-value models per task type.
+  // Track all candidates first, then pick best/worst at the end so a single
+  // pass over all models can rank them properly.
   const taskTypeBest: Record<
     string,
     {
       bestModel: string | null;
       bestModelSuccessRate: number;
+      bestValueModel: string | null;
+      bestValueScore: number;
+      worstModel: string | null;
+      worstModelSuccessRate: number;
       totalSamples: number;
     }
   > = {};
 
+  // Minimum samples before a model qualifies for best/worst ranking. Below
+  // this we have no statistical signal — penalizing or rewarding based on a
+  // few trials is noise. 5 is the convention used in many production
+  // bandit systems for "warm-up" before exploitation.
+  const MIN_SAMPLES = 5;
+  const COST_EPSILON = 0.001; // Avoid div-by-zero for free models like ollama
+
   const modelsOut: RoutingIntelligence["models"] = {};
   for (const [modelId, stats] of Object.entries(models)) {
+    // Enrich each task-type bucket with Wilson lower bound + value-per-dollar
+    // BEFORE writing it back so the consumer sees both raw and adjusted.
+    const enrichedByTaskType: Record<
+      string,
+      {
+        successes: number;
+        failures: number;
+        avgCost: number;
+        wilsonLowerBound: number;
+        valuePerDollar: number;
+      }
+    > = {};
+    for (const [taskType, t] of Object.entries(stats.byTaskType)) {
+      const total = t.successes + t.failures;
+      const wlb = wilsonLowerBound(t.successes, total);
+      const vpd = wlb / (t.avgCost + COST_EPSILON);
+      enrichedByTaskType[taskType] = {
+        successes: t.successes,
+        failures: t.failures,
+        avgCost: t.avgCost,
+        wilsonLowerBound: wlb,
+        valuePerDollar: vpd,
+      };
+    }
+
     modelsOut[modelId] = {
       totalSessions: stats.totalSessions,
       successCount: stats.successCount,
@@ -344,23 +421,45 @@ function aggregate(summaries: SessionSummary[]): RoutingIntelligence {
         stats.totalToolCalls > 0
           ? stats.totalToolSuccesses / stats.totalToolCalls
           : 0,
-      byTaskType: stats.byTaskType,
+      byTaskType: enrichedByTaskType,
     };
 
-    // Track best model per task type
-    for (const [taskType, t] of Object.entries(stats.byTaskType)) {
+    // Rank this model against existing best/worst per task type. Use Wilson
+    // lower bound (not raw success rate) so 100% on 3 samples doesn't beat
+    // 99% on 1000 samples. Cost-adjusted ranking uses the same Wilson bound
+    // divided by avg cost — a model that's 96% as good for 1/8th the cost
+    // wins on value-per-dollar.
+    for (const [taskType, t] of Object.entries(enrichedByTaskType)) {
       const total = t.successes + t.failures;
-      if (total < 2) continue; // Need at least 2 samples
-      const successRate = t.successes / total;
-      if (
-        !taskTypeBest[taskType] ||
-        successRate > taskTypeBest[taskType].bestModelSuccessRate
-      ) {
+      if (total < MIN_SAMPLES) continue;
+
+      if (!taskTypeBest[taskType]) {
         taskTypeBest[taskType] = {
           bestModel: modelId,
-          bestModelSuccessRate: successRate,
+          bestModelSuccessRate: t.wilsonLowerBound,
+          bestValueModel: modelId,
+          bestValueScore: t.valuePerDollar,
+          worstModel: modelId,
+          worstModelSuccessRate: t.wilsonLowerBound,
           totalSamples: total,
         };
+        continue;
+      }
+
+      const slot = taskTypeBest[taskType];
+      slot.totalSamples += total;
+
+      if (t.wilsonLowerBound > slot.bestModelSuccessRate) {
+        slot.bestModel = modelId;
+        slot.bestModelSuccessRate = t.wilsonLowerBound;
+      }
+      if (t.wilsonLowerBound < slot.worstModelSuccessRate) {
+        slot.worstModel = modelId;
+        slot.worstModelSuccessRate = t.wilsonLowerBound;
+      }
+      if (t.valuePerDollar > slot.bestValueScore) {
+        slot.bestValueModel = modelId;
+        slot.bestValueScore = t.valuePerDollar;
       }
     }
   }
