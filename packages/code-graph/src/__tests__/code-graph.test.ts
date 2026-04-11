@@ -230,6 +230,69 @@ describe("@brainst0rm/code-graph", () => {
     ]);
   });
 
+  it("parseFile recognizes generator and async generator function declarations as enclosing scopes", () => {
+    const projectDir = makeTempDir("code-graph-generator");
+    const filePath = writeProjectFile(
+      projectDir,
+      "gen.ts",
+      [
+        "export function* simpleGen() {",
+        "    yield helper();",
+        "}",
+        "",
+        "export async function* asyncGen() {",
+        "    yield await fetcher();",
+        "}",
+      ].join("\n"),
+    );
+
+    const parsed = parseFile(filePath);
+
+    // Both generator forms should be captured as functions, not skipped.
+    expect(parsed.functions.map((f) => f.name).sort()).toEqual([
+      "asyncGen",
+      "simpleGen",
+    ]);
+    // Calls inside generator bodies should be attributed to the enclosing
+    // generator function, not module level. This is the bug that made
+    // runAgentLoop's 159 outbound call sites invisible.
+    const helperCall = parsed.callSites.find((c) => c.calleeName === "helper");
+    expect(helperCall).toBeDefined();
+    expect(helperCall?.callerName).toBe("simpleGen");
+    const fetcherCall = parsed.callSites.find(
+      (c) => c.calleeName === "fetcher",
+    );
+    expect(fetcherCall?.callerName).toBe("asyncGen");
+  });
+
+  it("CodeGraph impactAnalysis surfaces module-level call sites instead of dropping them", () => {
+    const projectDir = makeTempDir("code-graph-module-impact");
+    const filePath = writeProjectFile(
+      projectDir,
+      "module-call.ts",
+      [
+        "// Top-level call to target with no enclosing function",
+        "import { target } from './other';",
+        "target();",
+      ].join("\n"),
+    );
+    const graph = createGraph(projectDir);
+
+    graph.upsertFile(parseFile(filePath));
+
+    // The call site has caller=null. Old behavior: impactAnalysis returned
+    // [] because the loop skipped null callers. New behavior: surface as
+    // a module-level call site so the agent at least knows the function is
+    // referenced from somewhere.
+    const impact = graph.impactAnalysis("target", 2);
+    expect(impact.length).toBeGreaterThan(0);
+    expect(impact[0]).toMatchObject({
+      name: "(module-level call site)",
+      depth: 1,
+      file: filePath,
+    });
+  });
+
   it("indexProject indexes supported files, skips ignored paths, and reports progress", () => {
     const projectDir = makeTempDir("code-graph-indexer");
     writeProjectFile(

@@ -112,9 +112,17 @@ function walk(
   currentClass: string | null,
 ): void {
   switch (node.type) {
-    case "function_declaration": {
+    // function_declaration: regular `function foo() {}`
+    // generator_function_declaration: `function* foo() {}` (used by runAgentLoop and many others)
+    // Both need the same handling — extract the name and track as enclosing function.
+    // Without generator_function_declaration here, every call inside a generator
+    // function gets caller=null, which collapses impactAnalysis to 0 results.
+    case "function_declaration":
+    case "generator_function_declaration": {
       const name = getChildText(node, "name") ?? "<anonymous>";
-      const isExported = node.parent?.type === "export_statement";
+      const exportParent =
+        node.parent?.type === "export_statement" ||
+        node.parent?.parent?.type === "export_statement";
       const isAsync = hasChildType(node, "async");
       const signature = getSignature(node);
       result.functions.push({
@@ -123,7 +131,7 @@ function walk(
         startLine: node.startPosition.row + 1,
         endLine: node.endPosition.row + 1,
         signature,
-        isExported,
+        isExported: exportParent,
         isAsync,
       });
       // Recurse with this as current function
@@ -192,11 +200,22 @@ function walk(
     }
 
     case "arrow_function":
-    case "function_expression": {
+    case "function_expression":
+    case "generator_function": {
       // Arrow/function expressions can have a name if assigned to a variable
+      // OR a property in an object literal: { foo: () => {} } / { foo() {} }
       let assignedName: string | null = null;
       const parent = node.parent;
       if (parent?.type === "variable_declarator") {
+        assignedName = getChildText(parent, "name");
+      } else if (
+        parent?.type === "pair" ||
+        parent?.type === "property_signature"
+      ) {
+        // Object literal property: { propertyName: arrowFn }
+        assignedName = getChildText(parent, "key");
+      } else if (parent?.type === "public_field_definition") {
+        // Class field: foo = () => {}
         assignedName = getChildText(parent, "name");
       }
       if (assignedName) {
