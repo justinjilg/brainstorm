@@ -2,7 +2,7 @@ import { loadConfig } from "@brainst0rm/config";
 import { getDb } from "@brainst0rm/db";
 import { createProviderRegistry } from "@brainst0rm/providers";
 import { BrainstormRouter, CostTracker } from "@brainst0rm/router";
-import { createDefaultToolRegistry } from "@brainst0rm/tools";
+import { createDefaultToolRegistry, withWorkspace } from "@brainst0rm/tools";
 import {
   runAgentLoop,
   buildSystemPrompt,
@@ -74,8 +74,11 @@ export async function runProbe(
     let output = "";
     let steps = 0;
 
-    // Run with timeout
-    const runPromise = (async () => {
+    // Run with timeout — wrap in withWorkspace so path-based tools resolve
+    // paths relative to the sandbox directory instead of process.cwd().
+    // Without this, probes that write to relative paths (e.g., ./prime.ts)
+    // end up in the brainstorm repo root and fail the code_compiles check.
+    const runPromise = withWorkspace(sandboxDir, async () => {
       for await (const event of runAgentLoop(sessionManager.getHistory(), {
         config,
         registry,
@@ -105,7 +108,7 @@ export async function runProbe(
             throw event.error;
         }
       }
-    })();
+    });
 
     // Race against timeout
     await Promise.race([

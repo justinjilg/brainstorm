@@ -1,6 +1,10 @@
 export { createTimeoutController } from "./timeout.js";
 export { defineTool, type BrainstormToolDef } from "./base.js";
-export { withWorkspace, getWorkspace } from "./workspace-context.js";
+export {
+  withWorkspace,
+  getWorkspace,
+  enterWorkspace,
+} from "./workspace-context.js";
 export {
   FileReadCache,
   getFileReadCache,

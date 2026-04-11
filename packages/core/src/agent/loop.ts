@@ -18,6 +18,7 @@ import {
   setToolOutputHandler,
   getTierForComplexity,
   getToolsForTier,
+  enterWorkspace,
 } from "@brainst0rm/tools";
 import {
   createLogger,
@@ -241,6 +242,16 @@ export async function* runAgentLoop(
 ): AsyncGenerator<AgentEvent> {
   const { router, costTracker, tools, config, sessionId } = options;
   let { systemPrompt } = options;
+
+  // Establish the workspace context for this agent session. Tools like
+  // file_write, file_edit, file_read, glob, grep, shell, and git now resolve
+  // paths relative to options.projectPath instead of process.cwd().
+  //
+  // Uses enterWith() rather than withWorkspace() because this is a generator:
+  // we can't wrap yield statements in a callback, and enterWith() persists for
+  // the rest of the current async execution. Nested spawnSubagent calls can
+  // override this scope with their own withWorkspace.
+  enterWorkspace(options.projectPath);
 
   // Initialize trajectory recorder — enabled by default for learning loop.
   // Explicitly opt out with trajectoryEnabled: false.

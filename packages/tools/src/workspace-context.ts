@@ -31,6 +31,19 @@ export function withWorkspace<T>(
 }
 
 /**
+ * Enter a workspace context WITHOUT a callback wrapper. Sets the store for
+ * the current async execution and all nested async work — no unset until
+ * the async context exits. Use this inside generators where you can't wrap
+ * yield statements in a callback.
+ *
+ * Calls to enterWorkspace in nested async contexts will override for that
+ * scope only, restoring the outer workspace when the inner scope exits.
+ */
+export function enterWorkspace(workspace: string): void {
+  workspaceStorage.enterWith(workspace);
+}
+
+/**
  * Get the current workspace root. Returns process.cwd() when no context is
  * active — preserving the old behavior for direct CLI usage.
  */
