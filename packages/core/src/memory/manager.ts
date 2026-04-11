@@ -102,6 +102,10 @@ export class MemoryManager {
   private indexDirty = false;
   private indexTimer: ReturnType<typeof setTimeout> | null = null;
   private gateway: BrainstormGateway | null;
+  private projectSlug: string;
+  private pullState: "idle" | "running" | "completed" | "failed" = "idle";
+  private lastPullAt: number | null = null;
+  private lastPullError: string | null = null;
 
   constructor(projectPath: string, gateway?: BrainstormGateway | null) {
     this.gateway = gateway ?? null;
@@ -109,6 +113,11 @@ export class MemoryManager {
       .update(projectPath)
       .digest("hex")
       .slice(0, 16);
+    // Project slug for BR: use basename (e.g. "hawktalk") not the full path,
+    // so teammates on different machines share the same project scope.
+    // Fall back to the 16-char hash if basename collides or is empty.
+    this.projectSlug =
+      projectPath.split("/").filter(Boolean).pop() ?? projectHash;
     this.memoryDir = join(
       homedir(),
       ".brainstorm",
@@ -230,10 +239,20 @@ export class MemoryManager {
     this.enforceCapacity();
     this.scheduleIndexUpdate();
 
-    // Fire-and-forget push to gateway
-    if (this.gateway) {
+    // Fire-and-forget push to gateway, now with project scope so
+    // teammates sharing the same project see each other's entries
+    // without cross-project pollution. See docs/br-capability-audit.md
+    // for why project scope matters.
+    //
+    // Quarantine tier is NEVER pushed to the gateway — low-trust
+    // content stays machine-local only, as designed.
+    if (this.gateway && tier !== "quarantine") {
       this.gateway
-        .storeMemory(memory.type, `[${memory.name}] ${memory.content}`)
+        .storeMemory(
+          memory.type,
+          `[${memory.name}] ${memory.content}`,
+          this.projectSlug,
+        )
         .catch((e) => {
           log.warn(
             { err: e, memoryId: id },
@@ -259,6 +278,164 @@ export class MemoryManager {
   /** List all memory entries. */
   list(): MemoryEntry[] {
     return Array.from(this.entries.values());
+  }
+
+  /**
+   * Pull remote memory entries from BR and merge with local.
+   *
+   * This closes the cross-machine sync loop — without it, local writes
+   * push to BR (fire-and-forget) but remote writes never come back, so
+   * two machines diverge over time. Now on construction, callers can
+   * invoke this to fetch whatever BR has for the current project and
+   * merge into the local store.
+   *
+   * Merge strategy: **additive last-writer-wins by name**.
+   *   1. For every remote entry that doesn't exist locally, create it.
+   *   2. For every remote entry whose local counterpart is older
+   *      (by updatedAt timestamp), overwrite the local copy.
+   *   3. Local entries that don't exist remotely are NOT deleted —
+   *      the CLI's explicit `forget` is the only delete path.
+   *
+   * The merge never touches the quarantine tier: low-trust entries
+   * stay machine-local on both the push and pull sides.
+   *
+   * This method is fire-and-forget from the caller's perspective: it
+   * returns a promise but errors are captured into pullState/lastPullError
+   * rather than thrown. That way the constructor can kick off a pull
+   * without worrying about unhandled rejections, and the CLI can show
+   * the sync state via getPullStatus().
+   */
+  async pullFromGateway(): Promise<{
+    pulled: number;
+    created: number;
+    updated: number;
+    skipped: number;
+  }> {
+    if (!this.gateway) {
+      return { pulled: 0, created: 0, updated: 0, skipped: 0 };
+    }
+    if (this.pullState === "running") {
+      return { pulled: 0, created: 0, updated: 0, skipped: 0 };
+    }
+    this.pullState = "running";
+
+    let created = 0;
+    let updated = 0;
+    let skipped = 0;
+    let pulled = 0;
+
+    try {
+      const remote = await this.gateway.listMemory(this.projectSlug);
+      pulled = remote.length;
+
+      for (const rem of remote) {
+        // BR's MemoryEntry has: { id, block, content, created_at }.
+        // Some tenant configurations may also expose updated_at; we
+        // cast through `any` to read both safely. The push path encodes
+        // "[name] content" in the content field, so parse it back.
+        const remAny = rem as any;
+        const name = this.extractNameFromBRContent(rem.content);
+        if (!name) {
+          skipped++;
+          continue;
+        }
+        const localId = name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+        const existing = this.entries.get(localId);
+
+        // BR timestamps arrive as ISO strings or unix — coerce to unix.
+        // Fall back to created_at if updated_at is absent.
+        const remoteUpdatedAt =
+          this.coerceTimestamp(remAny.updatedAt) ??
+          this.coerceTimestamp(remAny.updated_at) ??
+          this.coerceTimestamp(remAny.createdAt) ??
+          this.coerceTimestamp(remAny.created_at);
+
+        if (!existing) {
+          // New entry — create it, but via the save path so trust scoring,
+          // tier selection, and file write all go through the existing
+          // logic. Mark source as "gateway" so trust defaults apply.
+          this.save({
+            name,
+            description: rem.content.slice(0, 100),
+            type: (rem.block as MemoryEntry["type"]) ?? "reference",
+            content: this.stripNameFromBRContent(rem.content),
+            source: "gateway" as any,
+          });
+          created++;
+          continue;
+        }
+
+        // Existing entry — overwrite only if remote is newer
+        if (remoteUpdatedAt !== null && remoteUpdatedAt > existing.updatedAt) {
+          this.save({
+            name: existing.name,
+            description: existing.description,
+            type: existing.type,
+            content: this.stripNameFromBRContent(rem.content),
+            source: existing.source,
+            tier: existing.tier,
+            trustScore: existing.trustScore,
+          });
+          updated++;
+        } else {
+          skipped++;
+        }
+      }
+
+      this.pullState = "completed";
+      this.lastPullAt = Math.floor(Date.now() / 1000);
+      this.lastPullError = null;
+
+      if (created > 0 || updated > 0) {
+        log.info(
+          { pulled, created, updated, skipped, project: this.projectSlug },
+          "Memory pulled from gateway",
+        );
+      }
+    } catch (e: any) {
+      this.pullState = "failed";
+      this.lastPullError = e?.message ?? String(e);
+      log.warn({ err: e }, "Memory pull from gateway failed");
+    }
+
+    return { pulled, created, updated, skipped };
+  }
+
+  /** Get the current pull status — for `brainstorm sync status` CLI. */
+  getPullStatus(): {
+    state: "idle" | "running" | "completed" | "failed";
+    lastPullAt: number | null;
+    lastError: string | null;
+  } {
+    return {
+      state: this.pullState,
+      lastPullAt: this.lastPullAt,
+      lastError: this.lastPullError,
+    };
+  }
+
+  /**
+   * Parse a name out of BR content that the push path encoded as
+   * "[name] content body". Returns null if no bracket prefix found.
+   */
+  private extractNameFromBRContent(content: string): string | null {
+    const match = content.match(/^\[([^\]]+)\]\s*/);
+    return match?.[1] ?? null;
+  }
+
+  /** Strip the "[name] " prefix from BR content. */
+  private stripNameFromBRContent(content: string): string {
+    return content.replace(/^\[([^\]]+)\]\s*/, "");
+  }
+
+  /** Coerce BR's updatedAt (ISO string, unix number, or undefined) to unix seconds. */
+  private coerceTimestamp(value: unknown): number | null {
+    if (typeof value === "number") return value;
+    if (typeof value === "string") {
+      const parsed = Date.parse(value);
+      return Number.isFinite(parsed) ? Math.floor(parsed / 1000) : null;
+    }
+    return null;
   }
 
   /** Delete a memory entry. */
