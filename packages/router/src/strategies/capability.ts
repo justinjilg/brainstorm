@@ -6,6 +6,86 @@ import type {
   CapabilityScores,
 } from "@brainst0rm/shared";
 import type { RoutingStrategy } from "./types.js";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
+
+/**
+ * Cached routing intelligence — loaded lazily on first capability decision,
+ * refreshed every 5 minutes. Tracks the file's mtime so concurrent processes
+ * that update it (trajectory analyzer running fire-and-forget) get picked up
+ * within the TTL window.
+ */
+interface CachedIntelligence {
+  taskTypes: Record<
+    string,
+    {
+      bestModel: string | null;
+      bestValueModel: string | null;
+      bestValueScore: number;
+      bestModelSuccessRate: number;
+    }
+  >;
+  byModelTaskBound: Record<string, Record<string, number>>; // model -> taskType -> wilsonLowerBound
+  loadedAt: number;
+  fileMtime: number;
+}
+
+let intelligenceCache: CachedIntelligence | null = null;
+const INTELLIGENCE_TTL_MS = 5 * 60 * 1000;
+
+function loadRoutingIntelligence(): CachedIntelligence | null {
+  const path = join(homedir(), ".brainstorm", "routing-intelligence.json");
+  if (!existsSync(path)) return null;
+
+  // Check cache freshness against both TTL and file mtime so we pick up
+  // updates from a parallel trajectory-analyzer write within the window.
+  let mtime: number;
+  try {
+    mtime = statSync(path).mtimeMs;
+  } catch {
+    return intelligenceCache; // Best-effort fall back to whatever we had
+  }
+
+  if (
+    intelligenceCache &&
+    intelligenceCache.fileMtime === mtime &&
+    Date.now() - intelligenceCache.loadedAt < INTELLIGENCE_TTL_MS
+  ) {
+    return intelligenceCache;
+  }
+
+  try {
+    const data = JSON.parse(readFileSync(path, "utf-8"));
+    if (!data?.models || !data?.taskTypes) return null;
+
+    // Build a model -> taskType -> wilsonLowerBound lookup so capability
+    // scoring can apply per-task historical priors without re-reading the
+    // file structure on every model.
+    const byModelTaskBound: Record<string, Record<string, number>> = {};
+    for (const [modelId, modelStats] of Object.entries(data.models as any)) {
+      const m = modelStats as any;
+      if (!m?.byTaskType) continue;
+      byModelTaskBound[modelId] = {};
+      for (const [taskType, t] of Object.entries(m.byTaskType as any)) {
+        const tt = t as any;
+        if (typeof tt?.wilsonLowerBound === "number") {
+          byModelTaskBound[modelId][taskType] = tt.wilsonLowerBound;
+        }
+      }
+    }
+
+    intelligenceCache = {
+      taskTypes: data.taskTypes,
+      byModelTaskBound,
+      loadedAt: Date.now(),
+      fileMtime: mtime,
+    };
+    return intelligenceCache;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Map task properties to the capability dimensions that matter most.
@@ -150,12 +230,41 @@ export const capabilityStrategy: RoutingStrategy = {
 
     const requirements = getRequiredCapabilities(task);
 
-    // Score each model against requirements
-    const scored = available.map((model) => ({
-      model,
-      capabilityScore: scoreModel(model, requirements),
-      cost: estimateCost(model, task),
-    }));
+    // Consult historical routing intelligence for this task type. The
+    // analyzer ranks models by Wilson lower bound on success rate; we use
+    // those bounds as a multiplicative bias on top of capability scores.
+    // A model that's historically passed 95% of code-generation tasks
+    // (Wilson bound 0.92 on 100 samples) gets a 1.0x multiplier; a model
+    // that's only passed 60% (Wilson bound 0.50) gets 0.65x. The cap at
+    // 1.0 means historical evidence can only PENALIZE underperformers,
+    // never inflate confidence beyond what the eval probes measured.
+    const intelligence = loadRoutingIntelligence();
+    const taskHistorical = intelligence?.byModelTaskBound;
+
+    // Score each model against requirements with optional historical
+    // multiplier from routing intelligence.
+    const scored = available.map((model) => {
+      const baseScore = scoreModel(model, requirements);
+      let historicalMultiplier = 1.0;
+      let historicalNote = "";
+      if (taskHistorical?.[model.id]?.[task.type] !== undefined) {
+        const wlb = taskHistorical[model.id][task.type];
+        // Wilson bound is in [0, 1]. Multiply baseScore by max(0.5, wlb / 0.9)
+        // so a model with WLB ≥ 0.9 keeps full score, while WLB 0.5 gets a
+        // 0.55x penalty. Floor at 0.5 prevents complete elimination based on
+        // a few bad sessions.
+        historicalMultiplier = Math.max(0.5, Math.min(1.0, wlb / 0.9));
+        historicalNote = ` (historical wlb=${(wlb * 100).toFixed(0)}%)`;
+      }
+      return {
+        model,
+        capabilityScore: baseScore * historicalMultiplier,
+        rawCapabilityScore: baseScore,
+        historicalMultiplier,
+        historicalNote,
+        cost: estimateCost(model, task),
+      };
+    });
 
     // Sort: highest capability score first, then cheapest as tiebreaker
     scored.sort((a, b) => {
@@ -172,7 +281,7 @@ export const capabilityStrategy: RoutingStrategy = {
     return {
       model: best.model,
       fallbacks,
-      reason: `Capability-aware: ${best.model.name} scored ${(best.capabilityScore * 100).toFixed(0)}% on [${reqDims}]`,
+      reason: `Capability-aware: ${best.model.name} scored ${(best.capabilityScore * 100).toFixed(0)}% on [${reqDims}]${best.historicalNote}`,
       estimatedCost: best.cost,
       strategy: "capability",
     };

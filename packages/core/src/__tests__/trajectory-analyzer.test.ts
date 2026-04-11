@@ -206,11 +206,12 @@ describe("trajectory-analyzer", () => {
       avgReadEditRatio: 2,
       avgToolSuccessRate: 1,
     });
-    expect(modelStats.byTaskType.refactoring).toEqual({
+    expect(modelStats.byTaskType.refactoring).toMatchObject({
       successes: 1,
       failures: 0,
       avgCost: 1.25,
     });
+    // 1 sample is below MIN_SAMPLES (5) so this task type doesn't get ranked
     expect(intelligence.taskTypes).toEqual({});
     expect(intelligence.projectPreferences["/repo/project-a"]).toEqual({
       preferredModel: null,
@@ -308,23 +309,26 @@ describe("trajectory-analyzer", () => {
       intelligence.models["anthropic/claude-sonnet-4.6"].byTaskType[
         "code-generation"
       ],
-    ).toEqual({
+    ).toMatchObject({
       successes: 2,
       failures: 0,
       avgCost: 1.5,
     });
+    // Wilson lower bound on 2/2 trials is ~0.34 (low because tiny sample)
+    expect(
+      intelligence.models["anthropic/claude-sonnet-4.6"].byTaskType[
+        "code-generation"
+      ].wilsonLowerBound,
+    ).toBeCloseTo(0.342, 2);
     expect(
       intelligence.models["openai/gpt-4.1"].byTaskType["code-generation"],
-    ).toEqual({
+    ).toMatchObject({
       successes: 0,
       failures: 1,
       avgCost: 3,
     });
-    expect(intelligence.taskTypes["code-generation"]).toEqual({
-      bestModel: "anthropic/claude-sonnet-4.6",
-      bestModelSuccessRate: 1,
-      totalSamples: 2,
-    });
+    // taskTypes only ranks models with ≥ 5 samples — neither qualifies here
+    expect(intelligence.taskTypes["code-generation"]).toBeUndefined();
     expect(intelligence.projectPreferences["/repo/project-a"]).toEqual({
       preferredModel: "anthropic/claude-sonnet-4.6",
       preferredModelSuccessRate: 1,
@@ -431,6 +435,92 @@ describe("trajectory-analyzer", () => {
     const loaded = loadRoutingIntelligence();
 
     expect(loaded).toEqual(intelligence);
+  });
+
+  it("computes Wilson lower bound, value-per-dollar, and best/worst ranks above min sample threshold", () => {
+    const trajectoriesDir = createTempDir("trajectory-ranks-");
+    const outputDir = createTempDir("trajectory-output-");
+    const outputPath = join(outputDir, "routing-intelligence.json");
+
+    // Cheap model: 5 successes, 1 failure → 83% raw, ~0.44 Wilson bound,
+    // avgCost $0.10 → high value-per-dollar
+    for (let i = 0; i < 5; i++) {
+      writeJsonlSession(
+        trajectoriesDir,
+        `cheap-success-${i}.jsonl`,
+        createSessionEvents({
+          sessionId: `cheap-success-${i}`,
+          projectPath: "/repo/p",
+          model: "google/gemini-2.5-flash",
+          taskType: "code-generation",
+          llmCost: 0.1,
+          readTools: ["file_read"],
+          writeTools: ["file_edit"],
+        }),
+      );
+    }
+    writeJsonlSession(
+      trajectoriesDir,
+      "cheap-failure.jsonl",
+      createSessionEvents({
+        sessionId: "cheap-failure",
+        projectPath: "/repo/p",
+        model: "google/gemini-2.5-flash",
+        taskType: "code-generation",
+        llmCost: 0.1,
+        readTools: ["file_read"],
+        writeTools: ["file_edit"],
+        includeError: true,
+      }),
+    );
+
+    // Expensive model: 6 successes, 0 failures → 100% raw, ~0.61 Wilson bound,
+    // avgCost $2.00 → much lower value-per-dollar than cheap model despite
+    // higher raw success rate
+    for (let i = 0; i < 6; i++) {
+      writeJsonlSession(
+        trajectoriesDir,
+        `expensive-success-${i}.jsonl`,
+        createSessionEvents({
+          sessionId: `expensive-success-${i}`,
+          projectPath: "/repo/p",
+          model: "openai/gpt-5.4",
+          taskType: "code-generation",
+          llmCost: 2.0,
+          readTools: ["file_read"],
+          writeTools: ["file_edit"],
+        }),
+      );
+    }
+
+    const intelligence = analyzeTrajectories({
+      trajectoriesDir,
+      outputPath,
+    });
+
+    // Both models should have ≥ 5 samples → both qualify for ranking.
+    const cheap =
+      intelligence.models["google/gemini-2.5-flash"].byTaskType[
+        "code-generation"
+      ];
+    const exp =
+      intelligence.models["openai/gpt-5.4"].byTaskType["code-generation"];
+
+    expect(cheap.wilsonLowerBound).toBeGreaterThan(0);
+    expect(cheap.wilsonLowerBound).toBeLessThan(0.85); // 5/6 → ~0.44
+    expect(exp.wilsonLowerBound).toBeGreaterThan(0); // 6/6 → ~0.61
+
+    // Cheap model has much higher value-per-dollar despite lower wlb.
+    expect(cheap.valuePerDollar).toBeGreaterThan(exp.valuePerDollar! * 5);
+
+    // taskTypes ranking:
+    //   bestModel: highest Wilson bound = openai/gpt-5.4 (perfect record)
+    //   bestValueModel: highest cost-adjusted = google/gemini-2.5-flash
+    //   worstModel: lowest Wilson bound = google/gemini-2.5-flash (it failed once)
+    const ranking = intelligence.taskTypes["code-generation"];
+    expect(ranking.bestModel).toBe("openai/gpt-5.4");
+    expect(ranking.bestValueModel).toBe("google/gemini-2.5-flash");
+    expect(ranking.worstModel).toBe("google/gemini-2.5-flash");
   });
 
   it("converts routing intelligence to router historical stats format", () => {
