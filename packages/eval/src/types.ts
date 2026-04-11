@@ -1,13 +1,13 @@
 // ── Probe Definition ─────────────────────────────────────────────────
 
 export type CapabilityDimension =
-  | 'tool-selection'
-  | 'tool-sequencing'
-  | 'code-correctness'
-  | 'multi-step'
-  | 'instruction-adherence'
-  | 'context-utilization'
-  | 'self-correction';
+  | "tool-selection"
+  | "tool-sequencing"
+  | "code-correctness"
+  | "multi-step"
+  | "instruction-adherence"
+  | "context-utilization"
+  | "self-correction";
 
 export interface ProbeVerification {
   /** Tool names that must appear in the tool call log */
@@ -43,6 +43,15 @@ export interface Probe {
   verify: ProbeVerification;
   /** Timeout in milliseconds (default: 30000) */
   timeout_ms?: number;
+  /**
+   * Which workspace the agent's tools should operate against.
+   * - "project" (default): the brainstorm project directory — agent can
+   *   search the real codebase. Use for tool-selection, tool-sequencing,
+   *   context-utilization, and other introspection probes.
+   * - "sandbox": an isolated tmpdir — agent writes generated files there.
+   *   Use for code-correctness probes that expect a clean slate.
+   */
+  workspace?: "project" | "sandbox";
 }
 
 // ── Probe Result ─────────────────────────────────────────────────────
@@ -102,11 +111,14 @@ export interface EvalRun {
 export interface CapabilityScorecard {
   modelId: string;
   evaluatedAt: number;
-  dimensions: Record<CapabilityDimension, {
-    score: number;
-    passed: number;
-    total: number;
-  }>;
+  dimensions: Record<
+    CapabilityDimension,
+    {
+      score: number;
+      passed: number;
+      total: number;
+    }
+  >;
   overall: {
     score: number;
     passed: number;

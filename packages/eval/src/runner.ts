@@ -38,7 +38,9 @@ export async function runProbe(
   const startTime = Date.now();
   const timeout = probe.timeout_ms ?? options.defaultTimeout ?? 30000;
 
-  // Create sandbox directory for probe setup files
+  // Sandbox directory for probe setup files AND for code-correctness runs.
+  // Always created — scorer checks it for code_compiles — but the agent's
+  // actual workspace depends on probe.workspace.
   const sandboxDir = join(
     tmpdir(),
     `brainstorm-eval-${probe.id}-${Date.now()}`,
@@ -55,9 +57,15 @@ export async function runProbe(
       }
     }
 
-    // Use sandboxDir as the agent's working directory so model-generated files
-    // end up in the sandbox (where the scorer checks for them)
+    // Determine workspace: code-correctness probes operate in sandbox,
+    // everything else operates against the brainstorm project so tools
+    // like grep/glob/file_read can find real files to introspect.
     const configDir = options.projectDir ?? process.cwd();
+    const agentWorkspace: string =
+      probe.workspace === "sandbox" ||
+      (!probe.workspace && probe.capability === "code-correctness")
+        ? sandboxDir
+        : configDir;
     const config = loadConfig(configDir);
     const db = getDb();
     const registry = await createProviderRegistry(config);
@@ -65,8 +73,8 @@ export async function runProbe(
     const router = new BrainstormRouter(config, registry, costTracker);
     const tools = createDefaultToolRegistry();
     const sessionManager = new SessionManager(db);
-    const session = sessionManager.start(sandboxDir);
-    const { prompt: systemPrompt } = buildSystemPrompt(sandboxDir);
+    const session = sessionManager.start(agentWorkspace);
+    const { prompt: systemPrompt } = buildSystemPrompt(agentWorkspace);
 
     sessionManager.addUserMessage(probe.prompt);
 
@@ -75,10 +83,10 @@ export async function runProbe(
     let steps = 0;
 
     // Run with timeout — wrap in withWorkspace so path-based tools resolve
-    // paths relative to the sandbox directory instead of process.cwd().
-    // Without this, probes that write to relative paths (e.g., ./prime.ts)
-    // end up in the brainstorm repo root and fail the code_compiles check.
-    const runPromise = withWorkspace(sandboxDir, async () => {
+    // paths relative to agentWorkspace. Code-correctness probes use sandbox
+    // (clean slate for generated files); everything else uses the project
+    // root so introspection tools can search real code.
+    const runPromise = withWorkspace(agentWorkspace, async () => {
       for await (const event of runAgentLoop(sessionManager.getHistory(), {
         config,
         registry,
@@ -86,7 +94,7 @@ export async function runProbe(
         costTracker,
         tools,
         sessionId: session.id,
-        projectPath: sandboxDir,
+        projectPath: agentWorkspace,
         systemPrompt,
         ...(options.modelId && options.modelId !== "default"
           ? { preferredModelId: options.modelId }
