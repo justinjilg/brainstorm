@@ -1,5 +1,6 @@
 export {
   runAgentLoop,
+  normalizeSystemMessagesForProvider,
   type AgentLoopOptions,
   type CompactionCallbacks,
 } from "./agent/loop.js";
