@@ -42,23 +42,35 @@ export function findVaultPatterns(obj: unknown): string[] {
 // loop.ts calls setScrubMap() after resolving secrets, middleware's
 // afterToolResult calls consumeScrubMap() to scrub output.
 
-const _scrubMapRegistry = new Map<string, Map<string, string>>();
+const _scrubMapRegistry = new Map<
+  string,
+  { map: Map<string, string>; createdAt: number }
+>();
+const SCRUB_MAP_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 /** Register a scrub map for a tool call ID (called from loop.ts). */
 export function setScrubMap(
   callId: string,
   scrubMap: Map<string, string>,
 ): void {
-  _scrubMapRegistry.set(callId, scrubMap);
+  // Prune stale entries (fix #15: memory leak if afterToolResult never fires)
+  const cutoff = Date.now() - SCRUB_MAP_TTL_MS;
+  for (const [id, entry] of _scrubMapRegistry) {
+    if (entry.createdAt < cutoff) _scrubMapRegistry.delete(id);
+  }
+  _scrubMapRegistry.set(callId, { map: scrubMap, createdAt: Date.now() });
 }
 
 /** Get and consume a scrub map (called from afterToolResult). */
 export function consumeScrubMap(
   callId: string,
 ): Map<string, string> | undefined {
-  const map = _scrubMapRegistry.get(callId);
-  if (map) _scrubMapRegistry.delete(callId);
-  return map;
+  const entry = _scrubMapRegistry.get(callId);
+  if (entry) {
+    _scrubMapRegistry.delete(callId);
+    return entry.map;
+  }
+  return undefined;
 }
 
 // ── Substitution & Scrubbing ──────────────────────────────────────

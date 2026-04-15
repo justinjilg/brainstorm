@@ -93,13 +93,13 @@ export function createChangeSet(input: CreateChangeSetInput): ChangeSet {
 export async function approveChangeSet(
   id: string,
   approvedBy: "user" | "auto" = "user",
-): Promise<{ success: boolean; message: string; changeset: ChangeSet }> {
+): Promise<{ success: boolean; message: string; changeset: ChangeSet | null }> {
   const cs = changesets.get(id);
   if (!cs)
     return {
       success: false,
       message: `ChangeSet ${id} not found`,
-      changeset: null as any,
+      changeset: null,
     };
   if (cs.status !== "draft")
     return {
@@ -130,7 +130,22 @@ export async function approveChangeSet(
   }
 
   try {
-    const result = await executor(cs);
+    // Timeout executor to prevent indefinite hangs (e.g., unresponsive GitHub API)
+    const EXECUTOR_TIMEOUT_MS = 30_000;
+    const result = await Promise.race([
+      executor(cs),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () =>
+            reject(
+              new Error(
+                `ChangeSet executor timed out after ${EXECUTOR_TIMEOUT_MS / 1000}s`,
+              ),
+            ),
+          EXECUTOR_TIMEOUT_MS,
+        ),
+      ),
+    ]);
     if (result.success) {
       cs.status = "executed";
       cs.executedAt = Date.now();

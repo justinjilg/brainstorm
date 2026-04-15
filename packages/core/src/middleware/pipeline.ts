@@ -95,7 +95,8 @@ export class MiddlewarePipeline {
 
   /**
    * Run afterToolResult hooks. Returns modified result.
-   * FAIL-SAFE: if any middleware throws, log and continue with unmodified result.
+   * FAIL-SAFE for most middleware, but FAIL-CLOSED for secret-substitution
+   * (a scrub failure must not leak secrets to the model).
    */
   runAfterToolResult(result: MiddlewareToolResult): MiddlewareToolResult {
     let current = result;
@@ -105,6 +106,20 @@ export class MiddlewarePipeline {
           const modified = mw.afterToolResult(current);
           if (modified) current = modified;
         } catch (err) {
+          if (mw.name === "secret-substitution") {
+            // FAIL-CLOSED: secret scrub failure must not leak secrets
+            log.error(
+              { middleware: mw.name, tool: result.name, err },
+              "Secret scrubbing failed — redacting entire tool output to prevent leak",
+            );
+            return {
+              ...current,
+              output:
+                "[REDACTED: secret scrubbing failed — output withheld for security]",
+              ok: false,
+              error: "Secret scrubbing failed",
+            };
+          }
           log.error(
             { middleware: mw.name, tool: result.name, err },
             "Middleware afterToolResult threw — continuing with unmodified result",

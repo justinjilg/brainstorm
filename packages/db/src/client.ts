@@ -48,6 +48,15 @@ function cleanupOldRecords(db: Database.Database): void {
     db.prepare("DELETE FROM model_performance_v2 WHERE timestamp < ?").run(
       cutoff,
     );
+    // Clean up old sessions and their messages (fix #23: unbounded growth)
+    db.prepare(
+      "DELETE FROM messages WHERE session_id IN (SELECT id FROM sessions WHERE started_at < ?)",
+    ).run(cutoff);
+    db.prepare("DELETE FROM sessions WHERE started_at < ?").run(cutoff);
+    db.prepare("DELETE FROM audit_log WHERE timestamp < ?").run(cutoff);
+    db.prepare("DELETE FROM compliance_events WHERE created_at < ?").run(
+      cutoff,
+    );
   } catch {
     // Tables may not exist yet on first run — safe to ignore
   }

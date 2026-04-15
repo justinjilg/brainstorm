@@ -9,6 +9,9 @@
  */
 
 import { readdirSync, statSync } from "node:fs";
+import { createLogger } from "@brainst0rm/shared";
+
+const log = createLogger("indexer");
 import { join, extname } from "node:path";
 import { parseFile } from "./parser.js";
 import { CodeGraph } from "./graph.js";
@@ -116,6 +119,17 @@ export async function indexProject(
         }
       } catch (err) {
         progress.errors++;
+        // Abort if error rate exceeds 10% (after at least 20 files attempted)
+        if (
+          progress.filesScanned >= 20 &&
+          progress.errors / progress.filesScanned > 0.1
+        ) {
+          log.warn(
+            { errors: progress.errors, scanned: progress.filesScanned },
+            "Aborting indexing — error rate exceeds 10%",
+          );
+          break;
+        }
       }
 
       if (progress.filesIndexed >= maxFiles) break;
