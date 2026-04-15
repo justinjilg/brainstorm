@@ -500,7 +500,49 @@ export function registerCodeIntelTools(
       const max = limit ?? 20;
       const db = graph.getDb();
 
-      // Rank by number of incoming call edges (most depended-on functions)
+      // Filter common built-in names that inflate caller counts
+      const builtins = [
+        "json",
+        "JSON",
+        "log",
+        "error",
+        "warn",
+        "info",
+        "debug",
+        "get",
+        "set",
+        "has",
+        "delete",
+        "keys",
+        "values",
+        "entries",
+        "push",
+        "pop",
+        "map",
+        "filter",
+        "reduce",
+        "forEach",
+        "find",
+        "toString",
+        "valueOf",
+        "constructor",
+        "resolve",
+        "reject",
+        "then",
+        "catch",
+        "finally",
+        "parse",
+        "stringify",
+        "render",
+        "createElement",
+        "describe",
+        "it",
+        "test",
+        "expect",
+        "beforeEach",
+        "afterEach",
+      ];
+
       const hotspots = db
         .prepare(
           `
@@ -513,12 +555,13 @@ export function registerCodeIntelTools(
           (f.end_line - f.start_line) AS lineCount
         FROM call_edges ce
         JOIN functions f ON f.name = ce.callee
+        WHERE ce.callee NOT IN (${builtins.map(() => "?").join(",")})
         GROUP BY ce.callee, f.file
         ORDER BY callerCount DESC, lineCount DESC
         LIMIT ?
       `,
         )
-        .all(max) as any[];
+        .all(...builtins, max) as any[];
 
       return textResult({
         hotspots: hotspots.map((h: any, i: number) => ({
