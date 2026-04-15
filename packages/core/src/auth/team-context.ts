@@ -77,8 +77,23 @@ export const ROLE_TOOL_ACCESS: Record<
   },
 };
 
+/** Valid role values — reject anything not in this set. */
+const VALID_ROLES = new Set<TeamRole>([
+  "admin",
+  "engineer",
+  "qa",
+  "designer",
+  "devops",
+  "compliance",
+]);
+
 /**
  * Resolve team context from JWT claims.
+ *
+ * Security: the role claim is validated against the VALID_ROLES allowlist.
+ * Unknown roles default to "engineer" (least privilege for active use).
+ * The JWT itself must be signature-verified BEFORE calling this function —
+ * this function only parses claims, it does not verify signatures.
  */
 export function resolveTeamContext(
   claims: Record<string, unknown>,
@@ -87,10 +102,21 @@ export function resolveTeamContext(
     (claims.platform_tenant_id as string) ?? (claims.org_id as string);
   const userId = (claims.sub as string) ?? (claims.user_id as string);
   const email = claims.email as string;
-  const role =
-    (claims.platform_role as TeamRole) ??
-    (claims.team_role as TeamRole) ??
-    "engineer";
+
+  // Validate role against allowlist — unknown values default to engineer
+  const rawRole =
+    (claims.platform_role as string) ?? (claims.team_role as string);
+  const role: TeamRole =
+    rawRole && VALID_ROLES.has(rawRole as TeamRole)
+      ? (rawRole as TeamRole)
+      : "engineer";
+
+  if (rawRole && !VALID_ROLES.has(rawRole as TeamRole)) {
+    log.warn(
+      { rawRole, defaultedTo: "engineer", userId },
+      "Unknown role in JWT claims — defaulted to engineer",
+    );
+  }
 
   if (!orgId || !userId) return null;
 
