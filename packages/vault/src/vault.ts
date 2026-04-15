@@ -73,16 +73,20 @@ export class BrainstormVault {
     let vaultFile: VaultFile;
     try {
       vaultFile = JSON.parse(raw);
-    } catch {
-      // Backup corrupt vault file and throw
+    } catch (parseErr: unknown) {
+      // Backup corrupt vault file and throw with context
       const backupPath = this.vaultPath + ".corrupt." + Date.now();
+      let backedUp = false;
       try {
         writeFileSync(backupPath, raw, { mode: 0o600 });
+        backedUp = true;
       } catch {
-        /* best effort */
+        /* best effort — disk may be full */
       }
+      const reason =
+        parseErr instanceof Error ? parseErr.message : "invalid JSON";
       throw new Error(
-        `Vault file is corrupt (backed up to ${backupPath}). Re-initialize with: brainstorm vault init`,
+        `Vault file is corrupt: ${reason}${backedUp ? ` (backed up to ${backupPath})` : " (backup failed)"}. Re-initialize with: brainstorm vault init`,
       );
     }
 
@@ -221,25 +225,28 @@ export class BrainstormVault {
     if (this.rotating) throw new Error("Rotation already in progress");
     this.rotating = true;
 
-    const salt = generateSalt();
-    const key = deriveKey(newPassword, salt);
+    try {
+      const salt = generateSalt();
+      const key = deriveKey(newPassword, salt);
 
-    const payload: VaultPayload = {
-      keys: Object.fromEntries(this.keys),
-      metadata: {
-        created_at: this.cachedCreatedAt ?? new Date().toISOString(),
-        last_accessed: new Date().toISOString(),
-        key_count: this.keys.size,
-      },
-    };
+      const payload: VaultPayload = {
+        keys: Object.fromEntries(this.keys),
+        metadata: {
+          created_at: this.cachedCreatedAt ?? new Date().toISOString(),
+          last_accessed: new Date().toISOString(),
+          key_count: this.keys.size,
+        },
+      };
 
-    this.persistVaultFile(key, salt, payload);
+      this.persistVaultFile(key, salt, payload);
 
-    if (this.derivedKey) this.derivedKey.fill(0);
-    this.derivedKey = key;
-    this.cachedSalt = salt;
-    this.lastAccessAt = Date.now();
-    this.rotating = false;
+      if (this.derivedKey) this.derivedKey.fill(0);
+      this.derivedKey = key;
+      this.cachedSalt = salt;
+      this.lastAccessAt = Date.now();
+    } finally {
+      this.rotating = false;
+    }
   }
 
   /** Stop the auto-lock timer (call on process shutdown). */

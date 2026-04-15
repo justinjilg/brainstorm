@@ -158,7 +158,7 @@ describe("KeyResolver", () => {
 
       expect(result).toBe("op-secret");
       expect(stderrSpy).toHaveBeenCalledWith(
-        "[vault] Unlock failed — falling back to 1Password/env for this key only\n",
+        expect.stringContaining("[vault] Unlock failed: User cancelled"),
       );
       stderrSpy.mockRestore();
     });
