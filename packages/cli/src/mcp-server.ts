@@ -154,6 +154,48 @@ export async function startMCPServer(): Promise<void> {
     };
   });
 
+  // ── Register Code Intelligence tools ─────────────────────────
+  // Adds 16 structural analysis tools (code_query, code_impact, etc.)
+  // that expose the code knowledge graph to agents via MCP.
+
+  try {
+    const { registerCodeIntelMCP } = await import("@brainst0rm/code-graph");
+    const projectPath = process.cwd();
+    const { toolCount } = await registerCodeIntelMCP(server as any, {
+      projectPath,
+      skipAutoIndex: false, // auto-index on first use
+    });
+    process.stderr.write(
+      `[code-intel] Registered ${toolCount} code intelligence tools\n`,
+    );
+  } catch (err: any) {
+    process.stderr.write(
+      `[code-intel] Code intelligence tools unavailable: ${err.message}\n`,
+    );
+  }
+
+  // ── Register Governance tools ────────────────────────────────
+  // Adds 6 governance tools (gov_validate, gov_trace, gov_coverage,
+  // gov_artifacts, gov_record, gov_analytics) for enterprise compliance.
+
+  try {
+    const { registerGovernanceMCPTools } = await import("@brainst0rm/core");
+    const { default: Database } = await import("better-sqlite3");
+    const { join } = await import("node:path");
+    const { homedir } = await import("node:os");
+    const dbPath = join(homedir(), ".brainstorm", "brainstorm.db");
+    const db = new Database(dbPath);
+    const project = process.cwd().split("/").pop() ?? "unknown";
+    const toolCount = registerGovernanceMCPTools(server as any, db, project);
+    process.stderr.write(
+      `[governance] Registered ${toolCount} governance tools\n`,
+    );
+  } catch (err: any) {
+    process.stderr.write(
+      `[governance] Governance tools unavailable: ${err.message}\n`,
+    );
+  }
+
   // ── Start stdio transport ────────────────────────────────────
 
   const transport = new StdioServerTransport();

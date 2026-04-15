@@ -7,6 +7,7 @@ import {
   BrainstormRouter,
   CostTracker,
   recordOutcome,
+  adaptToolsForModel,
 } from "@brainst0rm/router";
 import type { RoutingOutcomeRepository } from "@brainst0rm/db";
 import type { ToolRegistry, PermissionCheckFn } from "@brainst0rm/tools";
@@ -38,6 +39,12 @@ import {
   syncTrustWindow,
   flushTrustWindow,
 } from "../middleware/builtin/trust-propagation.js";
+import {
+  buildScrubMap,
+  injectSecrets,
+  scrubSecrets,
+  setScrubMap,
+} from "../middleware/builtin/secret-substitution.js";
 import { TrajectoryRecorder } from "../session/trajectory.js";
 import { CircuitBreakerRegistry } from "../security/circuit-breaker.js";
 
@@ -312,6 +319,9 @@ export interface AgentLoopOptions {
   checkpointer?: { saveIfNeeded: (data: any) => boolean };
   /** Role-based tool filter. When set, restricts which tools the agent can use. */
   roleToolFilter?: { allowedTools?: string[]; blockedTools?: string[] };
+  /** Secret resolver for $VAULT_* pattern substitution. When provided, tool args
+   *  containing $VAULT_NAME are resolved before execution and scrubbed from output. */
+  secretResolver?: (name: string) => Promise<string | null>;
 }
 
 // All task types get tools — the model decides whether to use them.
@@ -621,16 +631,39 @@ export async function* runAgentLoop(
               middleware: wrapped.middleware,
             };
           }
+          // Vault secret substitution: resolve $VAULT_* patterns before execution
+          const vaultSubs = (wrapped as any)?.input?._vaultSubstitutions as
+            | string[]
+            | undefined;
+          let scrubMap: Map<string, string> | undefined;
+          if (vaultSubs?.length && options.secretResolver) {
+            scrubMap = await buildScrubMap(vaultSubs, options.secretResolver);
+            if (scrubMap.size > 0) {
+              injectSecrets(mwCall.input, scrubMap);
+              setScrubMap(mwCall.id, scrubMap);
+            }
+            delete mwCall.input._vaultSubstitutions;
+          }
+
           // Execute the tool
           const startMs = Date.now();
-          // Record tool-call event to trajectory
+          // Record tool-call event to trajectory (with placeholders, not secrets)
           trajectory?.recordToolCall({
             name: toolName,
             input: input ?? {},
             durationMs: 0,
           });
-          const result = await originalExecute(input, opts);
+          const rawResult = await originalExecute(
+            vaultSubs?.length ? mwCall.input : input,
+            opts,
+          );
           const durationMs = Date.now() - startMs;
+
+          // Scrub secrets from tool output before returning to model
+          const result = scrubMap?.size
+            ? scrubSecrets(rawResult, scrubMap)
+            : rawResult;
+
           // Post-execution: run afterToolResult for taint tracking
           const isOk = !(
             result &&
@@ -661,6 +694,18 @@ export async function* runAgentLoop(
         };
       }
     }
+  }
+
+  // Per-model tool name adaptation: rename tools to match what each provider's
+  // models were trained on (e.g., bash → shell_command for OpenAI).
+  // The reverse map translates tool calls back to canonical names for execution.
+  let finalTools = aiTools;
+  let toolReverseMap: Map<string, string> | undefined;
+  if (aiTools && decision) {
+    const adapted = adaptToolsForModel(aiTools, decision.model);
+    finalTools = adapted.adaptedTools;
+    toolReverseMap =
+      adapted.reverseMap.size > 0 ? adapted.reverseMap : undefined;
   }
 
   // Serialize task context for gateway telemetry (x-br-metadata header)
@@ -694,7 +739,7 @@ export async function* runAgentLoop(
       model: modelId,
       system: systemForApiNormalized as any,
       messages: messagesForApi as any,
-      ...(aiTools ? { tools: aiTools } : {}),
+      ...(finalTools ? { tools: finalTools } : {}),
       ...(metadataHeader
         ? { headers: { "x-br-metadata": metadataHeader } }
         : {}),

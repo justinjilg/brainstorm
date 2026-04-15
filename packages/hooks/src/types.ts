@@ -15,7 +15,7 @@ export type HookEvent =
   | "DaemonTick" // When a daemon tick fires
   | "DaemonSleep"; // When the daemon enters sleep
 
-export type HookType = "command" | "prompt";
+export type HookType = "command" | "prompt" | "function";
 
 /**
  * Hook definition — matches a lifecycle event and runs an action.
@@ -25,10 +25,12 @@ export interface HookDefinition {
   event: HookEvent;
   /** Optional matcher: only fire for specific tool names (regex for PreToolUse/PostToolUse). */
   matcher?: string;
-  /** Hook type: 'command' runs a shell command, 'prompt' asks an LLM. */
+  /** Hook type: 'command' runs a shell command, 'prompt' asks an LLM, 'function' runs a JS callback. */
   type: HookType;
-  /** The command to run or prompt to evaluate. */
+  /** The command to run or prompt to evaluate (not used for 'function' type). */
   command: string;
+  /** JS callback for 'function' type hooks. Runs in-process, no shell overhead. */
+  fn?: (context: Record<string, unknown>) => Promise<HookResult>;
   /** If true, a failing hook blocks the operation (PreToolUse only). */
   blocking?: boolean;
   /** Human-readable description. */

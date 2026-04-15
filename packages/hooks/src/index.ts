@@ -18,3 +18,5 @@ export {
   createAutoVerifyHooks,
   type VerifyResult,
 } from "./builtin/auto-verify.js";
+export { createGraphEnrichHooks } from "./builtin/graph-enrich.js";
+export { createAutoReindexHooks } from "./builtin/auto-reindex.js";

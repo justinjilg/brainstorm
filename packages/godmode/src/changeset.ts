@@ -220,6 +220,16 @@ function calculateRiskScore(
   // Constraints/blockers
   if (simulation.constraints.length > 0) score += 10;
 
+  // Blast radius from code knowledge graph
+  if (simulation.blastRadius) {
+    const br = simulation.blastRadius;
+    if (br.totalAffected > 20) score += 25;
+    else if (br.totalAffected > 5) score += 10;
+
+    // Apply risk multiplier from sector tier analysis
+    score = Math.round(score * br.riskMultiplier);
+  }
+
   return Math.min(score, 100);
 }
 
@@ -245,6 +255,27 @@ function identifyRiskFactors(
 
   if (simulation.constraints.length > 0)
     factors.push(`${simulation.constraints.length} constraint(s) to check`);
+
+  if (simulation.blastRadius) {
+    const br = simulation.blastRadius;
+    if (br.totalAffected > 0) {
+      factors.push(`${br.totalAffected} transitively affected symbols`);
+    }
+    if (br.affectedCommunities.length > 0) {
+      const criticalSectors = br.affectedCommunities.filter(
+        (c) => c.tier === "critical",
+      );
+      if (criticalSectors.length > 0) {
+        factors.push(
+          `Critical sectors affected: ${criticalSectors.map((c) => c.name).join(", ")}`,
+        );
+      }
+      factors.push(`${br.affectedCommunities.length} code sector(s) impacted`);
+    }
+    if (br.riskMultiplier > 1) {
+      factors.push(`Risk multiplier: ${br.riskMultiplier}x (sector tier)`);
+    }
+  }
 
   return factors;
 }

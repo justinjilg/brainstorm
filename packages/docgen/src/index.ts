@@ -16,6 +16,7 @@ export {
 } from "./architecture.js";
 export { generateModuleDocs, type ModuleDoc } from "./modules.js";
 export { generateAPIDoc, type APIDoc } from "./api-reference.js";
+export { generateGraphDoc, type GraphDoc } from "./graph-docs.js";
 
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -23,6 +24,7 @@ import type { ProjectAnalysis } from "@brainst0rm/ingest";
 import { generateArchitectureDoc } from "./architecture.js";
 import { generateModuleDocs } from "./modules.js";
 import { generateAPIDoc } from "./api-reference.js";
+import { generateGraphDoc } from "./graph-docs.js";
 
 export interface DocgenResult {
   outputDir: string;
@@ -30,6 +32,7 @@ export interface DocgenResult {
   architectureDoc: string;
   moduleDocs: number;
   apiDoc: string | null;
+  graphDoc: string | null;
 }
 
 /**
@@ -38,9 +41,17 @@ export interface DocgenResult {
  * @param analysis - ProjectAnalysis from @brainst0rm/ingest
  * @param outputDir - Directory to write docs to (default: docs/generated)
  */
+/**
+ * Generate all documentation and write to disk.
+ *
+ * @param analysis - ProjectAnalysis from @brainst0rm/ingest
+ * @param outputDir - Directory to write docs to (default: docs/generated)
+ * @param graph - Optional CodeGraph for structural documentation (call graphs, community maps)
+ */
 export function generateAllDocs(
   analysis: ProjectAnalysis,
   outputDir?: string,
+  graph?: any,
 ): DocgenResult {
   const dir = outputDir ?? join(analysis.projectPath, "docs", "generated");
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
@@ -76,11 +87,21 @@ export function generateAllDocs(
     filesWritten.push(apiDocPath);
   }
 
+  // Graph-aware documentation (call graphs, community maps, hotspots)
+  let graphDocPath: string | null = null;
+  if (graph && typeof graph.extendedStats === "function") {
+    const graphDoc = generateGraphDoc(graph);
+    graphDocPath = join(dir, "CODE-INTELLIGENCE.md");
+    writeFileSync(graphDocPath, graphDoc.markdown, "utf-8");
+    filesWritten.push(graphDocPath);
+  }
+
   return {
     outputDir: dir,
     filesWritten,
     architectureDoc: archPath,
     moduleDocs: moduleDocs.length,
     apiDoc: apiDocPath,
+    graphDoc: graphDocPath,
   };
 }

@@ -92,6 +92,48 @@ export class CodeGraph {
       CREATE INDEX IF NOT EXISTS idx_edges_callee ON call_edges(callee);
       CREATE INDEX IF NOT EXISTS idx_edges_caller ON call_edges(caller);
       CREATE INDEX IF NOT EXISTS idx_edges_file ON call_edges(file);
+
+      -- ── Enhanced Graph Schema (Phase 1, Feature 2) ──────────────────
+      -- Generic node/edge tables for community detection, cross-file
+      -- resolution, and recursive CTE-based graph traversal.
+
+      CREATE TABLE IF NOT EXISTS nodes (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        name TEXT NOT NULL,
+        file TEXT NOT NULL,
+        start_line INTEGER,
+        end_line INTEGER,
+        language TEXT,
+        metadata_json TEXT,
+        community_id TEXT,
+        FOREIGN KEY (file) REFERENCES files(path) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_nodes_name ON nodes(name);
+      CREATE INDEX IF NOT EXISTS idx_nodes_file ON nodes(file);
+      CREATE INDEX IF NOT EXISTS idx_nodes_kind ON nodes(kind);
+      CREATE INDEX IF NOT EXISTS idx_nodes_community ON nodes(community_id);
+
+      CREATE TABLE IF NOT EXISTS edges (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_id TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        metadata_json TEXT,
+        FOREIGN KEY (source_id) REFERENCES nodes(id) ON DELETE CASCADE,
+        FOREIGN KEY (target_id) REFERENCES nodes(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id);
+      CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id);
+      CREATE INDEX IF NOT EXISTS idx_edges_kind ON edges(kind);
+
+      CREATE TABLE IF NOT EXISTS communities (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        node_count INTEGER,
+        complexity_score REAL,
+        metadata_json TEXT
+      );
     `);
   }
 
@@ -182,6 +224,110 @@ export class CodeGraph {
       );
       for (const call of parsed.callSites) {
         edgeStmt.run(call.callerName, call.calleeName, call.file, call.line);
+      }
+
+      // ── Dual-write to nodes/edges tables ──────────────────────────
+      const language = parsed.language ?? "typescript";
+
+      // Delete old nodes for this file (cascade deletes edges)
+      this.db.prepare("DELETE FROM nodes WHERE file = ?").run(parsed.file);
+
+      const nodeStmt = this.db.prepare(
+        "INSERT OR REPLACE INTO nodes (id, kind, name, file, start_line, end_line, language, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      );
+      const edgeGraphStmt = this.db.prepare(
+        "INSERT INTO edges (source_id, target_id, kind, metadata_json) VALUES (?, ?, ?, ?)",
+      );
+
+      // Build a map of name → nodeId for edge creation
+      const nameToNodeId = new Map<string, string>();
+
+      for (const fn of parsed.functions) {
+        const id = hashId(`fn:${parsed.file}:${fn.name}:${fn.startLine}`);
+        nodeStmt.run(
+          id,
+          "function",
+          fn.name,
+          fn.file,
+          fn.startLine,
+          fn.endLine,
+          language,
+          JSON.stringify({
+            signature: fn.signature,
+            exported: fn.isExported,
+            async: fn.isAsync,
+          }),
+        );
+        nameToNodeId.set(fn.name, id);
+      }
+      for (const cls of parsed.classes) {
+        const id = hashId(`cls:${parsed.file}:${cls.name}:${cls.startLine}`);
+        nodeStmt.run(
+          id,
+          "class",
+          cls.name,
+          cls.file,
+          cls.startLine,
+          cls.endLine,
+          language,
+          JSON.stringify({ exported: cls.isExported }),
+        );
+        nameToNodeId.set(cls.name, id);
+      }
+      for (const m of parsed.methods) {
+        const id = hashId(
+          `m:${parsed.file}:${m.className}:${m.name}:${m.startLine}`,
+        );
+        const qualifiedName = `${m.className}.${m.name}`;
+        nodeStmt.run(
+          id,
+          "method",
+          qualifiedName,
+          m.file,
+          m.startLine,
+          m.endLine,
+          language,
+          JSON.stringify({
+            className: m.className,
+            static: m.isStatic,
+            async: m.isAsync,
+          }),
+        );
+        nameToNodeId.set(qualifiedName, id);
+      }
+
+      // Create call edges in the new graph (only for intra-file edges where both sides are known)
+      for (const call of parsed.callSites) {
+        if (!call.callerName) continue;
+        const sourceId = nameToNodeId.get(call.callerName);
+        if (!sourceId) continue;
+        const targetId = nameToNodeId.get(call.calleeName);
+        if (targetId) {
+          edgeGraphStmt.run(
+            sourceId,
+            targetId,
+            "calls",
+            JSON.stringify({ file: call.file, line: call.line }),
+          );
+        }
+      }
+
+      // Create import edges
+      for (const imp of parsed.imports) {
+        // File-level import edge: we create a file node and connect it
+        const fileNodeId = hashId(`file:${parsed.file}`);
+        nodeStmt.run(
+          fileNodeId,
+          "file",
+          parsed.file,
+          parsed.file,
+          null,
+          null,
+          language,
+          null,
+        );
+        // Edge: file imports module (target is the source path string, not a node)
+        // These cross-file edges get resolved in the cross-file pipeline stage
       }
     });
     tx();
@@ -310,6 +456,199 @@ export class CodeGraph {
         this.db.prepare("SELECT COUNT(*) AS c FROM call_edges").get() as any
       ).c,
     };
+  }
+
+  // ── Enhanced Graph Traversal (recursive CTEs) ─────────────────
+
+  /**
+   * Find all transitive callers of a node using recursive CTE.
+   * More powerful than the BFS impactAnalysis — uses the nodes/edges tables.
+   */
+  transitiveCallers(
+    nodeId: string,
+    maxDepth = 5,
+  ): Array<{ id: string; name: string; file: string; depth: number }> {
+    return this.db
+      .prepare(
+        `
+      WITH RECURSIVE callers(id, name, file, depth) AS (
+        SELECT n.id, n.name, n.file, 0
+        FROM nodes n WHERE n.id = ?
+        UNION
+        SELECT n2.id, n2.name, n2.file, c.depth + 1
+        FROM callers c
+        JOIN edges e ON e.target_id = c.id AND e.kind = 'calls'
+        JOIN nodes n2 ON n2.id = e.source_id
+        WHERE c.depth < ?
+      )
+      SELECT id, name, file, depth FROM callers
+      WHERE depth > 0
+      ORDER BY depth, name
+    `,
+      )
+      .all(nodeId, maxDepth) as any[];
+  }
+
+  /**
+   * Find all transitive callees of a node using recursive CTE.
+   */
+  transitiveCallees(
+    nodeId: string,
+    maxDepth = 5,
+  ): Array<{ id: string; name: string; file: string; depth: number }> {
+    return this.db
+      .prepare(
+        `
+      WITH RECURSIVE callees(id, name, file, depth) AS (
+        SELECT n.id, n.name, n.file, 0
+        FROM nodes n WHERE n.id = ?
+        UNION
+        SELECT n2.id, n2.name, n2.file, c.depth + 1
+        FROM callees c
+        JOIN edges e ON e.source_id = c.id AND e.kind = 'calls'
+        JOIN nodes n2 ON n2.id = e.target_id
+        WHERE c.depth < ?
+      )
+      SELECT id, name, file, depth FROM callees
+      WHERE depth > 0
+      ORDER BY depth, name
+    `,
+      )
+      .all(nodeId, maxDepth) as any[];
+  }
+
+  /**
+   * Find shortest path between two nodes using bidirectional BFS via CTE.
+   * Returns the node IDs along the path, or null if no path exists.
+   */
+  shortestPath(fromId: string, toId: string, maxDepth = 10): string[] | null {
+    // Use forward traversal and check if target is reached
+    const rows = this.db
+      .prepare(
+        `
+      WITH RECURSIVE paths(id, path, depth) AS (
+        SELECT ?, ?, 0
+        UNION
+        SELECT e.target_id, p.path || ',' || e.target_id, p.depth + 1
+        FROM paths p
+        JOIN edges e ON e.source_id = p.id
+        WHERE p.depth < ? AND p.id != ?
+      )
+      SELECT path FROM paths WHERE id = ? LIMIT 1
+    `,
+      )
+      .get(fromId, fromId, maxDepth, toId, toId) as
+      | { path: string }
+      | undefined;
+
+    return rows ? rows.path.split(",") : null;
+  }
+
+  /**
+   * Find all nodes in the same connected component.
+   */
+  connectedComponent(nodeId: string): string[] {
+    const rows = this.db
+      .prepare(
+        `
+      WITH RECURSIVE component(id) AS (
+        SELECT ?
+        UNION
+        SELECT CASE
+          WHEN e.source_id = c.id THEN e.target_id
+          ELSE e.source_id
+        END
+        FROM component c
+        JOIN edges e ON e.source_id = c.id OR e.target_id = c.id
+      )
+      SELECT DISTINCT id FROM component
+    `,
+      )
+      .all(nodeId) as Array<{ id: string }>;
+
+    return rows.map((r) => r.id);
+  }
+
+  /**
+   * Get all communities.
+   */
+  getCommunities(): Array<{
+    id: string;
+    name: string | null;
+    nodeCount: number;
+    complexityScore: number | null;
+  }> {
+    return this.db
+      .prepare(
+        "SELECT id, name, node_count AS nodeCount, complexity_score AS complexityScore FROM communities",
+      )
+      .all() as any[];
+  }
+
+  /**
+   * Get all nodes belonging to a community.
+   */
+  getNodesInCommunity(communityId: string): Array<{
+    id: string;
+    kind: string;
+    name: string;
+    file: string;
+  }> {
+    return this.db
+      .prepare(
+        "SELECT id, kind, name, file FROM nodes WHERE community_id = ? ORDER BY file, name",
+      )
+      .all(communityId) as any[];
+  }
+
+  /**
+   * Find a node by name (searches the nodes table).
+   */
+  findNode(name: string): Array<{
+    id: string;
+    kind: string;
+    name: string;
+    file: string;
+    startLine: number | null;
+    communityId: string | null;
+  }> {
+    return this.db
+      .prepare(
+        "SELECT id, kind, name, file, start_line AS startLine, community_id AS communityId FROM nodes WHERE name = ?",
+      )
+      .all(name) as any[];
+  }
+
+  /**
+   * Extended stats including the new tables.
+   */
+  extendedStats(): {
+    files: number;
+    functions: number;
+    classes: number;
+    methods: number;
+    callEdges: number;
+    nodes: number;
+    graphEdges: number;
+    communities: number;
+  } {
+    const base = this.stats();
+    return {
+      ...base,
+      nodes: (this.db.prepare("SELECT COUNT(*) AS c FROM nodes").get() as any)
+        .c,
+      graphEdges: (
+        this.db.prepare("SELECT COUNT(*) AS c FROM edges").get() as any
+      ).c,
+      communities: (
+        this.db.prepare("SELECT COUNT(*) AS c FROM communities").get() as any
+      ).c,
+    };
+  }
+
+  /** Get the underlying database instance (for advanced queries). */
+  getDb(): Database.Database {
+    return this.db;
   }
 
   close(): void {

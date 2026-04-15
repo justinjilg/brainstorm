@@ -1,8 +1,26 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CodeGraph, indexProject, parseFile } from "../index.js";
+import {
+  CodeGraph,
+  indexProjectSync,
+  parseFile,
+  registerAdapter,
+  createTypeScriptAdapter,
+} from "../index.js";
+
+// Register TypeScript adapter before tests (required after multi-language refactor)
+beforeAll(() => {
+  registerAdapter(createTypeScriptAdapter());
+});
+
+/** parseFile with non-null assertion — safe because TS adapter is registered above. */
+function parse(filePath: string) {
+  const result = parseFile(filePath);
+  if (!result) throw new Error(`parseFile returned null for ${filePath}`);
+  return result;
+}
 
 const tempDirs: string[] = [];
 const graphs: CodeGraph[] = [];
@@ -58,7 +76,7 @@ describe("@brainst0rm/code-graph", () => {
       ].join("\n"),
     );
 
-    const parsed = parseFile(filePath);
+    const parsed = parse(filePath);
 
     expect(parsed.functions).toEqual([
       expect.objectContaining({
@@ -119,7 +137,7 @@ describe("@brainst0rm/code-graph", () => {
       ),
     );
 
-    const parsed = parseFile(filePath);
+    const parsed = parse(filePath);
 
     expect(parsed.functions).toEqual([
       expect.objectContaining({
@@ -155,7 +173,7 @@ describe("@brainst0rm/code-graph", () => {
         "}",
       ].join("\n"),
     );
-    const parsed = parseFile(filePath);
+    const parsed = parse(filePath);
     const graph = createGraph(projectDir);
 
     graph.upsertFile(parsed);
@@ -207,7 +225,7 @@ describe("@brainst0rm/code-graph", () => {
     );
     const graph = createGraph(projectDir);
 
-    graph.upsertFile(parseFile(filePath));
+    graph.upsertFile(parse(filePath));
 
     expect(graph.impactAnalysis("leaf", 1)).toEqual([
       {
@@ -246,7 +264,7 @@ describe("@brainst0rm/code-graph", () => {
       ].join("\n"),
     );
 
-    const parsed = parseFile(filePath);
+    const parsed = parse(filePath);
 
     // Both generator forms should be captured as functions, not skipped.
     expect(parsed.functions.map((f) => f.name).sort()).toEqual([
@@ -278,7 +296,7 @@ describe("@brainst0rm/code-graph", () => {
     );
     const graph = createGraph(projectDir);
 
-    graph.upsertFile(parseFile(filePath));
+    graph.upsertFile(parse(filePath));
 
     // The call site has caller=null. Old behavior: impactAnalysis returned
     // [] because the loop skipped null callers. New behavior: surface as
@@ -327,7 +345,7 @@ describe("@brainst0rm/code-graph", () => {
     }> = [];
     const graph = createGraph(projectDir);
 
-    const { progress } = indexProject(projectDir, {
+    const { progress } = indexProjectSync(projectDir, {
       graph,
       maxFiles: 2,
       onProgress(current) {

@@ -50,6 +50,8 @@ export function createSubagentTool(
           "general",
           "decompose",
           "external",
+          "research",
+          "memory-curator",
         ])
         .default("general")
         .describe(
