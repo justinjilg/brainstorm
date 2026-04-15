@@ -1,7 +1,10 @@
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+// Scorer tests spawn tsc --noEmit which takes ~6s. Increase timeout for full-suite runs.
+vi.setConfig({ testTimeout: 15_000 });
 import { scoreProbe, type ProbeOutput } from "../scorer.js";
 import type { Probe } from "../types.js";
 

@@ -1,4 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+// Argon2id key derivation is intentionally slow (~1-2s per call).
+// In the full test suite, resource contention can push this past the default 5s timeout.
+vi.setConfig({ testTimeout: 15_000 });
 import {
   deriveKey,
   generateSalt,

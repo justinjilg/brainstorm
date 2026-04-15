@@ -68,6 +68,7 @@ describe("MemoryManager", () => {
   });
 
   afterEach(() => {
+    manager.dispose(); // Cancel pending timers before deleting the directory
     cleanup(projectPath);
   });
 

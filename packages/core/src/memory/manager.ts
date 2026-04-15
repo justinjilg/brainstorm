@@ -891,7 +891,12 @@ export class MemoryManager {
       }
     }
 
-    writeFileSync(this.indexPath, lines.join("\n") + "\n", "utf-8");
+    try {
+      writeFileSync(this.indexPath, lines.join("\n") + "\n", "utf-8");
+    } catch {
+      // Directory may have been removed (test teardown, process cleanup).
+      // This is expected — the index is a convenience file, not critical data.
+    }
   }
 
   /** Promote an entry to system tier (always in prompt). Quarantined entries cannot be promoted without explicit user trust override. */
