@@ -73,6 +73,39 @@ import { shouldUseEnsemble } from "./ensemble.js";
 
 const log = createLogger("agent-loop");
 
+/** Classify whether an error is from the model API (rate limit, auth, network). */
+function isModelApiError(err: any): boolean {
+  const status = err.statusCode ?? err.status;
+  if (status && status >= 400) return true;
+  const msg = (err.message ?? "").toLowerCase();
+  return (
+    msg.includes("fetch failed") ||
+    msg.includes("rate limit") ||
+    msg.includes("429") ||
+    msg.includes("503") ||
+    msg.includes("unauthorized") ||
+    msg.includes("api key") ||
+    msg.includes("timeout") ||
+    msg.includes("econnrefused") ||
+    msg.includes("ai_") // AI SDK error codes
+  );
+}
+
+/** Classify whether an error is from SQLite/database operations. */
+function isDbError(err: any): boolean {
+  const msg = (err.message ?? "").toLowerCase();
+  return (
+    err.code === "SQLITE_FULL" ||
+    err.code === "SQLITE_BUSY" ||
+    err.code === "SQLITE_LOCKED" ||
+    msg.includes("sqlite") ||
+    msg.includes("database is locked") ||
+    msg.includes("disk i/o error") ||
+    msg.includes("no space left") ||
+    msg.includes("enospc")
+  );
+}
+
 /**
  * Enrich raw API errors with actionable user-facing messages.
  * The original error is preserved; the message is replaced with a helpful one.
@@ -754,16 +787,24 @@ export async function* runAgentLoop(
         if (usage) {
           const inputTokens = usage.inputTokens ?? 0;
           const outputTokens = usage.outputTokens ?? 0;
-          costTracker.record({
-            sessionId,
-            modelId: decision.model.id,
-            provider: decision.model.provider,
-            inputTokens,
-            outputTokens,
-            taskType: task.type,
-            projectPath: options.projectPath,
-            pricing: decision.model.pricing,
-          });
+          try {
+            costTracker.record({
+              sessionId,
+              modelId: decision.model.id,
+              provider: decision.model.provider,
+              inputTokens,
+              outputTokens,
+              taskType: task.type,
+              projectPath: options.projectPath,
+              pricing: decision.model.pricing,
+            });
+          } catch (dbErr) {
+            // SQLite write failure (disk full, locked, etc.) — log but don't crash the agent loop
+            log.error(
+              { err: dbErr },
+              "Cost tracking write failed — continuing without recording",
+            );
+          }
           // Record LLM call to trajectory for learning loop
           const stepCost =
             (inputTokens / 1_000_000) *
@@ -1182,12 +1223,16 @@ export async function* runAgentLoop(
       totalTokens: costTracker.getSessionTokens(),
     };
   } catch (error: any) {
-    // AbortError means the user cancelled — yield interrupted, not error
+    // ── Error Classification ────────────────────────────────────
+    // Differentiate error types so callers can make informed retry decisions.
+
+    // 1. User abort — not an error
     if (error.name === "AbortError" || options.signal?.aborted) {
       yield { type: "interrupted" };
-    } else {
+
+      // 2. Model API error (rate limit, auth, network) — record failure for routing
+    } else if (isModelApiError(error)) {
       router.recordFailure(decision.model.id, error.message);
-      // Record failure for Thompson sampling
       const failLatencyMs = Date.now() - turnStartMs;
       recordOutcome(task.type, decision.model.id, false, failLatencyMs, 0);
       if (options.routingOutcomeRepo) {
@@ -1203,9 +1248,53 @@ export async function* runAgentLoop(
           log.warn({ err: outcomeErr }, "Failed to persist routing outcome");
         }
       }
-      // Wrap raw API errors with actionable messages
       const enriched = enrichError(error, decision.model.id);
-      yield { type: "error", error: enriched };
+      yield { type: "error", error: enriched, category: "model-api" };
+
+      // 3. Database/persistence error — surface clearly, don't blame the model
+    } else if (isDbError(error)) {
+      log.error(
+        { err: error },
+        "Database error in agent loop — not a model failure",
+      );
+      yield {
+        type: "error",
+        error: new Error(
+          `Database error: ${error.message}. Check disk space and file permissions.`,
+        ),
+        category: "database",
+      };
+
+      // 4. Middleware/security error — surface the blocking middleware
+    } else if (error.middleware) {
+      yield {
+        type: "error",
+        error: new Error(
+          `Blocked by ${error.middleware}: ${error.reason ?? error.message}`,
+        ),
+        category: "middleware",
+      };
+
+      // 5. Unknown — treat as model error for backward compatibility
+    } else {
+      router.recordFailure(decision.model.id, error.message);
+      const failLatencyMs = Date.now() - turnStartMs;
+      recordOutcome(task.type, decision.model.id, false, failLatencyMs, 0);
+      if (options.routingOutcomeRepo) {
+        try {
+          options.routingOutcomeRepo.record(
+            decision.model.id,
+            task.type,
+            false,
+            failLatencyMs,
+            0,
+          );
+        } catch (outcomeErr) {
+          log.warn({ err: outcomeErr }, "Failed to persist routing outcome");
+        }
+      }
+      const enriched = enrichError(error, decision.model.id);
+      yield { type: "error", error: enriched, category: "unknown" };
     }
   } finally {
     setTaskEventHandler(null);

@@ -257,7 +257,11 @@ export type AgentEvent =
   | { type: "daemon-wake"; trigger: "timer" | "user" | "scheduler" }
   | { type: "daemon-stopped"; tickCount: number; totalCost: number }
   | { type: "interrupted" }
-  | { type: "error"; error: Error }
+  | {
+      type: "error";
+      error: Error;
+      category?: "model-api" | "database" | "middleware" | "unknown";
+    }
   | {
       type: "done";
       totalCost: number;

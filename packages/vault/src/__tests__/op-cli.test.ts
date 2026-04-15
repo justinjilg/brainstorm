@@ -231,7 +231,7 @@ describe("1Password CLI backend", () => {
         { key: "OPENAI_API_KEY", expectedItem: "OpenAI API Key" },
         {
           key: "GOOGLE_GENERATIVE_AI_API_KEY",
-          expectedItem: "Google AI API Key (server)",
+          expectedItem: "Gemini API Key",
         },
         { key: "DEEPSEEK_API_KEY", expectedItem: "DeepSeek API Key" },
         { key: "MOONSHOT_API_KEY", expectedItem: "Moonshot API Key" },
