@@ -64,6 +64,9 @@ export function initTraceabilitySchema(db: Database.Database): void {
   db.prepare(
     "CREATE INDEX IF NOT EXISTS idx_links_target ON trace_links(target_id)",
   ).run();
+  db.prepare(
+    "CREATE INDEX IF NOT EXISTS idx_links_target_source ON trace_links(target_id, source_id)",
+  ).run();
 }
 
 /**
@@ -186,25 +189,28 @@ export function traceChain(
 ): TracedArtifact[] {
   initTraceabilitySchema(db);
 
+  // Depth-limited recursive CTE — prevents infinite recursion on circular refs
   const sql =
     direction === "downstream"
       ? `
-      WITH RECURSIVE chain(id) AS (
-        SELECT ?
+      WITH RECURSIVE chain(id, depth) AS (
+        SELECT ?, 0
         UNION
-        SELECT target_id FROM trace_links
-        JOIN chain ON chain.id = trace_links.source_id
+        SELECT target_id, c.depth + 1 FROM trace_links
+        JOIN chain c ON c.id = trace_links.source_id
+        WHERE c.depth < 50
       )
-      SELECT DISTINCT id FROM chain WHERE id != ?
+      SELECT DISTINCT id FROM chain WHERE id != ? LIMIT 500
     `
       : `
-      WITH RECURSIVE chain(id) AS (
-        SELECT ?
+      WITH RECURSIVE chain(id, depth) AS (
+        SELECT ?, 0
         UNION
-        SELECT source_id FROM trace_links
-        JOIN chain ON chain.id = trace_links.target_id
+        SELECT source_id, c.depth + 1 FROM trace_links
+        JOIN chain c ON c.id = trace_links.target_id
+        WHERE c.depth < 50
       )
-      SELECT DISTINCT id FROM chain WHERE id != ?
+      SELECT DISTINCT id FROM chain WHERE id != ? LIMIT 500
     `;
 
   const rows = db.prepare(sql).all(traceId, traceId) as Array<{ id: string }>;

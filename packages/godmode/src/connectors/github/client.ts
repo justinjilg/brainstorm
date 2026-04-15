@@ -228,9 +228,7 @@ export class GitHubClient {
   }
 
   private async exchangeForInstallationToken(): Promise<string> {
-    // Sign JWT with the app's private key
-    // For now, use a simplified approach — real implementation would use jsonwebtoken
-    // This is a placeholder that will be replaced with proper JWT signing
+    // Sign JWT with the app's private key using node:crypto RS256
     const appJwt = await this.createAppJwt();
 
     const res = await fetch(

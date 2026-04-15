@@ -52,17 +52,25 @@ export class GitMemorySync {
    * Rate-limited to avoid hammering the remote on frequent reads.
    * Conflicts are auto-resolved with last-writer-wins (theirs).
    */
+  private _pulling = false;
+
   syncBeforeRead(): void {
     if (!this.isActive()) return;
+    if (this._pulling) return; // Prevent parallel pull race condition
 
     const now = Date.now();
     if (now - this.lastPullAt < this.pullCooldownMs) return;
 
-    const result = pullChanges(this.memoryDir, "origin", this.branch);
-    if (!result.success && result.conflicts.length > 0) {
-      resolveConflicts(this.memoryDir, "theirs");
+    this._pulling = true;
+    try {
+      const result = pullChanges(this.memoryDir, "origin", this.branch);
+      if (!result.success && result.conflicts.length > 0) {
+        resolveConflicts(this.memoryDir, "theirs");
+      }
+      this.lastPullAt = now;
+    } finally {
+      this._pulling = false;
     }
-    this.lastPullAt = now;
   }
 
   /**

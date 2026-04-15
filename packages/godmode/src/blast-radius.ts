@@ -11,6 +11,11 @@
 import type { BlastRadius } from "./types.js";
 import { createLogger } from "@brainst0rm/shared";
 
+/** Escape SQL LIKE wildcards to prevent unintended pattern matching. */
+function escapeLike(s: string): string {
+  return s.replace(/%/g, "\\%").replace(/_/g, "\\_");
+}
+
 const log = createLogger("blast-radius");
 
 /** Tier-based risk multipliers. */
@@ -50,7 +55,7 @@ export function computeBlastRadius(
     // Find all functions defined in this file
     const functions = db
       .prepare("SELECT name FROM functions WHERE file = ? OR file LIKE ?")
-      .all(file, `%${file}`) as Array<{ name: string }>;
+      .all(file, `%${escapeLike(file)}`) as Array<{ name: string }>;
 
     for (const fn of functions) {
       // Run impact analysis (transitive callers)
@@ -67,7 +72,7 @@ export function computeBlastRadius(
       .prepare(
         "SELECT DISTINCT community_id FROM nodes WHERE (file = ? OR file LIKE ?) AND community_id IS NOT NULL",
       )
-      .all(file, `%${file}`) as Array<{ community_id: string }>;
+      .all(file, `%${escapeLike(file)}`) as Array<{ community_id: string }>;
 
     for (const c of communities) {
       affectedCommunityIds.add(c.community_id);

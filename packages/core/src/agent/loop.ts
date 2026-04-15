@@ -670,10 +670,17 @@ export async function* runAgentLoop(
             | undefined;
           let scrubMap: Map<string, string> | undefined;
           if (vaultSubs?.length && options.secretResolver) {
-            scrubMap = await buildScrubMap(vaultSubs, options.secretResolver);
-            if (scrubMap.size > 0) {
-              injectSecrets(mwCall.input, scrubMap);
-              setScrubMap(mwCall.id, scrubMap);
+            try {
+              scrubMap = await buildScrubMap(vaultSubs, options.secretResolver);
+              if (scrubMap.size > 0) {
+                injectSecrets(mwCall.input, scrubMap);
+                setScrubMap(mwCall.id, scrubMap);
+              }
+            } catch (vaultErr) {
+              log.warn(
+                { err: vaultErr, patterns: vaultSubs },
+                "Vault secret resolution failed — patterns passed unresolved",
+              );
             }
             delete mwCall.input._vaultSubstitutions;
           }

@@ -171,17 +171,16 @@ export class MemoryManager {
     if (trustScore < QUARANTINE_THRESHOLD && !entry.tier) {
       tier = "quarantine";
       log.info({ id, source, trustScore }, "Low-trust entry quarantined");
-    } else if (
-      entry.tier === "system" &&
-      source === "web_fetch" &&
-      trustScore < 0.7
-    ) {
-      // Block web-sourced entries from system tier unless high trust
-      tier = "archive";
-      log.warn(
-        { id, source, trustScore },
-        "Web-sourced entry blocked from system tier — demoted to archive",
-      );
+    } else if (source === "web_fetch" && trustScore < 0.7) {
+      // Block ALL web-sourced entries from system tier unless high trust,
+      // regardless of whether tier was explicitly set or auto-derived.
+      tier = entry.tier === "system" ? "archive" : (entry.tier ?? "archive");
+      if (entry.tier === "system") {
+        log.warn(
+          { id, source, trustScore },
+          "Web-sourced entry blocked from system tier — demoted to archive",
+        );
+      }
     } else {
       tier =
         entry.tier ??
@@ -241,11 +240,25 @@ export class MemoryManager {
     if (memory.validUntil) fmLines.push(`validUntil: ${memory.validUntil}`);
     if (memory.projectPath) fmLines.push(`projectPath: ${memory.projectPath}`);
     fmLines.push("---", "", memory.content);
-    writeFileSync(filePath, fmLines.join("\n"), "utf-8");
+    const fileContent = fmLines.join("\n");
+
+    // Pre-check capacity — reject entries that would exceed the limit
+    const currentSize = this.estimateTotalSize();
+    if (currentSize + fileContent.length > MAX_MEMORY_BYTES) {
+      this.enforceCapacity(); // Try pruning first
+      if (this.estimateTotalSize() + fileContent.length > MAX_MEMORY_BYTES) {
+        log.warn(
+          { id, size: fileContent.length, cap: MAX_MEMORY_BYTES },
+          "Memory entry exceeds capacity — rejected",
+        );
+        return memory; // Return without writing
+      }
+    }
+
+    writeFileSync(filePath, fileContent, "utf-8");
 
     this.entries.set(id, memory);
     this._sessionMemoryOps++;
-    this.enforceCapacity();
     this.scheduleIndexUpdate();
 
     // Fire-and-forget push to gateway, now with project scope so
@@ -740,6 +753,18 @@ export class MemoryManager {
    * Evicts oldest entries (by updatedAt) until total size is under MAX_MEMORY_BYTES.
    * Entries with "[keep]" in their name are exempt from eviction.
    */
+  private estimateTotalSize(): number {
+    let total = 0;
+    for (const entry of this.entries.values()) {
+      total +=
+        entry.content.length +
+        entry.name.length +
+        entry.description.length +
+        200; // 200 for frontmatter
+    }
+    return total;
+  }
+
   private enforceCapacity(): void {
     // Scan ALL memory directories — root, system/, and quarantine/ — to prevent
     // unbounded growth in subdirectories that were previously not counted.
