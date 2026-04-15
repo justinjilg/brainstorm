@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+// Vault operations use Argon2id which is intentionally slow (~2s per call).
+vi.setConfig({ testTimeout: 15_000 });
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
