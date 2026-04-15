@@ -20,3 +20,15 @@ export {
   type SyncQueueRow,
   type EnqueueOptions,
 } from "./repositories.js";
+export {
+  OrgRepository,
+  TeamMemberRepository,
+  type Org,
+  type TeamMember,
+  type TeamRole,
+} from "./team-repository.js";
+export {
+  ComplianceEventRepository,
+  type ComplianceEvent,
+  type ComplianceSeverity,
+} from "./compliance-repository.js";

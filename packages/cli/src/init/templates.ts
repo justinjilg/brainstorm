@@ -1,15 +1,21 @@
 export interface InitChoices {
   name: string;
-  type: 'monorepo' | 'app' | 'cli' | 'library' | 'api';
-  language: 'typescript' | 'python' | 'rust' | 'go' | 'java' | 'multi';
-  framework: 'nextjs' | 'hono' | 'fastapi' | 'express' | 'none';
-  runtime: 'node' | 'deno' | 'bun' | 'python' | 'go';
-  deploy: 'vercel' | 'do-app-platform' | 'docker' | 'aws' | 'none';
-  cloudProvider: 'brainstormrouter' | 'direct' | 'none';
-  localModels: Array<'ollama' | 'lmstudio' | 'llamacpp'>;
-  budgetTier: 'low' | 'standard' | 'premium';
-  secretsStrategy: 'env-file' | 'op-cli' | 'sops' | 'doppler' | 'infisical' | 'manual';
-  ciTier: 'standard' | 'full' | 'monorepo' | 'none';
+  type: "monorepo" | "app" | "cli" | "library" | "api";
+  language: "typescript" | "python" | "rust" | "go" | "java" | "multi";
+  framework: "nextjs" | "hono" | "fastapi" | "express" | "none";
+  runtime: "node" | "deno" | "bun" | "python" | "go";
+  deploy: "vercel" | "do-app-platform" | "docker" | "aws" | "none";
+  cloudProvider: "brainstormrouter" | "direct" | "none";
+  localModels: Array<"ollama" | "lmstudio" | "llamacpp">;
+  budgetTier: "low" | "standard" | "premium";
+  secretsStrategy:
+    | "env-file"
+    | "op-cli"
+    | "sops"
+    | "doppler"
+    | "infisical"
+    | "manual";
+  ciTier: "standard" | "full" | "monorepo" | "none";
   architecture: string;
 }
 
@@ -24,97 +30,129 @@ export interface GatewayInfo {
 
 export function generateStormMd(choices: InitChoices): string {
   const lines = [
-    '---',
-    'version: 1',
+    "---",
+    "version: 1",
     `name: ${choices.name}`,
     `type: ${choices.type}`,
     `language: ${choices.language}`,
     `framework: ${choices.framework}`,
     `runtime: ${choices.runtime}`,
     `deploy: ${choices.deploy}`,
-    'routing:',
-    '  primary_tasks: [code-generation, debugging]',
+    "routing:",
+    "  primary_tasks: [code-generation, debugging]",
     `  typical_complexity: moderate`,
-    `  prefer_local: ${choices.budgetTier === 'low'}`,
+    `  prefer_local: ${choices.budgetTier === "low"}`,
     `  budget_tier: ${choices.budgetTier}`,
-    'providers:',
+    "providers:",
     `  cloud: ${choices.cloudProvider}`,
-    `  local: [${choices.localModels.join(', ')}]`,
-    'secrets:',
+    `  local: [${choices.localModels.join(", ")}]`,
+    "secrets:",
     `  strategy: ${choices.secretsStrategy}`,
     `entry_points: []`,
-    choices.language === 'typescript' ? 'test_command: npm test' : choices.language === 'python' ? 'test_command: pytest' : undefined,
-    choices.language === 'typescript' ? 'build_command: npm run build' : undefined,
-    choices.language === 'typescript' ? 'dev_command: npm run dev' : choices.language === 'python' ? 'dev_command: python -m uvicorn app:app --reload' : undefined,
-    '---',
-    '',
-    '## What is this?',
+    choices.language === "typescript"
+      ? "test_command: npm test"
+      : choices.language === "python"
+        ? "test_command: pytest"
+        : undefined,
+    choices.language === "typescript"
+      ? "build_command: npm run build"
+      : undefined,
+    choices.language === "typescript"
+      ? "dev_command: npm run dev"
+      : choices.language === "python"
+        ? "dev_command: python -m uvicorn app:app --reload"
+        : undefined,
+    "---",
+    "",
+    "## What is this?",
     `<!-- One sentence. What does this project do? -->`,
-    choices.architecture || '[Describe your project here.]',
-    '',
-    '## Start here',
-    '<!-- The 5 files to read first to understand the architecture. -->',
-    '- [Add your key entry point]',
-    '- [Add your main abstraction]',
-    '- [Add your data schema]',
-    '- [Add your route definitions]',
-    '- [Add your config file]',
-    '',
-    '## Commands that work',
-    '<!-- Copy-pasteable. Must work on a fresh clone. -->',
-    '```bash',
-    choices.language === 'typescript' ? 'npm install' : choices.language === 'python' ? 'pip install -r requirements.txt' : '# install dependencies',
-    choices.language === 'typescript' ? 'npm run dev' : choices.language === 'python' ? 'python -m uvicorn app:app --reload' : '# start dev server',
-    choices.language === 'typescript' ? 'npm test' : choices.language === 'python' ? 'pytest' : '# run tests',
-    choices.language === 'typescript' ? 'npm run build' : '# build',
-    '```',
-    '',
-    '## Conventions',
-    '<!-- Show patterns by example. I learn by reading code, not rules. -->',
-    '```' + (choices.language === 'typescript' ? 'typescript' : choices.language),
-    '// Add code examples of your project\'s patterns here',
-    '```',
-    '',
-    '## Environment',
-    '<!-- Required vars marked [REQUIRED]. -->',
-    choices.cloudProvider === 'brainstormrouter' ? '- `BRAINSTORM_API_KEY` [REQUIRED] — BrainstormRouter SaaS key' : '- [Add required environment variables]',
-    '',
-    '## Don\'t touch',
-    '<!-- Files I should never modify without asking. -->',
-    '- [Add protected files/directories here]',
-    '',
+    choices.architecture || "[Describe your project here.]",
+    "",
+    "## Start here",
+    "<!-- The 5 files to read first to understand the architecture. -->",
+    "- [Add your key entry point]",
+    "- [Add your main abstraction]",
+    "- [Add your data schema]",
+    "- [Add your route definitions]",
+    "- [Add your config file]",
+    "",
+    "## Commands that work",
+    "<!-- Copy-pasteable. Must work on a fresh clone. -->",
+    "```bash",
+    choices.language === "typescript"
+      ? "npm install"
+      : choices.language === "python"
+        ? "pip install -r requirements.txt"
+        : "# install dependencies",
+    choices.language === "typescript"
+      ? "npm run dev"
+      : choices.language === "python"
+        ? "python -m uvicorn app:app --reload"
+        : "# start dev server",
+    choices.language === "typescript"
+      ? "npm test"
+      : choices.language === "python"
+        ? "pytest"
+        : "# run tests",
+    choices.language === "typescript" ? "npm run build" : "# build",
+    "```",
+    "",
+    "## Conventions",
+    "<!-- Show patterns by example. I learn by reading code, not rules. -->",
+    "```" +
+      (choices.language === "typescript" ? "typescript" : choices.language),
+    "// Add code examples of your project's patterns here",
+    "```",
+    "",
+    "## Environment",
+    "<!-- Required vars marked [REQUIRED]. -->",
+    choices.cloudProvider === "brainstormrouter"
+      ? "- `BRAINSTORM_API_KEY` [REQUIRED] — BrainstormRouter SaaS key"
+      : "- [Add required environment variables]",
+    "",
+    "## Don't touch",
+    "<!-- Files I should never modify without asking. -->",
+    "- [Add protected files/directories here]",
+    "",
   ];
 
-  return lines.filter((l) => l !== undefined).join('\n');
+  return lines.filter((l) => l !== undefined).join("\n");
 }
 
 // ── brainstorm.toml ─────────────────────────────────────────────────
 
 export function generateBrainstormToml(choices: InitChoices): string {
-  const strategy = choices.budgetTier === 'low' ? 'cost-first'
-    : choices.budgetTier === 'premium' ? 'quality-first'
-    : 'combined';
+  const strategy =
+    choices.budgetTier === "low"
+      ? "cost-first"
+      : choices.budgetTier === "premium"
+        ? "quality-first"
+        : "combined";
 
   const lines = [
-    '[general]',
+    "[general]",
     `defaultStrategy = "${strategy}"`,
-    '',
-    '[providers.gateway]',
-    `enabled = ${choices.cloudProvider === 'brainstormrouter'}`,
-    '',
-    '[providers.ollama]',
-    `enabled = ${choices.localModels.includes('ollama')}`,
-    '',
-    '[providers.lmstudio]',
-    `enabled = ${choices.localModels.includes('lmstudio')}`,
-    '',
-    '[budget]',
-    choices.budgetTier === 'low' ? 'daily = 2.00' : choices.budgetTier === 'premium' ? 'daily = 20.00' : 'daily = 5.00',
-    'hardLimit = false',
-    '',
+    "",
+    "[providers.gateway]",
+    `enabled = ${choices.cloudProvider === "brainstormrouter"}`,
+    "",
+    "[providers.ollama]",
+    `enabled = ${choices.localModels.includes("ollama")}`,
+    "",
+    "[providers.lmstudio]",
+    `enabled = ${choices.localModels.includes("lmstudio")}`,
+    "",
+    "[budget]",
+    choices.budgetTier === "low"
+      ? "daily = 2.00"
+      : choices.budgetTier === "premium"
+        ? "daily = 20.00"
+        : "daily = 5.00",
+    "hardLimit = false",
+    "",
   ];
 
-  return lines.join('\n');
+  return lines.join("\n");
 }
 
 // ── .gitignore ──────────────────────────────────────────────────────
@@ -216,57 +254,61 @@ credentials.json
 // ── .prettierrc ─────────────────────────────────────────────────────
 
 export function generatePrettierrc(): string {
-  return JSON.stringify({
-    semi: true,
-    singleQuote: true,
-    tabWidth: 2,
-    printWidth: 100,
-    trailingComma: 'all',
-  }, null, 2) + '\n';
+  return (
+    JSON.stringify(
+      {
+        semi: true,
+        singleQuote: true,
+        tabWidth: 2,
+        printWidth: 100,
+        trailingComma: "all",
+      },
+      null,
+      2,
+    ) + "\n"
+  );
 }
 
 // ── .env.example ────────────────────────────────────────────────────
 
 export function generateEnvExample(choices: InitChoices): string {
-  const lines = [
-    '# === LLM Providers ===',
-  ];
+  const lines = ["# === LLM Providers ==="];
 
-  if (choices.cloudProvider === 'brainstormrouter') {
+  if (choices.cloudProvider === "brainstormrouter") {
     lines.push(
-      '# BrainstormRouter SaaS (recommended — routes to optimal model)',
-      '# Sign up: https://brainstormrouter.com',
-      'BRAINSTORM_API_KEY=',
+      "# BrainstormRouter SaaS (recommended — routes to optimal model)",
+      "# Sign up: https://brainstormrouter.com",
+      "BRAINSTORM_API_KEY=",
     );
-  } else if (choices.cloudProvider === 'direct') {
+  } else if (choices.cloudProvider === "direct") {
     lines.push(
-      '# Direct provider keys (set the ones you use)',
-      '# ANTHROPIC_API_KEY=',
-      '# OPENAI_API_KEY=',
-      '# GOOGLE_GENERATIVE_AI_API_KEY=',
-      '# DEEPSEEK_API_KEY=',
+      "# Direct provider keys (set the ones you use)",
+      "# ANTHROPIC_API_KEY=",
+      "# OPENAI_API_KEY=",
+      "# GOOGLE_GENERATIVE_AI_API_KEY=",
+      "# DEEPSEEK_API_KEY=",
     );
   }
 
   lines.push(
-    '',
-    '# === Local Models ===',
-    '# Ollama runs on localhost:11434 by default (auto-detected)',
-    '# LM Studio runs on localhost:1234 by default (auto-detected)',
-    '',
-    '# === Application ===',
-    '# DATABASE_URL=',
-    '# Add project-specific env vars below',
-    '',
+    "",
+    "# === Local Models ===",
+    "# Ollama runs on localhost:11434 by default (auto-detected)",
+    "# LM Studio runs on localhost:1234 by default (auto-detected)",
+    "",
+    "# === Application ===",
+    "# DATABASE_URL=",
+    "# Add project-specific env vars below",
+    "",
   );
 
-  return lines.join('\n');
+  return lines.join("\n");
 }
 
 // ── CI/CD Workflows ─────────────────────────────────────────────────
 
 export function generateCiWorkflow(choices: InitChoices): string {
-  if (choices.ciTier === 'monorepo') {
+  if (choices.ciTier === "monorepo") {
     return `name: CI
 on:
   push: { branches: [main] }
@@ -285,7 +327,7 @@ jobs:
 `;
   }
 
-  if (choices.language === 'python') {
+  if (choices.language === "python") {
     return `name: CI
 on:
   push: { branches: [main] }
@@ -319,6 +361,49 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm test
       - run: npm run build
+`;
+}
+
+export function generateBrainstormReviewWorkflow(): string {
+  return `name: Brainstorm PR Review
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: write
+  checks: write
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Brainstorm CLI
+        run: npm install -g @brainst0rm/cli
+
+      - name: Index codebase
+        run: brainstorm analyze
+        env:
+          BRAINSTORM_API_KEY: \${{ secrets.BRAINSTORM_API_KEY }}
+
+      - name: Review PR
+        run: |
+          brainstorm review \\
+            --pr \${{ github.event.pull_request.number }} \\
+            --post-review \\
+            --create-check
+        env:
+          BRAINSTORM_API_KEY: \${{ secrets.BRAINSTORM_API_KEY }}
+          GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
 `;
 }
 

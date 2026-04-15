@@ -172,6 +172,31 @@ export class HookManager {
 
           if (blocked) break; // Stop processing further hooks
         }
+      } else if (hook.type === "function" && hook.fn) {
+        // Function hooks run in-process — no shell overhead.
+        // Used for graph enrichment, auto-reindex, and other fast callbacks.
+        try {
+          const fnResult = await hook.fn(context ?? {});
+          results.push({
+            ...fnResult,
+            hookId,
+            event,
+            durationMs: Date.now() - start,
+          });
+
+          if (fnResult.blocked && event === "PreToolUse") break;
+        } catch (err: any) {
+          const blocked = hook.blocking && event === "PreToolUse";
+          results.push({
+            hookId,
+            event,
+            success: false,
+            error: err.message,
+            durationMs: Date.now() - start,
+            blocked,
+          });
+          if (blocked) break;
+        }
       } else if (hook.type === "prompt") {
         // Prompt hooks require an LLM call — log warning until implemented
         log.warn(

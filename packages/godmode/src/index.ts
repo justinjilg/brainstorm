@@ -18,9 +18,20 @@ export {
   listChangeSets,
   registerExecutor,
 } from "./changeset.js";
+export { computeBlastRadius } from "./blast-radius.js";
+export type { BlastRadius } from "./types.js";
 // BaseConnector: abstract base for God Mode connectors.
 // Not re-exported — connectors implement GodModeConnector interface directly.
 export { ProductConnector } from "./product-connector.js";
+export {
+  GitHubConnector,
+  createGitHubConnector,
+  type GitHubConnectorConfig,
+} from "./connectors/github/index.js";
+export {
+  GitHubClient,
+  type GitHubClientConfig,
+} from "./connectors/github/client.js";
 export { createProductConnectors } from "./product-factory.js";
 export {
   signEvent,

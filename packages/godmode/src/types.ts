@@ -129,6 +129,19 @@ export interface SimulationResult {
   /** Things that would block execution. */
   constraints: string[];
   estimatedDuration: string;
+  /** Code-level blast radius from knowledge graph analysis. */
+  blastRadius?: BlastRadius;
+}
+
+export interface BlastRadius {
+  /** Functions/methods directly or transitively affected. */
+  affectedSymbols: Array<{ name: string; file: string; depth: number }>;
+  /** Community sectors affected by this change. */
+  affectedCommunities: Array<{ id: string; name: string; tier: string }>;
+  /** Risk multiplier — higher if critical sectors are affected. */
+  riskMultiplier: number;
+  /** Total number of affected symbols. */
+  totalAffected: number;
 }
 
 // ── Action Results ───────────────────────────────────────────────

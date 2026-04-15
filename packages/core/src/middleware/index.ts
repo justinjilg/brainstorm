@@ -51,6 +51,20 @@ export {
   pruneFleetState,
 } from "./builtin/fleet-signals.js";
 export { createConventionMonitorMiddleware } from "./builtin/convention-monitor.js";
+export {
+  createConventionEnforcementMiddleware,
+  BUILTIN_RULES,
+  type ConventionRule,
+} from "./builtin/convention-enforcement.js";
+export {
+  createSecretSubstitutionMiddleware,
+  setScrubMap,
+  consumeScrubMap,
+  buildScrubMap,
+  injectSecrets,
+  scrubSecrets,
+  findVaultPatterns,
+} from "./builtin/secret-substitution.js";
 
 /**
  * Create a default middleware pipeline with all built-in middleware.
@@ -80,6 +94,7 @@ import { createQualitySignalsMiddleware } from "./builtin/quality-signals.js";
 import { createStopDetectionMiddleware } from "./builtin/stop-detection.js";
 import { createFleetSignalsMiddleware } from "./builtin/fleet-signals.js";
 import { createConventionMonitorMiddleware } from "./builtin/convention-monitor.js";
+import { createSecretSubstitutionMiddleware } from "./builtin/secret-substitution.js";
 
 export function createDefaultMiddlewarePipeline(
   projectPath?: string,
@@ -87,6 +102,7 @@ export function createDefaultMiddlewarePipeline(
 ): MiddlewarePipeline {
   const pipeline = new MiddlewarePipeline();
   pipeline.use(createTrustPropagationMiddleware()); // Must be first — tracks taint before other middleware
+  pipeline.use(createSecretSubstitutionMiddleware()); // Mark $VAULT_* patterns before other middleware sees args
   pipeline.use(createContentInjectionFilterMiddleware()); // Sanitize web content at ingestion
   pipeline.use(createToolContractMiddleware()); // Argument validation — catches dangerous args early
   pipeline.use(createToolSequenceDetectorMiddleware()); // Sequence detection — trust-aware pattern matching

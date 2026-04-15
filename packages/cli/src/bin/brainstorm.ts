@@ -82,7 +82,12 @@ const PROVIDER_KEY_NAMES = [
  * Triggers the lazy vault password prompt if a vault exists and keys are needed.
  * Returns a sync ResolvedKeys map for createProviderRegistry.
  */
-async function resolveProviderKeys(): Promise<ResolvedKeys> {
+interface ResolvedKeysWithResolver extends ResolvedKeys {
+  /** Async resolver for $VAULT_* substitution — can look up any key, not just provider keys. */
+  resolver: KeyResolver;
+}
+
+async function resolveProviderKeys(): Promise<ResolvedKeysWithResolver> {
   const vault = new BrainstormVault(VAULT_PATH);
   const resolver = new KeyResolver(vault.exists() ? vault : null, () =>
     promptPassword("  Vault password: "),
@@ -99,7 +104,10 @@ async function resolveProviderKeys(): Promise<ResolvedKeys> {
     }
   }
 
-  return { get: (name: string) => resolved.get(name) ?? null };
+  return {
+    get: (name: string) => resolved.get(name) ?? null,
+    resolver,
+  };
 }
 
 function buildCompactionCallbacks(
@@ -1592,10 +1600,13 @@ program
 
       const db = getDb();
       // Skip vault prompt when non-interactive (no TTY on stdin) or explicit machine mode
-      const resolvedKeys =
+      const resolvedKeys: ResolvedKeysWithResolver =
         canPrompt && !machineMode
           ? await resolveProviderKeys()
-          : { get: (name: string) => process.env[name] ?? null };
+          : {
+              get: (name: string) => process.env[name] ?? null,
+              resolver: new KeyResolver(null),
+            };
       const resolvedBRKey =
         resolvedKeys.get("BRAINSTORM_API_KEY") ?? getBrainstormApiKey();
       const isCommunityTier = isCommunityKey(resolvedBRKey);
@@ -1822,6 +1833,7 @@ program
         permissionCheck: (tool, args) => permissionManager.check(tool, args),
         middleware,
         routingOutcomeRepo,
+        secretResolver: (name) => resolvedKeys.resolver.get(name),
       })) {
         // --events: every event as timestamped JSONL
         if (opts.events) {
@@ -7187,12 +7199,89 @@ program
           tools.unregister("pipeline_dispatch");
           tools.register(wiredPipeline);
 
+          // ── Sector Intelligence Integration ─────────────────────
+          // Wire code-graph sector agents into the daemon tick loop.
+          // If sectors are detected, each tick targets the sector with
+          // the oldest lastTickAt. The sector's tier determines model
+          // selection via BrainstormRouter's QualityTier system.
+          let sectorAgents: any[] = [];
+          let sectorGraph: any = null;
+          let _selectNextSector: any = null;
+          let _recordSectorTick: any = null;
+          try {
+            const {
+              CodeGraph,
+              initializeAdapters,
+              executePipeline,
+              createDefaultPipeline,
+              detectCommunities,
+              assignAgentsToSectors,
+              selectNextSector: sns,
+              recordSectorTick: rst,
+            } = await import("@brainst0rm/code-graph");
+            _selectNextSector = sns;
+            _recordSectorTick = rst;
+
+            sectorGraph = new CodeGraph({ projectPath });
+            const stats = sectorGraph.extendedStats();
+
+            // Auto-index if graph is empty
+            if (stats.files === 0) {
+              await initializeAdapters();
+              await executePipeline(createDefaultPipeline(), {
+                projectPath,
+                graph: sectorGraph,
+                results: new Map(),
+              });
+            }
+
+            // Detect communities and assign agents
+            if (sectorGraph.extendedStats().nodes > 0) {
+              const { communities } = detectCommunities(sectorGraph);
+              sectorAgents = assignAgentsToSectors(communities, sectorGraph, {
+                writeAgentFiles: true,
+                projectPath,
+                minNodes: 3,
+              });
+              if (sectorAgents.length > 0) {
+                dailyLog.append(
+                  `Sector agents: ${sectorAgents.length} (${sectorAgents.map((a: any) => `${a.sectorName}:${a.tier}`).join(", ")})`,
+                  { eventType: "sector-init" },
+                );
+              }
+            }
+          } catch (err: any) {
+            // Code graph not available — daemon runs without sectors
+            dailyLog.append(`Sector intelligence unavailable: ${err.message}`, {
+              eventType: "warning",
+            });
+          }
+
           const daemon = new DaemonController({
             config: config.daemon,
             sessionId: session.id,
             projectPath,
             runTick: (tickMessage: string) => {
-              sessionManager.addUserMessage(tickMessage);
+              // If sector agents are configured, overlay sector context
+              let finalMessage = tickMessage;
+              let sectorBudget: number | undefined;
+              let currentSectorId: string | undefined;
+
+              if (sectorAgents.length > 0 && sectorGraph && _selectNextSector) {
+                try {
+                  const tick = _selectNextSector(sectorAgents, sectorGraph);
+                  if (tick) {
+                    finalMessage =
+                      tick.tickMessage + "\n\n---\n\n" + tickMessage;
+                    sectorBudget = tick.budgetLimit;
+                    currentSectorId = tick.agent.sectorId;
+                  }
+                } catch {
+                  // Fall through to default tick message
+                }
+              }
+
+              sessionManager.addUserMessage(finalMessage);
               return runAgentLoop(sessionManager.getHistory(), {
                 config,
                 registry,
@@ -7209,10 +7298,24 @@ program
                 preferredModelId,
                 middleware,
                 routingOutcomeRepo,
+                secretResolver: (name) => resolvedKeys.resolver.get(name),
                 onTurnComplete: (ctx: any) => {
                   ctx.turn = sessionManager.incrementTurn();
                   ctx.sessionMinutes = sessionManager.getSessionMinutes();
                   sessionManager.addTurnContext(ctx);
+
+                  // Record sector tick completion
+                  if (currentSectorId && sectorGraph && _recordSectorTick) {
+                    try {
+                      _recordSectorTick(
+                        sectorGraph,
+                        currentSectorId,
+                        ctx.cost ?? 0,
+                      );
+                    } catch {
+                      /* non-blocking */
+                    }
+                  }
                 },
               });
             },
@@ -7494,6 +7597,7 @@ program
             middleware,
             roleToolFilter,
             routingOutcomeRepo,
+            secretResolver: (name) => resolvedKeys.resolver.get(name),
             onTurnComplete: (ctx) => {
               ctx.turn = sessionManager.incrementTurn();
               ctx.sessionMinutes = sessionManager.getSessionMinutes();
@@ -7623,6 +7727,7 @@ program
           preferredModelId,
           roleToolFilter: roleFilter,
           routingOutcomeRepo,
+          secretResolver: (name) => resolvedKeys.resolver.get(name),
         });
         // Wrap to capture assistant message after completion
         return (async function* () {

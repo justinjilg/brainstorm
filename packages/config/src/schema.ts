@@ -300,6 +300,10 @@ export const brainstormConfigSchema = z.object({
     .object({
       /** Maximum memory storage in bytes (default 25KB). */
       maxBytes: z.number().default(25 * 1024),
+      /** Git remote URL for memory sync (e.g., a GitHub repo). Optional. */
+      gitRemote: z.string().optional(),
+      /** Git branch for memory sync (default: "main"). */
+      gitBranch: z.string().default("main"),
     })
     .default({}),
   models: z.array(modelOverrideSchema).default([]),

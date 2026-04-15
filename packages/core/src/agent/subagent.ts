@@ -24,7 +24,8 @@ export type SubagentType =
   | "general"
   | "decompose"
   | "external"
-  | "research";
+  | "research"
+  | "memory-curator";
 
 interface SubagentTypeConfig {
   /** Tools this subagent type is allowed to use */
@@ -161,6 +162,13 @@ const SUBAGENT_TYPES: Record<SubagentType, SubagentTypeConfig> = {
     defaultMaxSteps: 1,
     modelHint: "cheap",
   },
+  "memory-curator": {
+    allowedTools: ["file_read", "file_write", "glob"],
+    systemPrompt:
+      "You are a memory curator agent. Tidy recently-modified memory files: dedup near-identical entries, resolve contradictions, promote/demote tiers. Be conservative — only change what clearly needs changing.",
+    defaultMaxSteps: 5,
+    modelHint: "cheap",
+  },
 };
 
 /**
@@ -181,6 +189,8 @@ export const SUBAGENT_TYPE_NAMES: SubagentType[] = [
   "general",
   "decompose",
   "external",
+  "research",
+  "memory-curator",
 ];
 
 // ── Subagent Execution ──────────────────────────────────────────────

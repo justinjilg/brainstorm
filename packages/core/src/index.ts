@@ -66,13 +66,61 @@ export {
   commitMemoryChange,
   getMemoryHistory,
   getMemoryDiff,
+  configureRemote,
+  hasRemote,
+  pullChanges,
+  pushChanges,
+  resolveConflicts,
 } from "./memory/git.js";
+export { GitMemorySync } from "./memory/git-sync.js";
 export {
   runDreamCycle,
   isDreamDue,
   incrementDreamSessionCounter,
   type DreamCycleResult,
 } from "./memory/dream-runner.js";
+export {
+  runCuratorCycle,
+  type CuratorCycleOptions,
+  type CuratorCycleResult,
+} from "./memory/curator-runner.js";
+// Team Auth
+export {
+  resolveTeamContext,
+  getPermissionMode,
+  canAccessTool,
+  ROLE_PERMISSION_MODE,
+  ROLE_TOOL_ACCESS,
+  type TeamContext,
+  type TeamRole as AuthTeamRole,
+} from "./auth/team-context.js";
+
+// Traceability
+export {
+  generateTraceId,
+  generateSequentialTraceId,
+  parseTraceId,
+  isValidTraceId,
+  initTraceabilitySchema,
+  saveArtifact,
+  loadArtifact,
+  listArtifacts,
+  traceChain,
+  findUntestedRequirements,
+  findUntracedChanges,
+  getCoverageMetrics,
+  type ArtifactType,
+  type TraceLink,
+  type TracedArtifact,
+  validate,
+  type ValidationResult,
+  type ValidationFinding,
+  type ValidationRules,
+  generateAnalyticsReport,
+  formatAnalyticsMarkdown,
+  type AnalyticsReport,
+  registerGovernanceMCPTools,
+} from "./traceability/index.js";
 export { getPlanModeTools, getPlanModePrompt } from "./plan/mode.js";
 export { executePlan, type SubagentDispatcher } from "./plan/executor.js";
 export {
@@ -382,6 +430,12 @@ export {
   createApprovalFrictionMiddleware,
   recordApprovalDecision,
   getApprovalTracker,
+  createSecretSubstitutionMiddleware,
+  setScrubMap,
+  buildScrubMap,
+  injectSecrets,
+  scrubSecrets,
+  findVaultPatterns,
 } from "./middleware/index.js";
 export {
   SessionCheckpointer,

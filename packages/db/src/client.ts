@@ -690,4 +690,71 @@ const MIGRATIONS = [
         ON sync_queue(idempotency_key);
     `,
   },
+  {
+    name: "031_org_teams",
+    sql: `
+      CREATE TABLE IF NOT EXISTS orgs (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        github_owner TEXT,
+        github_repo TEXT,
+        settings_json TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+
+      CREATE TABLE IF NOT EXISTS team_members (
+        id TEXT PRIMARY KEY,
+        org_id TEXT NOT NULL,
+        email TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'engineer'
+          CHECK (role IN ('admin', 'engineer', 'qa', 'designer', 'devops', 'compliance')),
+        github_username TEXT,
+        api_key_hash TEXT,
+        budget_daily REAL,
+        budget_monthly REAL,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        UNIQUE(org_id, email)
+      );
+      CREATE INDEX IF NOT EXISTS idx_members_org ON team_members(org_id);
+      CREATE INDEX IF NOT EXISTS idx_members_email ON team_members(email);
+    `,
+  },
+  {
+    name: "032_tenant_columns",
+    sql: `
+      ALTER TABLE sessions ADD COLUMN org_id TEXT;
+      ALTER TABLE sessions ADD COLUMN user_id TEXT;
+      ALTER TABLE cost_records ADD COLUMN org_id TEXT;
+      ALTER TABLE cost_records ADD COLUMN user_id TEXT;
+      ALTER TABLE audit_log ADD COLUMN org_id TEXT;
+      ALTER TABLE audit_log ADD COLUMN user_id TEXT;
+      CREATE INDEX IF NOT EXISTS idx_cost_org ON cost_records(org_id);
+      CREATE INDEX IF NOT EXISTS idx_cost_user ON cost_records(user_id);
+      CREATE INDEX IF NOT EXISTS idx_audit_org ON audit_log(org_id);
+      CREATE INDEX IF NOT EXISTS idx_sessions_org ON sessions(org_id);
+    `,
+  },
+  {
+    name: "033_compliance_events",
+    sql: `
+      CREATE TABLE IF NOT EXISTS compliance_events (
+        id TEXT PRIMARY KEY,
+        org_id TEXT NOT NULL,
+        user_id TEXT,
+        event_type TEXT NOT NULL,
+        severity TEXT NOT NULL DEFAULT 'info'
+          CHECK (severity IN ('info', 'warning', 'critical')),
+        description TEXT NOT NULL,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      CREATE INDEX IF NOT EXISTS idx_compliance_org ON compliance_events(org_id);
+      CREATE INDEX IF NOT EXISTS idx_compliance_type ON compliance_events(event_type);
+      CREATE INDEX IF NOT EXISTS idx_compliance_severity ON compliance_events(severity);
+      CREATE INDEX IF NOT EXISTS idx_compliance_created ON compliance_events(created_at);
+    `,
+  },
 ];

@@ -160,3 +160,142 @@ export function getMemoryDiff(memoryDir: string, since: string): string | null {
     return null;
   }
 }
+
+// ── Remote Operations ─────────────────────────────────────────────
+
+/** Configure a git remote for memory sync. Returns true if remote was added/updated. */
+export function configureRemote(
+  memoryDir: string,
+  remoteUrl: string,
+  remoteName = "origin",
+): boolean {
+  if (!existsSync(join(memoryDir, ".git"))) {
+    initMemoryRepo(memoryDir);
+  }
+
+  try {
+    // Check if remote already exists
+    const existing = git(memoryDir, ["remote", "get-url", remoteName]).trim();
+    if (existing === remoteUrl) return false; // already configured
+    // Update existing remote
+    gitSilent(memoryDir, ["remote", "set-url", remoteName, remoteUrl]);
+    log.info({ remote: remoteName, url: remoteUrl }, "Memory remote updated");
+    return true;
+  } catch {
+    // Remote doesn't exist — add it
+    if (gitSilent(memoryDir, ["remote", "add", remoteName, remoteUrl])) {
+      log.info({ remote: remoteName, url: remoteUrl }, "Memory remote added");
+      return true;
+    }
+    return false;
+  }
+}
+
+/** Check if a remote is configured. */
+export function hasRemote(memoryDir: string, remoteName = "origin"): boolean {
+  if (!existsSync(join(memoryDir, ".git"))) return false;
+  try {
+    git(memoryDir, ["remote", "get-url", remoteName]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export interface PullResult {
+  success: boolean;
+  conflicts: string[];
+}
+
+/** Pull changes from remote. Returns conflict info if merge fails. */
+export function pullChanges(
+  memoryDir: string,
+  remoteName = "origin",
+  branch = "main",
+): PullResult {
+  if (!existsSync(join(memoryDir, ".git"))) {
+    return { success: false, conflicts: [] };
+  }
+
+  try {
+    // Fetch first, then merge — more control than pull
+    gitSilent(memoryDir, ["fetch", remoteName, branch]);
+    gitSilent(memoryDir, ["merge", `${remoteName}/${branch}`, "--no-edit"]);
+    return { success: true, conflicts: [] };
+  } catch (err) {
+    // Check for merge conflicts
+    try {
+      const status = git(memoryDir, ["status", "--porcelain"]);
+      const conflicts = status
+        .split("\n")
+        .filter((l) => l.startsWith("UU ") || l.startsWith("AA "))
+        .map((l) => l.slice(3).trim());
+
+      if (conflicts.length > 0) {
+        log.warn({ conflicts }, "Memory merge conflicts detected");
+        return { success: false, conflicts };
+      }
+    } catch {
+      // Can't even check status — return generic failure
+    }
+
+    log.warn({ err }, "Memory pull failed");
+    return { success: false, conflicts: [] };
+  }
+}
+
+/** Push committed changes to remote. */
+export function pushChanges(
+  memoryDir: string,
+  remoteName = "origin",
+  branch = "main",
+): boolean {
+  if (!existsSync(join(memoryDir, ".git"))) return false;
+  return gitSilent(memoryDir, ["push", remoteName, branch]);
+}
+
+/**
+ * Resolve merge conflicts using the specified strategy.
+ * 'theirs' = last-writer-wins (matches gateway semantics).
+ * 'ours' = keep local version.
+ */
+export function resolveConflicts(
+  memoryDir: string,
+  strategy: "ours" | "theirs",
+): boolean {
+  if (!existsSync(join(memoryDir, ".git"))) return false;
+
+  try {
+    const flag = strategy === "theirs" ? "--theirs" : "--ours";
+    // Get list of conflicted files
+    const status = git(memoryDir, ["status", "--porcelain"]);
+    const conflicts = status
+      .split("\n")
+      .filter((l) => l.startsWith("UU ") || l.startsWith("AA "))
+      .map((l) => l.slice(3).trim());
+
+    if (conflicts.length === 0) return true;
+
+    // Checkout the chosen side for each conflict
+    for (const file of conflicts) {
+      gitSilent(memoryDir, ["checkout", flag, "--", file]);
+    }
+
+    // Stage resolved files and commit
+    gitSilent(memoryDir, ["add", "-A"]);
+    gitSilent(memoryDir, [
+      "commit",
+      "-m",
+      `resolve: memory merge conflicts (${strategy})`,
+    ]);
+
+    log.info(
+      { strategy, files: conflicts.length },
+      "Memory conflicts resolved",
+    );
+    return true;
+  } catch (err) {
+    log.error({ err }, "Failed to resolve memory conflicts");
+    return false;
+  }
+}

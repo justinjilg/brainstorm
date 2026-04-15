@@ -14,6 +14,7 @@ import { createHash } from "node:crypto";
 import { createLogger } from "@brainst0rm/shared";
 import type { BrainstormGateway } from "@brainst0rm/gateway";
 import { initMemoryRepo, commitMemoryChange } from "./git.js";
+import type { GitMemorySync } from "./git-sync.js";
 
 const log = createLogger("memory");
 
@@ -106,9 +107,16 @@ export class MemoryManager {
   private pullState: "idle" | "running" | "completed" | "failed" = "idle";
   private lastPullAt: number | null = null;
   private lastPullError: string | null = null;
+  private _sessionMemoryOps = 0;
+  private gitSync: GitMemorySync | null = null;
 
-  constructor(projectPath: string, gateway?: BrainstormGateway | null) {
+  constructor(
+    projectPath: string,
+    gateway?: BrainstormGateway | null,
+    gitSync?: GitMemorySync | null,
+  ) {
     this.gateway = gateway ?? null;
+    this.gitSync = gitSync ?? null;
     const projectHash = createHash("sha256")
       .update(projectPath)
       .digest("hex")
@@ -236,6 +244,7 @@ export class MemoryManager {
     writeFileSync(filePath, fmLines.join("\n"), "utf-8");
 
     this.entries.set(id, memory);
+    this._sessionMemoryOps++;
     this.enforceCapacity();
     this.scheduleIndexUpdate();
 
@@ -262,10 +271,13 @@ export class MemoryManager {
     }
 
     // Git-track the change
-    commitMemoryChange(
-      this.memoryDir,
-      `memory: ${existing ? "update" : "create"} ${memory.name}`,
-    );
+    const commitMsg = `memory: ${existing ? "update" : "create"} ${memory.name}`;
+    commitMemoryChange(this.memoryDir, commitMsg);
+
+    // Push to git remote if configured
+    if (this.gitSync) {
+      this.gitSync.syncAfterWrite(commitMsg);
+    }
 
     return memory;
   }
@@ -458,7 +470,11 @@ export class MemoryManager {
       log.warn({ err: e, filePath }, "Failed to delete memory file");
     }
     this.scheduleIndexUpdate();
-    commitMemoryChange(this.memoryDir, `memory: delete ${entry.name}`);
+    const deleteMsg = `memory: delete ${entry.name}`;
+    commitMemoryChange(this.memoryDir, deleteMsg);
+    if (this.gitSync) {
+      this.gitSync.syncAfterWrite(deleteMsg);
+    }
     return true;
   }
 
@@ -551,6 +567,16 @@ export class MemoryManager {
     return this.memoryDir;
   }
 
+  /** Number of save() calls this session — used to gate curator cycle. */
+  getSessionMemoryOps(): number {
+    return this._sessionMemoryOps;
+  }
+
+  /** Reset session counter (call at session start). */
+  resetSessionOps(): void {
+    this._sessionMemoryOps = 0;
+  }
+
   /** Get raw file contents for all memory files (for dream consolidation). */
   getRawFiles(): Array<{ filename: string; content: string }> {
     if (!existsSync(this.memoryDir)) return [];
@@ -598,6 +624,10 @@ export class MemoryManager {
   }
 
   private loadAll(): void {
+    // Pull from git remote before loading (rate-limited internally)
+    if (this.gitSync) {
+      this.gitSync.syncBeforeRead();
+    }
     // Load from root (archive), system/, and quarantine/ directories
     this.loadFromDir(this.memoryDir, "archive");
     this.loadFromDir(this.systemDir, "system");
