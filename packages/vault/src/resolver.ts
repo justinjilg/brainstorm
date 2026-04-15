@@ -32,12 +32,11 @@ export class KeyResolver {
         try {
           const password = await this.promptPassword();
           this.vault.open(password);
-        } catch {
-          // Wrong password or user cancelled — vault is authoritative once it exists.
-          // Only fall through to other backends if the key truly isn't in the vault,
-          // not because unlock failed. Log a warning so the user knows.
+        } catch (err: unknown) {
+          // Preserve error type so user can distinguish wrong password from corrupt vault
+          const msg = err instanceof Error ? err.message : String(err);
           process.stderr.write(
-            "[vault] Unlock failed — falling back to 1Password/env for this key only\n",
+            `[vault] Unlock failed: ${msg} — falling back to 1Password/env for this key only\n`,
           );
         }
       }
