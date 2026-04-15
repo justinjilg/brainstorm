@@ -1,8 +1,11 @@
 /**
  * Community Namer — auto-generates descriptive names for code communities.
  *
- * Strategy: find the most common directory prefix and the most frequent
- * function name stems. Combines them into a readable sector name.
+ * Strategy:
+ * 1. Find the most specific directory path shared by members
+ * 2. Extract meaningful function name stems (filter generic words)
+ * 3. Combine into a readable label like "providers/bedrock-transform"
+ *    or "handlers/cache-service"
  */
 
 interface NodeInfo {
@@ -15,74 +18,85 @@ interface NodeInfo {
  * Generate a descriptive name for a community from its member nodes.
  */
 export function nameCommunity(members: NodeInfo[]): string {
-  // Extract directory paths
-  const dirCounts = new Map<string, number>();
+  // Find the most specific shared directory path
+  const dirPath = findDominantPath(members);
+
+  // Extract meaningful function name stems
+  const stems = findMeaningfulStems(members);
+
+  // Build name
+  if (dirPath && stems.length > 0) {
+    return `${dirPath}/${stems.join("-")}`;
+  }
+  if (dirPath) return dirPath;
+  if (stems.length > 0) return stems.join("-");
+
+  // Fallback: most common file name
+  const fileCounts = new Map<string, number>();
   for (const m of members) {
-    const parts = m.file.split("/");
-    // Use the last 2 directory segments for specificity
-    for (let i = Math.max(0, parts.length - 3); i < parts.length - 1; i++) {
-      const dir = parts[i];
-      if (dir && !isSkippableDir(dir)) {
-        dirCounts.set(dir, (dirCounts.get(dir) ?? 0) + 1);
-      }
+    const fileName =
+      m.file
+        .split("/")
+        .pop()
+        ?.replace(/\.[^.]+$/, "") ?? "";
+    if (fileName) fileCounts.set(fileName, (fileCounts.get(fileName) ?? 0) + 1);
+  }
+  const topFile = [...fileCounts.entries()].sort((a, b) => b[1] - a[1])[0];
+  return topFile ? topFile[0] : `sector-${members.length}`;
+}
+
+/**
+ * Find the most specific directory path shared by members.
+ * Prefers "providers/bedrock" over just "providers".
+ */
+function findDominantPath(members: NodeInfo[]): string {
+  // Count full 2-segment paths (more specific than single dirs)
+  const pathCounts = new Map<string, number>();
+
+  for (const m of members) {
+    const parts = m.file.split("/").filter((p) => p && !isSkippableDir(p));
+    // Take the last 2 meaningful segments before the filename
+    const meaningful = parts.slice(0, -1); // exclude filename
+    if (meaningful.length >= 2) {
+      const path = meaningful.slice(-2).join("/");
+      pathCounts.set(path, (pathCounts.get(path) ?? 0) + 1);
+    } else if (meaningful.length === 1) {
+      pathCounts.set(meaningful[0], (pathCounts.get(meaningful[0]) ?? 0) + 1);
     }
   }
 
-  // Find dominant directory
-  let dominantDir = "";
-  let maxDirCount = 0;
-  for (const [dir, count] of dirCounts) {
-    if (count > maxDirCount) {
-      maxDirCount = count;
-      dominantDir = dir;
-    }
-  }
+  if (pathCounts.size === 0) return "";
 
-  // Extract function name stems (camelCase/snake_case split)
+  // Pick the most common path
+  const sorted = [...pathCounts.entries()].sort((a, b) => b[1] - a[1]);
+  return sorted[0][0];
+}
+
+/**
+ * Extract meaningful stems from function names.
+ * Filters out generic verbs and common prefixes.
+ */
+function findMeaningfulStems(members: NodeInfo[]): string[] {
   const stemCounts = new Map<string, number>();
+
   for (const m of members) {
-    if (m.kind === "function" || m.kind === "method") {
-      const stems = extractStems(m.name);
-      for (const stem of stems) {
+    if (m.kind !== "function" && m.kind !== "method") continue;
+    const stems = extractStems(m.name);
+    for (const stem of stems) {
+      if (!isGenericStem(stem)) {
         stemCounts.set(stem, (stemCounts.get(stem) ?? 0) + 1);
       }
     }
   }
 
-  // Find top 2 stems
-  const topStems = [...stemCounts.entries()]
-    .filter(([stem]) => stem.length > 2 && !isCommonStem(stem))
+  return [...stemCounts.entries()]
+    .filter(([stem]) => stem.length > 2)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 2)
     .map(([stem]) => stem);
-
-  // Build name
-  const parts: string[] = [];
-  if (dominantDir) parts.push(dominantDir);
-  if (topStems.length > 0) parts.push(topStems.join("-"));
-
-  if (parts.length === 0) {
-    // Fallback: use the most common file name
-    const fileCounts = new Map<string, number>();
-    for (const m of members) {
-      const fileName =
-        m.file
-          .split("/")
-          .pop()
-          ?.replace(/\.[^.]+$/, "") ?? "";
-      if (fileName)
-        fileCounts.set(fileName, (fileCounts.get(fileName) ?? 0) + 1);
-    }
-    const topFile = [...fileCounts.entries()].sort((a, b) => b[1] - a[1])[0];
-    return topFile ? topFile[0] : `sector-${members.length}`;
-  }
-
-  return parts.join("/");
 }
 
 function extractStems(name: string): string[] {
-  // Split camelCase: handleRequest → [handle, request]
-  // Split snake_case: handle_request → [handle, request]
   return name
     .replace(/([a-z])([A-Z])/g, "$1_$2")
     .toLowerCase()
@@ -91,31 +105,110 @@ function extractStems(name: string): string[] {
 }
 
 function isSkippableDir(dir: string): boolean {
-  return ["src", "lib", "app", "apps", "packages", "internal", "pkg"].includes(
-    dir,
-  );
+  return [
+    "src",
+    "lib",
+    "app",
+    "apps",
+    "packages",
+    "internal",
+    "pkg",
+    "dist",
+    "build",
+    "out",
+    "node_modules",
+    "__tests__",
+    "tests",
+    "test",
+  ].includes(dir);
 }
 
-function isCommonStem(stem: string): boolean {
-  return [
-    "get",
-    "set",
-    "new",
-    "create",
-    "make",
-    "init",
-    "build",
-    "run",
-    "start",
-    "stop",
-    "handle",
-    "process",
-    "parse",
-    "check",
-    "test",
-    "from",
-    "with",
-    "the",
-    "for",
-  ].includes(stem);
+/**
+ * Generic stems that don't add meaning to a sector name.
+ * Expanded from the original list to catch more false positives.
+ */
+function isGenericStem(stem: string): boolean {
+  return GENERIC_STEMS.has(stem);
 }
+
+const GENERIC_STEMS = new Set([
+  // Verbs
+  "get",
+  "set",
+  "new",
+  "create",
+  "make",
+  "init",
+  "build",
+  "run",
+  "start",
+  "stop",
+  "handle",
+  "process",
+  "parse",
+  "check",
+  "test",
+  "from",
+  "with",
+  "the",
+  "for",
+  "add",
+  "remove",
+  "update",
+  "delete",
+  "load",
+  "save",
+  "read",
+  "write",
+  "send",
+  "receive",
+  "return",
+  "call",
+  "apply",
+  "bind",
+  "execute",
+  "invoke",
+  // Generic nouns
+  "data",
+  "result",
+  "response",
+  "request",
+  "error",
+  "event",
+  "item",
+  "value",
+  "index",
+  "list",
+  "array",
+  "object",
+  "string",
+  "number",
+  "type",
+  "name",
+  "path",
+  "file",
+  "dir",
+  "url",
+  "base",
+  "config",
+  "options",
+  "params",
+  "args",
+  "input",
+  "output",
+  "state",
+  "status",
+  "helper",
+  "util",
+  "utils",
+  "misc",
+  "common",
+  "shared",
+  "default",
+  "main",
+  "app",
+  "module",
+  "component",
+  "service",
+  "manager",
+]);

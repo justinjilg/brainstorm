@@ -12,6 +12,67 @@
  */
 
 import type { CodeGraph } from "../graph.js";
+
+/**
+ * Common built-in / standard library names that inflate caller counts.
+ * These are filtered from hotspot detection to avoid false positives
+ * like "json has 384 callers" (it's JSON.parse, not a real hotspot).
+ */
+const BUILTIN_NAMES = [
+  "json",
+  "JSON",
+  "log",
+  "error",
+  "warn",
+  "info",
+  "debug",
+  "get",
+  "set",
+  "has",
+  "delete",
+  "keys",
+  "values",
+  "entries",
+  "push",
+  "pop",
+  "shift",
+  "map",
+  "filter",
+  "reduce",
+  "forEach",
+  "find",
+  "toString",
+  "valueOf",
+  "constructor",
+  "resolve",
+  "reject",
+  "then",
+  "catch",
+  "finally",
+  "parse",
+  "stringify",
+  "setTimeout",
+  "setInterval",
+  "clearTimeout",
+  "clearInterval",
+  "require",
+  "import",
+  "exports",
+  "module",
+  "console",
+  "process",
+  "Buffer",
+  "describe",
+  "it",
+  "test",
+  "expect",
+  "beforeEach",
+  "afterEach",
+  "beforeAll",
+  "afterAll",
+  "render",
+  "createElement",
+];
 import {
   TIER_TO_COMPLEXITY,
   TIER_TO_QUALITY,
@@ -189,6 +250,17 @@ export function generateWorkPlan(
     });
   }
 
+  // Deduplicate sector names — append tier when names collide
+  const nameCounts = new Map<string, number>();
+  for (const s of sectors) {
+    nameCounts.set(s.name, (nameCounts.get(s.name) ?? 0) + 1);
+  }
+  for (const s of sectors) {
+    if ((nameCounts.get(s.name) ?? 0) > 1) {
+      s.name = `${s.name} (${s.tier})`;
+    }
+  }
+
   // Sort: critical first, then by complexity
   const tierOrder: Record<string, number> = {
     critical: 0,
@@ -209,10 +281,15 @@ export function generateWorkPlan(
       `
     SELECT ce.callee AS name, COUNT(*) AS callerCount, f.file
     FROM call_edges ce JOIN functions f ON f.name = ce.callee
+    WHERE ce.callee NOT IN (${BUILTIN_NAMES.map(() => "?").join(",")})
     GROUP BY ce.callee, f.file ORDER BY callerCount DESC LIMIT 15
   `,
     )
-    .all() as Array<{ name: string; callerCount: number; file: string }>;
+    .all(...BUILTIN_NAMES) as Array<{
+    name: string;
+    callerCount: number;
+    file: string;
+  }>;
 
   // Functions with deepest transitive impact
   const highBlastRadius: RiskAssessment["highBlastRadius"] = [];
@@ -225,14 +302,15 @@ export function generateWorkPlan(
     .filter((s) => s.tier === "critical")
     .map((s) => s.name);
 
-  // Isolated nodes (no edges)
+  // Isolated functions/methods (no call edges — potential dead code)
+  // Excludes classes/types which are often used as types without call edges
   const isolatedNodes =
     (
       db
         .prepare(
           `
     SELECT COUNT(*) AS c FROM nodes n
-    WHERE n.kind != 'file'
+    WHERE n.kind IN ('function', 'method')
     AND NOT EXISTS (SELECT 1 FROM edges e WHERE e.source_id = n.id OR e.target_id = n.id)
   `,
         )
@@ -458,7 +536,7 @@ function renderMarkdown(
   }
   lines.push(
     "",
-    `**Isolated nodes:** ${risks.isolatedNodes} (no connections — potential dead code)`,
+    `**Isolated functions:** ${risks.isolatedNodes} (no callers or callees — potential dead code)`,
     `**Cross-sector edges:** ${risks.crossSectorEdges} (coupling between sectors)`,
     "",
   );
