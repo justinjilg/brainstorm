@@ -131,15 +131,49 @@ export interface WebhookHandlerOptions {
   onPullRequest?: (event: PullRequestEvent) => Promise<void>;
 }
 
+// ── Replay Protection ─────────────────────────────────────────────
+
+const REPLAY_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_NONCE_CACHE = 1000;
+
+/** In-memory nonce cache — prevents replay of the same delivery. */
+const seenDeliveries = new Map<string, number>(); // deliveryId → timestamp
+
+function isReplay(deliveryId: string | undefined): boolean {
+  if (!deliveryId) return false; // Missing header = allow (GitHub always sends it)
+
+  // Prune old entries
+  const cutoff = Date.now() - REPLAY_WINDOW_MS;
+  if (seenDeliveries.size > MAX_NONCE_CACHE) {
+    for (const [id, ts] of seenDeliveries) {
+      if (ts < cutoff) seenDeliveries.delete(id);
+    }
+  }
+
+  if (seenDeliveries.has(deliveryId)) return true;
+  seenDeliveries.set(deliveryId, Date.now());
+  return false;
+}
+
 /**
  * Create the webhook request handler.
- * Returns a function compatible with Node.js http.createServer.
+ * Includes replay protection via X-GitHub-Delivery nonce + timestamp window.
  */
 export function createWebhookHandler(opts: WebhookHandlerOptions) {
   return async (
     body: string,
     headers: Record<string, string | undefined>,
   ): Promise<{ status: number; body: Record<string, unknown> }> => {
+    // Replay protection — reject duplicate deliveries
+    const deliveryId = headers["x-github-delivery"];
+    if (isReplay(deliveryId)) {
+      log.warn(
+        { deliveryId },
+        "Replay detected — rejecting duplicate delivery",
+      );
+      return { status: 200, body: { received: true, duplicate: true } };
+    }
+
     // Verify signature
     const signature = headers["x-hub-signature-256"];
     if (

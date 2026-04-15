@@ -836,6 +836,26 @@ export class MemoryManager {
     }, INDEX_DEBOUNCE_MS);
   }
 
+  /**
+   * Dispose — cancel pending timers and flush any dirty index.
+   * MUST be called before process exit or test teardown to prevent
+   * the ENOENT timer leak (the timer fires into a cleaned-up directory).
+   */
+  dispose(): void {
+    if (this.indexTimer) {
+      clearTimeout(this.indexTimer);
+      this.indexTimer = null;
+    }
+    // Flush synchronously if dirty — prevents data loss on SIGKILL
+    if (this.indexDirty) {
+      try {
+        this.flushIndex();
+      } catch {
+        // Directory may already be removed (test teardown) — safe to ignore
+      }
+    }
+  }
+
   /** Immediately write the index file if dirty. */
   flushIndex(): void {
     if (!this.indexDirty) return;

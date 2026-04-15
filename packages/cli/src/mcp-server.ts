@@ -169,8 +169,24 @@ export async function startMCPServer(): Promise<void> {
       `[code-intel] Registered ${toolCount} code intelligence tools\n`,
     );
   } catch (err: any) {
-    process.stderr.write(
-      `[code-intel] Code intelligence tools unavailable: ${err.message}\n`,
+    const errorMsg = `Code intelligence tools unavailable: ${err.message}`;
+    process.stderr.write(`[code-intel] ${errorMsg}\n`);
+    // Register a single diagnostic tool so the user knows WHY tools are missing
+    server.tool(
+      "code_intel_status",
+      `[UNAVAILABLE] ${errorMsg}. Install @brainst0rm/code-graph and rebuild.`,
+      {},
+      async () => ({
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify({
+              error: errorMsg,
+              fix: "Run: npm install && npx turbo run build --filter=@brainst0rm/code-graph",
+            }),
+          },
+        ],
+      }),
     );
   }
 
