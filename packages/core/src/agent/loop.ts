@@ -844,6 +844,13 @@ export async function* runAgentLoop(
     const loopDetector = new LoopDetector();
     const STREAM_TIMEOUT_MS = 60_000; // 60s without any SSE event = dead stream
 
+    // Track how many times we've incremented the global tool-in-flight gate
+    // so we can unwind the count in a finally block — if the stream throws
+    // or the consumer aborts between a tool-call and its tool-result, the
+    // global counter would otherwise leak and permanently disable
+    // compaction for this session.
+    let localToolGateDepth = 0;
+
     try {
       for await (const part of result.fullStream) {
         // Detect hung streams: if no event for 60s, break out
@@ -890,6 +897,7 @@ export async function* runAgentLoop(
         } else if (part.type === "tool-call") {
           toolCallCount++;
           enterToolExecution(); // gate compaction while tools are in-flight
+          localToolGateDepth++;
           yield {
             type: "tool-call-start" as const,
             toolName: part.toolName,
@@ -897,6 +905,7 @@ export async function* runAgentLoop(
           };
         } else if (part.type === "tool-result") {
           exitToolExecution(); // ungate compaction
+          localToolGateDepth--;
           const toolResult = getPartOutput(
             part as Record<string, unknown>,
           ) as any;
@@ -1007,6 +1016,15 @@ export async function* runAgentLoop(
           streamErr.message ?? "stream_error",
         );
         throw streamErr; // Re-throw real errors
+      }
+    } finally {
+      // Unwind any tool gate entries that didn't see a matching tool-result
+      // (stream error, aborted consumer, early return above). Leaking even
+      // one would permanently pin isToolInFlight() > 0 and block every
+      // future compaction attempt in the current process.
+      while (localToolGateDepth > 0) {
+        exitToolExecution();
+        localToolGateDepth--;
       }
     }
 
