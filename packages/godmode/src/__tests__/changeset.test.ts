@@ -4,6 +4,7 @@ import {
   createChangeSet,
   listChangeSets,
   registerExecutor,
+  retryChangeSet,
 } from "../changeset";
 import { getAuditLog } from "../audit";
 import type { Change, SimulationResult } from "../types";
@@ -175,5 +176,105 @@ describe("ChangeSet state machine", () => {
       action,
       status: "executed",
     });
+  });
+
+  it("serializes concurrent approve() calls — only one enters the executor", async () => {
+    const action = `concurrent-${Math.random()}`;
+    let invocations = 0;
+    registerExecutor(action, async () => {
+      invocations++;
+      // Simulate slow executor so the race window is real.
+      await new Promise((r) => setTimeout(r, 30));
+      return { success: true, message: "applied" };
+    });
+
+    const changeset = createDraft({ action });
+
+    const [a, b] = await Promise.all([
+      approveChangeSet(changeset.id),
+      approveChangeSet(changeset.id),
+    ]);
+
+    // Exactly one invocation reached the executor.
+    expect(invocations).toBe(1);
+
+    // One caller succeeded; the other was rejected as in-progress or
+    // as "not draft" after the first one's initial status flip.
+    const successes = [a, b].filter((r) => r.success);
+    const failures = [a, b].filter((r) => !r.success);
+    expect(successes).toHaveLength(1);
+    expect(failures).toHaveLength(1);
+  });
+
+  it("marks failed executor returns as failed (not draft) to prevent silent replay", async () => {
+    const action = `executor-fails-${Math.random()}`;
+    registerExecutor(action, async () => ({
+      success: false,
+      message: "upstream 500",
+    }));
+
+    const changeset = createDraft({ action });
+    const result = await approveChangeSet(changeset.id);
+
+    expect(result.success).toBe(false);
+    expect(result.changeset?.status).toBe("failed");
+
+    // Re-approving the same id is refused; operator must explicitly
+    // retry to rehydrate.
+    const second = await approveChangeSet(changeset.id);
+    expect(second.success).toBe(false);
+    expect(second.message).toMatch(/not draft|failed/);
+  });
+
+  it("marks thrown executor errors as failed (not draft)", async () => {
+    const action = `executor-throws-${Math.random()}`;
+    registerExecutor(action, async () => {
+      throw new Error("boom");
+    });
+
+    const changeset = createDraft({ action });
+    const result = await approveChangeSet(changeset.id);
+
+    expect(result.success).toBe(false);
+    expect(result.changeset?.status).toBe("failed");
+  });
+
+  it("retryChangeSet rehydrates a failed changeset back to draft", async () => {
+    const action = `retry-cycle-${Math.random()}`;
+    let shouldFail = true;
+    registerExecutor(action, async () => {
+      if (shouldFail) return { success: false, message: "first attempt fails" };
+      return { success: true, message: "second attempt wins" };
+    });
+
+    const cs = createDraft({ action });
+    const first = await approveChangeSet(cs.id);
+    expect(first.changeset?.status).toBe("failed");
+
+    // Retrying moves us back to draft.
+    const retry = retryChangeSet(cs.id);
+    expect(retry.success).toBe(true);
+    expect(retry.changeset?.status).toBe("draft");
+
+    // Second attempt now succeeds.
+    shouldFail = false;
+    const second = await approveChangeSet(cs.id);
+    expect(second.success).toBe(true);
+    expect(second.changeset?.status).toBe("executed");
+  });
+
+  it("retryChangeSet refuses to rehydrate a non-failed changeset", async () => {
+    const action = `retry-nonfailed-${Math.random()}`;
+    registerExecutor(action, async () => ({
+      success: true,
+      message: "applied",
+    }));
+
+    const cs = createDraft({ action });
+    await approveChangeSet(cs.id);
+
+    const retry = retryChangeSet(cs.id);
+    expect(retry.success).toBe(false);
+    expect(retry.message).toMatch(/cannot retry/);
   });
 });

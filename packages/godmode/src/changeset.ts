@@ -31,6 +31,17 @@ const DRAFT_TTL_MS = 5 * 60 * 1000;
 /** In-memory store of active changesets (keyed by ID). */
 const changesets = new Map<string, ChangeSet>();
 
+/**
+ * Tracks in-flight approve() calls per ChangeSet id.
+ *
+ * Prevents double-execute when two concurrent callers (e.g. two LLM tool
+ * invocations, or an LLM call racing with a user click) hit approveChangeSet
+ * for the same id before either has finished. Without this, both callers
+ * passed the `cs.status === "draft"` check against the same observed state
+ * and both invoked the executor — destructive action twice.
+ */
+const inflightApprovals = new Set<string>();
+
 /** Callbacks registered by connectors to execute approved changesets. */
 const executors = new Map<
   string,
@@ -101,6 +112,18 @@ export async function approveChangeSet(
       message: `ChangeSet ${id} not found`,
       changeset: null,
     };
+
+  // Atomic concurrency guard: only one approve() can be in flight per id.
+  // Second callers see "approval in progress" instead of re-entering the
+  // executor on the same draft.
+  if (inflightApprovals.has(id)) {
+    return {
+      success: false,
+      message: `ChangeSet ${id} approval already in progress`,
+      changeset: cs,
+    };
+  }
+
   if (cs.status !== "draft")
     return {
       success: false,
@@ -116,56 +139,106 @@ export async function approveChangeSet(
     };
   }
 
-  cs.status = "approved";
-  cs.approvedBy = approvedBy;
-
-  // Execute via the registered executor
-  const executor = executors.get(cs.action);
-  if (!executor) {
-    return {
-      success: false,
-      message: `No executor registered for ${cs.action}`,
-      changeset: cs,
-    };
-  }
-
+  inflightApprovals.add(id);
   try {
-    // Timeout executor to prevent indefinite hangs (e.g., unresponsive GitHub API)
-    const EXECUTOR_TIMEOUT_MS = 30_000;
-    const executorTimeout = AbortSignal.timeout(EXECUTOR_TIMEOUT_MS);
-    const result = await Promise.race([
-      executor(cs),
-      new Promise<never>((_, reject) => {
-        executorTimeout.addEventListener("abort", () =>
-          reject(
-            new Error(
-              `ChangeSet executor timed out after ${EXECUTOR_TIMEOUT_MS / 1000}s`,
-            ),
-          ),
-        );
-      }),
-    ]);
-    if (result.success) {
-      cs.status = "executed";
-      cs.executedAt = Date.now();
-      cs.rollbackData = result.rollbackData;
-    } else {
-      // Execution returned failure — mark as failed, not executed
-      cs.status = "draft"; // Keep retryable
+    cs.status = "approved";
+    cs.approvedBy = approvedBy;
+
+    // Execute via the registered executor
+    const executor = executors.get(cs.action);
+    if (!executor) {
+      return {
+        success: false,
+        message: `No executor registered for ${cs.action}`,
+        changeset: cs,
+      };
     }
-    // Always audit both success and failure
-    logChangeSet(cs);
-    return { success: result.success, message: result.message, changeset: cs };
-  } catch (error) {
-    cs.status = "draft"; // revert to draft on failure
-    logChangeSet(cs); // Audit the failure
-    const msg = error instanceof Error ? error.message : String(error);
+
+    try {
+      // Timeout executor to prevent indefinite hangs (e.g., unresponsive
+      // GitHub API).
+      const EXECUTOR_TIMEOUT_MS = 30_000;
+      const executorTimeout = AbortSignal.timeout(EXECUTOR_TIMEOUT_MS);
+      const result = await Promise.race([
+        executor(cs),
+        new Promise<never>((_, reject) => {
+          executorTimeout.addEventListener("abort", () =>
+            reject(
+              new Error(
+                `ChangeSet executor timed out after ${EXECUTOR_TIMEOUT_MS / 1000}s`,
+              ),
+            ),
+          );
+        }),
+      ]);
+      if (result.success) {
+        cs.status = "executed";
+        cs.executedAt = Date.now();
+        cs.rollbackData = result.rollbackData;
+      } else {
+        // Execution returned failure. Previously we reverted to "draft" to
+        // keep the changeset retryable, but that let a partial-mutation
+        // failure (e.g. HTTP wrote, then timed out reading the response) be
+        // silently replayed. Mark as "failed" and require an explicit
+        // retryChangeSet() call to rehydrate — operator intervention.
+        cs.status = "failed";
+      }
+      // Always audit both success and failure
+      logChangeSet(cs);
+      return {
+        success: result.success,
+        message: result.message,
+        changeset: cs,
+      };
+    } catch (error) {
+      cs.status = "failed";
+      logChangeSet(cs); // Audit the failure
+      const msg = error instanceof Error ? error.message : String(error);
+      return {
+        success: false,
+        message: `Execution failed: ${msg}`,
+        changeset: cs,
+      };
+    }
+  } finally {
+    inflightApprovals.delete(id);
+  }
+}
+
+/**
+ * Rehydrate a failed or expired ChangeSet back to draft so it can be
+ * re-approved. Extending the TTL by another DRAFT_TTL_MS gives the operator
+ * time to review the failure reason before re-approving.
+ *
+ * Only callable on "failed" or "expired" drafts. Executed or rejected
+ * changesets stay terminal.
+ */
+export function retryChangeSet(id: string): {
+  success: boolean;
+  message: string;
+  changeset: ChangeSet | null;
+} {
+  const cs = changesets.get(id);
+  if (!cs)
     return {
       success: false,
-      message: `Execution failed: ${msg}`,
+      message: `ChangeSet ${id} not found`,
+      changeset: null,
+    };
+  if (cs.status !== "failed" && cs.status !== "expired") {
+    return {
+      success: false,
+      message: `ChangeSet ${id} is ${cs.status}, cannot retry`,
       changeset: cs,
     };
   }
+  cs.status = "draft";
+  cs.expiresAt = Date.now() + DRAFT_TTL_MS;
+  return {
+    success: true,
+    message: `ChangeSet ${id} rehydrated to draft`,
+    changeset: cs,
+  };
 }
 
 /**

@@ -15,6 +15,7 @@ export {
   createChangeSet,
   approveChangeSet,
   rejectChangeSet,
+  retryChangeSet,
   listChangeSets,
   registerExecutor,
 } from "./changeset.js";
