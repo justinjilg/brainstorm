@@ -5,3 +5,4 @@ export * from "./telemetry.js";
 export * from "./sentry.js";
 export * from "./features.js";
 export * from "./fs-atomic.js";
+export * from "./abort-signals.js";
