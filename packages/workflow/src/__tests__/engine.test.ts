@@ -302,8 +302,8 @@ describe("artifact-store", () => {
 
     expect(readArtifact(runId, "code", 0)).toBe("first pass");
     expect(readArtifact(runId, "code", 1)).toBe("second pass");
-    // Unknown iteration falls back to the first match found on disk
-    expect(readArtifact(runId, "code", 99)).not.toBeNull();
+    // Unknown iteration returns null (no silent fallback to wrong artifact)
+    expect(readArtifact(runId, "code", 99)).toBeNull();
   });
 
   it("listRuns returns the most recent manifests, reverse sorted and limited", () => {
