@@ -43,7 +43,12 @@ export type OrchestrationEvent =
   | {
       type: "orchestration-completed";
       run: OrchestrationRun;
-      results: Array<{ projectName: string; summary: string; cost: number }>;
+      results: Array<{
+        projectName: string;
+        status: "ok" | "failed";
+        summary: string;
+        cost: number;
+      }>;
     }
   | { type: "orchestration-failed"; run: OrchestrationRun; error: string };
 
@@ -131,6 +136,7 @@ export class OrchestrationEngine {
     // Execute tasks (currently sequential — parallel with dep resolution in future)
     const results: Array<{
       projectName: string;
+      status: "ok" | "failed";
       summary: string;
       cost: number;
     }> = [];
@@ -168,7 +174,12 @@ export class OrchestrationEngine {
           cost,
         });
 
-        results.push({ projectName: project.name, summary, cost });
+        results.push({
+          projectName: project.name,
+          status: "ok",
+          summary,
+          cost,
+        });
         yield { type: "task-completed", task, project, summary, cost };
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
@@ -181,6 +192,7 @@ export class OrchestrationEngine {
         // Continue with remaining projects (don't fail the whole orchestration)
         results.push({
           projectName: project.name,
+          status: "failed",
           summary: `FAILED: ${error}`,
           cost: 0,
         });
@@ -191,11 +203,13 @@ export class OrchestrationEngine {
     // - "completed": all tasks succeeded
     // - "partial": some tasks succeeded, some failed
     // - "failed": all tasks failed
-    // Previously this always set "completed" regardless of failures, which
-    // was a silent-failure anti-pattern flagged in the v7 assessment.
-    const failedCount = results.filter((r) =>
-      r.summary.startsWith("FAILED:"),
-    ).length;
+    //
+    // Uses the explicit status field, not a summary string-prefix check. The
+    // prior `summary.startsWith("FAILED:")` matched any task whose caller
+    // happened to return a summary starting with that literal — e.g. a
+    // test runner reporting "FAILED: 3 of 87 tests" on an otherwise
+    // successful run would silently be counted as failed.
+    const failedCount = results.filter((r) => r.status === "failed").length;
     const finalStatus =
       failedCount === 0
         ? "completed"
