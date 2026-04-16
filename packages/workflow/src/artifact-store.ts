@@ -130,7 +130,8 @@ export function readArtifact(
   const files = readdirSync(dir).filter((f) => f.startsWith(`step-${stepId}-`));
   if (files.length === 0) return null;
 
-  const target = files.find((f) => f.includes(`-${iteration}.`)) ?? files[0];
+  const target = files.find((f) => f.includes(`-${iteration}.`));
+  if (!target) return null;
   try {
     return readFileSync(join(dir, target), "utf-8");
   } catch {
