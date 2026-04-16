@@ -306,6 +306,29 @@ describe("artifact-store", () => {
     expect(readArtifact(runId, "code", 99)).toBeNull();
   });
 
+  it("rejects stepIds containing path traversal", () => {
+    const make = (stepId: string): Artifact => ({
+      id: "impl",
+      stepId,
+      agentId: "a",
+      content: "x",
+      contentType: "text",
+      metadata: {},
+      confidence: 0,
+      cost: 0,
+      timestamp: 0,
+      iteration: 0,
+    });
+
+    expect(() =>
+      writeArtifact("run-sec-1", make("../../../etc/passwd")),
+    ).toThrow();
+    expect(() => writeArtifact("run-sec-1", make("../sibling"))).toThrow();
+    expect(() => writeArtifact("run-sec-1", make("a/b"))).toThrow();
+    expect(() => writeArtifact("run-sec-1", make(""))).toThrow();
+    expect(() => readArtifact("run-sec-1", "../../etc/passwd", 0)).toThrow();
+  });
+
   it("listRuns returns the most recent manifests, reverse sorted and limited", () => {
     // Use a unique prefix and limit to our own ids so other tests' dirs
     // don't contaminate the assertion.
