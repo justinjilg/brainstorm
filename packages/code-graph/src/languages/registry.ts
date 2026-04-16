@@ -7,6 +7,10 @@
 
 import type { LanguageAdapter } from "./types.js";
 import { createLogger } from "@brainst0rm/shared";
+import { createPythonAdapter } from "./python.js";
+import { createGoAdapter } from "./go.js";
+import { createRustAdapter } from "./rust.js";
+import { createJavaAdapter } from "./java.js";
 
 const log = createLogger("language-registry");
 
@@ -49,37 +53,6 @@ export function registeredLanguages(): string[] {
 }
 
 /**
- * Try to load an optional language adapter by dynamically importing its
- * tree-sitter grammar package. Silently skips if not installed.
- */
-async function tryLoadOptionalAdapter(
-  name: string,
-  grammarPackage: string,
-  adapterModule: string,
-  factoryName: string,
-): Promise<boolean> {
-  if (failedAdapters.has(name)) return false;
-  try {
-    // First check if the grammar package is available
-    await import(grammarPackage);
-    // Then load the adapter
-    const mod = await import(adapterModule);
-    const adapter = mod[factoryName]() as LanguageAdapter;
-    adapter.getParser(); // verify it works
-    registerAdapter(adapter);
-    log.debug({ language: name }, "Language adapter loaded");
-    return true;
-  } catch {
-    failedAdapters.add(name);
-    log.debug(
-      { language: name },
-      "Language adapter not available (grammar not installed)",
-    );
-    return false;
-  }
-}
-
-/**
  * Initialize all built-in adapters. TypeScript is always loaded;
  * others are attempted but silently skipped if grammars are missing.
  */
@@ -91,43 +64,30 @@ export async function initializeAdapters(): Promise<string[]> {
   registerAdapter(createTypeScriptAdapter());
   loaded.push("typescript");
 
-  // Optional adapters — try each, skip if grammar not installed.
-  // Each adapter file checks for its grammar package internally.
-  const optional: Array<{
-    name: string;
-    grammar: string;
-    module: string;
-    factory: string;
-  }> = [
-    {
-      name: "python",
-      grammar: "tree-sitter-python",
-      module: "./python.js",
-      factory: "createPythonAdapter",
-    },
-    {
-      name: "go",
-      grammar: "tree-sitter-go",
-      module: "./go.js",
-      factory: "createGoAdapter",
-    },
-    {
-      name: "rust",
-      grammar: "tree-sitter-rust",
-      module: "./rust.js",
-      factory: "createRustAdapter",
-    },
-    {
-      name: "java",
-      grammar: "tree-sitter-java",
-      module: "./java.js",
-      factory: "createJavaAdapter",
-    },
+  // Optional adapters — statically imported but lazily initialized.
+  // Each adapter's getParser() uses createRequire to load the grammar
+  // from code-graph's own node_modules, which works after bundling.
+  const optional: Array<{ name: string; factory: () => LanguageAdapter }> = [
+    { name: "python", factory: createPythonAdapter },
+    { name: "go", factory: createGoAdapter },
+    { name: "rust", factory: createRustAdapter },
+    { name: "java", factory: createJavaAdapter },
   ];
 
-  for (const { name, grammar, module: mod, factory } of optional) {
-    if (await tryLoadOptionalAdapter(name, grammar, mod, factory)) {
+  for (const { name, factory } of optional) {
+    if (failedAdapters.has(name)) continue;
+    try {
+      const adapter = factory();
+      adapter.getParser(); // verify the grammar loads
+      registerAdapter(adapter);
       loaded.push(name);
+      log.debug({ language: name }, "Language adapter loaded");
+    } catch (err: any) {
+      failedAdapters.add(name);
+      log.debug(
+        { language: name, error: err.message },
+        "Language adapter not available",
+      );
     }
   }
 

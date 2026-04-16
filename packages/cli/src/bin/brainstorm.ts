@@ -3607,100 +3607,171 @@ program
   )
   .argument("[path]", "Project path to analyze", ".")
   .option("--json", "Output as JSON")
-  .action(async (projectPath: string, opts: { json?: boolean }) => {
-    const { resolve } = await import("node:path");
-    const absPath = resolve(projectPath);
+  .option(
+    "--deep",
+    "Run deep AST analysis with tree-sitter (builds call graph, detects communities)",
+  )
+  .action(
+    async (projectPath: string, opts: { json?: boolean; deep?: boolean }) => {
+      const { resolve } = await import("node:path");
+      const absPath = resolve(projectPath);
 
-    console.log(`\n  Analyzing ${absPath}...\n`);
-    const startTime = Date.now();
+      console.log(`\n  Analyzing ${absPath}...\n`);
+      const startTime = Date.now();
 
-    const { analyzeProject } = await import("@brainst0rm/ingest");
-    const analysis = analyzeProject(absPath);
-    const elapsed = Date.now() - startTime;
+      const { analyzeProject, runDeepAnalysis } =
+        await import("@brainst0rm/ingest");
+      const analysis = analyzeProject(absPath);
 
-    if (opts.json) {
-      console.log(JSON.stringify(analysis, null, 2));
-      return;
-    }
+      // Deep analysis: tree-sitter AST parsing → SQLite graph → communities
+      if (opts.deep) {
+        console.log(`  Running deep analysis (tree-sitter AST parsing)...`);
+        try {
+          analysis.graph = await runDeepAnalysis(absPath);
+          console.log(
+            `    ✓ ${analysis.graph.stats.nodes} nodes, ${analysis.graph.stats.graphEdges} edges, ` +
+              `${analysis.graph.communities.length} communities (${analysis.graph.pipelineMs}ms)\n`,
+          );
+        } catch (err: any) {
+          console.log(`    ✗ Deep analysis failed: ${err.message}\n`);
+        }
+      }
 
-    console.log("  ══════════════════════════════════════════════════");
-    console.log("   Codebase Analysis");
-    console.log("  ══════════════════════════════════════════════════\n");
+      const elapsed = Date.now() - startTime;
 
-    console.log(
-      `  ${analysis.summary.totalFiles} files | ${analysis.summary.totalLines.toLocaleString()} lines | ${analysis.summary.primaryLanguage}`,
-    );
-    console.log(
-      `  ${analysis.summary.moduleCount} modules | avg complexity: ${analysis.summary.avgComplexity}/100 | ${elapsed}ms\n`,
-    );
+      if (opts.json) {
+        console.log(JSON.stringify(analysis, null, 2));
+        return;
+      }
 
-    // Languages
-    console.log("  Languages:");
-    for (const l of analysis.languages.languages.slice(0, 8)) {
-      const bar = "█".repeat(Math.max(1, Math.round(l.percentage / 5)));
+      console.log("  ══════════════════════════════════════════════════");
+      console.log("   Codebase Analysis");
+      console.log("  ══════════════════════════════════════════════════\n");
+
       console.log(
-        `    ${l.language.padEnd(15)} ${bar} ${l.percentage}% (${l.files} files, ${l.lines.toLocaleString()} lines)`,
+        `  ${analysis.summary.totalFiles} files | ${analysis.summary.totalLines.toLocaleString()} lines | ${analysis.summary.primaryLanguage}`,
       );
-    }
+      console.log(
+        `  ${analysis.summary.moduleCount} modules | avg complexity: ${analysis.summary.avgComplexity}/100 | ${elapsed}ms\n`,
+      );
 
-    // Frameworks
-    const hasStack =
-      analysis.frameworks.frameworks.length > 0 ||
-      analysis.frameworks.buildTools.length > 0;
-    if (hasStack) {
-      console.log("\n  Stack:");
-      if (analysis.frameworks.frameworks.length > 0)
+      // Languages
+      console.log("  Languages:");
+      for (const l of analysis.languages.languages.slice(0, 8)) {
+        const bar = "█".repeat(Math.max(1, Math.round(l.percentage / 5)));
         console.log(
-          `    Frameworks:  ${analysis.frameworks.frameworks.join(", ")}`,
-        );
-      if (analysis.frameworks.buildTools.length > 0)
-        console.log(
-          `    Build:       ${analysis.frameworks.buildTools.join(", ")}`,
-        );
-      if (analysis.frameworks.databases.length > 0)
-        console.log(
-          `    Databases:   ${analysis.frameworks.databases.join(", ")}`,
-        );
-      if (analysis.frameworks.testing.length > 0)
-        console.log(
-          `    Testing:     ${analysis.frameworks.testing.join(", ")}`,
-        );
-      if (analysis.frameworks.deployment.length > 0)
-        console.log(
-          `    Deploy:      ${analysis.frameworks.deployment.join(", ")}`,
-        );
-      if (analysis.frameworks.ci.length > 0)
-        console.log(`    CI/CD:       ${analysis.frameworks.ci.join(", ")}`);
-    }
-
-    // Complexity hotspots
-    if (analysis.complexity.summary.hotspots.length > 0) {
-      console.log("\n  Complexity Hotspots (score > 70):");
-      for (const f of analysis.complexity.files
-        .filter((cf: any) => cf.score >= 70)
-        .slice(0, 8)) {
-        console.log(
-          `    ${f.path.padEnd(50)} score:${f.score} branches:${f.branchCount} nesting:${f.maxNesting}`,
+          `    ${l.language.padEnd(15)} ${bar} ${l.percentage}% (${l.files} files, ${l.lines.toLocaleString()} lines)`,
         );
       }
-    }
 
-    // Module clusters
-    if (analysis.dependencies.clusters.length > 0) {
-      console.log("\n  Module Clusters (by size):");
-      for (const c of analysis.dependencies.clusters.slice(0, 8)) {
-        const cohesionLabel =
-          c.cohesion > 0.5 ? "high" : c.cohesion > 0.2 ? "med" : "low";
+      // Frameworks
+      const hasStack =
+        analysis.frameworks.frameworks.length > 0 ||
+        analysis.frameworks.buildTools.length > 0;
+      if (hasStack) {
+        console.log("\n  Stack:");
+        if (analysis.frameworks.frameworks.length > 0)
+          console.log(
+            `    Frameworks:  ${analysis.frameworks.frameworks.join(", ")}`,
+          );
+        if (analysis.frameworks.buildTools.length > 0)
+          console.log(
+            `    Build:       ${analysis.frameworks.buildTools.join(", ")}`,
+          );
+        if (analysis.frameworks.databases.length > 0)
+          console.log(
+            `    Databases:   ${analysis.frameworks.databases.join(", ")}`,
+          );
+        if (analysis.frameworks.testing.length > 0)
+          console.log(
+            `    Testing:     ${analysis.frameworks.testing.join(", ")}`,
+          );
+        if (analysis.frameworks.deployment.length > 0)
+          console.log(
+            `    Deploy:      ${analysis.frameworks.deployment.join(", ")}`,
+          );
+        if (analysis.frameworks.ci.length > 0)
+          console.log(`    CI/CD:       ${analysis.frameworks.ci.join(", ")}`);
+      }
+
+      // Complexity hotspots
+      if (analysis.complexity.summary.hotspots.length > 0) {
+        console.log("\n  Complexity Hotspots (score > 70):");
+        for (const f of analysis.complexity.files
+          .filter((cf: any) => cf.score >= 70)
+          .slice(0, 8)) {
+          console.log(
+            `    ${f.path.padEnd(50)} score:${f.score} branches:${f.branchCount} nesting:${f.maxNesting}`,
+          );
+        }
+      }
+
+      // Module clusters
+      if (analysis.dependencies.clusters.length > 0) {
+        console.log("\n  Module Clusters (by size):");
+        for (const c of analysis.dependencies.clusters.slice(0, 8)) {
+          const cohesionLabel =
+            c.cohesion > 0.5 ? "high" : c.cohesion > 0.2 ? "med" : "low";
+          console.log(
+            `    ${c.directory.padEnd(40)} ${c.files.length} files  cohesion:${cohesionLabel}`,
+          );
+        }
+      }
+
+      // Deep graph results
+      if (analysis.graph) {
+        const g = analysis.graph;
+        console.log("\n  Knowledge Graph (tree-sitter AST):");
         console.log(
-          `    ${c.directory.padEnd(40)} ${c.files.length} files  cohesion:${cohesionLabel}`,
+          `    ${g.stats.functions} functions | ${g.stats.classes} classes | ${g.stats.methods} methods`,
+        );
+        console.log(
+          `    ${g.stats.callEdges} call edges | ${g.crossFile.resolved} cross-file resolved`,
+        );
+        console.log(
+          `    ${g.communities.length} communities | languages: ${g.parsedLanguages.join(", ") || "none"}`,
+        );
+
+        if (g.exports.length > 0) {
+          console.log(`\n  Top Exports:`);
+          for (const e of g.exports.slice(0, 10)) {
+            console.log(
+              `    ${e.kind.padEnd(10)} ${e.name.padEnd(40)} ${e.file}:${e.line}`,
+            );
+          }
+        }
+
+        if (g.callHotspots.length > 0) {
+          console.log(`\n  Call Hotspots (most-called symbols):`);
+          for (const h of g.callHotspots.slice(0, 10)) {
+            console.log(
+              `    ${String(h.callerCount).padStart(4)} callers  ${h.name.padEnd(40)} ${h.file ?? "unknown"}`,
+            );
+          }
+        }
+
+        if (g.communities.length > 0) {
+          console.log(`\n  Communities (Louvain):`);
+          for (const c of g.communities.slice(0, 10)) {
+            console.log(
+              `    ${(c.name ?? c.id).padEnd(40)} ${c.nodeCount} nodes`,
+            );
+          }
+        }
+      }
+
+      console.log("\n  ──────────────────────────────────────────────────");
+      if (!analysis.graph) {
+        console.log(
+          `  Run \`storm analyze --deep\` for AST-based knowledge graph.`,
         );
       }
-    }
-
-    console.log("\n  ──────────────────────────────────────────────────");
-    console.log(`  Run \`storm analyze --json\` for machine-readable output.`);
-    console.log();
-  });
+      console.log(
+        `  Run \`storm analyze --json\` for machine-readable output.`,
+      );
+      console.log();
+    },
+  );
 
 // ── Docgen Command ────────────────────────────────────────────────
 
@@ -5607,13 +5678,28 @@ program
       console.log(`   Brainstorm Ingest — ${absPath}`);
       console.log(`  ══════════════════════════════════════════════════\n`);
 
-      // Phase 1: Analyze
+      // Phase 1: Analyze (surface scan)
       console.log(`  Phase 1: Analyzing codebase...`);
-      const { analyzeProject } = await import("@brainst0rm/ingest");
+      const { analyzeProject, runDeepAnalysis } =
+        await import("@brainst0rm/ingest");
       const analysis = analyzeProject(absPath);
       console.log(
         `    ✓ ${analysis.summary.totalFiles} files, ${analysis.summary.totalLines.toLocaleString()} lines, ${analysis.summary.moduleCount} modules`,
       );
+
+      // Phase 1b: Deep AST analysis (tree-sitter → knowledge graph)
+      if (opts.depth === "full") {
+        console.log(`  Phase 1b: Deep analysis (tree-sitter AST)...`);
+        try {
+          analysis.graph = await runDeepAnalysis(absPath);
+          console.log(
+            `    ✓ ${analysis.graph.stats.nodes} nodes, ${analysis.graph.stats.graphEdges} edges, ` +
+              `${analysis.graph.communities.length} communities (${analysis.graph.pipelineMs}ms)`,
+          );
+        } catch (err: any) {
+          console.log(`    ✗ Deep analysis failed: ${err.message}`);
+        }
+      }
 
       // Phase 2: Generate docs
       console.log(`  Phase 2: Generating documentation...`);
@@ -5645,25 +5731,119 @@ program
           `${analysis.languages.primary} project with ${analysis.summary.frameworkList.join(", ") || "no detected frameworks"}.`,
           `${analysis.summary.totalFiles} files, ${analysis.summary.totalLines.toLocaleString()} lines across ${analysis.summary.moduleCount} modules.`,
         ];
+
+        // Enrich with graph data
+        if (analysis.graph) {
+          const g = analysis.graph;
+          lines.push(
+            "",
+            "## Knowledge Graph",
+            "",
+            `${g.stats.functions} functions, ${g.stats.classes} classes, ${g.stats.methods} methods.`,
+            `${g.stats.callEdges} call edges, ${g.crossFile.resolved} cross-file resolved.`,
+            `${g.communities.length} communities detected. Languages parsed: ${g.parsedLanguages.join(", ") || "none"}.`,
+          );
+
+          if (g.communities.length > 0) {
+            lines.push("", "### Modules", "");
+            for (const c of g.communities.slice(0, 15)) {
+              lines.push(`- **${c.name ?? c.id}** — ${c.nodeCount} symbols`);
+            }
+          }
+
+          if (g.callHotspots.length > 0) {
+            lines.push("", "### Key Functions (most-called)", "");
+            for (const h of g.callHotspots.slice(0, 10)) {
+              lines.push(`- \`${h.name}\` — ${h.callerCount} callers`);
+            }
+          }
+        }
+
         fsWrite(bmPath, lines.join("\n"), "utf-8");
         console.log(`    ✓ Generated BRAINSTORM.md`);
       }
 
-      // Agent profiles
+      // Agent profiles — enriched with graph data when available
       const agentsDir = pathJoin(absPath, ".brainstorm", "agents");
       if (!existsSync(agentsDir)) fsMkdir(agentsDir, { recursive: true });
       let agentCount = 0;
-      for (const cluster of analysis.dependencies.clusters.slice(0, 10)) {
-        const safeName = cluster.directory
-          .replace(/[/\\]/g, "-")
-          .replace(/^-/, "");
+
+      // If we have graph communities, use those for agent assignment (much better than directory clusters)
+      const agentSources =
+        analysis.graph && analysis.graph.communities.length > 0
+          ? analysis.graph.communities.slice(0, 15).map((c) => ({
+              name: c.name ?? c.id,
+              nodeCount: c.nodeCount,
+              complexityScore: c.complexityScore,
+              // Find exports and hotspots belonging to this community
+              exports: analysis
+                .graph!.exports.filter((e) => {
+                  // Match exports to community by checking if the community name appears in the file path
+                  const communityDir = (c.name ?? "").split("/")[0];
+                  return communityDir && e.file.includes(communityDir);
+                })
+                .slice(0, 5),
+              hotspots: analysis
+                .graph!.callHotspots.filter((h) => {
+                  const communityDir = (c.name ?? "").split("/")[0];
+                  return (
+                    communityDir && h.file && h.file.includes(communityDir)
+                  );
+                })
+                .slice(0, 5),
+            }))
+          : analysis.dependencies.clusters.slice(0, 10).map((c) => ({
+              name: c.directory,
+              nodeCount: c.files.length,
+              complexityScore: null as number | null,
+              exports: [] as Array<{
+                name: string;
+                kind: string;
+                file: string;
+                line: number;
+              }>,
+              hotspots: [] as Array<{
+                name: string;
+                callerCount: number;
+                file: string;
+              }>,
+            }));
+
+      for (const source of agentSources) {
+        const safeName = source.name.replace(/[/\\]/g, "-").replace(/^-/, "");
+        if (!safeName) continue;
         const agentPath = pathJoin(agentsDir, `${safeName}.agent.md`);
         if (!existsSync(agentPath)) {
-          fsWrite(
-            agentPath,
-            `---\nname: ${safeName}-expert\nrole: coder\n---\n\n# ${safeName} Expert\n\nDomain expert for the ${safeName} module.\n`,
-            "utf-8",
-          );
+          const lines = [
+            "---",
+            `name: ${safeName}-expert`,
+            "role: coder",
+            "---",
+            "",
+            `# ${safeName} Expert`,
+            "",
+            `Domain expert for the ${safeName} module.`,
+            `${source.nodeCount} symbols${source.complexityScore != null ? `, complexity: ${source.complexityScore}` : ""}.`,
+          ];
+
+          if (source.exports.length > 0) {
+            lines.push("", "## Key Exports", "");
+            for (const e of source.exports) {
+              lines.push(`- \`${e.name}\` (${e.kind}) — ${e.file}:${e.line}`);
+            }
+          }
+
+          if (source.hotspots.length > 0) {
+            lines.push("", "## Call Hotspots", "");
+            for (const h of source.hotspots) {
+              lines.push(
+                `- \`${h.name}\` — ${h.callerCount} callers (${h.file})`,
+              );
+            }
+          }
+
+          lines.push("");
+          fsWrite(agentPath, lines.join("\n"), "utf-8");
           agentCount++;
         }
       }
