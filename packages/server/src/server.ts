@@ -89,6 +89,7 @@ export class BrainstormServer {
       port: opts?.port ?? 8000,
       host: opts?.host ?? "127.0.0.1",
       cors: opts?.cors ?? false,
+      allowedOrigins: opts?.allowedOrigins ?? [],
       jwtSecret: opts?.jwtSecret ?? "",
       projectPath: opts?.projectPath ?? process.cwd(),
     };
@@ -161,13 +162,18 @@ export class BrainstormServer {
     req: IncomingMessage,
     res: ServerResponse,
   ): Promise<void> {
+    // Stash the request on the response so helpers (json, corsHeaders,
+    // errorResponse) can resolve the Origin without every call site having
+    // to thread req through.
+    (res as any)._brainstormReq = req;
+
     const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
     const path = url.pathname;
     const method = req.method ?? "GET";
 
     // CORS preflight
     if (method === "OPTIONS" && this.opts.cors) {
-      res.writeHead(204, this.corsHeaders());
+      res.writeHead(204, this.corsHeaders(req));
       res.end();
       return;
     }
@@ -546,7 +552,7 @@ export class BrainstormServer {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
-      ...(this.opts.cors ? { "Access-Control-Allow-Origin": "*" } : {}),
+      ...this.corsHeaders(req),
     });
 
     const {
@@ -946,9 +952,10 @@ export class BrainstormServer {
 
   private json(res: ServerResponse, status: number, body: unknown): void {
     const payload = JSON.stringify(body);
+    const req = (res as any)._brainstormReq as IncomingMessage | undefined;
     res.writeHead(status, {
       "Content-Type": "application/json",
-      ...(this.opts.cors ? this.corsHeaders() : {}),
+      ...this.corsHeaders(req),
     });
     res.end(payload);
   }
@@ -993,12 +1000,28 @@ export class BrainstormServer {
     return Number.isFinite(n) ? n : fallback;
   }
 
-  private corsHeaders() {
+  /**
+   * Build CORS headers for a request. Only reflects the request Origin when
+   * it appears in the configured allowlist. Emitting `*` on a credentialed
+   * API would let any origin exfiltrate authenticated SSE responses.
+   */
+  private corsHeaders(req?: IncomingMessage): Record<string, string> {
+    const origin = this.resolveAllowedOrigin(req);
+    if (!origin) return {};
     return {
-      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Credentials": "true",
+      Vary: "Origin",
       "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Authorization",
       "Access-Control-Max-Age": "86400",
     };
+  }
+
+  private resolveAllowedOrigin(req?: IncomingMessage): string | null {
+    if (!this.opts.cors) return null;
+    const origin = req?.headers.origin;
+    if (!origin || typeof origin !== "string") return null;
+    return this.opts.allowedOrigins.includes(origin) ? origin : null;
   }
 }

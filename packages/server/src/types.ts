@@ -26,6 +26,12 @@ export interface ServerOptions {
   port?: number;
   host?: string;
   cors?: boolean;
+  /**
+   * Origins allowed when cors is enabled. If omitted or empty, no CORS
+   * headers are emitted — this prevents a `*` wildcard from leaking
+   * credentialed responses (e.g. SSE chat streams) to attacker origins.
+   */
+  allowedOrigins?: string[];
   /** JWT secret for auth. If not set, runs in dev mode (no auth). */
   jwtSecret?: string;
   /** Project path for the server context. */
