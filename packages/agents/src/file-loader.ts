@@ -135,9 +135,26 @@ export function parseAgentFile(
   const model = get("model") ?? "";
   const role = (get("role") ?? "custom") as AgentRole;
   const tools = getArray("tools");
-  const maxSteps = parseInt(get("max_steps") ?? "10", 10);
-  const budget = parseFloat(get("budget") ?? "0");
-  const confidence = parseFloat(get("confidence") ?? "0.7");
+  // parseFloat/parseInt happily return NaN/Infinity for "NaN", "Infinity",
+  // or numerically-overflowed strings. Validate and clamp so a stray
+  // frontmatter value doesn't poison the profile with non-finite numbers.
+  const parseFinite = (raw: string | undefined, fallback: number): number => {
+    const n = parseFloat(raw ?? "");
+    return Number.isFinite(n) ? n : fallback;
+  };
+  const parseFiniteInt = (
+    raw: string | undefined,
+    fallback: number,
+  ): number => {
+    const n = parseInt(raw ?? "", 10);
+    return Number.isFinite(n) ? n : fallback;
+  };
+  const maxSteps = parseFiniteInt(get("max_steps"), 10);
+  const budget = Math.max(0, parseFinite(get("budget"), 0));
+  const confidence = Math.min(
+    1,
+    Math.max(0, parseFinite(get("confidence"), 0.7)),
+  );
 
   // Map model hint to model ID pattern
   const modelId =
