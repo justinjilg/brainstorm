@@ -7,6 +7,21 @@ import type {
   TaskType,
 } from "@brainst0rm/shared";
 
+/**
+ * Parse a JSON column, falling back to the provided default on any error.
+ * A single corrupt row (power-loss truncation, bug in an old migration,
+ * manual edit) would otherwise crash session/conversation hydration and
+ * take down every caller that doesn't wrap the repository call.
+ */
+function safeParseJson<T>(raw: unknown, fallback: T): T {
+  if (typeof raw !== "string" || raw.length === 0) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
 // ── Sessions ─────────────────────────────────────────────────────────
 
 export class SessionRepository {
@@ -484,7 +499,7 @@ export class CompactionCommitRepository {
       sessionId: row.session_id,
       timestamp: row.timestamp,
       summary: row.summary,
-      originalMessageIds: JSON.parse(row.original_message_ids),
+      originalMessageIds: safeParseJson<string[]>(row.original_message_ids, []),
       keptCount: row.kept_count,
       summarizedCount: row.summarized_count,
       droppedCount: row.dropped_count,
@@ -505,7 +520,7 @@ export class CompactionCommitRepository {
       sessionId: row.session_id,
       timestamp: row.timestamp,
       summary: row.summary,
-      originalMessageIds: JSON.parse(row.original_message_ids),
+      originalMessageIds: safeParseJson<string[]>(row.original_message_ids, []),
       keptCount: row.kept_count,
       summarizedCount: row.summarized_count,
       droppedCount: row.dropped_count,
@@ -1083,10 +1098,13 @@ export class ConversationRepository {
       name: row.name,
       description: row.description,
       projectPath: row.project_path,
-      tags: JSON.parse(row.tags || "[]"),
+      tags: safeParseJson<string[]>(row.tags, []),
       modelOverride: row.model_override,
-      memoryOverrides: JSON.parse(row.memory_overrides || "{}"),
-      metadata: JSON.parse(row.metadata || "{}"),
+      memoryOverrides: safeParseJson<Record<string, string | null>>(
+        row.memory_overrides,
+        {},
+      ),
+      metadata: safeParseJson<Record<string, unknown>>(row.metadata, {}),
       isArchived: !!row.is_archived,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
