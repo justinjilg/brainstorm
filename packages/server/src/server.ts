@@ -509,24 +509,38 @@ export class BrainstormServer {
     let finalText = "";
     let totalCost = 0;
 
-    for await (const event of runAgentLoop(messages, {
-      config: this.deps.config,
-      registry: this.deps.registry,
-      router: this.deps.router,
-      costTracker: this.deps.costTracker,
-      tools: this.deps.tools,
-      sessionId: session.id,
-      projectPath: this.opts.projectPath,
-      systemPrompt,
-      systemSegments: segments,
-      permissionCheck: () => "allow" as const,
-      middleware: createDefaultMiddlewarePipeline(this.opts.projectPath),
-      preferredModelId,
-    })) {
-      if (event.type === "text-delta") finalText += event.delta;
-      if (event.type === "done") totalCost = event.totalCost;
+    // Abort the agent loop if the HTTP client disconnects — otherwise the
+    // server keeps consuming LLM tokens (billed to the session) for a
+    // response nobody will ever read.
+    const abortController = new AbortController();
+    const onClose = () => abortController.abort();
+    req.on("close", onClose);
+
+    try {
+      for await (const event of runAgentLoop(messages, {
+        config: this.deps.config,
+        registry: this.deps.registry,
+        router: this.deps.router,
+        costTracker: this.deps.costTracker,
+        tools: this.deps.tools,
+        sessionId: session.id,
+        projectPath: this.opts.projectPath,
+        systemPrompt,
+        systemSegments: segments,
+        permissionCheck: () => "allow" as const,
+        middleware: createDefaultMiddlewarePipeline(this.opts.projectPath),
+        preferredModelId,
+        signal: abortController.signal,
+      })) {
+        if (event.type === "text-delta") finalText += event.delta;
+        if (event.type === "done") totalCost = event.totalCost;
+      }
+    } finally {
+      req.off("close", onClose);
     }
 
+    // If the client already disconnected we can skip writing a response,
+    // but it's cheap and harmless in case they reconnected over keepalive.
     this.json(
       res,
       200,
@@ -570,26 +584,41 @@ export class BrainstormServer {
 
     const messages = [{ role: "user" as const, content: body.message }];
 
-    for await (const event of runAgentLoop(messages, {
-      config: this.deps.config,
-      registry: this.deps.registry,
-      router: this.deps.router,
-      costTracker: this.deps.costTracker,
-      tools: this.deps.tools,
-      sessionId: session.id,
-      projectPath: this.opts.projectPath,
-      systemPrompt,
-      systemSegments: segments,
-      permissionCheck: () => "allow" as const,
-      middleware: createDefaultMiddlewarePipeline(this.opts.projectPath),
-      preferredModelId,
-    })) {
-      res.write(`data: ${JSON.stringify(event)}\n\n`);
-      if (event.type === "done" || event.type === "error") break;
+    // Abort the agent loop if the SSE client disconnects. Without this, a
+    // client that opens /chat/stream and drops the socket lets the server
+    // keep pulling tokens from the LLM — billable work with no reader,
+    // trivial cost-exhaustion vector for any connecting client.
+    const abortController = new AbortController();
+    const onClose = () => abortController.abort();
+    req.on("close", onClose);
+
+    try {
+      for await (const event of runAgentLoop(messages, {
+        config: this.deps.config,
+        registry: this.deps.registry,
+        router: this.deps.router,
+        costTracker: this.deps.costTracker,
+        tools: this.deps.tools,
+        sessionId: session.id,
+        projectPath: this.opts.projectPath,
+        systemPrompt,
+        systemSegments: segments,
+        permissionCheck: () => "allow" as const,
+        middleware: createDefaultMiddlewarePipeline(this.opts.projectPath),
+        preferredModelId,
+        signal: abortController.signal,
+      })) {
+        res.write(`data: ${JSON.stringify(event)}\n\n`);
+        if (event.type === "done" || event.type === "error") break;
+      }
+    } finally {
+      req.off("close", onClose);
     }
 
-    res.write("data: [DONE]\n\n");
-    res.end();
+    if (!res.writableEnded) {
+      res.write("data: [DONE]\n\n");
+      res.end();
+    }
   }
 
   // ── Conversations ─────────────────────────────────────────────────
