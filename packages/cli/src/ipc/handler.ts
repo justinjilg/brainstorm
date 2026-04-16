@@ -150,6 +150,12 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
   });
 
   log(`Brainstorm IPC v${ctx.version} ready`);
+  // Structured readiness signal on the NDJSON channel so the desktop app
+  // doesn't have to pattern-match the stderr log line. Main consumes this
+  // and flips backendReady exactly once.
+  process.stdout.write(
+    JSON.stringify({ type: "ready", version: ctx.version }) + "\n",
+  );
 
   function maybeExit(): void {
     if (stdinClosed && pendingDispatches === 0) {
