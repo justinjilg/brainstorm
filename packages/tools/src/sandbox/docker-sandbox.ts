@@ -117,7 +117,8 @@ export class DockerSandbox {
 
       if (sentinelIdx >= 0) {
         const codeStr = output.slice(sentinelIdx + sentinel.length).trim();
-        exitCode = parseInt(codeStr, 10) || 0;
+        const parsed = parseInt(codeStr, 10);
+        exitCode = Number.isNaN(parsed) ? 1 : parsed;
         cleanOutput = output.slice(0, sentinelIdx).trimEnd();
       }
 
@@ -191,7 +192,7 @@ export function translatePath(
   hostWorkspace: string,
   containerWorkspace: string,
 ): string {
-  if (path.startsWith(hostWorkspace)) {
+  if (path.startsWith(hostWorkspace + "/") || path === hostWorkspace) {
     return path.replace(hostWorkspace, containerWorkspace);
   }
   return path;
