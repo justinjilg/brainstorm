@@ -190,7 +190,12 @@ export async function compactContext(
     summary = toSummarize.length > 0 ? fallbackSummary(toSummarize) : "";
   }
 
-  let commitId: string | undefined;
+  // Allocate the commit id up front so the tag embedded in the summary
+  // message below and the summary line at the end agree with whatever we
+  // eventually persist to commitRepo. If commitRepo is not configured we
+  // leave commitId undefined and the tag is simply omitted.
+  let commitId: string | undefined =
+    options.commitRepo && options.sessionId ? randomUUID() : undefined;
   const tokensBefore = estimateTokenCount(messages);
 
   // Build compacted message list: system + kept messages + summary + recent
@@ -243,8 +248,8 @@ export async function compactContext(
 
   // ── Persist compaction commit for reversible context collapse ────
   // Stored after building the compacted list so tokensAfter is accurate.
-  if (options.commitRepo && options.sessionId) {
-    commitId = randomUUID();
+  // commitId was allocated before building the summary tag above.
+  if (options.commitRepo && options.sessionId && commitId) {
     try {
       options.commitRepo.create({
         id: commitId,
