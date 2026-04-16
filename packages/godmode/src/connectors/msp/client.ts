@@ -12,6 +12,7 @@ import type {
   SimulationResult,
   Change,
 } from "../../types.js";
+import { encodePathSegment } from "../path-segment.js";
 
 /**
  * MSP HTTP Client — thin typed wrapper around BrainstormMSP's REST API.
@@ -81,11 +82,13 @@ export class MSPClient {
   }
 
   async getDevice(id: string): Promise<any> {
-    return this.apiFetch(`/api/v1/discovery/assets/${id}`);
+    return this.apiFetch(`/api/v1/discovery/assets/${encodePathSegment(id)}`);
   }
 
   async getDeviceSoftware(id: string): Promise<any> {
-    return this.apiFetch(`/api/v1/discovery/assets/${id}/software`);
+    return this.apiFetch(
+      `/api/v1/discovery/assets/${encodePathSegment(id)}/software`,
+    );
   }
 
   /**
@@ -97,9 +100,10 @@ export class MSPClient {
     deviceId: string,
     level: string,
   ): Promise<{ simulation: SimulationResult; changes: Change[] }> {
+    const encodedId = encodePathSegment(deviceId);
     // Try server-side simulation first
     const simResult = await this.apiFetch(
-      `/api/v1/rmm/devices/${deviceId}/protect/simulate`,
+      `/api/v1/rmm/devices/${encodedId}/protect/simulate`,
       { method: "POST", body: JSON.stringify({ level }) },
     );
 
@@ -171,22 +175,31 @@ export class MSPClient {
   }
 
   async executeProtect(deviceId: string, level: string): Promise<any> {
-    return this.apiFetch(`/api/v1/rmm/devices/${deviceId}/protect`, {
-      method: "POST",
-      body: JSON.stringify({ level }),
-    });
+    return this.apiFetch(
+      `/api/v1/rmm/devices/${encodePathSegment(deviceId)}/protect`,
+      {
+        method: "POST",
+        body: JSON.stringify({ level }),
+      },
+    );
   }
 
   async isolateDevice(deviceId: string): Promise<any> {
-    return this.apiFetch(`/api/v1/rmm/devices/${deviceId}/isolate`, {
-      method: "POST",
-    });
+    return this.apiFetch(
+      `/api/v1/rmm/devices/${encodePathSegment(deviceId)}/isolate`,
+      {
+        method: "POST",
+      },
+    );
   }
 
   async scanDevice(deviceId: string): Promise<any> {
-    return this.apiFetch(`/api/v1/rmm/devices/${deviceId}/scan`, {
-      method: "POST",
-    });
+    return this.apiFetch(
+      `/api/v1/rmm/devices/${encodePathSegment(deviceId)}/scan`,
+      {
+        method: "POST",
+      },
+    );
   }
 
   // ── User Operations ────────────────────────────────────────────
@@ -196,11 +209,11 @@ export class MSPClient {
   }
 
   async getUser(id: string): Promise<any> {
-    return this.apiFetch(`/api/v1/clients/${id}`);
+    return this.apiFetch(`/api/v1/clients/${encodePathSegment(id)}`);
   }
 
   async disableUser(userId: string): Promise<any> {
-    return this.apiFetch(`/api/v1/clients/${userId}`, {
+    return this.apiFetch(`/api/v1/clients/${encodePathSegment(userId)}`, {
       method: "PUT",
       body: JSON.stringify({ status: "disabled" }),
     });
@@ -214,15 +227,20 @@ export class MSPClient {
 
   async getBackupStatus(agentId?: string): Promise<any> {
     if (agentId) {
-      return this.apiFetch(`/api/v1/backups/status/${agentId}`);
+      return this.apiFetch(
+        `/api/v1/backups/status/${encodePathSegment(agentId)}`,
+      );
     }
     return this.apiFetch("/api/v1/backups/status");
   }
 
   async retryBackup(jobId: string): Promise<any> {
-    return this.apiFetch(`/api/v1/backups/jobs/${jobId}/retry`, {
-      method: "POST",
-    });
+    return this.apiFetch(
+      `/api/v1/backups/jobs/${encodePathSegment(jobId)}/retry`,
+      {
+        method: "POST",
+      },
+    );
   }
 
   // ── Discovery Operations ───────────────────────────────────────

@@ -7,6 +7,7 @@
  */
 
 import type { ConnectorConfig, HealthResult } from "../../types.js";
+import { encodePathSegment } from "../path-segment.js";
 
 export class VMClient {
   private baseUrl: string;
@@ -67,7 +68,7 @@ export class VMClient {
   }
 
   async getVM(id: string): Promise<any> {
-    return this.apiFetch(`/api/v1/resources/${id}`);
+    return this.apiFetch(`/api/v1/resources/${encodePathSegment(id)}`);
   }
 
   async createVM(spec: {
@@ -85,7 +86,9 @@ export class VMClient {
   }
 
   async destroyVM(id: string): Promise<any> {
-    return this.apiFetch(`/api/v1/resources/${id}`, { method: "DELETE" });
+    return this.apiFetch(`/api/v1/resources/${encodePathSegment(id)}`, {
+      method: "DELETE",
+    });
   }
 
   async migrateVM(id: string, targetNode: string): Promise<any> {
@@ -105,9 +108,12 @@ export class VMClient {
   }
 
   async restoreSnapshot(snapshotId: string): Promise<any> {
-    return this.apiFetch(`/api/v1/snapshots/${snapshotId}/restore`, {
-      method: "POST",
-    });
+    return this.apiFetch(
+      `/api/v1/snapshots/${encodePathSegment(snapshotId)}/restore`,
+      {
+        method: "POST",
+      },
+    );
   }
 
   // ── Network ────────────────────────────────────────────────────

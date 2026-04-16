@@ -6,6 +6,7 @@
  */
 
 import type { ConnectorConfig, HealthResult } from "../../types.js";
+import { encodePathSegment } from "../path-segment.js";
 
 export class EmailClient {
   private baseUrl: string;
@@ -68,12 +69,14 @@ export class EmailClient {
   }
 
   async getMessageDetail(messageId: string): Promise<any> {
-    return this.apiFetch(`/api/v1/email-security/messages/${messageId}`);
+    return this.apiFetch(
+      `/api/v1/email-security/messages/${encodePathSegment(messageId)}`,
+    );
   }
 
   async submitFeedback(messageId: string, verdict: string): Promise<any> {
     return this.apiFetch(
-      `/api/v1/email-security/messages/${messageId}/feedback`,
+      `/api/v1/email-security/messages/${encodePathSegment(messageId)}/feedback`,
       {
         method: "POST",
         body: JSON.stringify({ verdict }),
@@ -89,7 +92,7 @@ export class EmailClient {
 
   async releaseMessage(messageId: string): Promise<any> {
     return this.apiFetch(
-      `/api/v1/email-security/quarantine/${messageId}/release`,
+      `/api/v1/email-security/quarantine/${encodePathSegment(messageId)}/release`,
       {
         method: "POST",
       },
@@ -141,7 +144,9 @@ export class EmailClient {
 
   async getDashboard(clientId?: string): Promise<any> {
     if (clientId) {
-      return this.apiFetch(`/api/v1/email-security/dashboard/${clientId}`);
+      return this.apiFetch(
+        `/api/v1/email-security/dashboard/${encodePathSegment(clientId)}`,
+      );
     }
     return this.apiFetch("/api/v1/email-security/dashboard");
   }
