@@ -374,6 +374,45 @@ describe("MemoryManager", () => {
   // These tests exercise the BR pull path using a stub gateway. The
   // merge semantics are: additive last-writer-wins by name, never
   // delete local entries, skip quarantine tier.
+  describe("capacity enforcement", () => {
+    // Each entry is ~10 KB. 15 writes (150 KB) must trigger eviction to fit
+    // under the default 100 KB cap.
+    const big = (slug: string) => ({
+      name: `big-entry-${slug}`,
+      description: "d",
+      content: "x".repeat(10_000),
+      type: "project" as const,
+      source: "user_input" as const,
+    });
+
+    it("unlinks the corresponding files on disk when evicting", () => {
+      for (let i = 0; i < 15; i++) {
+        manager.save(big(`${i}`));
+      }
+
+      // If eviction reconstructed paths incorrectly (basename collision),
+      // the map would shrink while disk bytes stayed high.
+      const entryCount = manager.list().length;
+      const fileCount = readdirSync(memoryDir).filter((f) =>
+        f.endsWith(".md"),
+      ).length;
+      // One file on disk per in-memory entry — no orphans, no phantoms.
+      expect(fileCount).toBe(entryCount);
+    });
+
+    it("keeps total on-disk bytes at or below the cap after a burst", async () => {
+      for (let i = 0; i < 15; i++) {
+        manager.save(big(`burst-${i}`));
+      }
+
+      const { statSync } = await import("node:fs");
+      const total = readdirSync(memoryDir)
+        .filter((f) => f.endsWith(".md"))
+        .reduce((sum, f) => sum + statSync(join(memoryDir, f)).size, 0);
+      expect(total).toBeLessThanOrEqual(100 * 1024);
+    });
+  });
+
   describe("pullFromGateway", () => {
     // Minimal gateway stub exposing only what pullFromGateway calls.
     function stubGateway(entries: Array<Record<string, unknown>>): any {

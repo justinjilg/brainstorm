@@ -11,7 +11,7 @@ import {
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { createHash } from "node:crypto";
-import { createLogger } from "@brainst0rm/shared";
+import { createLogger, atomicWriteFile } from "@brainst0rm/shared";
 import type { BrainstormGateway } from "@brainst0rm/gateway";
 import { initMemoryRepo, commitMemoryChange } from "./git.js";
 import type { GitMemorySync } from "./git-sync.js";
@@ -255,11 +255,19 @@ export class MemoryManager {
       }
     }
 
-    writeFileSync(filePath, fileContent, "utf-8");
+    atomicWriteFile(filePath, fileContent);
 
     this.entries.set(id, memory);
     this._sessionMemoryOps++;
     this.scheduleIndexUpdate();
+
+    // Cross-process concurrency: another CLI process may have written its
+    // own entry between our pre-check and this write, pushing us over the
+    // soft cap. Re-check and evict now so the overflow doesn't linger
+    // until the next save() call.
+    if (this.estimateTotalSize() > MAX_MEMORY_BYTES) {
+      this.enforceCapacity();
+    }
 
     // Fire-and-forget push to gateway, now with project scope so
     // teammates sharing the same project see each other's entries
@@ -776,13 +784,12 @@ export class MemoryManager {
     let totalBytes = 0;
     const fileSizes: Array<{
       id: string;
-      file: string;
-      dir: string;
+      fullPath: string;
       bytes: number;
       updatedAt: number;
     }> = [];
 
-    for (const { dir, prefix } of dirs) {
+    for (const { dir } of dirs) {
       let files: string[];
       try {
         files = readdirSync(dir).filter(
@@ -800,8 +807,7 @@ export class MemoryManager {
           const entry = this.entries.get(id);
           fileSizes.push({
             id,
-            file: prefix + file,
-            dir,
+            fullPath: filePath,
             bytes,
             updatedAt: entry?.updatedAt ?? 0,
           });
@@ -828,9 +834,8 @@ export class MemoryManager {
       // Don't evict [keep] entries
       if (this.entries.get(entry.id)?.name.includes("[keep]")) continue;
 
-      const filePath = join(entry.dir, entry.file.split("/").pop()!);
       try {
-        unlinkSync(filePath);
+        unlinkSync(entry.fullPath);
         this.entries.delete(entry.id);
         totalBytes -= entry.bytes;
         evicted++;
