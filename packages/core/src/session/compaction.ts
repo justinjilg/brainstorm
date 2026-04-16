@@ -81,6 +81,13 @@ export async function compactContext(
     sessionId?: string;
     /** Repository for persisting compaction commits (enables reversible compaction). */
     commitRepo?: CompactionCommitRepository;
+    /**
+     * Snapshot of DB message IDs present in this session at compaction time.
+     * Stored verbatim on the commit so rehydrate can fetch the exact original
+     * rows by ID instead of relying on a positional slice (which breaks if any
+     * messages are later deleted or if persistence lags).
+     */
+    dbMessageIds?: string[];
   },
 ): Promise<{
   messages: ConversationMessage[];
@@ -256,7 +263,10 @@ export async function compactContext(
         sessionId: options.sessionId,
         timestamp: Math.floor(Date.now() / 1000),
         summary,
-        originalMessageIds: oldMessages.map((_, i) => `msg-${i}`),
+        originalMessageIds:
+          options.dbMessageIds && options.dbMessageIds.length > 0
+            ? options.dbMessageIds.slice(0, oldMessages.length)
+            : oldMessages.map((_, i) => `msg-${i}`),
         keptCount: kept.length,
         summarizedCount: toSummarize.length,
         droppedCount: dropped,
