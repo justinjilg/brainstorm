@@ -121,8 +121,19 @@ export async function* runWorkflow(
   // Execute steps
   let stepIndex = 0;
   const MAX_CONFIDENCE_RETRIES = 2;
+  // Retry counter is scoped by stepIndex, not by loop iteration. The
+  // previous version declared `let confidenceRetries = 0` inside the
+  // while body, so every `continue` (used below to re-run the same
+  // step after a low-confidence escalation) re-entered the loop head
+  // and reset the counter to 0 — MAX_CONFIDENCE_RETRIES was never
+  // reachable and the step could loop indefinitely against the budget.
+  let confidenceRetries = 0;
+  let confidenceRetryStepIndex = stepIndex;
   while (stepIndex < definition.steps.length) {
-    let confidenceRetries = 0;
+    if (confidenceRetryStepIndex !== stepIndex) {
+      confidenceRetries = 0;
+      confidenceRetryStepIndex = stepIndex;
+    }
     const stepDef = definition.steps[stepIndex];
     const agent = stepAgents.get(stepDef.id);
     if (!agent) {
