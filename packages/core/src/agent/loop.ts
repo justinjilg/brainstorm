@@ -1145,12 +1145,26 @@ export async function* runAgentLoop(
     // Extract gateway response headers (X-BR-*) for cost reconciliation and telemetry.
     // Use a timeout to prevent hanging if the response promise never resolves
     // (happens when the stream errored on the guardian SSE event).
+    const HEADERS_TIMEOUT_MS = 5000;
+    let headersTimedOut = false;
     try {
       const response = await Promise.race([
         result.response,
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+        new Promise<null>((resolve) =>
+          setTimeout(() => {
+            headersTimedOut = true;
+            resolve(null);
+          }, HEADERS_TIMEOUT_MS),
+        ),
       ]);
-      if (response?.headers) {
+      if (headersTimedOut) {
+        // Cost reconciliation is skipped for this turn — surface it instead of
+        // silently dropping the gateway feedback.
+        log.warn(
+          { model: decision.model.id, timeoutMs: HEADERS_TIMEOUT_MS },
+          "Gateway response headers timed out; cost reconciliation skipped",
+        );
+      } else if (response?.headers) {
         const feedback = parseGatewayHeaders(response.headers);
         if (Object.keys(feedback).length > 0) {
           yield {
@@ -1164,8 +1178,12 @@ export async function* runAgentLoop(
           }
         }
       }
-    } catch {
-      // Gateway headers not available (local models) — non-fatal
+    } catch (err) {
+      // Gateway headers not available (local models) — non-fatal, but log for triage.
+      log.debug(
+        { err, model: decision.model.id },
+        "Gateway headers unavailable",
+      );
     }
 
     // Record success for model momentum
