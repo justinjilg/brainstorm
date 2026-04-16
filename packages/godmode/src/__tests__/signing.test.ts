@@ -140,4 +140,53 @@ describe("Platform Event Signing", () => {
       expect(verifyEvent(event, MASTER_SECRET)).toBe(true);
     });
   });
+
+  describe("replay freshness", () => {
+    const baseEvent = {
+      id: "evt-freshness",
+      type: "msp.alert.created",
+      tenant_id: TENANT_ID,
+      product: "msp",
+      data: {},
+      schema_version: 1,
+    };
+
+    it("rejects an event with no timestamp", () => {
+      const unsigned = { ...baseEvent, timestamp: "" } as Omit<
+        Parameters<typeof signEvent>[0],
+        "signature"
+      > & { timestamp: string };
+      const sig = signEvent(unsigned, MASTER_SECRET);
+      expect(verifyEvent({ ...unsigned, signature: sig }, MASTER_SECRET)).toBe(
+        false,
+      );
+    });
+
+    it("rejects an event whose timestamp does not parse as a date", () => {
+      const bad = { ...baseEvent, timestamp: "not-a-date" };
+      const sig = signEvent(bad, MASTER_SECRET);
+      expect(verifyEvent({ ...bad, signature: sig }, MASTER_SECRET)).toBe(
+        false,
+      );
+    });
+
+    it("rejects an event older than the freshness window", () => {
+      const old = {
+        ...baseEvent,
+        timestamp: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+      };
+      const sig = signEvent(old, MASTER_SECRET);
+      expect(verifyEvent({ ...old, signature: sig }, MASTER_SECRET)).toBe(
+        false,
+      );
+    });
+
+    it("accepts an event inside the freshness window", () => {
+      const fresh = { ...baseEvent, timestamp: new Date().toISOString() };
+      const sig = signEvent(fresh, MASTER_SECRET);
+      expect(verifyEvent({ ...fresh, signature: sig }, MASTER_SECRET)).toBe(
+        true,
+      );
+    });
+  });
 });
