@@ -108,15 +108,23 @@ export function parseAgentFile(
   const frontmatter = fmMatch[1];
   const body = fmMatch[2].trim();
 
+  // Escape keys before building a RegExp. Callers here pass literals, but
+  // interpolating any string into RegExp without escaping is a foot-gun
+  // (ReDoS if a caller ever passes user input).
+  const escapeRegex = (s: string): string =>
+    s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
   // Parse YAML fields
   const get = (key: string): string | undefined => {
-    const match = frontmatter.match(new RegExp(`^${key}:\\s*(.+)$`, "m"));
+    const match = frontmatter.match(
+      new RegExp(`^${escapeRegex(key)}:\\s*(.+)$`, "m"),
+    );
     return match?.[1]?.trim().replace(/^["']|["']$/g, "");
   };
 
   const getArray = (key: string): string[] => {
     const match = frontmatter.match(
-      new RegExp(`^${key}:\\s*\\[([^\\]]+)\\]`, "m"),
+      new RegExp(`^${escapeRegex(key)}:\\s*\\[([^\\]]+)\\]`, "m"),
     );
     if (!match) return [];
     return match[1].split(",").map((s) => s.trim().replace(/^["']|["']$/g, ""));
