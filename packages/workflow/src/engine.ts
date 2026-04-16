@@ -20,6 +20,7 @@ import {
 import { runAgentLoop, buildSystemPrompt, loadSkills } from "@brainst0rm/core";
 import { AgentManager, buildAgentSystemPrompt } from "@brainst0rm/agents";
 import { buildStepContext } from "./context-filter.js";
+import { writeArtifact } from "./artifact-store.js";
 import {
   extractConfidence,
   determineEscalation,
@@ -235,6 +236,7 @@ export async function* runWorkflow(
       artifact.confidence = extractConfidence(artifact);
 
       run.artifacts.push(artifact);
+      writeArtifact(run.id, artifact);
       stepRun.artifactId = artifact.id;
       stepRun.status = "completed";
       stepRun.completedAt = Math.floor(Date.now() / 1000);
