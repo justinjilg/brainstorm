@@ -79,13 +79,15 @@ export function verifyEvent(
   // Reject events without a signature
   if (!event.signature) return false;
 
-  // Replay protection: reject events outside the freshness window
-  if (event.timestamp) {
-    const eventTime = new Date(event.timestamp).getTime();
-    const now = Date.now();
-    const ageMs = Math.abs(now - eventTime);
-    if (ageMs > MAX_EVENT_AGE_SECONDS * 1000) return false;
-  }
+  // Replay protection: require a parseable timestamp inside the freshness
+  // window. A missing or malformed timestamp is treated as a failed check,
+  // not skipped — otherwise a captured event could be replayed forever by
+  // an attacker who strips or corrupts the timestamp field.
+  if (!event.timestamp) return false;
+  const eventTime = new Date(event.timestamp).getTime();
+  if (Number.isNaN(eventTime)) return false;
+  const ageMs = Math.abs(Date.now() - eventTime);
+  if (ageMs > MAX_EVENT_AGE_SECONDS * 1000) return false;
 
   const { signature, ...rest } = event;
   const expected = signEvent(rest, masterSecret);
