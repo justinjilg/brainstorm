@@ -42,19 +42,16 @@ export async function connectGodMode(
   const HEALTH_CHECK_TIMEOUT_MS = 15_000;
   const results = await Promise.allSettled(
     connectors.map(async (connector) => {
+      const healthTimeout = AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS);
       const health = await Promise.race([
         connector.healthCheck(),
-        new Promise<never>((_, reject) =>
-          setTimeout(
-            () =>
-              reject(
-                new Error(
-                  `Health check timeout (${HEALTH_CHECK_TIMEOUT_MS}ms)`,
-                ),
-              ),
-            HEALTH_CHECK_TIMEOUT_MS,
-          ),
-        ),
+        new Promise<never>((_, reject) => {
+          healthTimeout.addEventListener("abort", () =>
+            reject(
+              new Error(`Health check timeout (${HEALTH_CHECK_TIMEOUT_MS}ms)`),
+            ),
+          );
+        }),
       ]);
       return { connector, health };
     }),

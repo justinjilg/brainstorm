@@ -554,17 +554,17 @@ export async function* runAgentLoop(
     if (tokenEstimate > contextWindow * threshold) {
       try {
         const COMPACTION_TIMEOUT_MS = 30_000;
+        const compactionTimeout = AbortSignal.timeout(COMPACTION_TIMEOUT_MS);
         const compactionResult = await Promise.race([
           options.compaction.compact({
             contextWindow,
             keepRecent: config.compaction?.keepRecent ?? 5,
           }),
-          new Promise<never>((_, reject) =>
-            setTimeout(
-              () => reject(new Error("Compaction timeout")),
-              COMPACTION_TIMEOUT_MS,
-            ),
-          ),
+          new Promise<never>((_, reject) => {
+            compactionTimeout.addEventListener("abort", () =>
+              reject(new Error("Compaction timeout")),
+            );
+          }),
         ]);
         if (compactionResult.compacted) {
           yield {
@@ -1147,15 +1147,16 @@ export async function* runAgentLoop(
     // (happens when the stream errored on the guardian SSE event).
     const HEADERS_TIMEOUT_MS = 5000;
     let headersTimedOut = false;
+    const headersTimeoutSignal = AbortSignal.timeout(HEADERS_TIMEOUT_MS);
     try {
       const response = await Promise.race([
         result.response,
-        new Promise<null>((resolve) =>
-          setTimeout(() => {
+        new Promise<null>((resolve) => {
+          headersTimeoutSignal.addEventListener("abort", () => {
             headersTimedOut = true;
             resolve(null);
-          }, HEADERS_TIMEOUT_MS),
-        ),
+          });
+        }),
       ]);
       if (headersTimedOut) {
         // Cost reconciliation is skipped for this turn — surface it instead of

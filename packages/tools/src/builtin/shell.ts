@@ -91,11 +91,14 @@ export function setBackgroundEventHandler(
   handler: typeof backgroundEventHandler,
 ): void {
   backgroundEventHandler = handler;
-  // Replay any events that arrived before handler was registered
   if (handler && pendingEvents.length > 0) {
+    // Replay events that arrived before handler was registered
     for (const event of pendingEvents) handler(event);
-    pendingEvents.length = 0;
   }
+  // Clear pending events on every handler change (including null).
+  // Without this, orphaned events from background test runs accumulate
+  // in the module-level array holding full stdout/stderr strings.
+  pendingEvents.length = 0;
 }
 
 // ── Tool Output Streaming ──────────────────────────────────────

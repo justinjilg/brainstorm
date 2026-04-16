@@ -118,15 +118,15 @@ export async function runProbe(
       }
     });
 
-    // Race against timeout
+    // Race against timeout (AbortSignal auto-cleans the timer on GC)
+    const probeTimeout = AbortSignal.timeout(timeout);
     await Promise.race([
       runPromise,
-      new Promise((_, reject) =>
-        setTimeout(
-          () => reject(new Error(`Probe timed out after ${timeout}ms`)),
-          timeout,
-        ),
-      ),
+      new Promise((_, reject) => {
+        probeTimeout.addEventListener("abort", () =>
+          reject(new Error(`Probe timed out after ${timeout}ms`)),
+        );
+      }),
     ]);
 
     const durationMs = Date.now() - startTime;

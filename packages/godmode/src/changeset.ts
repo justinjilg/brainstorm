@@ -132,19 +132,18 @@ export async function approveChangeSet(
   try {
     // Timeout executor to prevent indefinite hangs (e.g., unresponsive GitHub API)
     const EXECUTOR_TIMEOUT_MS = 30_000;
+    const executorTimeout = AbortSignal.timeout(EXECUTOR_TIMEOUT_MS);
     const result = await Promise.race([
       executor(cs),
-      new Promise<never>((_, reject) =>
-        setTimeout(
-          () =>
-            reject(
-              new Error(
-                `ChangeSet executor timed out after ${EXECUTOR_TIMEOUT_MS / 1000}s`,
-              ),
+      new Promise<never>((_, reject) => {
+        executorTimeout.addEventListener("abort", () =>
+          reject(
+            new Error(
+              `ChangeSet executor timed out after ${EXECUTOR_TIMEOUT_MS / 1000}s`,
             ),
-          EXECUTOR_TIMEOUT_MS,
-        ),
-      ),
+          ),
+        );
+      }),
     ]);
     if (result.success) {
       cs.status = "executed";
