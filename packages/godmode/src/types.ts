@@ -79,6 +79,7 @@ export type ChangeSetStatus =
   | "draft"
   | "approved"
   | "executed"
+  | "failed"
   | "rolled_back"
   | "rejected"
   | "expired";
