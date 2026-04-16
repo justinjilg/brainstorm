@@ -2077,6 +2077,7 @@ function printResumeSummary(
 }
 
 import { promptPassword } from "../util/prompt-password.js";
+import { maskSecret } from "../util/mask-secret.js";
 
 const vaultCmd = program
   .command("vault")
@@ -2155,9 +2156,7 @@ vaultCmd
       if (opts.reveal) {
         console.log(value);
       } else {
-        const masked =
-          value.slice(0, 8) + "*".repeat(Math.max(0, value.length - 8));
-        console.log(masked);
+        console.log(maskSecret(value));
       }
     } else {
       console.error(`  Key "${name}" not found in vault.`);
@@ -8039,11 +8038,15 @@ program
                   return `Vault: ${VAULT_PATH}\nStatus: ${vault.isOpen() ? "unlocked" : "locked"}\nKeys: ${vault.list().length}`;
                 }
                 case "get": {
-                  if (!args) return "Usage: /vault get <key-name>";
-                  const val = vault.get(args);
+                  const tokens = args.trim().split(/\s+/);
+                  const keyName = tokens[0];
+                  const reveal = tokens.includes("--reveal");
+                  if (!keyName)
+                    return "Usage: /vault get <key-name> [--reveal]";
+                  const val = vault.get(keyName);
                   if (val === null)
-                    return `Key '${args}' not found (or vault is locked).`;
-                  return `${args} = ${val.slice(0, 8)}${"*".repeat(Math.max(0, val.length - 8))}`;
+                    return `Key '${keyName}' not found (or vault is locked).`;
+                  return `${keyName} = ${reveal ? val : maskSecret(val)}`;
                 }
                 case "add":
                 case "set": {
