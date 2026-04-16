@@ -1,8 +1,8 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
-import { pathToFileURL } from 'node:url';
-import type { BrainstormPlugin, PluginManifest } from './types.js';
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join, resolve, sep } from "node:path";
+import { homedir } from "node:os";
+import { pathToFileURL } from "node:url";
+import type { BrainstormPlugin, PluginManifest } from "./types.js";
 
 /**
  * Discover and load installed plugins.
@@ -11,27 +11,32 @@ import type { BrainstormPlugin, PluginManifest } from './types.js';
  * 1. ~/.brainstorm/plugins/ — user-installed plugins
  * 2. .brainstorm/plugins/ — project-local plugins
  */
-export async function discoverPlugins(projectPath: string): Promise<LoadedPlugin[]> {
+export async function discoverPlugins(
+  projectPath: string,
+): Promise<LoadedPlugin[]> {
   const plugins: LoadedPlugin[] = [];
 
   // 1. Global plugins
-  const globalDir = join(homedir(), '.brainstorm', 'plugins');
-  plugins.push(...(await loadPluginsFromDir(globalDir, 'global')));
+  const globalDir = join(homedir(), ".brainstorm", "plugins");
+  plugins.push(...(await loadPluginsFromDir(globalDir, "global")));
 
   // 2. Project plugins
-  const projectDir = join(projectPath, '.brainstorm', 'plugins');
-  plugins.push(...(await loadPluginsFromDir(projectDir, 'project')));
+  const projectDir = join(projectPath, ".brainstorm", "plugins");
+  plugins.push(...(await loadPluginsFromDir(projectDir, "project")));
 
   return plugins;
 }
 
 export interface LoadedPlugin {
   plugin: BrainstormPlugin;
-  source: 'global' | 'project';
+  source: "global" | "project";
   path: string;
 }
 
-async function loadPluginsFromDir(dir: string, source: 'global' | 'project'): Promise<LoadedPlugin[]> {
+async function loadPluginsFromDir(
+  dir: string,
+  source: "global" | "project",
+): Promise<LoadedPlugin[]> {
   if (!existsSync(dir)) return [];
 
   const plugins: LoadedPlugin[] = [];
@@ -64,12 +69,27 @@ async function loadPluginsFromDir(dir: string, source: 'global' | 'project'): Pr
  */
 async function loadPlugin(pluginDir: string): Promise<BrainstormPlugin | null> {
   // Read manifest
-  const manifestPath = join(pluginDir, 'package.json');
+  const manifestPath = join(pluginDir, "package.json");
   if (!existsSync(manifestPath)) return null;
 
-  const manifest: PluginManifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
-  const entryPoint = manifest.main ?? './dist/index.js';
-  const entryPath = join(pluginDir, entryPoint);
+  let manifest: PluginManifest;
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
+  } catch (err: any) {
+    throw new Error(`Plugin manifest is not valid JSON: ${err.message}`);
+  }
+
+  const entryPoint = manifest.main ?? "./dist/index.js";
+  // Resolve entryPath and verify it stays within pluginDir. A manifest with
+  // "main": "../../../etc/passwd" or an absolute path would otherwise let
+  // an untrusted plugin load arbitrary JS files from the host filesystem.
+  const pluginRoot = resolve(pluginDir);
+  const entryPath = resolve(pluginRoot, entryPoint);
+  if (entryPath !== pluginRoot && !entryPath.startsWith(pluginRoot + sep)) {
+    throw new Error(
+      `Plugin entry point escapes plugin directory: ${entryPoint}`,
+    );
+  }
 
   if (!existsSync(entryPath)) {
     throw new Error(`Plugin entry point not found: ${entryPath}`);
@@ -82,7 +102,9 @@ async function loadPlugin(pluginDir: string): Promise<BrainstormPlugin | null> {
 
   // Validate required fields
   if (!plugin.name || !plugin.version) {
-    throw new Error(`Plugin at ${pluginDir} is missing required fields (name, version).`);
+    throw new Error(
+      `Plugin at ${pluginDir} is missing required fields (name, version).`,
+    );
   }
 
   // Run onLoad if present
@@ -97,12 +119,12 @@ async function loadPlugin(pluginDir: string): Promise<BrainstormPlugin | null> {
  * Get the global plugins directory path.
  */
 export function getGlobalPluginsDir(): string {
-  return join(homedir(), '.brainstorm', 'plugins');
+  return join(homedir(), ".brainstorm", "plugins");
 }
 
 /**
  * Get the project plugins directory path.
  */
 export function getProjectPluginsDir(projectPath: string): string {
-  return join(projectPath, '.brainstorm', 'plugins');
+  return join(projectPath, ".brainstorm", "plugins");
 }
