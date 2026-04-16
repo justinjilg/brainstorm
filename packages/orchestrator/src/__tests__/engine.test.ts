@@ -280,6 +280,35 @@ describe("OrchestrationEngine.run", () => {
     expect(alphaResult?.cost).toBe(0);
   });
 
+  it("does not misclassify a successful task whose summary starts with 'FAILED:'", async () => {
+    insertProject(db, "alpha");
+    insertProject(db, "beta");
+    const engine = new OrchestrationEngine(db);
+
+    const events = await collect(
+      engine.run({
+        description: "test runner misclassification",
+        projectNames: ["alpha", "beta"],
+        // Simulate a task (e.g. test runner) that summarizes a successful
+        // run with a summary that happens to start with "FAILED:" —
+        // e.g. "FAILED: 0 of 100". The prior string-prefix check would
+        // count this as a failure; the typed status field must not.
+        executeTask: async (project) => ({
+          summary:
+            project.name === "alpha" ? "FAILED: 0 of 100 tests" : "all clear",
+          cost: 0.01,
+        }),
+      }),
+    );
+
+    const final = events[events.length - 1];
+    if (final.type !== "orchestration-completed")
+      throw new Error("unreachable");
+    // Both tasks succeeded (executeTask returned without throwing), so the
+    // run is "completed" — the "FAILED:" in the summary is free text.
+    expect(final.run.status).toBe("completed");
+  });
+
   it("records run.status='partial' when some tasks fail", async () => {
     insertProject(db, "alpha");
     insertProject(db, "beta");
