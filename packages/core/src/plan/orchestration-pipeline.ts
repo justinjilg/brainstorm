@@ -198,6 +198,20 @@ export async function* runOrchestrationPipeline(
   const recorder = new TrajectoryRecorder(request, options.projectPath);
   // Use smart phase selection (BrainstormLLM v2 findings) unless user specified explicit phases
   const phases = options.phases ?? selectSmartPhases(request, options);
+
+  // resumeFrom with a phase that isn't in the selected list silently
+  // skipped every phase in the loop below and yielded pipeline-completed
+  // with zero work done. That looks like success to the caller. Fail loudly
+  // so the user notices they asked to resume at a phase that was excluded
+  // (e.g. smart-phase selection dropped "refactor", or the caller passed
+  // an explicit phases array that doesn't include resumeFrom).
+  if (options.resumeFrom && !phases.includes(options.resumeFrom)) {
+    throw new Error(
+      `resumeFrom="${options.resumeFrom}" is not in the selected phases [${phases.join(", ")}]. ` +
+        `Include it explicitly in options.phases or remove resumeFrom.`,
+    );
+  }
+
   const budgetPerPhase = options.budget ? options.budget / phases.length : 1.0;
   const results: PhaseResult[] = [];
   let totalCost = 0;
