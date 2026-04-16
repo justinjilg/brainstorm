@@ -22,6 +22,7 @@
  */
 
 import type { ConnectorConfig, HealthResult } from "../../types.js";
+import { encodePathSegment } from "../path-segment.js";
 
 export interface AgentSummary {
   id: string;
@@ -101,11 +102,13 @@ export class AgentClient {
   }
 
   async getAgent(agentId: string): Promise<any> {
-    return this.apiFetch(`/api/v1/edge/agents/${agentId}`);
+    return this.apiFetch(`/api/v1/edge/agents/${encodePathSegment(agentId)}`);
   }
 
   async getAgentTrustScore(agentId: string): Promise<any> {
-    return this.apiFetch(`/api/v1/edge/agents/${agentId}/trust-score`);
+    return this.apiFetch(
+      `/api/v1/edge/agents/${encodePathSegment(agentId)}/trust-score`,
+    );
   }
 
   // ── Command Dispatch ─────────────────────────────────────────
@@ -114,10 +117,13 @@ export class AgentClient {
     agentId: string,
     command: CommandDispatch,
   ): Promise<CommandResponse | { error: string }> {
-    return this.apiFetch(`/api/v1/edge/agents/${agentId}/command`, {
-      method: "POST",
-      body: JSON.stringify(command),
-    });
+    return this.apiFetch(
+      `/api/v1/edge/agents/${encodePathSegment(agentId)}/command`,
+      {
+        method: "POST",
+        body: JSON.stringify(command),
+      },
+    );
   }
 
   // ── OODA Events & Telemetry ──────────────────────────────────
@@ -180,19 +186,25 @@ export class AgentClient {
     workflowId: string,
     opts: { approved: boolean; notes?: string; mfa_token?: string },
   ): Promise<any> {
-    return this.apiFetch(`/api/v1/edge/workflows/${workflowId}/approve`, {
-      method: "POST",
-      body: JSON.stringify(opts),
-    });
+    return this.apiFetch(
+      `/api/v1/edge/workflows/${encodePathSegment(workflowId)}/approve`,
+      {
+        method: "POST",
+        body: JSON.stringify(opts),
+      },
+    );
   }
 
   // ── Kill Switch ──────────────────────────────────────────────
 
   async killSwitch(agentId: string, reason: string): Promise<any> {
-    return this.apiFetch(`/api/v1/edge/agents/${agentId}/kill`, {
-      method: "POST",
-      body: JSON.stringify({ reason }),
-    });
+    return this.apiFetch(
+      `/api/v1/edge/agents/${encodePathSegment(agentId)}/kill`,
+      {
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      },
+    );
   }
 
   // ── HTTP Client ──────────────────────────────────────────────
