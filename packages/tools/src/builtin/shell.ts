@@ -286,6 +286,14 @@ export const shellTool = defineTool({
         stdio: ["ignore", "pipe", "pipe"],
       });
 
+      // Detach the child's handle from the parent's event loop. Without
+      // this, a long-running background task (sleep 100, a dev server,
+      // etc.) would keep Node alive after the user quit the CLI, because
+      // the ChildProcess handle counts as a live reference. The 'close'
+      // listener below still fires when the child exits, so completion
+      // notification is unaffected.
+      child.unref();
+
       backgroundTasks.set(taskId, {
         id: taskId,
         command,
