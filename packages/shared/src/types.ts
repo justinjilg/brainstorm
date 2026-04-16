@@ -584,7 +584,8 @@ export type TaskRunStatus =
   | "failed"
   | "budget_exceeded"
   | "timeout"
-  | "cancelled";
+  | "cancelled"
+  | "crashed";
 export type ExecutionMode = "daemon" | "trigger";
 export type TriggerType = "cron" | "manual" | "daemon";
 

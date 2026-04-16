@@ -228,6 +228,47 @@ export class TaskRunRepository {
       );
   }
 
+  /**
+   * Mark an in-flight run as "running" without stamping completed_at.
+   *
+   * The scheduler used to reuse complete() for this transition, which set
+   * completed_at to the current time even though the run hadn't finished.
+   * That broke "in-flight" queries keyed on completed_at IS NULL, and any
+   * caller inspecting elapsed time would see "ran for 0ms" on still-running
+   * rows.
+   */
+  markRunning(id: string): void {
+    this.db
+      .prepare(`UPDATE scheduled_task_runs SET status = 'running' WHERE id = ?`)
+      .run(id);
+  }
+
+  /**
+   * Sweep rows stuck in status='running' from a previous process crash.
+   * Updates them to 'crashed' with the current timestamp so observers see
+   * a real completed_at, and returns the ids that were swept.
+   */
+  sweepZombieRunning(): string[] {
+    const now = Math.floor(Date.now() / 1000);
+    const rows = this.db
+      .prepare(`SELECT id FROM scheduled_task_runs WHERE status = 'running'`)
+      .all() as Array<{ id: string }>;
+    const ids = rows.map((r) => r.id);
+    if (ids.length === 0) return [];
+
+    const placeholders = ids.map(() => "?").join(",");
+    this.db
+      .prepare(
+        `UPDATE scheduled_task_runs
+         SET status = 'crashed',
+             completed_at = ?,
+             error = COALESCE(error, 'Process crashed while running')
+         WHERE id IN (${placeholders})`,
+      )
+      .run(now, ...ids);
+    return ids;
+  }
+
   /** Get the most recent run for a task (to determine last execution time). */
   getLastRun(taskId: string): ScheduledTaskRun | undefined {
     const row = this.db
