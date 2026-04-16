@@ -104,8 +104,13 @@ export class BrainstormVault {
     let payload: VaultPayload;
     try {
       payload = JSON.parse(plaintext.toString("utf-8"));
+    } catch {
+      plaintext.fill(0);
+      throw new Error(
+        "Vault decryption succeeded but payload is not valid JSON — wrong password or corrupt file",
+      );
     } finally {
-      plaintext.fill(0); // zero decrypted key ring from memory
+      plaintext.fill(0);
     }
 
     this.derivedKey = key;
