@@ -83,9 +83,9 @@ export const ghPrTool = defineTool({
           if (input.base) args.push("--base", input.base);
           if (input.draft) args.push("--draft");
           if (input.reviewers?.length)
-            args.push("--reviewer", input.reviewers.join(","));
+            for (const r of input.reviewers) args.push("--reviewer", r);
           if (input.labels?.length)
-            args.push("--label", input.labels.join(","));
+            for (const l of input.labels) args.push("--label", l);
           const { stdout } = await execFileAsync("gh", args, opts);
           return { success: true, url: stdout.trim() };
         }
