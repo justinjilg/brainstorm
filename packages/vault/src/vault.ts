@@ -1,11 +1,6 @@
-import {
-  readFileSync,
-  writeFileSync,
-  renameSync,
-  existsSync,
-  mkdirSync,
-} from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+import { atomicWriteFile } from "@brainst0rm/shared";
 import {
   deriveKey,
   generateSalt,
@@ -294,11 +289,12 @@ export class BrainstormVault {
       tag: tag.toString("base64"),
     };
 
-    const tempPath = this.vaultPath + ".tmp";
-    writeFileSync(tempPath, JSON.stringify(vaultFile, null, 2), {
+    // atomicWriteFile uses a pid+uuid temp suffix so concurrent Brainstorm
+    // processes (e.g. daemon + interactive CLI) cannot clobber each other's
+    // write via the old shared ".tmp" path.
+    atomicWriteFile(this.vaultPath, JSON.stringify(vaultFile, null, 2), {
       mode: 0o600,
     });
-    renameSync(tempPath, this.vaultPath);
   }
 
   /** Write current in-memory keys to disk without locking. */
