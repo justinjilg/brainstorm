@@ -983,8 +983,26 @@ export class BrainstormServer {
   }
 
   private async readBody<T = any>(req: IncomingMessage): Promise<T> {
+    const MAX_BODY_BYTES = 10 * 1024 * 1024; // 10 MB hard cap
+    const declared = Number(req.headers["content-length"] ?? 0);
+    if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+      throw Object.assign(new Error("Request body too large"), {
+        statusCode: 413,
+      });
+    }
     const chunks: Buffer[] = [];
-    for await (const chunk of req) chunks.push(chunk as Buffer);
+    let received = 0;
+    for await (const chunk of req) {
+      const buf = chunk as Buffer;
+      received += buf.length;
+      if (received > MAX_BODY_BYTES) {
+        req.destroy();
+        throw Object.assign(new Error("Request body too large"), {
+          statusCode: 413,
+        });
+      }
+      chunks.push(buf);
+    }
     const raw = Buffer.concat(chunks).toString("utf-8");
     try {
       return JSON.parse(raw);
