@@ -221,10 +221,17 @@ export class SessionManager {
     summaryCost: number;
   }> {
     const tokensBefore = estimateTokenCount(this.conversationHistory);
+    // Snapshot DB message IDs now so the compaction commit records the exact
+    // rows that were compacted. Without this, rehydrate falls back to a
+    // positional slice which is wrong if messages are later deleted.
+    const dbMessageIds = this.currentSession
+      ? this.messages.listBySession(this.currentSession.id).map((m) => m.id)
+      : undefined;
     const result = await compactContext(this.conversationHistory, {
       ...options,
       sessionId: this.currentSession?.id,
       commitRepo: this.compactionRepo,
+      dbMessageIds,
     });
 
     if (result.compacted) {
@@ -271,12 +278,16 @@ export class SessionManager {
     const dbMessages = this.messages.listBySession(commit.sessionId);
     if (dbMessages.length === 0) return null;
 
-    // Use the original message IDs to find the right slice.
-    // Since we stored count-based IDs, reconstruct from the DB messages
-    // that were present before compaction (by count).
-    const originalCount = commit.originalMessageIds.length;
-    const originals: ConversationMessage[] = dbMessages
-      .slice(0, originalCount)
+    // Prefer exact lookup by stored DB message IDs (new format). Fall back to
+    // the legacy count-based slice for commits written before this change.
+    const storedIds = commit.originalMessageIds;
+    const usingRealIds =
+      storedIds.length > 0 && !storedIds[0].startsWith("msg-");
+    const selected = usingRealIds
+      ? dbMessages.filter((m) => storedIds.includes(m.id))
+      : dbMessages.slice(0, storedIds.length);
+
+    const originals: ConversationMessage[] = selected
       .filter((m) => m.role !== "tool")
       .map((m) => ({
         role: m.role as "user" | "assistant" | "system",
