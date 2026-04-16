@@ -1,4 +1,4 @@
-export { getDb, closeDb, getTestDb } from "./client.js";
+export { getDb, closeDb, getTestDb, cleanupOldRecords } from "./client.js";
 export {
   SessionRepository,
   MessageRepository,

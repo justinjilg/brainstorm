@@ -2,6 +2,9 @@ import Database from "better-sqlite3";
 import { mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { createLogger } from "@brainst0rm/shared";
+
+const log = createLogger("db.client");
 
 const DB_DIR = join(homedir(), ".brainstorm");
 const DB_PATH = join(DB_DIR, "brainstorm.db");
@@ -40,25 +43,35 @@ export function getTestDb(): Database.Database {
 }
 
 /** Delete cost records and model performance data older than 90 days. */
-function cleanupOldRecords(db: Database.Database): void {
+export function cleanupOldRecords(db: Database.Database): void {
   const cutoff = Math.floor(Date.now() / 1000) - 90 * 24 * 60 * 60;
-  try {
-    db.prepare("DELETE FROM cost_records WHERE timestamp < ?").run(cutoff);
-    db.prepare("DELETE FROM model_performance WHERE timestamp < ?").run(cutoff);
-    db.prepare("DELETE FROM model_performance_v2 WHERE timestamp < ?").run(
-      cutoff,
-    );
-    // Clean up old sessions and their messages (fix #23: unbounded growth)
-    db.prepare(
-      "DELETE FROM messages WHERE session_id IN (SELECT id FROM sessions WHERE started_at < ?)",
-    ).run(cutoff);
-    db.prepare("DELETE FROM sessions WHERE started_at < ?").run(cutoff);
-    db.prepare("DELETE FROM audit_log WHERE timestamp < ?").run(cutoff);
-    db.prepare("DELETE FROM compliance_events WHERE created_at < ?").run(
-      cutoff,
-    );
-  } catch {
-    // Tables may not exist yet on first run — safe to ignore
+  // Each DELETE runs independently so a missing table (first run, before its
+  // migration) does not stop later statements from running. Errors other
+  // than "no such table" are logged so typos in column names surface
+  // instead of silently disabling cleanup.
+  const statements: Array<[string, string]> = [
+    ["cost_records", "DELETE FROM cost_records WHERE timestamp < ?"],
+    ["model_performance", "DELETE FROM model_performance WHERE timestamp < ?"],
+    [
+      "model_performance_v2",
+      "DELETE FROM model_performance_v2 WHERE timestamp < ?",
+    ],
+    [
+      "messages",
+      "DELETE FROM messages WHERE session_id IN (SELECT id FROM sessions WHERE created_at < ?)",
+    ],
+    ["sessions", "DELETE FROM sessions WHERE created_at < ?"],
+    ["audit_log", "DELETE FROM audit_log WHERE created_at < ?"],
+    ["compliance_events", "DELETE FROM compliance_events WHERE created_at < ?"],
+  ];
+  for (const [table, sql] of statements) {
+    try {
+      db.prepare(sql).run(cutoff);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("no such table")) continue; // Pre-migration; expected.
+      log.warn({ table, err: msg }, "cleanupOldRecords statement failed");
+    }
   }
 }
 
