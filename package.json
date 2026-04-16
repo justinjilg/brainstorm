@@ -1,6 +1,27 @@
 {
   "name": "brainstorm",
   "private": true,
+  "description": "Governed control plane for AI-managed infrastructure. Connect AI operators to your product ecosystem through a standardized protocol.",
+  "keywords": [
+    "ai",
+    "cli",
+    "llm",
+    "mcp",
+    "agent",
+    "routing",
+    "infrastructure",
+    "control-plane",
+    "ai-ops",
+    "model-context-protocol",
+    "thompson-sampling"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/justinjilg/brainstorm.git"
+  },
+  "homepage": "https://brainstorm.co",
+  "author": "Justin Jilg <jj@brainstorm.co>",
+  "license": "Apache-2.0",
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",

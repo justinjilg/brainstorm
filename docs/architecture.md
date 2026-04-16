@@ -1,22 +1,22 @@
 # Architecture
 
-Brainstorm is a Turborepo monorepo with 15 TypeScript packages. All packages use ESM (`"type": "module"`) with tsup bundling and `.js` import extensions.
+Brainstorm is a Turborepo monorepo with 27 TypeScript packages. All packages use ESM (`"type": "module"`) with tsup bundling and `.js` import extensions.
 
 ## Package Dependency Graph
 
 ```
-                    ┌──────────┐
-                    │  shared   │  Types, errors, logger (pino)
-                    └────┬─────┘
-                         │
-              ┌──────────┼──────────┐
-              ▼          ▼          ▼
-         ┌────────┐ ┌────────┐ ┌────────┐
-         │ config │ │   db   │ │  eval  │
-         └───┬────┘ └───┬────┘ └────────┘
-             │          │
-         ┌───┴──────────┤
-         ▼              ▼
+                         ┌──────────┐
+                         │  shared   │  Types, errors, logger (pino)
+                         └────┬─────┘
+                              │
+              ┌───────┬───────┼───────┬───────┐
+              ▼       ▼       ▼       ▼       ▼
+         ┌────────┐┌────────┐┌────────┐┌────────┐┌────────┐
+         │ config ││   db   ││  eval  ││  sdk   ││ docgen │
+         └───┬────┘└───┬────┘└────────┘└────────┘└────────┘
+             │         │
+         ┌───┴─────────┤
+         ▼             ▼
     ┌───────────┐  ┌────────┐
     │ providers │  │ vault  │
     └─────┬─────┘  └────────┘
@@ -28,20 +28,27 @@ Brainstorm is a Turborepo monorepo with 15 TypeScript packages. All packages use
 └───┬────┘ └─────────┘
     │
     ▼
-┌────────┐   ┌────────┐   ┌────────┐
-│ tools  │──▶│  core  │──▶│  hooks │
-└────────┘   └───┬────┘   └────────┘
+┌────────┐   ┌────────┐   ┌────────┐   ┌────────────┐
+│ tools  │──▶│  core  │──▶│  hooks │   │ code-graph │
+└────────┘   └───┬────┘   └────────┘   └────────────┘
                  │
-      ┌──────────┼──────────┐
-      ▼          ▼          ▼
- ┌────────┐ ┌──────────┐ ┌────────┐
- │ agents │ │ workflow │ │  mcp   │
- └────────┘ └──────────┘ └────────┘
+      ┌──────────┼──────────┬──────────┐
+      ▼          ▼          ▼          ▼
+ ┌────────┐ ┌──────────┐ ┌────────┐ ┌─────────┐
+ │ agents │ │ workflow │ │  mcp   │ │ godmode │
+ └────────┘ └──────────┘ └────────┘ └─────────┘
                  │
-                 ▼
-            ┌────────┐
-            │  cli   │  Entry point
-            └────────┘
+      ┌──────────┼──────────┬──────────┬──────────┐
+      ▼          ▼          ▼          ▼          ▼
+ ┌────────┐ ┌───────────┐ ┌───────┐ ┌─────────┐ ┌────────┐
+ │  cli   │ │plugin-sdk │ │server │ │ onboard │ │ ingest │
+ └────────┘ └───────────┘ └───────┘ └─────────┘ └────────┘
+                 │
+      ┌──────────┼──────────┬──────────┐
+      ▼          ▼          ▼          ▼
+ ┌──────────┐ ┌───────────┐ ┌────────┐ ┌──────────┐
+ │ projects │ │ scheduler │ │ vscode │ │orchestr. │
+ └──────────┘ └───────────┘ └────────┘ └──────────┘
 ```
 
 ## Data Flow
@@ -95,6 +102,7 @@ Model calls tool
 Foundation types shared across all packages.
 
 **Key exports:**
+
 - `TaskProfile` — Describes a classified task (complexity, category, tokens)
 - `ModelEntry` — A model with pricing, capabilities, provider info
 - `AgentProfile` — Configuration for a specialized agent
@@ -109,6 +117,7 @@ Layered configuration with Zod validation.
 **Config resolution order:** defaults → `~/.brainstorm/config.toml` (global) → `./brainstorm.toml` (project) → environment variables.
 
 **Key exports:**
+
 - `loadConfig()` — Merges all config layers
 - `loadProjectContext()` — Parses `BRAINSTORM.md` frontmatter + body
 - `brainstormConfigSchema` — Zod schema for full config validation
@@ -120,6 +129,7 @@ SQLite persistence with WAL mode. Database lives at `~/.brainstorm/brainstorm.db
 **Tables:** sessions, messages, cost_records, agent_profiles, workflow_runs, eval_results, session_patterns.
 
 **Key exports:**
+
 - `getDatabase()` — Singleton database connection with auto-migrations
 - `PatternRepository` — Cross-session learning storage (UPSERT with confidence decay)
 
@@ -131,6 +141,7 @@ Model discovery and AI SDK provider creation.
 **Local:** Ollama (`:11434`), LM Studio (`:1234`), llama.cpp (`:8080`) — auto-discovered by probing localhost.
 
 **Key exports:**
+
 - `ProviderRegistry` — Manages all providers, creates AI SDK language models
 - `discoverLocalModels()` — Probes local endpoints with caching
 
@@ -148,19 +159,21 @@ Task classification and model routing.
 | `rule-based` | Custom rules from config.toml |
 
 **Key exports:**
+
 - `BrainstormRouter` — Main router with `route(prompt, options)` method
 - `classifyTask()` — Heuristic classifier returning `TaskProfile`
 - `CostTracker` — Per-session and daily cost tracking
 
 ### `packages/tools`
 
-42 built-in tools with Zod input schemas and consistent `{ ok, data, error }` output.
+58+ built-in tools with Zod input schemas and consistent `{ ok, data, error }` output.
 
 **Categories:**
+
 - Filesystem (8): file_read, file_write, file_edit, multi_edit, batch_edit, list_dir, glob, grep
 - Shell (3): shell, process_spawn, process_kill
 - Git (6): git_status, git_diff, git_log, git_commit, git_branch, git_stash
-- GitHub (2): gh_pr, gh_issue
+- GitHub (8): gh_pr, gh_issue, gh_search, gh_actions, gh_release, gh_review, gh_checks, gh_repos
 - Web (2): web_fetch, web_search
 - Tasks (3): task_create, task_update, task_list
 - Agent (6): undo, scratchpad_write, scratchpad_read, ask_user, set_routing_hint, cost_estimate
@@ -169,6 +182,7 @@ Task classification and model routing.
 - BrainstormRouter (8): br_status, br_budget, br_leaderboard, br_insights, br_models, br_memory_search, br_memory_store, br_health
 
 **Key systems:**
+
 - `ToolRegistry` — Registers tools, wraps with permission checks
 - `CheckpointManager` — Snapshots files before writes for undo support
 - `SessionFileTracker` — Tracks all file reads/writes per session
@@ -179,6 +193,7 @@ Task classification and model routing.
 The brain — agent loop, session management, and intelligence features.
 
 **Key exports:**
+
 - `runAgentLoop()` — Main agent loop using AI SDK v6 `streamText`
 - `SessionManager` — Conversation history and turn tracking
 - `PermissionManager` — Three modes: strict, normal, permissive
@@ -193,7 +208,9 @@ The brain — agent loop, session management, and intelligence features.
 
 Agent profiles and the subagent system.
 
-**5 subagent types:** research, code, review, refactor, test — each with filtered tool sets and role-specific prompts. Supports parallel execution via `spawnParallel()`.
+**9 subagent types:** explore, plan, code, review, general, decompose, external, research, memory-curator — each with filtered tool sets and role-specific prompts. Supports parallel execution via `spawnParallel()`.
+
+**14 agent roles:** architect, coder, reviewer, debugger, analyst, orchestrator, product-manager, security-reviewer, code-reviewer, style-reviewer, qa, compliance, devops, custom.
 
 ### `packages/workflow`
 
@@ -231,16 +248,16 @@ Commander-based CLI with Ink TUI. Entry point: `packages/cli/src/bin/brainstorm.
 
 Brainstorm includes several features that make the agent self-aware:
 
-| Feature | Description |
-|---------|------------|
-| **Turn Context** | Injected between turns: model, tools, cost, files, build status |
-| **File Tracking** | Agent knows every file it has read/written this session |
-| **Tool Health** | Unhealthy tools surfaced in context so agent avoids them |
-| **Build State** | Persistent warning when build is broken |
-| **Loop Detection** | Nudges agent out of repetitive read patterns |
-| **Scratchpad** | Key-value notes that survive context compaction |
-| **Sentiment** | Adapts response style based on detected user tone |
-| **Self-Review** | Optional cheap-model review of writes before finalizing |
-| **Cross-Session Learning** | Learns tool preferences and command timings per project |
-| **Error-Fix Pairs** | Tracks error → fix sequences for future reference |
-| **Speculative Execution** | Tries two approaches in parallel git worktrees |
+| Feature                    | Description                                                     |
+| -------------------------- | --------------------------------------------------------------- |
+| **Turn Context**           | Injected between turns: model, tools, cost, files, build status |
+| **File Tracking**          | Agent knows every file it has read/written this session         |
+| **Tool Health**            | Unhealthy tools surfaced in context so agent avoids them        |
+| **Build State**            | Persistent warning when build is broken                         |
+| **Loop Detection**         | Nudges agent out of repetitive read patterns                    |
+| **Scratchpad**             | Key-value notes that survive context compaction                 |
+| **Sentiment**              | Adapts response style based on detected user tone               |
+| **Self-Review**            | Optional cheap-model review of writes before finalizing         |
+| **Cross-Session Learning** | Learns tool preferences and command timings per project         |
+| **Error-Fix Pairs**        | Tracks error → fix sequences for future reference               |
+| **Speculative Execution**  | Tries two approaches in parallel git worktrees                  |

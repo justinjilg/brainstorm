@@ -8,7 +8,7 @@
 
 <p align="center">
   <strong>Governed control plane for AI-managed infrastructure</strong><br/>
-  <sub>Connect AI operators to your entire product ecosystem through a standardized protocol. 117 tools. 5 products. One command.</sub>
+  <sub>Connect AI operators to your entire product ecosystem through a standardized protocol. 58+ built-in tools. 5 products. One command.</sub>
 </p>
 
 <p align="center">
@@ -17,8 +17,8 @@
   <a href="https://github.com/justinjilg/brainstorm/actions/workflows/ci.yml"><img src="https://github.com/justinjilg/brainstorm/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>&nbsp;
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" /></a>&nbsp;
   <img src="https://img.shields.io/badge/products-5-d97706.svg" alt="Products" />&nbsp;
-  <img src="https://img.shields.io/badge/tools-117-d97706.svg" alt="Tools" />&nbsp;
-  <img src="https://img.shields.io/badge/packages-25-d97706.svg" alt="Packages" />
+  <img src="https://img.shields.io/badge/tools-58+-d97706.svg" alt="Tools" />&nbsp;
+  <img src="https://img.shields.io/badge/packages-27-d97706.svg" alt="Packages" />
 </p>
 
 <p align="center">
@@ -59,7 +59,7 @@ If you're an LLM operating this codebase or using brainstorm as a tool:
 | Resource                                                   | What it provides                                                       |
 | ---------------------------------------------------------- | ---------------------------------------------------------------------- |
 | [`docs/llm-operator-guide.md`](docs/llm-operator-guide.md) | Full CLI contract, tool reference, error shapes, auth, headless safety |
-| [`docs/tool-catalog.json`](docs/tool-catalog.json)         | Machine-readable JSON Schema for all 45 built-in tools                 |
+| [`docs/tool-catalog.json`](docs/tool-catalog.json)         | Machine-readable JSON Schema for all 58 built-in tools                 |
 | `brainstorm introspect`                                    | Runtime capabilities dump (JSON): tools, models, auth state, config    |
 
 **Non-interactive usage:**
@@ -162,8 +162,8 @@ Restart Claude Code. The new product's tools appear automatically.
 |                           |                                                                                                                                                                                        |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Multi-model routing**   | 10+ models across 8 providers. 6 routing strategies including Thompson sampling from real outcomes. The system learns which models work best for which tasks.                          |
-| **Terminal dashboard**    | 5-mode TUI — Chat, Dashboard, Models, Config, Planning. Live cost tracking, routing decisions, tool health, model performance. Switch with `Esc` + number keys.                        |
-| **42 built-in tools**     | Filesystem, shell, git, GitHub, web search, planning, agents, transactions. Checkpoint/undo on every write. Docker sandbox option.                                                     |
+| **Terminal dashboard**    | 4-mode TUI — Dashboard, Models, Config, Planning. Live cost tracking, routing decisions, tool health, model performance. Switch with `Esc` + number keys.                              |
+| **58+ built-in tools**    | Filesystem, shell, git, GitHub (8), code graph, web search, memory, planning, agents, transactions. Checkpoint/undo on every write. Docker sandbox option.                             |
 | **Role workflows**        | `/architect` `/sr-developer` `/qa` — each sets the model, system prompt, tools, output style, and routing strategy in one command.                                                     |
 | **9-phase orchestration** | `storm orchestrate pipeline "add OAuth"` runs: spec → architecture → implementation → review → verify → refactor → deploy → document → report. Each phase routed to the optimal model. |
 | **Build wizard**          | `/build add login page` auto-detects workflow type, assigns models per step, shows cost estimate before execution.                                                                     |
@@ -173,17 +173,19 @@ Restart Claude Code. The new product's tools appear automatically.
 
 ## Architecture
 
-23 TypeScript packages in a Turborepo monorepo:
+27 TypeScript packages in a Turborepo monorepo:
 
 ```
 cli ─────── core ─── router ─── providers ─── config ─── shared
               │        │
-              ├── tools (42+)        ├── agents (11 roles, 8 subagent types)
+              ├── tools (58+)        ├── agents (14 roles, 9 subagent types)
               ├── workflow (4 presets)├── orchestrator (9-phase pipeline)
               ├── hooks (10 events)  ├── projects + scheduler
               ├── mcp (OAuth, SSE)   ├── eval (7 capability dimensions)
               ├── gateway (BR API)   ├── vault (AES-256-GCM)
-              └── db (SQLite/WAL)    └── plugin-sdk + sdk + docgen + ingest
+              ├── db (SQLite/WAL)    ├── godmode (connector framework)
+              ├── code-graph         ├── server (HTTP/IPC)
+              └── onboard            └── plugin-sdk + sdk + docgen + ingest
 ```
 
 ## Models
@@ -275,8 +277,8 @@ storm intelligence
 ```bash
 git clone https://github.com/justinjilg/brainstorm.git
 cd brainstorm && npm install
-npx turbo run build          # Build all 23 packages
-npx turbo run test           # Run tests (171 tests across 4 packages)
+npx turbo run build          # Build all 27 packages
+npx turbo run test           # Run tests (1,221 tests across 24 packages)
 node packages/cli/dist/brainstorm.js chat
 ```
 
