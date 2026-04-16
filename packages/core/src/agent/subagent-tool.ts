@@ -80,7 +80,15 @@ export function createSubagentTool(
           "Run multiple subagents in parallel. Each gets its own context.",
         ),
     }),
-    execute: async (input) => {
+    execute: async (input, ctx) => {
+      // Link the tool-call abortSignal (comes from the parent agent loop)
+      // into the options we forward to spawnSubagent, so a parent Ctrl+C
+      // or request-disconnect terminates spawned subagents too.
+      const linkedOptions: SubagentOptions = {
+        ...options,
+        parentSignal: ctx?.abortSignal,
+      };
+
       // Parallel mode: multiple subagents at once
       if (input.parallel && input.parallel.length > 0) {
         const results = await spawnParallel(
@@ -88,7 +96,7 @@ export function createSubagentTool(
             task: spec.task,
             type: spec.type as SubagentType,
           })),
-          options,
+          linkedOptions,
         );
         return {
           mode: "parallel",
@@ -112,7 +120,7 @@ export function createSubagentTool(
       }
 
       const result = await spawnSubagent(input.task, {
-        ...options,
+        ...linkedOptions,
         type: input.type as SubagentType,
       });
 

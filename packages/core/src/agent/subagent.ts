@@ -8,7 +8,11 @@ import {
   DockerSandbox,
   withWorkspace,
 } from "@brainst0rm/tools";
-import { serializeRoutingMetadata, createLogger } from "@brainst0rm/shared";
+import {
+  serializeRoutingMetadata,
+  createLogger,
+  linkSignals,
+} from "@brainst0rm/shared";
 import type { SystemPromptSegment } from "./context.js";
 import { segmentsToSystemArray } from "./context.js";
 
@@ -252,6 +256,14 @@ export interface SubagentOptions {
    * transitively through spawnSubagent.
    */
   preferredModelId?: string;
+  /**
+   * Parent abort signal. When the parent agent loop is cancelled (Ctrl+C,
+   * request disconnect), the subagent must also stop — otherwise spawned
+   * subagents keep burning tokens and running tools on a dead session.
+   * This is linked alongside the subagent's internal budget abort so
+   * either source triggers termination.
+   */
+  parentSignal?: AbortSignal;
 }
 
 export interface SubagentResult {
@@ -436,8 +448,12 @@ export async function spawnSubagent(
   let budgetExceeded = false;
   let subagentCostAccum = 0; // Track cost internally to avoid parallel race
 
-  // AbortController for budget enforcement — terminates the subagent stream
+  // AbortController for budget enforcement — terminates the subagent stream.
+  // The stream's effective abort signal is linked to both the internal
+  // budget controller and the optional parent signal, so parent Ctrl+C or
+  // request disconnect tears the subagent down too.
   const budgetAbort = new AbortController();
+  const effectiveAbort = linkSignals(budgetAbort.signal, options.parentSignal);
 
   const metadataHeader = serializeRoutingMetadata(taskProfile, decision);
 
@@ -492,7 +508,7 @@ export async function spawnSubagent(
         ...(metadataHeader
           ? { headers: { "x-br-metadata": metadataHeader } }
           : {}),
-        abortSignal: budgetAbort.signal,
+        abortSignal: effectiveAbort,
         stopWhen: stepCountIs(maxSteps),
         onStepFinish: async ({ usage }: any) => {
           if (usage) {
