@@ -27,27 +27,34 @@ Brainstorm — a governed control plane for AI operators managing multi-product 
 
 ## Architecture
 
-Turborepo monorepo with 20 TypeScript packages:
+Turborepo monorepo with 27 TypeScript packages:
 
 - `packages/shared` — Types (TaskProfile, ModelEntry, AgentProfile, WorkflowEvent, etc.), errors, pino logger
 - `packages/config` — Zod schemas, TOML config loader, layered config (defaults → global → project → env), BRAINSTORM.md parser
 - `packages/db` — better-sqlite3 persistence (sessions, messages, cost_records, agent_profiles, workflow_runs, audit_log, code_embeddings), auto-migrations
 - `packages/providers` — Cloud (Anthropic, OpenAI, Google, DeepSeek, Moonshot + BrainstormRouter SaaS) + local (Ollama, LM Studio, llama.cpp), auto-discovery with caching
 - `packages/router` — BrainstormRouter: heuristic task classifier, 6 routing strategies (quality, cost, combined, capability, learned/Thompson, rule-based), CostTracker with forecast, fallback chain
-- `packages/tools` — 42+ built-in tools (filesystem 8, shell 3, git 6, GitHub 2, web 2, tasks 3, agents 6, planning 1, transactions 3, BR intelligence 8) with permission levels + checkpoint system + Docker sandbox
+- `packages/tools` — 58+ built-in tools (filesystem 8, shell 4, git 7, GitHub 8, web 2, tasks 3, agents 7, planning 1, transactions 3, BR intelligence 8, code graph 5, memory 4, pipeline 1, daemon 1) with permission levels + checkpoint system + Docker sandbox
 - `packages/core` — Agentic loop, SessionManager, PermissionManager, context compaction, @-mentions, skills with temporal template vars, memory (4 types + auto-extraction middleware), plan mode, semantic code search (TF-IDF), git history indexing, style learning (code + prose), proactive compaction, 10 middleware pipeline
-- `packages/agents` — Agent profiles, NL parser, role prompts, Zod output schemas, TOML+SQLite merge, 7 subagent types (explore, plan, code, review, general, decompose, external)
+- `packages/agents` — Agent profiles, NL parser, role prompts, Zod output schemas, TOML+SQLite merge, 9 subagent types (explore, plan, code, review, general, decompose, external, research, memory-curator)
 - `packages/workflow` — Workflow engine state machine, context filtering, confidence/escalation, 4 preset workflows, artifact persistence to disk with manifests
 - `packages/hooks` — HookManager for lifecycle automation (PreToolUse, PostToolUse, SessionStart, etc.)
 - `packages/mcp` — MCP client with OAuth (client_credentials), tool normalization, SSE/HTTP/stdio transports
 - `packages/eval` — Capability probes (7 dimensions), eval runner, scorer, scorecard, JSONL result storage
 - `packages/gateway` — Typed BrainstormRouter API client, intelligence API (recommendations, ensemble ranking, cost forecast, community patterns), header parsing, cost reconciliation
 - `packages/vault` — Encrypted key manager (AES-256-GCM + Argon2id), 1Password bridge (Dev Keys vault, item name mapping), env var fallback
-- `packages/cli` — Commander subcommands + Ink TUI (React for terminal), 5 modes (Chat/Dashboard/Models/Config/Planning), 20+ components, SelectPrompt, Autocomplete, role system, build wizard
+- `packages/cli` — Commander subcommands + Ink TUI (React for terminal), 4 modes (Dashboard/Models/Config/Planning) + always-mounted Chat, 20+ components, SelectPrompt, Autocomplete, role system, build wizard
 - `packages/plugin-sdk` — SDK for building Brainstorm plugins
 - `packages/projects` — Project registry, context builder, budgets
 - `packages/scheduler` — Cron-based task scheduling with safety layer
 - `packages/orchestrator` — Multi-project task fan-out (sequential execution per project, cost tracking, SQLite persistence). The 9-phase pipeline engine with trajectory capture lives in `packages/core/src/plan/orchestration-pipeline.ts`, not here.
+- `packages/godmode` — God Mode connector framework, ChangeSet engine (simulation → approval → execution), connector registry with health checks
+- `packages/code-graph` — Structural code knowledge graph, callers/callees/definitions/impact analysis, sector-based codebase partitioning
+- `packages/sdk` — External SDK for building Brainstorm integrations
+- `packages/server` — HTTP/IPC server for desktop app and external clients
+- `packages/ingest` — Data ingestion pipeline for external knowledge sources
+- `packages/onboard` — Guided onboarding flow for new users and projects
+- `packages/docgen` — Automated documentation generation from code and types
 - `packages/vscode` — VS Code extension integration
 
 ## Build & Run
@@ -57,7 +64,7 @@ npm install                      # Install all workspace deps
 npx turbo run build              # Build all packages (respects dependency graph)
 npx turbo run build --force      # Rebuild all (ignore cache)
 npx turbo run build --filter=@brainst0rm/router  # Build single package + deps
-npx turbo run test               # Run all tests (vitest, 171 tests across 4 packages)
+npx turbo run test               # Run all tests (vitest, 1,221 tests across 24 packages)
 
 # CLI commands
 node packages/cli/dist/brainstorm.js chat      # Interactive chat (default)
@@ -113,9 +120,16 @@ Build wizard in `packages/cli/src/commands/build-wizard.ts` — state machine wi
 
 ## Testing
 
-171 tests across 4 packages:
+1,221 tests across 24 packages:
 
-- `packages/core` — 67 tests (middleware pipeline, semantic search, skills loader, loop detection, compaction)
-- `packages/tools` — 23 tests (sandbox, Docker integration, file operations)
-
-Other packages have test scripts but no test files yet (vitest exits with code 1).
+- `packages/core` — 403 tests (middleware pipeline, semantic search, skills loader, loop detection, compaction, memory, daemon, plan mode)
+- `packages/tools` — 91 tests (sandbox, Docker integration, file operations, GitHub tools)
+- `packages/router` — 92 tests (routing strategies, cost tracking, task classification)
+- `packages/godmode` — 83 tests (connector registry, changeset engine, tool execution)
+- `packages/code-graph` — 59 tests (callers/callees, sectors, MCP tools, pipeline)
+- `packages/hooks` — 57 tests (lifecycle events, hook manager)
+- `packages/shared` — 43 tests (types, error handling, logger)
+- `packages/workflow` — 42 tests (engine, confidence, artifact store)
+- `packages/eval` — 39 tests (probes, scorer, export)
+- `packages/gateway` — 38 tests (HTTP client, intelligence API)
+- Plus 14 more packages with tests (db, config, agents, mcp, orchestrator, scheduler, etc.)

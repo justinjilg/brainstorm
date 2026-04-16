@@ -15,7 +15,7 @@ npx turbo run build
 
 ## Repository Structure
 
-Brainstorm is a Turborepo monorepo with 20 TypeScript packages in `packages/`. The dependency graph flows upward:
+Brainstorm is a Turborepo monorepo with 27 TypeScript packages in `packages/`. The dependency graph flows upward:
 
 ```
 cli → core → router → providers → config → shared

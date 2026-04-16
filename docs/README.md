@@ -13,7 +13,7 @@
 | Doc                                                             | What                                            |
 | --------------------------------------------------------------- | ----------------------------------------------- |
 | [Architecture](architecture.md)                                 | Package graph, data flow, intelligence features |
-| [Tools Reference](tools.md)                                     | All 42+ tools by category                       |
+| [Tools Reference](tools.md)                                     | All 58+ tools by category                       |
 | [BrainstormRouter Integration](brainstormrouter-integration.md) | BR tools and intelligence API                   |
 
 ## Extending

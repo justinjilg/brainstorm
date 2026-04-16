@@ -1,11 +1,11 @@
 /**
  * Progressive Tool Loading — load tools by tier based on task complexity.
  *
- * Instead of injecting all 42 tool descriptions into every system prompt (~3000 tokens),
+ * Instead of injecting all 58+ tool descriptions into every system prompt (~4500 tokens),
  * load tools progressively:
  *   - minimal (5 tools): simple Q&A, file reads, basic edits
  *   - standard (20 tools): code editing, git, search, tasks
- *   - full (42 tools): transactions, undo, BR intelligence, web, batch ops
+ *   - full (58+ tools): transactions, undo, BR intelligence, web, batch ops, code graph, memory
  *
  * Inspired by DeerFlow's progressive skill loading, but task-aware:
  * the router's task classifier determines which tier to start with.
