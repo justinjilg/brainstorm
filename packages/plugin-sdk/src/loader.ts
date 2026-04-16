@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
@@ -83,8 +83,13 @@ async function loadPlugin(pluginDir: string): Promise<BrainstormPlugin | null> {
   // Resolve entryPath and verify it stays within pluginDir. A manifest with
   // "main": "../../../etc/passwd" or an absolute path would otherwise let
   // an untrusted plugin load arbitrary JS files from the host filesystem.
-  const pluginRoot = resolve(pluginDir);
-  const entryPath = resolve(pluginRoot, entryPoint);
+  const pluginRoot = realpathSync(resolve(pluginDir));
+  let entryPath: string;
+  try {
+    entryPath = realpathSync(resolve(pluginRoot, entryPoint));
+  } catch {
+    entryPath = resolve(pluginRoot, entryPoint);
+  }
   if (entryPath !== pluginRoot && !entryPath.startsWith(pluginRoot + sep)) {
     throw new Error(
       `Plugin entry point escapes plugin directory: ${entryPoint}`,
