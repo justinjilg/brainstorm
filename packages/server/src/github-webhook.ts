@@ -140,7 +140,12 @@ const MAX_NONCE_CACHE = 1000;
 const seenDeliveries = new Map<string, number>(); // deliveryId → timestamp
 
 function isReplay(deliveryId: string | undefined): boolean {
-  if (!deliveryId) return false; // Missing header = allow (GitHub always sends it)
+  // A real GitHub webhook always carries X-GitHub-Delivery. If the header is
+  // missing, we have no nonce to cache against and therefore no way to
+  // distinguish a first-time event from a replay — treat it as replay-suspect
+  // and drop. Previously this returned false, which let an attacker replay
+  // captured signed payloads indefinitely by simply stripping the header.
+  if (!deliveryId) return true;
 
   // Prune old entries
   const cutoff = Date.now() - REPLAY_WINDOW_MS;
