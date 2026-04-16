@@ -44,6 +44,17 @@ export class TriggerRunner {
     this.tasks = new ScheduledTaskRepository(db);
     this.runs = new TaskRunRepository(db);
     this.maxConcurrent = opts?.maxConcurrent ?? 3;
+
+    // Zombie sweep on startup: a previous process may have crashed mid-run
+    // and left rows stuck in status='running'. Without this, each such row
+    // would count toward the concurrency limit forever, eventually wedging
+    // the scheduler so no new tasks could dispatch.
+    const swept = this.runs.sweepZombieRunning();
+    if (swept.length > 0) {
+      console.error(
+        `[scheduler] swept ${swept.length} zombie run(s) from a prior crash: ${swept.join(", ")}`,
+      );
+    }
   }
 
   /**
@@ -161,12 +172,8 @@ export class TriggerRunner {
       });
 
       try {
-        // Mark as running
-        this.runs.complete(run.id, {
-          status: "running",
-          cost: 0,
-          turnsUsed: 0,
-        });
+        // Mark as running (without stamping completed_at — see markRunning).
+        this.runs.markRunning(run.id);
 
         if (this.executor) {
           // Execute via daemon controller's agent loop

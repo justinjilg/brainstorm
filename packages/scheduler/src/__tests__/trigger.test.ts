@@ -142,4 +142,40 @@ describe("TriggerRunner", () => {
     expect(summaries).toHaveLength(1);
     expect(summaries[0]).toBe("[one-shot] Summary Task: Short prompt");
   });
+
+  it("sweeps zombie 'running' rows left over from a prior process crash", async () => {
+    // Seed a zombie: a running row directly in the DB, as if the previous
+    // process had crashed mid-run without finishing the row.
+    const task = taskRepo.create({
+      projectId: "proj-1",
+      name: "Zombie Owner",
+      prompt: "anything",
+    });
+    const before = runRepo.create({ taskId: task.id, triggerType: "cron" });
+    runRepo.markRunning(before.id);
+    // Confirm the zombie exists before restart.
+    expect(runRepo.getById(before.id)?.status).toBe("running");
+
+    // Instantiating a fresh TriggerRunner simulates process restart; the
+    // constructor must sweep the zombie.
+    new TriggerRunner(db, { maxConcurrent: 2 });
+
+    const after = runRepo.getById(before.id);
+    expect(after?.status).toBe("crashed");
+    expect(after?.completedAt).toBeTypeOf("number");
+  });
+
+  it("does not stamp completed_at on the running transition", async () => {
+    const task = taskRepo.create({
+      projectId: "proj-1",
+      name: "In-flight",
+      prompt: "p",
+    });
+    const run = runRepo.create({ taskId: task.id, triggerType: "cron" });
+    runRepo.markRunning(run.id);
+
+    const row = runRepo.getById(run.id);
+    expect(row?.status).toBe("running");
+    expect(row?.completedAt).toBeUndefined();
+  });
 });
