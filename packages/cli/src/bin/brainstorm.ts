@@ -2076,69 +2076,7 @@ function printResumeSummary(
   if (lastMsg) console.log(`  Last ${lastMsg.role}: ${lastPreview}`);
 }
 
-/** Prompt for a password with masked echo. Supports BRAINSTORM_VAULT_PASSWORD env for non-interactive use. */
-function promptPassword(prompt: string): Promise<string> {
-  // Non-interactive: use env var if set (for CI/CD and scripting)
-  const envPassword = process.env.BRAINSTORM_VAULT_PASSWORD;
-  if (envPassword) {
-    console.error(
-      "  [vault] Using BRAINSTORM_VAULT_PASSWORD from environment (no prompt)",
-    );
-    return Promise.resolve(envPassword);
-  }
-
-  return new Promise((resolve, reject) => {
-    process.stderr.write(prompt);
-
-    // Always try to set raw mode to prevent terminal echo
-    let rawModeWasSet = false;
-    try {
-      if (process.stdin.setRawMode) {
-        process.stdin.setRawMode(true);
-        rawModeWasSet = true;
-      }
-    } catch {
-      // Some environments don't support raw mode
-    }
-
-    // Ensure stdin is in flowing mode
-    if (process.stdin.isPaused?.()) process.stdin.resume();
-
-    let password = "";
-    const cleanup = () => {
-      process.stdin.removeListener("data", onData);
-      if (rawModeWasSet) {
-        try {
-          process.stdin.setRawMode?.(false);
-        } catch {
-          /* ignore */
-        }
-      }
-      process.stderr.write("\n");
-    };
-
-    const onData = (ch: Buffer) => {
-      const c = ch.toString();
-      if (c === "\n" || c === "\r" || c === "\u0004") {
-        cleanup();
-        resolve(password);
-      } else if (c === "\u0003") {
-        cleanup();
-        reject(new Error("Cancelled"));
-      } else if (c === "\u007F" || c === "\b") {
-        if (password.length > 0) {
-          password = password.slice(0, -1);
-          process.stderr.write("\b \b");
-        }
-      } else if (c.charCodeAt(0) >= 32) {
-        // Only accept printable characters
-        password += c;
-        process.stderr.write("*");
-      }
-    };
-    process.stdin.on("data", onData);
-  });
-}
+import { promptPassword } from "../util/prompt-password.js";
 
 const vaultCmd = program
   .command("vault")

@@ -16,6 +16,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, basename } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { createLogger } from "@brainst0rm/shared";
+import { promptPassword } from "../util/prompt-password.js";
 
 const log = createLogger("org-init");
 
@@ -71,7 +72,10 @@ export async function runOrgInit(opts: OrgInitOptions): Promise<OrgInitResult> {
   if (authMethod === "pat") {
     token = process.env.GITHUB_TOKEN;
     if (!token) {
-      token = await rl.question("  GitHub PAT: ");
+      // Close readline before we take over stdin with the masked-echo
+      // helper, otherwise rl keeps it in line-buffered mode.
+      rl.close();
+      token = await promptPassword("  GitHub PAT: ", "GITHUB_TOKEN");
     } else {
       console.log("  Using GITHUB_TOKEN from environment");
     }
