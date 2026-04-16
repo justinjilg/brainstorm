@@ -30,7 +30,7 @@ import {
 } from "@brainst0rm/shared";
 import type { BuildStateTracker } from "./build-state.js";
 import { LoopDetector } from "./loop-detector.js";
-import { serializeRoutingMetadata } from "@brainst0rm/shared";
+import { serializeRoutingMetadata, linkSignals } from "@brainst0rm/shared";
 import { createStreamFilter } from "./response-filter.js";
 import { normalizeInsightMarkers } from "./insights.js";
 import { parseGatewayHeaders } from "@brainst0rm/gateway";
@@ -775,6 +775,17 @@ export async function* runAgentLoop(
     const { systemForApiNormalized, messagesForApi } =
       normalizeSystemMessagesForProvider(systemForAPI, messages);
 
+    // Stream-stall watchdog: a provider may open the SSE connection but
+    // never send any event (silent proxy drop, network stall, provider
+    // hang). The for-await-of below only checks the staleness timer when
+    // a part arrives, so without this watchdog a truly-hung stream would
+    // block the loop forever. Link the watchdog's signal with any parent
+    // signal so both sources terminate the stream.
+    const streamAbort = new AbortController();
+    const effectiveStreamSignal = linkSignals(
+      streamAbort.signal,
+      options.signal,
+    );
     const result = streamText({
       model: modelId,
       system: systemForApiNormalized as any,
@@ -783,7 +794,7 @@ export async function* runAgentLoop(
       ...(metadataHeader
         ? { headers: { "x-br-metadata": metadataHeader } }
         : {}),
-      ...(options.signal ? { abortSignal: options.signal } : {}),
+      abortSignal: effectiveStreamSignal,
       // Retry on 429/503 with exponential backoff (1s, 2s, 4s).
       // Without this, rate limits during long KAIROS runs crash the daemon.
       maxRetries: 3,
@@ -851,34 +862,35 @@ export async function* runAgentLoop(
     // compaction for this session.
     let localToolGateDepth = 0;
 
+    // Watchdog: if no event arrives for STREAM_TIMEOUT_MS the stream is
+    // dead. Aborting streamAbort terminates fullStream and the for-await
+    // exits cleanly. We unref() so the timer itself doesn't keep the
+    // process alive.
+    const watchdog = setInterval(() => {
+      if (Date.now() - lastEventTime > STREAM_TIMEOUT_MS) {
+        const elapsed = Date.now() - sessionStartTime;
+        log.warn(
+          {
+            model: decision.model.id,
+            elapsedMs: elapsed,
+            lastEventAgo: Date.now() - lastEventTime,
+            textDeltas: textDeltaCount,
+            toolCalls: toolCallCount,
+          },
+          "Stream stall detected — aborting stream",
+        );
+        trajectory?.recordError({
+          message: `Stream timeout after ${elapsed}ms`,
+          model: decision.model.id,
+        });
+        streamAbort.abort();
+      }
+    }, 5_000);
+    watchdog.unref?.();
+
     try {
       for await (const part of result.fullStream) {
-        // Detect hung streams: if no event for 60s, break out
         const now = Date.now();
-        if (
-          now - lastEventTime > STREAM_TIMEOUT_MS &&
-          textDeltaCount === 0 &&
-          toolCallCount === 0
-        ) {
-          const elapsed = now - sessionStartTime;
-          log.warn(
-            {
-              model: decision.model.id,
-              elapsedMs: elapsed,
-              lastEventAgo: now - lastEventTime,
-              textDeltas: textDeltaCount,
-              toolCalls: toolCallCount,
-            },
-            "Stream timeout — no events received, breaking out",
-          );
-          if (trajectory) {
-            trajectory.recordError({
-              message: `Stream timeout after ${elapsed}ms`,
-              model: decision.model.id,
-            });
-          }
-          break; // Fall through to empty detection + retry
-        }
         lastEventTime = now;
         if (part.type === "reasoning-delta") {
           const content = getPartText(part as Record<string, unknown>);
@@ -1018,6 +1030,7 @@ export async function* runAgentLoop(
         throw streamErr; // Re-throw real errors
       }
     } finally {
+      clearInterval(watchdog);
       // Unwind any tool gate entries that didn't see a matching tool-result
       // (stream error, aborted consumer, early return above). Leaking even
       // one would permanently pin isToolInFlight() > 0 and block every
