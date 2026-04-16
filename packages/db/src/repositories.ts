@@ -1220,30 +1220,36 @@ export class SyncQueueRepository {
    */
   claimBatch(limit: number = 10): SyncQueueRow[] {
     const now = Math.floor(Date.now() / 1000);
-    const rows = this.db
-      .prepare(
-        `SELECT * FROM sync_queue
-         WHERE status = 'pending' AND next_attempt_at <= ?
-         ORDER BY created_at ASC
-         LIMIT ?`,
-      )
-      .all(now, limit) as any[];
+    // The SELECT-then-UPDATE must run in a single transaction. better-sqlite3
+    // is single-writer, but a crash between the two statements would leave
+    // rows claimed-but-not-marked, and on restart another worker would
+    // re-claim and double-process them.
+    return this.db.transaction((): SyncQueueRow[] => {
+      const rows = this.db
+        .prepare(
+          `SELECT * FROM sync_queue
+           WHERE status = 'pending' AND next_attempt_at <= ?
+           ORDER BY created_at ASC
+           LIMIT ?`,
+        )
+        .all(now, limit) as any[];
 
-    if (rows.length === 0) return [];
+      if (rows.length === 0) return [];
 
-    const ids = rows.map((r) => r.id);
-    const placeholders = ids.map(() => "?").join(",");
-    this.db
-      .prepare(
-        `UPDATE sync_queue SET status = 'in_flight', updated_at = unixepoch()
-         WHERE id IN (${placeholders})`,
-      )
-      .run(...ids);
+      const ids = rows.map((r) => r.id);
+      const placeholders = ids.map(() => "?").join(",");
+      this.db
+        .prepare(
+          `UPDATE sync_queue SET status = 'in_flight', updated_at = unixepoch()
+           WHERE id IN (${placeholders})`,
+        )
+        .run(...ids);
 
-    return rows.map((r) => ({
-      ...mapSyncQueueRow(r),
-      status: "in_flight" as const,
-    }));
+      return rows.map((r) => ({
+        ...mapSyncQueueRow(r),
+        status: "in_flight" as const,
+      }));
+    })();
   }
 
   /** Mark a successfully-sent item as completed. */
