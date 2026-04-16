@@ -6,6 +6,7 @@ import {
   copyFileSync,
   readdirSync,
   unlinkSync,
+  lstatSync,
 } from "node:fs";
 import { join, dirname, basename, relative } from "node:path";
 import { homedir } from "node:os";
@@ -38,6 +39,17 @@ export class CheckpointManager {
    */
   snapshot(filePath: string): string | null {
     if (!existsSync(filePath)) return null; // New file, nothing to snapshot
+
+    // Refuse to snapshot symlinks. copyFileSync follows them, so a symlink
+    // placed inside the workspace (e.g. ~/.ssh/id_rsa) would let a
+    // later revert overwrite the link target and would copy its contents
+    // into the plaintext checkpoint store.
+    try {
+      const stat = lstatSync(filePath);
+      if (stat.isSymbolicLink()) return null;
+    } catch {
+      return null;
+    }
 
     const timestamp = Date.now();
     const safeName = relative(process.cwd(), filePath).replace(/[/\\]/g, "__");
