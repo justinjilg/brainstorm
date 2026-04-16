@@ -50,6 +50,10 @@ let backend: ChildProcess | null = null;
 let backendReady = false;
 let spawnRetries = 0;
 const pending = new Map<string, (value: any) => void>();
+// Per-request timers — cleared on backend exit so a timer that was scheduled
+// for a request in flight doesn't fire after the backend has already
+// respawned, sending a stale "timed out" event to the UI minutes later.
+const pendingTimers = new Map<string, NodeJS.Timeout>();
 let nextId = 1;
 
 function sendToBackend(msg: Record<string, unknown>): void {
@@ -90,6 +94,18 @@ function spawnBackend(): void {
 
     const id = msg.id;
 
+    // Structured readiness signal from the backend. This is the authoritative
+    // source — it's emitted exactly once at startup. The previous approach of
+    // substring-matching stderr for "ready" would flip backendReady on any
+    // log line containing that word (e.g. "database not ready",
+    // "already running"), causing the renderer to send requests to a
+    // not-actually-ready backend.
+    if (msg.type === "ready") {
+      backendReady = true;
+      spawnRetries = 0;
+      return;
+    }
+
     if (msg.event) {
       // Streaming event — forward to all renderer windows
       const wins = BrowserWindow.getAllWindows();
@@ -122,7 +138,8 @@ function spawnBackend(): void {
   backend.stderr?.on("data", (chunk: Buffer) => {
     const text = chunk.toString().trim();
     if (text) logToFile(`[brainstorm] ${text}`);
-    if (text.includes("ready")) backendReady = true;
+    // Readiness is now signaled via structured JSON on stdout (msg.type
+    // === "ready"). stderr is just for logs; never infer state from it.
   });
 
   backend.on("exit", (code) => {
@@ -131,10 +148,18 @@ function spawnBackend(): void {
     backendReady = false;
 
     // Reject all pending promises immediately (don't wait for 30s timeout)
-    for (const [id, resolve] of pending.entries()) {
+    for (const [, resolve] of pending.entries()) {
       resolve({ error: "Backend process exited" });
     }
     pending.clear();
+
+    // Clear any per-request timers — otherwise a chat-stream timer scheduled
+    // before the exit will later fire (minutes later, after respawn) and
+    // send a misleading "timed out" event to the UI.
+    for (const timer of pendingTimers.values()) {
+      clearTimeout(timer);
+    }
+    pendingTimers.clear();
 
     // Notify all windows
     for (const win of BrowserWindow.getAllWindows()) {
@@ -208,11 +233,14 @@ function registerIPC(): void {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         pending.delete(id);
+        pendingTimers.delete(id);
         reject(new Error(`Request ${method} timed out`));
       }, 30000);
+      pendingTimers.set(id, timer);
 
       pending.set(id, (result) => {
         clearTimeout(timer);
+        pendingTimers.delete(id);
         resolve(result);
       });
 
@@ -223,10 +251,12 @@ function registerIPC(): void {
   // Chat streaming (with 5-minute timeout to prevent permanent freeze)
   ipcMain.handle("chat-stream", async (_event, params: any) => {
     const id = `stream-${nextId++}`;
+    const doneKey = `${id}-done`;
 
     return new Promise<void>((resolve) => {
       const timer = setTimeout(() => {
-        pending.delete(`${id}-done`);
+        pending.delete(doneKey);
+        pendingTimers.delete(doneKey);
         // Send error to renderer so UI unfreezes
         for (const win of BrowserWindow.getAllWindows()) {
           win.webContents.send("chat-event", {
@@ -237,9 +267,11 @@ function registerIPC(): void {
         }
         resolve();
       }, 300000); // 5 minutes
+      pendingTimers.set(doneKey, timer);
 
-      pending.set(`${id}-done`, () => {
+      pending.set(doneKey, () => {
         clearTimeout(timer);
+        pendingTimers.delete(doneKey);
         resolve();
       });
       sendToBackend({ id, method: "chat.stream", params });
