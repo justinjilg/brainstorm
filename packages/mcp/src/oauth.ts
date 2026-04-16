@@ -19,10 +19,12 @@ interface CachedToken {
 }
 
 const tokenCache = new Map<string, CachedToken>();
+const inflightRequests = new Map<string, Promise<string>>();
 const REFRESH_BUFFER_MS = 60_000; // Refresh 60s before expiry
 
 /**
  * Get a valid OAuth access token, fetching or refreshing as needed.
+ * Concurrent calls for the same key coalesce into a single request.
  */
 export async function getOAuthToken(config: OAuthConfig): Promise<string> {
   const cacheKey = `${config.tokenUrl}:${config.clientId}`;
@@ -32,6 +34,25 @@ export async function getOAuthToken(config: OAuthConfig): Promise<string> {
     return cached.accessToken;
   }
 
+  // Evict expired tokens to prevent unbounded cache growth
+  if (cached) tokenCache.delete(cacheKey);
+
+  const inflight = inflightRequests.get(cacheKey);
+  if (inflight) return inflight;
+
+  const promise = fetchOAuthToken(config, cacheKey);
+  inflightRequests.set(cacheKey, promise);
+  try {
+    return await promise;
+  } finally {
+    inflightRequests.delete(cacheKey);
+  }
+}
+
+async function fetchOAuthToken(
+  config: OAuthConfig,
+  cacheKey: string,
+): Promise<string> {
   const clientId = await resolveSecret(config.clientId);
   const clientSecret = await resolveSecret(config.clientSecret);
 

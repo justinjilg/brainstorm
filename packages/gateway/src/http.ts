@@ -29,7 +29,15 @@ export async function gatewayRequest(
       signal: AbortSignal.timeout(15_000),
     });
 
-    const text = await response.text();
+    const bodyTimeout = AbortSignal.timeout(15_000);
+    const text = await Promise.race([
+      response.text(),
+      new Promise<never>((_, reject) => {
+        bodyTimeout.addEventListener("abort", () =>
+          reject(new Error("Response body read timed out")),
+        );
+      }),
+    ]);
     let data: any;
     try {
       data = JSON.parse(text);
