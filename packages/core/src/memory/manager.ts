@@ -157,6 +157,17 @@ export class MemoryManager {
     const now = Math.floor(Date.now() / 1000);
     const existing = this.entries.get(id);
 
+    // An existing entry with the same slug but a *different* original name
+    // means two semantically distinct memories want the same ID. Historically
+    // the second save would overwrite the first's on-disk file under "update"
+    // semantics and the first entry's content was silently lost. Surface the
+    // collision instead so the caller can pick a less ambiguous name.
+    if (existing && existing.name !== entry.name) {
+      throw new Error(
+        `Memory slug collision: "${entry.name}" and "${existing.name}" both slugify to "${id}". Rename one to disambiguate.`,
+      );
+    }
+
     // Resolve trust score from explicit value, existing entry, or source default
     const source = entry.source ?? "unknown";
     const trustScore =

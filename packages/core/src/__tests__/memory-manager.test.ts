@@ -374,6 +374,56 @@ describe("MemoryManager", () => {
   // These tests exercise the BR pull path using a stub gateway. The
   // merge semantics are: additive last-writer-wins by name, never
   // delete local entries, skip quarantine tier.
+  describe("slug collision", () => {
+    it("throws when two distinct names slugify to the same id", () => {
+      // Both slugify to "project-foo":
+      //   "Project: Foo"  → replace [^a-z0-9]+ with "-" → "project-foo"
+      //   "Project Foo"   → same
+      manager.save({
+        name: "Project: Foo",
+        description: "d1",
+        content: "first entry",
+        type: "project",
+        source: "user_input",
+      });
+
+      expect(() =>
+        manager.save({
+          name: "Project Foo",
+          description: "d2",
+          content: "second entry — would have clobbered the first",
+          type: "project",
+          source: "user_input",
+        }),
+      ).toThrow(/slug collision/i);
+
+      // The first entry's content is preserved.
+      expect(manager.get("project-foo")!.content).toBe("first entry");
+    });
+
+    it("still allows updating an entry under its original name", () => {
+      manager.save({
+        name: "my-entry",
+        description: "v1",
+        content: "first",
+        type: "project",
+        source: "user_input",
+      });
+
+      expect(() =>
+        manager.save({
+          name: "my-entry",
+          description: "v2",
+          content: "second",
+          type: "project",
+          source: "user_input",
+        }),
+      ).not.toThrow();
+
+      expect(manager.get("my-entry")!.content).toBe("second");
+    });
+  });
+
   describe("capacity enforcement", () => {
     // Each entry is ~10 KB. 15 writes (150 KB) must trigger eviction to fit
     // under the default 100 KB cap.
