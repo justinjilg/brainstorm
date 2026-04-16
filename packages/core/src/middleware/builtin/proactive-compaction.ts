@@ -76,6 +76,13 @@ export function createProactiveCompactionMiddleware(
             "Avoid reading large files or making unnecessary tool calls.]",
         };
       }
+
+      // Reset the auto-compact flag once context drops below 60% (after
+      // compaction freed headroom) so the tier-2 hint fires again the next
+      // time usage climbs back to 70%.
+      if (percent < 60 && autoCompactInjected) {
+        autoCompactInjected = false;
+      }
     },
   };
 }
