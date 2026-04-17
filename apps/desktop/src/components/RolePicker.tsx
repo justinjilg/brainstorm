@@ -83,7 +83,20 @@ interface RolePickerProps {
   open: boolean;
   onClose: () => void;
   currentRole: string | null;
+  /**
+   * Fires with the selected role id (or null for "no role"). Pre-fix this
+   * was the only effect of a pick — the skills array in the hover panel
+   * was decorative. Now the caller should also honour `onRoleSkills` so
+   * picking a role actually activates the skills the hover panel showed.
+   */
   onRoleSelect: (roleId: string | null) => void;
+  /**
+   * Fires alongside onRoleSelect with the role's skill list (empty array
+   * when the user picks "No role"). Caller should set activeSkills to
+   * this value so the chat stream carries the matching skill names and
+   * the system prompt picks up the right skill contents.
+   */
+  onRoleSkills?: (skills: string[]) => void;
   anchorRef?: React.RefObject<HTMLElement | null>;
 }
 
@@ -92,6 +105,7 @@ export function RolePicker({
   onClose,
   currentRole,
   onRoleSelect,
+  onRoleSkills,
 }: RolePickerProps) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -130,6 +144,7 @@ export function RolePicker({
           <button
             onClick={() => {
               onRoleSelect(null);
+              onRoleSkills?.([]);
               onClose();
             }}
             data-testid="role-clear"
@@ -148,6 +163,11 @@ export function RolePicker({
               data-testid={`role-${role.id}`}
               onClick={() => {
                 onRoleSelect(role.id);
+                // Activate the skills shown in the hover panel. Before this
+                // change the skills array was decorative — now picking
+                // "Architect" actually sets activeSkills to its three
+                // skills, so chat turns carry the matching skill contents.
+                onRoleSkills?.(role.skills);
                 onClose();
               }}
               onMouseEnter={() => setHoveredId(role.id)}
