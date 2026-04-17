@@ -423,9 +423,32 @@ function createWindow(): BrowserWindow {
 
   if (isDev) {
     win.loadURL("http://localhost:1420");
+    // Open DevTools in dev so renderer errors are immediately visible.
+    // Packaged builds stay gated behind the View menu / ⌥⌘I.
+    win.webContents.openDevTools({ mode: "detach" });
   } else {
     win.loadFile(join(__dirname, "../dist/index.html"));
   }
+
+  // Surface renderer failures to the main log — critical when the
+  // window paints white and the only evidence is a silent crash.
+  win.webContents.on("did-fail-load", (_e, code, desc, url) => {
+    logToFile(`Renderer did-fail-load: code=${code} desc="${desc}" url=${url}`);
+  });
+  win.webContents.on("render-process-gone", (_e, details) => {
+    logToFile(`Renderer render-process-gone: reason=${details.reason}`);
+  });
+  win.webContents.on("preload-error", (_e, preloadPath, error) => {
+    logToFile(`Preload error at ${preloadPath}: ${error.message}`);
+  });
+  win.webContents.on(
+    "console-message",
+    (_e, level, message, line, sourceId) => {
+      if (level >= 2) {
+        logToFile(`Renderer[${level}] ${sourceId}:${line} ${message}`);
+      }
+    },
+  );
 
   return win;
 }
@@ -435,6 +458,22 @@ function createWindow(): BrowserWindow {
 app.whenReady().then(() => {
   // ── Content Security Policy ─────────────────────────────────────
   // Prevents XSS from executing arbitrary scripts in the renderer.
+  //
+  // Dev mode (loadURL → http://localhost:1420): Vite injects an inline
+  // <script> preamble for @vitejs/plugin-react HMR. Blocking it makes
+  // the renderer paint black and log "can't detect preamble" — so dev
+  // gets 'unsafe-inline' for scripts.
+  //
+  // Packaged builds get the tight script-src 'self' — all JS is bundled
+  // and served from the file:// app root, no inline scripts exist.
+  const isDev = !app.isPackaged;
+  const scriptSrc = isDev
+    ? "script-src 'self' 'unsafe-inline'"
+    : "script-src 'self'";
+  const connectSrc = isDev
+    ? "connect-src 'self' ws://localhost:* http://localhost:*"
+    : "connect-src 'self'";
+
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
@@ -442,11 +481,11 @@ app.whenReady().then(() => {
         "Content-Security-Policy": [
           [
             "default-src 'self'",
-            "script-src 'self'",
+            scriptSrc,
             "style-src 'self' 'unsafe-inline'", // needed for inline styles (React, Tailwind)
             "font-src 'self' data:",
             "img-src 'self' data: https:",
-            "connect-src 'self' ws://localhost:* http://localhost:*",
+            connectSrc,
           ].join("; "),
         ],
       },
