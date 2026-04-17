@@ -446,6 +446,13 @@ export function App() {
           setActiveRole(role);
           setRolePickerOpen(false);
         }}
+        onRoleSkills={(skills) => {
+          // Role selection now drives activeSkills so the hover-panel skills
+          // list is a contract, not decoration. Chat turns sent after this
+          // carry the role's skill names; the backend injects those skills'
+          // content into the system prompt.
+          setActiveSkills(skills);
+        }}
       />
 
       {/* Command palette */}
