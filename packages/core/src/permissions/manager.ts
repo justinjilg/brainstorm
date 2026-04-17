@@ -1,11 +1,5 @@
-import type { ToolPermission } from "@brainst0rm/shared";
-import {
-  readFileSync,
-  writeFileSync,
-  renameSync,
-  mkdirSync,
-  existsSync,
-} from "node:fs";
+import { atomicWriteFile, type ToolPermission } from "@brainst0rm/shared";
+import { readFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
@@ -227,10 +221,12 @@ export class PermissionManager {
         allowlist: Array.from(this.persistentAllowlist),
         denylist: Array.from(this.persistentDenylist),
       };
-      // Atomic write: write to temp file then rename to prevent corruption on crash
-      const tmpFile = PERMISSIONS_FILE + ".tmp";
-      writeFileSync(tmpFile, JSON.stringify(data, null, 2) + "\n");
-      renameSync(tmpFile, PERMISSIONS_FILE);
+      // atomicWriteFile uses a pid+uuid temp suffix so concurrent Brainstorm
+      // processes (e.g. daemon + interactive CLI) cannot clobber each other's
+      // write via the shared ".tmp" path. A collision there previously left
+      // PERMISSIONS_FILE corrupt and loadPersisted() silently reverted the
+      // allowlist to empty on the next start.
+      atomicWriteFile(PERMISSIONS_FILE, JSON.stringify(data, null, 2) + "\n");
     } catch {
       /* best-effort persistence */
     }
