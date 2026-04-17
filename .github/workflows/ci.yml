@@ -27,6 +27,13 @@ jobs:
       - name: Type check
         run: npx turbo run typecheck --filter='!@brainst0rm/desktop'
 
+      # Guard against a specific memory-leak shape Pass 2 + Pass 3 of the
+      # quality scan both kept finding: AbortSignal.timeout(ms) wired to
+      # addEventListener("abort", …) without { once: true } or a matching
+      # removeEventListener pair. See scripts/lint-abort-signal-timeout.mjs.
+      - name: Lint — AbortSignal.timeout cleanup
+        run: npm run lint:abort-signal
+
       - name: Verify tool catalog freshness
         continue-on-error: true
         run: |
