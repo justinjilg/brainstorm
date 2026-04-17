@@ -26,6 +26,7 @@
     "build": "turbo run build",
     "dev": "turbo run dev",
     "lint": "turbo run lint",
+    "lint:abort-signal": "node scripts/lint-abort-signal-timeout.mjs",
     "test": "turbo run test",
     "test:dogfood": "npx tsx tests/dogfood/run-dogfood.ts",
     "test:workflow": "npx tsx tests/workflow-demo/run-demo.ts",
