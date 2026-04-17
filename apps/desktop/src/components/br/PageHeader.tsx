@@ -12,6 +12,8 @@ export interface PageTab {
   id: string;
   label: string;
   icon?: ReactNode;
+  /** Optional data-testid passed straight through to the tab button. */
+  testId?: string;
 }
 
 export interface PageHeaderProps {
@@ -59,6 +61,7 @@ export function PageHeader({
                 type="button"
                 role="tab"
                 aria-selected={active}
+                data-testid={tab.testId}
                 className={active ? "page-tab active" : "page-tab"}
                 onClick={() => onTabChange?.(tab.id)}
               >

@@ -76,9 +76,13 @@ export function DashboardView({
           title="Dashboard"
           description="Operator-console view of the Brainstorm runtime — session cost, tools, routing, and historical spend at a glance."
           tabs={[
-            { id: "tools", label: "Tools" },
-            { id: "routing", label: "Routing" },
-            { id: "cost", label: "Cost" },
+            { id: "tools", label: "Tools", testId: "dashboard-tab-tools" },
+            {
+              id: "routing",
+              label: "Routing",
+              testId: "dashboard-tab-routing",
+            },
+            { id: "cost", label: "Cost", testId: "dashboard-tab-cost" },
           ]}
           activeTab={activeTab}
           onTabChange={(id) => setActiveTab(id as DashboardTab)}
@@ -111,6 +115,7 @@ export function DashboardView({
               label="Tools"
               value={toolCountText}
               accent="info"
+              testId="tool-count"
               tooltip="Built-in tools available to the agent loop"
             />
             <StatCard
