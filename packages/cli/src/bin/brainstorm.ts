@@ -1,5 +1,10 @@
 import { Command } from "commander";
-import { initSentry, captureError, flushSentry } from "@brainst0rm/shared";
+import {
+  initSentry,
+  captureError,
+  flushSentry,
+  atomicWriteFile,
+} from "@brainst0rm/shared";
 import { loadConfig } from "@brainst0rm/config";
 import {
   getDb,
@@ -6434,7 +6439,11 @@ program
             command: "brainstorm",
             args: ["mcp"],
           };
-          writeFileSync(mcpPath, JSON.stringify(existing, null, 2));
+          // atomicWriteFile — ~/.claude/mcp.json is shared across Claude Code
+          // tools and typically holds other MCP server configs. A crash mid-
+          // writeFileSync would truncate the file and break those unrelated
+          // tools. pid+uuid temp + rename keeps the write all-or-nothing.
+          atomicWriteFile(mcpPath, JSON.stringify(existing, null, 2));
           console.log(
             `\n  ✓ Added brainstorm MCP server to ~/.claude/mcp.json`,
           );
