@@ -85,6 +85,39 @@ export const MOCK_SKILLS = [
   },
 ];
 
+// Presets used by `workflow-preset-*` test-ids. Minimal shape —
+// WorkflowsView only reads id/name/description/steps.
+export const MOCK_WORKFLOW_PRESETS = [
+  {
+    id: "spec-to-pr",
+    name: "Spec → PR",
+    description: "Draft a spec, implement, review, open a PR",
+    steps: 4,
+  },
+  {
+    id: "bug-hunt",
+    name: "Bug Hunt",
+    description: "Adversarial code scan + fix loop",
+    steps: 3,
+  },
+];
+
+// Minimal KAIROS status — widget only reads state + tickCount.
+export const MOCK_KAIROS_STATUS = {
+  state: "stopped",
+  status: "stopped",
+  tickCount: 0,
+  cost: 0,
+};
+
+// Config scrubbed of secrets (the real backend does the scrub).
+export const MOCK_CONFIG = {
+  general: { maxSteps: 20, defaultModel: null },
+  budget: { perSession: 5, perMonth: 100 },
+  shell: { sandbox: "confirm" },
+  routing: { strategy: "combined" },
+};
+
 // Model rows used by `model-row-*` test-ids. Minimal shape — ModelsView
 // only reads id/name/provider/status + pricing + capabilities tiers.
 export const MOCK_MODELS = [
@@ -291,6 +324,39 @@ export async function setupAllMocks(page: Page) {
       status: 200,
       contentType: "application/json",
       body: envelope(MOCK_MODELS),
+    });
+  });
+
+  await page.route("**/api/v1/workflows/presets", (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: envelope(MOCK_WORKFLOW_PRESETS),
+    });
+  });
+
+  await page.route("**/api/v1/workflows/run", (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: envelope({ id: "run-new", status: "completed" }),
+    });
+  });
+
+  await page.route("**/api/v1/kairos/status", (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: envelope(MOCK_KAIROS_STATUS),
+    });
+  });
+
+  // Config endpoint lets Config view render without perma-spinner.
+  await page.route("**/api/v1/config", (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: envelope(MOCK_CONFIG),
     });
   });
 }
