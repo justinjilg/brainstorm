@@ -2,9 +2,10 @@
  * Command Palette — Cmd+K fuzzy search across actions, modes, models, skills.
  */
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import type { AppMode } from "../App";
 import { fuzzyFilter } from "../lib/fuzzy";
+import { useModels, useSkills } from "../hooks/useServerData";
 
 interface PaletteCommand {
   id: string;
@@ -38,6 +39,37 @@ export function CommandPalette({
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
+
+  // Pull live data so palette commands track the real registry. Pre-fix the
+  // palette had four hardcoded "Switch to Claude Opus 4.6" / etc. entries
+  // that silently drifted from the actual loaded models, and no way to
+  // activate a skill by name.
+  const { models: allModels } = useModels();
+  const { skills: allSkills } = useSkills();
+
+  const dynamicCommands: PaletteCommand[] = useMemo(() => {
+    const cmds: PaletteCommand[] = [];
+    for (const m of allModels) {
+      if (m.status !== "available") continue;
+      cmds.push({
+        id: `model-dyn-${m.id}`,
+        label: `Switch to ${m.name}`,
+        category: "Model",
+        action: () => onModelSwitch?.(m.name, m.provider, m.id),
+      });
+    }
+    for (const s of allSkills) {
+      cmds.push({
+        id: `skill-dyn-${s.name}`,
+        label: `Show skill: ${s.name}`,
+        category: "Skill",
+        // For now skills open the Skills view filtered to this skill. Future
+        // work: add a "Toggle skill on/off" action that drives activeSkills.
+        action: () => onModeChange("skills"),
+      });
+    }
+    return cmds;
+  }, [allModels, allSkills, onModelSwitch, onModeChange]);
 
   const commands: PaletteCommand[] = [
     // Modes
@@ -211,12 +243,22 @@ export function CommandPalette({
     },
   ];
 
+  // Static commands (modes, toggles, hardcoded curated model shortcuts)
+  // come first so users with the old mental model still land on the same
+  // entries; dynamic commands (every loaded model + every loaded skill)
+  // extend the surface. Empty query shows only the static list — the
+  // dynamic list would be overwhelming without a filter.
+  const allCommands = useMemo(
+    () => [...commands, ...dynamicCommands],
+    [commands, dynamicCommands],
+  );
+
   // Fuzzy scoring so "gocfg" → "Go to Config" and "vmem" → "View Memory"
   // work. Pre-fix this was a substring match on label + category, which
   // matched "Go to Config" from "go to config" and little else.
   const filtered = query
     ? fuzzyFilter(
-        commands,
+        allCommands,
         query,
         (c) => c.label,
         (c) => c.category,
