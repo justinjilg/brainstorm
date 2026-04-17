@@ -8,7 +8,7 @@
  * Skips: node_modules, dist, .git, build, .turbo, coverage, .next
  */
 
-import { readdirSync, statSync } from "node:fs";
+import { readdirSync, lstatSync } from "node:fs";
 import { createLogger } from "@brainst0rm/shared";
 
 const log = createLogger("indexer");
@@ -85,7 +85,11 @@ export async function indexProject(
       const fullPath = join(dir, entry);
       let stat;
       try {
-        stat = statSync(fullPath);
+        // lstat so symlinks don't get followed — a project with a cyclic
+        // symlink (e.g. workspace-internal link back to the repo root)
+        // would otherwise push the same realpath repeatedly and blow up
+        // memory / loop until maxFiles was hit.
+        stat = lstatSync(fullPath);
       } catch {
         continue;
       }
@@ -183,7 +187,11 @@ export function indexProjectSync(
       const fullPath = join(dir, entry);
       let stat;
       try {
-        stat = statSync(fullPath);
+        // lstat so symlinks don't get followed — a project with a cyclic
+        // symlink (e.g. workspace-internal link back to the repo root)
+        // would otherwise push the same realpath repeatedly and blow up
+        // memory / loop until maxFiles was hit.
+        stat = lstatSync(fullPath);
       } catch {
         continue;
       }
