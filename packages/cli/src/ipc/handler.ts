@@ -68,6 +68,14 @@ const ConversationsMessagesParams = z.object({
 
 const ChatStreamParams = z.object({
   message: z.string().min(1),
+  // conversationId and sessionId are aliases from the renderer's perspective —
+  // the desktop app calls this "conversationId" (one per sidebar entry), the
+  // backend calls it "sessionId" (the agent-loop session key). Either is
+  // accepted; conversationId wins if both are sent. Pre-fix the renderer
+  // sent conversationId and Zod stripped it (.strip()), so every turn
+  // opened a brand-new session and the sidebar "same conversation" was
+  // an illusion.
+  conversationId: z.string().optional(),
   sessionId: z.string().optional(),
   modelId: z.string().optional(),
   role: z.string().optional(),
@@ -543,16 +551,69 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
         }
 
         abortController = new AbortController();
-        const chatSessionId = chatParams.sessionId ?? `session-${Date.now()}`;
+        // Prefer an explicit conversation id from the renderer. Fall back to
+        // sessionId (HTTP clients / tests), then to a fresh per-turn id.
+        const chatSessionId =
+          chatParams.conversationId ??
+          chatParams.sessionId ??
+          `session-${Date.now()}`;
         const costTracker = new ChatCT(ctx.db, ctx.config.budget);
 
         sendEvent(req.id, "session", { sessionId: chatSessionId });
 
-        // Build messages array — user message
-        const chatMessages = [
-          { role: "user" as const, content: chatParams.message },
-        ];
+        // Load prior messages for this conversation so the model sees the
+        // full context instead of treating every turn as a fresh session.
+        // We only load when the caller supplied a concrete conversationId/
+        // sessionId — for an auto-generated id there's nothing to rehydrate.
+        const chatMessages: Array<{
+          role: "user" | "assistant" | "system";
+          content: string;
+        }> = [];
+        if (chatParams.conversationId || chatParams.sessionId) {
+          try {
+            const { MessageRepository } = dbModule;
+            const msgRepo = new MessageRepository(ctx.db);
+            const prior = msgRepo.listBySession(chatSessionId);
+            for (const m of prior) {
+              if (
+                m.role === "user" ||
+                m.role === "assistant" ||
+                m.role === "system"
+              ) {
+                chatMessages.push({ role: m.role, content: m.content });
+              }
+            }
+          } catch {
+            // If the repo read fails, fall through with just the new turn.
+            // Better to drop history than fail the turn outright.
+          }
+        }
+        chatMessages.push({ role: "user", content: chatParams.message });
 
+        // Persist the session row (INSERT OR IGNORE; keeps first project_path
+        // if the row already exists) and the new user message BEFORE the
+        // model runs. Without this the next turn's listBySession finds
+        // nothing and the conversation-history rehydration above is a no-op.
+        try {
+          ctx.db
+            .prepare(
+              "INSERT OR IGNORE INTO sessions (id, project_path) VALUES (?, ?)",
+            )
+            .run(chatSessionId, ctx.projectPath);
+          const { MessageRepository } = dbModule;
+          const writeRepo = new MessageRepository(ctx.db);
+          writeRepo.create(
+            chatSessionId,
+            "user",
+            chatParams.message,
+            chatParams.modelId,
+          );
+        } catch {
+          /* DB write failure — continue the turn; best-effort persistence */
+        }
+
+        let assistantText = "";
+        let assistantModelId: string | undefined;
         try {
           for await (const event of runAgentLoop(chatMessages, {
             config: ctx.config,
@@ -566,7 +627,13 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
             preferredModelId: chatParams.modelId,
             signal: abortController.signal,
           })) {
-            sendEvent(req.id, (event as any).type ?? "event", event);
+            const e = event as any;
+            if (e.type === "text-delta" && typeof e.delta === "string") {
+              assistantText += e.delta;
+            } else if (e.type === "routing" && e.model?.id) {
+              assistantModelId = e.model.id;
+            }
+            sendEvent(req.id, e.type ?? "event", event);
           }
         } catch (err) {
           if (err instanceof Error && err.name === "AbortError") {
@@ -575,6 +642,24 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
             sendEvent(req.id, "error", {
               error: err instanceof Error ? err.message : String(err),
             });
+          }
+        }
+
+        // Persist the assistant reply. On abort we persist whatever text
+        // streamed before the abort — that's the user's conversation history
+        // even if it's incomplete.
+        if (assistantText) {
+          try {
+            const { MessageRepository } = dbModule;
+            const writeRepo = new MessageRepository(ctx.db);
+            writeRepo.create(
+              chatSessionId,
+              "assistant",
+              assistantText,
+              assistantModelId ?? chatParams.modelId,
+            );
+          } catch {
+            /* best-effort */
           }
         }
 

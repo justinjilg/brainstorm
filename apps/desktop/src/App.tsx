@@ -90,7 +90,11 @@ export function App() {
 
   // Server connection + data
   const serverHealth = useServerHealth();
-  const { conversations, create: createConversation } = useConversations();
+  // Scope conversations to the active project — list shows only project-
+  // matching conversations, create files new ones under it.
+  const { conversations, create: createConversation } = useConversations({
+    projectPath: currentProject,
+  });
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
