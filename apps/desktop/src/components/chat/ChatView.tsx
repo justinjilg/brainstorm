@@ -37,6 +37,10 @@ export function ChatView({
   // Forward every raw stream event up to App.tsx, which feeds the Trace
   // view's timeline. Pre-fix this prop was explicitly discarded
   // (`void _onAgentEvent`), making Trace mode permanently empty.
+  //
+  // Also thread conversationId so the hook rehydrates message history on
+  // sidebar switches — without it, the transcript from the previous
+  // conversation stayed visible under the new conversation's header.
   const {
     messages,
     streamingText,
@@ -48,7 +52,7 @@ export function ChatView({
     contextPercent,
     send,
     abort,
-  } = useChat({ onEvent: onAgentEvent });
+  } = useChat({ onEvent: onAgentEvent, conversationId });
 
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
