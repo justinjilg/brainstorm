@@ -9,9 +9,9 @@
  *
  * The splash sits over the shell until the first `backend-ready` signal.
  * Kept deliberately minimal — no spinner stock-art, just the mark + a
- * typographic "Starting Brainstorm…" line and the Catppuccin Mocha
- * palette. The animate-pulse-glow pulls its own weight as the "alive"
- * signal.
+ * typographic "Starting Brainstorm…" line in the BR-parity palette. The
+ * animate-pulse-glow on the spark node pulls its own weight as the
+ * "alive" signal.
  */
 
 export function BootSplash() {
@@ -19,12 +19,12 @@ export function BootSplash() {
     <div
       data-testid="boot-splash"
       className="flex flex-col items-center justify-center h-screen w-screen select-none"
-      style={{ background: "var(--ctp-crust)" }}
+      style={{ background: "var(--ink-1)" }}
     >
-      {/* Mark — rendered inline so we can animate its spark node. The
-          same asset is committed at /public/brainstorm.svg for the
-          favicon. Spark node breathes at 2s via animate-pulse-glow so
-          the splash reads as alive, not frozen. */}
+      {/* Mark — rendered inline so we can animate its spark node. The same
+          asset is committed at /public/brainstorm.svg for the favicon.
+          Spark node breathes at 2s via animate-pulse-glow so the splash
+          reads as alive, not frozen. */}
       <svg
         viewBox="0 0 64 64"
         width={96}
@@ -32,13 +32,13 @@ export function BootSplash() {
         fill="none"
         aria-label="Brainstorm"
       >
-        <circle cx="32" cy="20" r="9" fill="#cba6f7" fillOpacity="0.12" />
-        <circle cx="32" cy="20" r="6.5" fill="#cba6f7" fillOpacity="0.18" />
+        <circle cx="32" cy="20" r="9" fill="#e8ecf4" fillOpacity="0.08" />
+        <circle cx="32" cy="20" r="6.5" fill="#e8ecf4" fillOpacity="0.14" />
         <path
           d="M32 20 L20 40 L32 50 L44 40 Z"
-          stroke="#cba6f7"
+          stroke="#e8ecf4"
           strokeWidth="1.25"
-          strokeOpacity="0.55"
+          strokeOpacity="0.5"
           strokeLinejoin="round"
         />
         <line
@@ -46,7 +46,7 @@ export function BootSplash() {
           y1="40"
           x2="44"
           y2="40"
-          stroke="#bac2de"
+          stroke="#b2b7c2"
           strokeWidth="1"
           strokeOpacity="0.3"
         />
@@ -54,41 +54,41 @@ export function BootSplash() {
           cx="20"
           cy="40"
           r="2.75"
-          fill="#181825"
-          stroke="#bac2de"
+          fill="#0c0d10"
+          stroke="#b2b7c2"
           strokeWidth="1.25"
         />
         <circle
           cx="44"
           cy="40"
           r="2.75"
-          fill="#181825"
-          stroke="#bac2de"
+          fill="#0c0d10"
+          stroke="#b2b7c2"
           strokeWidth="1.25"
         />
         <circle
           cx="32"
           cy="50"
           r="2.75"
-          fill="#181825"
-          stroke="#bac2de"
+          fill="#0c0d10"
+          stroke="#b2b7c2"
           strokeWidth="1.25"
         />
         <circle
           cx="32"
           cy="20"
           r="3.75"
-          fill="#cba6f7"
+          fill="#e8ecf4"
           className="animate-pulse-glow"
         />
       </svg>
 
       <div
-        className="mt-6"
+        className="mt-6 font-display"
         style={{
-          fontSize: "var(--text-xl, 1.25rem)",
-          fontWeight: 600,
-          color: "var(--ctp-text)",
+          fontSize: "var(--text-xl)",
+          fontWeight: 500,
+          color: "var(--bone)",
           letterSpacing: "-0.01em",
         }}
       >
@@ -98,8 +98,8 @@ export function BootSplash() {
         className="mt-2 font-mono"
         style={{
           fontSize: "var(--text-2xs)",
-          color: "var(--ctp-overlay0)",
-          letterSpacing: "0.08em",
+          color: "var(--bone-mute)",
+          letterSpacing: "0.12em",
           textTransform: "uppercase",
         }}
       >
