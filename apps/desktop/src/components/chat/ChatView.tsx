@@ -139,19 +139,24 @@ export function ChatView({
             >
               <div className="text-center animate-fade-in">
                 <div
-                  className="tracking-[0.3em] uppercase font-semibold mb-3"
+                  className="font-display mb-2"
                   style={{
-                    fontSize: "var(--text-lg)",
-                    color: "var(--ctp-overlay1)",
+                    fontSize: "var(--text-3xl)",
+                    fontWeight: 460,
+                    letterSpacing: "-0.02em",
+                    color: "var(--bone)",
+                    fontVariationSettings: "'opsz' 96, 'SOFT' 30",
                   }}
                 >
                   Brainstorm
                 </div>
                 <div
-                  className="mb-8"
+                  className="mb-8 font-mono"
                   style={{
-                    fontSize: "var(--text-sm)",
-                    color: "var(--ctp-overlay0)",
+                    fontSize: "var(--text-2xs)",
+                    color: "var(--bone-mute)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.14em",
                   }}
                 >
                   Multi-model agent orchestration
