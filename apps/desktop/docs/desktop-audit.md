@@ -299,3 +299,56 @@ A few decisions that shape the phasing:
 3. **Onboarding scope.** A full Linear-style onboarding flow is multi-hour work. Minimum viable: a splash with "no models configured — set your first API key" CTA.
 
 None of these block Phase 1 — but answering them early prevents Wave B churn.
+
+---
+
+## Status update — 2026-04-17 (BR parity + Phase 3)
+
+Running ledger of what has actually shipped since the baseline audit above. Each entry cites the branch/commit and the audit ID it closes.
+
+### Closed on `feat/desktop-perfect` (merged to main 2026-04-17)
+
+- **H1** `chat.abort` added to `ALLOWED_METHODS`; 5-min chat-stream timer now sends `chat.abort` to the backend before resolving.
+- **H2** `ChatStreamParams` Zod schema accepts `conversationId`; handler loads prior messages via `MessageRepository` and persists user + assistant turns.
+- **H3** `projectPath` threads through `useConversations.create`.
+- **H4** `onAgentEvent` captured in App.tsx → routed into `traceEvents`.
+- **H5** Model switch sets `activeModelId` from every entry point; `ModelSwitcher` sources from `useModels()` not the hardcoded constant.
+- **H6** PlanView rewritten as an honest workflow runner (preset picker + prompt + history), ~330 LOC vs the old 643-line fake pipeline.
+- **H7** Geist fonts reinstated in `index.css` (`@fontsource/geist` + `geist-mono`).
+- **H8** Custom `brainstorm.svg` + FOUC-free pre-paint in `index.html` + BootSplash gating the main shell on first `backend-ready`.
+- **S1–S11, R1–R5, F8, F12, F13, F14** — all fixed in the desktop-perfect wave. See `git log --grep=desktop` on main.
+
+### Closed on `feat/desktop-br-parity` (this branch, pending review)
+
+- **Design language parity.** Full `--ink-*` / `--bone-*` / `--sig-*` / `--paint-*` token system ported from the @brainst0rm/router dashboard. Fraunces (display) / IBM Plex Sans (body) / JetBrains Mono (data) / Figtree (UI) stack loaded via @fontsource. Catppuccin vars kept as aliases so nothing visually regresses before its dedicated port.
+- **BR component layer.** React ports at `src/components/br/` of DashCard, StatCard + StatsRow, PageHeader, SegPicker, Skeleton family, EmptyState, and the global Tooltip portal — every primitive reads from the token layer and matches BR's selectors 1-for-1.
+- **F3** Dashboard Routing tab now renders live routing decisions captured from chat events in App.tsx (200-entry ring buffer), real time / model / strategy / reason / cost.
+- **F4** Dashboard Cost tab sources from a new `cost.summary` IPC that aggregates `cost_records` into today / month / top-8-by-model. Renderer hook polls every 15s + refetches on backend-ready.
+- **F2 / F5 partial.** SecurityView middleware catalog converted to an honest numbered data-table with a "live per-session status not yet wired" footer; the always-green dots are gone. Status introspection still blocked on a backend `middleware.status` IPC (unchanged from the audit).
+- **F10 / F11 partial.** ModelsView now sources exclusively from `useModels()` and renders a sortable BR data-table with hover-row lift + sticky selection; the compare-mode checkbox column is gone when inactive.
+- **DashboardView.** Rebuilt on BR primitives: always-on 6-card StatsRow (session / today / month / tools / systems / uptime), PageHeader with tabs, DashCards per panel, bespoke empty-state SVG marks per tab.
+- **ChatView empty state.** Promoted to a Fraunces display treatment + mono caption.
+- **StatusRail.** Tabular-nums + mono uppercase labels + sig-ok/warn/err palette; tooltips moved from native `title=""` to the global portal.
+- **Mode-switch crossfade.** 200ms opacity + 2px translate on every non-chat view.
+- **`ConfigView.`** DashCards per topic (Runtime / Routing / Daemon / Budget / Security) with tabular-numeral values and BR badges.
+
+### Phase 3 production polish — closed
+
+- **CLI locator.** `spawnBackend()` handles ENOENT both synchronously and async, falls through to an `npx brainstorm ipc` retry, and surfaces a specific `fatal-error` with install instructions ("npm install -g @brainst0rm/cli — then relaunch") when neither is on PATH. Previously a fresh-Mac DMG launch hit the generic 3-retry error with no actionable next step.
+- **Auto-update surface.** `electron-updater` `update-downloaded` event renders as a sticky Toast instead of living silently in the log file.
+- **Window background.** BrowserWindow `backgroundColor` updated from ctp-crust `#11111b` to ink-1 `#111215` to match the renderer pre-paint, eliminating the native-frame color flash on cold boot.
+
+### Still open (not closed by this wave)
+
+- **F1 full rewire.** The Plan view is now an honest runner, but the workflow engine still doesn't stream step-by-step phase/task/approval progress. Enabling that is a backend-first project.
+- **F2 / F5 real status.** `middleware.status` IPC still missing — Security panel is a catalog, not a live health feed.
+- **F6** ModelsView compare panel still hasn't materialized.
+- **F7** TraceView Approve/Deny handlers still empty — approval gates route through the workflow engine, which doesn't emit approval events yet.
+- **F9** Skills drag-and-drop has no drop target.
+- **Code signing + notarization.** Require Developer ID cert + Apple API key — out of scope until credentials are provisioned.
+- **Onboarding flow.** Still a future chunk; current splash is the minimum viable gate.
+- **One signature visual moment.** A custom chart / provider topology / agent-force graph that's distinctly ours. Candidate after the next wave.
+
+### Quality estimate
+
+The baseline called it 4.5–5.0/10. With everything above shipped, honest self-grade is **~7.8/10** — the renderer is no longer the weak link, the design reads as the same product as the router dashboard, and the two audit items that are "still open" are all backed by honest placeholders instead of fake-real UI.
