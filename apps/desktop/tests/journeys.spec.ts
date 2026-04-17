@@ -26,7 +26,9 @@ test.describe("E2E Journeys — Complex multi-step user workflows", () => {
       { mode: "memory", marker: "tier-all" },
       { mode: "skills", marker: `skill-row-${MOCK_SKILLS[0].name}` },
       { mode: "security", marker: "run-red-team" },
-      { mode: "workflows", marker: "new-workflow" },
+      // WorkflowsView renders `workflow-preset-*` rows for each preset;
+      // pick the first seeded one from the mock.
+      { mode: "workflows", marker: "workflow-preset-spec-to-pr" },
     ];
 
     for (const { mode, marker } of modes) {

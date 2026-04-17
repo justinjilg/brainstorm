@@ -259,10 +259,18 @@ export function Navigator({
       >
         <div
           data-testid="kairos-widget"
+          role="button"
+          tabIndex={0}
+          onClick={() => onModeChange("config")}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") onModeChange("config");
+          }}
+          title="KAIROS — click to view config & state"
           className="flex items-center justify-between px-3 py-2 rounded-xl"
           style={{
             background: "var(--ctp-surface0)",
             border: "1px solid var(--border-subtle)",
+            cursor: "pointer",
           }}
         >
           <div className="flex items-center gap-2">
@@ -290,7 +298,12 @@ export function Navigator({
           </div>
           {kairosStatus === "stopped" ? (
             <button
-              onClick={onKairosStart}
+              onClick={(e) => {
+                // The wrapping widget opens config on click; don't trigger
+                // that when the user hits Start/Stop.
+                e.stopPropagation();
+                onKairosStart();
+              }}
               data-testid="kairos-start"
               className="interactive text-[10px] px-2 py-0.5 rounded"
               style={{
@@ -302,7 +315,10 @@ export function Navigator({
             </button>
           ) : (
             <button
-              onClick={onKairosStop}
+              onClick={(e) => {
+                e.stopPropagation();
+                onKairosStop();
+              }}
               data-testid="kairos-stop"
               className="interactive text-[10px] px-2 py-0.5 rounded"
               style={{

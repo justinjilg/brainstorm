@@ -4,6 +4,10 @@ import { setupAllMocks } from "./fixtures/mocks";
 // ── Navigator ────────────────────────────────────────────────────────
 
 test.describe("Navigator", () => {
+  test.beforeEach(async ({ page }) => {
+    await setupAllMocks(page);
+  });
+
   test("project selector expands and collapses", async ({ page }) => {
     await page.goto("/");
     const selector = page.getByTestId("project-selector");
@@ -251,6 +255,10 @@ test.describe("Overlays", () => {
 // ── Dashboard ────────────────────────────────────────────────────────
 
 test.describe("Dashboard", () => {
+  test.beforeEach(async ({ page }) => {
+    await setupAllMocks(page);
+  });
+
   test("tab switching works", async ({ page }) => {
     await page.goto("/");
     await page.getByTestId("mode-dashboard").click();
@@ -343,6 +351,10 @@ test.describe("Memory", () => {
 // ── Skills ───────────────────────────────────────────────────────────
 
 test.describe("Skills", () => {
+  test.beforeEach(async ({ page }) => {
+    await setupAllMocks(page);
+  });
+
   test("skills view renders without crash", async ({ page }) => {
     await page.goto("/");
     await page.getByTestId("mode-skills").click();
@@ -380,6 +392,10 @@ test.describe("Security", () => {
 // ── Workflows ────────────────────────────────────────────────────────
 
 test.describe("Workflows", () => {
+  test.beforeEach(async ({ page }) => {
+    await setupAllMocks(page);
+  });
+
   test("presets load from backend", async ({ page }) => {
     await page.goto("/");
     await page.getByTestId("mode-workflows").click();
