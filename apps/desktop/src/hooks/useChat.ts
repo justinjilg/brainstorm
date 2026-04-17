@@ -18,6 +18,13 @@ export interface ChatMessage {
   timestamp: number;
   toolCalls?: ToolCallInfo[];
   reasoning?: string;
+  /**
+   * True if the assistant message was cut short by a user abort. UI should
+   * render this with a "— stopped" marker so the user knows the response
+   * is incomplete (previously partial outputs were silently appended as if
+   * complete).
+   */
+  aborted?: boolean;
 }
 
 export interface ToolCallInfo {
@@ -107,6 +114,7 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
       let model: string | undefined;
       let provider: string | undefined;
       let reasoning: string | undefined;
+      let aborted = false;
       const toolCalls: ToolCallInfo[] = [];
 
       try {
@@ -235,8 +243,11 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
           controller.signal,
         );
       } catch (err: unknown) {
-        if (err instanceof Error && err.name === "AbortError") {
-          // User aborted
+        if (
+          err instanceof Error &&
+          (err.name === "AbortError" || controller.signal.aborted)
+        ) {
+          aborted = true;
         } else {
           const errMsg: ChatMessage = {
             id: `msg-${Date.now()}-err`,
@@ -248,7 +259,10 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
         }
       }
 
-      // Finalize assistant message
+      // Finalize assistant message. If the turn was aborted mid-stream we
+      // still persist whatever text arrived (it's real content the user
+      // saw), but flag it so the UI can render "— stopped" and the user
+      // doesn't mistake a truncated reply for a complete one.
       if (accumulatedText) {
         const assistantMsg: ChatMessage = {
           id: `msg-${Date.now()}-assistant`,
@@ -260,6 +274,7 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
           timestamp: Date.now(),
           toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
           reasoning,
+          aborted: aborted || undefined,
         };
         setMessages((prev) => [...prev, assistantMsg]);
       }

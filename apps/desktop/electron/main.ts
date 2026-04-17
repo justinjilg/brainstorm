@@ -263,6 +263,17 @@ function registerIPC(): void {
       const timer = setTimeout(() => {
         pending.delete(doneKey);
         pendingTimers.delete(doneKey);
+        // Tell the backend to abort the stream before we resolve our
+        // promise. Pre-fix we just unfroze the UI here — the backend
+        // kept generating (and billing) until the turn finished naturally,
+        // and any tool results emitted afterwards leaked into the NEXT
+        // user message since nothing cleared the handler's abortController.
+        const abortReqId = `abort-after-timeout-${nextId++}`;
+        sendToBackend({
+          id: abortReqId,
+          method: "chat.abort",
+          params: {},
+        });
         // Send error to renderer so UI unfreezes
         for (const win of BrowserWindow.getAllWindows()) {
           win.webContents.send("chat-event", {
