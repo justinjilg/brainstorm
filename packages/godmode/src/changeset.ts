@@ -156,21 +156,40 @@ export async function approveChangeSet(
 
     try {
       // Timeout executor to prevent indefinite hangs (e.g., unresponsive
-      // GitHub API).
+      // GitHub API). Caller-owns the timer so we can clear it after the
+      // race — an AbortSignal.timeout() handle would keep firing and the
+      // listener would call reject() on an already-resolved promise,
+      // retaining the closure until the timer expires.
       const EXECUTOR_TIMEOUT_MS = 30_000;
-      const executorTimeout = AbortSignal.timeout(EXECUTOR_TIMEOUT_MS);
-      const result = await Promise.race([
-        executor(cs),
-        new Promise<never>((_, reject) => {
-          executorTimeout.addEventListener("abort", () =>
-            reject(
-              new Error(
-                `ChangeSet executor timed out after ${EXECUTOR_TIMEOUT_MS / 1000}s`,
-              ),
-            ),
-          );
-        }),
-      ]);
+      const timeoutController = new AbortController();
+      const timeoutTimer = setTimeout(
+        () => timeoutController.abort(),
+        EXECUTOR_TIMEOUT_MS,
+      );
+      let result: {
+        success: boolean;
+        message: string;
+        rollbackData?: unknown;
+      };
+      try {
+        result = await Promise.race([
+          executor(cs),
+          new Promise<never>((_, reject) => {
+            timeoutController.signal.addEventListener(
+              "abort",
+              () =>
+                reject(
+                  new Error(
+                    `ChangeSet executor timed out after ${EXECUTOR_TIMEOUT_MS / 1000}s`,
+                  ),
+                ),
+              { once: true },
+            );
+          }),
+        ]);
+      } finally {
+        clearTimeout(timeoutTimer);
+      }
       if (result.success) {
         cs.status = "executed";
         cs.executedAt = Date.now();
