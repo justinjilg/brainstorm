@@ -19,7 +19,7 @@ interface CommandPaletteProps {
   onModeChange: (mode: AppMode) => void;
   onToggleSidebar: () => void;
   onToggleDetail: () => void;
-  onModelSwitch?: (name: string, provider: string) => void;
+  onModelSwitch?: (name: string, provider: string, id?: string) => void;
   onRoleSwitch?: (roleId: string | null) => void;
   onNewConversation?: () => void;
 }
@@ -121,29 +121,36 @@ export function CommandPalette({
     },
 
     // Models
+    // Model IDs pass through to App.setActiveModelId so the palette actually
+    // changes the routed model, not just the StatusRail display name. These
+    // ids match the canonical model-registry keys; if a model isn't present
+    // in the loaded registry the router will fall back to its default.
     {
       id: "model-opus",
       label: "Switch to Claude Opus 4.6",
       category: "Model",
-      action: () => onModelSwitch?.("Claude Opus 4.6", "anthropic"),
+      action: () =>
+        onModelSwitch?.("Claude Opus 4.6", "anthropic", "claude-opus-4-6"),
     },
     {
       id: "model-sonnet",
       label: "Switch to Claude Sonnet 4.6",
       category: "Model",
-      action: () => onModelSwitch?.("Claude Sonnet 4.6", "anthropic"),
+      action: () =>
+        onModelSwitch?.("Claude Sonnet 4.6", "anthropic", "claude-sonnet-4-6"),
     },
     {
       id: "model-gpt",
       label: "Switch to GPT-5.4",
       category: "Model",
-      action: () => onModelSwitch?.("GPT-5.4", "openai"),
+      action: () => onModelSwitch?.("GPT-5.4", "openai", "gpt-5.4"),
     },
     {
       id: "model-gemini",
       label: "Switch to Gemini 3.1 Pro",
       category: "Model",
-      action: () => onModelSwitch?.("Gemini 3.1 Pro", "google"),
+      action: () =>
+        onModelSwitch?.("Gemini 3.1 Pro", "google", "gemini-3.1-pro"),
     },
 
     // Roles

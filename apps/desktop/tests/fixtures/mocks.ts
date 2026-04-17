@@ -85,6 +85,35 @@ export const MOCK_SKILLS = [
   },
 ];
 
+// Model rows used by `model-row-*` test-ids. Minimal shape — ModelsView
+// only reads id/name/provider/status + pricing + capabilities tiers.
+export const MOCK_MODELS = [
+  {
+    id: "claude-opus-4-6",
+    name: "Claude Opus 4.6",
+    provider: "anthropic",
+    status: "available",
+    capabilities: { qualityTier: 1, speedTier: 2 },
+    pricing: { inputPer1MTokens: 15, outputPer1MTokens: 75 },
+  },
+  {
+    id: "claude-sonnet-4-6",
+    name: "Claude Sonnet 4.6",
+    provider: "anthropic",
+    status: "available",
+    capabilities: { qualityTier: 2, speedTier: 2 },
+    pricing: { inputPer1MTokens: 3, outputPer1MTokens: 15 },
+  },
+  {
+    id: "gpt-5.4",
+    name: "GPT-5.4",
+    provider: "openai",
+    status: "available",
+    capabilities: { qualityTier: 2, speedTier: 2 },
+    pricing: { inputPer1MTokens: 5, outputPer1MTokens: 20 },
+  },
+];
+
 export const MOCK_CONVERSATIONS = [
   {
     id: "conv-1",
@@ -261,7 +290,7 @@ export async function setupAllMocks(page: Page) {
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: envelope([]),
+      body: envelope(MOCK_MODELS),
     });
   });
 }

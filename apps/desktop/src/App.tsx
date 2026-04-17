@@ -363,9 +363,13 @@ export function App() {
           {mode === "models" && (
             <ErrorBoundary fallbackLabel="Models">
               <ModelsView
-                onModelSelect={(_id, name, prov) => {
+                onModelSelect={(id, name, prov) => {
+                  // Set the routing id too, not just the display name. Without
+                  // setActiveModelId, ChatView keeps sending the prior modelId
+                  // to the router and the status rail "switch" is cosmetic.
                   setActiveModel(name);
                   setActiveProvider(prov);
+                  setActiveModelId(id);
                   setMode("chat");
                 }}
               />
@@ -450,9 +454,14 @@ export function App() {
         }}
         onToggleSidebar={() => setSidebarCollapsed((prev) => !prev)}
         onToggleDetail={() => setDetailOpen((prev) => !prev)}
-        onModelSwitch={(name, provider) => {
+        onModelSwitch={(name, provider, id) => {
+          // If the palette entry carries a concrete model id, route future
+          // chats to it. Palettes that only know the display name fall back
+          // to a lookup against the loaded model list downstream (future
+          // work); for now, no id → cosmetic-only like before.
           setActiveModel(name);
           setActiveProvider(provider);
+          if (id) setActiveModelId(id);
         }}
         onRoleSwitch={(roleId) => setActiveRole(roleId)}
         onNewConversation={async () => {
