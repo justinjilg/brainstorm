@@ -132,16 +132,29 @@ export async function runProbe(
       }
     });
 
-    // Race against timeout (AbortSignal auto-cleans the timer on GC)
-    const probeTimeout = AbortSignal.timeout(timeout);
-    await Promise.race([
-      runPromise,
-      new Promise((_, reject) => {
-        probeTimeout.addEventListener("abort", () =>
-          reject(new Error(`Probe timed out after ${timeout}ms`)),
-        );
-      }),
-    ]);
+    // Race against timeout. Caller-owns the timer so we can clear it after
+    // the race — otherwise the abort listener stays attached and fires on an
+    // already-resolved promise for every probe that finishes under the
+    // timeout, calling reject() on nothing and retaining the closure.
+    const probeTimeoutController = new AbortController();
+    const probeTimeoutTimer = setTimeout(
+      () => probeTimeoutController.abort(),
+      timeout,
+    );
+    try {
+      await Promise.race([
+        runPromise,
+        new Promise((_, reject) => {
+          probeTimeoutController.signal.addEventListener(
+            "abort",
+            () => reject(new Error(`Probe timed out after ${timeout}ms`)),
+            { once: true },
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(probeTimeoutTimer);
+    }
 
     const durationMs = Date.now() - startTime;
     const cost = costTracker.getSessionCost();
