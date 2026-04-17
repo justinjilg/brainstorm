@@ -5,19 +5,20 @@
  * Up/Down arrow navigation cycles through previous inputs.
  */
 
-import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
+import { existsSync, readFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
+import { atomicWriteFile } from "@brainst0rm/shared";
 
-const HISTORY_DIR = join(homedir(), '.brainstorm');
-const HISTORY_FILE = join(HISTORY_DIR, 'input-history.json');
+const HISTORY_DIR = join(homedir(), ".brainstorm");
+const HISTORY_FILE = join(HISTORY_DIR, "input-history.json");
 const MAX_MEMORY = 100;
 const MAX_PERSIST = 500;
 
 export class InputHistory {
   private entries: string[] = [];
   private cursor = -1;
-  private draft = '';
+  private draft = "";
 
   constructor() {
     this.load();
@@ -31,7 +32,10 @@ export class InputHistory {
     if (!trimmed) return;
 
     // Don't add if identical to most recent
-    if (this.entries.length > 0 && this.entries[this.entries.length - 1] === trimmed) {
+    if (
+      this.entries.length > 0 &&
+      this.entries[this.entries.length - 1] === trimmed
+    ) {
       this.resetCursor();
       return;
     }
@@ -58,7 +62,8 @@ export class InputHistory {
       this.draft = currentInput;
     }
 
-    const nextCursor = this.cursor === -1 ? this.entries.length - 1 : this.cursor - 1;
+    const nextCursor =
+      this.cursor === -1 ? this.entries.length - 1 : this.cursor - 1;
     if (nextCursor < 0) return null;
 
     this.cursor = nextCursor;
@@ -86,7 +91,7 @@ export class InputHistory {
    */
   resetCursor(): void {
     this.cursor = -1;
-    this.draft = '';
+    this.draft = "";
   }
 
   /**
@@ -99,7 +104,7 @@ export class InputHistory {
   private load(): void {
     try {
       if (existsSync(HISTORY_FILE)) {
-        const data = JSON.parse(readFileSync(HISTORY_FILE, 'utf-8'));
+        const data = JSON.parse(readFileSync(HISTORY_FILE, "utf-8"));
         if (Array.isArray(data)) {
           this.entries = data.slice(-MAX_MEMORY);
         }
@@ -118,7 +123,7 @@ export class InputHistory {
       let fullHistory: string[] = [];
       try {
         if (existsSync(HISTORY_FILE)) {
-          const data = JSON.parse(readFileSync(HISTORY_FILE, 'utf-8'));
+          const data = JSON.parse(readFileSync(HISTORY_FILE, "utf-8"));
           if (Array.isArray(data)) fullHistory = data;
         }
       } catch {
@@ -134,10 +139,12 @@ export class InputHistory {
       }
 
       const trimmed = merged.slice(-MAX_PERSIST);
-      // Atomic write: temp file + rename prevents corruption on crash
-      const tmpFile = HISTORY_FILE + '.tmp';
-      writeFileSync(tmpFile, JSON.stringify(trimmed), 'utf-8');
-      renameSync(tmpFile, HISTORY_FILE);
+      // atomicWriteFile uses a pid+uuid temp suffix so two CLI instances
+      // writing history simultaneously cannot clobber each other via the
+      // old shared ".tmp" path. A collision there previously left
+      // input-history.json corrupt and loadPersisted() silently reset
+      // entries to [], losing the user's history.
+      atomicWriteFile(HISTORY_FILE, JSON.stringify(trimmed));
     } catch {
       // Non-fatal — history is a convenience feature
     }
