@@ -24,6 +24,8 @@ import { ModelSwitcher } from "./components/ModelSwitcher";
 import { useServerHealth } from "./hooks/useServerHealth";
 import { useConversations } from "./hooks/useConversations";
 import { useKairos } from "./hooks/useKairos";
+import { useBackendReady } from "./hooks/useBackendReady";
+import { BootSplash } from "./components/BootSplash";
 
 export type AppMode =
   | "chat"
@@ -138,6 +140,16 @@ export function App() {
       }
     }
   }, []);
+
+  // Gate the main shell on a first-time backend-ready signal. Before this,
+  // every data hook fired its mount-time IPC call while the child process
+  // was still starting and surfaced "Failed to load X" banners for the
+  // first second. useBackendReady stays true across later crashes — those
+  // are handled by useBackendRecovery (refetch-only, no splash flash).
+  const backendReady = useBackendReady();
+  if (!backendReady) {
+    return <BootSplash />;
+  }
 
   return (
     <div
