@@ -26,8 +26,9 @@ import {
   StatCard,
   StatsRow,
 } from "../br";
+import { ProviderTopology } from "./ProviderTopology";
 
-export type DashboardTab = "tools" | "routing" | "cost";
+export type DashboardTab = "tools" | "routing" | "cost" | "topology";
 
 export interface RoutingDecision {
   id: string;
@@ -81,6 +82,11 @@ export function DashboardView({
               id: "routing",
               label: "Routing",
               testId: "dashboard-tab-routing",
+            },
+            {
+              id: "topology",
+              label: "Topology",
+              testId: "dashboard-tab-topology",
             },
             { id: "cost", label: "Cost", testId: "dashboard-tab-cost" },
           ]}
@@ -143,6 +149,9 @@ export function DashboardView({
           )}
           {activeTab === "routing" && (
             <RoutingPanel decisions={routingDecisions} />
+          )}
+          {activeTab === "topology" && (
+            <TopologyPanel decisions={routingDecisions} />
           )}
           {activeTab === "cost" && (
             <CostPanel
@@ -315,6 +324,20 @@ function ToolsPanel({
           </table>
         </div>
       )}
+    </DashCard>
+  );
+}
+
+// ── Topology panel ──────────────────────────────────────────────────
+
+function TopologyPanel({ decisions }: { decisions: RoutingDecision[] }) {
+  return (
+    <DashCard
+      eyebrow="CONSTELLATION"
+      title="Provider topology"
+      note="Each routing decision from the agent loop lights an edge from the Brainstorm hub to the chosen provider. Edge weight = share of recent decisions."
+    >
+      <ProviderTopology decisions={decisions} />
     </DashCard>
   );
 }
