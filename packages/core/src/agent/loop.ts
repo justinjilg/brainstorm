@@ -553,19 +553,35 @@ export async function* runAgentLoop(
 
     if (tokenEstimate > contextWindow * threshold) {
       try {
+        // Caller-owned timer + AbortController so the listener is cleaned
+        // up when compact() wins the race (the normal path). Previously an
+        // AbortSignal.timeout() handle retained the abort listener and
+        // fired reject() on an already-resolved promise 30s later, leaking
+        // the closure once per compaction.
         const COMPACTION_TIMEOUT_MS = 30_000;
-        const compactionTimeout = AbortSignal.timeout(COMPACTION_TIMEOUT_MS);
-        const compactionResult = await Promise.race([
-          options.compaction.compact({
-            contextWindow,
-            keepRecent: config.compaction?.keepRecent ?? 5,
-          }),
-          new Promise<never>((_, reject) => {
-            compactionTimeout.addEventListener("abort", () =>
-              reject(new Error("Compaction timeout")),
-            );
-          }),
-        ]);
+        const compactionTimeoutController = new AbortController();
+        const compactionTimeoutTimer = setTimeout(
+          () => compactionTimeoutController.abort(),
+          COMPACTION_TIMEOUT_MS,
+        );
+        let compactionResult;
+        try {
+          compactionResult = await Promise.race([
+            options.compaction.compact({
+              contextWindow,
+              keepRecent: config.compaction?.keepRecent ?? 5,
+            }),
+            new Promise<never>((_, reject) => {
+              compactionTimeoutController.signal.addEventListener(
+                "abort",
+                () => reject(new Error("Compaction timeout")),
+                { once: true },
+              );
+            }),
+          ]);
+        } finally {
+          clearTimeout(compactionTimeoutTimer);
+        }
         if (compactionResult.compacted) {
           yield {
             type: "compaction",
