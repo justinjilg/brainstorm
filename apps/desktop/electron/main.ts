@@ -219,6 +219,12 @@ const ALLOWED_METHODS = new Set([
   "security.redteam",
   "workflow.presets",
   "workflow.run",
+  // chat.abort signals the backend to stop an in-flight stream. Without
+  // this entry the allowlist rejected the call and the catch {} in
+  // ipc-client.ts swallowed the rejection — the Abort button in the UI
+  // flipped local state while the backend kept generating (and billing)
+  // until the 5-min main-process timeout fired. See docs/desktop-audit.md H1.
+  "chat.abort",
 ]);
 
 function registerIPC(): void {
