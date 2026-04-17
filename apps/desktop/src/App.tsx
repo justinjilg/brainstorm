@@ -26,6 +26,7 @@ import { useConversations } from "./hooks/useConversations";
 import { useKairos } from "./hooks/useKairos";
 import { useBackendReady } from "./hooks/useBackendReady";
 import { BootSplash } from "./components/BootSplash";
+import { useErrorToast } from "./hooks/useErrorToast";
 
 export type AppMode =
   | "chat"
@@ -78,6 +79,7 @@ export function App() {
   const traceIdCounter = useRef(0);
   const [fatalError, setFatalError] = useState<string | null>(null);
   const kairos = useKairos();
+  useErrorToast(kairos.error, "KAIROS");
 
   // Listen for fatal backend errors (e.g., 3-retry exhaustion)
   useEffect(() => {
@@ -94,9 +96,17 @@ export function App() {
   const serverHealth = useServerHealth();
   // Scope conversations to the active project — list shows only project-
   // matching conversations, create files new ones under it.
-  const { conversations, create: createConversation } = useConversations({
+  const {
+    conversations,
+    create: createConversation,
+    error: conversationsError,
+  } = useConversations({
     projectPath: currentProject,
   });
+  // Pipe hook errors to toasts so the user sees them no matter what view
+  // is mounted. Each hook exposes a stable `error` string — the helper
+  // dedupes via ref so the same error doesn't re-fire every render.
+  useErrorToast(conversationsError, "Conversations");
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
