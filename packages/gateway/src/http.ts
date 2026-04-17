@@ -29,15 +29,29 @@ export async function gatewayRequest(
       signal: AbortSignal.timeout(15_000),
     });
 
-    const bodyTimeout = AbortSignal.timeout(15_000);
-    const text = await Promise.race([
-      response.text(),
-      new Promise<never>((_, reject) => {
-        bodyTimeout.addEventListener("abort", () =>
-          reject(new Error("Response body read timed out")),
-        );
-      }),
-    ]);
+    // Own the body-read timeout so we can cancel it after the race
+    // resolves. The previous version attached a listener to an
+    // AbortSignal.timeout() handle and never removed it — after the body
+    // read won the race, the timer still fired 15s later and called
+    // reject() on a Promise that nothing was awaiting, producing an
+    // unhandled rejection plus a retained closure under load.
+    const bodyController = new AbortController();
+    const bodyTimer = setTimeout(() => bodyController.abort(), 15_000);
+    let text: string;
+    try {
+      text = await Promise.race([
+        response.text(),
+        new Promise<never>((_, reject) => {
+          bodyController.signal.addEventListener(
+            "abort",
+            () => reject(new Error("Response body read timed out")),
+            { once: true },
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(bodyTimer);
+    }
     let data: any;
     try {
       data = JSON.parse(text);
