@@ -137,44 +137,66 @@ export function useMemory() {
     setLoading(false);
   }, []);
 
-  const promote = useCallback(
-    async (id: string) => {
-      await request("memory.update", { id, tier: "system" });
-      refresh();
+  // Mutation wrapper: surface any IPC error via setError so the UI can
+  // render it, instead of swallowing and refreshing anyway (which made
+  // failed operations look identical to successful ones).
+  const mutate = useCallback(
+    async (op: () => Promise<unknown>, failureMsg: string) => {
+      try {
+        await op();
+        setError(null);
+        await refresh();
+        return true;
+      } catch (err) {
+        setError(
+          err instanceof Error ? `${failureMsg}: ${err.message}` : failureMsg,
+        );
+        return false;
+      }
     },
     [refresh],
+  );
+
+  const promote = useCallback(
+    (id: string) =>
+      mutate(
+        () => request("memory.update", { id, tier: "system" }),
+        "Failed to promote memory",
+      ),
+    [mutate],
   );
 
   const quarantine = useCallback(
-    async (id: string) => {
-      await request("memory.update", { id, tier: "quarantine" });
-      refresh();
-    },
-    [refresh],
+    (id: string) =>
+      mutate(
+        () => request("memory.update", { id, tier: "quarantine" }),
+        "Failed to quarantine memory",
+      ),
+    [mutate],
   );
 
   const demote = useCallback(
-    async (id: string) => {
-      await request("memory.update", { id, tier: "archive" });
-      refresh();
-    },
-    [refresh],
+    (id: string) =>
+      mutate(
+        () => request("memory.update", { id, tier: "archive" }),
+        "Failed to demote memory",
+      ),
+    [mutate],
   );
 
   const remove = useCallback(
-    async (id: string) => {
-      await request("memory.delete", { id });
-      refresh();
-    },
-    [refresh],
+    (id: string) =>
+      mutate(() => request("memory.delete", { id }), "Failed to delete memory"),
+    [mutate],
   );
 
   const create = useCallback(
-    async (name: string, content: string) => {
-      await request("memory.create", { name, content });
-      refresh();
-    },
-    [refresh],
+    (name: string, content: string) =>
+      mutate(
+        () => request("memory.create", { name, content }),
+        "Failed to create memory",
+      ),
+    [mutate],
   );
 
   useEffect(() => {

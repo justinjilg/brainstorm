@@ -21,17 +21,21 @@ export function useConversations(options: UseConversationsOptions = {}) {
   const { projectPath } = options;
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const convs = await request<Conversation[]>(
         "conversations.list",
         projectPath ? { project: projectPath } : undefined,
       );
       setConversations(convs);
-    } catch {
-      // Failed to load conversations
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to load conversations",
+      );
     }
     setLoading(false);
   }, [projectPath]);
@@ -48,11 +52,15 @@ export function useConversations(options: UseConversationsOptions = {}) {
           // to currentProject then couldn't find them.
           ...(projectPath ? { projectPath } : {}),
         });
+        setError(null);
         if (conv) {
           setConversations((prev) => [conv, ...prev]);
         }
         return conv;
-      } catch {
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "Failed to create conversation",
+        );
         return null;
       }
     },
@@ -66,5 +74,5 @@ export function useConversations(options: UseConversationsOptions = {}) {
   // via the CLI or another process while the child was down.
   useBackendRecovery(refresh);
 
-  return { conversations, loading, refresh, create };
+  return { conversations, loading, error, refresh, create };
 }
