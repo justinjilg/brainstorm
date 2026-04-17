@@ -27,6 +27,7 @@ import { useKairos } from "./hooks/useKairos";
 import { useBackendReady } from "./hooks/useBackendReady";
 import { BootSplash } from "./components/BootSplash";
 import { useErrorToast } from "./hooks/useErrorToast";
+import { useToast } from "./components/Toast";
 
 export type AppMode =
   | "chat"
@@ -87,16 +88,26 @@ export function App() {
   const kairos = useKairos();
   useErrorToast(kairos.error, "KAIROS");
 
-  // Listen for fatal backend errors (e.g., 3-retry exhaustion)
+  const toast = useToast();
+
+  // Listen for fatal backend errors (e.g., 3-retry exhaustion) and
+  // auto-update notifications. Both ride the same chat-event channel so
+  // we do a single listener instead of two.
   useEffect(() => {
     if (!("brainstorm" in window)) return;
     const unlisten = window.brainstorm!.onChatEvent((event: any) => {
       if (event.type === "fatal-error") {
         setFatalError(event.error ?? "Backend process failed permanently");
+      } else if (event.type === "update-available") {
+        toast.push(
+          `Brainstorm ${event.version ?? ""} downloaded — will install on quit.`.trim(),
+          "info",
+          0, // sticky until dismissed
+        );
       }
     });
     return unlisten;
-  }, []);
+  }, [toast]);
 
   // Server connection + data
   const serverHealth = useServerHealth();

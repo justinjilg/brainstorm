@@ -62,23 +62,66 @@ function sendToBackend(msg: Record<string, unknown>): void {
   }
 }
 
+/**
+ * Surface a fatal spawn failure to every renderer window. Used when the
+ * brainstorm CLI cannot be found (ENOENT) or the child exits before any
+ * stdio can be attached — e.g., a fresh-Mac DMG launch where the user
+ * never ran `npm install -g @brainst0rm/cli`. Renderer renders a
+ * prominent banner with install instructions.
+ */
+function notifyCliMissing(detail: string): void {
+  logToFile(`CLI locator: ${detail}`);
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send("chat-event", {
+      type: "fatal-error",
+      error: `Brainstorm CLI not found on PATH. Install with: npm install -g @brainst0rm/cli  —  then relaunch the app.\n(detail: ${detail})`,
+    });
+  }
+}
+
 function spawnBackend(): void {
   // Find brainstorm CLI — try global install first, then npx
   const cmd = process.platform === "win32" ? "brainstorm.cmd" : "brainstorm";
 
-  backend = spawn(cmd, ["ipc"], {
-    stdio: ["pipe", "pipe", "pipe"],
-    env: { ...process.env },
-  });
-
-  if (!backend.stdout || !backend.stdin) {
-    logToFile("Failed to capture backend stdio");
-    // Try npx fallback
-    backend = spawn("npx", ["brainstorm", "ipc"], {
+  try {
+    backend = spawn(cmd, ["ipc"], {
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env },
     });
+  } catch (err) {
+    // spawn() can throw synchronously if the cmd is utterly missing in
+    // some environments; handle that alongside the async 'error' path.
+    notifyCliMissing(err instanceof Error ? err.message : String(err));
+    return;
   }
+
+  // If the primary spawn emits ENOENT asynchronously, fall through to an
+  // npx retry. The retry is best-effort — a packaged DMG on a brand-new
+  // Mac may not have npm installed at all.
+  backend.once("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "ENOENT") {
+      logToFile(`brainstorm CLI not on PATH — trying npx fallback`);
+      try {
+        backend = spawn("npx", ["brainstorm", "ipc"], {
+          stdio: ["pipe", "pipe", "pipe"],
+          env: { ...process.env },
+        });
+        backend.once("error", (npxErr: NodeJS.ErrnoException) => {
+          notifyCliMissing(
+            npxErr.code === "ENOENT"
+              ? "neither brainstorm nor npx is on PATH"
+              : npxErr.message,
+          );
+        });
+      } catch (npxErr) {
+        notifyCliMissing(
+          npxErr instanceof Error ? npxErr.message : String(npxErr),
+        );
+      }
+    } else {
+      notifyCliMissing(err.message);
+    }
+  });
 
   if (!backend.stdout) return;
 
@@ -335,7 +378,10 @@ function createWindow(): BrowserWindow {
     minHeight: 600,
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 16, y: 12 },
-    backgroundColor: "#11111b", // ctp-crust
+    backgroundColor: "#111215", // ink-1 (BR palette) — mirrors the renderer pre-paint
+    // Do not auto-open DevTools in production. Dev workflows can still
+    // toggle via View → Toggle Developer Tools or ⌥⌘I; a packaged
+    // build never opens the inspector on its own.
     webPreferences: {
       preload: join(__dirname, "preload.cjs"),
       contextIsolation: true,
