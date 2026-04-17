@@ -153,6 +153,38 @@ describe("HookManager", () => {
       });
       expect(results).toHaveLength(0);
     });
+
+    it("rejects quantified-group ReDoS patterns like (a+)+ and (.*|x)*", async () => {
+      // Both of these catastrophic-backtrack shapes bypassed the original
+      // "two adjacent quantifiers" heuristic because a `)` sits between
+      // the inner and outer quantifier.
+      for (const matcher of ["(a+)+", "(.*|x)*", "(.+)+", "(a|b+)*"]) {
+        manager.register({
+          event: "PreToolUse",
+          type: "command",
+          command: "echo bad",
+          matcher,
+        });
+      }
+      // None of these compiled, so nothing fires regardless of the input.
+      const results = await manager.fire("PreToolUse", {
+        toolName: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      });
+      expect(results).toHaveLength(0);
+    });
+
+    it("still accepts safe regex matchers", async () => {
+      manager.register({
+        event: "PreToolUse",
+        type: "command",
+        command: "echo ok",
+        matcher: "^shell|^bash$",
+      });
+      const results = await manager.fire("PreToolUse", {
+        toolName: "shell",
+      });
+      expect(results).toHaveLength(1);
+    });
   });
 
   describe("blocking hooks", () => {
