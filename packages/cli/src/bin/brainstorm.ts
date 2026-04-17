@@ -510,6 +510,23 @@ program
           const shortId = instance.instanceId.slice(0, 40);
 
           try {
+            // Validate untrusted JSONL fields before they land as git argv.
+            // execFile prevents shell injection, but git accepts positional
+            // args that start with `-` as flags: a baseCommit of
+            // "--upload-pack=/tmp/evil.sh" would execute arbitrary code
+            // during git fetch. SWE-bench JSONLs are often loaded from
+            // public mirrors or --instances URLs, so treat them as untrusted.
+            if (!/^[0-9a-f]{7,64}$/.test(instance.baseCommit ?? "")) {
+              throw new Error(
+                `invalid baseCommit (expected 7-64 hex chars): ${JSON.stringify(instance.baseCommit)}`,
+              );
+            }
+            if (!/^[\w.-]+\/[\w.-]+$/.test(instance.repo ?? "")) {
+              throw new Error(
+                `invalid repo (expected owner/name): ${JSON.stringify(instance.repo)}`,
+              );
+            }
+
             // 1. Create isolated workspace
             const workDir = mkdtempSync(join(tmpdir(), "swe-bench-"));
             const repoDir = join(workDir, "repo");
