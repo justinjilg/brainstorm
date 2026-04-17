@@ -10,7 +10,7 @@ import {
 } from "@brainst0rm/core";
 import { createLogger } from "@brainst0rm/shared";
 import { mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import type { Probe, ProbeResult } from "./types.js";
 import { scoreProbe } from "./scorer.js";
@@ -48,10 +48,24 @@ export async function runProbe(
   mkdirSync(sandboxDir, { recursive: true });
 
   try {
-    // Write setup files
+    // Write setup files. Probe definitions come from arbitrary JSONL
+    // (shared SWE-bench mirrors, --probes-dir, user-authored files) so
+    // a malicious key like "../../../.ssh/authorized_keys" could write
+    // outside the sandbox. Reject any path that resolves outside
+    // sandboxDir before touching the filesystem.
     if (probe.setup?.files) {
+      const sandboxRoot = resolve(sandboxDir);
       for (const [path, content] of Object.entries(probe.setup.files)) {
         const fullPath = join(sandboxDir, path);
+        const resolvedPath = resolve(fullPath);
+        if (
+          resolvedPath !== sandboxRoot &&
+          !resolvedPath.startsWith(sandboxRoot + sep)
+        ) {
+          throw new Error(
+            `Probe ${probe.id}: setup file path escapes sandbox (${path})`,
+          );
+        }
         mkdirSync(join(fullPath, ".."), { recursive: true });
         writeFileSync(fullPath, content, "utf-8");
       }
