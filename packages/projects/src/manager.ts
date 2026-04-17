@@ -201,6 +201,12 @@ export class ProjectManager {
 
     const now = Math.floor(Date.now() / 1000);
 
+    // Track the tightest remaining across whichever budgets are set. The old
+    // control flow could land in the final `return { remaining: null }` even
+    // when a daily budget was set and under limit — callers that used
+    // `remaining` to drive warnings or UI got null and had nothing to show.
+    let tightestRemaining: number | null = null;
+
     if (project.budgetDaily) {
       const startOfDay = now - (now % 86400);
       const costToday = this.projects.getCost(project.path, startOfDay);
@@ -212,6 +218,7 @@ export class ProjectManager {
           message: `Daily budget exceeded for "${project.name}": $${costToday.toFixed(2)} / $${project.budgetDaily.toFixed(2)}`,
         };
       }
+      tightestRemaining = remaining;
     }
 
     if (project.budgetMonthly) {
@@ -225,9 +232,12 @@ export class ProjectManager {
           message: `Monthly budget exceeded for "${project.name}": $${costThisMonth.toFixed(2)} / $${project.budgetMonthly.toFixed(2)}`,
         };
       }
-      return { withinBudget: true, remaining };
+      tightestRemaining =
+        tightestRemaining === null
+          ? remaining
+          : Math.min(tightestRemaining, remaining);
     }
 
-    return { withinBudget: true, remaining: null };
+    return { withinBudget: true, remaining: tightestRemaining };
   }
 }

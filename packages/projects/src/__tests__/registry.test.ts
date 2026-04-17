@@ -286,6 +286,43 @@ describe("ProjectManager", () => {
     expect(check.message).toMatch(/Daily budget exceeded/);
   });
 
+  it("checkBudget() returns remaining daily spend when monthly is unset", () => {
+    // Before the fix, this returned { remaining: null } — the daily branch
+    // fell through without surfacing the remaining value, so any caller
+    // displaying headroom got null and nothing to show.
+    const mgr = new ProjectManager(db);
+    const dir = join(tmpRoot, "daily-only");
+    mkdirSync(dir);
+    const p = mgr.register(dir, "daily-only", { budgetDaily: 3.0 });
+
+    // Insert a small cost well under the $3 daily cap.
+    const sessionId = "s-daily-only";
+    db.prepare("INSERT INTO sessions (id, project_path) VALUES (?, ?)").run(
+      sessionId,
+      p.path,
+    );
+    db.prepare(
+      `INSERT INTO cost_records
+       (id, timestamp, session_id, model_id, provider, input_tokens, output_tokens, cost, task_type, project_path)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      "c-small",
+      Math.floor(Date.now() / 1000),
+      sessionId,
+      "m",
+      "p",
+      0,
+      0,
+      0.75,
+      "general",
+      p.path,
+    );
+
+    const check = mgr.checkBudget(p.id);
+    expect(check.withinBudget).toBe(true);
+    expect(check.remaining).toBeCloseTo(2.25, 5);
+  });
+
   it("autoDetect() skips bare dirs and auto-registers dirs with brainstorm.toml", () => {
     const mgr = new ProjectManager(db);
     const bare = join(tmpRoot, "bare");
