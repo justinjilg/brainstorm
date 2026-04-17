@@ -5,6 +5,28 @@
     <link rel="icon" type="image/svg+xml" href="/brainstorm.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Brainstorm</title>
+    <!--
+      Pre-paint styles so the body renders in Catppuccin crust before Vite
+      JS arrives. Without this there's a visible FOUC flash of whatever
+      the OS default is (white on most Macs) before React hydrates.
+      Everything the JS bundle loads flows from this baseline.
+    -->
+    <style>
+      html, body {
+        background: #11111b;
+        color: #cdd6f4;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family:
+          "Geist",
+          -apple-system,
+          BlinkMacSystemFont,
+          system-ui,
+          sans-serif;
+      }
+    </style>
   </head>
   <body class="bg-neutral-950 text-neutral-100 overflow-hidden">
     <div id="root"></div>
