@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { readFileSync, writeFileSync, renameSync, existsSync } from "node:fs";
+import {
+  readFileSync,
+  writeFileSync,
+  renameSync,
+  existsSync,
+  unlinkSync,
+} from "node:fs";
 import { resolve, relative } from "node:path";
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
@@ -71,10 +77,21 @@ export const multiEditTool = defineTool({
       const { getCheckpointManager } = await import("../checkpoint.js");
       const cp = getCheckpointManager();
       if (cp) cp.snapshot(safePath);
-      // Atomic write: tmp file then rename
+      // Atomic write: tmp file then rename. Clean up the tmp file on failure
+      // so retries don't leave stale ".tmp" files in the user's directories
+      // (matches file-write.ts's pattern).
       const tmpPath = `${safePath}.${randomUUID().slice(0, 8)}.tmp`;
-      writeFileSync(tmpPath, content, "utf-8");
-      renameSync(tmpPath, safePath);
+      try {
+        writeFileSync(tmpPath, content, "utf-8");
+        renameSync(tmpPath, safePath);
+      } catch (e) {
+        try {
+          unlinkSync(tmpPath);
+        } catch {
+          /* best-effort cleanup of temp file */
+        }
+        throw e;
+      }
     }
 
     return {
