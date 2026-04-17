@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { setupAllMocks } from "./fixtures/mocks";
 
 // ── Navigator ────────────────────────────────────────────────────────
 
@@ -273,6 +274,13 @@ test.describe("Dashboard", () => {
 // ── Models ───────────────────────────────────────────────────────────
 
 test.describe("Models", () => {
+  // The ModelsView sources rows from GET /api/v1/models; without the mock
+  // the list is empty and every `model-row-*` query times out. Wire the
+  // fixture mocks for every test in this describe block.
+  test.beforeEach(async ({ page }) => {
+    await setupAllMocks(page);
+  });
+
   test("select model shows detail", async ({ page }) => {
     await page.goto("/");
     await page.getByTestId("mode-models").click();
