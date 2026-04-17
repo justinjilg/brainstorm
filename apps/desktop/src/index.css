@@ -183,6 +183,39 @@ body {
   50% { opacity: 0; }
 }
 
+/* Per-digit flash for the RollingCost component. The first frame paints
+   the digit in the mauve accent; it fades back to inherited color over
+   ~300ms. Short enough that rapid cost ticks don't strobe; long enough
+   that the eye catches a change. */
+@keyframes cost-digit-flash {
+  0% {
+    color: var(--ctp-mauve);
+    transform: translateY(-1px);
+  }
+  100% {
+    color: inherit;
+    transform: translateY(0);
+  }
+}
+
+/* Trace rows enter with a subtle mauve-tint flash so the eye catches
+   "this just happened" in a live stream, then fade to baseline.
+   Paired with animate-fade-in on the outer row for the slide+settle. */
+@keyframes trace-row-enter {
+  0% {
+    background: color-mix(in srgb, var(--ctp-mauve) 22%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+.animate-trace-row-enter {
+  animation:
+    fadeIn var(--duration-normal) var(--ease-out) both,
+    trace-row-enter 600ms var(--ease-out) both;
+}
+
 .animate-fade-in {
   animation: fadeIn var(--duration-normal) var(--ease-out) both;
 }
