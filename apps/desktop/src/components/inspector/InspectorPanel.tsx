@@ -4,13 +4,16 @@
  */
 
 import type { TeamAgent } from "../navigator/TeamBuilder";
-import type { PlanTask } from "../plan/PlanView";
 import type { TraceEvent } from "../trace/TraceView";
 
+// The inspector no longer supports a "task" type — the Plan view was
+// rewritten to drop its fake per-task UI, so there is no task entity to
+// inspect anymore. When a real workflow-stream IPC lands and Plan grows
+// per-step entities back, re-introduce `{ type: "task"; task: PlanTask }`
+// here with a real shape (not the old decorative one).
 export type InspectorContext =
   | { type: "none" }
   | { type: "agent"; agent: TeamAgent }
-  | { type: "task"; task: PlanTask }
   | { type: "trace-event"; event: TraceEvent }
   | { type: "diff"; filePath: string; content: string }
   | { type: "cost"; sessionCost: number; budget: number };
@@ -77,7 +80,6 @@ export function InspectorPanel({ context, onClose }: InspectorPanelProps) {
       <div className="flex-1 overflow-y-auto p-4">
         {context.type === "none" && <EmptyInspector />}
         {context.type === "agent" && <AgentInspector agent={context.agent} />}
-        {context.type === "task" && <TaskInspector task={context.task} />}
         {context.type === "trace-event" && (
           <TraceEventInspector event={context.event} />
         )}
@@ -102,8 +104,6 @@ function contextLabel(ctx: InspectorContext): string {
   switch (ctx.type) {
     case "agent":
       return `Agent: ${ctx.agent.role}`;
-    case "task":
-      return "Task Detail";
     case "trace-event":
       return "Event Detail";
     case "diff":
@@ -204,66 +204,9 @@ function AgentInspector({ agent }: { agent: TeamAgent }) {
   );
 }
 
-function TaskInspector({ task }: { task: PlanTask }) {
-  const roleColor = ROLE_COLORS[task.agentRole] ?? "var(--ctp-overlay1)";
-
-  return (
-    <div className="space-y-4 animate-fade-in">
-      <div>
-        <div
-          className="font-medium mb-1"
-          style={{ fontSize: "var(--text-sm)", color: "var(--ctp-text)" }}
-        >
-          {task.description}
-        </div>
-        <div
-          className="flex items-center gap-2"
-          style={{ fontSize: "var(--text-2xs)" }}
-        >
-          <span style={{ color: roleColor }}>{task.agentRole}</span>
-          <span className="text-[var(--ctp-overlay0)]">·</span>
-          <span className="text-[var(--ctp-subtext1)]">{task.model}</span>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <StatBox label="Cost" value={`$${task.cost.toFixed(4)}`} />
-        <StatBox label="Tool Calls" value={String(task.toolCalls)} />
-      </div>
-
-      {task.worktree && (
-        <MetaSection title="Worktree">
-          <div
-            className="font-mono"
-            style={{
-              fontSize: "var(--text-2xs)",
-              color: "var(--ctp-subtext1)",
-            }}
-          >
-            {task.worktree}
-          </div>
-        </MetaSection>
-      )}
-
-      {task.output && (
-        <MetaSection title="Output">
-          <div
-            className="whitespace-pre-wrap"
-            style={{
-              fontSize: "var(--text-xs)",
-              color: "var(--ctp-overlay1)",
-              lineHeight: "1.5",
-              maxHeight: 300,
-              overflow: "auto",
-            }}
-          >
-            {task.output}
-          </div>
-        </MetaSection>
-      )}
-    </div>
-  );
-}
+// TaskInspector removed alongside Plan view's fake phase/task UI.
+// Will return when a real workflow-stream IPC exposes per-step task
+// entities with honest data (cost, duration, output, worktree).
 
 function TraceEventInspector({ event }: { event: TraceEvent }) {
   return (

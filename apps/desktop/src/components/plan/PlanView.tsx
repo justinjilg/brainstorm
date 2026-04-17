@@ -1,643 +1,376 @@
 /**
- * Plan View — visual execution of multi-phase plans.
- * Shows phases as a pipeline, tasks within each phase, agent assignments,
- * cost tracking, and approval gates.
+ * Plan View — run a preset workflow and see its output.
+ *
+ * Previous version rendered a ~640-line fake phase/task/approval pipeline
+ * that looked live but wasn't: pause/resume only mutated local state,
+ * onApprove was an empty function, cost and budget were always 0, and
+ * the task list was always []. The backend's workflow.run call just
+ * returns when done — there is no streaming phase signal yet, no
+ * per-step cost, no approval gate plumbing. The fancy UI made the
+ * product look broken because nothing in it reflected reality.
+ *
+ * Until the backend ships a `workflow.stream` IPC that actually emits
+ * per-phase progress, the honest version is small: pick a preset, type
+ * a prompt, run, watch a spinner, see the output. WorkflowsView does
+ * essentially the same thing — this view keeps a slightly different
+ * framing (emphasis on the request, running as a focused "plan" step)
+ * and stays a stub for the richer UI that phase-streaming will enable.
  */
 
 import { useState, useCallback, useEffect } from "react";
 import { request } from "../../lib/ipc-client";
 
-export type PlanStatus =
-  | "idle"
-  | "planning"
-  | "running"
-  | "paused"
-  | "completed"
-  | "failed";
-export type PhaseStatus =
-  | "pending"
-  | "running"
-  | "completed"
-  | "failed"
-  | "skipped";
-export type TaskStatus =
-  | "pending"
-  | "running"
-  | "completed"
-  | "failed"
-  | "blocked";
-
-export interface PlanTask {
-  id: string;
-  description: string;
-  status: TaskStatus;
-  agentRole: string;
-  model: string;
-  provider: string;
-  cost: number;
-  toolCalls: number;
-  worktree?: string;
-  output?: string;
-  startedAt?: number;
-  completedAt?: number;
-}
-
-export interface PlanPhase {
+interface WorkflowPreset {
   id: string;
   name: string;
-  status: PhaseStatus;
-  tasks: PlanTask[];
-  cost: number;
+  description: string;
+  steps: number;
 }
 
-export interface Plan {
+interface RunState {
   id: string;
-  title: string;
-  status: PlanStatus;
-  phases: PlanPhase[];
-  totalCost: number;
-  budget: number;
-  startedAt?: number;
+  presetId: string;
+  presetName: string;
+  prompt: string;
+  status: "running" | "completed" | "failed";
+  output?: string;
+  error?: string;
+  startedAt: number;
 }
 
-const PROVIDER_COLORS: Record<string, string> = {
-  anthropic: "var(--color-anthropic)",
-  openai: "var(--color-openai)",
-  google: "var(--color-google)",
-  deepseek: "var(--color-deepseek)",
-};
+export function PlanView() {
+  const [presets, setPresets] = useState<WorkflowPreset[]>([]);
+  const [presetsError, setPresetsError] = useState<string | null>(null);
+  const [activePresetId, setActivePresetId] = useState<string | null>(null);
+  const [prompt, setPrompt] = useState("");
+  const [currentRun, setCurrentRun] = useState<RunState | null>(null);
+  const [history, setHistory] = useState<RunState[]>([]);
 
-const ROLE_COLORS: Record<string, string> = {
-  architect: "var(--ctp-mauve)",
-  coder: "var(--ctp-green)",
-  reviewer: "var(--ctp-yellow)",
-  debugger: "var(--ctp-peach)",
-  qa: "var(--ctp-red)",
-  devops: "var(--ctp-sky)",
-};
-
-const STATUS_ICONS: Record<string, { icon: string; color: string }> = {
-  pending: { icon: "○", color: "var(--ctp-overlay0)" },
-  running: { icon: "◐", color: "var(--ctp-mauve)" },
-  completed: { icon: "✓", color: "var(--ctp-green)" },
-  failed: { icon: "✗", color: "var(--ctp-red)" },
-  blocked: { icon: "◻", color: "var(--ctp-yellow)" },
-  skipped: { icon: "—", color: "var(--ctp-overlay0)" },
-  idle: { icon: "○", color: "var(--ctp-overlay0)" },
-  planning: { icon: "◐", color: "var(--ctp-blue)" },
-  paused: { icon: "⏸", color: "var(--ctp-yellow)" },
-};
-
-interface PlanViewProps {
-  onTaskSelect: (taskId: string) => void;
-}
-
-export function PlanView({ onTaskSelect }: PlanViewProps) {
-  const [plan, setPlan] = useState<Plan | null>(null);
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [planInput, setPlanInput] = useState("");
-  const [generating, setGenerating] = useState(false);
-  const [presets, setPresets] = useState<
-    Array<{ id: string; name: string; description: string; steps: number }>
-  >([]);
-
-  // Load presets on mount
+  // Load presets from backend on mount.
   useEffect(() => {
-    request<
-      Array<{ id: string; name: string; description: string; steps: number }>
-    >("workflow.presets")
-      .then(setPresets)
-      .catch(() => {});
-  }, []);
-
-  const runWorkflow = useCallback(
-    async (workflowId: string, userRequest: string) => {
-      setGenerating(true);
-      // Create a plan shell while workflow runs
-      const preset = presets.find((p) => p.id === workflowId);
-      const newPlan: Plan = {
-        id: `plan-${Date.now()}`,
-        title: preset?.name ?? workflowId,
-        status: "running",
-        phases: [
-          {
-            id: "exec",
-            name: preset?.name ?? "Execution",
-            status: "running",
-            tasks: [],
-            cost: 0,
-          },
-        ],
-        totalCost: 0,
-        budget: 0,
-      };
-      setPlan(newPlan);
-      try {
-        await request("workflow.run", { workflowId, request: userRequest });
-        setPlan((prev) =>
-          prev
-            ? {
-                ...prev,
-                status: "completed",
-                phases: prev.phases.map((p) => ({
-                  ...p,
-                  status: "completed" as PhaseStatus,
-                })),
-              }
-            : null,
+    request<WorkflowPreset[]>("workflow.presets")
+      .then((p) => {
+        setPresets(p);
+        setPresetsError(null);
+      })
+      .catch((err) => {
+        setPresetsError(
+          err instanceof Error ? err.message : "Failed to load presets",
         );
-      } catch (e) {
-        setPlan((prev) => (prev ? { ...prev, status: "failed" } : null));
-      }
-      setGenerating(false);
-    },
-    [presets],
-  );
-
-  if (!plan) {
-    return (
-      <div className="flex-1 flex flex-col overflow-hidden bg-[var(--ctp-base)]">
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center animate-fade-in max-w-lg">
-            <div
-              className="tracking-[0.2em] uppercase font-semibold mb-3"
-              style={{
-                fontSize: "var(--text-lg)",
-                color: "var(--ctp-overlay1)",
-              }}
-            >
-              Plan Execution
-            </div>
-            <div
-              className="mb-6"
-              style={{
-                fontSize: "var(--text-sm)",
-                color: "var(--ctp-overlay0)",
-              }}
-            >
-              Describe what you want to build. The workflow engine will break it
-              into phases, assign agents, and execute with approval gates.
-            </div>
-
-            {/* Plan input */}
-            <div className="mb-4">
-              <textarea
-                value={planInput}
-                onChange={(e) => setPlanInput(e.target.value)}
-                placeholder="Describe a complex task..."
-                rows={3}
-                className="w-full bg-transparent resize-none outline-none rounded-xl px-4 py-3"
-                style={{
-                  border: "1px solid var(--border-default)",
-                  color: "var(--ctp-text)",
-                  fontSize: "var(--text-sm)",
-                  background: "var(--ctp-surface0)",
-                }}
-              />
-            </div>
-
-            {/* Preset workflows */}
-            {presets.length > 0 && (
-              <div className="mb-4">
-                <div
-                  className="mb-2"
-                  style={{
-                    fontSize: "var(--text-2xs)",
-                    color: "var(--ctp-overlay0)",
-                    letterSpacing: "0.12em",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  Preset Workflows
-                </div>
-                <div className="flex flex-wrap gap-2 justify-center">
-                  {presets.map((p) => (
-                    <button
-                      key={p.id}
-                      onClick={() =>
-                        runWorkflow(p.id, planInput || p.description)
-                      }
-                      disabled={generating}
-                      className="interactive px-3 py-1.5 rounded-lg disabled:opacity-40"
-                      style={{
-                        fontSize: "var(--text-2xs)",
-                        border: "1px solid var(--border-default)",
-                        color: "var(--ctp-subtext1)",
-                      }}
-                    >
-                      {p.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {generating && (
-              <div
-                className="animate-pulse-glow"
-                style={{
-                  fontSize: "var(--text-sm)",
-                  color: "var(--ctp-mauve)",
-                }}
-              >
-                Executing workflow...
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Plan control handlers — will be wired to workflow engine
-  const onPause = useCallback(() => {
-    setPlan((prev) =>
-      prev ? { ...prev, status: "paused" as PlanStatus } : null,
-    );
-  }, []);
-  const onResume = useCallback(() => {
-    setPlan((prev) =>
-      prev ? { ...prev, status: "running" as PlanStatus } : null,
-    );
-  }, []);
-  const onApprove = useCallback((_phaseId: string) => {
-    // Phase approval — will trigger next phase via workflow engine
+      });
   }, []);
 
-  const planStatus = STATUS_ICONS[plan.status] ?? STATUS_ICONS.idle;
-  const completedPhases = plan.phases.filter(
-    (p) => p.status === "completed",
-  ).length;
+  const activePreset = presets.find((p) => p.id === activePresetId) ?? null;
+
+  const runPlan = useCallback(async () => {
+    if (!activePreset || !prompt.trim() || currentRun?.status === "running") {
+      return;
+    }
+    const runId = `run-${Date.now()}`;
+    const run: RunState = {
+      id: runId,
+      presetId: activePreset.id,
+      presetName: activePreset.name,
+      prompt: prompt.trim(),
+      status: "running",
+      startedAt: Date.now(),
+    };
+    setCurrentRun(run);
+
+    try {
+      const result = await request<{ output?: string }>("workflow.run", {
+        workflowId: activePreset.id,
+        request: prompt.trim(),
+      });
+      const completed: RunState = {
+        ...run,
+        status: "completed",
+        output: result?.output ?? "(no output)",
+      };
+      setCurrentRun(completed);
+      setHistory((h) => [completed, ...h].slice(0, 10));
+    } catch (err) {
+      const failed: RunState = {
+        ...run,
+        status: "failed",
+        error: err instanceof Error ? err.message : String(err),
+      };
+      setCurrentRun(failed);
+      setHistory((h) => [failed, ...h].slice(0, 10));
+    }
+  }, [activePreset, prompt, currentRun]);
+
+  const isRunning = currentRun?.status === "running";
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-[var(--ctp-base)]">
-      {/* Plan header */}
-      <div
-        className="flex items-center justify-between px-6 py-3 shrink-0"
-        style={{
-          borderBottom: "1px solid var(--border-subtle)",
-          background: "var(--ctp-mantle)",
-        }}
-      >
-        <div className="flex items-center gap-3">
-          <span style={{ color: planStatus.color }}>{planStatus.icon}</span>
-          <div>
+    <div
+      className="flex-1 flex flex-col overflow-hidden bg-[var(--ctp-base)]"
+      data-testid="plan-view"
+    >
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-2xl mx-auto px-8 py-10">
+          <div
+            className="tracking-[0.2em] uppercase font-semibold mb-3"
+            style={{
+              fontSize: "var(--text-2xs)",
+              color: "var(--ctp-overlay0)",
+            }}
+          >
+            Plan
+          </div>
+          <div
+            className="mb-6"
+            style={{
+              fontSize: "var(--text-lg)",
+              color: "var(--ctp-text)",
+            }}
+          >
+            Run a preset workflow against a task.
+          </div>
+
+          {/* Preset picker */}
+          {presetsError && (
             <div
-              className="font-medium"
-              style={{ fontSize: "var(--text-sm)", color: "var(--ctp-text)" }}
+              data-testid="plan-presets-error"
+              className="mb-4 px-3 py-2 rounded-lg"
+              style={{
+                background: "var(--glow-red)",
+                color: "var(--ctp-red)",
+                fontSize: "var(--text-2xs)",
+                border: "1px solid var(--ctp-red)",
+              }}
             >
-              {plan.title}
+              Could not load presets: {presetsError}
             </div>
-            <div
+          )}
+
+          <div
+            className="tracking-[0.12em] uppercase mb-2"
+            style={{
+              fontSize: "var(--text-2xs)",
+              color: "var(--ctp-overlay0)",
+            }}
+          >
+            Preset
+          </div>
+          <div className="flex flex-wrap gap-2 mb-5">
+            {presets.length === 0 && !presetsError && (
+              <span
+                style={{
+                  fontSize: "var(--text-2xs)",
+                  color: "var(--ctp-overlay0)",
+                }}
+              >
+                Loading presets…
+              </span>
+            )}
+            {presets.map((p) => {
+              const selected = p.id === activePresetId;
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => setActivePresetId(p.id)}
+                  data-testid={`plan-preset-${p.id}`}
+                  className="interactive px-3 py-1.5 rounded-lg"
+                  title={p.description}
+                  style={{
+                    fontSize: "var(--text-xs)",
+                    background: selected
+                      ? "var(--ctp-mauve)"
+                      : "var(--ctp-surface0)",
+                    color: selected
+                      ? "var(--ctp-crust)"
+                      : "var(--ctp-subtext1)",
+                    border: "1px solid var(--border-subtle)",
+                  }}
+                >
+                  {p.name}{" "}
+                  <span
+                    style={{
+                      opacity: 0.6,
+                      marginLeft: 4,
+                    }}
+                  >
+                    · {p.steps} step{p.steps === 1 ? "" : "s"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Prompt */}
+          <div
+            className="tracking-[0.12em] uppercase mb-2"
+            style={{
+              fontSize: "var(--text-2xs)",
+              color: "var(--ctp-overlay0)",
+            }}
+          >
+            Task
+          </div>
+          <textarea
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder={
+              activePreset
+                ? `What should "${activePreset.name}" do?`
+                : "Pick a preset above first."
+            }
+            disabled={!activePreset || isRunning}
+            rows={4}
+            data-testid="plan-prompt"
+            className="w-full bg-transparent resize-none outline-none rounded-xl px-4 py-3 mb-3"
+            style={{
+              border: "1px solid var(--border-subtle)",
+              background: "var(--ctp-surface0)",
+              color: "var(--ctp-text)",
+              fontSize: "var(--text-sm)",
+            }}
+          />
+
+          <div className="flex items-center justify-between mb-6">
+            <span
               style={{
                 fontSize: "var(--text-2xs)",
                 color: "var(--ctp-overlay0)",
               }}
             >
-              {completedPhases}/{plan.phases.length} phases · $
-              {plan.totalCost.toFixed(2)} / ${plan.budget.toFixed(2)}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {plan.status === "running" && (
+              Runs synchronously — phase streaming is future work.
+            </span>
             <button
-              onClick={onPause}
-              className="interactive px-3 py-1.5 rounded-lg"
-              style={{
-                fontSize: "var(--text-xs)",
-                border: "1px solid var(--border-default)",
-                color: "var(--ctp-yellow)",
-              }}
-            >
-              Pause
-            </button>
-          )}
-          {plan.status === "paused" && (
-            <button
-              onClick={onResume}
-              className="interactive px-3 py-1.5 rounded-lg"
-              style={{
-                fontSize: "var(--text-xs)",
-                background: "var(--ctp-mauve)",
-                color: "var(--ctp-crust)",
-              }}
-            >
-              Resume
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Progress bar */}
-      <div style={{ height: 3, background: "var(--ctp-surface0)" }}>
-        <div
-          style={{
-            height: "100%",
-            width: `${(completedPhases / Math.max(plan.phases.length, 1)) * 100}%`,
-            background: "var(--ctp-mauve)",
-            transition: "width var(--duration-slow) var(--ease-out)",
-          }}
-        />
-      </div>
-
-      {/* Phase pipeline */}
-      <div className="overflow-x-auto px-6 py-4">
-        <div className="flex items-start gap-3">
-          {plan.phases.map((phase, i) => (
-            <div key={phase.id} className="flex items-start gap-3">
-              <PhaseCard
-                phase={phase}
-                selectedTaskId={selectedTaskId}
-                onTaskSelect={(id) => {
-                  setSelectedTaskId(id);
-                  onTaskSelect(id);
-                }}
-                onApprove={() => onApprove(phase.id)}
-              />
-              {i < plan.phases.length - 1 && (
-                <div
-                  className="shrink-0 mt-8"
-                  style={{
-                    fontSize: "var(--text-xs)",
-                    color: "var(--ctp-surface2)",
-                  }}
-                >
-                  →
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Selected task detail */}
-      {selectedTaskId && (
-        <div
-          className="flex-1 overflow-y-auto px-6 pb-4"
-          style={{ borderTop: "1px solid var(--border-subtle)" }}
-        >
-          <TaskDetail task={findTask(plan, selectedTaskId)} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function PhaseCard({
-  phase,
-  selectedTaskId,
-  onTaskSelect,
-  onApprove,
-}: {
-  phase: PlanPhase;
-  selectedTaskId: string | null;
-  onTaskSelect: (id: string) => void;
-  onApprove: () => void;
-}) {
-  const status = STATUS_ICONS[phase.status] ?? STATUS_ICONS.pending;
-  const isRunning = phase.status === "running";
-
-  return (
-    <div
-      className="shrink-0 rounded-2xl overflow-hidden"
-      style={{
-        width: 240,
-        background: "var(--ctp-surface0)",
-        border: isRunning
-          ? "1px solid var(--ctp-mauve)"
-          : "1px solid var(--border-subtle)",
-        boxShadow: isRunning ? "0 0 20px rgba(203, 166, 247, 0.1)" : "none",
-      }}
-    >
-      {/* Phase header */}
-      <div
-        className="px-4 py-3"
-        style={{ borderBottom: "1px solid var(--border-subtle)" }}
-      >
-        <div className="flex items-center justify-between mb-1">
-          <span
-            className="font-medium"
-            style={{ fontSize: "var(--text-sm)", color: "var(--ctp-text)" }}
-          >
-            {phase.name}
-          </span>
-          <span style={{ color: status.color, fontSize: "var(--text-sm)" }}>
-            {status.icon}
-          </span>
-        </div>
-        <div
-          className="flex items-center gap-2"
-          style={{ fontSize: "var(--text-2xs)", color: "var(--ctp-overlay0)" }}
-        >
-          <span>{phase.tasks.length} tasks</span>
-          <span>·</span>
-          <span className="font-mono">${phase.cost.toFixed(2)}</span>
-        </div>
-      </div>
-
-      {/* Tasks */}
-      <div className="p-2 space-y-1">
-        {phase.tasks.map((task) => {
-          const taskStatus = STATUS_ICONS[task.status] ?? STATUS_ICONS.pending;
-          const roleColor =
-            ROLE_COLORS[task.agentRole] ?? "var(--ctp-overlay1)";
-          const provColor =
-            PROVIDER_COLORS[task.provider] ?? "var(--ctp-overlay0)";
-          const isSelected = selectedTaskId === task.id;
-
-          return (
-            <div
-              key={task.id}
-              onClick={() => onTaskSelect(task.id)}
-              className="interactive px-3 py-2 rounded-xl"
-              style={{
-                background: isSelected
-                  ? "var(--surface-elevated)"
-                  : "transparent",
-                border: isSelected
-                  ? "1px solid var(--border-default)"
-                  : "1px solid transparent",
-              }}
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <span
-                  className={
-                    task.status === "running" ? "animate-pulse-glow" : ""
-                  }
-                  style={{
-                    color: taskStatus.color,
-                    fontSize: "var(--text-xs)",
-                  }}
-                >
-                  {taskStatus.icon}
-                </span>
-                <span
-                  className="truncate flex-1"
-                  style={{
-                    fontSize: "var(--text-xs)",
-                    color: "var(--ctp-text)",
-                  }}
-                >
-                  {task.description}
-                </span>
-              </div>
-              <div
-                className="flex items-center gap-2 ml-4"
-                style={{ fontSize: "var(--text-2xs)" }}
-              >
-                <span style={{ color: roleColor }}>{task.agentRole}</span>
-                <span
-                  className="w-1.5 h-1.5 rounded-full"
-                  style={{ background: provColor }}
-                />
-                <span className="font-mono text-[var(--ctp-overlay0)]">
-                  ${task.cost.toFixed(3)}
-                </span>
-                {task.toolCalls > 0 && (
-                  <span className="text-[var(--ctp-overlay0)]">
-                    {task.toolCalls}t
-                  </span>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Approval gate (shown when phase needs approval) */}
-      {phase.status === "running" &&
-        phase.tasks.every((t) => t.status === "completed") && (
-          <div className="px-3 pb-3 animate-fade-in">
-            <button
-              onClick={onApprove}
-              className="interactive w-full py-2 rounded-xl font-medium"
+              onClick={runPlan}
+              disabled={!activePreset || !prompt.trim() || isRunning}
+              data-testid="plan-run"
+              className="interactive px-4 py-2 rounded-lg disabled:opacity-40"
               style={{
                 fontSize: "var(--text-xs)",
                 background: "var(--ctp-green)",
                 color: "var(--ctp-crust)",
+                fontWeight: 500,
               }}
             >
-              Approve Phase
+              {isRunning ? "Running…" : "Run"}
             </button>
           </div>
-        )}
+
+          {/* Current run */}
+          {currentRun && (
+            <RunCard run={currentRun} testIdPrefix="plan-current" />
+          )}
+
+          {/* History */}
+          {history.length > 1 && (
+            <div className="mt-8">
+              <div
+                className="tracking-[0.12em] uppercase mb-2"
+                style={{
+                  fontSize: "var(--text-2xs)",
+                  color: "var(--ctp-overlay0)",
+                }}
+              >
+                Recent runs
+              </div>
+              <div className="space-y-2">
+                {history.slice(1).map((run) => (
+                  <RunCard
+                    key={run.id}
+                    run={run}
+                    testIdPrefix={`plan-history-${run.id}`}
+                    compact
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
 
-function TaskDetail({ task }: { task: PlanTask | null }) {
-  if (!task) return null;
-
-  const status = STATUS_ICONS[task.status] ?? STATUS_ICONS.pending;
-  const roleColor = ROLE_COLORS[task.agentRole] ?? "var(--ctp-overlay1)";
-
+function RunCard({
+  run,
+  testIdPrefix,
+  compact = false,
+}: {
+  run: RunState;
+  testIdPrefix: string;
+  compact?: boolean;
+}) {
+  const statusColor =
+    run.status === "running"
+      ? "var(--ctp-mauve)"
+      : run.status === "completed"
+        ? "var(--ctp-green)"
+        : "var(--ctp-red)";
   return (
-    <div className="py-4 animate-fade-in">
-      <div className="flex items-center gap-2 mb-3">
-        <span style={{ color: status.color }}>{status.icon}</span>
-        <span
-          className="font-medium"
-          style={{ fontSize: "var(--text-sm)", color: "var(--ctp-text)" }}
-        >
-          {task.description}
-        </span>
-      </div>
-
-      <div
-        className="grid grid-cols-4 gap-4 mb-4"
-        style={{ fontSize: "var(--text-xs)" }}
-      >
-        <div>
-          <div
+    <div
+      data-testid={testIdPrefix}
+      className="rounded-xl overflow-hidden"
+      style={{
+        background: "var(--ctp-surface0)",
+        border: "1px solid var(--border-subtle)",
+      }}
+    >
+      <div className="flex items-center justify-between px-4 py-2">
+        <div className="flex items-center gap-2">
+          <span
+            className={run.status === "running" ? "animate-pulse-glow" : ""}
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              background: statusColor,
+              display: "inline-block",
+            }}
+          />
+          <span
+            style={{
+              fontSize: "var(--text-xs)",
+              color: "var(--ctp-text)",
+              fontWeight: 500,
+            }}
+          >
+            {run.presetName}
+          </span>
+          <span
             style={{
               fontSize: "var(--text-2xs)",
               color: "var(--ctp-overlay0)",
             }}
           >
-            Agent
-          </div>
-          <div style={{ color: roleColor }}>{task.agentRole}</div>
-        </div>
-        <div>
-          <div
-            style={{
-              fontSize: "var(--text-2xs)",
-              color: "var(--ctp-overlay0)",
-            }}
-          >
-            Model
-          </div>
-          <div style={{ color: "var(--ctp-subtext1)" }}>{task.model}</div>
-        </div>
-        <div>
-          <div
-            style={{
-              fontSize: "var(--text-2xs)",
-              color: "var(--ctp-overlay0)",
-            }}
-          >
-            Cost
-          </div>
-          <div className="font-mono" style={{ color: "var(--ctp-text)" }}>
-            ${task.cost.toFixed(4)}
-          </div>
-        </div>
-        <div>
-          <div
-            style={{
-              fontSize: "var(--text-2xs)",
-              color: "var(--ctp-overlay0)",
-            }}
-          >
-            Tools
-          </div>
-          <div style={{ color: "var(--ctp-text)" }}>{task.toolCalls} calls</div>
-        </div>
-      </div>
-
-      {task.worktree && (
-        <div
-          className="px-3 py-2 rounded-xl mb-3"
-          style={{
-            background: "var(--ctp-surface0)",
-            border: "1px solid var(--border-subtle)",
-            fontSize: "var(--text-2xs)",
-          }}
-        >
-          <span className="text-[var(--ctp-overlay0)]">Worktree: </span>
-          <span className="font-mono text-[var(--ctp-subtext1)]">
-            {task.worktree}
+            {new Date(run.startedAt).toLocaleTimeString()}
           </span>
         </div>
-      )}
-
-      {task.output && (
-        <div
-          className="p-4 rounded-xl whitespace-pre-wrap"
+        <span
           style={{
-            background: "var(--ctp-surface0)",
-            border: "1px solid var(--border-subtle)",
-            fontSize: "var(--text-xs)",
-            color: "var(--ctp-overlay1)",
-            lineHeight: "1.6",
-            maxHeight: 300,
-            overflow: "auto",
+            fontSize: "var(--text-2xs)",
+            color: statusColor,
+            textTransform: "uppercase",
+            letterSpacing: "0.1em",
           }}
         >
-          {task.output}
+          {run.status}
+        </span>
+      </div>
+      {!compact && (
+        <div
+          className="px-4 py-3"
+          style={{
+            borderTop: "1px solid var(--border-subtle)",
+            fontSize: "var(--text-xs)",
+            color: "var(--ctp-subtext1)",
+            whiteSpace: "pre-wrap",
+            fontFamily: "var(--font-mono)",
+            maxHeight: 240,
+            overflowY: "auto",
+          }}
+        >
+          {run.status === "failed"
+            ? `✗ ${run.error ?? "Unknown error"}`
+            : run.output || "(waiting for output…)"}
         </div>
       )}
     </div>
   );
-}
-
-function findTask(plan: Plan, taskId: string): PlanTask | null {
-  for (const phase of plan.phases) {
-    for (const task of phase.tasks) {
-      if (task.id === taskId) return task;
-    }
-  }
-  return null;
 }
