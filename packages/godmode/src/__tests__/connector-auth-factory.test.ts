@@ -425,7 +425,10 @@ describe("ChangeSet State Machine - Additional Paths", () => {
     expect(secondResult.message).toContain("not draft");
   });
 
-  it("keeps changeset as draft when executor throws exception", async () => {
+  it("marks changeset as failed (not draft) when executor throws exception", async () => {
+    // Since fix fc77f7a, a thrown executor moves the changeset to "failed"
+    // so a partial-mutation failure (HTTP wrote then timed out) cannot be
+    // silently replayed. Operators retry explicitly via retryChangeSet().
     const action = `failing-exec-${Math.random()}`;
     registerExecutor(action, async () => {
       throw new Error("Executor crashed");
@@ -449,10 +452,10 @@ describe("ChangeSet State Machine - Additional Paths", () => {
 
     expect(result.success).toBe(false);
     expect(result.message).toContain("Execution failed");
-    expect(result.changeset.status).toBe("draft");
+    expect(result.changeset.status).toBe("failed");
   });
 
-  it("keeps changeset as draft when executor returns failure", async () => {
+  it("marks changeset as failed (not draft) when executor returns failure", async () => {
     const action = `failing-result-${Math.random()}`;
     registerExecutor(action, async () => ({
       success: false,
@@ -477,7 +480,7 @@ describe("ChangeSet State Machine - Additional Paths", () => {
 
     expect(result.success).toBe(false);
     expect(result.message).toContain("Business logic validation failed");
-    expect(result.changeset.status).toBe("draft");
+    expect(result.changeset.status).toBe("failed");
   });
 
   it("expands stale drafts when creating new changeset", async () => {
