@@ -180,7 +180,7 @@ function TraceEventRow({
   if (event.type === "approval-gate") {
     return (
       <div
-        className="px-4 py-3 rounded-xl animate-fade-in"
+        className="px-4 py-3 rounded-xl animate-trace-row-enter"
         style={{
           background: "var(--glow-mauve)",
           border: "1px solid rgba(203, 166, 247, 0.2)",
@@ -246,7 +246,7 @@ function TraceEventRow({
   return (
     <div
       onClick={onSelect}
-      className="interactive flex items-start gap-3 px-3 py-1.5 rounded-lg"
+      className="interactive animate-trace-row-enter flex items-start gap-3 px-3 py-1.5 rounded-lg"
     >
       {/* Timestamp */}
       <span

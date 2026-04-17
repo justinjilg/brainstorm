@@ -1,3 +1,5 @@
+import { RollingCost } from "./RollingCost";
+
 const PROVIDER_COLORS: Record<string, string> = {
   anthropic: "var(--color-anthropic)",
   openai: "var(--color-openai)",
@@ -108,15 +110,8 @@ export function StatusRail({
 
       {/* Right: metering */}
       <div className="flex items-center gap-1">
-        {/* Cost */}
-        <span
-          className="font-mono px-2"
-          data-testid="status-cost"
-          style={{ color: costColor(cost) }}
-          title={`Session cost: $${cost.toFixed(4)}`}
-        >
-          ${cost.toFixed(4)}
-        </span>
+        {/* Cost — per-digit flash on change so the user notices ticks */}
+        <RollingCost cost={cost} color={costColor(cost)} testId="status-cost" />
 
         <Divider />
 
