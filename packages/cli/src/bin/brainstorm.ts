@@ -3991,18 +3991,19 @@ program
             console.log("\n  No pending tasks in queue.");
             break;
           }
-          console.log(`\n  Running ${pending.length} queued task(s)...`);
+          console.log(`\n  ${pending.length} queued task(s) ready to run:`);
           console.log(
             `  Budget: ${opts.budget ?? "unlimited"} | Parallel: ${opts.parallel}`,
           );
           console.log(
-            `\n  Execute each task with: storm run --unattended "<task>"`,
+            `\n  Copy-paste to execute (status stays 'pending' until a real run finishes):`,
           );
-          // Mark as running
-          for (const item of pending) item.status = "running";
-          saveQueue(queue);
-          // In full implementation, this would fork child processes.
-          // For now, it outputs the commands to run.
+          // DO NOT flip status to "running" here. Previously we did — but the
+          // following block only *prints* the commands the user should run,
+          // it doesn't actually execute them. Flipping status to "running"
+          // leaves every queue item permanently stuck (a subsequent
+          // `queue run` finds nothing pending), corrupting queue state
+          // silently until the user hand-edits pending.json.
           for (const item of pending) {
             console.log(`    storm run --unattended "${item.task}"`);
           }
