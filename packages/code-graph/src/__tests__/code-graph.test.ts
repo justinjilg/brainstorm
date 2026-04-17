@@ -311,6 +311,32 @@ describe("@brainst0rm/code-graph", () => {
     });
   });
 
+  it("does not infinite-loop when a symlink forms a cycle with the project root", async () => {
+    // Set up: project with a self-referential symlink. A stat-based walker
+    // would follow the symlink on each iteration and scan the same files
+    // forever (or until maxFiles). lstat treats the symlink as a leaf and
+    // stops.
+    const projectDir = makeTempDir("code-graph-symlink");
+    writeProjectFile(projectDir, "src/a.ts", "export const a = 1;");
+    const { symlinkSync } = await import("node:fs");
+    try {
+      symlinkSync(projectDir, join(projectDir, "src", "loop"));
+    } catch {
+      // Some CI envs disallow symlinks — skip this test quietly there.
+      return;
+    }
+
+    const graph = createGraph(projectDir);
+    const result = indexProjectSync(projectDir, {
+      graph,
+      maxFiles: 10,
+    });
+    // If the fix regressed, this call would either hang or error after
+    // hitting maxFiles on repeated scans of src/a.ts.
+    expect(result.progress.filesIndexed).toBeLessThanOrEqual(10);
+    expect(result.progress.filesScanned).toBeLessThanOrEqual(10);
+  });
+
   it("indexProject indexes supported files, skips ignored paths, and reports progress", () => {
     const projectDir = makeTempDir("code-graph-indexer");
     writeProjectFile(

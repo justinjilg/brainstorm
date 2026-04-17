@@ -2,7 +2,7 @@
  * Scan Stage — discovers all parseable files in the project.
  */
 
-import { readdirSync, statSync } from "node:fs";
+import { readdirSync, lstatSync } from "node:fs";
 import { join, extname } from "node:path";
 import { supportedExtensions } from "../../languages/registry.js";
 import type { PipelineStage, PipelineContext } from "../types.js";
@@ -55,7 +55,8 @@ export const scanStage: PipelineStage = {
         const fullPath = join(dir, entry);
         let stat;
         try {
-          stat = statSync(fullPath);
+          // lstat, not stat — don't follow symlinks (cycle safety).
+          stat = lstatSync(fullPath);
         } catch {
           continue;
         }
