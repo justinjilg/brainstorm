@@ -6,24 +6,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Brainstorm</title>
     <!--
-      Pre-paint styles so the body renders in Catppuccin crust before Vite
-      JS arrives. Without this there's a visible FOUC flash of whatever
-      the OS default is (white on most Macs) before React hydrates.
-      Everything the JS bundle loads flows from this baseline.
+      Pre-paint styles so the body renders in BR ink-1 (#111215) before
+      Vite JS arrives. Without this the OS default (usually white on a
+      Mac) flashes in for one frame on cold boot. These values mirror
+      --ink-1 / --bone in src/index.css — keep in sync.
     -->
     <style>
       html, body {
-        background: #11111b;
-        color: #cdd6f4;
+        background: #111215;
+        color: #e8ecf4;
         margin: 0;
         padding: 0;
       }
       body {
         font-family:
-          "Geist",
+          "IBM Plex Sans",
           -apple-system,
           BlinkMacSystemFont,
-          system-ui,
+          "Segoe UI",
           sans-serif;
       }
     </style>

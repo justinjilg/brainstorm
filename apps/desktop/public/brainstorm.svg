@@ -1,17 +1,18 @@
 <!--
-  Brainstorm mark — asymmetric constellation.
+  Brainstorm mark — asymmetric constellation (BR-palette edition).
 
-  A mauve "spark" node at top connected to three outlined nodes forming
-  a rough triangle below. The diamond path + lateral line suggest a
-  synapse/network in mid-thought: something just fired from the top,
+  A bone-white "spark" node at top connected to three outlined nodes
+  forming a rough triangle below. The diamond path + lateral line suggest
+  a synapse/network in mid-thought: something just fired from the top,
   the three base nodes are receiving. Deliberately asymmetric so it
-  doesn't read as a snowflake, logo-template tessellation, or any of
-  the dozens of "AI brain" clichés. Readable at 16px (favicon),
-  distinctive at 256px (splash).
+  doesn't read as a snowflake, logo-template tessellation, or any of the
+  dozens of "AI brain" clichés. Readable at 16px (favicon), distinctive
+  at 256px (splash).
 
-  Palette is Catppuccin Mocha — mauve #cba6f7 for the active node,
-  subtext1 #bac2de for the outline nodes, both fading to 30% opacity
-  on the connector lines so the spark stays the eye's anchor.
+  Palette mirrors BR's dashboard — bone #e8ecf4 for the active spark,
+  bone-dim #b2b7c2 for the outlined base nodes, ink-0 #0c0d10 for the
+  base-node fills. Connectors fade to ~32% opacity so the spark stays
+  the eye's anchor.
 -->
 <svg
   viewBox="0 0 64 64"
@@ -20,15 +21,15 @@
   aria-label="Brainstorm"
 >
   <!-- Soft halo behind the spark node -->
-  <circle cx="32" cy="20" r="9" fill="#cba6f7" fill-opacity="0.12" />
-  <circle cx="32" cy="20" r="6.5" fill="#cba6f7" fill-opacity="0.18" />
+  <circle cx="32" cy="20" r="9" fill="#e8ecf4" fill-opacity="0.08" />
+  <circle cx="32" cy="20" r="6.5" fill="#e8ecf4" fill-opacity="0.14" />
 
   <!-- Connector lines — diamond path + base crossbar -->
   <path
     d="M32 20 L20 40 L32 50 L44 40 Z"
-    stroke="#cba6f7"
+    stroke="#e8ecf4"
     stroke-width="1.25"
-    stroke-opacity="0.55"
+    stroke-opacity="0.5"
     stroke-linejoin="round"
   />
   <line
@@ -36,16 +37,16 @@
     y1="40"
     x2="44"
     y2="40"
-    stroke="#bac2de"
+    stroke="#b2b7c2"
     stroke-width="1"
     stroke-opacity="0.3"
   />
 
   <!-- Base nodes — outlined, calm -->
-  <circle cx="20" cy="40" r="2.75" fill="#181825" stroke="#bac2de" stroke-width="1.25" />
-  <circle cx="44" cy="40" r="2.75" fill="#181825" stroke="#bac2de" stroke-width="1.25" />
-  <circle cx="32" cy="50" r="2.75" fill="#181825" stroke="#bac2de" stroke-width="1.25" />
+  <circle cx="20" cy="40" r="2.75" fill="#0c0d10" stroke="#b2b7c2" stroke-width="1.25" />
+  <circle cx="44" cy="40" r="2.75" fill="#0c0d10" stroke="#b2b7c2" stroke-width="1.25" />
+  <circle cx="32" cy="50" r="2.75" fill="#0c0d10" stroke="#b2b7c2" stroke-width="1.25" />
 
-  <!-- Active spark node — filled mauve -->
-  <circle cx="32" cy="20" r="3.75" fill="#cba6f7" />
+  <!-- Active spark node — filled bone -->
+  <circle cx="32" cy="20" r="3.75" fill="#e8ecf4" />
 </svg>

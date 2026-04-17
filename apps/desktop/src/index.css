@@ -1,110 +1,258 @@
 @import "tailwindcss";
-/* Geist family — the design system assumes these are loaded. They were
-   temporarily stubbed during the Tauri era (webview CSS resolution
-   quirks); the app is now Electron and those imports work fine. Without
-   them the UI silently falls back to system-ui and every typographic
-   claim in the design spec below becomes a lie. */
+
+/* BR Dashboard font stack — Fraunces (display serif), IBM Plex Sans (body),
+   JetBrains Mono (data/tabular), Figtree (UI chrome). Geist kept as a
+   fallback because a few surfaces still reference it through component
+   styles. Once those migrate the Geist @fontsource imports can go. */
+@import "@fontsource/fraunces/400.css";
+@import "@fontsource/fraunces/500.css";
+@import "@fontsource/fraunces/600.css";
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource-variable/jetbrains-mono";
+@import "@fontsource/figtree/400.css";
+@import "@fontsource/figtree/500.css";
+@import "@fontsource/figtree/600.css";
 @import "@fontsource/geist/400.css";
 @import "@fontsource/geist/500.css";
 @import "@fontsource/geist/600.css";
 @import "@fontsource-variable/geist-mono";
 
 /* ═══════════════════════════════════════════════════════════════
-   BRAINSTORM DESKTOP — Design System
-   Aesthetic: Refined Industrial (Bloomberg × Linear × Raycast)
+   BRAINSTORM DESKTOP — Design System (v2: BR parity)
+   Aesthetic: Precision Monochrome — Bloomberg × NYT Projects.
+   Warm ink blacks + bone neutrals + muted signal colors + a
+   painterly chart palette. Mirrors the @brainst0rm/router
+   dashboard so the desktop app reads as the same product.
    ═══════════════════════════════════════════════════════════════ */
 
 :root {
-  /* ── Typography ──────────────────────────────────────────── */
-  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --font-mono: "Geist Mono Variable", "JetBrains Mono", "SF Mono", monospace;
+  /* ── Ink layer (backgrounds, surfaces, lines) ─────────────── */
+  --ink-deep: #08090b;
+  --ink-0: #0c0d10;
+  --ink-1: #111215;
+  --ink-2: #16181c;
+  --ink-3: #1c1e23;
+  --ink-4: #23262c;
+  --ink-line: rgba(232, 236, 244, 0.06);
+  --ink-line-strong: rgba(232, 236, 244, 0.11);
+  --ink-line-emph: rgba(232, 236, 244, 0.18);
+  --ink-line-heavy: rgba(232, 236, 244, 0.28);
 
-  --text-2xs: 0.625rem;
-  --text-xs: 0.75rem;
-  --text-sm: 0.8125rem;
-  --text-base: 0.875rem;
-  --text-lg: 1rem;
-  --text-xl: 1.125rem;
+  /* ── Bone layer (text hierarchy) ──────────────────────────── */
+  --bone: #e8ecf4;
+  --bone-dim: #b2b7c2;
+  --bone-mute: #7a7f89;
+  --bone-faint: #4a4e57;
 
-  /* ── Catppuccin Mocha (base palette) ─────────────────────── */
-  --ctp-rosewater: #f5e0dc;
-  --ctp-flamingo: #f2cdcd;
-  --ctp-pink: #f5c2e7;
-  --ctp-mauve: #cba6f7;
-  --ctp-red: #f38ba8;
-  --ctp-maroon: #eba0ac;
-  --ctp-peach: #fab387;
-  --ctp-yellow: #f9e2af;
-  --ctp-green: #a6e3a1;
-  --ctp-teal: #94e2d5;
-  --ctp-sky: #89dceb;
-  --ctp-sapphire: #74c7ec;
-  --ctp-blue: #89b4fa;
-  --ctp-lavender: #b4befe;
-  --ctp-text: #cdd6f4;
-  --ctp-subtext1: #bac2de;
-  --ctp-subtext0: #a6adc8;
-  --ctp-overlay2: #9399b2;
-  --ctp-overlay1: #7f849c;
-  --ctp-overlay0: #6c7086;
-  --ctp-surface2: #585b70;
-  --ctp-surface1: #45475a;
-  --ctp-surface0: #313244;
-  --ctp-base: #1e1e2e;
-  --ctp-mantle: #181825;
-  --ctp-crust: #11111b;
+  /* ── Highlights / washes ──────────────────────────────────── */
+  --hi: #ffffff;
+  --hi-glow: rgba(255, 255, 255, 0.14);
+  --hi-haze: rgba(255, 255, 255, 0.05);
+  --hi-line: rgba(255, 255, 255, 0.28);
+  --hi-wash: rgba(255, 255, 255, 0.015);
+  --top-highlight: rgba(255, 255, 255, 0.06);
+  --top-highlight-soft: rgba(255, 255, 255, 0.035);
+  --bot-recession: rgba(0, 0, 0, 0.45);
+  --inset-hairline: rgba(255, 255, 255, 0.04);
 
-  /* ── Provider Colors ─────────────────────────────────────── */
-  --color-anthropic: #d4a4f9;
-  --color-openai: #74aa9c;
-  --color-google: #4285f4;
-  --color-deepseek: #00d4aa;
-  --color-local: #a6adc8;
+  /* ── Signal colors (ok / warn / err / info / dust) ────────── */
+  --sig-ok: #7ec89c;
+  --sig-ok-glow: rgba(126, 200, 156, 0.14);
+  --sig-ok-haze: rgba(126, 200, 156, 0.05);
+  --sig-warn: #d4b76a;
+  --sig-warn-glow: rgba(212, 183, 106, 0.14);
+  --sig-warn-haze: rgba(212, 183, 106, 0.05);
+  --sig-err: #d4675a;
+  --sig-err-glow: rgba(212, 103, 90, 0.14);
+  --sig-err-haze: rgba(212, 103, 90, 0.05);
+  --sig-info: #7fa8d4;
+  --sig-info-glow: rgba(127, 168, 212, 0.14);
+  --sig-info-haze: rgba(127, 168, 212, 0.05);
+  --sig-dust: #5a5f68;
 
-  /* ── Elevated Surfaces ───────────────────────────────────── */
-  --surface-elevated: rgba(69, 71, 90, 0.6);
-  --surface-float: rgba(49, 50, 68, 0.95);
+  /* ── Paint layer (chart + categorical data) ───────────────── */
+  --paint-coral: #e08268;
+  --paint-teal: #5faeb4;
+  --paint-moss: #94b07a;
+  --paint-brass: #d4b06a;
+  --paint-lavender: #ab9dbb;
+  --paint-slate: #8ba0be;
+  --paint-clay: #c17f6c;
+  --paint-cream: #d9c9a0;
+  --paint-coral-wash: rgba(224, 130, 104, 0.16);
+  --paint-teal-wash: rgba(95, 174, 180, 0.16);
+  --paint-moss-wash: rgba(148, 176, 122, 0.16);
+  --paint-brass-wash: rgba(212, 176, 106, 0.16);
+  --paint-lavender-wash: rgba(171, 157, 187, 0.16);
+  --paint-slate-wash: rgba(139, 160, 190, 0.16);
+  --paint-clay-wash: rgba(193, 127, 108, 0.16);
+  --paint-cream-wash: rgba(217, 201, 160, 0.16);
 
-  /* ── Glow Accents ────────────────────────────────────────── */
-  --glow-mauve: rgba(203, 166, 247, 0.12);
-  --glow-green: rgba(166, 227, 161, 0.12);
-  --glow-red: rgba(243, 139, 168, 0.12);
+  /* ── Semantic aliases ─────────────────────────────────────── */
+  --bg: var(--ink-1);
+  --bg-subtle: var(--ink-0);
+  --bg-element: var(--ink-2);
+  --bg-element-hover: var(--ink-3);
+  --surface: var(--ink-2);
+  --surface-raised: var(--ink-3);
+  --border: var(--ink-line);
+  --border-strong: var(--ink-line-strong);
+  --border-emph: var(--ink-line-emph);
+  --text: var(--bone);
+  --text-dim: var(--bone-dim);
+  --text-mute: var(--bone-mute);
+  --text-faint: var(--bone-faint);
+  --accent: var(--bone);
+  --accent-glow: var(--hi-glow);
+  --accent-haze: var(--hi-haze);
+  --success: var(--sig-ok);
+  --warning: var(--sig-warn);
+  --danger: var(--sig-err);
+  --info: var(--sig-info);
+  --dust: var(--sig-dust);
 
-  /* ── Borders ─────────────────────────────────────────────── */
-  --border-subtle: rgba(255, 255, 255, 0.05);
-  --border-default: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.12);
+  /* ── Typography ───────────────────────────────────────────── */
+  --font-display: "Fraunces", "Times New Roman", Georgia, serif;
+  --font-sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", "Berkeley Mono", "SF Mono", Menlo, monospace;
+  --font-data: var(--font-mono);
+  --font-ui: "Figtree", "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
-  /* ── Shadows ─────────────────────────────────────────────── */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
-  --shadow-float: 0 8px 32px rgba(0, 0, 0, 0.6),
-    0 0 0 1px rgba(255, 255, 255, 0.06);
+  --text-2xs: 0.679rem;
+  --text-xs: 0.815rem;
+  --text-sm: 0.929rem;
+  --text-base: 1rem;
+  --text-md: 1.143rem;
+  --text-lg: 1.428rem;
+  --text-xl: 1.857rem;
+  --text-2xl: 2.571rem;
+  --text-3xl: 3.571rem;
 
-  /* ── Transitions ─────────────────────────────────────────── */
-  --ease-out: cubic-bezier(0.165, 0.85, 0.45, 1);
-  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --duration-fast: 150ms;
-  --duration-normal: 250ms;
-  --duration-slow: 400ms;
+  /* ── Spacing + radii ──────────────────────────────────────── */
+  --space-0-5: 2px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-14: 56px;
+  --space-16: 64px;
+
+  --radius-none: 0;
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --radius-full: 999px;
+
+  /* ── Shadows (layered, instrument-panel depth) ────────────── */
+  --shadow-panel: 0 1px 0 0 var(--top-highlight) inset,
+    0 -1px 0 0 rgba(0, 0, 0, 0.25) inset,
+    0 0 0 1px var(--ink-line),
+    0 28px 56px -28px rgba(0, 0, 0, 0.65);
+  --shadow-raised: 0 1px 0 0 var(--top-highlight) inset,
+    0 -1px 0 0 rgba(0, 0, 0, 0.35) inset,
+    0 0 0 1px var(--ink-line-strong),
+    0 36px 72px -32px rgba(0, 0, 0, 0.75);
+  --shadow-flush: 0 1px 0 0 var(--top-highlight-soft) inset,
+    0 -1px 0 0 rgba(0, 0, 0, 0.2) inset,
+    0 0 0 1px var(--ink-line);
+  --shadow-float: 0 28px 64px -22px rgba(0, 0, 0, 0.8);
+  --shadow-modal: 0 44px 88px -22px rgba(0, 0, 0, 0.9);
+  --shadow-focus: 0 0 0 1px var(--bone),
+    0 0 0 3px var(--ink-0),
+    0 0 0 4px var(--hi-line);
+  --shadow-led: 0 0 12px -2px currentColor;
+
+  /* ── Motion ───────────────────────────────────────────────── */
+  --duration-instant: 0ms;
+  --duration-fast: 120ms;
+  --duration-normal: 220ms;
+  --duration-slow: 380ms;
+  --duration-panel: 540ms;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.64, 0, 0.78, 0);
+  --ease-in-out: cubic-bezier(0.76, 0, 0.24, 1);
+  --ease-instrument: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out: var(--ease);
+  --ease-spring: cubic-bezier(0.34, 1.35, 0.64, 1);
+
+  /* ── Legacy shims — Catppuccin-keyed surfaces throughout the
+     codebase map onto BR ink/bone layers until each component is
+     migrated explicitly. Tints match the old silhouette (deep
+     backgrounds, lifted surfaces) so nothing visually regresses
+     before its dedicated port. ─────────────────────────────── */
+  --ctp-crust: var(--ink-0);
+  --ctp-mantle: var(--ink-1);
+  --ctp-base: var(--ink-1);
+  --ctp-surface0: var(--ink-2);
+  --ctp-surface1: var(--ink-3);
+  --ctp-surface2: var(--ink-4);
+  --ctp-overlay0: var(--bone-faint);
+  --ctp-overlay1: var(--bone-mute);
+  --ctp-overlay2: var(--bone-dim);
+  --ctp-subtext0: var(--bone-mute);
+  --ctp-subtext1: var(--bone-dim);
+  --ctp-text: var(--bone);
+  --ctp-mauve: var(--bone);
+  --ctp-lavender: var(--paint-lavender);
+  --ctp-blue: var(--sig-info);
+  --ctp-sapphire: var(--sig-info);
+  --ctp-sky: var(--paint-teal);
+  --ctp-teal: var(--paint-teal);
+  --ctp-green: var(--sig-ok);
+  --ctp-yellow: var(--sig-warn);
+  --ctp-peach: var(--paint-brass);
+  --ctp-maroon: var(--sig-err);
+  --ctp-red: var(--sig-err);
+  --ctp-pink: var(--paint-clay);
+  --ctp-flamingo: var(--paint-coral);
+  --ctp-rosewater: var(--paint-cream);
+
+  --color-anthropic: var(--paint-lavender);
+  --color-openai: var(--paint-moss);
+  --color-google: var(--paint-slate);
+  --color-deepseek: var(--paint-teal);
+  --color-local: var(--bone-dim);
+
+  --surface-elevated: var(--ink-3);
+  --surface-float: var(--ink-4);
+
+  --glow-mauve: var(--hi-glow);
+  --glow-green: var(--sig-ok-glow);
+  --glow-red: var(--sig-err-glow);
+
+  --border-subtle: var(--ink-line);
+  --border-default: var(--ink-line-strong);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.7);
 }
 
 /* ── Base ──────────────────────────────────────────────────── */
 
 body {
-  background: var(--ctp-crust);
-  color: var(--ctp-text);
+  background: var(--ink-1);
+  color: var(--bone);
   font-family: var(--font-sans);
   font-size: var(--text-base);
-  line-height: 1.4;
+  line-height: 1.55;
   margin: 0;
   padding: 0;
   height: 100vh;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "ss01", "cv11";
 }
 
 #root {
@@ -113,11 +261,31 @@ body {
   flex-direction: column;
 }
 
+/* Tabular numerals helper — used on cost, counts, latency, any
+   place where digit width jitter is distracting. Pair with mono
+   when you want terminal feel; leave unpaired for editorial lists. */
+.tabular-nums,
+.font-data {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.font-mono,
+code,
+pre,
+[class*="font-mono"] {
+  font-family: var(--font-mono);
+}
+
 /* ── Selection ─────────────────────────────────────────────── */
 
 ::selection {
-  background: rgba(203, 166, 247, 0.3);
-  color: var(--ctp-text);
+  background: rgba(232, 236, 244, 0.18);
+  color: var(--bone);
 }
 
 /* ── Scrollbars ────────────────────────────────────────────── */
@@ -130,35 +298,41 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--ctp-surface2);
+  background: var(--ink-line-strong);
   border-radius: 4px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--ctp-overlay0);
+  background: var(--bone-faint);
   background-clip: content-box;
+}
+
+/* ── Focus ring ────────────────────────────────────────────── */
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+  border-radius: var(--radius);
 }
 
 /* ── Interactive Elements ──────────────────────────────────── */
 
 .interactive {
-  transition: all var(--duration-fast) var(--ease-out);
+  transition:
+    background var(--duration-fast) var(--ease),
+    color var(--duration-fast) var(--ease),
+    transform var(--duration-fast) var(--ease);
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
 }
 .interactive:hover {
-  background: var(--surface-elevated);
+  background: var(--ink-3);
 }
 .interactive:active {
   transform: scale(0.98);
   transition-duration: 50ms;
-}
-.interactive:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--ctp-mauve);
-  border-radius: 6px;
 }
 
 /* ── Animations ────────────────────────────────────────────── */
@@ -183,13 +357,12 @@ body {
   50% { opacity: 0; }
 }
 
-/* Per-digit flash for the RollingCost component. The first frame paints
-   the digit in the mauve accent; it fades back to inherited color over
-   ~300ms. Short enough that rapid cost ticks don't strobe; long enough
-   that the eye catches a change. */
+/* Per-digit flash for the RollingCost component. Bone tint, not mauve —
+   BR palette doesn't use purple. The brief flash drops back to
+   inherited color over ~300ms so rapid ticks don't strobe. */
 @keyframes cost-digit-flash {
   0% {
-    color: var(--ctp-mauve);
+    color: var(--bone);
     transform: translateY(-1px);
   }
   100% {
@@ -198,16 +371,22 @@ body {
   }
 }
 
-/* Trace rows enter with a subtle mauve-tint flash so the eye catches
-   "this just happened" in a live stream, then fade to baseline.
-   Paired with animate-fade-in on the outer row for the slide+settle. */
+/* Trace rows enter with an ice-tint flash (info signal, not mauve) so the
+   eye catches "this just happened" in a live stream, then fade to
+   baseline. Paired with animate-fade-in on the outer row. */
 @keyframes trace-row-enter {
   0% {
-    background: color-mix(in srgb, var(--ctp-mauve) 22%, transparent);
+    background: var(--sig-info-haze);
   }
   100% {
     background: transparent;
   }
+}
+
+/* Skeleton shimmer — faint left-to-right sweep while data loads. */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 0.9; }
 }
 
 .animate-trace-row-enter {
@@ -232,15 +411,9 @@ body {
   animation: cursor-blink 1s var(--ease-in-out) infinite;
 }
 
-/* ── Monospace ─────────────────────────────────────────────── */
-
-code, pre, .font-mono, [class*="font-mono"] {
-  font-family: var(--font-mono);
-}
-
-/* ── Backdrop Blur (for overlays) ──────────────────────────── */
+/* ── Backdrop blur (overlays, modals) ──────────────────────── */
 
 .backdrop-blur-float {
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
 }
