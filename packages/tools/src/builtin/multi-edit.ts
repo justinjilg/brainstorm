@@ -11,22 +11,27 @@ function ensureSafePath(filePath: string): string {
   const cwd = getWorkspace();
   const resolved = resolve(cwd, filePath);
   const home = homedir();
-  const BLOCKED = [
-    "/etc",
-    "/usr",
-    "/var",
-    "/proc",
-    "/sys",
-    "/dev",
-    "/sbin",
-    "/boot",
-  ];
+
+  // Match file-write.ts/file-edit.ts: /var is NOT blocked wholesale because
+  // macOS tmpdir lives at /var/folders/... (symlinked from /private/var/folders).
+  // multi_edit previously blocked all of /var, so it refused to operate in
+  // the same tmp workspace where file_write and file_edit worked fine — an
+  // orchestration agent would get inconsistent results and loop.
+  const isSafeTmpVar =
+    resolved.startsWith("/var/folders/") ||
+    resolved.startsWith("/private/var/folders/") ||
+    resolved.startsWith("/var/tmp/") ||
+    resolved.startsWith("/private/var/tmp/");
+  if (!isSafeTmpVar && resolved.startsWith("/var")) {
+    throw new Error(`Path blocked: "${filePath}" is a protected system path`);
+  }
+  const BLOCKED = ["/etc", "/usr", "/proc", "/sys", "/dev", "/sbin", "/boot"];
   if (BLOCKED.some((p) => resolved.startsWith(p))) {
     throw new Error(`Path blocked: "${filePath}" is a protected system path`);
   }
   const isInHome = resolved.startsWith(home);
   const isInCwd = !relative(cwd, resolved).startsWith("..");
-  if (!isInHome && !isInCwd) {
+  if (!isInHome && !isInCwd && !isSafeTmpVar) {
     throw new Error(
       `Path blocked: "${filePath}" is outside home directory and workspace`,
     );
