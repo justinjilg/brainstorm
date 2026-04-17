@@ -38,22 +38,39 @@ export async function connectGodMode(
   const connected: GodModeConnectionResult["connectedSystems"] = [];
   const errors: GodModeConnectionResult["errors"] = [];
 
-  // Health check all connectors in parallel (15s timeout per connector)
+  // Health check all connectors in parallel (15s timeout per connector).
+  // Caller-owned timer + AbortController so the listener is cleaned up when
+  // healthCheck() wins the race — otherwise the abort handler stays attached
+  // to an AbortSignal.timeout() and fires on an already-resolved promise
+  // 15s later, leaking the reject closure per connector per run.
   const HEALTH_CHECK_TIMEOUT_MS = 15_000;
   const results = await Promise.allSettled(
     connectors.map(async (connector) => {
-      const healthTimeout = AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS);
-      const health = await Promise.race([
-        connector.healthCheck(),
-        new Promise<never>((_, reject) => {
-          healthTimeout.addEventListener("abort", () =>
-            reject(
-              new Error(`Health check timeout (${HEALTH_CHECK_TIMEOUT_MS}ms)`),
-            ),
-          );
-        }),
-      ]);
-      return { connector, health };
+      const timeoutController = new AbortController();
+      const timeoutTimer = setTimeout(
+        () => timeoutController.abort(),
+        HEALTH_CHECK_TIMEOUT_MS,
+      );
+      try {
+        const health = await Promise.race([
+          connector.healthCheck(),
+          new Promise<never>((_, reject) => {
+            timeoutController.signal.addEventListener(
+              "abort",
+              () =>
+                reject(
+                  new Error(
+                    `Health check timeout (${HEALTH_CHECK_TIMEOUT_MS}ms)`,
+                  ),
+                ),
+              { once: true },
+            );
+          }),
+        ]);
+        return { connector, health };
+      } finally {
+        clearTimeout(timeoutTimer);
+      }
     }),
   );
 
