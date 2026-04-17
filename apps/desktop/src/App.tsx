@@ -346,12 +346,10 @@ export function App() {
           </div>
           {mode === "plan" && (
             <ErrorBoundary fallbackLabel="Plan">
-              <PlanView
-                onTaskSelect={(_taskId) => {
-                  setDetailOpen(true);
-                  setInspectorContext({ type: "none" });
-                }}
-              />
+              {/* PlanView was rewritten to drop the fake phase pipeline;
+                  task selection isn't a real affordance in the new shape
+                  (no per-task entities to inspect), so no callback. */}
+              <PlanView />
             </ErrorBoundary>
           )}
           {mode === "trace" && (
