@@ -152,11 +152,18 @@ function spawnBackend(): void {
       const wasReady = backendReady;
       backendReady = true;
       spawnRetries = 0;
+      logToFile("Backend emitted ready signal");
       // Forward ready signal to the renderer so hooks that loaded once at
       // mount can refetch after a crash+respawn. We include wasReady so
       // clients can distinguish the first ready (no refetch needed — the
       // hook's initial load handles it) from a recovery ready (refetch).
-      for (const win of BrowserWindow.getAllWindows()) {
+      const wins = BrowserWindow.getAllWindows();
+      if (wins.length === 0) {
+        // Backend beat the renderer — no window to notify yet.
+        // createWindow() below picks up the sticky flag and re-fires.
+        logToFile("Ready beat window creation; deferring");
+      }
+      for (const win of wins) {
         win.webContents.send("backend-ready", { recovery: wasReady });
       }
       return;
@@ -402,6 +409,17 @@ function createWindow(): BrowserWindow {
   // alias was removed somewhere around Electron 30 — on 41 it throws
   // "setWindowOpenHandler is not a function" at createWindow time.
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+
+  // Belt-and-braces: if the backend emitted its ready signal BEFORE this
+  // window existed, BrowserWindow.getAllWindows() was empty and the
+  // forwarded event was dropped. Re-send once the page finishes loading
+  // so the renderer's useBackendReady hook flips even in the race.
+  win.webContents.once("did-finish-load", () => {
+    if (backendReady) {
+      logToFile("Re-fired backend-ready on did-finish-load (was sticky)");
+      win.webContents.send("backend-ready", { recovery: false });
+    }
+  });
 
   if (isDev) {
     win.loadURL("http://localhost:1420");
