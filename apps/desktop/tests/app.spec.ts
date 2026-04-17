@@ -224,6 +224,12 @@ test.describe("Chat", () => {
 // ── Overlays ─────────────────────────────────────────────────────────
 
 test.describe("Overlays", () => {
+  // ModelSwitcher now sources from useModels() (was a hardcoded list);
+  // mock the /api/v1/models endpoint so filtering + selection finds rows.
+  test.beforeEach(async ({ page }) => {
+    await setupAllMocks(page);
+  });
+
   test("ModelSwitcher: open, filter, select", async ({ page }) => {
     await page.goto("/");
     await page.getByTestId("status-model").click();

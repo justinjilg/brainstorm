@@ -1,15 +1,19 @@
 /**
  * Model Switcher — dropdown for quick model selection from the status rail.
+ *
+ * Sources models from the live backend via useModels(). Pre-fix this was a
+ * hardcoded 6-entry list that drifted from the real registry on every
+ * brainstormrouter provider addition; the header pitch was "357 models
+ * across 7 providers" but this dropdown only ever showed six of them.
  */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { useModels, type ModelInfo } from "../hooks/useServerData";
 
 interface Model {
   id: string;
   name: string;
   provider: string;
-  quality: string;
-  speed: string;
   price: string;
 }
 
@@ -21,56 +25,16 @@ const PROVIDER_COLORS: Record<string, string> = {
   local: "var(--color-local)",
 };
 
-const MODELS: Model[] = [
-  {
-    id: "claude-opus-4-6",
-    name: "Claude Opus 4.6",
-    provider: "anthropic",
-    quality: "best",
-    speed: "slow",
-    price: "$15/$75",
-  },
-  {
-    id: "claude-sonnet-4-6",
-    name: "Claude Sonnet 4.6",
-    provider: "anthropic",
-    quality: "great",
-    speed: "fast",
-    price: "$3/$15",
-  },
-  {
-    id: "gpt-5.4",
-    name: "GPT-5.4",
-    provider: "openai",
-    quality: "best",
-    speed: "medium",
-    price: "$10/$30",
-  },
-  {
-    id: "gemini-3.1-pro-preview",
-    name: "Gemini 3.1 Pro (Preview)",
-    provider: "google",
-    quality: "great",
-    speed: "fast",
-    price: "$1.25/$5",
-  },
-  {
-    id: "gemini-2.5-flash",
-    name: "Gemini 2.5 Flash",
-    provider: "google",
-    quality: "good",
-    speed: "fastest",
-    price: "$0.15/$0.60",
-  },
-  {
-    id: "deepseek-v3",
-    name: "DeepSeek V3",
-    provider: "deepseek",
-    quality: "great",
-    speed: "fast",
-    price: "$0.27/$1.1",
-  },
-];
+// Format pricing into the "$in/$out" string the old static list used, so
+// the UI's information density is preserved. Backend sometimes omits
+// pricing for local models — fall back to a dash.
+function formatPrice(m: ModelInfo): string {
+  const p = m.pricing;
+  if (!p) return "—";
+  const fmt = (n: number) =>
+    n === 0 ? "0" : n < 1 ? n.toFixed(2).replace(/\.?0+$/, "") : n.toFixed(0);
+  return `$${fmt(p.inputPer1MTokens)}/$${fmt(p.outputPer1MTokens)}`;
+}
 
 interface ModelSwitcherProps {
   open: boolean;
@@ -87,6 +51,26 @@ export function ModelSwitcher({
 }: ModelSwitcherProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [filter, setFilter] = useState("");
+  const { models: serverModels, loading } = useModels();
+
+  // Map backend ModelInfo to the local Model shape the selection callback
+  // expects. Sort: available first, then by quality tier ascending.
+  const models: Model[] = useMemo(() => {
+    return serverModels
+      .filter((m) => m.status === "available")
+      .slice()
+      .sort((a, b) => {
+        const qa = a.capabilities?.qualityTier ?? 99;
+        const qb = b.capabilities?.qualityTier ?? 99;
+        return qa - qb;
+      })
+      .map((m) => ({
+        id: m.id,
+        name: m.name,
+        provider: m.provider,
+        price: formatPrice(m),
+      }));
+  }, [serverModels]);
 
   useEffect(() => {
     if (!open) return;
@@ -102,8 +86,8 @@ export function ModelSwitcher({
 
   if (!open) return null;
 
-  // Group by provider
-  const filtered = MODELS.filter(
+  // Group by provider (filtered)
+  const filtered = models.filter(
     (m) =>
       m.name.toLowerCase().includes(filter.toLowerCase()) ||
       m.provider.toLowerCase().includes(filter.toLowerCase()),
@@ -123,13 +107,23 @@ export function ModelSwitcher({
           value={filter}
           data-testid="model-search"
           onChange={(e) => setFilter(e.target.value)}
-          placeholder="Search models..."
+          placeholder={
+            loading ? "Loading models…" : `Search ${models.length} models…`
+          }
           autoFocus
           className="w-full bg-transparent text-xs text-[var(--ctp-text)] outline-none placeholder:text-[var(--ctp-overlay0)]"
         />
       </div>
 
       <div className="max-h-64 overflow-y-auto py-1">
+        {!loading && models.length === 0 && (
+          <div
+            data-testid="model-switcher-empty"
+            className="px-3 py-4 text-[10px] text-[var(--ctp-overlay0)]"
+          >
+            No models available. Check provider keys in the vault.
+          </div>
+        )}
         {providers.map((provider) => (
           <div key={provider}>
             <div className="px-3 py-1 text-[10px] text-[var(--ctp-overlay0)] uppercase tracking-wider">
