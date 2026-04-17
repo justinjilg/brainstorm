@@ -105,16 +105,20 @@ export function ConfigView() {
           />
         </Section>
 
+        {/* Security section intentionally links out to the Security view
+            rather than rendering fake "8 active / enabled / enabled" rows.
+            Until middleware.status exists on the backend, the honest
+            answer is "see Security view for the catalog — per-session
+            health is not yet introspected." */}
         <Section title="Security">
           <Row
-            label="Middleware layers"
-            value="8 active"
-            badge
-            badgeColor="var(--ctp-green)"
+            label="Middleware pipeline"
+            value="see Security tab — live status not yet wired"
           />
-          <Row label="Trust propagation" value="enabled" />
-          <Row label="Egress monitor" value="enabled" />
-          <Row label="Approval velocity" value="3 rapid threshold" />
+          <Row
+            label="Policy config"
+            value="packages/core/src/security (code)"
+          />
         </Section>
       </div>
     </div>

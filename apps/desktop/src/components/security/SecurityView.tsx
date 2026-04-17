@@ -217,9 +217,15 @@ export function SecurityView() {
             </div>
           )}
 
-          {/* Middleware Pipeline (always shown) */}
+          {/* Middleware Pipeline (catalog view).
+              Pre-fix this rendered 8 dots unconditionally in green — a
+              "live telemetry" shape with no live signal behind it. Until
+              the backend exposes middleware.status (not yet wired), the
+              panel is honest about what it is: a catalog of the layers
+              that exist in core, with no status claim. Layer dots are
+              neutral; a footer note says "Status feed not yet wired." */}
           <div>
-            <SectionHeader title="Middleware Pipeline (8 layers)" />
+            <SectionHeader title="Middleware Pipeline (catalog)" />
             <div className="mt-3 space-y-1.5">
               {[
                 { name: "trust-propagation", desc: "Taint tracking" },
@@ -250,8 +256,8 @@ export function SecurityView() {
                     className="w-5 h-5 rounded-full flex items-center justify-center font-medium"
                     style={{
                       fontSize: "var(--text-2xs)",
-                      background: "var(--glow-green)",
-                      color: "var(--ctp-green)",
+                      background: "var(--ctp-surface1)",
+                      color: "var(--ctp-subtext1)",
                     }}
                   >
                     {i + 1}
@@ -273,12 +279,23 @@ export function SecurityView() {
                   >
                     {layer.desc}
                   </span>
-                  <span
-                    className="w-2 h-2 rounded-full"
-                    style={{ background: "var(--ctp-green)" }}
-                  />
                 </div>
               ))}
+            </div>
+            <div
+              className="mt-2 px-3 py-2 rounded-lg"
+              style={{
+                background: "var(--ctp-surface0)",
+                fontSize: "var(--text-2xs)",
+                color: "var(--ctp-overlay0)",
+                border: "1px dashed var(--border-subtle)",
+              }}
+            >
+              Live status feed not yet wired — these are the layers that exist
+              in <span className="font-mono">packages/core</span>, not a
+              per-request health check. Needs a{" "}
+              <span className="font-mono">middleware.status</span> IPC to
+              introspect per-session instance health.
             </div>
           </div>
         </div>
