@@ -5,8 +5,8 @@
  * Consumes AgentEvent stream from POST /api/v1/chat/stream.
  */
 
-import { useState, useCallback, useRef } from "react";
-import { streamChat, abortChat } from "../lib/ipc-client";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { streamChat, abortChat, request } from "../lib/ipc-client";
 
 export interface ChatMessage {
   id: string;
@@ -56,6 +56,14 @@ export interface UseChatReturn {
   ) => void;
   abort: () => void;
   clear: () => void;
+  /**
+   * Rehydrate the message list from a conversation's history on the backend.
+   * Pre-fix: switching conversations in the sidebar left the local messages
+   * state intact — the user saw the previous conversation's bubbles under
+   * the new conversation's header. Call this when activeConversationId
+   * changes.
+   */
+  loadConversation: (sessionId: string | null) => Promise<void>;
 }
 
 export interface UseChatOptions {
@@ -66,10 +74,17 @@ export interface UseChatOptions {
    * event internally; this is observability-only.
    */
   onEvent?: (event: any) => void;
+  /**
+   * The session/conversation id whose history the view should reflect.
+   * When this changes, the hook rehydrates `messages` from the backend's
+   * message repository via conversations.messages. Null means "fresh
+   * conversation — no prior history to load."
+   */
+  conversationId?: string | null;
 }
 
 export function useChat(options: UseChatOptions = {}): UseChatReturn {
-  const { onEvent } = options;
+  const { onEvent, conversationId } = options;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingText, setStreamingText] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
@@ -80,6 +95,9 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
 
   const abortRef = useRef<AbortController | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  const loadConversationRef = useRef<
+    ((sessionId: string | null) => Promise<void>) | null
+  >(null);
   const [contextPercent, setContextPercent] = useState(0);
 
   const send = useCallback(
@@ -299,6 +317,64 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
     setSessionCost(0);
   }, []);
 
+  // Auto-load when the caller's conversationId changes. The imperative
+  // loadConversation export below is kept for code that needs to trigger
+  // a reload explicitly (e.g. after a manual refresh button).
+  useEffect(() => {
+    if (conversationId === undefined) return; // hook called without option
+    loadConversationRef.current?.(conversationId);
+    // loadConversation is stable (useCallback with no deps), so no need to
+    // depend on it here — the ref keeps us safe from stale closures.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId]);
+
+  const loadConversation = useCallback(async (sessionId: string | null) => {
+    // Null sessionId means "no conversation selected" — reset to an empty
+    // chat. Don't touch model/provider/cost; those belong to the active
+    // turn, not the conversation.
+    if (!sessionId) {
+      setMessages([]);
+      setStreamingText("");
+      sessionIdRef.current = null;
+      return;
+    }
+    try {
+      const prior = await request<
+        Array<{
+          id: string;
+          role: "user" | "assistant" | "system" | "tool";
+          content: string;
+          modelId?: string;
+          timestamp: number;
+        }>
+      >("conversations.messages", { sessionId });
+      // Map DB rows to ChatMessage. Drop `tool` rows — they don't belong in
+      // the linear chat transcript (tool calls render inline on the owning
+      // assistant message, not as standalone bubbles).
+      const rehydrated: ChatMessage[] = prior
+        .filter((m) => m.role !== "tool")
+        .map((m) => ({
+          id: m.id,
+          role: m.role as ChatMessage["role"],
+          content: m.content,
+          model: m.modelId,
+          timestamp: m.timestamp * 1000, // DB stores seconds; UI uses ms.
+        }));
+      setMessages(rehydrated);
+      setStreamingText("");
+      sessionIdRef.current = sessionId;
+    } catch {
+      // Failed to rehydrate — leave the UI in its current state rather than
+      // wiping what the user already has.
+    }
+  }, []);
+
+  // Keep the ref pointed at the current loadConversation so the useEffect
+  // above can call it without a useCallback dep cycle.
+  useEffect(() => {
+    loadConversationRef.current = loadConversation;
+  }, [loadConversation]);
+
   return {
     messages,
     streamingText,
@@ -311,5 +387,6 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
     send,
     abort,
     clear,
+    loadConversation,
   };
 }
