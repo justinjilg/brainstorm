@@ -275,7 +275,8 @@ export function ModelsView({
         </DashCard>
       </div>
 
-      {/* Detail panel */}
+      {/* Detail panel — either single-model detail or a side-by-side
+          comparison of the 2-3 rows the user checked in compare mode. */}
       <div
         className="overflow-y-auto"
         style={{
@@ -285,7 +286,18 @@ export function ModelsView({
           background: "var(--ink-0)",
         }}
       >
-        {selectedModel ? (
+        {compareMode && compared.size >= 2 ? (
+          <ComparePanel
+            models={rows.filter((r) => compared.has(r.id))}
+            onUse={onModelSelect}
+          />
+        ) : compareMode ? (
+          <EmptyState
+            icon={<EmptyCompareMark />}
+            heading={`Select ${2 - compared.size} more model${compared.size === 0 ? "s" : ""}`}
+            description="Check 2 or 3 rows to see quality, speed, and pricing side-by-side. The winning column in each row highlights on its accent."
+          />
+        ) : selectedModel ? (
           <ModelDetail model={selectedModel} onSelect={onModelSelect} />
         ) : (
           <EmptyState
@@ -296,6 +308,275 @@ export function ModelsView({
         )}
       </div>
     </div>
+  );
+}
+
+// ── Compare panel ───────────────────────────────────────────────────
+
+function ComparePanel({
+  models,
+  onUse,
+}: {
+  models: ModelRow[];
+  onUse?: (id: string, name: string, provider: string) => void;
+}) {
+  // Column-per-model, row-per-metric. Winners get a pearl-white highlight
+  // so the dominant model on each row pops without adding color noise.
+  const metrics: Array<{
+    key: keyof ModelRow;
+    label: string;
+    direction: "higher" | "lower";
+    format: (v: number) => string;
+  }> = [
+    {
+      key: "quality",
+      label: "Quality",
+      direction: "higher",
+      format: (v) => `${v}%`,
+    },
+    {
+      key: "speed",
+      label: "Speed",
+      direction: "higher",
+      format: (v) => `${v}%`,
+    },
+    {
+      key: "inputPrice",
+      label: "Input / 1M",
+      direction: "lower",
+      format: (v) => `$${v.toFixed(2)}`,
+    },
+    {
+      key: "outputPrice",
+      label: "Output / 1M",
+      direction: "lower",
+      format: (v) => `$${v.toFixed(2)}`,
+    },
+  ];
+
+  const winnerIdFor = (key: keyof ModelRow, dir: "higher" | "lower") => {
+    const values = models.map((m) => m[key] as number);
+    const target = dir === "higher" ? Math.max(...values) : Math.min(...values);
+    // If everyone ties, no winner (avoid highlighting every cell).
+    if (values.every((v) => v === target)) return null;
+    return models.find((m) => (m[key] as number) === target)?.id ?? null;
+  };
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: "var(--space-5)",
+      }}
+    >
+      <DashCard eyebrow="COMPARE" title={`Side-by-side (${models.length})`}>
+        <table className="data-table" data-testid="compare-table">
+          <thead>
+            <tr>
+              <th />
+              {models.map((m) => (
+                <th key={m.id} className="num" style={{ whiteSpace: "nowrap" }}>
+                  <div
+                    className="font-display"
+                    style={{
+                      fontSize: "var(--text-sm)",
+                      color: "var(--bone)",
+                      textTransform: "none",
+                      letterSpacing: "-0.01em",
+                    }}
+                  >
+                    {m.name}
+                  </div>
+                  <div
+                    className="font-mono"
+                    style={{
+                      fontSize: "var(--text-2xs)",
+                      color: "var(--bone-mute)",
+                      marginTop: 2,
+                    }}
+                  >
+                    {m.provider}
+                  </div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {metrics.map((metric) => {
+              const winnerId = winnerIdFor(metric.key, metric.direction);
+              return (
+                <tr key={metric.key as string}>
+                  <td
+                    className="font-mono"
+                    style={{
+                      color: "var(--bone-mute)",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.08em",
+                      fontSize: "var(--text-2xs)",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {metric.label}
+                  </td>
+                  {models.map((m) => {
+                    const isWinner = m.id === winnerId;
+                    return (
+                      <td
+                        key={m.id}
+                        className="num"
+                        data-winner={isWinner ? "true" : undefined}
+                        style={{
+                          color: isWinner ? "var(--bone)" : "var(--bone-dim)",
+                          fontWeight: isWinner ? 600 : 400,
+                          background: isWinner ? "var(--hi-haze)" : undefined,
+                        }}
+                      >
+                        {metric.format(m[metric.key] as number)}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </DashCard>
+
+      <DashCard eyebrow="ACTIONS" title="Use one of these">
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "var(--space-2)",
+          }}
+        >
+          {models.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              className="br-btn"
+              style={{ justifyContent: "space-between" }}
+              onClick={() => onUse?.(m.id, m.name, m.provider)}
+            >
+              <span
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "flex-start",
+                }}
+              >
+                <span style={{ color: "var(--bone)" }}>{m.name}</span>
+                <span
+                  className="font-mono"
+                  style={{
+                    fontSize: "var(--text-2xs)",
+                    color: "var(--bone-mute)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.08em",
+                  }}
+                >
+                  {m.provider}
+                </span>
+              </span>
+              <span
+                className="font-mono"
+                style={{
+                  fontSize: "var(--text-2xs)",
+                  color: "var(--bone-mute)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                }}
+              >
+                Use →
+              </span>
+            </button>
+          ))}
+        </div>
+      </DashCard>
+    </div>
+  );
+}
+
+function EmptyCompareMark() {
+  // Two overlapping rectangles — the "side-by-side" silhouette.
+  return (
+    <svg viewBox="0 0 88 88" fill="none" aria-hidden>
+      <rect
+        x="14"
+        y="22"
+        width="34"
+        height="44"
+        rx="2"
+        stroke="currentColor"
+        strokeWidth="1.2"
+      />
+      <rect
+        x="40"
+        y="22"
+        width="34"
+        height="44"
+        rx="2"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        fill="currentColor"
+        fillOpacity="0.08"
+      />
+      <line
+        x1="21"
+        y1="34"
+        x2="41"
+        y2="34"
+        stroke="currentColor"
+        strokeWidth="1"
+        strokeOpacity="0.55"
+      />
+      <line
+        x1="21"
+        y1="42"
+        x2="41"
+        y2="42"
+        stroke="currentColor"
+        strokeWidth="1"
+        strokeOpacity="0.45"
+      />
+      <line
+        x1="21"
+        y1="50"
+        x2="41"
+        y2="50"
+        stroke="currentColor"
+        strokeWidth="1"
+        strokeOpacity="0.35"
+      />
+      <line
+        x1="47"
+        y1="34"
+        x2="67"
+        y2="34"
+        stroke="currentColor"
+        strokeWidth="1"
+        strokeOpacity="0.55"
+      />
+      <line
+        x1="47"
+        y1="42"
+        x2="67"
+        y2="42"
+        stroke="currentColor"
+        strokeWidth="1"
+        strokeOpacity="0.45"
+      />
+      <line
+        x1="47"
+        y1="50"
+        x2="67"
+        y2="50"
+        stroke="currentColor"
+        strokeWidth="1"
+        strokeOpacity="0.35"
+      />
+    </svg>
   );
 }
 
