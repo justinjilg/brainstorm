@@ -78,7 +78,7 @@ export function WorkflowsView() {
   );
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex-1 flex flex-col overflow-hidden mode-crossfade">
       <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--ctp-surface0)]">
         <span className="text-xs font-medium text-[var(--ctp-overlay0)] uppercase tracking-wider">
           Workflows

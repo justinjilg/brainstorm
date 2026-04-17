@@ -79,7 +79,7 @@ export function TraceView({
 
   if (events.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-[var(--ctp-base)]">
+      <div className="flex-1 flex items-center justify-center mode-crossfade bg-[var(--ctp-base)]">
         <div className="text-center animate-fade-in">
           <div
             className="tracking-[0.2em] uppercase font-semibold mb-3"
@@ -99,7 +99,7 @@ export function TraceView({
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-[var(--ctp-base)]">
+    <div className="flex-1 flex flex-col overflow-hidden mode-crossfade bg-[var(--ctp-base)]">
       {/* Filter bar */}
       <div
         className="flex items-center gap-2 px-6 py-2 shrink-0"

@@ -59,7 +59,7 @@ export function ModelsView({
   };
 
   return (
-    <div className="flex-1 flex overflow-hidden">
+    <div className="flex-1 flex overflow-hidden mode-crossfade">
       {/* Model list */}
       <div className="w-[55%] border-r border-[var(--ctp-surface0)] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--ctp-surface0)]">

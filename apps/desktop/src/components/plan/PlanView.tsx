@@ -104,7 +104,7 @@ export function PlanView() {
 
   return (
     <div
-      className="flex-1 flex flex-col overflow-hidden bg-[var(--ctp-base)]"
+      className="flex-1 flex flex-col overflow-hidden mode-crossfade bg-[var(--ctp-base)]"
       data-testid="plan-view"
     >
       <div className="flex-1 overflow-y-auto">

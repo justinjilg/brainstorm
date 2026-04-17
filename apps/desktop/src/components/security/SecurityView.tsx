@@ -47,7 +47,7 @@ export function SecurityView() {
   }, []);
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-[var(--ctp-base)]">
+    <div className="flex-1 flex flex-col overflow-hidden mode-crossfade bg-[var(--ctp-base)]">
       <div
         className="flex items-center justify-between px-6 py-3 shrink-0"
         style={{ borderBottom: "1px solid var(--border-subtle)" }}
