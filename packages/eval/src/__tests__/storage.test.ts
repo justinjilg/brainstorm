@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildScorecard } from "../storage.js";
+import { buildScorecard, saveEvalRun } from "../storage.js";
 import type { EvalRun, ProbeResult, CapabilityDimension } from "../types.js";
 
 describe("buildScorecard", () => {
@@ -126,6 +126,16 @@ describe("buildScorecard", () => {
     expect(scorecard.overall.passed).toBe(0);
     expect(scorecard.overall.total).toBe(0);
     expect(scorecard.overall.cost).toBe(0);
+  });
+
+  it("saveEvalRun produces a finite startedAt when results are empty", () => {
+    // Before the fix, Math.min(...[]) === Infinity and the JSON serialization
+    // landed `null` in startedAt — downstream arithmetic then went NaN.
+    const run = saveEvalRun("some-model", []);
+    expect(Number.isFinite(run.startedAt)).toBe(true);
+    expect(run.startedAt).toBeGreaterThan(0);
+    // startedAt == completedAt is fine for a zero-result run.
+    expect(run.startedAt).toBeLessThanOrEqual(run.completedAt);
   });
 
   it("sums total cost from all probe results", () => {
