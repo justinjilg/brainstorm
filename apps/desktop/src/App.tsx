@@ -410,12 +410,6 @@ export function App() {
                   setDetailOpen(true);
                   setInspectorContext({ type: "trace-event", event });
                 }}
-                onApprove={(_eventId) => {
-                  // Approval gates handled by workflow engine — no-op in trace view
-                }}
-                onDeny={(_eventId) => {
-                  // Denial gates handled by workflow engine — no-op in trace view
-                }}
               />
             </ErrorBoundary>
           )}

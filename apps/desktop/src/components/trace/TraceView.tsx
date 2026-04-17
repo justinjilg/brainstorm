@@ -1,6 +1,14 @@
 /**
  * Trace View — real-time visibility into what agents are doing.
- * Shows every tool call, routing decision, and approval gate.
+ * Shows every tool call, routing decision, and error.
+ *
+ * Approval-gate events were part of the original type union but nothing
+ * in the chat-event stream ever emits them — the daemon controller
+ * handles approval gates in-band and doesn't surface them through the
+ * renderer-facing event channel. The union and its Approve/Deny branch
+ * were removed so there's no dead code path masquerading as a future
+ * feature. Re-add both when an approval.respond IPC exists and the
+ * backend actually emits approval-gate chat events into the trace.
  */
 
 import { useState, useRef, useEffect } from "react";
@@ -11,13 +19,7 @@ export interface TraceEvent {
   agentRole: string;
   agentModel: string;
   provider: string;
-  type:
-    | "tool-call"
-    | "tool-result"
-    | "routing"
-    | "text"
-    | "approval-gate"
-    | "error";
+  type: "tool-call" | "tool-result" | "routing" | "text" | "error";
   toolName?: string;
   toolArgs?: string;
   toolOutput?: string;
@@ -47,16 +49,9 @@ const ROLE_COLORS: Record<string, string> = {
 interface TraceViewProps {
   events: TraceEvent[];
   onEventSelect: (event: TraceEvent) => void;
-  onApprove?: (eventId: string) => void;
-  onDeny?: (eventId: string) => void;
 }
 
-export function TraceView({
-  events,
-  onEventSelect,
-  onApprove,
-  onDeny,
-}: TraceViewProps) {
+export function TraceView({ events, onEventSelect }: TraceViewProps) {
   const [filter, setFilter] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -147,8 +142,6 @@ export function TraceView({
               key={event.id}
               event={event}
               onSelect={() => onEventSelect(event)}
-              onApprove={onApprove}
-              onDeny={onDeny}
             />
           ))}
         </div>
@@ -160,13 +153,9 @@ export function TraceView({
 function TraceEventRow({
   event,
   onSelect,
-  onApprove,
-  onDeny,
 }: {
   event: TraceEvent;
   onSelect: () => void;
-  onApprove?: (id: string) => void;
-  onDeny?: (id: string) => void;
 }) {
   const time = new Date(event.timestamp).toLocaleTimeString("en-US", {
     hour12: false,
@@ -176,72 +165,6 @@ function TraceEventRow({
   });
   const roleColor = ROLE_COLORS[event.agentRole] ?? "var(--ctp-overlay1)";
   const provColor = PROVIDER_COLORS[event.provider] ?? "var(--ctp-overlay0)";
-
-  if (event.type === "approval-gate") {
-    return (
-      <div
-        className="px-4 py-3 rounded-xl animate-trace-row-enter"
-        style={{
-          background: "var(--glow-mauve)",
-          border: "1px solid rgba(203, 166, 247, 0.2)",
-        }}
-      >
-        <div
-          className="flex items-center gap-2 mb-2"
-          style={{ fontSize: "var(--text-xs)" }}
-        >
-          <span style={{ color: "var(--ctp-mauve)" }}>⚠</span>
-          <span className="font-medium text-[var(--ctp-mauve)]">
-            Approval Gate
-          </span>
-          <span className="font-mono text-[var(--ctp-overlay0)]">{time}</span>
-        </div>
-        <div
-          style={{ fontSize: "var(--text-xs)", color: "var(--ctp-subtext1)" }}
-          className="mb-2"
-        >
-          {event.text}
-          {event.confidence != null && (
-            <span
-              className="ml-2 font-mono"
-              style={{
-                color:
-                  event.confidence < 0.5
-                    ? "var(--ctp-red)"
-                    : "var(--ctp-yellow)",
-              }}
-            >
-              confidence: {event.confidence.toFixed(2)}
-            </span>
-          )}
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => onApprove?.(event.id)}
-            className="interactive px-3 py-1.5 rounded-lg"
-            style={{
-              fontSize: "var(--text-2xs)",
-              background: "var(--ctp-green)",
-              color: "var(--ctp-crust)",
-            }}
-          >
-            Approve
-          </button>
-          <button
-            onClick={() => onDeny?.(event.id)}
-            className="interactive px-3 py-1.5 rounded-lg"
-            style={{
-              fontSize: "var(--text-2xs)",
-              border: "1px solid var(--border-default)",
-              color: "var(--ctp-red)",
-            }}
-          >
-            Deny
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div
