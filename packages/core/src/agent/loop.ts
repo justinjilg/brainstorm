@@ -1192,19 +1192,35 @@ export async function* runAgentLoop(
     // Extract gateway response headers (X-BR-*) for cost reconciliation and telemetry.
     // Use a timeout to prevent hanging if the response promise never resolves
     // (happens when the stream errored on the guardian SSE event).
+    // Caller-owned timer so the abort listener is released once the race is
+    // decided — otherwise it fires 5s later (on every turn where headers
+    // resolved under 5s — i.e. almost every turn) and retains the closure.
     const HEADERS_TIMEOUT_MS = 5000;
     let headersTimedOut = false;
-    const headersTimeoutSignal = AbortSignal.timeout(HEADERS_TIMEOUT_MS);
+    const headersTimeoutController = new AbortController();
+    const headersTimeoutTimer = setTimeout(
+      () => headersTimeoutController.abort(),
+      HEADERS_TIMEOUT_MS,
+    );
     try {
-      const response = await Promise.race([
-        result.response,
-        new Promise<null>((resolve) => {
-          headersTimeoutSignal.addEventListener("abort", () => {
-            headersTimedOut = true;
-            resolve(null);
-          });
-        }),
-      ]);
+      let response: Awaited<typeof result.response> | null;
+      try {
+        response = await Promise.race([
+          result.response,
+          new Promise<null>((resolve) => {
+            headersTimeoutController.signal.addEventListener(
+              "abort",
+              () => {
+                headersTimedOut = true;
+                resolve(null);
+              },
+              { once: true },
+            );
+          }),
+        ]);
+      } finally {
+        clearTimeout(headersTimeoutTimer);
+      }
       if (headersTimedOut) {
         // Cost reconciliation is skipped for this turn — surface it instead of
         // silently dropping the gateway feedback.
