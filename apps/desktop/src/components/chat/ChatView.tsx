@@ -461,6 +461,19 @@ const MessageBubble = memo(function MessageBubble({
       {/* Content — flows full-width, no bubble */}
       <div style={{ fontSize: "var(--text-base)", lineHeight: "1.6" }}>
         <Markdown content={message.content} />
+        {message.aborted && (
+          <span
+            data-testid="assistant-aborted-marker"
+            className="ml-2 font-mono"
+            style={{
+              fontSize: "var(--text-2xs)",
+              color: "var(--ctp-peach)",
+            }}
+            title="This response was stopped before it finished."
+          >
+            — stopped
+          </span>
+        )}
       </div>
 
       {/* Tool calls */}
