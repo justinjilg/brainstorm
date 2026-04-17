@@ -9,7 +9,7 @@
  * This is the primary flywheel accelerator: every edit produces an outcome.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -69,10 +69,7 @@ export function detectBuildCommand(projectPath: string): string | null {
   if (existsSync(join(projectPath, "package.json"))) {
     try {
       const pkg = JSON.parse(
-        require("node:fs").readFileSync(
-          join(projectPath, "package.json"),
-          "utf-8",
-        ),
+        readFileSync(join(projectPath, "package.json"), "utf-8"),
       );
       if (pkg.scripts?.build) return "npm run build";
     } catch {
