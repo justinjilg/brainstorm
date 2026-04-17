@@ -19,6 +19,11 @@
 @import "@fontsource/geist/600.css";
 @import "@fontsource-variable/geist-mono";
 
+/* BR component layer — ported section, stat, page-header, table,
+   skeleton, tooltip, empty-state styles. All selectors read from the
+   --ink/--bone/--sig/--paint tokens declared below. */
+@import "./styles/br-components.css";
+
 /* ═══════════════════════════════════════════════════════════════
    BRAINSTORM DESKTOP — Design System (v2: BR parity)
    Aesthetic: Precision Monochrome — Bloomberg × NYT Projects.
