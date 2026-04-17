@@ -51,7 +51,18 @@ export interface UseChatReturn {
   clear: () => void;
 }
 
-export function useChat(): UseChatReturn {
+export interface UseChatOptions {
+  /**
+   * Fires on every raw event received during streaming (routing, text-delta,
+   * tool-call-start, tool-result, cost, done, error, ...). Used by
+   * App.tsx to populate the Trace view. The hook itself still handles the
+   * event internally; this is observability-only.
+   */
+  onEvent?: (event: any) => void;
+}
+
+export function useChat(options: UseChatOptions = {}): UseChatReturn {
+  const { onEvent } = options;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingText, setStreamingText] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
@@ -108,6 +119,14 @@ export function useChat(): UseChatReturn {
             activeSkills: opts?.activeSkills,
           },
           (event) => {
+            // Observability hook: forward every event to the caller before
+            // we handle it internally, so App.tsx can feed the Trace view.
+            // Errors in onEvent must never break the stream.
+            try {
+              onEvent?.(event);
+            } catch {
+              /* ignore observer errors */
+            }
             switch (event.type) {
               case "session":
                 sessionIdRef.current = (event.data?.sessionId as string) ?? "";
@@ -250,7 +269,7 @@ export function useChat(): UseChatReturn {
       setActiveTools([]);
       abortRef.current = null;
     },
-    [isProcessing, sessionCost],
+    [isProcessing, sessionCost, onEvent],
   );
 
   const abort = useCallback(() => {
