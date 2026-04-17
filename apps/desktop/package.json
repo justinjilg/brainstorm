@@ -13,6 +13,7 @@
     "build:electron": "tsc -p electron/tsconfig.json && cp electron/preload.cjs electron/dist/preload.cjs",
     "preview": "vite preview",
     "test": "npx playwright test",
+    "test:live": "npm run build:electron && npx playwright test --config tests-live/playwright.live.config.ts",
     "dist": "vite build && npm run build:electron && electron-builder",
     "dist:unsigned": "vite build && npm run build:electron && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder"
   },

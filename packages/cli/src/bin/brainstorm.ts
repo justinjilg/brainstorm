@@ -6643,15 +6643,22 @@ program
     const { MemoryManager } = await import("@brainst0rm/core");
     const config = loadConfig();
 
-    // Resolve keys from env only (non-interactive — no TTY in IPC mode)
-    const envKeys = new Map<string, string>();
-    for (const name of PROVIDER_KEY_NAMES) {
-      const val = process.env[name];
-      if (val) envKeys.set(name, val);
-    }
-    const resolvedKeys: ResolvedKeys = {
-      get: (name: string) => envKeys.get(name) ?? null,
-    };
+    // Resolve keys through the full chain (local vault → 1Password →
+    // env). Before, ipc mode went straight to process.env — but the
+    // desktop app inherits OP_SERVICE_ACCOUNT_TOKEN from the shell and
+    // expects 1Password to populate ANTHROPIC_API_KEY / OPENAI_API_KEY
+    // / etc. on demand, exactly like `brainstorm models` does. Skipping
+    // the resolver made every chat turn fail with "No models available".
+    //
+    // resolveProviderKeys() has a lazy vault password prompt that only
+    // triggers if a local vault exists AND keys aren't available via
+    // 1Password/env. In headless IPC mode there's no TTY to answer the
+    // prompt, so the prompt handler will reject and fall through; the
+    // practical case (1Password configured OR env keys set) works
+    // without user interaction. If someone genuinely needs a local
+    // vault unlocked, they'll have to run `brainstorm` interactively
+    // once to unlock it — out of scope for IPC.
+    const resolvedKeys = await resolveProviderKeys();
 
     const registry = await createProviderRegistry(config, resolvedKeys);
     const db = getDb();

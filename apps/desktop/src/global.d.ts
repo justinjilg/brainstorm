@@ -14,6 +14,12 @@ interface BrainstormBridge {
     callback: (payload: { recovery: boolean }) => void,
   ): () => void;
   openFolder(): Promise<string | null>;
+  /**
+   * Query main for the current sticky backendReady flag. Used at mount
+   * to resolve the race where main emits "backend-ready" before React
+   * attaches its onBackendReady subscription.
+   */
+  getBackendReady(): Promise<boolean>;
 }
 
 declare global {
