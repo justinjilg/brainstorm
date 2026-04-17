@@ -4,6 +4,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import type { AppMode } from "../App";
+import { fuzzyFilter } from "../lib/fuzzy";
 
 interface PaletteCommand {
   id: string;
@@ -210,12 +211,16 @@ export function CommandPalette({
     },
   ];
 
+  // Fuzzy scoring so "gocfg" → "Go to Config" and "vmem" → "View Memory"
+  // work. Pre-fix this was a substring match on label + category, which
+  // matched "Go to Config" from "go to config" and little else.
   const filtered = query
-    ? commands.filter(
-        (c) =>
-          c.label.toLowerCase().includes(query.toLowerCase()) ||
-          c.category.toLowerCase().includes(query.toLowerCase()),
-      )
+    ? fuzzyFilter(
+        commands,
+        query,
+        (c) => c.label,
+        (c) => c.category,
+      ).map((m) => m.item)
     : commands;
 
   useEffect(() => {
