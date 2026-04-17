@@ -27,6 +27,16 @@ export function useBackendReady(): boolean {
   useEffect(() => {
     const bridge = window.brainstorm;
     if (!bridge?.onBackendReady) return;
+
+    // Race resolution: main emits "backend-ready" on did-finish-load,
+    // which can land BEFORE this useEffect runs (effects flush after
+    // the first commit, but Electron's did-finish-load can fire at the
+    // same moment). Poll the main-side sticky flag at mount so we
+    // don't wait forever for an event we already missed.
+    bridge.getBackendReady?.().then((alreadyReady) => {
+      if (alreadyReady) setReady(true);
+    });
+
     const off = bridge.onBackendReady(() => setReady(true));
     return off;
   }, []);

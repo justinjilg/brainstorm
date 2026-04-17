@@ -41,4 +41,12 @@ contextBridge.exposeInMainWorld("brainstorm", {
 
   /** Open a native folder picker dialog. */
   openFolder: () => ipcRenderer.invoke("open-folder"),
+
+  /**
+   * Query main for the current sticky backendReady state. Used at mount
+   * time by useBackendReady to resolve a race where the backend emits
+   * its ready signal BEFORE React attaches the onBackendReady listener.
+   * Returns a boolean promise.
+   */
+  getBackendReady: () => ipcRenderer.invoke("main.backend-ready-state"),
 });

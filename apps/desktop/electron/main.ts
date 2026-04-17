@@ -171,6 +171,16 @@ function spawnBackend(): void {
 
     if (msg.event) {
       // Streaming event — forward to all renderer windows
+      if (msg.event === "text-delta") {
+        // One-line summary so we can see tokens are actually arriving
+        // without dumping every delta.
+        const delta = (msg.data as any)?.delta ?? "";
+        logToFile(`backend event: text-delta (${delta.length} chars)`);
+      } else {
+        logToFile(
+          `backend event: ${msg.event}${msg.data?.error ? ` error="${msg.data.error}"` : ""}`,
+        );
+      }
       const wins = BrowserWindow.getAllWindows();
       for (const win of wins) {
         win.webContents.send("chat-event", msg);
@@ -325,6 +335,9 @@ function registerIPC(): void {
   ipcMain.handle("chat-stream", async (_event, params: any) => {
     const id = `stream-${nextId++}`;
     const doneKey = `${id}-done`;
+    logToFile(
+      `chat-stream received (id=${id}, model=${params?.modelId ?? "auto"}, conv=${params?.conversationId ?? "new"}, msg=${String(params?.message ?? "").slice(0, 60)}…)`,
+    );
 
     return new Promise<void>((resolve) => {
       const timer = setTimeout(() => {
@@ -376,6 +389,12 @@ function registerIPC(): void {
     const id = `abort-${nextId++}`;
     sendToBackend({ id, method: "chat.abort" });
   });
+
+  // Backend-ready sticky state — let the renderer resolve the race where
+  // main emits "backend-ready" before React attaches the onBackendReady
+  // listener. useBackendReady calls this on mount and flips to true
+  // immediately if the main-side sticky flag is already set.
+  ipcMain.handle("main.backend-ready-state", () => backendReady);
 }
 
 // ── Window ───────────────────────────────────────────────────────

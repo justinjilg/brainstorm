@@ -219,6 +219,7 @@ export function ChatView({
             {messages.map((msg, i) => (
               <div
                 key={msg.id}
+                data-testid={`message-${msg.role}`}
                 className="animate-fade-in"
                 style={{ animationDelay: `${Math.min(i * 30, 200)}ms` }}
               >
@@ -228,7 +229,7 @@ export function ChatView({
 
             {/* Streaming response */}
             {streamingText && (
-              <div className="animate-fade-in">
+              <div className="animate-fade-in" data-testid="message-streaming">
                 {currentModel && (
                   <div
                     className="flex items-center gap-2 mb-2"
