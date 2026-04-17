@@ -1,5 +1,5 @@
 import { readFileSync, existsSync, watch, type FSWatcher } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { homedir } from "node:os";
 import TOML from "@iarna/toml";
 import { createLogger } from "@brainst0rm/shared";
@@ -141,27 +141,34 @@ export function watchConfig(
     }, 500);
   };
 
-  // Watch global config
-  if (existsSync(GLOBAL_CONFIG_FILE)) {
+  // Watch the *parent directory* and filter by basename. Watching the file
+  // directly breaks on atomic saves (vim backup-on-write, VS Code default,
+  // most macOS editors): the save replaces the inode and the old watcher
+  // becomes inert with no event. A directory watcher survives because the
+  // inode it holds — the parent — doesn't change.
+  const watchParentOf = (filePath: string, label: string) => {
+    const parent = dirname(filePath);
+    const name = basename(filePath);
+    if (!existsSync(parent)) return;
     try {
-      const w = watch(GLOBAL_CONFIG_FILE, () => notify(GLOBAL_CONFIG_FILE));
+      const w = watch(parent, (_eventType, changed) => {
+        if (!changed) return;
+        if (changed === name) notify(filePath);
+      });
       w.unref();
       watchers.push(w);
     } catch (e) {
-      log.warn({ err: e }, "Failed to watch global config");
+      log.warn({ err: e, label }, "Failed to watch config directory");
     }
+  };
+
+  if (existsSync(GLOBAL_CONFIG_FILE)) {
+    watchParentOf(GLOBAL_CONFIG_FILE, "global");
   }
 
-  // Watch project config
   const projectFile = join(projectDir, PROJECT_CONFIG_FILE);
   if (existsSync(projectFile)) {
-    try {
-      const w = watch(projectFile, () => notify(projectFile));
-      w.unref();
-      watchers.push(w);
-    } catch (e) {
-      log.warn({ err: e }, "Failed to watch project config");
-    }
+    watchParentOf(projectFile, "project");
   }
 
   return () => {
