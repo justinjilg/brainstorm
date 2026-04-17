@@ -1,8 +1,13 @@
 /**
- * Config View — wired to real server health data.
+ * Config View — rebuilt on the BR component layer. Every section is a
+ * DashCard with a mono eyebrow; every row is a labeled data line with
+ * tabular-numeral values. Read-only — this is a reflection of loaded
+ * config + live health, not an editor.
  */
 
+import type { ReactNode } from "react";
 import { useHealthStats, useTools, useConfig } from "../../hooks/useServerData";
+import { DashCard, PageHeader } from "../br";
 
 export function ConfigView() {
   const health = useHealthStats();
@@ -11,148 +16,119 @@ export function ConfigView() {
 
   return (
     <div
-      className="flex-1 overflow-y-auto mode-crossfade bg-[var(--ctp-base)]"
-      style={{ padding: 24 }}
+      className="flex-1 overflow-y-auto mode-crossfade"
+      style={{
+        background: "var(--ink-1)",
+        padding: "var(--space-6) var(--space-8)",
+      }}
     >
-      <div className="max-w-[720px] mx-auto space-y-6">
-        <Section title="Server">
-          <Row
-            label="Status"
-            value={health?.status ?? "unknown"}
-            badge
-            badgeColor={
-              health?.status === "healthy"
-                ? "var(--ctp-green)"
-                : "var(--ctp-red)"
-            }
-          />
-          <Row label="Version" value={health?.version ?? "—"} />
-          <Row
-            label="Uptime"
-            value={
-              health
-                ? `${Math.floor(health.uptime_seconds / 60)}m ${health.uptime_seconds % 60}s`
-                : "—"
-            }
-          />
-          <Row label="Tools" value={String(toolCount)} />
-          <Row
-            label="God Mode"
-            value={`${health?.god_mode?.connected ?? 0} systems, ${health?.god_mode?.tools ?? 0} tools`}
-          />
-          <Row
-            label="Conversations"
-            value={String(health?.conversations?.active ?? 0)}
-          />
-        </Section>
+      <div style={{ maxWidth: 760, margin: "0 auto" }}>
+        <PageHeader
+          title="Configuration"
+          description="Read-only reflection of the loaded brainstorm.toml + live server health. Edit via brainstorm.toml or the CLI."
+        />
 
-        <Section title="Routing Strategy">
-          <Row
-            label="Active strategy"
-            value={config?.general?.defaultModel ? "manual" : "combined"}
-          />
-          <Row
-            label="Default model"
-            value={config?.general?.defaultModel ?? "auto"}
-          />
-          <Row
-            label="Output style"
-            value={config?.general?.outputStyle ?? "default"}
-          />
-        </Section>
+        <div className="home-stack">
+          <DashCard eyebrow="SERVER" title="Runtime">
+            <Row
+              label="Status"
+              value={health?.status ?? "unknown"}
+              badge
+              accent={health?.status === "healthy" ? "ok" : "err"}
+            />
+            <Row label="Version" value={health?.version ?? "—"} mono />
+            <Row
+              label="Uptime"
+              value={
+                health
+                  ? `${Math.floor(health.uptime_seconds / 60)}m ${health.uptime_seconds % 60}s`
+                  : "—"
+              }
+              mono
+            />
+            <Row label="Tools" value={String(toolCount)} mono />
+            <Row
+              label="God Mode"
+              value={`${health?.god_mode?.connected ?? 0} systems · ${health?.god_mode?.tools ?? 0} tools`}
+              mono
+            />
+            <Row
+              label="Conversations"
+              value={String(health?.conversations?.active ?? 0)}
+              mono
+            />
+          </DashCard>
 
-        <Section title="KAIROS Daemon">
-          <Row
-            label="Tick interval"
-            value={`${config?.daemon?.tickIntervalMs ?? 30000}ms`}
-          />
-          <Row
-            label="Max ticks/session"
-            value={String(config?.daemon?.maxTicksPerSession ?? 100)}
-          />
-          <Row
-            label="Approval gate"
-            value={
-              config?.daemon?.approvalGateInterval
-                ? `every ${config.daemon.approvalGateInterval} ticks`
-                : "disabled"
-            }
-          />
-        </Section>
+          <DashCard eyebrow="ROUTING" title="Strategy + defaults">
+            <Row
+              label="Active strategy"
+              value={config?.general?.defaultModel ? "manual" : "combined"}
+            />
+            <Row
+              label="Default model"
+              value={config?.general?.defaultModel ?? "auto"}
+              mono
+            />
+            <Row
+              label="Output style"
+              value={config?.general?.outputStyle ?? "default"}
+              mono
+            />
+          </DashCard>
 
-        <Section title="Budget">
-          <Row
-            label="Session limit"
-            value={`$${config?.budget?.sessionLimit?.toFixed(2) ?? "5.00"}`}
-          />
-          <Row
-            label="Daily limit"
-            value={`$${config?.budget?.dailyLimit?.toFixed(2) ?? "50.00"}`}
-          />
-          <Row
-            label="Monthly limit"
-            value={`$${config?.budget?.monthlyLimit?.toFixed(2) ?? "500.00"}`}
-          />
-          <Row
-            label="Hard limit"
-            value={config?.budget?.hardLimit !== false ? "enabled" : "disabled"}
-            badge
-            badgeColor={
-              config?.budget?.hardLimit !== false
-                ? "var(--ctp-red)"
-                : "var(--ctp-green)"
-            }
-          />
-        </Section>
+          <DashCard eyebrow="DAEMON" title="KAIROS">
+            <Row
+              label="Tick interval"
+              value={`${config?.daemon?.tickIntervalMs ?? 30000}ms`}
+              mono
+            />
+            <Row
+              label="Max ticks/session"
+              value={String(config?.daemon?.maxTicksPerSession ?? 100)}
+              mono
+            />
+            <Row
+              label="Approval gate"
+              value={
+                config?.daemon?.approvalGateInterval
+                  ? `every ${config.daemon.approvalGateInterval} ticks`
+                  : "disabled"
+              }
+            />
+          </DashCard>
 
-        {/* Security section intentionally links out to the Security view
-            rather than rendering fake "8 active / enabled / enabled" rows.
-            Until middleware.status exists on the backend, the honest
-            answer is "see Security view for the catalog — per-session
-            health is not yet introspected." */}
-        <Section title="Security">
-          <Row
-            label="Middleware pipeline"
-            value="see Security tab — live status not yet wired"
-          />
-          <Row
-            label="Policy config"
-            value="packages/core/src/security (code)"
-          />
-        </Section>
-      </div>
-    </div>
-  );
-}
+          <DashCard eyebrow="BUDGET" title="Spend limits">
+            <Row
+              label="Session limit"
+              value={`$${config?.budget?.sessionLimit?.toFixed(2) ?? "5.00"}`}
+              mono
+            />
+            <Row
+              label="Daily limit"
+              value={`$${config?.budget?.dailyLimit?.toFixed(2) ?? "50.00"}`}
+              mono
+            />
+            <Row
+              label="Monthly limit"
+              value={`$${config?.budget?.monthlyLimit?.toFixed(2) ?? "500.00"}`}
+              mono
+            />
+            <Row
+              label="Hard limit"
+              value={
+                config?.budget?.hardLimit !== false ? "enabled" : "disabled"
+              }
+              badge
+              accent={config?.budget?.hardLimit !== false ? "err" : "ok"}
+            />
+          </DashCard>
 
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <div
-        className="mb-2"
-        style={{
-          fontSize: "var(--text-2xs)",
-          color: "var(--ctp-overlay0)",
-          letterSpacing: "0.12em",
-          textTransform: "uppercase",
-        }}
-      >
-        {title}
-      </div>
-      <div
-        className="rounded-xl overflow-hidden"
-        style={{
-          background: "var(--ctp-surface0)",
-          border: "1px solid var(--border-subtle)",
-        }}
-      >
-        {children}
+          <DashCard
+            eyebrow="SECURITY"
+            title="Middleware + policies"
+            note="Pipeline catalog lives in the Security view. Live per-session status isn't introspected yet — needs a middleware.status IPC."
+          />
+        </div>
       </div>
     </div>
   );
@@ -162,36 +138,95 @@ function Row({
   label,
   value,
   badge,
-  badgeColor,
+  accent,
+  mono,
 }: {
   label: string;
   value: string;
   badge?: boolean;
-  badgeColor?: string;
+  accent?: "ok" | "err" | "warn";
+  mono?: boolean;
 }) {
+  const badgeColor =
+    accent === "ok"
+      ? "var(--sig-ok)"
+      : accent === "err"
+        ? "var(--sig-err)"
+        : accent === "warn"
+          ? "var(--sig-warn)"
+          : "var(--bone)";
+  const badgeBg =
+    accent === "ok"
+      ? "var(--sig-ok-haze)"
+      : accent === "err"
+        ? "var(--sig-err-haze)"
+        : accent === "warn"
+          ? "var(--sig-warn-haze)"
+          : "var(--hi-haze)";
+
   return (
     <div
-      className="flex items-center justify-between px-4 py-2.5"
       style={{
-        borderBottom: "1px solid var(--border-subtle)",
-        fontSize: "var(--text-xs)",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        padding: "var(--space-2) 0",
+        borderBottom: "1px solid var(--ink-line)",
+        fontSize: "var(--text-sm)",
       }}
     >
-      <span style={{ color: "var(--ctp-overlay1)" }}>{label}</span>
+      <span
+        className="font-mono"
+        style={{
+          color: "var(--bone-mute)",
+          textTransform: "uppercase",
+          letterSpacing: "0.08em",
+          fontSize: "var(--text-2xs)",
+        }}
+      >
+        {label}
+      </span>
       {badge ? (
+        <Badge color={badgeColor} bg={badgeBg}>
+          {value}
+        </Badge>
+      ) : (
         <span
-          className="px-2 py-0.5 rounded-md"
-          style={{
-            fontSize: "var(--text-2xs)",
-            color: badgeColor,
-            background: `${badgeColor}15`,
-          }}
+          className={mono ? "font-mono tabular-nums" : undefined}
+          style={{ color: "var(--bone)" }}
         >
           {value}
         </span>
-      ) : (
-        <span style={{ color: "var(--ctp-text)" }}>{value}</span>
       )}
     </div>
+  );
+}
+
+function Badge({
+  color,
+  bg,
+  children,
+}: {
+  color: string;
+  bg: string;
+  children: ReactNode;
+}) {
+  return (
+    <span
+      className="font-mono"
+      style={{
+        padding: "2px 8px",
+        borderRadius: "var(--radius-xs)",
+        fontSize: "var(--text-2xs)",
+        textTransform: "uppercase",
+        letterSpacing: "0.08em",
+        color,
+        background: bg,
+        border: `1px solid ${color}`,
+        borderColor: color.replace(")", "-glow)"),
+      }}
+    >
+      {children}
+    </span>
   );
 }
