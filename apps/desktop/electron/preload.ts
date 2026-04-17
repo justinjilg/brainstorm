@@ -25,6 +25,21 @@ contextBridge.exposeInMainWorld("brainstorm", {
     return () => ipcRenderer.removeListener("chat-event", handler);
   },
 
+  /**
+   * Listen for backend-ready events. Fires on both the initial boot and
+   * after a crash+respawn recovery — the payload carries `recovery: true`
+   * only in the recovery case, so hooks that already loaded at mount can
+   * refetch selectively. Returns an unlisten function.
+   */
+  onBackendReady: (callback: (payload: { recovery: boolean }) => void) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: { recovery: boolean },
+    ) => callback(data);
+    ipcRenderer.on("backend-ready", handler);
+    return () => ipcRenderer.removeListener("backend-ready", handler);
+  },
+
   /** Open a native folder picker dialog. */
   openFolder: () => ipcRenderer.invoke("open-folder"),
 });
