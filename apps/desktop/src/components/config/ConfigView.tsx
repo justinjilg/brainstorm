@@ -11,7 +11,7 @@ export function ConfigView() {
 
   return (
     <div
-      className="flex-1 overflow-y-auto bg-[var(--ctp-base)]"
+      className="flex-1 overflow-y-auto mode-crossfade bg-[var(--ctp-base)]"
       style={{ padding: 24 }}
     >
       <div className="max-w-[720px] mx-auto space-y-6">

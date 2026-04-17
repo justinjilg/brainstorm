@@ -29,7 +29,7 @@ export function SkillsView({
   };
 
   return (
-    <div className="flex-1 flex overflow-hidden bg-[var(--ctp-base)]">
+    <div className="flex-1 flex overflow-hidden mode-crossfade bg-[var(--ctp-base)]">
       {/* Skill list */}
       <div
         className="flex flex-col overflow-hidden"

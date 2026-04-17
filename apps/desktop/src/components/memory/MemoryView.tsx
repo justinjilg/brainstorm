@@ -50,7 +50,7 @@ export function MemoryView() {
   };
 
   return (
-    <div className="flex-1 flex overflow-hidden bg-[var(--ctp-base)]">
+    <div className="flex-1 flex overflow-hidden mode-crossfade bg-[var(--ctp-base)]">
       {/* Entry list */}
       <div
         className="flex flex-col overflow-hidden"
