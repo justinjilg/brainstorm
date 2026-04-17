@@ -750,6 +750,21 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
         break;
       }
 
+      // ── Cost aggregation ────────────────────────────────────
+      case "cost.summary": {
+        const { CostRepository } = dbModule;
+        const repo = new CostRepository(ctx.db);
+        // Session cost is tracked by the renderer from streaming events;
+        // today/month/byModel are authoritative DB aggregations. byModel
+        // is capped to the top 8 models so the tab stays scannable.
+        sendResult(req.id, {
+          today: repo.totalCostToday(),
+          month: repo.totalCostThisMonth(),
+          byModel: repo.recentByModel(8),
+        });
+        break;
+      }
+
       // ── Health (for backward compat) ─────────────────────────
       case "health": {
         sendResult(req.id, {

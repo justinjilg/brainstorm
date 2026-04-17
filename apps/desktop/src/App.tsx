@@ -77,6 +77,12 @@ export function App() {
     import("./components/trace/TraceView").TraceEvent[]
   >([]);
   const traceIdCounter = useRef(0);
+  // Routing decisions captured live from chat events. Dashboard Routing tab
+  // reads this; capped to the last 200 so long sessions don't bloat memory.
+  const [routingDecisions, setRoutingDecisions] = useState<
+    import("./components/dashboard/DashboardView").RoutingDecision[]
+  >([]);
+  const routingIdCounter = useRef(0);
   const [fatalError, setFatalError] = useState<string | null>(null);
   const kairos = useKairos();
   useErrorToast(kairos.error, "KAIROS");
@@ -313,6 +319,29 @@ export function App() {
                 onModeChange={setMode}
                 onOpenPalette={() => setPaletteOpen(true)}
                 onAgentEvent={(event) => {
+                  // Capture every routing event into routingDecisions so
+                  // the Dashboard Routing tab has real data to render.
+                  // The trace view captures them too, but this slice is
+                  // scoped to model-pick metadata (no tool noise).
+                  if (event.type === "routing") {
+                    const decision: import("./components/dashboard/DashboardView").RoutingDecision =
+                      {
+                        id: `route-${routingIdCounter.current++}`,
+                        timestamp: Date.now(),
+                        modelName:
+                          (event as any).modelName ??
+                          (event as any).model ??
+                          activeModel,
+                        provider: (event as any).provider ?? activeProvider,
+                        strategy: (event as any).strategy,
+                        reason: (event as any).reason,
+                        cost: (event as any).cost,
+                      };
+                    setRoutingDecisions((prev) => [
+                      ...prev.slice(-199),
+                      decision,
+                    ]);
+                  }
                   // Capture events for trace view
                   if (
                     [
@@ -381,7 +410,10 @@ export function App() {
           )}
           {mode === "dashboard" && (
             <ErrorBoundary fallbackLabel="Dashboard">
-              <DashboardView sessionCost={sessionCost} />
+              <DashboardView
+                sessionCost={sessionCost}
+                routingDecisions={routingDecisions}
+              />
             </ErrorBoundary>
           )}
           {mode === "models" && (

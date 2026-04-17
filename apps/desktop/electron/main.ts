@@ -233,6 +233,10 @@ const ALLOWED_METHODS = new Set([
   // flipped local state while the backend kept generating (and billing)
   // until the 5-min main-process timeout fired. See docs/desktop-audit.md H1.
   "chat.abort",
+  // cost.summary aggregates cost_records by day/month/model. Without
+  // this entry the Dashboard Cost tab fell back to the session-only
+  // number and hardcoded $0.0000 for today/month (see docs/desktop-audit.md F4).
+  "cost.summary",
 ]);
 
 function registerIPC(): void {
