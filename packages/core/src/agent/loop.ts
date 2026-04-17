@@ -866,6 +866,12 @@ export async function* runAgentLoop(
     // dead. Aborting streamAbort terminates fullStream and the for-await
     // exits cleanly. We unref() so the timer itself doesn't keep the
     // process alive.
+    //
+    // `watchdogFired` distinguishes watchdog-origin aborts from user-origin
+    // aborts (options.signal). Watchdog-origin should fall through to the
+    // empty-response retry path with RETRY_MODELS, matching the old
+    // in-loop `break`-on-stall behaviour. User-origin stays "interrupted".
+    let watchdogFired = false;
     const watchdog = setInterval(() => {
       if (Date.now() - lastEventTime > STREAM_TIMEOUT_MS) {
         const elapsed = Date.now() - sessionStartTime;
@@ -883,6 +889,7 @@ export async function* runAgentLoop(
           message: `Stream timeout after ${elapsed}ms`,
           model: decision.model.id,
         });
+        watchdogFired = true;
         streamAbort.abort();
       }
     }, 5_000);
@@ -1018,16 +1025,27 @@ export async function* runAgentLoop(
       // BrainstormRouter sends a guardian SSE event after [DONE] that the AI SDK
       // can't parse (TypeValidationError). This is non-fatal — all content and
       // tool calls have already been yielded. Swallow validation errors silently.
-      if (
-        streamErr.name !== "AI_TypeValidationError" &&
-        !streamErr.message?.includes("Type validation failed")
-      ) {
+      const isTypeValidation =
+        streamErr.name === "AI_TypeValidationError" ||
+        streamErr.message?.includes("Type validation failed");
+      // Watchdog-origin abort: the stream stalled out. Swallow the AbortError
+      // here so control falls through to the empty-response retry below,
+      // which tries each model in RETRY_MODELS. Without this swallow, the
+      // outer catch's "error.name === AbortError" branch would classify a
+      // stalled stream as a user interrupt and end the turn with no retry.
+      const isWatchdogAbort = watchdogFired && streamErr.name === "AbortError";
+      if (!isTypeValidation && !isWatchdogAbort) {
         // Real error — record circuit breaker failure so repeated errors
         // open the circuit and subsequent sessions skip this model.
         getLLMCircuit(decision.model.id).recordFailure(
           streamErr.message ?? "stream_error",
         );
         throw streamErr; // Re-throw real errors
+      }
+      if (isWatchdogAbort) {
+        // Record the stall so circuit-breaker + routing see it as a failure
+        // against this model, just like the old in-loop break did.
+        getLLMCircuit(decision.model.id).recordFailure("stream_stall");
       }
     } finally {
       clearInterval(watchdog);
