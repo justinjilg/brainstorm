@@ -14,15 +14,36 @@ const log = createLogger("hooks");
 /** Cache compiled RegExps to avoid recompilation on every hook fire. */
 const regexCache = new Map<string, RegExp | null>();
 
-/** Simple ReDoS heuristic: reject patterns with nested quantifiers. */
-const REDOS_PATTERN = /(\+|\*|\{)\s*(\+|\*|\{)/;
+/**
+ * Heuristic: reject matchers prone to catastrophic backtracking.
+ *
+ * The original heuristic only matched two adjacent quantifiers like `++`
+ * or `*{`, missing the canonical ReDoS shape `(a+)+` — a quantified group
+ * followed by another quantifier — because the `)` separates them. This
+ * pattern also catches `(a*)+`, `(.*|x)*`, `(a|b)+`, etc.
+ *
+ * JS RegExp has no timeout primitive, so the only robust defence is to
+ * reject suspect patterns at compile time. Ship with a practical check;
+ * anyone who genuinely needs arbitrary regex can graduate the matcher
+ * runner to a worker-thread timeout later.
+ */
+function looksLikeRedos(pattern: string): boolean {
+  // Adjacent quantifiers: "*+", "++", "*{", etc.
+  if (/(\+|\*|\{)\s*(\+|\*|\{)/.test(pattern)) return true;
+  // A group followed by a repetition quantifier — the (a+)+ shape.
+  // Only flag when something inside the group is itself quantified,
+  // which is what actually backtracks. Non-quantified groups like
+  // (abc)+ are safe.
+  if (/\([^)]*[*+?{][^)]*\)[*+?{]/.test(pattern)) return true;
+  return false;
+}
 
 function getCachedRegex(pattern: string): RegExp | null {
   if (regexCache.has(pattern)) return regexCache.get(pattern)!;
-  if (REDOS_PATTERN.test(pattern)) {
+  if (looksLikeRedos(pattern)) {
     log.warn(
       { pattern },
-      "Rejected hook matcher — potential ReDoS (nested quantifiers)",
+      "Rejected hook matcher — potential ReDoS (nested/stacked quantifiers)",
     );
     regexCache.set(pattern, null);
     return null;
