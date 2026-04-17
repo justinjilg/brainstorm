@@ -36,7 +36,8 @@ export function DashCard({
         {actions ? <div className="dash-card-actions">{actions}</div> : null}
       </div>
       <div className="dash-card-body">
-        {note ? <div className="dash-card-note">{note}</div> : children}
+        {children}
+        {note ? <div className="dash-card-note">{note}</div> : null}
       </div>
     </section>
   );

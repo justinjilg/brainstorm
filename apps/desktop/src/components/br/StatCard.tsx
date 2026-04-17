@@ -31,6 +31,10 @@ export interface StatCardProps {
   sparkline?: number[];
   /** Override sparkline stroke. Defaults to the accent color. */
   sparklineColor?: string;
+  /** Forward a data-testid to the value span — Playwright assertions
+   *  assert on the rendered number, so point the id at the numeric
+   *  element rather than the outer card. */
+  testId?: string;
 }
 
 const accentCssVar: Record<StatAccent, string> = {
@@ -50,6 +54,7 @@ export function StatCard({
   trend,
   sparkline,
   sparklineColor,
+  testId,
 }: StatCardProps) {
   const valueRef = useRef<HTMLDivElement | null>(null);
   const prevValueRef = useRef(value);
@@ -81,7 +86,7 @@ export function StatCard({
         ) : null}
         <span>{label}</span>
       </div>
-      <div className="stat-value" ref={valueRef}>
+      <div className="stat-value" ref={valueRef} data-testid={testId}>
         {value}
       </div>
       {trend ? (
