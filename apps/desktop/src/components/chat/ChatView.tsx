@@ -32,9 +32,11 @@ export function ChatView({
   onNewConversation,
   onModeChange,
   onOpenPalette,
-  onAgentEvent: _onAgentEvent,
+  onAgentEvent,
 }: ChatViewProps) {
-  void _onAgentEvent; // Events captured by App.tsx onAgentEvent prop
+  // Forward every raw stream event up to App.tsx, which feeds the Trace
+  // view's timeline. Pre-fix this prop was explicitly discarded
+  // (`void _onAgentEvent`), making Trace mode permanently empty.
   const {
     messages,
     streamingText,
@@ -46,7 +48,7 @@ export function ChatView({
     contextPercent,
     send,
     abort,
-  } = useChat();
+  } = useChat({ onEvent: onAgentEvent });
 
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
