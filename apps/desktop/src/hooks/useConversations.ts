@@ -5,6 +5,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { request } from "../lib/ipc-client";
 import type { Conversation } from "../lib/api-client";
+import { useBackendRecovery } from "./useBackendRecovery";
 
 export interface UseConversationsOptions {
   /**
@@ -61,6 +62,9 @@ export function useConversations(options: UseConversationsOptions = {}) {
   useEffect(() => {
     refresh();
   }, [refresh]);
+  // On backend respawn, reload the conversation list — it may have changed
+  // via the CLI or another process while the child was down.
+  useBackendRecovery(refresh);
 
   return { conversations, loading, refresh, create };
 }

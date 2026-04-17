@@ -6,6 +6,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { request } from "../lib/ipc-client";
 import type { HealthResponse } from "../lib/api-client";
+import { useBackendRecovery } from "./useBackendRecovery";
 
 // ── Tools ──────────────────────────────────────────────────────────
 
@@ -35,6 +36,9 @@ export function useTools() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+  // Refetch after backend crash+respawn so the renderer doesn't sit on
+  // stale tool data (new MCP connections, restarted tool registry, etc.).
+  useBackendRecovery(refresh);
 
   // Group tools by category
   const grouped = groupTools(tools);
@@ -176,6 +180,7 @@ export function useMemory() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+  useBackendRecovery(refresh);
 
   return {
     entries,
@@ -219,6 +224,7 @@ export function useSkills() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+  useBackendRecovery(refresh);
 
   return { skills, loading, error, refresh };
 }
@@ -274,6 +280,7 @@ export function useConfig() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+  useBackendRecovery(refresh);
 
   return { config, loading, refresh };
 }
@@ -298,6 +305,7 @@ export function useModels() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+  useBackendRecovery(refresh);
 
   return { models, loading, refresh };
 }

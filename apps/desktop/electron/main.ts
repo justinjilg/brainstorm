@@ -101,8 +101,16 @@ function spawnBackend(): void {
     // "already running"), causing the renderer to send requests to a
     // not-actually-ready backend.
     if (msg.type === "ready") {
+      const wasReady = backendReady;
       backendReady = true;
       spawnRetries = 0;
+      // Forward ready signal to the renderer so hooks that loaded once at
+      // mount can refetch after a crash+respawn. We include wasReady so
+      // clients can distinguish the first ready (no refetch needed — the
+      // hook's initial load handles it) from a recovery ready (refetch).
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send("backend-ready", { recovery: wasReady });
+      }
       return;
     }
 

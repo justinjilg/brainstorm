@@ -6,6 +6,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { isBackendAlive } from "../lib/ipc-client";
 import type { HealthResponse } from "../lib/api-client";
+import { useBackendRecovery } from "./useBackendRecovery";
 
 export interface ServerHealthState {
   connected: boolean;
@@ -52,6 +53,9 @@ export function useServerHealth(pollIntervalMs = 10_000): ServerHealthState & {
     const interval = setInterval(check, pollIntervalMs);
     return () => clearInterval(interval);
   }, [check, pollIntervalMs]);
+  // Don't wait up to pollIntervalMs to flip "connected" back to true after
+  // a respawn — the backend-ready signal arrives within ~1s of recovery.
+  useBackendRecovery(check);
 
   return { ...state, check };
 }
