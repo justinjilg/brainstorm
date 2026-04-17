@@ -1,129 +1,159 @@
 /**
- * Dashboard View — wired to real server data.
+ * Dashboard View — rebuilt with the BR component layer.
+ *
+ * Always-on stats-row at the top, three tabs below (Tools / Routing /
+ * Cost). All content lives inside DashCards so the view is visually
+ * identical to the @brainst0rm/router dashboard. Previously this view
+ * had hardcoded $0.0000 placeholders and a stub "Routing decisions will
+ * appear here…" block — both of those are now backed by real data:
+ *   · Cost → cost.summary IPC aggregation (today / month / by model).
+ *   · Routing → decisions captured from chat events in App.tsx.
+ *   · Tools → tools.list IPC, grouped by category (unchanged).
  */
 
-import { useState } from "react";
-import { useTools, useHealthStats } from "../../hooks/useServerData";
+import { useMemo, useState } from "react";
+import {
+  useTools,
+  useHealthStats,
+  useCostSummary,
+} from "../../hooks/useServerData";
+import {
+  DashCard,
+  EmptyState,
+  PageHeader,
+  SkeletonRows,
+  SkeletonStatsRow,
+  StatCard,
+  StatsRow,
+} from "../br";
+
+export type DashboardTab = "tools" | "routing" | "cost";
+
+export interface RoutingDecision {
+  id: string;
+  timestamp: number;
+  modelName?: string;
+  provider?: string;
+  strategy?: string;
+  reason?: string;
+  cost?: number;
+}
 
 interface DashboardProps {
   sessionCost: number;
+  routingDecisions: RoutingDecision[];
 }
 
-export function DashboardView({ sessionCost }: DashboardProps) {
-  // contextPercent removed — only used in StatusRail
-  const [activeTab, setActiveTab] = useState<"routing" | "tools" | "cost">(
-    "tools",
-  );
-  const {
-    grouped,
-    count: toolCount,
-    loading: toolsLoading,
-    error: toolsError,
-  } = useTools();
+export function DashboardView({
+  sessionCost,
+  routingDecisions,
+}: DashboardProps) {
+  const [activeTab, setActiveTab] = useState<DashboardTab>("tools");
+  const tools = useTools();
   const health = useHealthStats();
+  const cost = useCostSummary();
+
+  const toolCountText = String(tools.count);
+  const todayText = cost.summary ? formatUsd(cost.summary.today) : "—";
+  const monthText = cost.summary ? formatUsd(cost.summary.month) : "—";
+  const uptime = health ? formatUptime(health.uptime_seconds) : "—";
+  const godModeCount = `${health?.god_mode?.connected ?? 0}`;
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-[var(--ctp-base)]">
-      {/* Top metrics */}
+    <div
+      className="flex-1 overflow-y-auto mode-crossfade"
+      data-testid="dashboard-view"
+      style={{ background: "var(--ink-1)" }}
+    >
       <div
-        className="flex items-center gap-8 px-6 py-3 shrink-0"
+        className="mx-auto"
         style={{
-          borderBottom: "1px solid var(--border-subtle)",
-          background: "var(--ctp-mantle)",
-          fontSize: "var(--text-xs)",
+          maxWidth: 1200,
+          padding: "var(--space-8) var(--space-10) var(--space-16)",
         }}
       >
-        <Metric label="Session" value={`$${sessionCost.toFixed(4)}`} />
-        <Metric label="Tools" value={String(toolCount)} />
-        <Metric
-          label="God Mode"
-          value={`${health?.god_mode?.connected ?? 0} systems`}
+        <PageHeader
+          title="Dashboard"
+          description="Operator-console view of the Brainstorm runtime — session cost, tools, routing, and historical spend at a glance."
+          tabs={[
+            { id: "tools", label: "Tools" },
+            { id: "routing", label: "Routing" },
+            { id: "cost", label: "Cost" },
+          ]}
+          activeTab={activeTab}
+          onTabChange={(id) => setActiveTab(id as DashboardTab)}
         />
-        <Metric
-          label="Server"
-          value={health?.status ?? "unknown"}
-          color={
-            health?.status === "healthy" ? "var(--ctp-green)" : "var(--ctp-red)"
-          }
-        />
-        <Metric
-          label="Uptime"
-          value={health ? formatUptime(health.uptime_seconds) : "—"}
-        />
-        <Metric label="Version" value={health?.version ?? "—"} />
-      </div>
 
-      {/* Tabs */}
-      <div
-        className="flex gap-1 px-6 pt-3"
-        style={{ borderBottom: "1px solid var(--border-subtle)" }}
-      >
-        {(["tools", "routing", "cost"] as const).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            data-testid={`dashboard-tab-${tab}`}
-            className="interactive px-4 py-2 rounded-t-lg"
-            style={{
-              fontSize: "var(--text-xs)",
-              color:
-                activeTab === tab ? "var(--ctp-text)" : "var(--ctp-overlay0)",
-              background:
-                activeTab === tab ? "var(--ctp-surface0)" : "transparent",
-              borderBottom:
-                activeTab === tab
-                  ? "2px solid var(--ctp-mauve)"
-                  : "2px solid transparent",
-            }}
-          >
-            {tab.charAt(0).toUpperCase() + tab.slice(1)}
-          </button>
-        ))}
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto p-6">
-        {activeTab === "tools" && (
-          <ToolsPanel
-            grouped={grouped}
-            loading={toolsLoading}
-            error={toolsError}
-          />
+        {/* Always-on stats row — session + today + month + tools + systems + uptime. */}
+        {cost.loading && !cost.summary ? (
+          <SkeletonStatsRow count={6} />
+        ) : (
+          <StatsRow>
+            <StatCard
+              label="Session"
+              value={formatUsd(sessionCost)}
+              accent="accent"
+              tooltip="Cost of the current conversation since the app started"
+            />
+            <StatCard
+              label="Today"
+              value={todayText}
+              accent="warning"
+              tooltip="Sum of all cost_records since local midnight"
+            />
+            <StatCard
+              label="This Month"
+              value={monthText}
+              accent="warning"
+              tooltip="Month-to-date cost across every session"
+            />
+            <StatCard
+              label="Tools"
+              value={toolCountText}
+              accent="info"
+              tooltip="Built-in tools available to the agent loop"
+            />
+            <StatCard
+              label="Systems"
+              value={godModeCount}
+              accent="success"
+              tooltip="God Mode connectors currently online"
+            />
+            <StatCard
+              label="Uptime"
+              value={uptime}
+              accent="accent"
+              tooltip="How long the backend child process has been running"
+            />
+          </StatsRow>
         )}
-        {activeTab === "routing" && <RoutingPanel />}
-        {activeTab === "cost" && <CostPanel sessionCost={sessionCost} />}
+
+        <div className="home-stack" data-testid="dashboard-content">
+          {activeTab === "tools" && (
+            <ToolsPanel
+              grouped={tools.grouped}
+              loading={tools.loading}
+              error={tools.error}
+            />
+          )}
+          {activeTab === "routing" && (
+            <RoutingPanel decisions={routingDecisions} />
+          )}
+          {activeTab === "cost" && (
+            <CostPanel
+              sessionCost={sessionCost}
+              summary={cost.summary}
+              loading={cost.loading}
+              error={cost.error}
+            />
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-function Metric({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: string;
-  color?: string;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <span style={{ color: "var(--ctp-overlay0)" }}>{label}</span>
-      <span
-        className="font-medium"
-        style={{ color: color ?? "var(--ctp-text)" }}
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
-
-function formatUptime(seconds: number): string {
-  if (seconds < 60) return `${seconds}s`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-  return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
-}
+// ── Tools panel ──────────────────────────────────────────────────────
 
 function ToolsPanel({
   grouped,
@@ -142,216 +172,507 @@ function ToolsPanel({
 
   if (error) {
     return (
-      <div
-        data-testid="tools-error"
-        style={{ fontSize: "var(--text-sm)", color: "var(--ctp-red)" }}
-      >
-        {error}
-      </div>
+      <DashCard eyebrow="REGISTRY" title="Tools">
+        <div
+          data-testid="tools-error"
+          style={{ fontSize: "var(--text-sm)", color: "var(--sig-err)" }}
+        >
+          {error}
+        </div>
+      </DashCard>
     );
   }
 
   if (loading) {
     return (
-      <div
-        className="animate-pulse-glow"
-        style={{ fontSize: "var(--text-sm)", color: "var(--ctp-overlay1)" }}
-      >
-        Loading tools...
-      </div>
+      <DashCard eyebrow="REGISTRY" title="Tools">
+        <SkeletonRows count={4} />
+      </DashCard>
     );
   }
 
-  return (
-    <div className="space-y-3">
-      <div
-        style={{
-          fontSize: "var(--text-2xs)",
-          color: "var(--ctp-overlay0)",
-          letterSpacing: "0.12em",
-          textTransform: "uppercase",
-        }}
-      >
-        <span data-testid="tool-count">
-          Tool Registry ({grouped.reduce((s, g) => s + g.count, 0)})
-        </span>
-      </div>
+  const total = grouped.reduce((s, g) => s + g.count, 0);
 
-      <div className="grid grid-cols-3 gap-3">
-        {grouped.map((group) => (
-          <button
-            key={group.category}
-            onClick={() =>
-              setExpandedCat(
-                expandedCat === group.category ? null : group.category,
-              )
-            }
-            data-testid={`tool-category-${group.category}`}
-            className="interactive text-left p-4 rounded-xl"
-            style={{
-              background:
-                expandedCat === group.category
-                  ? "var(--ctp-surface0)"
-                  : "transparent",
-              border: "1px solid var(--border-default)",
-            }}
-          >
-            <div
-              className="font-medium text-[var(--ctp-text)] mb-1"
-              style={{ fontSize: "var(--text-sm)" }}
-            >
-              {group.category}
-            </div>
-            <div
+  return (
+    <DashCard eyebrow="REGISTRY" title={`Tools (${total})`}>
+      {grouped.length === 0 ? (
+        <EmptyState
+          icon={<EmptyToolsMark />}
+          heading="No tools registered"
+          description="The backend started with an empty tool registry. Enable built-in tools or wire an MCP server to see them here."
+        />
+      ) : (
+        <div
+          className="grid gap-3"
+          style={{
+            gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
+          }}
+        >
+          {grouped.map((group) => (
+            <button
+              key={group.category}
+              type="button"
+              onClick={() =>
+                setExpandedCat(
+                  expandedCat === group.category ? null : group.category,
+                )
+              }
+              data-testid={`tool-category-${group.category}`}
+              className="br-btn text-left"
               style={{
-                fontSize: "var(--text-2xs)",
-                color: "var(--ctp-overlay0)",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "flex-start",
+                padding: "var(--space-4)",
+                gap: "var(--space-1)",
+                background:
+                  expandedCat === group.category
+                    ? "var(--ink-3)"
+                    : "var(--ink-2)",
               }}
             >
-              {group.count} tools
-            </div>
-          </button>
-        ))}
-      </div>
+              <span
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontSize: "var(--text-md)",
+                  fontWeight: 500,
+                  color: "var(--bone)",
+                }}
+              >
+                {group.category}
+              </span>
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "var(--text-2xs)",
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: "var(--bone-mute)",
+                }}
+              >
+                {group.count} tools
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
 
-      {/* Expanded tool list */}
       {expandedCat && (
-        <div className="animate-fade-in space-y-1 mt-2">
+        <div
+          className="animate-fade-in"
+          style={{ marginTop: "var(--space-4)" }}
+        >
           <div
             style={{
+              fontFamily: "var(--font-mono)",
               fontSize: "var(--text-2xs)",
-              color: "var(--ctp-overlay0)",
               letterSpacing: "0.12em",
               textTransform: "uppercase",
+              color: "var(--bone-mute)",
               marginBottom: 8,
             }}
           >
             {expandedCat}
           </div>
-          {grouped
-            .find((g) => g.category === expandedCat)
-            ?.tools.map((tool) => (
-              <div
-                key={tool.name}
-                className="flex items-start gap-3 px-3 py-2 rounded-lg"
-                style={{
-                  background: "var(--ctp-surface0)",
-                  border: "1px solid var(--border-subtle)",
-                }}
-              >
-                <span
-                  className="font-mono shrink-0"
-                  style={{
-                    fontSize: "var(--text-xs)",
-                    color: "var(--ctp-mauve)",
-                  }}
-                >
-                  {tool.name}
-                </span>
-                <span
-                  className="flex-1"
-                  style={{
-                    fontSize: "var(--text-2xs)",
-                    color: "var(--ctp-overlay1)",
-                  }}
-                >
-                  {tool.description}
-                </span>
-                <span
-                  className="shrink-0 px-1.5 py-0.5 rounded"
-                  style={{
-                    fontSize: "var(--text-2xs)",
-                    color:
-                      tool.permission === "auto"
-                        ? "var(--ctp-green)"
-                        : tool.permission === "confirm"
-                          ? "var(--ctp-yellow)"
-                          : "var(--ctp-red)",
-                    background:
-                      tool.permission === "auto"
-                        ? "var(--glow-green)"
-                        : tool.permission === "confirm"
-                          ? "rgba(249, 226, 175, 0.12)"
-                          : "var(--glow-red)",
-                  }}
-                >
-                  {tool.permission}
-                </span>
-              </div>
-            ))}
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Description</th>
+                <th style={{ width: 100 }}>Permission</th>
+              </tr>
+            </thead>
+            <tbody>
+              {grouped
+                .find((g) => g.category === expandedCat)
+                ?.tools.map((tool) => (
+                  <tr key={tool.name}>
+                    <td className="font-mono" style={{ color: "var(--bone)" }}>
+                      {tool.name}
+                    </td>
+                    <td>{tool.description}</td>
+                    <td>
+                      <span
+                        className="font-mono"
+                        style={{
+                          fontSize: "var(--text-2xs)",
+                          color: permissionColor(tool.permission),
+                          textTransform: "uppercase",
+                          letterSpacing: "0.08em",
+                        }}
+                      >
+                        {tool.permission}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
         </div>
       )}
-    </div>
+    </DashCard>
   );
 }
 
-function RoutingPanel() {
+// ── Routing panel ────────────────────────────────────────────────────
+
+function RoutingPanel({ decisions }: { decisions: RoutingDecision[] }) {
+  if (decisions.length === 0) {
+    return (
+      <DashCard eyebrow="INTELLIGENCE" title="Routing decisions">
+        <EmptyState
+          icon={<EmptyRoutingMark />}
+          heading="No routing decisions yet"
+          description="Each chat turn picks a model via the router; decisions appear here in real time as they happen."
+        />
+      </DashCard>
+    );
+  }
+
+  // Recent-first; cap at 50 rows so the table doesn't balloon.
+  const ordered = [...decisions].reverse().slice(0, 50);
+
   return (
-    <div className="space-y-4">
-      <div
-        style={{
-          fontSize: "var(--text-2xs)",
-          color: "var(--ctp-overlay0)",
-          letterSpacing: "0.12em",
-          textTransform: "uppercase",
-        }}
-      >
-        Routing History
-      </div>
-      <div style={{ fontSize: "var(--text-sm)", color: "var(--ctp-overlay1)" }}>
-        Routing decisions will appear here as messages are processed. Each entry
-        shows model, strategy, reason, and cost.
-      </div>
-    </div>
+    <DashCard
+      eyebrow="INTELLIGENCE"
+      title={`Routing decisions (${decisions.length})`}
+    >
+      <table className="data-table" data-testid="routing-table">
+        <thead>
+          <tr>
+            <th style={{ width: 90 }}>Time</th>
+            <th>Model</th>
+            <th>Strategy</th>
+            <th>Reason</th>
+            <th className="num" style={{ width: 100 }}>
+              Cost
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {ordered.map((d) => (
+            <tr key={d.id}>
+              <td className="font-mono" style={{ color: "var(--bone-mute)" }}>
+                {formatTime(d.timestamp)}
+              </td>
+              <td style={{ color: "var(--bone)" }}>
+                {d.modelName ?? "—"}
+                {d.provider ? (
+                  <span
+                    className="font-mono"
+                    style={{
+                      marginLeft: 8,
+                      fontSize: "var(--text-2xs)",
+                      color: "var(--bone-mute)",
+                      letterSpacing: "0.08em",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    {d.provider}
+                  </span>
+                ) : null}
+              </td>
+              <td className="font-mono" style={{ color: "var(--bone-dim)" }}>
+                {d.strategy ?? "—"}
+              </td>
+              <td style={{ color: "var(--bone-dim)" }}>{d.reason ?? "—"}</td>
+              <td className="num">
+                {d.cost != null ? formatUsd(d.cost) : "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </DashCard>
   );
 }
 
-function CostPanel({ sessionCost }: { sessionCost: number }) {
+// ── Cost panel ───────────────────────────────────────────────────────
+
+function CostPanel({
+  sessionCost,
+  summary,
+  loading,
+  error,
+}: {
+  sessionCost: number;
+  summary: ReturnType<typeof useCostSummary>["summary"];
+  loading: boolean;
+  error: string | null;
+}) {
+  const rows = useMemo(
+    () =>
+      summary
+        ? [...summary.byModel].sort((a, b) => b.totalCost - a.totalCost)
+        : [],
+    [summary],
+  );
+
   return (
-    <div className="space-y-4">
-      <div
-        style={{
-          fontSize: "var(--text-2xs)",
-          color: "var(--ctp-overlay0)",
-          letterSpacing: "0.12em",
-          textTransform: "uppercase",
-        }}
-      >
-        Cost Tracking
-      </div>
-      <div className="grid grid-cols-3 gap-4">
-        <CostCard label="Session" value={sessionCost} />
-        <CostCard label="Today" value={0} />
-        <CostCard label="This Month" value={0} />
-      </div>
-    </div>
+    <>
+      <DashCard eyebrow="LEDGER" title="Totals">
+        {error ? (
+          <div
+            data-testid="cost-error"
+            style={{ fontSize: "var(--text-sm)", color: "var(--sig-err)" }}
+          >
+            {error}
+          </div>
+        ) : loading && !summary ? (
+          <SkeletonRows count={3} />
+        ) : (
+          <div
+            className="grid gap-4"
+            style={{
+              gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
+            }}
+          >
+            <CostTile label="Session" value={sessionCost} />
+            <CostTile label="Today" value={summary?.today ?? 0} />
+            <CostTile label="This Month" value={summary?.month ?? 0} />
+          </div>
+        )}
+      </DashCard>
+
+      <DashCard eyebrow="BREAKDOWN" title="Top models">
+        {loading && !summary ? (
+          <SkeletonRows count={5} />
+        ) : rows.length === 0 ? (
+          <EmptyState
+            icon={<EmptyCostMark />}
+            heading="No spend recorded yet"
+            description="Chat turns, workflow runs, and daemon ticks all write to cost_records. As soon as one happens you'll see a model-level breakdown here."
+          />
+        ) : (
+          <table className="data-table" data-testid="cost-by-model">
+            <thead>
+              <tr>
+                <th>Model</th>
+                <th className="num" style={{ width: 140 }}>
+                  Requests
+                </th>
+                <th className="num" style={{ width: 140 }}>
+                  Total
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.modelId}>
+                  <td className="font-mono" style={{ color: "var(--bone)" }}>
+                    {r.modelId}
+                  </td>
+                  <td className="num">{r.requestCount}</td>
+                  <td className="num">{formatUsd(r.totalCost)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </DashCard>
+    </>
   );
 }
 
-function CostCard({ label, value }: { label: string; value: number }) {
+function CostTile({ label, value }: { label: string; value: number }) {
   return (
     <div
-      className="p-4 rounded-xl"
       style={{
-        background: "var(--ctp-surface0)",
-        border: "1px solid var(--border-subtle)",
+        padding: "var(--space-4) var(--space-5)",
+        border: "1px solid var(--ink-line)",
+        borderRadius: "var(--radius)",
+        background: "var(--ink-1)",
       }}
     >
       <div
         style={{
+          fontFamily: "var(--font-mono)",
           fontSize: "var(--text-2xs)",
-          color: "var(--ctp-overlay0)",
-          marginBottom: 4,
+          textTransform: "uppercase",
+          letterSpacing: "0.08em",
+          color: "var(--bone-mute)",
+          marginBottom: 8,
         }}
       >
         {label}
       </div>
       <div
-        className="font-mono font-medium"
-        style={{ fontSize: "var(--text-lg)", color: "var(--ctp-text)" }}
+        className="tabular-nums"
+        style={{
+          fontFamily: "var(--font-display)",
+          fontSize: "var(--text-xl)",
+          fontWeight: 500,
+          color: "var(--bone)",
+          letterSpacing: "-0.02em",
+        }}
       >
-        ${value.toFixed(4)}
+        {formatUsd(value)}
       </div>
     </div>
   );
+}
+
+// ── Empty-state marks ────────────────────────────────────────────────
+
+function EmptyToolsMark() {
+  // Four nested squares — a plan/tool chest silhouette.
+  return (
+    <svg viewBox="0 0 88 88" fill="none" aria-hidden>
+      <rect
+        x="10"
+        y="18"
+        width="68"
+        height="56"
+        rx="3"
+        stroke="currentColor"
+        strokeWidth="1.3"
+      />
+      <rect
+        x="20"
+        y="26"
+        width="20"
+        height="16"
+        rx="2"
+        stroke="currentColor"
+        strokeWidth="1.1"
+      />
+      <rect
+        x="46"
+        y="26"
+        width="24"
+        height="8"
+        rx="2"
+        stroke="currentColor"
+        strokeWidth="1.1"
+      />
+      <rect
+        x="46"
+        y="38"
+        width="24"
+        height="4"
+        rx="1"
+        stroke="currentColor"
+        strokeWidth="1.1"
+      />
+      <rect
+        x="20"
+        y="48"
+        width="50"
+        height="18"
+        rx="2"
+        stroke="currentColor"
+        strokeWidth="1.1"
+      />
+      <circle cx="26" cy="18" r="2" fill="currentColor" />
+      <circle cx="44" cy="18" r="2" fill="currentColor" />
+      <circle cx="62" cy="18" r="2" fill="currentColor" />
+    </svg>
+  );
+}
+
+function EmptyRoutingMark() {
+  // Three paths fanning from a central node — router decision tree.
+  return (
+    <svg viewBox="0 0 88 88" fill="none" aria-hidden>
+      <circle cx="20" cy="44" r="4" fill="currentColor" />
+      <circle cx="68" cy="22" r="3.5" stroke="currentColor" strokeWidth="1.3" />
+      <circle cx="68" cy="44" r="3.5" stroke="currentColor" strokeWidth="1.3" />
+      <circle cx="68" cy="66" r="3.5" stroke="currentColor" strokeWidth="1.3" />
+      <path
+        d="M24 44 Q46 22 64 22"
+        stroke="currentColor"
+        strokeWidth="1.1"
+        fill="none"
+      />
+      <path
+        d="M24 44 L64 44"
+        stroke="currentColor"
+        strokeWidth="1.1"
+        fill="none"
+      />
+      <path
+        d="M24 44 Q46 66 64 66"
+        stroke="currentColor"
+        strokeWidth="1.1"
+        fill="none"
+      />
+    </svg>
+  );
+}
+
+function EmptyCostMark() {
+  // A ledger line — horizontal rule with four stacked bars above.
+  return (
+    <svg viewBox="0 0 88 88" fill="none" aria-hidden>
+      <rect
+        x="14"
+        y="54"
+        width="6"
+        height="16"
+        fill="currentColor"
+        fillOpacity="0.4"
+      />
+      <rect
+        x="26"
+        y="42"
+        width="6"
+        height="28"
+        fill="currentColor"
+        fillOpacity="0.55"
+      />
+      <rect
+        x="38"
+        y="48"
+        width="6"
+        height="22"
+        fill="currentColor"
+        fillOpacity="0.7"
+      />
+      <rect
+        x="50"
+        y="34"
+        width="6"
+        height="36"
+        fill="currentColor"
+        fillOpacity="0.85"
+      />
+      <rect x="62" y="22" width="6" height="48" fill="currentColor" />
+      <line
+        x1="8"
+        y1="74"
+        x2="80"
+        y2="74"
+        stroke="currentColor"
+        strokeWidth="1.2"
+      />
+    </svg>
+  );
+}
+
+// ── Format helpers ───────────────────────────────────────────────────
+
+function formatUsd(n: number): string {
+  if (n < 1) return `$${n.toFixed(4)}`;
+  return `$${n.toFixed(2)}`;
+}
+
+function formatUptime(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+}
+
+function formatTime(ts: number): string {
+  const d = new Date(ts);
+  return d.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function permissionColor(permission: string): string {
+  if (permission === "auto") return "var(--sig-ok)";
+  if (permission === "confirm") return "var(--sig-warn)";
+  return "var(--sig-err)";
 }

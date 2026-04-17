@@ -307,6 +307,42 @@ export function useConfig() {
   return { config, loading, refresh };
 }
 
+// ── Cost summary ──────────────────────────────────────────────────
+
+export interface CostSummary {
+  today: number;
+  month: number;
+  byModel: Array<{ modelId: string; totalCost: number; requestCount: number }>;
+}
+
+export function useCostSummary(pollMs = 15000) {
+  const [summary, setSummary] = useState<CostSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const data = await request<CostSummary>("cost.summary");
+      setSummary(data);
+      setError(null);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to load cost summary",
+      );
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    refresh();
+    const interval = setInterval(refresh, pollMs);
+    return () => clearInterval(interval);
+  }, [refresh, pollMs]);
+  useBackendRecovery(refresh);
+
+  return { summary, loading, error, refresh };
+}
+
 // ── Models ────────────────────────────────────────────────────────
 
 export function useModels() {
