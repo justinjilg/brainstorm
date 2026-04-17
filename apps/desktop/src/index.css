@@ -1,6 +1,13 @@
 @import "tailwindcss";
-/* Geist font loaded via system fallback — @fontsource imports removed
-   to prevent CSS resolution failures in Tauri webview */
+/* Geist family — the design system assumes these are loaded. They were
+   temporarily stubbed during the Tauri era (webview CSS resolution
+   quirks); the app is now Electron and those imports work fine. Without
+   them the UI silently falls back to system-ui and every typographic
+   claim in the design spec below becomes a lie. */
+@import "@fontsource/geist/400.css";
+@import "@fontsource/geist/500.css";
+@import "@fontsource/geist/600.css";
+@import "@fontsource-variable/geist-mono";
 
 /* ═══════════════════════════════════════════════════════════════
    BRAINSTORM DESKTOP — Design System
