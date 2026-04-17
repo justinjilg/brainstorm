@@ -8,7 +8,12 @@
  */
 
 import { app, BrowserWindow, ipcMain, dialog, session } from "electron";
-import { autoUpdater } from "electron-updater";
+// electron-updater is shipped as CommonJS. apps/desktop is ESM
+// ("type": "module"), so a named import fails with "Named export
+// 'autoUpdater' not found" at Electron startup. Default-import the
+// module and destructure — this is the documented interop pattern.
+import electronUpdater from "electron-updater";
+const { autoUpdater } = electronUpdater;
 import { appendFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
@@ -392,7 +397,11 @@ function createWindow(): BrowserWindow {
   // Block navigation injection — prevents LLM responses with crafted links
   // from navigating the renderer to arbitrary URLs
   win.webContents.on("will-navigate", (e) => e.preventDefault());
-  win.setWindowOpenHandler(() => ({ action: "deny" }));
+  // setWindowOpenHandler lives on webContents in Electron 12+, not on
+  // BrowserWindow directly. The older BrowserWindow.setWindowOpenHandler
+  // alias was removed somewhere around Electron 30 — on 41 it throws
+  // "setWindowOpenHandler is not a function" at createWindow time.
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
 
   if (isDev) {
     win.loadURL("http://localhost:1420");
