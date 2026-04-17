@@ -4549,9 +4549,30 @@ program
         }
       };
 
-      // Run immediately, then on interval
+      // Run immediately, then self-chain on interval. setInterval fires
+      // regardless of whether the prior runOnce is still awaiting — for a
+      // task that takes longer than the interval (common when intervalMs
+      // is tight and `storm run` hits its 5-min timeout), executions stack,
+      // budget compounds, and SQLite WAL contention rises. Chaining via
+      // setTimeout after each runOnce settles keeps exactly one run in
+      // flight at a time.
+      let loopTimer: ReturnType<typeof setTimeout> | null = null;
+      const scheduleNext = () => {
+        loopTimer = setTimeout(async () => {
+          await runOnce();
+          scheduleNext();
+        }, intervalMs);
+      };
+      const stop = () => {
+        if (loopTimer) clearTimeout(loopTimer);
+      };
+      process.on("SIGINT", () => {
+        stop();
+        process.exit(0);
+      });
+
       await runOnce();
-      setInterval(runOnce, intervalMs);
+      scheduleNext();
     },
   );
 
