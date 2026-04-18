@@ -30,6 +30,18 @@ jobs:
       - name: Lint — as-any escape-hatch budget (pre-install, supply-chain safe)
         run: node scripts/check-as-any-budget.mjs
 
+      # Meta-ratchet: cap `continue-on-error: true` at 0. Three separate
+      # soft-fail steps in this workflow accrued over 5+ rounds with
+      # speculative rationale ("known CI env issue") that turned out
+      # to be cover stories for actual bugs (99e73d0, 709abde, cdca3b9,
+      # ed69a5f). The pattern: someone adds `continue-on-error: true`
+      # to make CI green for the current PR, never circles back, and
+      # the real failure stays invisible. This ratchet forces the
+      # conversation before soft-fail debt accrues again. Also pre-
+      # install (stdlib readFileSync only).
+      - name: Lint — CI soft-fail budget (no continue-on-error regressions)
+        run: node scripts/check-ci-continue-on-error.mjs
+
       - name: Install dependencies
         run: npm ci
 
