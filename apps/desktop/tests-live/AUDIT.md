@@ -104,7 +104,7 @@ evidence (file path or test name).
 - Evidence: `tests-live/_helpers.ts` `assertNoOrphanBackends()`, plus
   the standalone sentinel at `tests-live/teardown.live.spec.ts`.
 
-## Closed during reliability passes 10–24
+## Closed during reliability passes 10–25
 
 ### ✅ Previous-turn durability — direct sqlite readback
 
@@ -262,6 +262,37 @@ respawn.live.spec.ts` already covers the sibling path (outbound
       completion event arrives under 8s with non-zero exit and no
       pgrep survivor.
     - pre-aborted: controller already aborted when execute() runs.
+
+### ✅ Shell env scrubbing — 1Password / provider-key exfil blocked (A2, pass 25)
+
+- Source: v9 stochastic assessment's Attacker agent (1/10 but
+  high-severity): shell children inherited `process.env` unchanged,
+  including `OP_SERVICE_ACCOUNT_TOKEN` (the master token for the
+  60-item "Dev Keys" 1Password vault), every provider API key, and
+  any other secret the user had loaded at shell startup. A
+  prompt-injection payload that triggered `env | curl ...` would
+  exfiltrate the crown jewel.
+- Our status: fixed in pass 25.
+- Evidence:
+  - `packages/tools/src/builtin/shell.ts` now calls
+    `buildChildEnv(currentSandboxLevel)` at both spawn sites
+    (foreground + background). Under `"restricted"` (the default
+    per pass 24), the env is scrubbed of both an explicit denylist
+    (20 known secret names including `OP_SERVICE_ACCOUNT_TOKEN`,
+    provider API keys, AWS creds, DB URLs, integration tokens) AND
+    any name matching `/API_KEY|SECRET|PASSWORD|CREDENTIALS|
+PRIVATE_KEY|_TOKEN/i`. `GITHUB_TOKEN` + `GH_TOKEN` are
+    explicitly allowlisted so the `gh` tool surface keeps working.
+  - `"none"` sandbox level passes env through unchanged — the
+    caller opted out of sandboxing, respect that.
+  - Trap: `shell-sandbox.test.ts` 6 new cases in
+    `buildChildEnv — env scrubbing`: stashes process.env, injects
+    fake secrets, verifies each is scrubbed under restricted and
+    preserved under none. Reverting the scrub fails these.
+- Note: GitHub token passthrough is a documented trade-off — a
+  compromised agent could still exfil via GitHub Gists, but that
+  channel is audit-logged by GitHub itself, unlike the silent
+  network egress the pattern closes.
 
 ### ✅ Docker sandbox hardening + default level flip (A1, pass 24)
 
