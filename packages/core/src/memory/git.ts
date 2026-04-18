@@ -51,7 +51,14 @@ export function initMemoryRepo(memoryDir: string): boolean {
   if (existsSync(join(memoryDir, ".git"))) return false;
 
   try {
-    gitSilent(memoryDir, ["init"]);
+    // `--initial-branch=main` pins the branch name so cross-platform
+    // sync ("push main", "fetch origin/main") doesn't drift based on
+    // the host's `init.defaultBranch` config. GitHub Actions Ubuntu
+    // runners ship without that config set, so a bare `git init` there
+    // creates `master` — then `git push remote main` exits 1 because
+    // there is no `main` branch. Requires Git 2.28+ (CI has 2.40+;
+    // macOS bundled git is 2.39+; any modern install is fine).
+    gitSilent(memoryDir, ["init", "--initial-branch=main"]);
     gitSilent(memoryDir, ["config", "user.name", "Brainstorm"]);
     gitSilent(memoryDir, ["config", "user.email", "agent@brainstorm.co"]);
     gitSilent(memoryDir, ["add", "-A"]);
