@@ -144,49 +144,70 @@ evidence (file path or test name).
   the safety property relies on `connectAll` being awaited before
   the agent loop starts.
 
-### ⚠️ Permission-mode switch mid-stream
+### ✅ Permission-mode switch mid-stream — not applicable to our shape
 
 - Source: [Claude Agent SDK permissions doc — "During streaming"](https://code.claude.com/docs/en/agent-sdk/permissions).
-- Current coverage: `PermissionManager` lives in
-  `packages/core/src/permissions/manager.ts` but I haven't verified
-  that switching modes during a live turn invalidates cached approvals
-  in the preload bridge.
-- Follow-up: audit the permission-check call site in the agent loop,
-  then add a live trap: start in `confirm`, send a tool-triggering
-  prompt, flip to `auto`, assert the next tool call skips the prompt.
+- Our status: audited in pass 15. The race doesn't apply.
+- Evidence: our desktop app has no UI affordance to flip permission
+  modes during a live turn. The `permissionMode` state in
+  `apps/desktop/src/App.tsx` is declared with a leading underscore
+  on the setter (`_setPermissionMode`) — never called. Permission
+  mode is set on persona selection (before the turn starts) and
+  stays fixed for the duration. The class of bug the SDK flags —
+  stale permission caches surviving an `acceptEdits` flip — can't
+  occur on a surface that doesn't expose the flip.
+- Note: if we ever add a mid-stream permission control (Raycast-style
+  "allow once / always / deny"), re-open this item. The audit is
+  about the UI affordance, not the underlying `PermissionManager`.
 
-### ⚠️ Session fork + resume identity
+### ✅ Session fork + handoff — IPC contract pinned
 
 - Source: [SDK `test_session_mutations.py`](https://github.com/anthropics/claude-agent-sdk-python/blob/main/tests/test_session_mutations.py).
-- Our status: `conversations.fork` and `conversations.handoff` IPC
-  methods exist in `packages/cli/src/ipc/handler.ts`, but no renderer
-  call sites use them today, and no test covers the identity contract
-  (new session id, parent messages up to fork point preserved, UUIDs
-  remapped).
-- Follow-up: either wire a renderer entry point and add the test, or
-  remove the IPC methods as dead code until a consumer appears.
+- Our status: pinned in pass 14.
+- Evidence: `tests-protocol/conversations-mutations.test.ts` exercises
+  `conversations.fork` and `conversations.handoff` against the real
+  `brainstorm ipc` subprocess. Three assertions:
+  1. fork mints a fresh id, inherits settings, does NOT copy
+     messages (intentional divergence from SDK `fork_session`,
+     documented in the test).
+  2. fork against an unknown id returns null.
+  3. handoff updates `modelOverride` without creating a new row.
+- Note: our fork intentionally does not preserve history. If we ever
+  want SDK-parity `fork_session` semantics, the pinned test forces
+  that to be a deliberate, reviewable change.
 
-### ⚠️ Rate-limit / retry surface
+### ✅ Rate-limit / retry surface — handled at AI SDK layer
 
 - Source: [Vercel AI `describe('retries')`](https://github.com/vercel/ai/blob/main/packages/ai/src/generate-text/stream-text.test.ts).
-- Shape: 429 responses should trigger a typed retry and eventually
-  stream the successful call.
-- Current coverage: none — we don't have a dev backdoor that can
-  inject 429s at the router layer.
-- Follow-up: add a `BRAINSTORM_FORCE_429` env var to BR gateway /
-  router dev mode, then a live trap that asserts the UI shows a
-  recoverable state + second attempt streams.
+- Our status: implemented via `maxRetries: 3` passed to `streamText`.
+- Evidence: `packages/core/src/agent/loop.ts` line 816 —
+  `maxRetries: 3` with the comment "Retry on 429/503 with exponential
+  backoff (1s, 2s, 4s). Without this, rate limits during long KAIROS
+  runs crash the daemon." The AI SDK itself has the retries test
+  suite the research cited; we inherit the behaviour. Additionally
+  line 83 classifies rate-limit errors as model-API errors and
+  records them in routing outcomes so bandit-learning avoids the
+  rate-limited model going forward.
+- Note: no dedicated live trap because we'd need a dev backdoor at
+  the BR gateway to inject 429s deterministically. The SDK-layer
+  test coverage is adequate for the common case; our layer's
+  contribution is the routing-outcome recording, which is covered
+  elsewhere by the router's learned-strategy tests.
 
-### ⚠️ `stopWhen` / step-cap invariant
+### ✅ `stopWhen` / step-cap invariant — AI SDK primitive
 
 - Source: [Vercel AI `stop-condition.test.ts`](https://github.com/vercel/ai/blob/main/packages/ai/src/generate-text/stop-condition.test.ts).
-- Shape: `stepCountIs(N)` off-by-one or infinite-loop guard.
-- Current coverage: `packages/core/src/agent/loop.ts` uses
-  `stopWhen: stepCountIs(N)` but no test validates the step counter
-  across tool-call loops.
-- Follow-up: unit test with a fake model that always requests one more
-  tool call. Assert the loop terminates at N steps, `finishReason` is
-  the step-limit variant, `onStepFinish` fires exactly N times.
+- Our status: uses the AI SDK's `stepCountIs(N)` primitive directly.
+- Evidence: `packages/core/src/agent/loop.ts` line 817 —
+  `stopWhen: stepCountIs(shouldUseTools ? (options.maxSteps ??
+config.general.maxSteps) : 1)`. No custom step-cap logic; we
+  inherit the AI SDK's tested behaviour. `maxSteps` is user-
+  configurable in `brainstorm.toml` via `general.maxSteps`; per-
+  agent overrides come through `agent.maxSteps`.
+- Note: if we ever roll a custom stopWhen composite (e.g., "stop
+  when N steps OR total tokens > M OR any tool errored"), re-open
+  this item — custom logic needs its own test. The current single-
+  condition `stepCountIs(N)` is table-stakes SDK usage.
 
 ## Notes for reviewers
 

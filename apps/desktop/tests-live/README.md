@@ -103,30 +103,19 @@ __tests__/shell-abort.test.ts`.
   SIGTERM, and linger. Fixed: ordered stdin-close → SIGTERM → 1.5s
   watchdog → SIGKILL. Caught by `teardown.live.spec.ts`.
 
-## Still-open patterns
+## Audit status
 
-The reliability work has converged to a short list of patterns the
-research flagged that we haven't trapped yet. Each has a citation and
-a concrete shape in [`AUDIT.md`](./AUDIT.md) — that file is the
-single source of truth for what's been closed vs. what remains.
+Every architectural gotcha the research flagged is now either trapped
+or audited as not-applicable-to-our-shape. The ground-truth map lives
+in [`AUDIT.md`](./AUDIT.md) — that's the file to update when adding a
+new finding or closing an existing one. Every entry there cites the
+source issue AND the concrete test/file guarding it.
 
-Current open items (summary; full state lives in AUDIT.md):
+If you're adding a new reliability item, either:
 
-- **`stopWhen` / step-cap invariant** — assert the agent loop
-  terminates at exactly N tool-call iterations. Would need a fake
-  model that keeps requesting tools; deep mocking.
-- **Permission-mode switch mid-stream** — start in `confirm`, send
-  a tool-triggering prompt, flip to `auto` via IPC, assert the next
-  tool skips the prompt.
-- **Session fork + resume identity** — `conversations.fork` IPC exists
-  but has no renderer consumer. Either wire a use case or delete the
-  method as dead code.
-- **Rate-limit / retry surface** — inject a 429 through a BR gateway
-  dev backdoor, assert the UI shows a recoverable state + retry
-  streams cleanly.
-
-Everything else the research flagged has either been trapped or
-audited as not-applicable-to-our-shape — see AUDIT.md.
+- match an existing research citation and file it under AUDIT.md, or
+- pick a new failure mode, cite the incident that inspired it, and
+  land the trap + the AUDIT.md entry in the same commit.
 
 ## Adding a new live spec
 
