@@ -21,8 +21,6 @@ export {
 } from "./changeset.js";
 export { computeBlastRadius } from "./blast-radius.js";
 export type { BlastRadius } from "./types.js";
-// BaseConnector: abstract base for God Mode connectors.
-// Not re-exported — connectors implement GodModeConnector interface directly.
 export { ProductConnector } from "./product-connector.js";
 export {
   GitHubConnector,
