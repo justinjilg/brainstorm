@@ -57,11 +57,16 @@ jobs:
       - name: Architecture — no circular imports (dep-cruiser ratchet)
         run: node scripts/check-dep-cruiser.mjs
 
+      # Uses export-catalog:check which normalizes the `generated`
+      # timestamp before comparison. Previous version ran `export-catalog`
+      # (write mode) then `git diff --exit-code` — that flagged every
+      # run because the timestamp always drifted, and because prettier
+      # compacted the committed file's arrays while the generator emits
+      # canonical multi-line JSON. continue-on-error was masking both.
+      # docs/tool-catalog.json is now in .prettierignore so the generator
+      # output stays stable across commits.
       - name: Verify tool catalog freshness
-        continue-on-error: true
-        run: |
-          npm run --workspace=@brainst0rm/tools export-catalog
-          git diff --exit-code docs/tool-catalog.json || echo "::warning::Tool catalog drifted — run: npm run --workspace=@brainst0rm/tools export-catalog"
+        run: npm run --workspace=@brainst0rm/tools export-catalog:check
 
       # Create ~/.brainstorm directory structure for tests that reference it
       - name: Prepare test environment
