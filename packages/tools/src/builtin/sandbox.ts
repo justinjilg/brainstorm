@@ -238,6 +238,10 @@ function normalizeForPatternMatch(command: string): string {
       // `$SUB` sentinel isn't immediately followed by `/`. After
       // stripping, the concat shape is exposed for the regex.
       .replace(/["']/g, "")
+      // Collapse consecutive slashes. Shells treat `/a//b` identically
+      // to `/a/b`, so `~//.ssh/id_rsa` is a valid read of the key.
+      // Self-probe after the first F5 pass found this gap.
+      .replace(/\/{2,}/g, "/")
   );
 }
 
