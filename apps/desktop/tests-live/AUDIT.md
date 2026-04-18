@@ -106,35 +106,43 @@ evidence (file path or test name).
 
 ## Open items
 
-### ⚠️ Previous-turn durability — DB-level assertion still missing
+### ✅ Previous-turn durability — direct sqlite readback
 
 - Source: [SDK issue #625 — session file not flushed before subprocess termination](https://github.com/anthropics/claude-agent-sdk-python/issues/625).
-- Our status: DOM-level trap exists; direct DB readback does not.
-- Current coverage: `tests-live/backend-crash.live.spec.ts` asserts the
-  turn-1 marker survives a SIGKILL _in the transcript_. That proves
-  either the DB wrote OR the in-memory state carried through — we
-  can't tell which.
-- Follow-up: extend the test to open
-  `$BRAINSTORM_HOME/brainstorm.db` via `better-sqlite3` and query
-  `messages` by session id. If the row is missing, our persistence
-  path has a latent corruption window the DOM can't see.
+- Our status: trapped at DB level in pass 10.
+- Evidence: `tests-live/_repro/repro-crash-db-durability.live.spec.ts`
+  opens `$BRAINSTORM_HOME/brainstorm.db` readonly after the app
+  closes and asserts BOTH the marker user row and at least one
+  assistant row for the session exist. Stricter than the DOM check
+  in `backend-crash.live.spec.ts` because it proves the persistence
+  path actually reached disk.
 
-### ⚠️ `config.agent.streamTimeoutMs` isn't configurable
+### ✅ `config.agent.streamTimeoutMs` is configurable
 
-- Source: the stream-stall watchdog is hardcoded at 60s.
-- Current coverage: none.
-- Follow-up: thread a config option through and respect
-  `cfg.agent?.streamTimeoutMs ?? 60_000`. Low urgency; no user has hit
-  this yet.
+- Source: the stream-stall watchdog was hardcoded at 60s.
+- Our status: fixed in pass 11.
+- Evidence: `packages/config/src/schema.ts` now declares
+  `agent.streamTimeoutMs` (positive integer, default 60_000).
+  `packages/core/src/agent/loop.ts` reads
+  `options.config.agent?.streamTimeoutMs ?? 60_000`. Extended-thinking
+  models can raise it via `[agent] streamTimeoutMs = N` in
+  `brainstorm.toml`.
 
-### ⚠️ MCP handshake stdin timing
+### ✅ MCP handshake stdin timing — not applicable to our shape
 
 - Source: [SDK issue #817](https://github.com/anthropics/claude-agent-sdk-python/issues/817).
-- Shape: query started before the MCP server finished initialization.
-- Current coverage: not audited in our code yet — `packages/mcp/src/
-client.ts` is where to look.
-- Follow-up: read the client startup path. If it doesn't await a
-  `handshake-complete` signal before returning, add one.
+- Our status: audited in pass 12. The race doesn't apply here.
+- Evidence: `packages/mcp/src/client.ts` connectAll awaits both
+  `createMCPClient({ transport })` and the subsequent `client.tools()`
+  call before registering each tool with the registry. `.tools()` is
+  the first server call and implicitly completes the initialize
+  handshake — no ambient request can race past it. Separately, the
+  desktop `brainstorm ipc` command doesn't call `connectMCPServers`
+  at all today; MCP is wired only in the interactive `chat` / `run`
+  commands where `connectAll` is awaited by the startup orchestrator.
+- Note: if a future IPC mode adds MCP support, re-run this audit —
+  the safety property relies on `connectAll` being awaited before
+  the agent loop starts.
 
 ### ⚠️ Permission-mode switch mid-stream
 
