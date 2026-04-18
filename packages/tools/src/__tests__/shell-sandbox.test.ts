@@ -231,6 +231,31 @@ describe("checkSandbox", () => {
           .allowed,
       ).toBe(false);
     });
+    it("blocks nested subshells (iterated normalization)", () => {
+      // The first-pass normalizer only collapses the OUTER $(...)
+      // because [^()]* rejects nested parens. The iterated loop
+      // collapses innermost-first until stable. Without the loop
+      // the outer replace leaves a stray `)` before /.ssh/ and the
+      // sensitive-path regex never matches.
+      expect(
+        checkSandbox("cat $(echo $(echo ~))/.ssh/id_rsa", "restricted").allowed,
+      ).toBe(false);
+    });
+    it("blocks mixed subshell + backtick", () => {
+      expect(
+        checkSandbox("cat $(echo `echo ~`)/.ssh/id_rsa", "restricted").allowed,
+      ).toBe(false);
+    });
+    it('blocks quoted subshell "$(echo ~)"/.ssh/...', () => {
+      // Quote-wrapping the subshell keeps the expansion in real shell
+      // behavior; the attacker value is just that the literal
+      // `"$(echo ~)"/.ssh/` form has a quote between the sentinel and
+      // the path suffix. The normalizer's quote-strip removes that
+      // defense hole.
+      expect(
+        checkSandbox('cat "$(echo ~)"/.ssh/id_rsa', "restricted").allowed,
+      ).toBe(false);
+    });
 
     // False-positive guards — the normalization must not break
     // legitimate commands that happen to use subshells for reasons
