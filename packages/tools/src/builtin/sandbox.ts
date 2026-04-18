@@ -207,18 +207,37 @@ export function checkSandbox(
 // already acknowledges that. This is defense-in-depth against the
 // three most ergonomic prompt-injection bypasses.
 function normalizeForPatternMatch(command: string): string {
+  let out = command;
+  // Iterate the subshell strip so nested `$(echo $(echo ~))` fully
+  // collapses to `$SUB`. Without the loop, the first pass matches
+  // only the OUTER `$(echo $(echo ~)` (up to the first `)`), leaving
+  // a stray `)` after the replace that breaks the downstream
+  // sensitive-path regex. Bound iterations to prevent pathological
+  // cases; real payloads rarely nest past depth 3.
+  for (let i = 0; i < 8; i++) {
+    const prev = out;
+    out = out
+      // $(anything) → $SUB. `[^()]*` rejects parens inside, so the
+      // innermost subshell matches first on each pass.
+      .replace(/\$\([^()]*\)/g, "$SUB")
+      // `anything` (backticks) → $SUB. Nested backticks are rare; a
+      // single pass is enough in practice because the shell itself
+      // struggles with them.
+      .replace(/`[^`]*`/g, "$SUB");
+    if (out === prev) break;
+  }
   return (
-    command
+    out
       // Empty string concat — `""`, `''` split a path character while
       // shell resolution collapses them. Strip before regex match.
       .replace(/""/g, "")
       .replace(/''/g, "")
-      // $(anything) → $SUB. Regex is non-greedy and doesn't handle
-      // nested subshells; nesting is rare in shell-injection payloads
-      // and this is defense-in-depth, not a parser.
-      .replace(/\$\([^)]*\)/g, "$SUB")
-      // `anything` (backticks) → $SUB. Same logic as above.
-      .replace(/`[^`]*`/g, "$SUB")
+      // Strip any REMAINING single- or double-quotes. The shell removes
+      // them during expansion, and v12 Attacker's `"$(echo ~)"/.ssh/`
+      // payload relies on quote-wrapping the expanded value so the
+      // `$SUB` sentinel isn't immediately followed by `/`. After
+      // stripping, the concat shape is exposed for the regex.
+      .replace(/["']/g, "")
   );
 }
 
