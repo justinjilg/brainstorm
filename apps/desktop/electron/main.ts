@@ -54,7 +54,19 @@ function logToFile(msg: string): void {
 let backend: ChildProcess | null = null;
 let backendReady = false;
 let spawnRetries = 0;
-const pending = new Map<string, (value: any) => void>();
+/**
+ * Per-request pending handlers. Stored as {settle, reject} so that
+ * backend-exit can reject the promise cleanly, rather than resolving
+ * with an `{error:"..."}` sentinel that every caller would have to
+ * null-check. Previously this was a single-callback map and backend
+ * crashes "resolved" every in-flight request with a fake success value,
+ * which data hooks treated as legitimate data.
+ */
+interface PendingEntry {
+  settle: (value: any) => void;
+  reject: (err: Error) => void;
+}
+const pending = new Map<string, PendingEntry>();
 // Per-request timers — cleared on backend exit so a timer that was scheduled
 // for a request in flight doesn't fire after the backend has already
 // respawned, sending a stale "timed out" event to the UI minutes later.
@@ -224,18 +236,18 @@ function spawnBackend(): void {
       // If stream-end, resolve the pending promise
       if (msg.event === "stream-end" && id) {
         const doneKey = `${id}-done`;
-        const resolve = pending.get(doneKey);
-        if (resolve) {
+        const entry = pending.get(doneKey);
+        if (entry) {
           pending.delete(doneKey);
-          resolve(undefined);
+          entry.settle(undefined);
         }
       }
     } else if (id) {
       // Request-response — resolve the pending promise
-      const resolve = pending.get(id);
-      if (resolve) {
+      const entry = pending.get(id);
+      if (entry) {
         pending.delete(id);
-        resolve(msg.result ?? msg);
+        entry.settle(msg.result ?? msg);
         // Reset retry counter on successful response
         spawnRetries = 0;
         backendReady = true;
@@ -255,9 +267,14 @@ function spawnBackend(): void {
     backend = null;
     backendReady = false;
 
-    // Reject all pending promises immediately (don't wait for 30s timeout)
-    for (const [, resolve] of pending.entries()) {
-      resolve({ error: "Backend process exited" });
+    // Reject all pending promises immediately (don't wait for 30s timeout).
+    // Using reject rather than resolve({error}) so data hooks' .catch()
+    // blocks actually fire — the old code silently handed every caller
+    // a fake success value containing {error:"..."} that callers would
+    // render as legitimate data.
+    const backendExit = new Error("Backend process exited");
+    for (const [, entry] of pending.entries()) {
+      entry.reject(backendExit);
     }
     pending.clear();
 
@@ -356,10 +373,17 @@ function registerIPC(): void {
       }, 30000);
       pendingTimers.set(id, timer);
 
-      pending.set(id, (result) => {
-        clearTimeout(timer);
-        pendingTimers.delete(id);
-        resolve(result);
+      pending.set(id, {
+        settle: (result) => {
+          clearTimeout(timer);
+          pendingTimers.delete(id);
+          resolve(result);
+        },
+        reject: (err) => {
+          clearTimeout(timer);
+          pendingTimers.delete(id);
+          reject(err);
+        },
       });
 
       sendToBackend({ id, method, params: params ?? {} });
@@ -401,10 +425,22 @@ function registerIPC(): void {
       }, 300000); // 5 minutes
       pendingTimers.set(doneKey, timer);
 
-      pending.set(doneKey, () => {
-        clearTimeout(timer);
-        pendingTimers.delete(doneKey);
-        resolve();
+      pending.set(doneKey, {
+        settle: () => {
+          clearTimeout(timer);
+          pendingTimers.delete(doneKey);
+          resolve();
+        },
+        // A backend exit mid-stream already fires a stream-end + error
+        // event from the exit handler above (see "Notify all windows").
+        // We resolve() here rather than reject so the renderer's
+        // `await chatStream()` unblocks and re-enters the idle state
+        // — the surfaced error is the source of truth for the user.
+        reject: () => {
+          clearTimeout(timer);
+          pendingTimers.delete(doneKey);
+          resolve();
+        },
       });
       sendToBackend({ id, method: "chat.stream", params });
     });
