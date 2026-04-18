@@ -256,6 +256,29 @@ describe("checkSandbox", () => {
         checkSandbox('cat "$(echo ~)"/.ssh/id_rsa', "restricted").allowed,
       ).toBe(false);
     });
+    it("blocks double-slash paths (cat ~//.ssh/)", () => {
+      // Shell treats `/a//b` identically to `/a/b`. Pre-fix,
+      // `cat ~//.ssh/id_rsa` evaded the regex because the regex
+      // expected a single `/` between `~` and `.ssh/`. The
+      // normalizer now collapses `/{2,}` to `/`.
+      expect(checkSandbox("cat ~//.ssh/id_rsa", "restricted").allowed).toBe(
+        false,
+      );
+    });
+    it("blocks triple-slash paths too", () => {
+      expect(
+        checkSandbox("cat /Users/justin//.ssh/id_rsa", "restricted").allowed,
+      ).toBe(false);
+    });
+    // Known-deferred: shell-parser-class bypasses documented in the
+    // commit message for this pass. Variable-assignment-then-use
+    // (`P=/Users/x/.ssh; cat $P/id_rsa`) requires intra-command
+    // symbol tracking; printf-hex-in-subshell (`cat $(printf
+    // '\\x2f\\x55sers/…')`) requires recursing INTO the subshell
+    // content before collapsing to $SUB; IFS manipulation requires
+    // shell-semantics modeling. All three are genuinely shell-parser
+    // work and are the reason the file-level comment still says
+    // "use sandbox=container for true FS isolation".
 
     // False-positive guards — the normalization must not break
     // legitimate commands that happen to use subshells for reasons
