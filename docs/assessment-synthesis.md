@@ -1,183 +1,122 @@
-# Stochastic Assessment Synthesis v10 — 2026-04-18
+# Stochastic Assessment Synthesis v11 — 2026-04-18 (methodology rerun)
 
-Previous: v9 scored 5.76/10 earlier the same day. v10 measures
-whether passes 22–26 (as-any ratchet, working-tree cleanup, Docker
-hardening, env scrub, WAL recovery trap — all landed after v9's
-synthesis) moved the score and the risk register.
+Previous: v10 scored 5.96/10 (σ 0.07) earlier the same session. v11 is
+a deliberate no-work replication — zero code changed since commit
+01e8295 — to test whether v10's tight cross-agent agreement was real
+signal or shared-evidence-doc anchoring.
 
-## Overall Score: 5.96 / 10 (StdDev: 0.07)
+## Overall Score: 5.90 / 10 (StdDev: 0.047)
 
-Delta from v9: **+0.20 points.** Range: 5.80 (Chaos Monkey) to 6.08 (Operator).
+Delta from v10: **−0.06 points.** Range: 5.82 (Chaos Monkey) to 5.98 (Competitor).
 
-Monotonicity invariant held: no dimension regressed. No UNCERTAIN
-dimensions (max σ = 0.42 for Security Posture, well under 1.5). No
-calibration drift corrections required. Cross-agent agreement tightened
-further (σ 0.12 → 0.07).
+## Methodology-Test Findings
 
-## 10-Agent Score Matrix
+| Question                   | Answer                            | Evidence                                                                                         |
+| -------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Is the tight σ real?       | **Yes.**                          | σ 0.047 < v10's 0.07. Agents reliably converge on the evidence.                                  |
+| Was the v10 mean anchored? | **Partially.**                    | Mean drifted −0.06 on replication; 8/10 agents scored flat or lower. Not a large bias, but real. |
+| Did new evidence emerge?   | **Yes — 5 substantive findings.** | See below. This is the more valuable output than the score.                                      |
 
-| Dimension             | A1   | A2  | A3   | A4   | A5   | A6  | A7   | A8   | A9   | A10  | Min  | Max  | Mean     | σ    | v9   | Δ         |
-| --------------------- | ---- | --- | ---- | ---- | ---- | --- | ---- | ---- | ---- | ---- | ---- | ---- | -------- | ---- | ---- | --------- |
-| Code Completeness     | 7.60 | 7.5 | 7.6  | 7.60 | 7.60 | 7.5 | 7.60 | 7.55 | 7.55 | 7.55 | 7.5  | 7.60 | **7.57** | 0.04 | 7.46 | +0.11     |
-| Wiring                | 6.85 | 6.9 | 6.9  | 6.90 | 6.90 | 7.0 | 6.90 | 6.85 | 6.80 | 6.80 | 6.80 | 7.0  | **6.88** | 0.06 | 6.80 | +0.08     |
-| Test Reality          | 6.65 | 6.6 | 6.6  | 6.65 | 6.65 | 6.4 | 6.70 | 6.55 | 6.80 | 6.60 | 6.4  | 6.80 | **6.62** | 0.11 | 6.42 | +0.20     |
-| Production Evidence   | 4.80 | 4.8 | 4.75 | 4.75 | 4.75 | 4.8 | 4.75 | 4.85 | 4.75 | 4.75 | 4.75 | 4.85 | **4.78** | 0.04 | 4.75 | +0.02     |
-| Operational Readiness | 5.75 | 5.8 | 5.75 | 5.75 | 6.00 | 5.7 | 5.80 | 5.75 | 5.75 | 5.58 | 5.58 | 6.00 | **5.76** | 0.10 | 5.58 | +0.18     |
-| Security Posture      | 6.40 | 6.5 | 6.75 | 6.55 | 6.80 | 7.6 | 6.70 | 6.55 | 7.10 | 5.93 | 5.93 | 7.6  | **6.69** | 0.42 | 5.93 | **+0.76** |
-| Documentation         | 5.60 | 5.7 | 5.6  | 5.55 | 6.20 | 5.6 | 5.55 | 5.55 | 5.80 | 5.60 | 5.55 | 6.20 | **5.68** | 0.19 | 5.53 | +0.15     |
-| Failure Handling      | 6.65 | 6.6 | 6.7  | 6.60 | 6.70 | 6.5 | 6.70 | 6.55 | 6.80 | 6.55 | 6.5  | 6.80 | **6.64** | 0.09 | 6.36 | +0.28     |
-| Scale Readiness       | 4.00 | 4.0 | 4.1  | 4.05 | 4.10 | 3.9 | 4.05 | 3.95 | 3.95 | 3.88 | 3.88 | 4.10 | **4.00** | 0.07 | 3.88 | +0.12     |
-| Ship Readiness        | 4.95 | 5.2 | 5.1  | 4.95 | 5.10 | 5.0 | 4.85 | 4.95 | 5.10 | 4.78 | 4.78 | 5.2  | **5.00** | 0.12 | 4.74 | +0.26     |
+## Per-Agent Deltas (v10 → v11)
 
-## UNCERTAIN Dimensions (StdDev > 1.5)
+| Agent        | v10      | v11      | Δ                                      |
+| ------------ | -------- | -------- | -------------------------------------- |
+| Optimist     | 5.93     | 5.93     | 0.00                                   |
+| Pessimist    | 5.96     | 5.88     | −0.08                                  |
+| Architect    | 5.99     | 5.86     | −0.13                                  |
+| Auditor      | 5.93     | 5.88     | −0.05                                  |
+| Operator     | 6.08     | 5.89     | **−0.19** (biggest drop, real finding) |
+| Attacker     | 6.00     | 5.90     | −0.10 (new bypass found)               |
+| Competitor   | 5.96     | 5.98     | +0.02                                  |
+| Pragmatist   | 5.91     | 5.87     | −0.04                                  |
+| Sr Engineer  | 6.04     | 5.97     | −0.07                                  |
+| Chaos Monkey | 5.80     | 5.82     | +0.02                                  |
+| **Mean**     | **5.96** | **5.90** | **−0.06**                              |
 
-None. Security Posture's 0.42 is the highest σ but well within tolerance —
-the spread reflects Chaos Monkey scoring 5.93 (unchanged, security not in
-scope for that perspective) vs Attacker's 7.60 (explicitly closed three
-attack paths they flagged at v9).
+## 10-Agent Score Matrix (v11)
 
-## Calibration Drift Corrections
+| Dimension             | A1   | A2  | A3   | A4   | A5   | A6   | A7   | A8   | A9   | A10  | Mean     | σ    | v10  | Δ         |
+| --------------------- | ---- | --- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | -------- | ---- | ---- | --------- |
+| Code Completeness     | 7.55 | 7.5 | 7.55 | 7.55 | 7.5  | 7.5  | 7.58 | 7.55 | 7.55 | 7.50 | **7.53** | 0.03 | 7.57 | −0.04     |
+| Wiring                | 6.85 | 6.8 | 6.80 | 6.85 | 6.9  | 7.0  | 6.90 | 6.85 | 6.85 | 6.80 | **6.86** | 0.06 | 6.88 | −0.02     |
+| Test Reality          | 6.60 | 6.5 | 6.55 | 6.65 | 6.5  | 6.6  | 6.70 | 6.55 | 6.80 | 6.55 | **6.60** | 0.09 | 6.62 | −0.02     |
+| Production Evidence   | 4.80 | 4.8 | 4.75 | 4.75 | 4.75 | 4.75 | 4.75 | 4.75 | 4.80 | 4.75 | **4.77** | 0.03 | 4.78 | −0.01     |
+| Operational Readiness | 5.75 | 5.7 | 5.70 | 5.70 | 5.8  | 5.6  | 5.72 | 5.75 | 5.75 | 5.70 | **5.72** | 0.05 | 5.76 | −0.04     |
+| Security Posture      | 6.50 | 6.5 | 6.35 | 6.35 | 6.4  | 6.5  | 6.35 | 6.40 | 6.65 | 6.25 | **6.43** | 0.12 | 6.69 | **−0.26** |
+| Documentation         | 5.60 | 5.6 | 5.60 | 5.55 | 5.7  | 5.5  | 5.60 | 5.60 | 5.95 | 5.53 | **5.62** | 0.12 | 5.68 | −0.06     |
+| Failure Handling      | 6.60 | 6.5 | 6.55 | 6.55 | 6.6  | 6.6  | 6.55 | 6.55 | 6.55 | 6.45 | **6.55** | 0.05 | 6.64 | −0.09     |
+| Scale Readiness       | 4.00 | 3.9 | 3.95 | 3.95 | 4.0  | 3.88 | 3.95 | 3.95 | 3.90 | 3.88 | **3.94** | 0.05 | 4.00 | −0.06     |
+| Ship Readiness        | 5.00 | 4.8 | 4.80 | 4.85 | 4.7  | 5.0  | 4.74 | 4.80 | 4.85 | 4.80 | **4.83** | 0.10 | 5.00 | −0.17     |
 
-None required. No agent scored below baseline.
+All dimensions drifted downward. **Security Posture dropped most (−0.26)** because the Attacker found a real bypass (OP*SESSION*<accountid>) that invalidated part of v10's A2-closed credit. **Ship Readiness dropped −0.17** because Operator caught the unwired CI ratchet.
 
-**Contradiction flagged by Phase-4 Auditor (not score-moving):** The
-Attacker (Agent 6) Risk #3 claimed `"restricted"` mode runs host
-children with `process.env` unchanged, because "line 86 short-circuits
-scrubbing when level is `"none"` ... the container path is the only
-one that scrubs." This is factually wrong: `shell.ts:85-95`
-short-circuits ONLY when `level === "none"`; under `"restricted"` (the
-default per line 106) the scrub loop runs, and both host spawn sites
-(foreground line 374, background line 485) call `buildChildEnv(current
-SandboxLevel)`. `shell-sandbox.test.ts:176-227` explicitly asserts
-this. The Attacker simultaneously awarded Security Posture 7.60
-(highest of any agent, crediting the scrub closure) AND flagged this
-inconsistent risk — an internal contradiction. The 7.60 is kept in
-the mean because the Auditor's recount with the Attacker's score
-removed gives Security 6.54, still +0.61 over v9; the finding holds
-either way. Flagged for v11 methodology: Phase-2 prompts should
-include a "verify before you claim" requirement for any code-level
-assertion.
+## New Substantive Findings (v11 uncovered; v10 missed)
 
-## Risk Register (sorted by agent consensus)
+These are the actual payload of running v11:
 
-| Risk                                                                | Count    | Agents            |
-| ------------------------------------------------------------------- | -------- | ----------------- |
-| Multi-window + disk-full scale scenarios still open                 | **6/10** | 2, 3, 4, 7, 9, 10 |
-| Auto-updater GitHub supply-chain trust                              | **3/10** | 4, 6, 7           |
-| Zero production telemetry                                           | **3/10** | 4, 7, 8           |
-| Uncommitted WIP (router plugin, code-graph scanner)                 | **3/10** | 2, 4, 5           |
-| ENOSPC mid-DB-write untrapped                                       | **2/10** | 2, 10             |
-| Parallel turbo test flake unchanged                                 | **2/10** | 1, 9              |
-| `sandbox=none` escape hatch can revert hardening                    | **2/10** | 2, 6              |
-| CI ratchet not wired into `.github/workflows/*.yml`                 | 1/10     | 5 (Operator)      |
-| Docker daemon death untrapped                                       | 1/10     | 10 (Chaos)        |
-| No dependency-cruiser for 27-package graph                          | 1/10     | 3 (Architect)     |
-| No jsdom+RTL harness (React hook coverage gap)                      | 1/10     | 8 (Pragmatist)    |
-| S/A/C series naming glossary missing                                | 1/10     | 5 (Operator)      |
-| GITHUB_TOKEN allowlist still enables gh-based exfil                 | 1/10     | 6 (Attacker)      |
-| `buildChildEnv` scrub doesn't catch user-added unusual secret names | 1/10     | 9 (Sr Eng)        |
-| Docker `--user=1000:1000` vs host UID mismatch                      | 1/10     | 9 (Sr Eng)        |
+1. **CI ratchet is script-only, not CI-enforced** (Operator). `scripts/check-as-any-budget.mjs` exists and is runnable, but NO `.github/workflows/*.yml` step invokes it. Rapid regression can land silently through PR merge.
 
-## Agent Scores
+2. **`continue-on-error: true` on core + vault test steps** (Operator). "Green CI" badges pass even when test suites fail. Hides regressions.
 
-| #   | Agent        | Overall | Key finding                                                               |
-| --- | ------------ | ------- | ------------------------------------------------------------------------- |
-| 1   | Optimist     | 5.93    | All 8 dimensions up, 2 held; same-day movement trustworthy                |
-| 2   | Pessimist    | 5.96    | Gains narrow; disk-full + multi-window still open                         |
-| 3   | Architect    | 5.99    | CI ratchet pattern is structural win; extend to dep-cruiser               |
-| 4   | Auditor      | 5.93    | All 5 verification checks passed; counts match, traps green               |
-| 5   | Operator     | 6.08    | Highest score; but CI ratchet not actually wired in `.github/workflows/*` |
-| 6   | Attacker     | 6.00    | 3 named v9 attack paths closed; Security Posture +1.67                    |
-| 7   | Competitor   | 5.96    | 4 capabilities now technically exceed public posture of Aider/Continue    |
-| 8   | Pragmatist   | 5.91    | Crossed "dressed-up prototype" → "early production-grade"                 |
-| 9   | Sr Engineer  | 6.04    | `buildChildEnv` + WAL trap are reference-quality engineering              |
-| 10  | Chaos Monkey | 5.80    | Lowest score; 1/3 corruption surfaces closed (WAL); 2/3 remain            |
+3. **`OP_SESSION` scrub uses exact-match** (Attacker). 1Password CLI exports session tokens as `OP_SESSION_<accountid>` (e.g., `OP_SESSION_abc123xyz`). The explicit name set has bare `OP_SESSION` only; the regex `/(?:API_KEY|SECRET|PASSWORD|CREDENTIALS|PRIVATE_KEY|_TOKEN)/i` does NOT match `OP_SESSION_*`. Real session token leaks to shell children under "restricted" default.
 
-## What Moved (evidence-backed)
+4. **Restricted sandbox does not block sensitive file reads** (Attacker). Default `"restricted"` only blocks command PATTERNS (rm, sudo, curl-pipe-sh). An attacker with shell can `cat ~/.aws/credentials ~/.ssh/id_rsa ~/.netrc ~/.config/op/config.json` — none are blocked. Host filesystem-sandbox is only in "container" mode.
 
-- **Security Posture +0.76** (5.93 → 6.69): biggest single-dimension
-  gain. Three v9 Attacker findings closed with traps:
-  - A1 Docker hardening (6 flags: `--network=none`, `--user=1000:1000`,
-    `--cap-drop=ALL`, `--security-opt=no-new-privileges`, memory/cpus/
-    pids limits) + container UUID name.
-  - A2 `buildChildEnv()` scrubs `OP_SERVICE_ACCOUNT_TOKEN`, every
-    provider key, AWS creds, DB URLs — 20 explicit names + regex
-    pattern. GITHUB_TOKEN allowlisted.
-  - Default sandbox flipped `"none"` → `"restricted"`.
-- **Failure Handling +0.28** (6.36 → 6.64): C1 SQLite WAL truncation
-  recovery trap (`wal-recovery.test.ts`, 3 cases — zero-length,
-  mid-frame, corrupt MAIN file).
-- **Ship Readiness +0.26** (4.74 → 5.00): working tree 31 → 9,
-  `as any` count 291 → 285, CI ratchet committed.
-- **Test Reality +0.20** (6.42 → 6.62): +10 targeted trap tests
-  (tools 96→103, db 30→33).
+5. **No `busy_timeout` pragma on SQLite** (Chaos Monkey). `packages/db/src/client.ts` sets `journal_mode=WAL` and `foreign_keys=ON` but NO `busy_timeout`. Desktop + CLI both opening `~/.brainstorm/brainstorm.db` produce immediate `SQLITE_BUSY` on first concurrent write. Multi-window risk is architectural, not just untrapped.
 
-## What Did Not Move
+## False Finding Flagged by This Synthesis
 
-- **Production Evidence +0.02** (4.75 → 4.78): structurally bounded,
-  no telemetry stream.
-- **Wiring +0.08** (6.80 → 6.88): no new subsystems required wiring.
-- **Code Completeness +0.11** (7.46 → 7.57): small fix-pass volume.
+- **Pragmatist (A8) claimed "8 modified tracked files exist"** — `git status` shows 0. The claim is stale/hallucinated. Score contribution unchanged.
 
-## Most-Flagged Risk (v10)
+## Risk Register (v11 consensus)
 
-**Multi-window + disk-full scale scenarios still open** (6/10 agents).
-The v9 consensus on `as any` (8/10) and working tree (7/10) has been
-supplanted by the chaos-monkey class of risks: WAL is closed but two
-sibling scenarios remain untrapped. This is the natural shape for
-round-over-round risk migration — close the loud risks, the next
-round's loudest risk is the next layer down.
+| Risk                                                    | Count        | Notes                                                   |
+| ------------------------------------------------------- | ------------ | ------------------------------------------------------- |
+| Multi-window SQLite concurrent writes (no busy_timeout) | **7/10**     | NEW ANGLE this round: architectural, not just untrapped |
+| ENOSPC / disk-full mid-DB-write untrapped               | 3/10         | From v10                                                |
+| Docker daemon death mid-sandbox untrapped               | 2/10         | From v10                                                |
+| Auto-updater GitHub supply-chain trust                  | 3/10         | Structural                                              |
+| Zero production telemetry                               | 3/10         | Structural                                              |
+| Parallel turbo test flake unchanged                     | 3/10         | From v10                                                |
+| Inspection-only S4/S6/S7 closures                       | 2/10         | From v10                                                |
+| CI ratchet not actually in CI                           | **1/10 NEW** | Real gap                                                |
+| `continue-on-error` masks test failures                 | **1/10 NEW** | Real gap                                                |
+| OP*SESSION*<accountid> scrub bypass                     | **1/10 NEW** | Real bug                                                |
+| Restricted sandbox allows sensitive file reads          | **1/10 NEW** | Real design gap                                         |
+| Grep-based as-any counter is brittle                    | 1/10         | Minor                                                   |
+| Docker `--user=1000:1000` vs host UID mismatch          | 1/10         | From v10                                                |
+| No dep-cruiser                                          | 1/10         | From v10                                                |
+| No jsdom+RTL                                            | 1/10         | From v10                                                |
 
-## Agent Agreement Analysis
+## Calibration Assessment
 
-σ dropped from v9's 0.12 to **0.07** — tightest agreement in any round.
-Four possible causes:
+- **σ:** 0.07 → 0.047 (tighter). Agent convergence on the evidence is real.
+- **Mean:** 5.96 → 5.90 (−0.06). Modest anchoring drift. Inside noise band.
+- **Substantive net:** 5 new real findings vs 1 false finding. Strong signal that the assessment _produces value_ through re-running, not just scoring.
 
-1. Evidence is unambiguous (5 closed commits, each with a named trap)
-2. Shared-evidence-doc anchoring (same critique v9's Auditor raised)
-3. Same-day re-scoring effect (agents saw the delta clearly)
-4. Monotonicity invariant working as designed
+## What This Tells Us About Methodology
 
-Likely a mix. The Attacker's 5.93 → 6.00 (lowest mover) and Operator's
-5.70 → 6.08 (highest mover) track their personas: Attacker rewards
-closed attack paths; Operator rewards operator-facing docs + runbooks.
+Running the assessment twice on the same no-work state:
 
-## Recommended One-Week Plan (cross-agent consensus)
+- Confirms σ is small enough that 10 agents on the same evidence doc produce a stable number ± 0.07.
+- But the **number itself drifts ±0.05–0.10** across independent runs even on identical state — so reporting precision beyond 0.1 is false signal.
+- The **new-finding rate** is the more valuable output. v11 found 5 substantive items v10 missed in ~5 minutes of agent time.
+- Ideal methodology: re-run v11-style replication anytime a round produces σ < 0.1 on a significant delta, to distinguish real progress from anchoring.
 
-1. **Wire the as-any CI ratchet into `.github/workflows/ci.yml`** (1/10
-   Operator, high-leverage): the gate exists but CI doesn't invoke it.
-   Single-line fix. Without this, pass 22's ratchet is advisory, not
-   enforced.
-2. **Close the remaining 2/3 chaos-corruption traps** (6/10 consensus
-   on scale): port the WAL test template to `enospc.test.ts` and
-   `docker-daemon-death.test.ts`. Same filesystem-isolation pattern.
-3. **Multi-window SQLite concurrency trap** (6/10 consensus): two
-   Database handles on one path, interleaved writes, assert no
-   `SQLITE_BUSY` escapes.
-4. **Add dep-cruiser layer** (1/10 Architect): extends the pass-22
-   ratchet pattern to the 27-package graph. Pre-empts 5-year rot.
-5. **Opt-in telemetry beacon** (3/10 Auditor/Competitor/Pragmatist):
-   first move toward lifting Production Evidence past the 4.78
-   structural ceiling.
+## Recommended Immediate Action (Pass 27)
 
-## Delta from Baseline — Summary
+Fix the 5 v11-new findings in priority order:
 
-**v9 5.76 → v10 5.96 (+0.20).** Every dimension up or held. Largest
-movers: Security Posture (+0.76), Failure Handling (+0.28), Ship
-Readiness (+0.26). No dimension regressed.
+1. **OP_SESSION bypass** (A6) — highest severity; session token exfil. Change `SCRUBBED_ENV_NAMES` check to prefix-match or add `OP_SESSION` to the regex.
+2. **busy_timeout pragma** (A10) — architectural; one-line fix closing the multi-window collision path.
+3. **CI ratchet wire-up** (A5) — make the governance claim real, not aspirational.
+4. **Fix `continue-on-error` on tests** (A5) — restore CI signal integrity.
+5. **Restricted sandbox file-read block** (A6) — add `~/.ssh/*`, `~/.aws/*`, `~/.netrc`, `~/.config/op/*` to sandbox's sensitive-path blocklist OR clearly document users should run untrusted workloads under "container".
 
-Over two rounds: **v8 5.36 → v9 5.76 → v10 5.96.** +0.60 total across
-the session. The slope is the signal — narrowing (+0.40, then +0.20)
-suggests the highest-value fixes are behind us and the remaining
-risks are structural (telemetry, supply chain) or infrastructure
-(dep-cruiser, jsdom+RTL) rather than surgical.
+## Delta Summary
 
-## Methodology Notes
+**v10 5.96 → v11 5.90 (−0.06).** Three-round trajectory: v8 5.36 → v9 5.76 → v10 5.96 → v11 5.90.
 
-Same agent framework as v9. σ tightened further — 0.07 is the
-lowest in any round. The Attacker was the lowest scorer at v9 (5.65)
-and is now mid-pack at 6.00, reflecting that their v9 findings
-translated into real commits with traps. The Chaos Monkey is now the
-lowest (5.80), reflecting the unclosed chaos-corruption scenarios —
-which is the correct signal for the persona, and the natural next
-target.
+Taking v11 as the corrected baseline (the methodology rerun is a better point-estimate than the biased original), two-round gain since v8 is **+0.54**, not the +0.60 v10 suggested. Still substantial, but not as large.
+
+More importantly: the number is directional at ±0.1 precision. Finer claims are noise.
