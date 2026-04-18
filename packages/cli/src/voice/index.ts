@@ -1,5 +1,10 @@
-import { AudioRecorder } from './recorder.js';
-import { detectBackend, transcribe, type TranscriptionResult, type WhisperBackend } from './transcriber.js';
+import { AudioRecorder } from "./recorder.js";
+import {
+  detectBackend,
+  transcribe,
+  type TranscriptionResult,
+  type WhisperBackend,
+} from "./transcriber.js";
 
 /**
  * Voice input manager for Brainstorm CLI.
@@ -34,10 +39,12 @@ export class VoiceInput {
   /** Stop recording and transcribe. Returns the transcribed text. */
   async stopAndTranscribe(): Promise<TranscriptionResult> {
     if (!this.backend) {
-      throw new Error('No transcription backend available. Install whisper.cpp or set OPENAI_API_KEY.');
+      throw new Error(
+        "No transcription backend available. Install whisper.cpp or set OPENAI_API_KEY.",
+      );
     }
 
-    const audioPath = this.recorder.stop();
+    const audioPath = await this.recorder.stop();
     return transcribe(audioPath, this.backend);
   }
 
@@ -49,15 +56,23 @@ export class VoiceInput {
   /** Get a status string for display. */
   getStatusString(): string {
     if (!this.isAvailable()) {
-      return 'Voice: unavailable (need sox + whisper)';
+      return "Voice: unavailable (need sox + whisper)";
     }
     if (this.isRecording()) {
-      return 'Voice: recording... (release to send)';
+      return "Voice: recording... (release to send)";
     }
     return `Voice: ready (${this.backend})`;
   }
 }
 
-export { AudioRecorder } from './recorder.js';
-export { detectBackend, transcribe, type TranscriptionResult, type WhisperBackend } from './transcriber.js';
-export { analyzeVoiceSentiment, type VoiceSentimentResult } from './voice-sentiment.js';
+export { AudioRecorder } from "./recorder.js";
+export {
+  detectBackend,
+  transcribe,
+  type TranscriptionResult,
+  type WhisperBackend,
+} from "./transcriber.js";
+export {
+  analyzeVoiceSentiment,
+  type VoiceSentimentResult,
+} from "./voice-sentiment.js";

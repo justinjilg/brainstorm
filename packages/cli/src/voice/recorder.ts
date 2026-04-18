@@ -55,14 +55,42 @@ export class AudioRecorder {
     return this.outputPath;
   }
 
-  /** Stop recording and return the audio file path. */
-  stop(): string {
+  /**
+   * Stop recording and return the audio file path.
+   *
+   * Async because sox needs a moment after SIGTERM to flush the WAV
+   * header + closing chunk. Pre-fix this was sync: kill + immediate
+   * existsSync check. existsSync returned `true` the moment sox
+   * opened the file at start() — but the file contents could still
+   * be a truncated, header-less write at stop() time. Callers saw
+   * "recording succeeded" and got corrupt audio. Awaiting 'exit'
+   * guarantees sox has closed its write handle.
+   */
+  async stop(): Promise<string> {
     if (!this.process) {
       throw new Error("Not recording. Call start() first.");
     }
 
-    this.process.kill("SIGTERM");
+    const proc = this.process;
     this.process = null;
+
+    await new Promise<void>((resolve) => {
+      // Race: sox exiting naturally vs. our SIGTERM. Either way we
+      // resolve on 'exit'. The SIGTERM is idempotent — if sox
+      // already exited on its own (unlikely but possible), kill()
+      // throws and we swallow it; the pending 'exit' listener
+      // would fire synchronously with the close anyway.
+      proc.once("exit", () => resolve());
+      try {
+        proc.kill("SIGTERM");
+      } catch {
+        // Already exited between the start() return and now.
+        // 'exit' may already have fired on a different tick — fall
+        // back to a short watchdog so we don't hang if the event
+        // was dispatched before we registered.
+        setTimeout(resolve, 50);
+      }
+    });
 
     if (!existsSync(this.outputPath)) {
       throw new Error("Recording failed — no audio file produced.");
