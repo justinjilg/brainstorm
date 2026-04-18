@@ -104,7 +104,7 @@ evidence (file path or test name).
 - Evidence: `tests-live/_helpers.ts` `assertNoOrphanBackends()`, plus
   the standalone sentinel at `tests-live/teardown.live.spec.ts`.
 
-## Open items
+## Closed during reliability passes 10–15
 
 ### ✅ Previous-turn durability — direct sqlite readback
 
@@ -211,12 +211,14 @@ config.general.maxSteps) : 1)`. No custom step-cap logic; we
 
 ## Notes for reviewers
 
-- Every "✅" item here has at least one runnable trap. If you change the
-  code that would silently break the invariant, a test fires before
-  merge.
-- Every "⚠️" item is legitimately open — we haven't built the trap, or
-  we haven't fully audited the code path. A future reliability pass
-  should pull items off this list top-down.
+- Every "✅" item here has at least one runnable trap OR a documented
+  reason it's not applicable. If you change code that would silently
+  break an invariant, a test fires before merge.
+- If you come across a new failure mode:
+  1. Find the public source (SDK issue, Vercel AI test, etc.) that
+     flagged the same class.
+  2. Add a section here with status + evidence.
+  3. Land the trap in the same commit as the AUDIT.md entry.
 - Don't add a new audit finding without a source citation. "I thought
   of this" isn't enough — if it was worth flagging, someone else hit it
   in production and the bug report is public.
