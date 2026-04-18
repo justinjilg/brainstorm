@@ -104,7 +104,7 @@ evidence (file path or test name).
 - Evidence: `tests-live/_helpers.ts` `assertNoOrphanBackends()`, plus
   the standalone sentinel at `tests-live/teardown.live.spec.ts`.
 
-## Closed during reliability passes 10–15
+## Closed during reliability passes 10–20
 
 ### ✅ Previous-turn durability — direct sqlite readback
 
@@ -208,6 +208,78 @@ config.general.maxSteps) : 1)`. No custom step-cap logic; we
   when N steps OR total tokens > M OR any tool errored"), re-open
   this item — custom logic needs its own test. The current single-
   condition `stepCountIs(N)` is table-stakes SDK usage.
+
+### ✅ Pending IPC requests reject on backend exit (S6)
+
+- Source: Apr-2026 adversarial review, S6 — `main.ts` `pending` map
+  dropped callbacks on backend exit.
+- Our status: fixed in pass 17.
+- Evidence:
+  - `apps/desktop/electron/main.ts` — `pending` now stores
+    `{ settle, reject }` and the `exit` handler rejects every
+    in-flight promise with `new Error("Backend process exited")`
+    before clearing the map. `chat-stream`'s `doneKey` is stored as
+    a no-op reject (backend-exit surfaces via the stream event path,
+    not the one-shot promise).
+- Note: no dedicated live trap — the fastest real backend response
+  (sub-10ms) always beats any SIGKILL + 300ms-wait scheme, so the
+  race can't be made deterministic in a live Playwright spec.
+  Closed by inspection; the existing `repro-sendtobackend-drop-on-
+respawn.live.spec.ts` already covers the sibling path (outbound
+  queue across respawn).
+
+### ✅ Partial reply flagged on mid-stream backend error (S5)
+
+- Source: Apr-2026 adversarial review, S5 — provider `error` event
+  arriving after some text-delta events finalized the bubble as a
+  clean completion, masking truncation from the user.
+- Our status: fixed in pass 18.
+- Evidence:
+  - `apps/desktop/src/hooks/useChat.ts` — `backendErrored` flag set
+    in the `"error"` case; OR'd with `aborted` when finalizing so
+    the existing "— stopped" UI path renders on both cancel and
+    mid-stream error.
+  - Pure helper extracted to `src/hooks/finalize-turn.ts` so the
+    decision matrix is testable without mounting the hook.
+  - Protocol trap: `tests-protocol/finalize-turn.test.ts` (7 cases)
+    pins clean-complete, user-abort, backend-error, and both.
+
+### ✅ Background shell task honours AbortSignal (S2)
+
+- Source: Apr-2026 adversarial review, S2 — `background: true`
+  branch dropped `ctx.abortSignal` on the floor; user Stop during a
+  turn that spawned a bg task left the subprocess running until the
+  10-minute timeout and the completion event never fired.
+- Our status: fixed in pass 19.
+- Evidence:
+  - `packages/tools/src/builtin/shell.ts` background branch now
+    mirrors the foreground onAbort handler (SIGTERM + 2s SIGKILL
+    grace), bails out of the completion path with a non-zero exit,
+    and detaches the listener on completion to avoid leaking
+    listeners on per-session controllers that spawn many bg tasks.
+  - Unit traps in `shell-abort.test.ts`:
+    - mid-flight abort: spawn bg sleep, abort 200ms later, assert
+      completion event arrives under 8s with non-zero exit and no
+      pgrep survivor.
+    - pre-aborted: controller already aborted when execute() runs.
+
+### ✅ Send-guard race closed with ref (S4)
+
+- Source: Apr-2026 adversarial review, S4 — `isProcessing` state
+  closure could allow rapid double-send to bypass the guard.
+- Our status: fixed in pass 20.
+- Evidence:
+  - `apps/desktop/src/hooks/useChat.ts` — `isProcessingRef` flipped
+    synchronously before any async work; the public `isProcessing`
+    state is still exported for UI (disable input, show spinner)
+    but the ref is the re-entry gate.
+  - Side-fix: `sessionCost` removed from useCallback deps (unused
+    in the body; its presence churned `send`'s identity per cost
+    tick and forced memoized parents to re-render).
+- Note: no automated trap — this race lives inside React's state
+  batching, and the project's vitest harness is node-environment
+  only (no jsdom + RTL). Closed by inspection + the explicit ref
+  comment; `chat.live.spec.ts` already covers the happy path.
 
 ## Notes for reviewers
 
