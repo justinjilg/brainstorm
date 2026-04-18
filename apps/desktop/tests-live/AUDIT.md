@@ -104,7 +104,7 @@ evidence (file path or test name).
 - Evidence: `tests-live/_helpers.ts` `assertNoOrphanBackends()`, plus
   the standalone sentinel at `tests-live/teardown.live.spec.ts`.
 
-## Closed during reliability passes 10–30
+## Closed during reliability passes 10–31
 
 ### ✅ Previous-turn durability — direct sqlite readback
 
@@ -263,6 +263,48 @@ respawn.live.spec.ts` already covers the sibling path (outbound
       pgrep survivor.
     - pre-aborted: controller already aborted when execute() runs.
 
+### ✅ v12 findings closed — env regex widened + CI ordering + macOS root path (pass 31)
+
+- Source: v12 stochastic assessment identified three real fixes after
+  v11 synthesis (`docs/assessment-synthesis.md` v12). Four other
+  findings were verified open but deferred (F3 busy_timeout UX needs
+  async driver, F5 shell string tricks need AST parsing).
+
+**F1 — env regex `_KEY` gap (pass 25 leftover):** the pre-pass-31
+`SCRUBBED_ENV_PATTERN` matched compound forms like `API_KEY` and
+`PRIVATE_KEY` but missed bare `_KEY` and the `HONEYCOMB_WRITEKEY`
+shape. Real leak surface: `SUPABASE_ANON_KEY`,
+`SUPABASE_SERVICE_ROLE_KEY`, `DATADOG_APP_KEY`, `HONEYCOMB_WRITEKEY`,
+`MIXPANEL_PROJECT_KEY`, `SENTRY_DSN`, anything with `_AUTH`/`_BEARER`/
+`_COOKIE`/`_JWT`/`_PAT`. Broadened to
+`/(?:API_KEY|SECRET|PASSWORD|CREDENTIALS|PRIVATE_KEY|_TOKEN|_KEY|KEY$|
+_AUTH|_BEARER|_COOKIE|_DSN|_JWT|_PAT)/i`. Added `SSH_AUTH_SOCK` to
+the allowlist (socket path, not secret). Trap: 2 new cases in
+`shell-sandbox.test.ts`.
+
+**F2 — CI ratchet supply-chain window (pass 29 ordering):** the
+as-any ratchet ran at ci.yml line 43, AFTER `npm ci` at line 22.
+A transitive-dep postinstall could mutate
+`scripts/check-as-any-budget.mjs` between install and enforcement.
+Moved the ratchet step to BEFORE `npm ci`. The script uses only
+Node stdlib so it has no install dependency. Flagged by Pessimist +
+Auditor + Operator + Sr Engineer (4/10 v12 consensus). No new trap
+— CI yaml change is self-verifying.
+
+**F6 — `/var/root/.ssh` pattern gap (pass 30 macOS root home):**
+the pre-pass-31 regex covered `/Users/<user>/` and `/home/<user>/`
+but missed macOS's root-user home at `/var/root`. Added `/var/root`
+to the sensitive-path alternative. Trap: `blocks cat /var/root/.ssh
+/id_rsa` in `shell-sandbox.test.ts`.
+
+Open, deferred:
+
+- F3 busy_timeout synchronous stall: needs async sqlite driver or
+  TUI progress wiring. Not a pass.
+- F5 shell string-trick bypasses: documented comment says "path-name
+  defense, not a real capability sandbox" — true fix requires
+  shell-quote AST parser. Out of scope for a surgical pass.
+
 ### ✅ v11 findings closed — env prefix scrub + CI ratchet wiring + busy_timeout + sensitive-path reads (passes 27–30)
 
 - Source: v11 stochastic assessment methodology rerun
@@ -277,7 +319,7 @@ which escaped both the explicit set AND the regex. Fix: added
 `SCRUBBED_ENV_PREFIXES = ["OP_SESSION_", "AWS_", "GCP_", "AZURE_"]` +
 prefix-match step in `buildChildEnv`. Allowlist check now runs FIRST
 so GITHUB*\* passthrough still works. Traps: 3 new cases in
-`shell-sandbox.test.ts` (OP_SESSION_abc123, AWS*_ prefix, GITHUB\__
+`shell-sandbox.test.ts` (OP_SESSION_abc123, AWS*\_ prefix, GITHUB\_\_
 non-token keep-through).
 
 **Pass 28 — C1b: no busy_timeout on SQLite.** v11 Chaos Monkey

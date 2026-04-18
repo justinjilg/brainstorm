@@ -114,7 +114,12 @@ const BLOCKED_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   // /proc reads, tool-chained obfuscation). For true FS isolation the
   // user must run sandbox="container". This closes the obvious path.
   {
-    pattern: /(?:~|\$HOME|\/Users\/[^/]+|\/home\/[^/]+)\/\.ssh\//,
+    // Covers ~/, $HOME, /Users/<user> (macOS), /home/<user> (Linux),
+    // AND /var/root (macOS root-user home). v12 Attacker/Pessimist
+    // finding: the macOS root user's home directory is /var/root,
+    // not /Users/root, so a command running as root or a payload
+    // traversing to root-owned paths would escape the prior regex.
+    pattern: /(?:~|\$HOME|\/Users\/[^/]+|\/home\/[^/]+|\/var\/root)\/\.ssh\//,
     reason:
       "Reading ~/.ssh/* blocked — use sandbox=container for workspace-edit workflows that need SSH",
   },

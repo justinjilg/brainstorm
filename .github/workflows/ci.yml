@@ -18,6 +18,18 @@ jobs:
           node-version: 22
           cache: npm
 
+      # Ratchet for `as any` escape hatches runs BEFORE `npm ci`.
+      # v12 Pessimist/Auditor/Operator/Sr-Engineer consensus (4/10):
+      # if this ran post-install, a compromised transitive dep with a
+      # postinstall hook could rewrite scripts/check-as-any-budget.mjs
+      # between the install and the enforcement step. The script uses
+      # only Node stdlib (execFileSync + grep) so it has no install
+      # dependency. Moving it here closes the supply-chain tamper
+      # window. Raise the budget in scripts/check-as-any-budget.mjs
+      # only in the SAME PR that adds the new cast + justifies it.
+      - name: Lint — as-any escape-hatch budget (pre-install, supply-chain safe)
+        run: node scripts/check-as-any-budget.mjs
+
       - name: Install dependencies
         run: npm ci
 
@@ -33,14 +45,6 @@ jobs:
       # removeEventListener pair. See scripts/lint-abort-signal-timeout.mjs.
       - name: Lint — AbortSignal.timeout cleanup
         run: npm run lint:abort-signal
-
-      # Ratchet for `as any` escape hatches. v11 Operator finding:
-      # pre-fix this script existed but was never invoked by CI, so
-      # the cap at 285 from pass 22 was advisory. Now enforced.
-      # Raise the budget in scripts/check-as-any-budget.mjs only in the
-      # SAME PR that adds the new cast + justifies it in the commit.
-      - name: Lint — as-any escape-hatch budget
-        run: node scripts/check-as-any-budget.mjs
 
       - name: Verify tool catalog freshness
         continue-on-error: true
