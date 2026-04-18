@@ -117,7 +117,12 @@ function startIPC(): IPCHarness {
       await new Promise<void>((resolve) => {
         proc.once("exit", () => resolve());
         setTimeout(() => {
-          if (!proc.killed) proc.kill("SIGKILL");
+          // `proc.killed` only tracks prior .kill() calls, not OS
+          // liveness. For "is the process still alive after 3s?" use
+          // exitCode/signalCode — both stay null until 'exit' fires.
+          if (proc.exitCode === null && proc.signalCode === null) {
+            proc.kill("SIGKILL");
+          }
           resolve();
         }, 3_000);
       });
