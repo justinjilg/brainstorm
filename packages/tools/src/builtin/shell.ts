@@ -316,11 +316,30 @@ export const shellTool = defineTool({
       }, timeoutMs);
       bgTimer.unref(); // Don't keep event loop alive for background timeout
 
+      // Honour the caller's AbortSignal even in background mode. A
+      // background task by design survives the turn that spawned it,
+      // but when the USER cancels (Ctrl+C / desktop Stop), the signal
+      // DOES fire, and ignoring it leaves a runaway subprocess the
+      // user explicitly told us to stop. Mirrors the foreground
+      // branch; we only attach the listener once and detach it on
+      // completion so the signal can't keep the listener array
+      // growing on long-lived per-session controllers.
+      const bgAbortSignal = ctx?.abortSignal;
+      const onBgAbort = () => {
+        if (!child.killed) child.kill("SIGTERM");
+        setTimeout(() => {
+          if (!child.killed) child.kill("SIGKILL");
+        }, 2000);
+      };
+
       let completed = false;
       const emitCompletion = (exitCode: number, stderr?: string) => {
         if (completed) return; // Idempotent — error+close can both fire
         completed = true;
         clearTimeout(bgTimer);
+        if (bgAbortSignal) {
+          bgAbortSignal.removeEventListener("abort", onBgAbort);
+        }
         backgroundTasks.delete(taskId);
         const event: BackgroundEvent = {
           taskId,
@@ -337,13 +356,27 @@ export const shellTool = defineTool({
         }
       };
 
-      child.on("close", (code) => {
-        emitCompletion(code ?? 1);
+      child.on("close", (code, signal) => {
+        // POSIX convention: signal-terminated processes report exitCode
+        // 128+signum. We don't know the exact number, so fall back to
+        // 128 (generic "killed by signal") — non-zero so callers can
+        // distinguish cancelled from clean-exit.
+        emitCompletion(code ?? (signal ? 128 : 1));
       });
 
       child.on("error", (err) => {
         emitCompletion(1, err.message);
       });
+
+      if (bgAbortSignal) {
+        if (bgAbortSignal.aborted) {
+          // Already aborted before we could register — kill now and
+          // let the close handler fire naturally.
+          onBgAbort();
+        } else {
+          bgAbortSignal.addEventListener("abort", onBgAbort, { once: true });
+        }
+      }
 
       return {
         taskId,
