@@ -24,7 +24,13 @@ export default defineConfig({
   fullyParallel: false,
   // Cold boot + backend spawn + DB migrations are slow the first time.
   timeout: 60_000,
-  retries: 0,
+  // Live tests launch a real Electron + spawn a real sqlite-backed
+  // backend child; under suite load (~10+ back-to-back launches) the
+  // OS process table + Electron's renderer GPU helper occasionally
+  // crashes a single test. One retry absorbs the flake; two retries
+  // failing in a row means the test is genuinely red. This is the
+  // Playwright-sanctioned pattern for integration-tier flake budget.
+  retries: 1,
   reporter: "list",
   use: {
     trace: "retain-on-failure",

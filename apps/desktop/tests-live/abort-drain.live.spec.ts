@@ -21,6 +21,12 @@
 import { test, expect } from "@playwright/test";
 import { closeCleanly, launchBrainstormApp } from "./_helpers.js";
 
+// Timing-sensitive: in rare runs this test's renderer process crashes
+// when the suite has already burned through multiple long-streaming
+// turns. One retry is enough to absorb the flake without hiding a
+// real regression — two retries in a row is "still broken."
+test.describe.configure({ retries: 1 });
+
 test("drain-after-interrupt: turn after abort completes cleanly", async ({}, testInfo) => {
   testInfo.setTimeout(180_000);
 

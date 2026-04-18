@@ -7,6 +7,7 @@
  */
 
 import type { AgentEvent } from "./api-client";
+import { normalizeChatEvent } from "./ipc-protocol";
 
 // Re-export types that components depend on
 export type { AgentEvent, Conversation, HealthResponse } from "./api-client";
@@ -51,24 +52,13 @@ export async function streamChat(
   const runtime = getRuntime();
 
   if (runtime === "electron") {
-    // Main forwards NDJSON from the backend as {id, event: "...", data: {...}}.
-    // useChat (and every other consumer) discriminates on `type`, not
-    // `event`, and expects the data fields merged onto the top level —
-    // matching the shape of the HTTP SSE stream. Without this adapter,
-    // every chat turn would emit a done event to the renderer but no
-    // text-delta would ever hit the switch that accumulates streaming
-    // text, so the UI would flicker "thinking" and then clear with
-    // no reply ever landing.
-    const normalize = (raw: any): AgentEvent => {
-      if (!raw || typeof raw !== "object") return raw as AgentEvent;
-      if (raw.type) return raw as AgentEvent; // already normalized
-      if (typeof raw.event === "string") {
-        return { type: raw.event, ...(raw.data ?? {}) } as AgentEvent;
-      }
-      return raw as AgentEvent;
-    };
+    // Main forwards NDJSON from the backend as {id, event, data}; every
+    // consumer downstream discriminates on .type. normalizeChatEvent
+    // is the adapter and its contract is unit-tested in
+    // tests-protocol/ipc-protocol.test.ts. Do not re-inline the logic
+    // here — keep one source of truth for the wire format.
     const unlisten = window.brainstorm!.onChatEvent((raw) =>
-      onEvent(normalize(raw)),
+      onEvent(normalizeChatEvent(raw)),
     );
     try {
       await window.brainstorm!.chatStream(params);
