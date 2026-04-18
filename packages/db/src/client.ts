@@ -30,6 +30,13 @@ export function getDb(): Database.Database {
   _db = new Database(DB_PATH);
   _db.pragma("journal_mode = WAL");
   _db.pragma("foreign_keys = ON");
+  // Retry for up to 5s on SQLITE_BUSY before returning an error.
+  // v11 Chaos Monkey finding: pre-fix, no busy_timeout meant the
+  // first concurrent write from a second window (desktop + CLI both
+  // open, or two desktop windows) produced SQLITE_BUSY immediately
+  // with no backoff. WAL mode serializes writes; busy_timeout lets
+  // the loser of the race wait for the winner instead of erroring.
+  _db.pragma("busy_timeout = 5000");
 
   runMigrations(_db);
   cleanupOldRecords(_db);

@@ -33,7 +33,11 @@ let TAIL_BYTES = 20_000;
  * the attack.
  */
 const SCRUBBED_ENV_NAMES = new Set([
-  // 1Password
+  // 1Password service-account + bare-session token (the wrapped session
+  // prefix is handled by SCRUBBED_ENV_PREFIXES below — see v11 Attacker
+  // finding: real 1Password CLI env vars are `OP_SESSION_<accountid>`,
+  // e.g. `OP_SESSION_abc123xyz`, which escaped both the bare-name set
+  // AND the regex pattern in pass 25).
   "OP_SERVICE_ACCOUNT_TOKEN",
   "OP_SESSION",
   // Provider keys (first-party)
@@ -67,6 +71,21 @@ const SCRUBBED_ENV_NAMES = new Set([
 const SCRUBBED_ENV_PATTERN =
   /(?:API_KEY|SECRET|PASSWORD|CREDENTIALS|PRIVATE_KEY|_TOKEN)/i;
 
+/**
+ * Env-name prefixes that are always scrubbed. The exact-match set and
+ * regex above catch most shapes, but some integrations namespace tokens
+ * under a prefix: `OP_SESSION_<accountid>` (1Password CLI), `AWS_`
+ * (namespaced cloud creds), `GCP_` (Google Cloud). Adding these as
+ * prefixes closes the v11 Attacker finding where bare-name lookup
+ * missed `OP_SESSION_abc123` and the regex didn't match either.
+ *
+ * GITHUB_ is NOT in this list because `GITHUB_TOKEN` is explicitly
+ * allowlisted; most other GITHUB_* vars are benign (GITHUB_ACTIONS,
+ * GITHUB_REPOSITORY, GITHUB_SHA, etc.) and scrubbing them would break
+ * `gh` CLI workflows.
+ */
+const SCRUBBED_ENV_PREFIXES = ["OP_SESSION_", "AWS_", "GCP_", "AZURE_"];
+
 // Env names to KEEP even when they match the scrub pattern. `gh` is
 // part of our tool surface and fails hard without GITHUB_TOKEN /
 // GH_TOKEN — scrubbing these would break a first-class workflow.
@@ -86,8 +105,13 @@ export function buildChildEnv(level: SandboxLevel): NodeJS.ProcessEnv {
   if (level === "none") return process.env;
   const scrubbed: NodeJS.ProcessEnv = {};
   for (const [name, value] of Object.entries(process.env)) {
+    if (SCRUBBED_ENV_ALLOWLIST.has(name)) {
+      scrubbed[name] = value;
+      continue;
+    }
     if (SCRUBBED_ENV_NAMES.has(name)) continue;
-    if (SCRUBBED_ENV_PATTERN.test(name) && !SCRUBBED_ENV_ALLOWLIST.has(name))
+    if (SCRUBBED_ENV_PATTERN.test(name)) continue;
+    if (SCRUBBED_ENV_PREFIXES.some((prefix) => name.startsWith(prefix)))
       continue;
     scrubbed[name] = value;
   }

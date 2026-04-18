@@ -101,6 +101,56 @@ const BLOCKED_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
     pattern: /\bgit\s+reflog\s+expire\s+.*--expire=now/,
     reason: "Reflog expiry blocked",
   },
+  // Sensitive-path reads (v11 Attacker finding): pre-pass-30,
+  // `restricted` blocked destructive command PATTERNS but did NOT
+  // block READING credential files. A prompt-injection payload could
+  // `cat ~/.ssh/id_rsa` or `cat ~/.aws/credentials` freely. These
+  // paths hold keys that the process.env scrub can't cover because
+  // they're on disk, not in env. Match anywhere in the command; any
+  // tool (cat/head/tail/less/xxd/< redirect) hits the same pattern.
+  //
+  // This is path-name defense, not a real capability sandbox — a
+  // determined attacker can still read via alternative paths (symlinks,
+  // /proc reads, tool-chained obfuscation). For true FS isolation the
+  // user must run sandbox="container". This closes the obvious path.
+  {
+    pattern: /(?:~|\$HOME|\/Users\/[^/]+|\/home\/[^/]+)\/\.ssh\//,
+    reason:
+      "Reading ~/.ssh/* blocked — use sandbox=container for workspace-edit workflows that need SSH",
+  },
+  {
+    pattern: /(?:~|\$HOME|\/Users\/[^/]+|\/home\/[^/]+)\/\.aws\/credentials/,
+    reason: "Reading AWS credentials blocked",
+  },
+  {
+    pattern: /(?:~|\$HOME|\/Users\/[^/]+|\/home\/[^/]+)\/\.netrc/,
+    reason: "Reading ~/.netrc blocked (contains remote auth tokens)",
+  },
+  {
+    pattern: /(?:~|\$HOME|\/Users\/[^/]+|\/home\/[^/]+)\/\.config\/op\//,
+    reason: "Reading 1Password config blocked",
+  },
+  {
+    pattern: /(?:~|\$HOME|\/Users\/[^/]+|\/home\/[^/]+)\/\.gnupg\//,
+    reason: "Reading GPG keyring blocked",
+  },
+  {
+    pattern:
+      /(?:~|\$HOME|\/Users\/[^/]+|\/home\/[^/]+)\/\.docker\/config\.json/,
+    reason: "Reading Docker registry config blocked (contains auth)",
+  },
+  {
+    pattern: /(?:~|\$HOME|\/Users\/[^/]+|\/home\/[^/]+)\/\.npmrc/,
+    reason: "Reading ~/.npmrc blocked (may contain auth tokens)",
+  },
+  {
+    pattern: /\/etc\/shadow\b|\/etc\/sudoers\b/,
+    reason: "Reading /etc/shadow or /etc/sudoers blocked",
+  },
+  {
+    pattern: /\/proc\/[^/\s]+\/environ\b/,
+    reason: "Reading /proc/*/environ blocked (leaks parent env)",
+  },
 ];
 
 /**
