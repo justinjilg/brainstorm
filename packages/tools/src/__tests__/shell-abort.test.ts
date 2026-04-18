@@ -53,8 +53,12 @@ describe("shell tool — abort propagation", () => {
     ).toBeLessThan(8_000);
 
     // Child died via signal, not natural exit. The shell tool bubbles
-    // up the POSIX signal name on terminated children.
-    expect("signal" in result ? result.signal : undefined).toBeTruthy();
+    // up the POSIX signal name on terminated children. `result` is
+    // typed as `unknown` because defineTool's execute() has a generic
+    // TOutput — we asserted its shape with a narrow helper so the
+    // test stays strict even if the signature ever gets stricter.
+    const outcome = result as { signal?: string; exitCode?: number };
+    expect(outcome.signal).toBeTruthy();
 
     // Belt-and-braces: confirm no stray child with our marker survived
     // the abort. pgrep returns 1 on no match; we accept that as the

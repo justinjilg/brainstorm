@@ -32,18 +32,39 @@ describe("BrainstormServer Utility Methods", () => {
   });
 
   describe("corsHeaders", () => {
-    it("returns correct CORS headers when CORS is enabled", () => {
+    it("returns allowlist-reflected CORS headers for a matching origin", () => {
+      // The old wildcard `Access-Control-Allow-Origin: *` was replaced
+      // with an allowlist-reflection model (commit d36d967). Now the
+      // test has to ship an Origin header and set allowedOrigins.
       const serverWithCors = new BrainstormServer(mockDependencies, {
         cors: true,
+        allowedOrigins: ["http://localhost:1420"],
         jwtSecret: "test-secret",
       });
-      const headers = (serverWithCors as any).corsHeaders(); // Access private method
+      const req = {
+        headers: { origin: "http://localhost:1420" },
+      } as unknown as import("node:http").IncomingMessage;
+      const headers = (serverWithCors as any).corsHeaders(req);
       expect(headers).toEqual({
-        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Origin": "http://localhost:1420",
+        "Access-Control-Allow-Credentials": "true",
+        Vary: "Origin",
         "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, Authorization",
         "Access-Control-Max-Age": "86400",
       });
+    });
+
+    it("returns empty headers when the origin isn't in the allowlist", () => {
+      const server = new BrainstormServer(mockDependencies, {
+        cors: true,
+        allowedOrigins: ["http://localhost:1420"],
+        jwtSecret: "test-secret",
+      });
+      const req = {
+        headers: { origin: "http://evil.example" },
+      } as unknown as import("node:http").IncomingMessage;
+      expect((server as any).corsHeaders(req)).toEqual({});
     });
   });
 
@@ -76,32 +97,39 @@ describe("BrainstormServer Utility Methods", () => {
       expect(mockRes.end).toHaveBeenCalledWith(JSON.stringify(expectedPayload));
     });
 
-    it("writes the correct status and JSON error message with CORS enabled", () => {
+    it("writes CORS headers when the response has an allowlisted origin attached", () => {
+      // Post-d36d967 the server reads the request off a side-channel
+      // (`res._brainstormReq`) so it can reflect the matching origin.
+      // To exercise the CORS-enabled branch the test has to attach a
+      // request with an origin the server's allowlist accepts.
+      const serverWithCors = new BrainstormServer(mockDependencies, {
+        cors: true,
+        allowedOrigins: ["http://localhost:1420"],
+        jwtSecret: "test-secret",
+      });
+      const fakeReq = {
+        headers: { origin: "http://localhost:1420" },
+      } as unknown as import("node:http").IncomingMessage;
       const mockRes = {
         writeHead: vi.fn(),
         end: vi.fn(),
         setHeader: vi.fn(),
+        _brainstormReq: fakeReq,
       } as unknown as ServerResponse;
 
       const message = "Unauthorized";
       const status = 401;
-      const expectedPayload = {
-        ok: false,
-        error: message,
-        request_id: "mock-uuid",
-        timestamp: "2023-01-01T00:00:00.000Z",
-      };
-
-      (server as any).errorResponse(mockRes, status, message);
+      (serverWithCors as any).errorResponse(mockRes, status, message);
 
       expect(mockRes.writeHead).toHaveBeenCalledWith(status, {
         "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Origin": "http://localhost:1420",
+        "Access-Control-Allow-Credentials": "true",
+        Vary: "Origin",
         "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, Authorization",
         "Access-Control-Max-Age": "86400",
       });
-      expect(mockRes.end).toHaveBeenCalledWith(JSON.stringify(expectedPayload));
     });
   });
 

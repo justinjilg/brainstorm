@@ -77,10 +77,10 @@ describe("ChangeSet state machine", () => {
     const result = await approveChangeSet(changeset.id);
 
     expect(result.success).toBe(true);
-    expect(result.changeset.status).toBe("executed");
-    expect(result.changeset.approvedBy).toBe("user");
-    expect(result.changeset.executedAt).toBeTypeOf("number");
-    expect(result.changeset.rollbackData).toEqual({
+    expect(result.changeset?.status).toBe("executed");
+    expect(result.changeset?.approvedBy).toBe("user");
+    expect(result.changeset?.executedAt).toBeTypeOf("number");
+    expect(result.changeset?.rollbackData).toEqual({
       undo: "restore previous value",
     });
   });
@@ -94,7 +94,7 @@ describe("ChangeSet state machine", () => {
 
     expect(result.success).toBe(false);
     expect(result.message).toContain("No executor registered");
-    expect(result.changeset.status).toBe("approved");
+    expect(result.changeset?.status).toBe("approved");
   });
 
   it("preserves rollback data after execution so the executed state can be reversed", async () => {
@@ -114,9 +114,9 @@ describe("ChangeSet state machine", () => {
     const result = await approveChangeSet(changeset.id, "auto");
 
     expect(result.success).toBe(true);
-    expect(result.changeset.status).toBe("executed");
-    expect(result.changeset.rollbackData).toEqual(rollbackData);
-    expect(result.changeset.approvedBy).toBe("auto");
+    expect(result.changeset?.status).toBe("executed");
+    expect(result.changeset?.rollbackData).toEqual(rollbackData);
+    expect(result.changeset?.approvedBy).toBe("auto");
   });
 
   it("assesses blast radius through risk score and risk factors", () => {

@@ -34,8 +34,13 @@ export interface CodeGraphBuildResult {
  * Index the project into the code graph. Returns a summary suitable for
  * the onboard pipeline's phase-completed event.
  */
-export function runCodeGraphBuild(projectPath: string): CodeGraphBuildResult {
-  const { graph, progress } = indexProject(projectPath);
+export async function runCodeGraphBuild(
+  projectPath: string,
+): Promise<CodeGraphBuildResult> {
+  // indexProject returns a Promise — destructuring it synchronously
+  // used to yield Promise properties and produce silent nonsense
+  // at runtime (filesScanned: undefined). Await it.
+  const { graph, progress } = await indexProject(projectPath);
   const stats = graph.stats();
   graph.close();
   return {

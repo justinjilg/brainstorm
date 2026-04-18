@@ -391,7 +391,7 @@ describe("ChangeSet State Machine - Additional Paths", () => {
 
     expect(result.success).toBe(false);
     expect(result.message).toContain("expired");
-    expect(result.changeset.status).toBe("expired");
+    expect(result.changeset?.status).toBe("expired");
   });
 
   it("prevents approval of already-approved changeset", async () => {
@@ -452,7 +452,7 @@ describe("ChangeSet State Machine - Additional Paths", () => {
 
     expect(result.success).toBe(false);
     expect(result.message).toContain("Execution failed");
-    expect(result.changeset.status).toBe("failed");
+    expect(result.changeset?.status).toBe("failed");
   });
 
   it("marks changeset as failed (not draft) when executor returns failure", async () => {
@@ -480,7 +480,7 @@ describe("ChangeSet State Machine - Additional Paths", () => {
 
     expect(result.success).toBe(false);
     expect(result.message).toContain("Business logic validation failed");
-    expect(result.changeset.status).toBe("failed");
+    expect(result.changeset?.status).toBe("failed");
   });
 
   it("expands stale drafts when creating new changeset", async () => {
