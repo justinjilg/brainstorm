@@ -104,7 +104,7 @@ evidence (file path or test name).
 - Evidence: `tests-live/_helpers.ts` `assertNoOrphanBackends()`, plus
   the standalone sentinel at `tests-live/teardown.live.spec.ts`.
 
-## Closed during reliability passes 10–31
+## Closed during reliability passes 10–32
 
 ### ✅ Previous-turn durability — direct sqlite readback
 
@@ -262,6 +262,35 @@ respawn.live.spec.ts` already covers the sibling path (outbound
       completion event arrives under 8s with non-zero exit and no
       pgrep survivor.
     - pre-aborted: controller already aborted when execute() runs.
+
+### ✅ Dep-cruiser ratchet for 27-package graph (pass 32)
+
+- Source: v9–v12 Architect persona (multi-round): flagged the absence
+  of architectural boundary enforcement as the single highest-leverage
+  structural gap for 5-year feature-growth survival. Without dep-
+  cruiser (or equivalent), a graph of this size drifts into circular-
+  import thickets and deep-reach coupling as packages multiply.
+- Our status: ratchet landed in pass 32 with ONE rule.
+- Evidence:
+  - `.dependency-cruiser.cjs` — config with `no-circular` rule at
+    severity=error, scoped to `packages` + `apps`.
+  - `scripts/check-dep-cruiser.mjs` — ratchet gate at budget=0
+    (same shape as `check-as-any-budget.mjs` from pass 22).
+  - `.github/workflows/ci.yml` — new step "Architecture — no
+    circular imports" runs the ratchet after `npm ci` (depcruise
+    is installed, not stdlib, so it can't run pre-install).
+  - `package.json` — `dependency-cruiser` added to devDependencies
+    at `17.3.10`.
+- First-run side-effect: dep-cruiser immediately found a real cycle
+  in `packages/core/src/traceability/` (`index.ts → mcp-tools.ts →
+index.ts`, a classic barrel-through-sibling loop). Fixed in the
+  same pass by routing `mcp-tools.ts` imports through the source
+  modules (`./store.js`, `./trace-id.js`) instead of through the
+  barrel. Typecheck clean after the refactor.
+- Note: this is the first rule. Follow-up passes should add:
+  (a) no-orphans, (b) cross-package-via-barrel-only, (c) apps
+  can't import from apps. Each rule lands with its current
+  violation count as the baseline.
 
 ### ✅ v12 findings closed — env regex widened + CI ordering + macOS root path (pass 31)
 
