@@ -4,6 +4,7 @@ import {
   captureError,
   flushSentry,
   atomicWriteFile,
+  type StrategyName,
 } from "@brainst0rm/shared";
 import { loadConfig } from "@brainst0rm/config";
 import {
@@ -1670,7 +1671,7 @@ program
       const sessionManager = new SessionManager(db);
       const projectPath = runProjectPath;
       configureSandbox(
-        config.shell.sandbox as any,
+        config.shell.sandbox,
         projectPath,
         config.shell.maxOutputBytes,
         config.shell.containerImage,
@@ -1701,7 +1702,7 @@ program
 
       // Permission manager — gates tool execution
       const permissionManager = new PermissionManager(
-        config.general.defaultPermissionMode as any,
+        config.general.defaultPermissionMode,
         config.permissions,
       );
 
@@ -1713,7 +1714,7 @@ program
         !!resolvedKeys.get("GOOGLE_GENERATIVE_AI_API_KEY") ||
         !!resolvedKeys.get("MOONSHOT_API_KEY");
       if (opts.strategy) {
-        router.setStrategy(opts.strategy as any);
+        router.setStrategy(opts.strategy as StrategyName);
       }
       // Otherwise: respect config.general.defaultStrategy (set by router constructor).
       // Previously this code force-overrode to quality-first when the user had their
@@ -6977,14 +6978,14 @@ program
       }
 
       configureSandbox(
-        config.shell.sandbox as any,
+        config.shell.sandbox,
         projectPath,
         config.shell.maxOutputBytes,
         config.shell.containerImage,
         config.shell.containerTimeout,
       );
       const permissionManager = new PermissionManager(
-        config.general.defaultPermissionMode as any,
+        config.general.defaultPermissionMode,
         config.permissions,
       );
       let currentOutputStyle: OutputStyle =
@@ -7067,7 +7068,7 @@ program
         !!resolvedKeys.get("MOONSHOT_API_KEY") ||
         !!resolvedKeys.get("GOOGLE_GENERATIVE_AI_API_KEY");
       if (opts.strategy) {
-        router.setStrategy(opts.strategy as any);
+        router.setStrategy(opts.strategy as StrategyName);
       }
       // Otherwise: respect config.general.defaultStrategy (set by router constructor).
       // Previously this code force-overrode to quality-first when the user had their
