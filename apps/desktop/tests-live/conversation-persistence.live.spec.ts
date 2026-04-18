@@ -4,43 +4,43 @@
  * Audit item H2: `conversationId` was being stripped by the Zod schema,
  * so every chat turn opened a fresh session. The sidebar showed "same
  * conversation" but every message was a new thread. This test is the
- * regression trap: send two turns in one conversation, then reload the
- * app, pick the conversation from the sidebar, and assert both user
- * messages rehydrate.
+ * regression trap: send a marker turn in one session, reload the app
+ * into the SAME BRAINSTORM_HOME, pick the conversation from the
+ * sidebar, and assert the marker user message rehydrates from the DB.
  *
- * Depends on MessageRepository actually persisting to the sqlite DB at
- * ~/.brainstorm/brainstorm.db — if the persistence layer regresses,
- * this fails.
+ * Uses the test-owned BRAINSTORM_HOME in `_helpers.ts` so the two
+ * launches share a fresh sqlite DB that no other spec touches. Before
+ * we added isolation this test would pick the wrong "first
+ * conversation" row on reload depending on what ran earlier in the
+ * full suite.
  */
 
-import { test, expect, _electron as electron } from "@playwright/test";
+import { expect, test, _electron as electron } from "@playwright/test";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  assertNoOrphanBackends,
+  pickAppWindow,
+  WORKSPACE_BIN,
+} from "./_helpers.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DESKTOP_ROOT = join(__dirname, "..");
-const WORKSPACE_BIN = join(DESKTOP_ROOT, "..", "..", "node_modules", ".bin");
 
-async function pickAppWindow(
-  app: import("@playwright/test").ElectronApplication,
-) {
-  const isAppWindow = (url: string) =>
-    url.startsWith("http://localhost:1420") || url.includes("/dist/index.html");
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    const match = app.windows().find((w) => isAppWindow(w.url()));
-    if (match) return match;
-    await app.waitForEvent("window", { timeout: 2_000 }).catch(() => null);
-  }
-  throw new Error("Brainstorm window never appeared");
-}
+test("conversation persistence: messages rehydrate after app restart", async ({}, testInfo) => {
+  testInfo.setTimeout(120_000);
 
-test("conversation persistence: messages rehydrate after app restart", async () => {
-  const patchedPath = `${WORKSPACE_BIN}:${process.env.PATH ?? ""}`;
-  const launchEnv = { ...process.env, PATH: patchedPath };
-
-  // Use a message distinctive enough that it can't collide with prior
-  // test runs in ~/.brainstorm/brainstorm.db.
+  // Shared BRAINSTORM_HOME across BOTH launches so the second session
+  // sees what the first session wrote. Fresh tmpdir so no other spec
+  // (past or parallel) can pollute it.
+  const home = mkdtempSync(join(tmpdir(), "brainstorm-live-persist-"));
+  const launchEnv: Record<string, string> = {
+    ...process.env,
+    PATH: `${WORKSPACE_BIN}:${process.env.PATH ?? ""}`,
+    BRAINSTORM_HOME: home,
+  };
   const marker = `persistence-marker-${Date.now().toString(36)}`;
 
   // ── First session: create conversation, send marker turn ──────────
@@ -58,13 +58,11 @@ test("conversation persistence: messages rehydrate after app restart", async () 
       timeout: 10_000,
     });
 
-    // Create a fresh conversation so we have a stable id to target on
-    // reload. The "New conversation" button in the sidebar fires the
-    // create IPC and then selects the new conversation.
     await window.getByTestId("new-conversation").click();
 
-    // Wait for the conversation row to appear in the sidebar with a
-    // stable data-testid we can remember.
+    // Because this test has an isolated DB, the new conversation is
+    // the ONLY conversation in the sidebar — `.first()` picks it
+    // unambiguously.
     const conversationRow = window
       .locator("[data-testid^='conversation-']")
       .first();
@@ -80,13 +78,14 @@ test("conversation persistence: messages rehydrate after app restart", async () 
       timeout: 5_000,
     });
     // Wait for the assistant reply so the turn is actually committed to
-    // the DB before we tear down — otherwise the backend might not
-    // have flushed the assistant message by shutdown time.
+    // the DB before we tear down.
     await expect(window.getByTestId("message-assistant").first()).toBeVisible({
       timeout: 45_000,
     });
   } finally {
     await app1.close();
+    await new Promise((r) => setTimeout(r, 500));
+    assertNoOrphanBackends();
   }
 
   expect(
@@ -94,7 +93,7 @@ test("conversation persistence: messages rehydrate after app restart", async () 
     "first session should've produced a conversation row",
   ).toBeTruthy();
 
-  // ── Second session: relaunch, pick the same conversation, assert ──
+  // ── Second session: relaunch against SAME home, assert rehydrate ──
   const app2 = await electron.launch({
     args: [DESKTOP_ROOT],
     env: launchEnv,
@@ -118,8 +117,6 @@ test("conversation persistence: messages rehydrate after app restart", async () 
 
     await reloadedRow.click();
 
-    // The rehydrated chat view should contain the marker text from the
-    // first session inside a user message.
     const userMsg = window
       .getByTestId("message-user")
       .filter({ hasText: marker });
@@ -129,5 +126,7 @@ test("conversation persistence: messages rehydrate after app restart", async () 
     ).toBeVisible({ timeout: 10_000 });
   } finally {
     await app2.close();
+    await new Promise((r) => setTimeout(r, 500));
+    assertNoOrphanBackends();
   }
 });

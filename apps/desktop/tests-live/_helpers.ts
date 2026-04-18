@@ -13,6 +13,8 @@
 import { expect, _electron as electron } from "@playwright/test";
 import type { ElectronApplication, Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -29,6 +31,26 @@ export const WORKSPACE_BIN = join(
 export interface LaunchedApp {
   app: ElectronApplication;
   window: Page;
+  /** Absolute path of the test-owned BRAINSTORM_HOME, or undefined if
+   *  the app was launched against the user's default home. */
+  brainstormHome?: string;
+}
+
+export interface LaunchOptions {
+  /**
+   * If true (default), point the backend at a fresh per-test
+   * BRAINSTORM_HOME so its sqlite DB can't collide with another
+   * spec's conversations. See packages/db/src/client.ts for the
+   * env override. Only affects the brainstorm data directory —
+   * HOME, 1Password config, vault, etc. still resolve to the real
+   * user's home so provider-key resolution keeps working.
+   *
+   * Set to false only when you specifically want to test durability
+   * against the user's real DB (rare — today nothing does).
+   */
+  isolateDb?: boolean;
+  /** Extra env vars to set on the child process. */
+  env?: Record<string, string | undefined>;
 }
 
 /**
@@ -36,11 +58,36 @@ export interface LaunchedApp {
  * for the app window (not the DevTools sibling), and confirm the main
  * shell has mounted past the boot splash.
  */
-export async function launchBrainstormApp(): Promise<LaunchedApp> {
+export async function launchBrainstormApp(
+  opts: LaunchOptions = {},
+): Promise<LaunchedApp> {
+  const { isolateDb = true, env: extraEnv = {} } = opts;
   const patchedPath = `${WORKSPACE_BIN}:${process.env.PATH ?? ""}`;
+
+  let brainstormHome: string | undefined;
+  const envBase: Record<string, string | undefined> = {
+    ...process.env,
+    PATH: patchedPath,
+    ...extraEnv,
+  };
+
+  if (isolateDb) {
+    // Unique per launch — not per-test-file, so a spec that launches
+    // twice still gets one shared home for both launches (which is
+    // correct for conversation-persistence: both sessions must see
+    // the SAME DB to exercise the rehydration path).
+    brainstormHome = mkdtempSync(join(tmpdir(), "brainstorm-live-"));
+    envBase.BRAINSTORM_HOME = brainstormHome;
+  }
+
+  const cleanEnv: Record<string, string> = {};
+  for (const [k, v] of Object.entries(envBase)) {
+    if (v !== undefined) cleanEnv[k] = v;
+  }
+
   const app = await electron.launch({
     args: [DESKTOP_ROOT],
-    env: { ...process.env, PATH: patchedPath },
+    env: cleanEnv,
   });
 
   const window = await pickAppWindow(app);
@@ -50,7 +97,7 @@ export async function launchBrainstormApp(): Promise<LaunchedApp> {
   await expect(window.getByTestId("app-root")).toBeVisible({
     timeout: 10_000,
   });
-  return { app, window };
+  return { app, window, brainstormHome };
 }
 
 /**

@@ -6,7 +6,16 @@ import { createLogger } from "@brainst0rm/shared";
 
 const log = createLogger("db.client");
 
-const DB_DIR = join(homedir(), ".brainstorm");
+/**
+ * Where the brainstorm data directory lives. Defaults to `~/.brainstorm`,
+ * but honors `BRAINSTORM_HOME` for test isolation — the live-backend
+ * harness points each spec at its own tmpdir so tests can't collide
+ * on the shared user DB. Production users never set this; the default
+ * is the right one.
+ */
+const DB_DIR = process.env.BRAINSTORM_HOME
+  ? join(process.env.BRAINSTORM_HOME)
+  : join(homedir(), ".brainstorm");
 const DB_PATH = join(DB_DIR, "brainstorm.db");
 
 let _db: Database.Database | null = null;
