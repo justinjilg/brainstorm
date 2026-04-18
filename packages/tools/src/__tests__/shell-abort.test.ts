@@ -14,10 +14,16 @@
  */
 
 import { spawn } from "node:child_process";
-import { describe, expect, it } from "vitest";
-import { shellTool } from "../builtin/shell";
+import { describe, expect, it, afterEach } from "vitest";
+import { shellTool, setBackgroundEventHandler } from "../builtin/shell";
 
 describe("shell tool — abort propagation", () => {
+  afterEach(() => {
+    // Clear the module-level handler so background-event tests don't
+    // contaminate each other.
+    setBackgroundEventHandler(null);
+  });
+
   it("terminates the child process when the AbortSignal fires", async () => {
     // Prove the abort path works end-to-end against a real subprocess.
     // Pick a long sleep so the child cannot finish naturally before
@@ -110,5 +116,105 @@ describe("shell tool — abort propagation", () => {
     // Pre-aborted path skips the sleep entirely; a few hundred ms is
     // spawn overhead + SIGKILL grace period.
     expect(elapsed).toBeLessThan(4_000);
+  }, 10_000);
+
+  it("kills the background child when AbortSignal fires mid-flight (S2)", async () => {
+    // Regression trap for the S2 review finding: the `background: true`
+    // branch used to drop `ctx.abortSignal` on the floor. A user Stop
+    // during a turn that spawned a background dev server would leave
+    // the server running forever; the completion event never fired,
+    // so the agent never saw closure either.
+    //
+    // This test waits for the background completion event rather than
+    // the execute() return value (which lands immediately with a
+    // taskId) — that's the only signal the rest of the system gets
+    // that a background task ended, and the bug shape was that this
+    // event never arrived when the turn was cancelled.
+    const marker = `bst-bg-abort-${Date.now().toString(36)}`;
+    const controller = new AbortController();
+
+    const completion = new Promise<{ exitCode: number; taskId: string }>(
+      (resolve) => {
+        setBackgroundEventHandler((event) => {
+          if (event.command.includes(marker)) {
+            resolve({ exitCode: event.exitCode, taskId: event.taskId });
+          }
+        });
+      },
+    );
+
+    const result = await shellTool.execute(
+      {
+        command: `# ${marker}\nsleep 30`,
+        cwd: undefined,
+        timeout: 60_000,
+        background: true,
+      },
+      { abortSignal: controller.signal },
+    );
+    expect(result).toMatchObject({ status: "running" });
+
+    // Fire the abort after the child has definitely spawned.
+    setTimeout(() => controller.abort(), 200);
+
+    const start = Date.now();
+    const { exitCode } = await completion;
+    const elapsed = Date.now() - start;
+
+    // If abort didn't propagate, completion wouldn't arrive for 30s
+    // (sleep) or 60s (timeout). Should be well under 5s through the
+    // SIGTERM grace period.
+    expect(
+      elapsed,
+      `background completion took ${elapsed}ms after abort — signal did not propagate to child`,
+    ).toBeLessThan(8_000);
+
+    // Signal-terminated child reports non-zero exit (128 for signal).
+    expect(exitCode).not.toBe(0);
+
+    // Final proof: no leftover sleep with our marker.
+    await new Promise((r) => setTimeout(r, 500));
+    const survivors = await new Promise<string[]>((resolve) => {
+      const p = spawn("pgrep", ["-f", marker], { stdio: "pipe" });
+      let out = "";
+      p.stdout.on("data", (c) => (out += c.toString()));
+      p.on("close", () => resolve(out.split("\n").filter(Boolean)));
+    });
+    expect(
+      survivors,
+      `background sleep with marker ${marker} survived abort: pids=${survivors.join(",")}`,
+    ).toHaveLength(0);
+  }, 30_000);
+
+  it("kills the background child immediately when signal is pre-aborted", async () => {
+    // Catch the branch where abort fires before the background
+    // listener registers — same race class as the foreground
+    // pre-aborted case, but for the bg path that returns early.
+    const marker = `bst-bg-pre-${Date.now().toString(36)}`;
+    const controller = new AbortController();
+    controller.abort();
+
+    const completion = new Promise<number>((resolve) => {
+      setBackgroundEventHandler((event) => {
+        if (event.command.includes(marker)) resolve(event.exitCode);
+      });
+    });
+
+    const start = Date.now();
+    await shellTool.execute(
+      {
+        command: `# ${marker}\nsleep 30`,
+        cwd: undefined,
+        timeout: 60_000,
+        background: true,
+      },
+      { abortSignal: controller.signal },
+    );
+
+    const exitCode = await completion;
+    const elapsed = Date.now() - start;
+
+    expect(elapsed).toBeLessThan(5_000);
+    expect(exitCode).not.toBe(0);
   }, 10_000);
 });
