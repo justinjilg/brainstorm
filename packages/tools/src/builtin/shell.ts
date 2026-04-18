@@ -15,6 +15,85 @@ const BACKGROUND_TIMEOUT = 600_000; // 10 minutes max for background tasks
 let HEAD_BYTES = 20_000;
 let TAIL_BYTES = 20_000;
 
+/**
+ * Env var names that must NEVER reach a shell child under the
+ * "restricted" sandbox level. See v9 assessment's Attacker finding
+ * (#8, 1/10 agents, high-severity): the parent's `process.env` on
+ * this machine includes `OP_SERVICE_ACCOUNT_TOKEN` (which grants
+ * access to the entire 1Password "Dev Keys" vault — 60 items) plus
+ * every provider API key loaded at shell startup. Pre-fix, a
+ * prompt-injection payload that managed to trigger `env | curl ...`
+ * would exfiltrate the crown-jewel 1Password token.
+ *
+ * Explicit-name list covers the known secrets in this project's
+ * environment; the pattern list catches anything matching a common
+ * secret-name shape. Inclusive over-scrubbing is fine — a child
+ * that needs one of these back can re-export it from the command
+ * itself, which is audit-visible. Quiet exfiltration from env is
+ * the attack.
+ */
+const SCRUBBED_ENV_NAMES = new Set([
+  // 1Password
+  "OP_SERVICE_ACCOUNT_TOKEN",
+  "OP_SESSION",
+  // Provider keys (first-party)
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+  "GOOGLE_GENERATIVE_AI_API_KEY",
+  "GEMINI_API_KEY",
+  "DEEPSEEK_API_KEY",
+  "MOONSHOT_API_KEY",
+  "BRAINSTORM_API_KEY",
+  // Cloud creds
+  "AWS_SECRET_ACCESS_KEY",
+  "AWS_SESSION_TOKEN",
+  "AWS_ACCESS_KEY_ID",
+  // Datastore passwords
+  "DATABASE_URL",
+  "POSTGRES_PASSWORD",
+  // Integration tokens
+  "SLACK_BOT_TOKEN",
+  "LINEAR_API_KEY",
+  "STRIPE_SECRET_KEY",
+  "POSTHOG_API_KEY",
+  "SENTRY_AUTH_TOKEN",
+]);
+
+// Anything matching this shape is presumed secret even if not in the
+// explicit list above. Conservative: matches KEY / SECRET / TOKEN /
+// PASSWORD / CREDENTIALS / PRIVATE_KEY anywhere in the name. Does NOT
+// match GITHUB_TOKEN because that's kept below — `gh` CLI commands
+// are a first-class tool and expect it.
+const SCRUBBED_ENV_PATTERN =
+  /(?:API_KEY|SECRET|PASSWORD|CREDENTIALS|PRIVATE_KEY|_TOKEN)/i;
+
+// Env names to KEEP even when they match the scrub pattern. `gh` is
+// part of our tool surface and fails hard without GITHUB_TOKEN /
+// GH_TOKEN — scrubbing these would break a first-class workflow.
+// The trade-off is documented: a prompt-injection attacker can still
+// exfiltrate via GitHub if the user has a token loaded, but GitHub
+// is a trusted exfil channel (audit-logged by GitHub itself).
+const SCRUBBED_ENV_ALLOWLIST = new Set(["GITHUB_TOKEN", "GH_TOKEN"]);
+
+/**
+ * Produce a sanitized env for shell children. Under the "restricted"
+ * sandbox level, removes every name in SCRUBBED_ENV_NAMES plus any
+ * name matching SCRUBBED_ENV_PATTERN (minus the allowlist). Under
+ * "none" returns process.env unchanged — the caller explicitly opted
+ * out of sandboxing.
+ */
+export function buildChildEnv(level: SandboxLevel): NodeJS.ProcessEnv {
+  if (level === "none") return process.env;
+  const scrubbed: NodeJS.ProcessEnv = {};
+  for (const [name, value] of Object.entries(process.env)) {
+    if (SCRUBBED_ENV_NAMES.has(name)) continue;
+    if (SCRUBBED_ENV_PATTERN.test(name) && !SCRUBBED_ENV_ALLOWLIST.has(name))
+      continue;
+    scrubbed[name] = value;
+  }
+  return scrubbed;
+}
+
 // Module-level sandbox config — set by the CLI during startup via
 // `configureSandbox()`. Default flipped from "none" to "restricted"
 // per v9 assessment's Attacker finding: pre-fix, a caller that
@@ -292,6 +371,7 @@ export const shellTool = defineTool({
       const child = spawn("/bin/sh", ["-c", command], {
         cwd: cwd ?? getWorkspace(),
         stdio: ["ignore", "pipe", "pipe"],
+        env: buildChildEnv(currentSandboxLevel),
       });
 
       // Detach the child's handle from the parent's event loop. Without
@@ -402,6 +482,7 @@ export const shellTool = defineTool({
       const child = spawn("/bin/sh", ["-c", command], {
         cwd: cwd ?? getWorkspace(),
         stdio: ["ignore", "pipe", "pipe"],
+        env: buildChildEnv(currentSandboxLevel),
       });
 
       child.stdout.setEncoding("utf-8");
