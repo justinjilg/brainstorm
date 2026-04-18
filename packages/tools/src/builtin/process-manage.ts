@@ -25,7 +25,11 @@ function cleanupStaleProcesses(): void {
   );
   for (const [key, entry] of toRemove) {
     try {
-      process.kill(entry.pid, "SIGTERM");
+      // Kill the whole process group — the spawn uses `detached: true`
+      // so pid is the pgid. On Linux `/bin/sh` (dash) exits on SIGTERM
+      // without forwarding to children, so killing only the shell pid
+      // leaves the actual command (npm run dev, etc.) orphaned.
+      process.kill(-entry.pid, "SIGTERM");
     } catch {
       /* already dead */
     }
@@ -98,7 +102,8 @@ export const processKillTool = defineTool({
     }
 
     try {
-      process.kill(proc.pid, "SIGTERM");
+      // Group-kill — see cleanupStaleProcesses() for the Linux rationale.
+      process.kill(-proc.pid, "SIGTERM");
       managedProcesses.delete(name);
       return { success: true, name, pid: proc.pid };
     } catch (err: any) {
