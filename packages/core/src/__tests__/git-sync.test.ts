@@ -27,7 +27,16 @@ function createBareRemote(): string {
     `git-remote-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   );
   mkdirSync(dir, { recursive: true });
-  execFileSync("git", ["init", "--bare"], { cwd: dir, stdio: "ignore" });
+  // Pin the initial branch so `git clone <remote>` checks out a branch
+  // that actually exists once we push `main` to it. Without this, CI
+  // Linux (no `init.defaultBranch` set) creates a bare repo with
+  // HEAD -> refs/heads/master; we push `main` into it, but the clone
+  // follows HEAD, sees no master, and produces an empty working tree
+  // — then the test's `existsSync(cloneDir/test.md)` returns false.
+  execFileSync("git", ["init", "--bare", "--initial-branch=main"], {
+    cwd: dir,
+    stdio: "ignore",
+  });
   return dir;
 }
 
