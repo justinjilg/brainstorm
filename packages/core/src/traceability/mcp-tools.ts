@@ -8,15 +8,22 @@
 
 import { z } from "zod";
 import type Database from "better-sqlite3";
+// Import from source modules directly, NOT through `./index.js`. Pass
+// 32 dep-cruiser caught a cycle: index.ts re-exports mcp-tools, and
+// mcp-tools was importing from index — a classic barrel-through-sibling
+// loop. Going to the source module breaks the cycle without changing
+// semantics.
 import {
   listArtifacts,
   traceChain,
   getCoverageMetrics,
   saveArtifact,
+} from "./store.js";
+import {
   generateTraceId,
   type TracedArtifact,
   type ArtifactType,
-} from "./index.js";
+} from "./trace-id.js";
 import { validate, type ValidationRules } from "./validate.js";
 import {
   generateAnalyticsReport,

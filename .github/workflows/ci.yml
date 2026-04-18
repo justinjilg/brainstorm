@@ -46,6 +46,17 @@ jobs:
       - name: Lint — AbortSignal.timeout cleanup
         run: npm run lint:abort-signal
 
+      # Architectural boundary ratchet for the 27-package graph.
+      # v9-v12 assessment's Architect persona flagged the absence of
+      # dep-cruiser as the highest-leverage structural gap for 5-year
+      # survival. Pass 32 adds one rule (no-circular) with budget 0 —
+      # a new dep cycle fails the build. Runs AFTER `npm ci` because
+      # depcruise is an installed binary, not stdlib (trade-off
+      # acknowledged: as-any ratchet runs pre-install for supply-chain
+      # safety; this one can't).
+      - name: Architecture — no circular imports (dep-cruiser ratchet)
+        run: node scripts/check-dep-cruiser.mjs
+
       - name: Verify tool catalog freshness
         continue-on-error: true
         run: |
