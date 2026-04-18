@@ -7,34 +7,10 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { streamChat, abortChat, request } from "../lib/ipc-client";
+import type { ChatMessage, ToolCallInfo } from "./chat-types.js";
+import { finalizeAssistantMessage } from "./finalize-turn.js";
 
-export interface ChatMessage {
-  id: string;
-  role: "user" | "assistant" | "system" | "routing";
-  content: string;
-  model?: string;
-  provider?: string;
-  cost?: number;
-  timestamp: number;
-  toolCalls?: ToolCallInfo[];
-  reasoning?: string;
-  /**
-   * True if the assistant message was cut short by a user abort. UI should
-   * render this with a "— stopped" marker so the user knows the response
-   * is incomplete (previously partial outputs were silently appended as if
-   * complete).
-   */
-  aborted?: boolean;
-}
-
-export interface ToolCallInfo {
-  id: string;
-  name: string;
-  status: "running" | "success" | "error";
-  durationMs?: number;
-  input?: Record<string, unknown>;
-  output?: unknown;
-}
+export type { ChatMessage, ToolCallInfo };
 
 export interface UseChatReturn {
   messages: ChatMessage[];
@@ -133,6 +109,14 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
       let provider: string | undefined;
       let reasoning: string | undefined;
       let aborted = false;
+      // Flips true if the backend emits an "error" event mid-stream.
+      // Without this flag, a provider error that arrived AFTER some
+      // text had already been streamed would finalize the assistant
+      // message as if it were complete — the user would see a
+      // truncated reply with no indication it had been cut short. We
+      // reuse the aborted-marker UI to flag it, since the user-visible
+      // shape is identical: partial content with a warning.
+      let backendErrored = false;
       const toolCalls: ToolCallInfo[] = [];
 
       try {
@@ -247,6 +231,7 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
               }
 
               case "error": {
+                backendErrored = true;
                 const errMsg: ChatMessage = {
                   id: `msg-${Date.now()}-err`,
                   role: "system",
@@ -277,23 +262,20 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
         }
       }
 
-      // Finalize assistant message. If the turn was aborted mid-stream we
-      // still persist whatever text arrived (it's real content the user
-      // saw), but flag it so the UI can render "— stopped" and the user
-      // doesn't mistake a truncated reply for a complete one.
-      if (accumulatedText) {
-        const assistantMsg: ChatMessage = {
-          id: `msg-${Date.now()}-assistant`,
-          role: "assistant",
-          content: accumulatedText,
-          model,
-          provider,
-          cost: turnCost > 0 ? turnCost : undefined,
-          timestamp: Date.now(),
-          toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-          reasoning,
-          aborted: aborted || undefined,
-        };
+      // Finalize via the pure helper so the protocol-tier trap can pin
+      // the decision matrix (abort, backend-error, both) without having
+      // to mount the React hook under jsdom.
+      const assistantMsg = finalizeAssistantMessage({
+        accumulatedText,
+        aborted,
+        backendErrored,
+        model,
+        provider,
+        turnCost,
+        toolCalls,
+        reasoning,
+      });
+      if (assistantMsg) {
         setMessages((prev) => [...prev, assistantMsg]);
       }
 
