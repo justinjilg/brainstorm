@@ -104,7 +104,7 @@ evidence (file path or test name).
 - Evidence: `tests-live/_helpers.ts` `assertNoOrphanBackends()`, plus
   the standalone sentinel at `tests-live/teardown.live.spec.ts`.
 
-## Closed during reliability passes 10–21
+## Closed during reliability passes 10–24
 
 ### ✅ Previous-turn durability — direct sqlite readback
 
@@ -262,6 +262,33 @@ respawn.live.spec.ts` already covers the sibling path (outbound
       completion event arrives under 8s with non-zero exit and no
       pgrep survivor.
     - pre-aborted: controller already aborted when execute() runs.
+
+### ✅ Docker sandbox hardening + default level flip (A1, pass 24)
+
+- Source: v9 stochastic assessment's Attacker agent (1/10 but
+  high-severity): pre-fix, the `docker run` invocation had no
+  `--network`, no `--user`, no `--cap-drop`, no resource limits, and
+  ran as root with bridge networking; separately, the shell module
+  default was `"none"` so any caller that skipped `configureSandbox()`
+  got unsandboxed execution.
+- Our status: fixed in pass 24.
+- Evidence:
+  - `packages/tools/src/sandbox/docker-sandbox.ts` now passes
+    `--network=none`, `--user=1000:1000`, `--cap-drop=ALL`,
+    `--security-opt=no-new-privileges`, `--memory=2g --cpus=2
+--pids-limit=256`; container name switched from predictable
+    `Date.now()` to `randomUUID()`.
+  - `packages/tools/src/builtin/shell.ts` module default flipped
+    from `"none"` to `"restricted"`.
+  - Trap: `shell-sandbox.test.ts` "blocks destructive commands
+    without explicit configureSandbox()" — runs `shellTool.execute({
+command: "rm -rf /" })` directly and asserts `blocked: true`.
+    Reverting the default fails this test.
+- Note: bind mount stays read-write because workspace editing is the
+  core use case. The remaining escape surface (a compromised agent
+  inside the container tampering with tracked files) is already in
+  the trust model — this closes exfiltration, fork-bombs, root
+  escalation, and prevents enumeration of container names.
 
 ### ✅ npx-fallback child gets full stdio wiring (S7, pass 21)
 
