@@ -34,6 +34,14 @@ jobs:
       - name: Lint — AbortSignal.timeout cleanup
         run: npm run lint:abort-signal
 
+      # Ratchet for `as any` escape hatches. v11 Operator finding:
+      # pre-fix this script existed but was never invoked by CI, so
+      # the cap at 285 from pass 22 was advisory. Now enforced.
+      # Raise the budget in scripts/check-as-any-budget.mjs only in the
+      # SAME PR that adds the new cast + justifies it in the commit.
+      - name: Lint — as-any escape-hatch budget
+        run: node scripts/check-as-any-budget.mjs
+
       - name: Verify tool catalog freshness
         continue-on-error: true
         run: |
@@ -49,10 +57,20 @@ jobs:
       - name: Run tests (excluding core — has CI env issues being fixed)
         run: npx turbo run test --filter='!@brainst0rm/desktop' --filter='!@brainst0rm/vault' --filter='!@brainst0rm/core'
 
+      # TODO (v11 Operator finding): this step has carried
+      # `continue-on-error: true` for multiple rounds with the rationale
+      # "known CI env issue with memory paths". Core tests pass locally
+      # (410 tests green in isolation) but fail in GitHub Actions due
+      # to HOME/filesystem differences — a real problem masked here.
+      # Do NOT remove this flag without reproducing + fixing the CI env
+      # issue. But DO NOT add new soft-fail steps either — this is debt.
       - name: Run core tests (known CI env issue with memory paths)
         continue-on-error: true
         run: npx turbo run test --filter=@brainst0rm/core
 
+      # TODO (v11 Operator finding): vault tests pass locally (56 tests,
+      # incl. Argon2id) but flake in CI on slow runners. Same debt shape
+      # as core above — document before fixing.
       - name: Run vault tests (slow Argon2id)
         run: npx turbo run test --filter=@brainst0rm/vault
         timeout-minutes: 5

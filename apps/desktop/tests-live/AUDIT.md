@@ -104,7 +104,7 @@ evidence (file path or test name).
 - Evidence: `tests-live/_helpers.ts` `assertNoOrphanBackends()`, plus
   the standalone sentinel at `tests-live/teardown.live.spec.ts`.
 
-## Closed during reliability passes 10–26
+## Closed during reliability passes 10–30
 
 ### ✅ Previous-turn durability — direct sqlite readback
 
@@ -262,6 +262,63 @@ respawn.live.spec.ts` already covers the sibling path (outbound
       completion event arrives under 8s with non-zero exit and no
       pgrep survivor.
     - pre-aborted: controller already aborted when execute() runs.
+
+### ✅ v11 findings closed — env prefix scrub + CI ratchet wiring + busy_timeout + sensitive-path reads (passes 27–30)
+
+- Source: v11 stochastic assessment methodology rerun
+  (`docs/assessment-synthesis.md`) surfaced 5 substantive findings
+  v10 had missed. All closed here.
+
+**Pass 27 — A6b: OP*SESSION*<accountid> exfil bypass.** v10 claimed
+A2 closed all env-scrub gaps, but v11 Attacker found that
+`SCRUBBED_ENV_NAMES.has(name)` is exact-match: real 1Password CLI
+exports sessions as `OP_SESSION_<accountid>` (e.g. `OP_SESSION_abc123`)
+which escaped both the explicit set AND the regex. Fix: added
+`SCRUBBED_ENV_PREFIXES = ["OP_SESSION_", "AWS_", "GCP_", "AZURE_"]` +
+prefix-match step in `buildChildEnv`. Allowlist check now runs FIRST
+so GITHUB*\* passthrough still works. Traps: 3 new cases in
+`shell-sandbox.test.ts` (OP_SESSION_abc123, AWS*_ prefix, GITHUB\__
+non-token keep-through).
+
+**Pass 28 — C1b: no busy_timeout on SQLite.** v11 Chaos Monkey
+re-verified `packages/db/src/client.ts` and found `journal_mode=WAL`
+
+- `foreign_keys=ON` but NO `busy_timeout` pragma. Multi-window
+  concurrent writers (desktop + CLI both open) would hit SQLITE_BUSY
+  immediately with no retry — architectural, not just untrapped. Fix:
+  added `busy_timeout = 5000` pragma after journal_mode. Trap:
+  `concurrent-writers.test.ts` asserts the pragma is set to 5000ms +
+  exercises the exhaustion path so the failure case still returns a
+  clear error rather than hanging.
+
+**Pass 29 — O1: CI ratchet not wired.** v11 Operator found that
+`scripts/check-as-any-budget.mjs` from pass 22 existed but was
+invoked by NO `.github/workflows/*.yml` step, so the "as any cap at
+285" was advisory, not enforced. Fix: added `- name: Lint — as-any
+escape-hatch budget` step to `ci.yml` running
+`node scripts/check-as-any-budget.mjs`. Now a PR adding a 286th
+`as any` fails CI. Also: the same Operator flagged
+`continue-on-error: true` on core + vault test steps (long-standing
+"known CI env issue"). Added TODO comments flagging as debt rather
+than silently fixing — root-cause investigation is deferred.
+
+**Pass 30 — A6c: restricted sandbox allows sensitive file reads.**
+v11 Attacker found that `restricted` blocks command PATTERNS (rm,
+sudo, curl|sh) but does NOT block reading credential files on disk.
+A compromised agent could `cat ~/.ssh/id_rsa`, `~/.aws/credentials`,
+`~/.netrc`, etc. Fix: added 9 path patterns to `BLOCKED_PATTERNS` in
+`sandbox.ts` covering ~/.ssh/, ~/.aws/credentials, ~/.netrc,
+~/.config/op/, ~/.gnupg/, ~/.docker/config.json, ~/.npmrc,
+/etc/shadow, /etc/sudoers, /proc/\*/environ. Patterns match anywhere
+in the command so alternative tools (cat/head/less/xxd/redirect)
+hit the same block. Trap: 10 new cases in `shell-sandbox.test.ts`
+(each path type blocked + one defensive false-positive case).
+
+Note: path-pattern blocking is NOT a real capability sandbox — a
+determined attacker can still read via symlinks or tool chains. For
+true FS isolation, users must run `sandbox="container"`. This
+closes the obvious attack path and surfaces the harder-to-abuse
+alternatives.
 
 ### ✅ SQLite WAL corruption recovery pinned (C1, pass 26)
 
