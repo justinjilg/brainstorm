@@ -147,24 +147,29 @@ export function readManifest(runId: string): ArtifactManifest | null {
 }
 
 /**
- * List all workflow runs with manifests.
+ * List all workflow runs with manifests, most recent first.
  */
 export function listRuns(limit = 10): ArtifactManifest[] {
   if (!existsSync(ARTIFACTS_BASE)) return [];
 
+  // runIds are randomUUID() (engine.ts:62), so sorting directory names
+  // lexically returns runs in essentially random order — not "most
+  // recent first" as the `.reverse().slice(limit)` shape implied.
+  // Read every manifest, sort by startedAt, then slice. For typical
+  // workflow-run counts (dozens, not thousands) the full-scan cost
+  // is negligible; a manifest that fails to parse is silently
+  // dropped (same behavior as before).
   const dirs = readdirSync(ARTIFACTS_BASE, { withFileTypes: true })
     .filter((d) => d.isDirectory())
-    .map((d) => d.name)
-    .sort()
-    .reverse()
-    .slice(0, limit);
+    .map((d) => d.name);
 
   const manifests: ArtifactManifest[] = [];
   for (const dir of dirs) {
     const m = readManifest(dir);
     if (m) manifests.push(m);
   }
-  return manifests;
+  manifests.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+  return manifests.slice(0, limit);
 }
 
 /**

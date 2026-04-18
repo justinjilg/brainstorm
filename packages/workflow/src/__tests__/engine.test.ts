@@ -329,26 +329,40 @@ describe("artifact-store", () => {
     expect(() => readArtifact("run-sec-1", "../../etc/passwd", 0)).toThrow();
   });
 
-  it("listRuns returns the most recent manifests, reverse sorted and limited", () => {
-    // Use a unique prefix and limit to our own ids so other tests' dirs
-    // don't contaminate the assertion.
-    const ids = ["zlist-001", "zlist-002", "zlist-003"];
-    for (const id of ids) {
-      writeManifest(id, {
-        runId: id,
-        description: id,
+  it("listRuns returns the most recent manifests (by startedAt), limited", () => {
+    // runIds in production are randomUUID() — not timestamped — so the
+    // pre-fix `readdirSync → sort → reverse` returned runs in
+    // essentially random order. The fix in artifact-store.ts sorts by
+    // manifest.startedAt, which is the correct "recency" signal.
+    //
+    // Use explicit staggered timestamps so ordering is deterministic;
+    // the assertion does NOT require lexically-ordered runIds.
+    // Use a prefix unique to this test run so stale manifests from
+    // prior test runs (artifacts dir is shared across invocations)
+    // don't contaminate the count assertion.
+    const prefix = `listruns-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const entries = [
+      { id: `${prefix}-aaaa`, startedAt: "2026-04-18T00:00:00.000Z" }, // oldest
+      { id: `${prefix}-bbbb`, startedAt: "2026-04-18T00:00:01.000Z" },
+      { id: `${prefix}-cccc`, startedAt: "2026-04-18T00:00:02.000Z" }, // newest
+    ];
+    for (const e of entries) {
+      writeManifest(e.id, {
+        runId: e.id,
+        description: e.id,
         preset: "test",
-        startedAt: new Date().toISOString(),
+        startedAt: e.startedAt,
         totalCost: 0,
         steps: [],
       });
     }
 
-    const runs = listRuns(50);
-    const ours = runs.filter((r) => r.runId.startsWith("zlist-"));
+    const runs = listRuns(1000);
+    const ours = runs.filter((r) => r.runId.startsWith(prefix));
     expect(ours).toHaveLength(3);
-    // readdirSync → sort → reverse → highest id first
-    expect(ours[0].runId).toBe("zlist-003");
-    expect(ours[2].runId).toBe("zlist-001");
+    // Newest first, regardless of runId lexicographic order.
+    expect(ours[0].runId).toBe(`${prefix}-cccc`);
+    expect(ours[1].runId).toBe(`${prefix}-bbbb`);
+    expect(ours[2].runId).toBe(`${prefix}-aaaa`);
   });
 });
