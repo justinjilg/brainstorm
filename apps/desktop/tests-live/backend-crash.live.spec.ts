@@ -69,8 +69,13 @@ test("backend crash recovery: kill the ipc child, next chat turn still lands", a
     });
 
     // First turn — baseline proof the app is healthy before we knock
-    // the backend over.
-    await window.getByTestId("chat-input").fill("one");
+    // the backend over. Use a marker string so we can later assert
+    // that turn-1 actually hit disk BEFORE the crash, not just that
+    // turn-2 recovered. claude-agent-sdk-python issue #625 was the
+    // exact class of bug that only shows up when you check post-
+    // crash persistence, not just post-crash liveness.
+    const marker = `crash-marker-${Date.now().toString(36)}`;
+    await window.getByTestId("chat-input").fill(marker);
     await window.getByTestId("chat-input").press("Enter");
     await expect(window.getByTestId("message-assistant").first()).toBeVisible({
       timeout: 45_000,
@@ -100,6 +105,22 @@ test("backend crash recovery: kill the ipc child, next chat turn still lands", a
           "second assistant message never arrived — respawn + second turn pipeline is broken",
       })
       .toBeGreaterThanOrEqual(2);
+
+    // Post-crash durability: the marker message from turn-1 must still
+    // be in the DOM. If useChat's rehydration ever regresses (or the
+    // backend fails to flush turn-1 before exit — the claude-agent-sdk
+    // #625 class of bug), the crashed turn vanishes silently and the
+    // user loses work. The DOM is a proxy for the DB because our
+    // conversation-persistence spec already proves the DB-backed
+    // rehydration path; here we just guard that the in-memory
+    // message list didn't drop turn-1 during the crash.
+    const markerMsg = window
+      .getByTestId("message-user")
+      .filter({ hasText: marker });
+    await expect(
+      markerMsg.first(),
+      `turn-1 marker ${marker} vanished from the transcript after backend crash`,
+    ).toBeVisible({ timeout: 5_000 });
   } finally {
     await app.close();
   }

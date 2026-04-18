@@ -17,17 +17,19 @@ running). The tests put `@brainst0rm/cli`'s workspace bin ahead of the
 user's PATH so the child process is the Node CLI, not a Python
 homonym.
 
-## Current coverage (7 tests, ~2.4 min end-to-end)
+## Current coverage (9 tests, ~3.6 min end-to-end)
 
-| file                                    | traps                                                                                     |
-| --------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `boot.live.spec.ts`                     | preload loading, CSP, backend-ready race, ESM interop, window-picker-vs-devtools race     |
-| `chat.live.spec.ts`                     | env→1Password key resolution, IPC↔useChat event shape, streaming pipeline                 |
-| `conversation-persistence.live.spec.ts` | `conversationId` Zod strip (audit H2), MessageRepository persistence, rehydrate-on-select |
-| `mode-sweep.live.spec.ts`               | any view crashing on mount; renderer pageerror accumulator                                |
-| `model-switch.live.spec.ts`             | activeModelId propagation (audit H5/F5), status-rail state wiring                         |
-| `backend-crash.live.spec.ts`            | `sendToBackend` queueing across respawn; auto-respawn; post-recovery chat                 |
-| `abort.live.spec.ts`                    | Stop button actually reaches the backend (audit H1/S4); stream genuinely stops            |
+| file                                    | traps                                                                                                     |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `boot.live.spec.ts`                     | preload loading, CSP, backend-ready race, ESM interop, window-picker-vs-devtools race                     |
+| `chat.live.spec.ts`                     | env→1Password key resolution, IPC↔useChat event shape, streaming pipeline                                 |
+| `conversation-persistence.live.spec.ts` | `conversationId` Zod strip (audit H2), MessageRepository persistence, rehydrate-on-select                 |
+| `mode-sweep.live.spec.ts`               | any view crashing on mount; renderer pageerror accumulator                                                |
+| `model-switch.live.spec.ts`             | activeModelId propagation (audit H5/F5), status-rail state wiring                                         |
+| `backend-crash.live.spec.ts`            | `sendToBackend` queueing across respawn; auto-respawn; turn-1 survives the crash                          |
+| `abort.live.spec.ts`                    | Stop button actually reaches the backend (audit H1/S4); stream genuinely stops                            |
+| `abort-drain.live.spec.ts`              | session isn't poisoned by abort — next turn completes (Vercel AI / Claude Agent SDK buffer-drain warning) |
+| `teardown.live.spec.ts`                 | no orphan `brainstorm ipc` child processes survive `app.close()`                                          |
 
 ## Bugs the harness has caught
 
@@ -35,6 +37,13 @@ homonym.
   same commit). Before: messages that arrived during the 2s respawn gap
   were written to a null stdin and dropped. After: bounded queue
   flushes on `{type:"ready"}`.
+- **Phantom "drain-after-interrupt" hang** — pass 4 suspected the
+  Vercel AI / Agent SDK buffer-drain warning applied; pass 5's
+  dedicated trap proved otherwise. Real root cause: sending a new turn
+  before the UI settles out of `isProcessing=true` silently no-ops via
+  the `if (isProcessing) return;` guard in useChat.send. Not a
+  renderer bug — a UX one. Future pass: add a visible "aborting…"
+  transient state so users don't type into a disabled send path.
 
 ## Deliberately-not-yet-covered patterns
 
@@ -43,19 +52,7 @@ These are drawn from a research pass through `anthropics/claude-agent-sdk-python
 a concrete failure mode we should trap eventually. Do not delete without reading
 the rationale.
 
-### Pass 5 candidates (highest signal)
-
-**Drain-after-interrupt.** The Vercel AI SDK and the Claude Agent SDK
-both warn that after an interrupt, the session buffer holds an
-`error_during_execution` ResultMessage that MUST be drained before the
-next query, or stale tokens leak into the next bubble. Our current
-`abort.live.spec.ts` scopes down to "Stop stops the backend" because
-the follow-up-turn assertion fails — exactly the symptom these two
-projects warned about. Follow-up work is a two-part task: drain in
-`useChat` on the backend-aborted path, then a spec that asserts
-Turn 2 after an abort completes cleanly. Refs:
-[`claude-agent-sdk-python/tests/test_streaming_client.py#L484`](https://github.com/anthropics/claude-agent-sdk-python/blob/main/tests/test_streaming_client.py#L484),
-[Vercel AI `stream-text.test.ts` lines 3870–4186](https://github.com/vercel/ai/blob/main/packages/ai/src/generate-text/stream-text.test.ts).
+### Pass 6 candidates (highest remaining signal)
 
 **NDJSON framing torture.** Spawn `brainstorm ipc` directly, pipe crafted
 stdout lines across: two objects on one line, embedded `\n` in a JSON
@@ -94,15 +91,17 @@ BrainstormRouter, assert a recoverable state (not a crash), assert the
 retry streams cleanly. Ref:
 [Vercel AI `stream-text.test.ts` line 2212 `describe('retries')`](https://github.com/vercel/ai/blob/main/packages/ai/src/generate-text/stream-text.test.ts).
 
-**Orphan-process cleanup.** `afterEach` assertion: `pgrep -f "brainstorm ipc"`
-returns zero children after `app.close()`. Trivial to add; catches a
-class of tear-down bug none of the current tests exercise.
+**Orphan-process cleanup.** _Landed in pass 5 via `_helpers.ts`
+`closeCleanly()` + `teardown.live.spec.ts`._ Every live spec now
+asserts no `brainstorm ipc` child survives `app.close()`.
 
-**Previous-turn durability across crash.** Our current
-`backend-crash.live.spec.ts` only asserts turn-2 works; it never
-opens the DB and checks that turn-1's assistant message actually
-persisted. Issue #625 in `claude-agent-sdk-python` was exactly this
-class of bug.
+**Previous-turn durability across crash.** _Partially landed in pass 5_
+— `backend-crash.live.spec.ts` now sends a unique marker as turn-1
+and asserts that marker is still in the transcript after the crash +
+recovery. Still open: a direct DB assertion (opening sqlite from the
+test, querying `messages` by session_id, asserting the row is there).
+Worth adding once we need the evidence the DB write path itself is
+durable beyond what the DOM proves.
 
 ### Architectural gotchas to keep in mind
 
