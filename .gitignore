@@ -28,3 +28,16 @@ apps/web/
 apps/desktop/dist/
 apps/desktop/node_modules/
 apps/desktop/src-tauri/target/
+apps/desktop/release/
+apps/desktop/test-results/
+
+# Monorepo-wide test / build ephemera
+test-results/
+tmp/
+
+# tsup occasionally leaves bundled_*.mjs scratch files in package
+# roots when a build is interrupted. Never meant to be committed.
+**/tsup.config.bundled_*.mjs
+
+# Runtime vault (Obsidian-style personal knowledge store; user-local).
+brainstorm-vault/
