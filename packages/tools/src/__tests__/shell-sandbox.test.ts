@@ -187,6 +187,79 @@ describe("checkSandbox", () => {
       ).toBe(true);
     });
   });
+
+  describe("restricted — string-trick bypasses (v12 Attacker, F5)", () => {
+    // v12 Attacker/Auditor-verified: the sensitive-path patterns from
+    // pass 30 catch LITERAL paths but a prompt-injection payload can
+    // still read credentials by obfuscating the path:
+    //   cat $(echo ~)/.ssh/id_rsa       ← subshell expansion
+    //   cat `echo ~`/.ssh/id_rsa        ← backtick expansion
+    //   cat /U""sers/$USER/.ssh/id_rsa  ← empty-quote concat
+    //
+    // Pre-fix, all three bypassed the filter — the checkpoint's F5
+    // finding. Fix: `normalizeForPatternMatch()` collapses subshells
+    // to the sentinel `$SUB` and strips empty-quote pairs before the
+    // regex match, so the sensitive-path patterns (extended with
+    // `\$SUB` alternation) catch the post-obfuscation shape.
+    //
+    // This is defense-in-depth, not a real capability sandbox. The
+    // file-header comment still tells the user to run
+    // sandbox="container" for true FS isolation.
+    it("blocks cat $(echo ~)/.ssh/id_rsa (subshell concat)", () => {
+      expect(
+        checkSandbox("cat $(echo ~)/.ssh/id_rsa", "restricted").allowed,
+      ).toBe(false);
+    });
+    it("blocks cat `echo ~`/.ssh/id_rsa (backtick concat)", () => {
+      expect(
+        checkSandbox("cat `echo ~`/.ssh/id_rsa", "restricted").allowed,
+      ).toBe(false);
+    });
+    it('blocks cat /U""sers/$USER/.ssh/id_rsa (empty-quote split)', () => {
+      expect(
+        checkSandbox('cat /U""sers/$USER/.ssh/id_rsa', "restricted").allowed,
+      ).toBe(false);
+    });
+    it("blocks cat /U''sers/$USER/.ssh/id_rsa (empty single-quote split)", () => {
+      expect(
+        checkSandbox("cat /U''sers/$USER/.ssh/id_rsa", "restricted").allowed,
+      ).toBe(false);
+    });
+    it("blocks subshell concat against .aws/credentials", () => {
+      expect(
+        checkSandbox("cat $(echo $HOME)/.aws/credentials", "restricted")
+          .allowed,
+      ).toBe(false);
+    });
+
+    // False-positive guards — the normalization must not break
+    // legitimate commands that happen to use subshells for reasons
+    // unrelated to credential paths. If these ever start getting
+    // blocked, something overshot.
+    it("allows cd $(pwd) (benign subshell, no sensitive target)", () => {
+      expect(checkSandbox("cd $(pwd)", "restricted").allowed).toBe(true);
+    });
+    it("allows echo $(git branch --show-current) (benign subshell)", () => {
+      expect(
+        checkSandbox("echo $(git branch --show-current)", "restricted").allowed,
+      ).toBe(true);
+    });
+    it("allows ls $(dirname ./README.md) (benign subshell)", () => {
+      expect(
+        checkSandbox("ls $(dirname ./README.md)", "restricted").allowed,
+      ).toBe(true);
+    });
+    it('allows echo "quote with empty "" inside" (empty-quote is not always attack)', () => {
+      // This one is genuinely a potential false-positive: strip-empty-
+      // quote will collapse `""` to nothing. If that reveals a
+      // sensitive pattern, block. If it reveals nothing dangerous,
+      // allow. The command here contains no credential path after
+      // stripping, so it remains allowed.
+      expect(
+        checkSandbox('echo "benign ""message"', "restricted").allowed,
+      ).toBe(true);
+    });
+  });
 });
 
 describe("shell tool default sandbox level (pass 24)", () => {

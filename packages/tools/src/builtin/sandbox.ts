@@ -113,39 +113,49 @@ const BLOCKED_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   // determined attacker can still read via alternative paths (symlinks,
   // /proc reads, tool-chained obfuscation). For true FS isolation the
   // user must run sandbox="container". This closes the obvious path.
+  // NOTE on the `\$SUB` alternation: the sandbox's
+  // `normalizeForPatternMatch()` step collapses any `$(...)` or
+  // backtick subshell to the literal token `$SUB` before matching.
+  // So a payload like `cat $(echo ~)/.ssh/id_rsa` becomes
+  // `cat $SUB/.ssh/id_rsa` and matches here alongside the direct
+  // path forms. Without this, v12 Attacker's "string tricks" bypass
+  // let subshell-expanded paths sail past the filter.
   {
     // Covers ~/, $HOME, /Users/<user> (macOS), /home/<user> (Linux),
-    // AND /var/root (macOS root-user home). v12 Attacker/Pessimist
-    // finding: the macOS root user's home directory is /var/root,
-    // not /Users/root, so a command running as root or a payload
-    // traversing to root-owned paths would escape the prior regex.
-    pattern: /(?:~|\$HOME|\/Users\/[^/]+|\/home\/[^/]+|\/var\/root)\/\.ssh\//,
+    // /var/root (macOS root-user home), AND $SUB (any subshell
+    // expansion). v12 Attacker/Pessimist finding: the macOS root
+    // user's home directory is /var/root, not /Users/root, so a
+    // command running as root or a payload traversing to root-owned
+    // paths would escape the prior regex.
+    pattern:
+      /(?:~|\$HOME|\$SUB|\/Users\/[^/]+|\/home\/[^/]+|\/var\/root)\/\.ssh\//,
     reason:
       "Reading ~/.ssh/* blocked — use sandbox=container for workspace-edit workflows that need SSH",
   },
   {
-    pattern: /(?:~|\$HOME|\/Users\/[^/]+|\/home\/[^/]+)\/\.aws\/credentials/,
+    pattern:
+      /(?:~|\$HOME|\$SUB|\/Users\/[^/]+|\/home\/[^/]+)\/\.aws\/credentials/,
     reason: "Reading AWS credentials blocked",
   },
   {
-    pattern: /(?:~|\$HOME|\/Users\/[^/]+|\/home\/[^/]+)\/\.netrc/,
+    pattern: /(?:~|\$HOME|\$SUB|\/Users\/[^/]+|\/home\/[^/]+)\/\.netrc/,
     reason: "Reading ~/.netrc blocked (contains remote auth tokens)",
   },
   {
-    pattern: /(?:~|\$HOME|\/Users\/[^/]+|\/home\/[^/]+)\/\.config\/op\//,
+    pattern: /(?:~|\$HOME|\$SUB|\/Users\/[^/]+|\/home\/[^/]+)\/\.config\/op\//,
     reason: "Reading 1Password config blocked",
   },
   {
-    pattern: /(?:~|\$HOME|\/Users\/[^/]+|\/home\/[^/]+)\/\.gnupg\//,
+    pattern: /(?:~|\$HOME|\$SUB|\/Users\/[^/]+|\/home\/[^/]+)\/\.gnupg\//,
     reason: "Reading GPG keyring blocked",
   },
   {
     pattern:
-      /(?:~|\$HOME|\/Users\/[^/]+|\/home\/[^/]+)\/\.docker\/config\.json/,
+      /(?:~|\$HOME|\$SUB|\/Users\/[^/]+|\/home\/[^/]+)\/\.docker\/config\.json/,
     reason: "Reading Docker registry config blocked (contains auth)",
   },
   {
-    pattern: /(?:~|\$HOME|\/Users\/[^/]+|\/home\/[^/]+)\/\.npmrc/,
+    pattern: /(?:~|\$HOME|\$SUB|\/Users\/[^/]+|\/home\/[^/]+)\/\.npmrc/,
     reason: "Reading ~/.npmrc blocked (may contain auth tokens)",
   },
   {
@@ -178,13 +188,54 @@ export function checkSandbox(
   return checkRestricted(command, projectPath);
 }
 
+// Normalize a command string to defeat trivial obfuscations before
+// pattern matching. Closes three v12 Attacker bypasses that the
+// checkpoint's F5 finding flagged:
+//
+//   1. Empty double-quote concat:  /U""sers/   → /Users/
+//   2. Empty single-quote concat:  /U''sers/   → /Users/
+//   3. Subshell-to-sensitive-path concat:
+//        cat $(echo ~)/.ssh/id_rsa    (unchanged by the strip above)
+//        The concat shape `)/.ssh/` or `` `/.ssh/`` is a strong signal:
+//        there is no legitimate reason to build a path to a credential
+//        directory via command substitution. Collapse the subshell to
+//        a sentinel `$SUB` so the downstream sensitive-path regex
+//        treats it like any other variable and matches the suffix.
+//
+// Does NOT try to be a real shell parser — the true fix is a
+// capability-based sandbox (container mode) and this file's header
+// already acknowledges that. This is defense-in-depth against the
+// three most ergonomic prompt-injection bypasses.
+function normalizeForPatternMatch(command: string): string {
+  return (
+    command
+      // Empty string concat — `""`, `''` split a path character while
+      // shell resolution collapses them. Strip before regex match.
+      .replace(/""/g, "")
+      .replace(/''/g, "")
+      // $(anything) → $SUB. Regex is non-greedy and doesn't handle
+      // nested subshells; nesting is rare in shell-injection payloads
+      // and this is defense-in-depth, not a parser.
+      .replace(/\$\([^)]*\)/g, "$SUB")
+      // `anything` (backticks) → $SUB. Same logic as above.
+      .replace(/`[^`]*`/g, "$SUB")
+  );
+}
+
 function checkRestricted(command: string, projectPath?: string): SandboxResult {
-  // Phase 1: Check blocked patterns against the FULL command string first.
-  // This catches pipe-based patterns like "curl ... | sh" that would be
-  // destroyed by command splitting (the pipe is the attack vector).
+  // Normalize obfuscations before checking so the existing sensitive-
+  // path regex catches subshell-concat and quote-concat bypasses.
+  const normalized = normalizeForPatternMatch(command);
+
+  // Phase 1: Check blocked patterns against the FULL normalized string
+  // first. This catches pipe-based patterns like "curl ... | sh" that
+  // would be destroyed by command splitting (the pipe is the attack
+  // vector). Test both the raw command AND the normalized form — some
+  // patterns (e.g., the ANSI-C escape) rely on the literal characters
+  // that normalize would strip.
   for (const { pattern, reason } of BLOCKED_PATTERNS) {
     pattern.lastIndex = 0;
-    if (pattern.test(command)) {
+    if (pattern.test(command) || pattern.test(normalized)) {
       return { allowed: false, reason: `Sandbox blocked: ${reason}` };
     }
   }
@@ -195,9 +246,10 @@ function checkRestricted(command: string, projectPath?: string): SandboxResult {
   const subcommands = splitChainedCommands(command);
 
   for (const sub of subcommands) {
+    const subNormalized = normalizeForPatternMatch(sub);
     for (const { pattern, reason } of BLOCKED_PATTERNS) {
       pattern.lastIndex = 0;
-      if (pattern.test(sub)) {
+      if (pattern.test(sub) || pattern.test(subNormalized)) {
         return { allowed: false, reason: `Sandbox blocked: ${reason}` };
       }
     }
