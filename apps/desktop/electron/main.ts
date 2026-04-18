@@ -664,8 +664,18 @@ app.on("before-quit", () => {
   // Use an unref'd timer so the kill watchdog doesn't block Electron's
   // own exit. If the child is still around after 1.5s, blast it. The
   // main process is on its way out anyway — we don't wait for confirmation.
+  //
+  // Use `exitCode === null && signalCode === null` to detect "still
+  // running" rather than `child.killed`. `child.killed` is set the
+  // moment `.kill()` returns from the syscall, regardless of whether
+  // the OS process has actually terminated — so the prior
+  // `if (!child.killed)` gate ALWAYS tested false after the SIGTERM
+  // above, and SIGKILL never actually fired. Result: the "slow DB
+  // flush leaves orphan" scenario the comment describes silently
+  // failed through. Now checks the process-liveness properties that
+  // Node actually updates when the child exits.
   const killer = setTimeout(() => {
-    if (!child.killed) {
+    if (child.exitCode === null && child.signalCode === null) {
       try {
         child.kill("SIGKILL");
       } catch {
