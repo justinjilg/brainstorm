@@ -36,6 +36,33 @@ module.exports = {
         circular: true,
       },
     },
+    {
+      name: "no-workspace-deep-import",
+      severity: "error",
+      comment:
+        "Cross-package imports must go through the public barrel " +
+        "(index.ts) of the target workspace package. Reaching into " +
+        "another package's src/* bypasses the public contract, makes " +
+        "refactors dangerous (internal moves become silent breaking " +
+        "changes), and defeats tsup's treeshaking by pulling internal " +
+        "modules directly instead of the built index.js. At rule " +
+        "introduction: 0 violations across the 27-package monorepo — " +
+        "the codebase is already clean, the rule locks that in. Adding " +
+        "a deep import now fails CI; do the fix or raise the budget " +
+        "in the SAME PR with a documented reason.",
+      from: { path: "^packages/([^/]+)/src/" },
+      to: {
+        // Target is another workspace package's src/ BUT NOT its
+        // public index barrel. Workspace imports resolve directly to
+        // `packages/<pkg>/src/<file>.ts` (pnpm/npm workspace symlinks
+        // don't go through node_modules for source builds).
+        path: "^packages/([^/]+)/src/(?!index\\.(?:ts|js)$)",
+        // Exclude same-package imports — dep-cruiser's `sameAs` backref
+        // lets us say "only flag when the `to` package captured group
+        // is NOT identical to the `from` package captured group."
+        pathNot: "^packages/$1/src/",
+      },
+    },
   ],
   options: {
     doNotFollow: {
