@@ -15,8 +15,16 @@ const BACKGROUND_TIMEOUT = 600_000; // 10 minutes max for background tasks
 let HEAD_BYTES = 20_000;
 let TAIL_BYTES = 20_000;
 
-// Module-level sandbox config — set by the CLI during startup
-let currentSandboxLevel: SandboxLevel = "none";
+// Module-level sandbox config — set by the CLI during startup via
+// `configureSandbox()`. Default flipped from "none" to "restricted"
+// per v9 assessment's Attacker finding: pre-fix, a caller that
+// forgot to call configureSandbox() (test harnesses, embedder SDKs,
+// early-boot shell calls before config loads) ran every command
+// unsandboxed. "restricted" blocks the destructive patterns in
+// sandbox.ts (rm -rf /, curl | sh, sudo, etc.) by default; callers
+// that genuinely need the unrestricted "none" level must opt in
+// explicitly via `configureSandbox("none", ...)`.
+let currentSandboxLevel: SandboxLevel = "restricted";
 let currentProjectPath: string | undefined;
 
 // Docker sandbox — lazy-started on first container-mode shell call

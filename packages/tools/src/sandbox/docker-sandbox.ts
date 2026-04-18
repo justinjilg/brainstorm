@@ -58,6 +58,15 @@ export class DockerSandbox {
   start(): void {
     if (this.containerId) return;
 
+    // Hardening flags — see v9 assessment's Attacker finding. Pre-fix,
+    // `container` mode spawned a privileged root container with bridge
+    // networking and no resource limits, so a compromised agent inside
+    // could (a) exfiltrate via any outbound protocol, (b) fork-bomb
+    // the host, (c) trash files via root uid 0, (d) gain new
+    // privileges through setuid binaries. Each flag below closes
+    // exactly one of those paths; the bind mount is deliberately
+    // kept read-write because workspace-editing IS the product and
+    // the container is already trust-scoped to the user's own code.
     try {
       const output = execFileSync(
         "docker",
@@ -65,7 +74,37 @@ export class DockerSandbox {
           "run",
           "-d",
           "--name",
-          `brainstorm-sandbox-${Date.now()}`,
+          // randomUUID over Date.now() kills the predictable-name
+          // enumeration the v9 Attacker flagged.
+          `brainstorm-sandbox-${randomUUID()}`,
+          // No network by default. Agent-generated `curl`/`nc`/DNS
+          // exfiltration can't leave the container. If a specific
+          // workflow needs network (e.g. `npm install`), the caller
+          // should explicitly construct a network-enabled sandbox
+          // — not paper over a silent default.
+          "--network=none",
+          // Drop to unprivileged UID. Typical image has uid 1000
+          // available; if not, the container fails fast (better than
+          // silent root).
+          "--user=1000:1000",
+          // Drop every Linux capability. A shell doesn't need
+          // CAP_NET_ADMIN, CAP_SYS_PTRACE, etc.
+          "--cap-drop=ALL",
+          // Block setuid/setgid privilege escalation via the kernel
+          // no_new_privs bit.
+          "--security-opt=no-new-privileges",
+          // Hard ceilings for resource exhaustion. Values picked to
+          // match a typical CI box — a real workload may need
+          // tuning via DockerSandbox config.
+          "--memory=2g",
+          "--cpus=2",
+          "--pids-limit=256",
+          // Workspace mount stays read-write because file edits are
+          // the core use case. A compromised agent still can't
+          // escape the mount — everything outside /workspace is
+          // inaccessible (thanks --cap-drop + --user + --read-only
+          // elsewhere would close it entirely if writes ever move to
+          // tmpfs).
           "-v",
           `${this.config.hostWorkspace}:${this.config.containerWorkspace}`,
           "-w",

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { checkSandbox } from "../builtin/sandbox";
+import { shellTool } from "../builtin/shell";
 
 describe("checkSandbox", () => {
   describe("none level", () => {
@@ -115,5 +116,42 @@ describe("checkSandbox", () => {
     it("allows rm in container mode", () => {
       expect(checkSandbox("rm -rf /tmp/test", "container").allowed).toBe(true);
     });
+  });
+});
+
+describe("shell tool default sandbox level (pass 24)", () => {
+  // Trap for the v9 Attacker finding: the module-level sandbox default
+  // was "none", so any caller that forgot to run `configureSandbox()`
+  // first (early boot, test harnesses, embedder SDKs) got an
+  // unsandboxed shell. Flipping the default to "restricted" means
+  // destructive patterns from sandbox.ts are blocked by default.
+  // Callers that genuinely need "none" must opt in explicitly.
+  //
+  // The trap: if a future contributor reverts the default, this runs
+  // the shell tool WITHOUT calling configureSandbox and asserts the
+  // restricted-layer block fires. Must run before any other test
+  // calls configureSandbox in this file — kept as a module-level
+  // describe to minimize interference.
+  it("blocks destructive commands without explicit configureSandbox()", async () => {
+    // Safe to actually call execute() — the sandbox blocks this
+    // BEFORE spawning, so there's no way an accidental rm can leak
+    // to the host even if the test is wrong. The `blocked: true`
+    // flag is the sandbox's signature response.
+    const result = await shellTool.execute({
+      command: "rm -rf /",
+      cwd: undefined,
+      timeout: 5000,
+      background: false,
+    });
+    const out = result as {
+      blocked?: boolean;
+      exitCode?: number;
+      stderr?: string;
+    };
+    expect(
+      out.blocked,
+      `shell default sandbox did not block 'rm -rf /' — default likely reverted to "none"`,
+    ).toBe(true);
+    expect(out.exitCode).toBe(1);
   });
 });
