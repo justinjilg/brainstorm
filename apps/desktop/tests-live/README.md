@@ -92,6 +92,16 @@ retries. Every retry masks information.
   the `if (isProcessing) return;` guard in useChat.send. Not a
   renderer bug — a UX one. Future pass: add a visible "aborting…"
   transient state so users don't type into a disabled send path.
+- **Shell tool ignored AbortSignal** — pass 8. `shellTool.execute()`
+  didn't declare the ctx parameter, so user cancel left the bash
+  child running to completion (and billing). Fixed: listener fires
+  SIGTERM + 2s later SIGKILL. Unit trap in `packages/tools/src/
+__tests__/shell-abort.test.ts`.
+- **Orphan `brainstorm ipc` child on app quit** — pass 13. Electron's
+  before-quit sent a single SIGTERM with no grace window. Under load
+  (vault close, WAL checkpoint) the child could be mid-flush, ignore
+  SIGTERM, and linger. Fixed: ordered stdin-close → SIGTERM → 1.5s
+  watchdog → SIGKILL. Caught by `teardown.live.spec.ts`.
 
 ## Deliberately-not-yet-covered patterns
 
