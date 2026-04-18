@@ -64,12 +64,27 @@ const SCRUBBED_ENV_NAMES = new Set([
 ]);
 
 // Anything matching this shape is presumed secret even if not in the
-// explicit list above. Conservative: matches KEY / SECRET / TOKEN /
-// PASSWORD / CREDENTIALS / PRIVATE_KEY anywhere in the name. Does NOT
-// match GITHUB_TOKEN because that's kept below — `gh` CLI commands
-// are a first-class tool and expect it.
+// explicit list. Conservative by design: over-scrubbing a non-secret
+// is cheap (the child can re-export it), but under-scrubbing a real
+// secret is a leak.
+//
+// v12 Attacker finding: the pre-pass-31 pattern only matched the
+// compound forms `API_KEY` and `PRIVATE_KEY`, missing bare `_KEY`
+// suffixes. Real leaks that escaped:
+//   - SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
+//   - DATADOG_APP_KEY, HONEYCOMB_WRITEKEY, MIXPANEL_PROJECT_KEY
+//   - SENTRY_DSN (auth in URL; DSN shape not covered)
+//   - _AUTH / _BEARER / _COOKIE / _JWT / _PAT (personal access token)
+// Pass 31 broadens to catch those. `SSH_AUTH_SOCK` (Unix socket path
+// used by ssh-agent, not a secret) is the one name that would be
+// scrubbed incorrectly — keep it working via the allowlist.
 const SCRUBBED_ENV_PATTERN =
-  /(?:API_KEY|SECRET|PASSWORD|CREDENTIALS|PRIVATE_KEY|_TOKEN)/i;
+  /(?:API_KEY|SECRET|PASSWORD|CREDENTIALS|PRIVATE_KEY|_TOKEN|_KEY|KEY$|_AUTH|_BEARER|_COOKIE|_DSN|_JWT|_PAT)/i;
+// Note: `KEY$` (end-anchor) catches shapes like HONEYCOMB_WRITEKEY
+// that don't use the `_KEY` convention. Over-matches any env var
+// ending in "KEY" — mostly fine (MONKEY / DONKEY etc. aren't
+// realistic env names). If a legitimate env var ending in KEY ever
+// needs to pass through, add to SCRUBBED_ENV_ALLOWLIST.
 
 /**
  * Env-name prefixes that are always scrubbed. The exact-match set and
@@ -92,7 +107,16 @@ const SCRUBBED_ENV_PREFIXES = ["OP_SESSION_", "AWS_", "GCP_", "AZURE_"];
 // The trade-off is documented: a prompt-injection attacker can still
 // exfiltrate via GitHub if the user has a token loaded, but GitHub
 // is a trusted exfil channel (audit-logged by GitHub itself).
-const SCRUBBED_ENV_ALLOWLIST = new Set(["GITHUB_TOKEN", "GH_TOKEN"]);
+//
+// SSH_AUTH_SOCK is the Unix socket path exported by ssh-agent. It's
+// NOT a secret — scrubbing it just forces the child to re-key
+// every git/ssh call. Keep it passing through. (Added in pass 31:
+// the broader `_AUTH` pattern would scrub it otherwise.)
+const SCRUBBED_ENV_ALLOWLIST = new Set([
+  "GITHUB_TOKEN",
+  "GH_TOKEN",
+  "SSH_AUTH_SOCK",
+]);
 
 /**
  * Produce a sanitized env for shell children. Under the "restricted"

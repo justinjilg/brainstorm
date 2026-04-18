@@ -139,6 +139,14 @@ describe("checkSandbox", () => {
         checkSandbox("cat /Users/justin/.ssh/id_rsa", "restricted").allowed,
       ).toBe(false);
     });
+    it("blocks cat /var/root/.ssh/id_rsa (macOS root user, pass 31)", () => {
+      // v12 finding: the macOS root user's home is /var/root, not
+      // /Users/root. A command running as root (or traversing to a
+      // root-owned path) would escape the prior regex.
+      expect(
+        checkSandbox("cat /var/root/.ssh/id_rsa", "restricted").allowed,
+      ).toBe(false);
+    });
     it("blocks cat ~/.aws/credentials", () => {
       expect(checkSandbox("cat ~/.aws/credentials", "restricted").allowed).toBe(
         false,
@@ -313,6 +321,51 @@ describe("buildChildEnv — env scrubbing (pass 25)", () => {
     expect(env.AWS_SECRET_ACCESS_KEY).toBeUndefined();
     expect(env.AWS_SESSION_TOKEN).toBeUndefined();
     expect(env.AWS_PROFILE).toBeUndefined();
+  });
+
+  it("scrubs _KEY / _AUTH / _BEARER / _COOKIE / _DSN / _JWT / _PAT suffixes (v12 Attacker bypass, pass 31)", () => {
+    // v12 Attacker found that the pre-pass-31 regex only caught
+    // compound forms like API_KEY and PRIVATE_KEY, missing bare _KEY.
+    // Real leaks that escaped: SUPABASE_ANON_KEY, DATADOG_APP_KEY,
+    // HONEYCOMB_WRITEKEY, SENTRY_DSN, etc. Pass 31 broadens the
+    // regex to catch those suffixes.
+    process.env.SUPABASE_ANON_KEY = "sb-anon";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "sb-srv";
+    process.env.DATADOG_APP_KEY = "dd-app";
+    process.env.HONEYCOMB_WRITEKEY = "hc-wr";
+    process.env.MIXPANEL_PROJECT_KEY = "mp-key";
+    process.env.SENTRY_DSN = "https://x@sentry.io/y";
+    process.env.HF_BEARER = "hf-bearer";
+    process.env.GENERIC_AUTH = "any-auth";
+    process.env.SOME_COOKIE = "c";
+    process.env.APP_JWT = "jwt";
+    process.env.NPM_PAT = "npm-pat";
+    const env = buildChildEnv("restricted");
+    expect(
+      env.SUPABASE_ANON_KEY,
+      "Supabase anon key leaked — v12 _KEY regex gap reopened",
+    ).toBeUndefined();
+    expect(env.SUPABASE_SERVICE_ROLE_KEY).toBeUndefined();
+    expect(env.DATADOG_APP_KEY).toBeUndefined();
+    expect(env.HONEYCOMB_WRITEKEY).toBeUndefined();
+    expect(env.MIXPANEL_PROJECT_KEY).toBeUndefined();
+    expect(env.SENTRY_DSN).toBeUndefined();
+    expect(env.HF_BEARER).toBeUndefined();
+    expect(env.GENERIC_AUTH).toBeUndefined();
+    expect(env.SOME_COOKIE).toBeUndefined();
+    expect(env.APP_JWT).toBeUndefined();
+    expect(env.NPM_PAT).toBeUndefined();
+  });
+
+  it("keeps SSH_AUTH_SOCK (socket path, not a secret) — pass 31 allowlist", () => {
+    // Pass 31's broader _AUTH pattern would scrub SSH_AUTH_SOCK,
+    // which is just a Unix socket path exported by ssh-agent.
+    // Scrubbing it would force every shell child to re-enter ssh
+    // credentials — usability regression with zero security gain.
+    // Added to SCRUBBED_ENV_ALLOWLIST.
+    process.env.SSH_AUTH_SOCK = "/tmp/ssh-abc/agent.12345";
+    const env = buildChildEnv("restricted");
+    expect(env.SSH_AUTH_SOCK).toBe("/tmp/ssh-abc/agent.12345");
   });
 
   it("keeps GITHUB_* non-token vars (GITHUB_REPOSITORY etc. for gh CLI)", () => {
