@@ -1,0 +1,11 @@
+# Machine-generated — don't let prettier reformat and cause CI drift.
+# Re-generate via `npm run --workspace=@brainst0rm/tools export-catalog`.
+# See .github/workflows/ci.yml step "Verify tool catalog freshness" —
+# prettier's default JSON formatter compacts short inline arrays
+# while the generator emits canonical multi-line JSON, creating an
+# every-run diff that broke the freshness check for months.
+docs/tool-catalog.json
+
+# Build outputs (belt-and-braces — most are already gitignored)
+**/dist/**
+**/node_modules/**
