@@ -104,7 +104,7 @@ evidence (file path or test name).
 - Evidence: `tests-live/_helpers.ts` `assertNoOrphanBackends()`, plus
   the standalone sentinel at `tests-live/teardown.live.spec.ts`.
 
-## Closed during reliability passes 10–25
+## Closed during reliability passes 10–26
 
 ### ✅ Previous-turn durability — direct sqlite readback
 
@@ -262,6 +262,28 @@ respawn.live.spec.ts` already covers the sibling path (outbound
       completion event arrives under 8s with non-zero exit and no
       pgrep survivor.
     - pre-aborted: controller already aborted when execute() runs.
+
+### ✅ SQLite WAL corruption recovery pinned (C1, pass 26)
+
+- Source: v9 Chaos Monkey finding: the project uses
+  `journal_mode=WAL` but had no trap for truncated-WAL recovery. A
+  SIGKILL-during-checkpoint or power-loss-mid-fsync leaves a
+  partial `-wal` file on disk. Pre-trap, no one had verified that
+  the next app launch opens cleanly; a regression that made SQLite
+  throw on open would break every user with an abnormal shutdown.
+- Our status: trapped in pass 26.
+- Evidence: `packages/db/src/__tests__/wal-recovery.test.ts` — 3
+  cases in dedicated tmpdirs (never touch the real user DB):
+  1. Zero-length `-wal` after insert → reopen succeeds, DB queryable.
+  2. Mid-frame `-wal` truncation → reopen succeeds, DB queryable
+     (row count unpredictable but non-negative).
+  3. Corrupt MAIN db file (header wiped) → reopen throws loudly,
+     guards against silent empty-DB data loss.
+- Note: SQLite's default recovery (ignore invalid trailing WAL
+  frames, preserve up to last valid checkpoint) turns out to be
+  exactly what we want — but now it's asserted, so a future pragma
+  change or better-sqlite3 upgrade that regresses recovery fails
+  this trap immediately.
 
 ### ✅ Shell env scrubbing — 1Password / provider-key exfil blocked (A2, pass 25)
 
