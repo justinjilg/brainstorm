@@ -1,4 +1,79 @@
-# Stochastic Assessment Evidence v10 — 2026-04-18 (same day as v9)
+# Stochastic Assessment Evidence v12 — 2026-04-18 (same day as v9/v10/v11)
+
+**v12 is targeted at hunting bypasses in passes 27–30** (landed after v11).
+Passes 27-30 closed five v11 findings; the v12 panel's job is to prove
+whether those fixes have their own bypasses, false-positives, or
+regressions.
+
+Prior rounds:
+
+- v8 (pre-session): 5.36
+- v9 (early session): 5.76
+- v10 (after passes 22-26): 5.96
+- v11 (methodology rerun, same code as v10): 5.90 — σ 0.047, surfaced 5 new findings
+
+## Changes since v11 (passes 27–30)
+
+All on `origin/main`. Commit `f1a37b1`.
+
+Pass 27 — OP*SESSION*<accountid> scrub bypass fix:
+packages/tools/src/builtin/shell.ts: added SCRUBBED*ENV_PREFIXES =
+["OP_SESSION*", "AWS*", "GCP*", "AZURE*"]. Allowlist check runs
+FIRST so GITHUB*\* still passes through. +3 trap cases in
+shell-sandbox.test.ts.
+
+Pass 28 — SQLite busy_timeout:
+packages/db/src/client.ts: added `busy_timeout = 5000` pragma after
+`journal_mode = WAL`. concurrent-writers.test.ts: 2 cases (pragma
+verification + exhaustion path).
+
+Pass 29 — CI ratchet wire-up:
+.github/workflows/ci.yml: added `Lint — as-any escape-hatch budget`
+step running `node scripts/check-as-any-budget.mjs`. Also flagged
+existing `continue-on-error: true` on core + vault steps as TODO
+debt (not fixed — root-cause investigation deferred).
+
+Pass 30 — Sensitive-path read blocks:
+packages/tools/src/builtin/sandbox.ts: added 9 path patterns to
+BLOCKED_PATTERNS covering ~/.ssh/, ~/.aws/credentials, ~/.netrc,
+~/.config/op/, ~/.gnupg/, ~/.docker/config.json, ~/.npmrc,
+/etc/shadow, /etc/sudoers, /proc/\*/environ. 10 new trap cases.
+
+Post-pass metrics:
+
+- Tools tests: 116 (was 103 at v11)
+- DB tests: 35 (was 33 at v11)
+- AUDIT.md closed items: 25 (was 24 at v11)
+- as-any budget: 285/285 (unchanged, no new casts)
+- Typecheck: 0 errors
+- `.github/workflows/ci.yml`: now invokes check-as-any-budget.mjs
+
+## v12 scope (what agents should actively probe)
+
+1. **Pass 27 bypass hunt**: can `_OP_SESSION_foo` (leading underscore),
+   `OPsession_*` (case tricks), or `AWS` (no underscore suffix)
+   escape the prefix match?
+2. **Pass 28**: is 5000ms the right retry window, or will it hang a
+   TUI under real lock contention?
+3. **Pass 29**: is `node scripts/check-as-any-budget.mjs` placed
+   BEFORE or AFTER `npm ci`? If after, a malicious postinstall could
+   mutate the script. Also, does the existing `continue-on-error`
+   debt mean CI green still doesn't mean passing tests?
+4. **Pass 30 bypass hunt**: can an attacker read credentials via
+   `/private/etc/...` (macOS), `$(echo ~)/..ssh/id_rsa`, symlinks,
+   command-substitution tricks, `base64 < ~/.ssh/id_rsa` (the
+   blocked patterns only match full paths, not redirect sigils)?
+5. **False-positive regressions**: do the pass-30 path blocks break
+   legitimate project files? (e.g., `packages/vault/docs/keys.md`,
+   `docs/guides/aws-setup.md`, anything referencing `.ssh` in a
+   project filename.)
+
+Continue from v10 evidence below (unchanged sections omitted for
+brevity; see git blame for full v10 content).
+
+---
+
+# [Archived: v10 evidence continues below]
 
 Round 10 evidence. v9 was run earlier this session (baseline **5.76/10**,
 σ 0.12). v10 measures whether passes 22–26 (all landed after v9's

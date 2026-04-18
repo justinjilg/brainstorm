@@ -1,59 +1,137 @@
-# v11 Calibration & Bias Audit — 2026-04-18
+# v12 Calibration & Bias Audit — 2026-04-18
 
-Auditor of the methodology-rerun synthesis (v10 → v11, zero code changes since commit `01e8295`).
+## Job 1: arithmetic audit
 
-## Job 1 — Arithmetic
+Summed each column of the 10-agent matrix directly.
 
-All 10 per-dimension sums and the overall mean reproduce exactly to 3 decimal places. Spot-check:
+| Dimension             | Computed          | Synthesis | Delta           |
+| --------------------- | ----------------- | --------- | --------------- |
+| Code Completeness     | 7.591 -> 7.59     | 7.59      | ok              |
+| Wiring                | 6.958 -> 6.96     | 6.96      | ok              |
+| Test Reality          | 6.735 -> 6.74     | 6.74      | ok              |
+| Production Evidence   | 4.780 -> 4.78     | 4.78      | ok              |
+| Operational Readiness | 5.804 -> 5.80     | 5.80      | ok              |
+| **Security Posture**  | **6.650 -> 6.65** | **6.75**  | **+0.10 ERROR** |
+| Documentation         | 5.665 -> 5.67     | 5.67      | ok              |
+| Failure Handling      | 6.567 -> 6.57     | 6.57      | ok              |
+| Scale Readiness       | 4.046 -> 4.05     | 4.05      | ok              |
+| Ship Readiness        | 4.883 -> 4.88     | 4.88      | ok              |
 
-- Overall: 58.98 / 10 = 5.898 → 5.90 ✓
-- Code 7.533 · Wiring 6.860 · Test 6.600 · Prod 4.765 · Ops 5.717 · Sec 6.425 · Doc 5.623 · Fail 6.550 · Scale 3.936 · Ship 4.834 ✓
-- σ on the 10 agent overalls: population 0.0469, sample 0.0494. Synthesis reports **0.047** — that is the population σ, consistent with v10's reporting convention. No error.
+Row: 6.80+6.55+6.70+6.75+6.75+6.60+6.80+6.75+7.20+6.60 = 66.50 -> mean
+**6.65**. Synthesis prints 6.75. Delta v11 -> v12 should read
+**+0.22**, not +0.32.
 
-**Result: arithmetic verified.**
+Propagating to overall: mean of the 10 corrected dimension means =
+(7.59+6.96+6.74+4.78+5.80+**6.65**+5.67+6.57+4.05+4.88)/10 = 5.969 ->
+**5.97**, not 5.99. v12 delta from v11 becomes **+0.07**, not +0.09.
 
-## Job 2 — Methodology-Test Finding Audit
+Security Posture is load-bearing in the narrative ("+0.32 is the
+largest gain"), so this single sum error propagates to the headline
+overall and the trajectory slope. Only arithmetic error, but a
+material one.
 
-All five "new v11 findings" were sourced directly from current repo state. Each verified against checked-in code:
+## Job 2: monotonicity audit
 
-1. **CI ratchet not wired — VERIFIED.** `ls .github/workflows/` returns `ai-review.yml, ci.yml, codeql.yml, e2e.yml, npm-publish.yml, release.yml`. Grep of `check-as-any-budget` across all six YAMLs returns **zero matches**. The script at `scripts/check-as-any-budget.mjs` is never invoked by CI. Governance claim is aspirational.
+**Pessimist 5.87 (-0.03 vs v11 5.90).** Citations:
 
-2. **`continue-on-error: true` on test jobs — VERIFIED.** Three instances in `.github/workflows/ci.yml`:
-   - Line 38 — tool-catalog drift check
-   - Line 53 — core test suite
-   - Line 59 — vault test suite
-     Two of those three are the actual test steps. Green CI does not prove tests pass.
+- CI ratchet ordering -> verified (npm ci at ci.yml:22, ratchet at
+  ci.yml:43). Fair Ship penalty.
+- busy_timeout synchronous TUI hang -> verified (better-sqlite3 is
+  synchronous by design; Ink renders on the Node main thread). Fair
+  Ops penalty.
+- `/private/etc/` bypass -> **NOT verified**. The existing pattern
+  `/\/etc\/shadow\b|\/etc\/sudoers\b/` is unanchored and matches
+  `/private/etc/shadow` as substring. Pessimist wrong on this one.
 
-3. **OP_SESSION scrub bypass — VERIFIED.** `packages/tools/src/builtin/shell.ts:35-60` defines `SCRUBBED_ENV_NAMES` containing literal `"OP_SESSION"` (line 38). `SCRUBBED_ENV_NAMES.has("OP_SESSION_myaccount")` is **false** — `Set.has` is exact-match, not prefix. The regex `/(?:API_KEY|SECRET|PASSWORD|CREDENTIALS|PRIVATE_KEY|_TOKEN)/i` does **not** match `OP_SESSION_myaccount` (no matching substring). Under "restricted" default, a real 1Password session token leaks to every shell child. High-severity.
+2 of 3 citations land; -0.03 justified by F2 + F3 alone.
 
-4. **Restricted sandbox allows sensitive file reads — VERIFIED.** `packages/tools/src/builtin/sandbox.ts` `checkSandbox` delegates to `checkRestricted`, which iterates `BLOCKED_PATTERNS` (lines 18-104). The list covers rm/mkfs/sudo/curl-pipe-sh/base64-pipe/python-dash-e/git-filter-branch etc. **No entry** blocks `cat`, `~/.ssh/*`, `~/.aws/*`, `~/.netrc`, or `~/.config/op/*`. `cat ~/.ssh/id_rsa` passes. Design gap is real.
+**Chaos Monkey 5.77 (-0.13 vs v11 5.90).** Citations:
 
-5. **No busy_timeout pragma — VERIFIED.** `grep -rn busy_timeout packages/db/src/` returns zero matches. `packages/db/src/client.ts:31-36` sets `journal_mode=WAL`, `foreign_keys=ON`, `optimize` — but no busy_timeout. Concurrent writers (desktop + CLI opening `~/.brainstorm/brainstorm.db`) will fail immediately with `SQLITE_BUSY` instead of retrying.
+- Pass 28 TUI stall as new user-visible failure mode -> verified.
+- Pass 28 is a grace window, not a fix -> fair. Lock contention now
+  degrades UX instead of producing a hard error.
+- 2/3 chaos surfaces (ENOSPC, Docker daemon death) still open ->
+  carryover, fair.
 
-**All 5 findings: VERIFIED. None hallucinated.**
+The -0.35 on Failure Handling is steep, but the rubric rewards fix
+quality over closure count. Pass 28 is closure-without-fix. **Not a
+rubric over-penalty.** -0.13 overall is internally consistent.
 
-## Job 3 — Bias Audit of Synthesis
+Monotonicity invariant **holds** for both sub-baseline scores.
 
-Pragmatist's "8 modified tracked files" claim. `git status --short | grep "^ M"` returns a single line: `docs/assessment-synthesis.md` (the synthesis file itself). That's 1 file, not 8, and it's the synthesis's own workspace artifact — irrelevant to the code-change claim. **Synthesis is correct to flag the Pragmatist as stale/hallucinated.**
+## Job 3: verify the 6 new findings
 
-Omission/softening check: none found. The synthesis flags the Pragmatist, gives the Operator the largest downward revision (−0.19), and explicitly withdraws credit on Security Posture (−0.26) where v10 gave A2-closure credit that v11's Attacker invalidated. Precision is not overclaimed — the calibration section explicitly says reporting beyond 0.1 is false signal. Action list is appropriately prioritized by severity (OP_SESSION first). No glossed weaknesses, no self-congratulatory language.
+**F1 (env scrub `_KEY` gap).** Regex
+`/(?:API_KEY|SECRET|PASSWORD|CREDENTIALS|PRIVATE_KEY|_TOKEN)/i` at
+shell.ts:71-72. `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,
+`DATADOG_APP_KEY` contain none of those tokens. **REAL.**
+High-severity legitimate bug.
 
-One minor note: "8/10 agents scored flat or lower" in the delta table — counting the per-agent deltas column, exactly 8 are ≤ 0 (Optimist 0.00, Pessimist −0.08, Architect −0.13, Auditor −0.05, Operator −0.19, Attacker −0.10, Pragmatist −0.04, Sr Engineer −0.07); Competitor +0.02 and Chaos Monkey +0.02 are positive. Claim verified.
+**F2 (CI ratchet ordering).** Verified: `npm ci` at ci.yml:22,
+`node scripts/check-as-any-budget.mjs` at ci.yml:43. Ratchet runs
+after install. **REAL.**
 
-## Job 4 — Methodology Conclusion Audit
+**F3 (busy_timeout synchronous).** better-sqlite3 is synchronous by
+design; the Node main thread blocks during prepare/run. Ink TUI
+renders on that thread. **REAL architectural claim.**
 
-Four claims to test:
+**F4 (regex unescaped `.`).** Direct read of sandbox.ts:116-153.
+Every `.` in path patterns IS escaped: `\.ssh\/`, `\.aws\/`,
+`\.netrc`, `\.config\/`, `\.gnupg\/`, `\.docker\/config\.json`,
+`\.npmrc`. **Dot-escape claim is FALSE.** The separate "not
+end-anchored" observation is accurate but also intentional per the
+code comment (substring matching across any tool). **Recommend
+striking the dot claim; retain anchor note if framed as trade-off
+not bug.**
 
-- **σ 0.047 tighter than v10's 0.07 → convergence is real** — Mathematically correct. With identical evidence, 10 agents converged more tightly on the re-run, which supports the claim that the rubric + evidence doc reliably produces a stable number.
-- **−0.06 mean drop → small anchoring effect** — Fair framing. The drop is inside the σ band of either round, so attributing it purely to "anchoring" vs "new findings dragging scores down on merit" is soft. The synthesis hedges appropriately: "Modest anchoring drift. Inside noise band."
-- **True score is ~5.90 ± 0.1, not 5.96** — Honest. Explicitly states the number drifts ±0.05–0.10 across independent runs on identical state, so precision beyond 0.1 is noise. That's a stronger, more honest claim than v10 implied.
-- **Assessment's value is finding bugs, not precision scoring** — Supported by the data. Five real new findings in one rerun, one hallucinated claim flagged. Bug-discovery rate dominates score precision as the meaningful output.
+**F5 (shell string tricks).** `checkRestricted` runs regex against
+the raw command string with no AST/lex pre-processing. All cited
+payloads (`$(echo ~)/.ssh/...`, `cat ~"/.ssh/..."`, glob expansion)
+defeat literal match. **REAL** — and the code comment on line 112
+("path-name defense, not a real capability sandbox") concedes it.
 
-**Conclusion is fair.**
+**F6 (`/private/etc/*` and `/var/root/.ssh`).** Pattern
+`/\/etc\/shadow\b|\/etc\/sudoers\b/` is unanchored, so
+`/private/etc/shadow` matches as substring. **`/private/etc/` claim
+is FALSE — already covered.** `/var/root/.ssh/` IS a real gap; the
+`.ssh` blocks hardcode `/Users/[^/]+` and `/home/[^/]+` with no
+`/var/root` branch. **Partial: drop /private/etc, retain /var/root.**
+
+Scorecard: **4 fully real (F1, F2, F3, F5), 1 false (F4 dot-escape
+portion), 1 partial (F6).**
+
+## Job 4: bias audit
+
+Synthesis is not cherry-picked or softened. Pessimist and Chaos
+Monkey keep sub-baseline scores with narrative support; "sigma
+widened" is framed as honest disagreement, not drama. No agent is
+treated unfairly.
+
+Two concerns, both execution-level:
+
+1. Security Posture's "+0.32 largest gain" line is rhetorically
+   load-bearing; actual delta is +0.22.
+2. Recommended-action #4 tells pass 31 to add `/private/etc/shadow|sudoers`
+   patterns that the regex already catches. Actioning as written is
+   make-work.
 
 ## Scores
 
-- **Calibration: 9/10.** Arithmetic clean, findings hold under direct code verification, σ interpretation correct, conclusion appropriately hedged. One minor quibble: "anchoring" is one of several valid causal stories for the −0.06 drift; the synthesis commits to it without fully considering that new bugs discovered in v11 _should_ lower scores on merit, independent of anchoring. Not a correction-worthy defect.
-- **Honesty: 10/10.** Flags its own hallucinated Pragmatist claim. Downgrades Security Posture by 0.26 on evidence that contradicts v10 credit. States precision limits directly. No rhetorical inflation, no hidden carve-outs.
+- **Calibration: 6.5/10.** Security-row sum error propagates to the
+  headline overall. Two of six new findings are wrong or partial (F4
+  dot-escape, F6 /private/etc). These would mislead pass 31.
+- **Honesty: 8/10.** No softening, no rhetorical inflation; errors
+  are arithmetic + verification slips, not bias.
 
-No corrections required.
+## Corrections required
+
+1. Security Posture mean: 6.75 -> **6.65**. Delta v11 -> v12: +0.32
+   -> **+0.22**.
+2. Overall: 5.99 -> **5.97**. Delta v11 -> v12: +0.09 -> **+0.07**.
+   Trajectory becomes 5.36 -> 5.76 -> 5.96 -> 5.90 -> **5.97**.
+3. F4: strike the dot-escape claim; either drop entirely or reframe
+   as "patterns intentionally substring-match and aren't end-anchored
+   — acceptable trade-off per code comment."
+4. F6: strike `/private/etc/shadow|sudoers`; retain `/var/root/.ssh`.
+5. Recommended-action #4 (pass 31): drop the `/private/etc/` entry
+   from the patch list. Keep `/var/root/.ssh/` only.

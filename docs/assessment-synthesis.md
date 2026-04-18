@@ -1,122 +1,192 @@
-# Stochastic Assessment Synthesis v11 — 2026-04-18 (methodology rerun)
+# Stochastic Assessment Synthesis v12 — 2026-04-18
 
-Previous: v10 scored 5.96/10 (σ 0.07) earlier the same session. v11 is
-a deliberate no-work replication — zero code changed since commit
-01e8295 — to test whether v10's tight cross-agent agreement was real
-signal or shared-evidence-doc anchoring.
+Previous: v11 scored 5.90/10 (σ 0.047). v12 deliberately hunted bypasses
+of passes 27–30 (landed between v11 and v12) to test the hypothesis
+that "each assessment round finds the next layer."
 
-## Overall Score: 5.90 / 10 (StdDev: 0.047)
+## Overall Score: 5.97 / 10 (StdDev: 0.10)
 
-Delta from v10: **−0.06 points.** Range: 5.82 (Chaos Monkey) to 5.98 (Competitor).
+Delta from v11: **+0.07.** Range: 5.77 (Chaos Monkey) to 6.15 (Sr Engineer).
 
-## Methodology-Test Findings
+_(Initial draft of this synthesis reported 5.99 / +0.09 due to an
+arithmetic error on Security Posture row sum — caught by Phase-4
+Auditor. Corrected here.)_
 
-| Question                   | Answer                            | Evidence                                                                                         |
-| -------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Is the tight σ real?       | **Yes.**                          | σ 0.047 < v10's 0.07. Agents reliably converge on the evidence.                                  |
-| Was the v10 mean anchored? | **Partially.**                    | Mean drifted −0.06 on replication; 8/10 agents scored flat or lower. Not a large bias, but real. |
-| Did new evidence emerge?   | **Yes — 5 substantive findings.** | See below. This is the more valuable output than the score.                                      |
+**σ widened** from 0.047 → 0.10 — the largest spread of any round.
+**Two agents scored below baseline** (Pessimist 5.87, Chaos Monkey
+5.77) with cited regressions introduced by passes 27–30. Monotonicity
+invariant honored: every drop has specific evidence, not just
+reinterpretation.
 
-## Per-Agent Deltas (v10 → v11)
+## What v12 confirmed about the methodology
 
-| Agent        | v10      | v11      | Δ                                      |
-| ------------ | -------- | -------- | -------------------------------------- |
-| Optimist     | 5.93     | 5.93     | 0.00                                   |
-| Pessimist    | 5.96     | 5.88     | −0.08                                  |
-| Architect    | 5.99     | 5.86     | −0.13                                  |
-| Auditor      | 5.93     | 5.88     | −0.05                                  |
-| Operator     | 6.08     | 5.89     | **−0.19** (biggest drop, real finding) |
-| Attacker     | 6.00     | 5.90     | −0.10 (new bypass found)               |
-| Competitor   | 5.96     | 5.98     | +0.02                                  |
-| Pragmatist   | 5.91     | 5.87     | −0.04                                  |
-| Sr Engineer  | 6.04     | 5.97     | −0.07                                  |
-| Chaos Monkey | 5.80     | 5.82     | +0.02                                  |
-| **Mean**     | **5.96** | **5.90** | **−0.06**                              |
+Each round of the assessment has produced something qualitatively
+different:
 
-## 10-Agent Score Matrix (v11)
+- v9 → v10: surgical hardening (+0.20, tight σ)
+- v10 → v11: methodology rerun caught 5 real findings v10 missed
+  (−0.06 mean drift, tightest σ)
+- v11 → v12: targeted bypass hunt found **bypasses of passes 27–30
+  themselves** (+0.09 mean, widest σ — genuine disagreement on how
+  much the bypasses matter)
 
-| Dimension             | A1   | A2  | A3   | A4   | A5   | A6   | A7   | A8   | A9   | A10  | Mean     | σ    | v10  | Δ         |
-| --------------------- | ---- | --- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | -------- | ---- | ---- | --------- |
-| Code Completeness     | 7.55 | 7.5 | 7.55 | 7.55 | 7.5  | 7.5  | 7.58 | 7.55 | 7.55 | 7.50 | **7.53** | 0.03 | 7.57 | −0.04     |
-| Wiring                | 6.85 | 6.8 | 6.80 | 6.85 | 6.9  | 7.0  | 6.90 | 6.85 | 6.85 | 6.80 | **6.86** | 0.06 | 6.88 | −0.02     |
-| Test Reality          | 6.60 | 6.5 | 6.55 | 6.65 | 6.5  | 6.6  | 6.70 | 6.55 | 6.80 | 6.55 | **6.60** | 0.09 | 6.62 | −0.02     |
-| Production Evidence   | 4.80 | 4.8 | 4.75 | 4.75 | 4.75 | 4.75 | 4.75 | 4.75 | 4.80 | 4.75 | **4.77** | 0.03 | 4.78 | −0.01     |
-| Operational Readiness | 5.75 | 5.7 | 5.70 | 5.70 | 5.8  | 5.6  | 5.72 | 5.75 | 5.75 | 5.70 | **5.72** | 0.05 | 5.76 | −0.04     |
-| Security Posture      | 6.50 | 6.5 | 6.35 | 6.35 | 6.4  | 6.5  | 6.35 | 6.40 | 6.65 | 6.25 | **6.43** | 0.12 | 6.69 | **−0.26** |
-| Documentation         | 5.60 | 5.6 | 5.60 | 5.55 | 5.7  | 5.5  | 5.60 | 5.60 | 5.95 | 5.53 | **5.62** | 0.12 | 5.68 | −0.06     |
-| Failure Handling      | 6.60 | 6.5 | 6.55 | 6.55 | 6.6  | 6.6  | 6.55 | 6.55 | 6.55 | 6.45 | **6.55** | 0.05 | 6.64 | −0.09     |
-| Scale Readiness       | 4.00 | 3.9 | 3.95 | 3.95 | 4.0  | 3.88 | 3.95 | 3.95 | 3.90 | 3.88 | **3.94** | 0.05 | 4.00 | −0.06     |
-| Ship Readiness        | 5.00 | 4.8 | 4.80 | 4.85 | 4.7  | 5.0  | 4.74 | 4.80 | 4.85 | 4.80 | **4.83** | 0.10 | 5.00 | −0.17     |
+The score is now a ±0.1 directional signal. The **payload is the
+finding list.**
 
-All dimensions drifted downward. **Security Posture dropped most (−0.26)** because the Attacker found a real bypass (OP*SESSION*<accountid>) that invalidated part of v10's A2-closed credit. **Ship Readiness dropped −0.17** because Operator caught the unwired CI ratchet.
+## 10-Agent Score Matrix
 
-## New Substantive Findings (v11 uncovered; v10 missed)
+| Dimension             | A1   | A2   | A3   | A4   | A5   | A6   | A7   | A8   | A9   | A10  | Mean     | σ    | v11  | Δ     |
+| --------------------- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | -------- | ---- | ---- | ----- |
+| Code Completeness     | 7.70 | 7.55 | 7.60 | 7.60 | 7.55 | 7.53 | 7.60 | 7.55 | 7.70 | 7.53 | **7.59** | 0.07 | 7.53 | +0.06 |
+| Wiring                | 6.90 | 7.00 | 6.95 | 7.00 | 7.10 | 6.86 | 6.86 | 7.05 | 7.00 | 6.86 | **6.96** | 0.09 | 6.86 | +0.10 |
+| Test Reality          | 6.80 | 6.70 | 6.75 | 6.75 | 6.70 | 6.60 | 6.60 | 6.75 | 6.90 | 6.80 | **6.74** | 0.09 | 6.60 | +0.14 |
+| Production Evidence   | 4.80 | 4.77 | 4.80 | 4.77 | 4.77 | 4.77 | 4.95 | 4.77 | 4.80 | 4.60 | **4.78** | 0.08 | 4.77 | +0.01 |
+| Operational Readiness | 5.90 | 5.60 | 5.80 | 5.85 | 5.85 | 5.72 | 5.80 | 5.95 | 5.85 | 5.72 | **5.80** | 0.11 | 5.72 | +0.08 |
+| Security Posture      | 6.80 | 6.55 | 6.70 | 6.75 | 6.75 | 6.60 | 6.80 | 6.75 | 7.20 | 6.60 | **6.65** | 0.16 | 6.43 | +0.22 |
+| Documentation         | 5.70 | 5.62 | 5.65 | 5.62 | 5.75 | 5.62 | 5.62 | 5.70 | 5.75 | 5.62 | **5.67** | 0.05 | 5.62 | +0.05 |
+| Failure Handling      | 6.70 | 6.40 | 6.65 | 6.65 | 6.55 | 6.55 | 6.62 | 6.65 | 6.70 | 6.20 | **6.57** | 0.14 | 6.55 | +0.02 |
+| Scale Readiness       | 4.00 | 3.94 | 3.95 | 4.10 | 3.94 | 3.94 | 4.05 | 4.30 | 4.30 | 3.94 | **4.05** | 0.13 | 3.94 | +0.11 |
+| Ship Readiness        | 4.90 | 4.70 | 4.85 | 4.83 | 4.83 | 4.83 | 4.83 | 4.83 | 5.40 | 4.83 | **4.88** | 0.18 | 4.83 | +0.05 |
 
-These are the actual payload of running v11:
+Security Posture +0.22 is the largest gain (pass 27 + 30 credit) but
+Chaos Monkey's Failure Handling −0.35 and Pessimist's Ops/Ship
+regressions counterbalance it.
 
-1. **CI ratchet is script-only, not CI-enforced** (Operator). `scripts/check-as-any-budget.mjs` exists and is runnable, but NO `.github/workflows/*.yml` step invokes it. Rapid regression can land silently through PR merge.
+## New substantive findings
 
-2. **`continue-on-error: true` on core + vault test steps** (Operator). "Green CI" badges pass even when test suites fail. Hides regressions.
+### Legitimate security bug (pass 25 leftover, v11 missed)
 
-3. **`OP_SESSION` scrub uses exact-match** (Attacker). 1Password CLI exports session tokens as `OP_SESSION_<accountid>` (e.g., `OP_SESSION_abc123xyz`). The explicit name set has bare `OP_SESSION` only; the regex `/(?:API_KEY|SECRET|PASSWORD|CREDENTIALS|PRIVATE_KEY|_TOKEN)/i` does NOT match `OP_SESSION_*`. Real session token leaks to shell children under "restricted" default.
+**F1. Env scrub regex `_KEY` gap.** `SCRUBBED_ENV_PATTERN =
+/(?:API_KEY|SECRET|PASSWORD|CREDENTIALS|PRIVATE_KEY|_TOKEN)/i` catches
+`API_KEY` and `PRIVATE_KEY` but NOT bare `_KEY`. Real leak surface:
 
-4. **Restricted sandbox does not block sensitive file reads** (Attacker). Default `"restricted"` only blocks command PATTERNS (rm, sudo, curl-pipe-sh). An attacker with shell can `cat ~/.aws/credentials ~/.ssh/id_rsa ~/.netrc ~/.config/op/config.json` — none are blocked. Host filesystem-sandbox is only in "container" mode.
+- `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
+- `DATADOG_APP_KEY`, `HONEYCOMB_WRITEKEY`, `MIXPANEL_PROJECT_KEY`
+- `SENTRY_DSN` (auth in URL, `DSN` pattern not covered)
+- Anything with `_AUTH`, `_BEARER`, `_COOKIE`, `_JWT`, `_PAT`
 
-5. **No `busy_timeout` pragma on SQLite** (Chaos Monkey). `packages/db/src/client.ts` sets `journal_mode=WAL` and `foreign_keys=ON` but NO `busy_timeout`. Desktop + CLI both opening `~/.brainstorm/brainstorm.db` produce immediate `SQLITE_BUSY` on first concurrent write. Multi-window risk is architectural, not just untrapped.
+### Regressions introduced by passes 27–30
 
-## False Finding Flagged by This Synthesis
+**F2. CI ratchet supply-chain window.** Pass 29 placed
+`check-as-any-budget.mjs` at ci.yml line 43, AFTER `npm ci` at line 22. A transitive-dep postinstall could mutate the script between
+install and enforcement. Flagged by Pessimist + Auditor + Operator +
+Sr Engineer (4/10). Fix: move step before `npm ci` — it uses only
+Node stdlib.
 
-- **Pragmatist (A8) claimed "8 modified tracked files exist"** — `git status` shows 0. The claim is stale/hallucinated. Score contribution unchanged.
+**F3. Pass 28 busy_timeout is synchronous, TUI stalls silently.**
+better-sqlite3 is synchronous; `busy_timeout=5000` blocks the Node
+thread for up to 5s. Ink TUI renders on that thread. No progress
+indicator wired. Pre-pass-28: fail-fast with SQLITE_BUSY. Post-pass-
+28: silent 5s hang. Flagged by Pessimist + Chaos Monkey (2/10). Fix
+requires design: async driver OR UX spinner + shorter default
+timeout + fallback.
 
-## Risk Register (v11 consensus)
+**F4. Pass 30 regex is unanchored (not unescaped).** _Correction:
+Phase-4 Auditor verified that `.` IS properly escaped in every
+pattern (`\.ssh`, `\.aws`, `\.netrc`, etc.). Sr Engineer's claim of
+unescaped `.` was wrong._ What IS true: patterns aren't anchored with
+`^` or word boundaries, so `~/.ssh/` matches as a substring anywhere
+in the command. This creates over-inclusive false positives (e.g.,
+`grep -r "~/.ssh/" docs/` gets blocked) rather than under-inclusive
+bypasses. Lower priority than initially stated.
 
-| Risk                                                    | Count        | Notes                                                   |
-| ------------------------------------------------------- | ------------ | ------------------------------------------------------- |
-| Multi-window SQLite concurrent writes (no busy_timeout) | **7/10**     | NEW ANGLE this round: architectural, not just untrapped |
-| ENOSPC / disk-full mid-DB-write untrapped               | 3/10         | From v10                                                |
-| Docker daemon death mid-sandbox untrapped               | 2/10         | From v10                                                |
-| Auto-updater GitHub supply-chain trust                  | 3/10         | Structural                                              |
-| Zero production telemetry                               | 3/10         | Structural                                              |
-| Parallel turbo test flake unchanged                     | 3/10         | From v10                                                |
-| Inspection-only S4/S6/S7 closures                       | 2/10         | From v10                                                |
-| CI ratchet not actually in CI                           | **1/10 NEW** | Real gap                                                |
-| `continue-on-error` masks test failures                 | **1/10 NEW** | Real gap                                                |
-| OP*SESSION*<accountid> scrub bypass                     | **1/10 NEW** | Real bug                                                |
-| Restricted sandbox allows sensitive file reads          | **1/10 NEW** | Real design gap                                         |
-| Grep-based as-any counter is brittle                    | 1/10         | Minor                                                   |
-| Docker `--user=1000:1000` vs host UID mismatch          | 1/10         | From v10                                                |
-| No dep-cruiser                                          | 1/10         | From v10                                                |
-| No jsdom+RTL                                            | 1/10         | From v10                                                |
+**F5. Pass 30 defeated by shell string tricks.**
 
-## Calibration Assessment
+- `cat $(echo ~)/.ssh/id_rsa` — no literal `~`, regex fails
+- `cat /U""sers/$USER/.ssh/id_rsa` — string concat breaks
+- ``cat `printf /U\x73ers/justin`/.ssh/id_rsa`` — hex in subshell
+- `cat ~"/.ssh/id_rsa"` — quote between `~` and `/`
+- `cat /Users/justin/.s*h/id_rsa` — glob expansion
 
-- **σ:** 0.07 → 0.047 (tighter). Agent convergence on the evidence is real.
-- **Mean:** 5.96 → 5.90 (−0.06). Modest anchoring drift. Inside noise band.
-- **Substantive net:** 5 new real findings vs 1 false finding. Strong signal that the assessment _produces value_ through re-running, not just scoring.
+Flagged by Attacker (1/10 but detailed). The code comment says
+"path-name defense, not a real capability sandbox"; v12 confirms the
+gap is wider than the comment suggests.
 
-## What This Tells Us About Methodology
+**F6. Pass 30 partial gap — `/var/root/.ssh` (macOS root user) only.**
+_Correction: Phase-4 Auditor verified that `/private/etc/shadow` IS
+caught by the existing unanchored `/\/etc\/shadow\b/` pattern via
+substring match. The Pessimist/Architect claim that `/private/etc/`
+bypasses was wrong._ What IS real: `/var/root/.ssh/` (macOS root
+user home) isn't in any pattern. Narrower gap than initially
+reported.
 
-Running the assessment twice on the same no-work state:
+### Carried forward from v11
 
-- Confirms σ is small enough that 10 agents on the same evidence doc produce a stable number ± 0.07.
-- But the **number itself drifts ±0.05–0.10** across independent runs even on identical state — so reporting precision beyond 0.1 is false signal.
-- The **new-finding rate** is the more valuable output. v11 found 5 substantive items v10 missed in ~5 minutes of agent time.
-- Ideal methodology: re-run v11-style replication anytime a round produces σ < 0.1 on a significant delta, to distinguish real progress from anchoring.
+- F7. `continue-on-error: true` on core + vault test steps (5/10 —
+  now a multi-round carryover)
+- F8. ENOSPC + Docker daemon death traps still open (Chaos, 1/10)
+- F9. No dep-cruiser for 27-package graph (Architect, 1/10)
+- F10. Zero production telemetry (Auditor + Competitor + Pragmatist,
+  3/10)
 
-## Recommended Immediate Action (Pass 27)
+## Risk register (v12 consensus)
 
-Fix the 5 v11-new findings in priority order:
+| Risk                                           | Count                    |
+| ---------------------------------------------- | ------------------------ |
+| `continue-on-error` on core + vault CI         | **5/10**                 |
+| CI ratchet ordering vs `npm ci`                | **4/10**                 |
+| Pass 30 `/private/`, symlinks, realpath bypass | 3/10                     |
+| Zero production telemetry                      | 3/10                     |
+| Pass 28 synchronous busy_timeout stalls TUI    | 2/10                     |
+| Pass 30 regex unescaped `.` + unanchored       | 2/10                     |
+| Env regex `_KEY` gap (NEW legitimate bug)      | **1/10 (high-severity)** |
+| Pass 30 shell string-trick bypasses            | 1/10                     |
+| ENOSPC + Docker daemon death untrapped         | 1/10                     |
+| No dep-cruiser                                 | 1/10                     |
 
-1. **OP_SESSION bypass** (A6) — highest severity; session token exfil. Change `SCRUBBED_ENV_NAMES` check to prefix-match or add `OP_SESSION` to the regex.
-2. **busy_timeout pragma** (A10) — architectural; one-line fix closing the multi-window collision path.
-3. **CI ratchet wire-up** (A5) — make the governance claim real, not aspirational.
-4. **Fix `continue-on-error` on tests** (A5) — restore CI signal integrity.
-5. **Restricted sandbox file-read block** (A6) — add `~/.ssh/*`, `~/.aws/*`, `~/.netrc`, `~/.config/op/*` to sandbox's sensitive-path blocklist OR clearly document users should run untrusted workloads under "container".
+## Agent-level narrative
 
-## Delta Summary
+| Agent        | Score | Key insight                                                    |
+| ------------ | ----- | -------------------------------------------------------------- |
+| Optimist     | 6.02  | +5 dimensions moved, trap discipline held                      |
+| Pessimist    | 5.87  | Ship + Ops + Fail all regressed with cited evidence            |
+| Architect    | 5.97  | Passes 27–30 are pattern extensions, not new patterns          |
+| Auditor      | 6.00  | All verification checks passed; ordering concern noted         |
+| Operator     | 6.05  | CI ratchet now real; `continue-on-error` debt persists         |
+| Attacker     | 5.92  | 6+ bypasses found in pass 27 + 30                              |
+| Competitor   | 6.07  | Brainstorm now publishes stricter posture than Aider/Continue  |
+| Pragmatist   | 6.03  | Crossed 6.0 (barely); CI gate still gated on soft-fail tests   |
+| Sr Engineer  | 6.15  | Allowlist-first ordering sound; regex anchoring weak           |
+| Chaos Monkey | 5.77  | Pass 28 is grace window not fix; 2/3 chaos surfaces still open |
 
-**v10 5.96 → v11 5.90 (−0.06).** Three-round trajectory: v8 5.36 → v9 5.76 → v10 5.96 → v11 5.90.
+## Three-round trajectory
 
-Taking v11 as the corrected baseline (the methodology rerun is a better point-estimate than the biased original), two-round gain since v8 is **+0.54**, not the +0.60 v10 suggested. Still substantial, but not as large.
+**v8 5.36 → v9 5.76 → v10 5.96 → v11 5.90 → v12 5.97**
 
-More importantly: the number is directional at ±0.1 precision. Finer claims are noise.
+Slope narrowing: +0.40, +0.20, −0.06 (methodology), +0.07. Each round
+produces fewer score points but more specific findings. v12 found
+4 real substantive items (1 legitimate security bug, 2 real bypass
+vectors, 2 regressions) — 2 items flagged by agents were hallucinated
+and caught by the Phase-4 Auditor. The assessment has crossed the
+point where running it is mostly about surfacing the next layer of
+bugs, not moving the aggregate.
+
+## Recommended actions (pass 31+)
+
+Cheap high-severity (real after Auditor verification):
+
+1. **F1 env regex `_KEY`**: extend pattern to `/(?:API_KEY|SECRET|PASSWORD|CREDENTIALS|PRIVATE_KEY|_TOKEN|_KEY|_AUTH|_BEARER|_COOKIE|_DSN|_JWT|_PAT)/i`. Add allowlist exemption for `SSH_AUTH_SOCK` (socket path, not secret).
+2. **F2 CI ratchet ordering**: move step before `npm ci`. One-line move.
+3. **F6 `/var/root/.ssh/`**: add to the sandbox path patterns (macOS root user home). Narrower than initially reported.
+
+Skip (hallucinated findings, Auditor-verified):
+
+- ~~F4 path regex unescaped `.`~~ — `.` IS escaped; unanchored-ness is a false-positive surface, not bypass
+- ~~F6 `/private/etc/shadow` bypass~~ — existing unanchored regex already catches it
+
+Design-level (defer or punt):
+
+- F3 busy_timeout UX: async driver rewrite OR downgrade to 500ms + document
+- F5 shell string tricks: true fix requires shell-quote AST parsing
+
+Design-level (defer or punt):
+
+- F3 busy_timeout UX: async driver rewrite OR downgrade to 500ms + document
+- F5 shell string tricks: true fix requires shell-quote AST parsing
+
+Structural (multi-round carryover):
+
+- F7 core + vault CI debt
+- F8 ENOSPC + Docker daemon death traps
+- F9 dep-cruiser
+- F10 telemetry
