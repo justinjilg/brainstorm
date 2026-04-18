@@ -63,10 +63,56 @@ module.exports = {
         pathNot: "^packages/$1/src/",
       },
     },
+    {
+      name: "no-orphans-in-packages",
+      severity: "error",
+      comment:
+        "Orphaned source files in packages/ are dead code. Either " +
+        "wire them up, delete them, or re-export through the package " +
+        "index (if they're part of the public API). Baseline at rule " +
+        "introduction: 0 violations — two orphans (workflow/" +
+        "consensus-review.ts, core/security/scan-utils.ts) were " +
+        "deleted in the same commit. Exclusions cover legitimate " +
+        "entry points (src/index.ts, src/bin/*), test files, types " +
+        "files (imported as type-only so dep-cruiser without " +
+        "tsPreCompilationDeps flags them as orphan), and tsup/" +
+        "vitest configs that shouldn't be graph nodes. NOT applied " +
+        "to apps/ because Next.js + Electron rely on convention-" +
+        "based dynamic loading that dep-cruiser cannot trace.",
+      from: {
+        orphan: true,
+        path: "^packages/[^/]+/src/",
+        pathNot: [
+          "^packages/[^/]+/src/index\\.ts$",
+          "^packages/[^/]+/src/bin/",
+          "^packages/[^/]+/src/cli/brainstorm\\.ts$",
+          "__tests__/",
+          "\\.test\\.ts$",
+          "\\.spec\\.ts$",
+          "export-catalog\\.ts$",
+          "\\.config\\.(ts|js|cjs|mjs)$",
+          "\\.d\\.ts$",
+          // `types.ts` files are imported only as `import type {...}`.
+          // Without tsPreCompilationDeps dep-cruiser doesn't see them
+          // as imports — but we can't enable that globally because it
+          // exposes type-only circular deps the no-circular rule
+          // wasn't meant to catch. Excluding types.ts from orphan
+          // detection is the targeted trade-off.
+          "/types\\.ts$",
+        ],
+      },
+      to: {},
+    },
   ],
   options: {
     doNotFollow: {
       path: "node_modules",
+    },
+    // Exclude build outputs and generated artifacts from every rule.
+    // Without this, `.next/build/chunks/*.js` and `dist/*` appear as
+    // orphans (they are — they're outputs, not source).
+    exclude: {
+      path: "(^|/)(dist|node_modules|\\.next|release|test-results)(/|$)",
     },
   },
 };
