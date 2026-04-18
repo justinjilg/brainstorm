@@ -1,152 +1,59 @@
-# Stochastic Assessment Audit v10 — 2026-04-18
+# v11 Calibration & Bias Audit — 2026-04-18
 
-Auditor role: Calibration & Bias Auditor for v10. Cross-checks
-arithmetic, monotonicity, and synthesis faithfulness against the 10
-raw agent outputs. v9 baseline overall 5.76; v10 reports 5.96.
+Auditor of the methodology-rerun synthesis (v10 → v11, zero code changes since commit `01e8295`).
 
-## Job 1 — Arithmetic Audit
+## Job 1 — Arithmetic
 
-Reproduced all ten per-dimension sums from the synthesis score matrix:
+All 10 per-dimension sums and the overall mean reproduce exactly to 3 decimal places. Spot-check:
 
-| Dim    |   Sum |   /10 | Reported | OK                      |
-| ------ | ----: | ----: | -------: | ----------------------- |
-| Code   | 75.65 | 7.565 |     7.57 | PASS (half-up rounding) |
-| Wiring | 68.80 | 6.880 |     6.88 | PASS                    |
-| Test   | 66.20 | 6.620 |     6.62 | PASS                    |
-| Prod   | 47.75 | 4.775 |     4.78 | PASS                    |
-| Ops    | 57.63 | 5.763 |     5.76 | PASS                    |
-| Sec    | 66.88 | 6.688 |     6.69 | PASS                    |
-| Doc    | 56.75 | 5.675 |     5.68 | PASS                    |
-| Fail   | 66.35 | 6.635 |     6.64 | PASS                    |
-| Scale  | 39.98 | 3.998 |     4.00 | PASS                    |
-| Ship   | 49.98 | 4.998 |     5.00 | PASS                    |
+- Overall: 58.98 / 10 = 5.898 → 5.90 ✓
+- Code 7.533 · Wiring 6.860 · Test 6.600 · Prod 4.765 · Ops 5.717 · Sec 6.425 · Doc 5.623 · Fail 6.550 · Scale 3.936 · Ship 4.834 ✓
+- σ on the 10 agent overalls: population 0.0469, sample 0.0494. Synthesis reports **0.047** — that is the population σ, consistent with v10's reporting convention. No error.
 
-Overall: 59.60 / 10 = 5.960 → 5.96 reported. Matches. Rounding rule is
-consistent (half-away-from-zero at the second decimal). No inflation.
+**Result: arithmetic verified.**
 
-σ values not recomputed (not in scope); Security 0.42 is plausible
-given the 5.93 → 7.60 spread over N=10.
+## Job 2 — Methodology-Test Finding Audit
 
-**Arithmetic result: clean.**
+All five "new v11 findings" were sourced directly from current repo state. Each verified against checked-in code:
 
-## Job 2 — Monotonicity Audit
+1. **CI ratchet not wired — VERIFIED.** `ls .github/workflows/` returns `ai-review.yml, ci.yml, codeql.yml, e2e.yml, npm-publish.yml, release.yml`. Grep of `check-as-any-budget` across all six YAMLs returns **zero matches**. The script at `scripts/check-as-any-budget.mjs` is never invoked by CI. Governance claim is aspirational.
 
-Every v10 dimension mean is ≥ v9 mean. Per-agent minima:
+2. **`continue-on-error: true` on test jobs — VERIFIED.** Three instances in `.github/workflows/ci.yml`:
+   - Line 38 — tool-catalog drift check
+   - Line 53 — core test suite
+   - Line 59 — vault test suite
+     Two of those three are the actual test steps. Green CI does not prove tests pass.
 
-- Sec min = 5.93 (Chaos Monkey) = v9 baseline exactly. No regression —
-  persona held the line on an out-of-scope dimension.
-- Ops min = 5.58 (Chaos Monkey) = v9 baseline. No regression.
-- All other per-agent minima ≥ v9 means on their dimensions.
+3. **OP_SESSION scrub bypass — VERIFIED.** `packages/tools/src/builtin/shell.ts:35-60` defines `SCRUBBED_ENV_NAMES` containing literal `"OP_SESSION"` (line 38). `SCRUBBED_ENV_NAMES.has("OP_SESSION_myaccount")` is **false** — `Set.has` is exact-match, not prefix. The regex `/(?:API_KEY|SECRET|PASSWORD|CREDENTIALS|PRIVATE_KEY|_TOKEN)/i` does **not** match `OP_SESSION_myaccount` (no matching substring). Under "restricted" default, a real 1Password session token leaks to every shell child. High-severity.
 
-No agent dipped below v9 on any dimension. Monotonicity invariant
-held. Synthesis's "no dimension regressed" claim is correct.
+4. **Restricted sandbox allows sensitive file reads — VERIFIED.** `packages/tools/src/builtin/sandbox.ts` `checkSandbox` delegates to `checkRestricted`, which iterates `BLOCKED_PATTERNS` (lines 18-104). The list covers rm/mkfs/sudo/curl-pipe-sh/base64-pipe/python-dash-e/git-filter-branch etc. **No entry** blocks `cat`, `~/.ssh/*`, `~/.aws/*`, `~/.netrc`, or `~/.config/op/*`. `cat ~/.ssh/id_rsa` passes. Design gap is real.
 
-**Monotonicity result: clean.**
+5. **No busy_timeout pragma — VERIFIED.** `grep -rn busy_timeout packages/db/src/` returns zero matches. `packages/db/src/client.ts:31-36` sets `journal_mode=WAL`, `foreign_keys=ON`, `optimize` — but no busy_timeout. Concurrent writers (desktop + CLI opening `~/.brainstorm/brainstorm.db`) will fail immediately with `SQLITE_BUSY` instead of retrying.
 
-## Job 3 — Bias Audit & Specific Attacker Claim
+**All 5 findings: VERIFIED. None hallucinated.**
 
-### Attacker's Risk #3 — ground truth check
+## Job 3 — Bias Audit of Synthesis
 
-Claim (paraphrased from the raw Attacker output): "`restricted` blocks
-dangerous command patterns but still executes on the host with
-`process.env` unchanged (line 86 short-circuits scrubbing when level
-is `"none"`, and the container path is the only one that scrubs via
-`buildChildEnv(currentSandboxLevel)` where level is truthy)."
+Pragmatist's "8 modified tracked files" claim. `git status --short | grep "^ M"` returns a single line: `docs/assessment-synthesis.md` (the synthesis file itself). That's 1 file, not 8, and it's the synthesis's own workspace artifact — irrelevant to the code-change claim. **Synthesis is correct to flag the Pragmatist as stale/hallucinated.**
 
-Actual code at `packages/tools/src/builtin/shell.ts:85-95`:
+Omission/softening check: none found. The synthesis flags the Pragmatist, gives the Operator the largest downward revision (−0.19), and explicitly withdraws credit on Security Posture (−0.26) where v10 gave A2-closure credit that v11's Attacker invalidated. Precision is not overclaimed — the calibration section explicitly says reporting beyond 0.1 is false signal. Action list is appropriately prioritized by severity (OP_SESSION first). No glossed weaknesses, no self-congratulatory language.
 
-```ts
-export function buildChildEnv(level: SandboxLevel): NodeJS.ProcessEnv {
-  if (level === "none") return process.env;
-  const scrubbed: NodeJS.ProcessEnv = {};
-  for (const [name, value] of Object.entries(process.env)) {
-    if (SCRUBBED_ENV_NAMES.has(name)) continue;
-    if (SCRUBBED_ENV_PATTERN.test(name) && !SCRUBBED_ENV_ALLOWLIST.has(name))
-      continue;
-    scrubbed[name] = value;
-  }
-  return scrubbed;
-}
-```
+One minor note: "8/10 agents scored flat or lower" in the delta table — counting the per-agent deltas column, exactly 8 are ≤ 0 (Optimist 0.00, Pessimist −0.08, Architect −0.13, Auditor −0.05, Operator −0.19, Attacker −0.10, Pragmatist −0.04, Sr Engineer −0.07); Competitor +0.02 and Chaos Monkey +0.02 are positive. Claim verified.
 
-Line 86 short-circuits **only** when `level === "none"`. For
-`"restricted"` (and any other non-`"none"` value), control falls
-through to the scrub loop. Both host-spawn sites (`shell.ts:374`,
-`shell.ts:485`) call `buildChildEnv(currentSandboxLevel)`, and the
-module default at line 106 is `"restricted"`. Tests at
-`shell-sandbox.test.ts:176-227` explicitly assert scrubbing under
-`"restricted"` — OP_SERVICE_ACCOUNT_TOKEN, provider keys,
-pattern-matched unknowns, GITHUB_TOKEN allowlist, and the `"none"`
-pass-through.
+## Job 4 — Methodology Conclusion Audit
 
-**Attacker Risk #3 is factually wrong.** The Attacker mis-reads the
-control flow: they treat the `"none"` short-circuit as if it were the
-scrub body, and they claim the container path is the only scrubber
-when in fact the host path is the primary scrubber. The read-write
-bind-mount concern attached to the same risk is independently valid,
-but the env-inheritance sub-claim is not.
+Four claims to test:
 
-### Did the synthesis flag this contradiction?
+- **σ 0.047 tighter than v10's 0.07 → convergence is real** — Mathematically correct. With identical evidence, 10 agents converged more tightly on the re-run, which supports the claim that the rubric + evidence doc reliably produces a stable number.
+- **−0.06 mean drop → small anchoring effect** — Fair framing. The drop is inside the σ band of either round, so attributing it purely to "anchoring" vs "new findings dragging scores down on merit" is soft. The synthesis hedges appropriately: "Modest anchoring drift. Inside noise band."
+- **True score is ~5.90 ± 0.1, not 5.96** — Honest. Explicitly states the number drifts ±0.05–0.10 across independent runs on identical state, so precision beyond 0.1 is noise. That's a stronger, more honest claim than v10 implied.
+- **Assessment's value is finding bugs, not precision scoring** — Supported by the data. Five real new findings in one rerun, one hallucinated claim flagged. Bug-discovery rate dominates score precision as the meaningful output.
 
-**No.** The synthesis simultaneously (a) credits A2 (`buildChildEnv`
-scrubs OP_SERVICE_ACCOUNT_TOKEN et al.) as a closed finding and
-attributes most of the +0.76 Security gain to it, and (b) carries the
-Attacker's 7.60 forward into the Sec mean (66.88) while that same
-Attacker is asserting, in writing, that `restricted` doesn't scrub on
-the host. Those two agent statements cannot both be true.
-
-This is not score-moving: removing the Attacker's 7.60 drops Sec from
-6.69 to 6.54, still +0.61 over v9. But the synthesis is structurally
-obliged to either correct the Attacker or discount their Sec score,
-and it did neither.
-
-**Bias finding:** faithfulness gap. Not softening, not omission, not
-reframing — a missed internal contradiction between the agent pool
-and the code.
-
-### Other bias checks
-
-- **Softening:** none found. Risk-register entries quote agents
-  sharply ("CI ratchet not wired into `.github/workflows/*.yml`",
-  "`buildChildEnv` scrub doesn't catch user-added unusual secret
-  names", "Docker `--user=1000:1000` vs host UID mismatch").
-- **Omission:** Sr Engineer's UID-mismatch nit and the Attacker's
-  GITHUB_TOKEN-exfil note both made the register at 1/10. Chaos
-  Monkey's "2/3 chaos-corruption scenarios still open" is the
-  headline Most-Flagged Risk. No drops detected.
-- **Inflation:** arithmetic already verified clean.
-- **Reframing:** "structurally bounded, no telemetry stream" on
-  Prod 4.78 is accurate, not spin.
-- **Cherry-pick:** Operator's 6.08 high and Chaos Monkey's 5.80 low
-  both preserved in the agent table and narrated in Methodology Notes.
+**Conclusion is fair.**
 
 ## Scores
 
-- **Calibration: 9/10.** Math clean, monotonicity clean, σ plausible.
-  One-point deduction: an agent (Attacker) made a factually false
-  claim about the code within the scoring round and was not
-  recalibrated.
-- **Honesty: 7/10.** Synthesis is mostly faithful but failed to flag
-  the Attacker's internal contradiction against the A2 closure it
-  simultaneously credited. Transparency gap a Calibration & Bias
-  Auditor is expected to note.
+- **Calibration: 9/10.** Arithmetic clean, findings hold under direct code verification, σ interpretation correct, conclusion appropriately hedged. One minor quibble: "anchoring" is one of several valid causal stories for the −0.06 drift; the synthesis commits to it without fully considering that new bugs discovered in v11 _should_ lower scores on merit, independent of anchoring. Not a correction-worthy defect.
+- **Honesty: 10/10.** Flags its own hallucinated Pragmatist claim. Downgrades Security Posture by 0.26 on evidence that contradicts v10 credit. States precision limits directly. No rhetorical inflation, no hidden carve-outs.
 
-Both ≥ 7. **No corrected synthesis required.**
-
-## Single-line amendment recommended for the synthesis
-
-Append to Calibration Drift Corrections: "Attacker Risk #3 mis-reads
-`buildChildEnv` — line 86 short-circuits only on `"none"`;
-`"restricted"` does scrub on the host path (test
-`shell-sandbox.test.ts:176-227` asserts this). A2-closed credit stands;
-the Attacker's contradicting sub-claim does not. No score adjustment;
-contradiction logged."
-
----
-
-Files referenced:
-
-- `/Users/justin/Projects/brainstorm/packages/tools/src/builtin/shell.ts` (lines 85-95, 106, 374, 485)
-- `/Users/justin/Projects/brainstorm/packages/tools/src/__tests__/shell-sandbox.test.ts` (lines 176-227)
-- `/Users/justin/Projects/brainstorm/docs/assessment-evidence.md`
-- `/Users/justin/Projects/brainstorm/docs/assessment-synthesis.md`
+No corrections required.
