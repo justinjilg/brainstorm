@@ -220,7 +220,7 @@ export const shellTool = defineTool({
         "Run in background. Returns immediately with a task ID. You will be notified on completion.",
       ),
   }),
-  async execute({ command, cwd, timeout, background }) {
+  async execute({ command, cwd, timeout, background }, ctx) {
     // Sandbox check — block dangerous commands based on configured level
     const sandboxResult = checkSandbox(
       command,
@@ -383,8 +383,36 @@ export const shellTool = defineTool({
         }, 5000);
       }, timeoutMs);
 
+      // Propagate caller aborts into a SIGTERM/SIGKILL pair on the
+      // child. Without this, user cancel (Ctrl+C or desktop Stop
+      // button) only clears the local stream; the shell command keeps
+      // running to completion and its output bleeds into the next
+      // turn as a ghost PostToolUse event. The AI SDK forwards its
+      // signal through ToolExecuteContext — we just have to honour it.
+      // { once: true } keeps this from leaking listeners if the signal
+      // is a long-lived one shared across turns.
+      const onAbort = () => {
+        if (!child.killed) child.kill("SIGTERM");
+        setTimeout(() => {
+          if (!child.killed) child.kill("SIGKILL");
+        }, 2000);
+      };
+      const abortSignal = ctx?.abortSignal;
+      if (abortSignal) {
+        if (abortSignal.aborted) {
+          // Signal fired before we could register — kill immediately
+          // and skip the execution.
+          onAbort();
+        } else {
+          abortSignal.addEventListener("abort", onAbort, { once: true });
+        }
+      }
+
       child.on("close", (code, signal) => {
         clearTimeout(timer);
+        if (abortSignal) {
+          abortSignal.removeEventListener("abort", onAbort);
+        }
         const exitCode = code ?? (signal ? 128 : 1);
         resolve({
           stdout: stdout.toString(),
@@ -396,6 +424,9 @@ export const shellTool = defineTool({
 
       child.on("error", (err) => {
         clearTimeout(timer);
+        if (abortSignal) {
+          abortSignal.removeEventListener("abort", onAbort);
+        }
         resolve({
           stdout: "",
           stderr: err.message,
