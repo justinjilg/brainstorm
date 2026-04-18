@@ -5,12 +5,17 @@ import type { Probe } from "../types.js";
 const baseProbe: Probe = {
   id: "test-traversal",
   capability: "code-correctness",
-  input: "ignored",
-  // Signal: force the runner to the sandbox-setup branch before any agent
-  // work happens — the path assertion is the first thing to run.
+  // Field was renamed from `input` to `prompt` during a refactor; this
+  // test file was missed. Keep the body minimal — the runner never
+  // reaches the LLM in the cases below because the sandbox path check
+  // fires first.
+  prompt: "ignored",
   workspace: "sandbox",
-  // Intentionally empty expectations so scorer doesn't matter for this test.
-  expectations: {} as any,
+  // Empty verification block — the sandbox path check in the runner
+  // fires before any scoring happens, so verify content doesn't
+  // matter for these cases. Name was `expectations` in an earlier
+  // Probe shape; now `verify`.
+  verify: {},
 };
 
 describe("runProbe — probe.setup.files path validation", () => {

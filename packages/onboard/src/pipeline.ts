@@ -138,7 +138,7 @@ export async function* runOnboardPipeline(
     };
 
     try {
-      const result = runCodeGraphBuild(options.projectPath);
+      const result = await runCodeGraphBuild(options.projectPath);
       // Stash on context so downstream phases / verification can reference it.
       (context as any)._codeGraph = result;
       phasesRun.push("code-graph-build");

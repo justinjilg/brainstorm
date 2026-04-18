@@ -135,7 +135,7 @@ describe("buildScorecard", () => {
     expect(Number.isFinite(run.startedAt)).toBe(true);
     expect(run.startedAt).toBeGreaterThan(0);
     // startedAt == completedAt is fine for a zero-result run.
-    expect(run.startedAt).toBeLessThanOrEqual(run.completedAt);
+    expect(run.startedAt).toBeLessThanOrEqual(run.completedAt ?? Infinity);
   });
 
   it("sums total cost from all probe results", () => {

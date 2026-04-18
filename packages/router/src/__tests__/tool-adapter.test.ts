@@ -4,6 +4,10 @@ import { getProviderFamily } from "../tool-mappings.js";
 import type { ModelEntry } from "@brainst0rm/shared";
 
 function mockModel(provider: string): ModelEntry {
+  // `as unknown as ModelEntry` is deliberate — this test's scope is
+  // the adapter's behavior for the provider/capabilities slice only.
+  // Providing a minimal shape keeps the test focused; in exchange we
+  // name the cast explicitly so no one mistakes this for a real model.
   return {
     id: `${provider}/test-model`,
     provider,
@@ -16,7 +20,7 @@ function mockModel(provider: string): ModelEntry {
     },
     pricing: { inputPer1M: 1, outputPer1M: 3 },
     qualityTier: "high",
-  } as ModelEntry;
+  } as unknown as ModelEntry;
 }
 
 function mockTools() {

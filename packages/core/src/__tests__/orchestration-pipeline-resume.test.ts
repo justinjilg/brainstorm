@@ -4,7 +4,7 @@ import type { PhaseDispatcher } from "../plan/orchestration-pipeline.js";
 
 function noopDispatcher(): PhaseDispatcher {
   return {
-    run: async () => ({ text: "", cost: 0, toolCalls: [] }),
+    runPhase: async () => ({ text: "", cost: 0, toolCalls: [] }),
     runParallel: async () => [],
     runCommand: async () => ({ passed: true, output: "" }),
   };
@@ -14,7 +14,7 @@ describe("runOrchestrationPipeline — resumeFrom validation", () => {
   it("throws when resumeFrom targets a phase that is not in the selected list", async () => {
     const gen = runOrchestrationPipeline("do thing", noopDispatcher(), {
       projectPath: "/tmp",
-      phases: ["spec", "design"],
+      phases: ["spec", "architecture"],
       resumeFrom: "refactor",
     });
 
@@ -29,8 +29,8 @@ describe("runOrchestrationPipeline — resumeFrom validation", () => {
   it("does not throw when resumeFrom matches a selected phase", async () => {
     const gen = runOrchestrationPipeline("do thing", noopDispatcher(), {
       projectPath: "/tmp",
-      phases: ["spec", "design"],
-      resumeFrom: "design",
+      phases: ["spec", "architecture"],
+      resumeFrom: "architecture",
     });
     // Just consume the first event — should be pipeline-started, not an error.
     const first = await gen.next();

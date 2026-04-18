@@ -67,7 +67,7 @@ describe("db repositories", () => {
       outputTokens: 20,
       cachedTokens: 0,
       cost: 0.12,
-      taskType: "chat",
+      taskType: "conversation",
       projectPath: "/tmp/project-c",
     });
     costs.record({
@@ -79,7 +79,7 @@ describe("db repositories", () => {
       outputTokens: 10,
       cachedTokens: 5,
       cost: 0.2,
-      taskType: "chat",
+      taskType: "conversation",
       projectPath: "/tmp/project-c",
     });
 
