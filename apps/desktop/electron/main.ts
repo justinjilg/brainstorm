@@ -61,8 +61,38 @@ const pending = new Map<string, (value: any) => void>();
 const pendingTimers = new Map<string, NodeJS.Timeout>();
 let nextId = 1;
 
+// Messages queued while the backend is down. Flushed in order once the
+// next child spawns and emits {type:"ready"}. Without this queue, any
+// IPC call that fires during the ~2s respawn window is silently
+// dropped — which is exactly what broke crash-recovery in
+// tests-live/backend-crash.live.spec.ts before this fix.
+const pendingOutbound: Array<Record<string, unknown>> = [];
+const MAX_PENDING_OUTBOUND = 50;
+
 function sendToBackend(msg: Record<string, unknown>): void {
-  if (backend?.stdin?.writable) {
+  if (backend?.stdin?.writable && backendReady) {
+    backend.stdin.write(JSON.stringify(msg) + "\n");
+    return;
+  }
+  // Queue up while we're mid-respawn. Cap at 50 to avoid runaway
+  // memory if the backend is permanently dead — beyond that we'd
+  // rather drop new messages than leak.
+  if (pendingOutbound.length >= MAX_PENDING_OUTBOUND) {
+    logToFile(
+      `sendToBackend: dropping ${String(msg.method ?? msg.event ?? "?")} — queue full`,
+    );
+    return;
+  }
+  pendingOutbound.push(msg);
+  logToFile(
+    `sendToBackend: queued ${String(msg.method ?? msg.event ?? "?")} (backend down, queue=${pendingOutbound.length})`,
+  );
+}
+
+function flushPendingOutbound(): void {
+  if (!backend?.stdin?.writable) return;
+  while (pendingOutbound.length > 0) {
+    const msg = pendingOutbound.shift()!;
     backend.stdin.write(JSON.stringify(msg) + "\n");
   }
 }
@@ -153,6 +183,11 @@ function spawnBackend(): void {
       backendReady = true;
       spawnRetries = 0;
       logToFile("Backend emitted ready signal");
+      // Drain any IPC calls that arrived during the respawn gap before
+      // we tell the renderer about the new backend. Doing it in this
+      // order means the renderer's first post-recovery request isn't
+      // racing any queued message this new child hasn't seen yet.
+      flushPendingOutbound();
       // Forward ready signal to the renderer so hooks that loaded once at
       // mount can refetch after a crash+respawn. We include wasReady so
       // clients can distinguish the first ready (no refetch needed — the
