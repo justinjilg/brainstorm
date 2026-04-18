@@ -104,7 +104,7 @@ evidence (file path or test name).
 - Evidence: `tests-live/_helpers.ts` `assertNoOrphanBackends()`, plus
   the standalone sentinel at `tests-live/teardown.live.spec.ts`.
 
-## Closed during reliability passes 10–20
+## Closed during reliability passes 10–21
 
 ### ✅ Previous-turn durability — direct sqlite readback
 
@@ -262,6 +262,30 @@ respawn.live.spec.ts` already covers the sibling path (outbound
       completion event arrives under 8s with non-zero exit and no
       pgrep survivor.
     - pre-aborted: controller already aborted when execute() runs.
+
+### ✅ npx-fallback child gets full stdio wiring (S7, pass 21)
+
+- Source: post-review re-audit of `main.ts` during pass 21.
+- Our status: fixed.
+- Evidence:
+  - `apps/desktop/electron/main.ts` — a module-level `useNpxFallback`
+    flag now gates command selection in `spawnBackend()`. On primary
+    ENOENT the error handler flips the flag and calls `spawnBackend()`
+    recursively so the fallback child goes through the same rl/stderr/
+    exit wiring the primary would have.
+- Previous bug shape: the old inline fallback reassigned `backend`
+  to an npx child but left the readline, stderr listener, and exit
+  handler bound to the now-dead primary's streams. A fresh-Mac DMG
+  launch with `brainstorm` absent from PATH but `npx` present would
+  spawn a working npx child that no one was reading stdout from —
+  user saw a silent hang with no error banner, no respawn retries
+  (per Node docs, ENOENT doesn't fire 'exit'), and no way to recover
+  without relaunching.
+- Note: no automated trap — exercising this path would require a
+  fake npx that speaks our NDJSON protocol plus careful PATH
+  manipulation inside the Playwright harness. Closed by inspection;
+  the change is tiny, self-contained, and the `notifyCliMissing`
+  banner still surfaces the failure if the npx fallback also ENOENTs.
 
 ### ✅ Send-guard race closed with ref (S4)
 
