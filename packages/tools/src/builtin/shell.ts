@@ -197,6 +197,31 @@ export function setDockerSandbox(
   return prev;
 }
 
+// Kill a whole process group (shell + every child it forked). Used
+// everywhere we need to cancel a shell: abort signal, timeout, or
+// background abort. CI Linux (dash as /bin/sh) exposed the gap — a
+// plain `child.kill("SIGTERM")` there signals only the shell, which
+// exits without forwarding to its children; the `sleep 30` is
+// reparented to init and runs to completion. macOS bash happens to
+// propagate, which is why this was invisible locally.
+//
+// Relies on `detached: true` in spawn — that makes the shell a
+// process-group leader (pgid == pid), so -pid addresses the whole
+// group. Swallows errors: ESRCH (group already gone) and EPERM
+// (race with init reaping) are both "nothing to do", not failures.
+function killProcessGroup(
+  pid: number | undefined,
+  signal: "SIGTERM" | "SIGKILL",
+): void {
+  if (!pid) return;
+  try {
+    process.kill(-pid, signal);
+  } catch {
+    // Group already dead, or permission denied by a race with init —
+    // either way, no one to signal.
+  }
+}
+
 // ── Background Task Management ──────────────────────────────────────
 
 interface BackgroundTask {
@@ -420,6 +445,10 @@ export const shellTool = defineTool({
         cwd: cwd ?? getWorkspace(),
         stdio: ["ignore", "pipe", "pipe"],
         env: buildChildEnv(currentSandboxLevel),
+        // Put the shell + everything it spawns into its own process
+        // group so we can kill the whole group on abort/timeout. See
+        // killProcessGroup() for the CI-Linux rationale.
+        detached: true,
       });
 
       // Detach the child's handle from the parent's event loop. Without
@@ -443,11 +472,13 @@ export const shellTool = defineTool({
       child.stdout.on("data", (chunk: string) => bgStdout.append(chunk));
       child.stderr.on("data", (chunk: string) => bgStderr.append(chunk));
 
-      // Timeout: SIGTERM then SIGKILL, same pattern as foreground
+      // Timeout: SIGTERM then SIGKILL, same pattern as foreground.
+      // Group kill (via -pid) ensures we catch shell grandchildren on
+      // Linux where SIGTERM to dash doesn't forward.
       const bgTimer = setTimeout(() => {
-        child.kill("SIGTERM");
+        killProcessGroup(child.pid, "SIGTERM");
         setTimeout(() => {
-          if (!child.killed) child.kill("SIGKILL");
+          if (child.exitCode === null) killProcessGroup(child.pid, "SIGKILL");
         }, 5000);
       }, timeoutMs);
       bgTimer.unref(); // Don't keep event loop alive for background timeout
@@ -462,9 +493,9 @@ export const shellTool = defineTool({
       // growing on long-lived per-session controllers.
       const bgAbortSignal = ctx?.abortSignal;
       const onBgAbort = () => {
-        if (!child.killed) child.kill("SIGTERM");
+        killProcessGroup(child.pid, "SIGTERM");
         setTimeout(() => {
-          if (!child.killed) child.kill("SIGKILL");
+          if (child.exitCode === null) killProcessGroup(child.pid, "SIGKILL");
         }, 2000);
       };
 
@@ -531,6 +562,9 @@ export const shellTool = defineTool({
         cwd: cwd ?? getWorkspace(),
         stdio: ["ignore", "pipe", "pipe"],
         env: buildChildEnv(currentSandboxLevel),
+        // Process-group leader so abort/timeout can kill everything
+        // the command forked — see killProcessGroup().
+        detached: true,
       });
 
       child.stdout.setEncoding("utf-8");
@@ -546,10 +580,10 @@ export const shellTool = defineTool({
       });
 
       const timer = setTimeout(() => {
-        child.kill("SIGTERM");
-        // Give 5s for graceful shutdown, then force kill
+        killProcessGroup(child.pid, "SIGTERM");
+        // Give 5s for graceful shutdown, then force kill the group.
         setTimeout(() => {
-          if (!child.killed) child.kill("SIGKILL");
+          if (child.exitCode === null) killProcessGroup(child.pid, "SIGKILL");
         }, 5000);
       }, timeoutMs);
 
@@ -562,9 +596,9 @@ export const shellTool = defineTool({
       // { once: true } keeps this from leaking listeners if the signal
       // is a long-lived one shared across turns.
       const onAbort = () => {
-        if (!child.killed) child.kill("SIGTERM");
+        killProcessGroup(child.pid, "SIGTERM");
         setTimeout(() => {
-          if (!child.killed) child.kill("SIGKILL");
+          if (child.exitCode === null) killProcessGroup(child.pid, "SIGKILL");
         }, 2000);
       };
       const abortSignal = ctx?.abortSignal;
