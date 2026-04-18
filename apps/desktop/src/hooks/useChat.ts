@@ -74,6 +74,15 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
   const loadConversationRef = useRef<
     ((sessionId: string | null) => Promise<void>) | null
   >(null);
+  // Mirrors `isProcessing` but is readable synchronously inside `send`
+  // before React has flushed the setIsProcessing(true) re-render.
+  // Without this, two back-to-back synchronous calls (rapid Enter
+  // keypress, or a button click + Enter race) both see the stale
+  // closure-captured `isProcessing=false` and kick off two parallel
+  // turns — the second one blows away the first's streaming text and
+  // only the second's assistantMsg lands in the transcript. Using a
+  // ref as the guard closes the window before the state flush.
+  const isProcessingRef = useRef(false);
   const [contextPercent, setContextPercent] = useState(0);
 
   const send = useCallback(
@@ -86,7 +95,11 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
         activeSkills?: string[];
       },
     ) => {
-      if (isProcessing) return;
+      // Ref-based guard — see isProcessingRef declaration for the
+      // race it closes. Always flip the ref before any async work,
+      // and always reset it in the shared cleanup block below.
+      if (isProcessingRef.current) return;
+      isProcessingRef.current = true;
 
       // Add user message
       const userMsg: ChatMessage = {
@@ -281,10 +294,15 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
 
       setStreamingText("");
       setIsProcessing(false);
+      isProcessingRef.current = false;
       setActiveTools([]);
       abortRef.current = null;
     },
-    [isProcessing, sessionCost, onEvent],
+    // Only `onEvent` actually needs to be in deps — `isProcessing` is
+    // now a ref, and `sessionCost` was only here by accident (the body
+    // never reads it, so its presence just churned `send`'s identity
+    // on every cost tick and forced memoized parents to re-render).
+    [onEvent],
   );
 
   const abort = useCallback(() => {
