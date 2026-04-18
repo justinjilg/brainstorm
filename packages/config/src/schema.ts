@@ -307,6 +307,19 @@ export const brainstormConfigSchema = z.object({
     })
     .default({}),
   models: z.array(modelOverrideSchema).default([]),
+  agent: z
+    .object({
+      /**
+       * How long the agent loop waits for any stream event (text-delta,
+       * tool-call, reasoning, finish) before declaring the stream dead
+       * and aborting via the stall watchdog. Default 60s matches the
+       * historical hardcoded value. Extended-thinking models that emit
+       * long stretches of silent reasoning may need higher values; raw
+       * chat models usually don't.
+       */
+      streamTimeoutMs: z.number().int().positive().default(60_000),
+    })
+    .default({}),
   agents: z.array(agentConfigSchema).default([]),
   workflows: z.array(workflowConfigSchema).default([]),
   mcp: mcpSchema.default({}),

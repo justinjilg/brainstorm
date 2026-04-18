@@ -869,7 +869,12 @@ export async function* runAgentLoop(
     const filesRead: string[] = [];
     const filesWritten: string[] = [];
     const loopDetector = new LoopDetector();
-    const STREAM_TIMEOUT_MS = 60_000; // 60s without any SSE event = dead stream
+    // Stream-stall watchdog threshold. Configurable via
+    // config.agent.streamTimeoutMs; defaults to 60s. Extended-thinking
+    // models that emit long stretches of silent reasoning may need a
+    // higher value — raising this is cheap, lowering it is what
+    // catches genuine hangs faster.
+    const STREAM_TIMEOUT_MS = options.config.agent?.streamTimeoutMs ?? 60_000;
 
     // Track how many times we've incremented the global tool-in-flight gate
     // so we can unwind the count in a finally block — if the stream throws
