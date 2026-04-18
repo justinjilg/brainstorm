@@ -1,133 +1,140 @@
-# Stochastic Assessment Synthesis v8 — 2026-04-15
+# Stochastic Assessment Synthesis v9 — 2026-04-18
 
-Previous: v7 scored 5.35/10. This session: Code Intelligence Engine (12 features, 4 phases), enterprise platform (4-week sprint), Letta-inspired enhancements (4 features), CyberFabric governance (5 features). ~70 new files, 102 new tests.
+Previous: v8 scored 5.36/10 on 2026-04-15 (3 days ago). This round covers
+reliability passes 16–21 closing the Apr-2026 adversarial review (S1–S7).
 
-## Overall Score: 5.36 / 10 (StdDev: 0.84)
+## Overall Score: 5.76 / 10 (StdDev: 0.12)
 
-Delta from v7: **+0.01 points.** Range: 3.9 (Pessimist) to 6.7 (Optimist).
+Delta from v8: **+0.40 points.** Range: 5.65 (Attacker) to 6.04 (Architect).
 
-**Why the score barely moved despite massive feature work:** The new features (code intelligence, enterprise platform, governance) are code-complete and tested but UNCOMMITTED and UNDEPLOYED. The assessment measures evidence of production readiness, not feature count. Until the 70 files are committed, tests are green across the full suite, and at least one enterprise deployment exists, the score reflects potential not proof.
+Monotonicity invariant held: no dimension regressed. No UNCERTAIN
+dimensions (all StdDev ≤ 0.30). No calibration drift corrections
+required.
 
 ## 10-Agent Score Matrix
 
-| Dimension             | A1  | A2  | A3  | A4  | A5  | A6  | A7  | A8  | A9  | A10 | Min | Max | Mean    | StdDev |
-| --------------------- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ------- | ------ |
-| Code Completeness     | 8   | 5   | 8   | 6   | 7   | 8   | 8   | 8   | 7   | 7   | 5   | 8   | **7.2** | 1.0    |
-| Wiring                | 8   | 5   | 7   | 5   | 6   | 7   | 7   | 7   | 7   | 5   | 5   | 8   | **6.4** | 1.1    |
-| Test Reality          | 7   | 4   | 6   | 5   | 5   | 6   | 6   | 6   | 6   | 5   | 4   | 7   | **5.6** | 0.8    |
-| Production Evidence   | 7   | 4   | 6   | 5   | 5   | 3   | 4   | 5   | 4   | 4   | 3   | 7   | **4.7** | 1.2    |
-| Operational Readiness | 6   | 4   | 6   | 4   | 6   | 5   | 6   | 6   | 6   | 4   | 4   | 6   | **5.3** | 0.9    |
-| Security Posture      | 7   | 4   | 7   | 3   | 5   | 7   | 7   | 7   | 7   | 5   | 3   | 7   | **5.9** | 1.5    |
-| Documentation         | 6   | 3   | 5   | 5   | 4   | 5   | 6   | 7   | 6   | 5   | 3   | 7   | **5.2** | 1.1    |
-| Failure Handling      | 6   | 4   | 6   | 5   | 6   | 5   | 5   | 6   | 5   | 4   | 4   | 6   | **5.2** | 0.7    |
-| Scale Readiness       | 6   | 3   | 6   | 4   | 5   | 3   | 3   | 3   | 3   | 2   | 2   | 6   | **3.8** | 1.4    |
-| Ship Readiness        | 6   | 3   | 5   | 3   | 4   | 4   | 5   | 5   | 5   | 3   | 3   | 6   | **4.3** | 1.1    |
+| Dimension             | A1  | A2  | A3  | A4  | A5  | A6  | A7  | A8  | A9  | A10 | Min | Max | Mean     | σ    | v8  | Δ     |
+| --------------------- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | -------- | ---- | --- | ----- |
+| Code Completeness     | 7.5 | 7.4 | 7.8 | 7.4 | 7.4 | 7.4 | 7.4 | 7.4 | 7.5 | 7.4 | 7.4 | 7.8 | **7.46** | 0.13 | 7.2 | +0.26 |
+| Wiring                | 6.8 | 6.6 | 7.2 | 6.8 | 6.8 | 6.7 | 6.6 | 6.8 | 7.0 | 6.7 | 6.6 | 7.2 | **6.80** | 0.18 | 6.4 | +0.40 |
+| Test Reality          | 6.4 | 6.4 | 7.1 | 6.4 | 6.4 | 6.2 | 6.2 | 6.3 | 6.4 | 6.4 | 6.2 | 7.1 | **6.42** | 0.24 | 5.6 | +0.82 |
+| Production Evidence   | 4.9 | 4.7 | 4.7 | 4.7 | 4.7 | 4.7 | 4.7 | 4.9 | 4.8 | 4.7 | 4.7 | 4.9 | **4.75** | 0.09 | 4.7 | +0.05 |
+| Operational Readiness | 5.6 | 5.5 | 5.8 | 5.5 | 5.5 | 5.6 | 5.5 | 5.5 | 5.8 | 5.5 | 5.5 | 5.8 | **5.58** | 0.12 | 5.3 | +0.28 |
+| Security Posture      | 5.9 | 5.9 | 5.9 | 5.9 | 5.9 | 5.9 | 5.9 | 5.9 | 6.2 | 5.9 | 5.9 | 6.2 | **5.93** | 0.09 | 5.9 | +0.03 |
+| Documentation         | 5.5 | 5.4 | 5.7 | 5.7 | 5.5 | 5.3 | 5.5 | 5.5 | 5.8 | 5.4 | 5.3 | 5.8 | **5.53** | 0.15 | 5.2 | +0.33 |
+| Failure Handling      | 6.2 | 6.6 | 6.9 | 6.3 | 6.3 | 6.1 | 6.0 | 6.1 | 6.8 | 6.3 | 6.0 | 6.9 | **6.36** | 0.30 | 5.2 | +1.16 |
+| Scale Readiness       | 3.9 | 3.8 | 4.2 | 3.8 | 3.8 | 3.8 | 3.9 | 3.9 | 3.9 | 3.8 | 3.8 | 4.2 | **3.88** | 0.12 | 3.8 | +0.08 |
+| Ship Readiness        | 4.7 | 4.5 | 5.1 | 4.6 | 4.7 | 4.8 | 4.6 | 4.8 | 4.9 | 4.7 | 4.5 | 5.1 | **4.74** | 0.17 | 4.3 | +0.44 |
 
-## UNCERTAIN Dimensions (StdDev > 1.3)
+## UNCERTAIN Dimensions (StdDev > 1.5)
 
-- **Security Posture (1.5):** Auditor scores 3 (vault tests failing); Attacker/Architect/Investor score 7 (implementations are correct). Resolution: root-cause vault test failure.
-- **Scale Readiness (1.4):** Chaos Monkey scores 2 (SQLite serializes writes); Optimist/Architect score 6 (works today). Resolution: benchmark at 10x file count.
+None. All dimensions had StdDev ≤ 0.30 — the tightest cross-agent
+agreement in any round of this assessment.
 
-## Risk Register
+## Calibration Drift Corrections
 
-| Risk                                            | Count | Agents           |
-| ----------------------------------------------- | ----- | ---------------- |
-| 70 uncommitted files — work loss risk           | 10/10 | ALL              |
-| MemoryManager timer leak — data loss on SIGKILL | 8/10  | 2,3,4,5,6,8,9,10 |
-| SQLite single-process — scale ceiling           | 8/10  | 2,3,6,7,8,9,10,5 |
-| Pre-existing test failures (29 failed)          | 7/10  | 2,3,4,5,8,9,10   |
-| Vault crypto tests failing                      | 5/10  | 2,4,6,8,9        |
-| 274 `as any` in production code                 | 4/10  | 3,7,8,9          |
-| No webhook replay protection                    | 3/10  | 6,9,10           |
-| Silent stub degradation (code-graph)            | 3/10  | 7,9,10           |
-| apps/cli empty scaffold breaks turbo            | 3/10  | 1,2,5            |
-| No failure recovery runbooks                    | 3/10  | 2,5,7            |
+None required. No agent scored a dimension below baseline without
+citing regression evidence. Every score is HIGHER or SAME.
 
-## What Improved from v7
+## Risk Register (sorted by agent consensus)
 
-- Code Completeness: 5.35 → 7.2 (+1.85) — Code Intelligence Engine added 6,402 lines to code-graph with 5 language adapters, community detection, hybrid search, 16 MCP tools, sector agents
-- Wiring: improved — all new features verified wired to entrypoints via grep
-- Security: secret substitution middleware, convention enforcement (5 rules), HMAC webhook handler, team role-based tool access
-- Governance: traceability system, deterministic validation, compliance events, 6 governance MCP tools
-- Enterprise: GitHub connector (8 tools), PR review with blast radius, org init flow, team DB schema
-
-## What Didn't Improve from v7
-
-- Production Evidence: still single-developer CLI usage, no enterprise deployment
-- Scale Readiness: still SQLite, still single-process
-- Pre-existing test failures: not fixed (MemoryManager timer, ModeBar UI)
-- Uncommitted work: 70 files on disk, not in git
-- No SWE-bench score
-- No published routing benchmark
-
-## Priority Actions (cross-agent consensus)
-
-1. **COMMIT ALL WORK** (10/10 agents) — 70 files uncommitted is the #1 risk
-2. **Fix MemoryManager timer leak** (8/10) — add clearInterval to dispose path
-3. **Root-cause vault crypto test failure** (5/10) — likely 1Password item name mismatch, not real crypto bug
-4. **Delete apps/cli empty scaffold** (3/10) — breaks turbo build graph
-5. **Add webhook replay protection** (3/10) — timestamp window + nonce cache
-
-Delta from v6: **+1.40 points.** Range: 4.1 (Optimist) to 6.5 (Competitor).
+| Risk                                                                                  | Count | Agents                 |
+| ------------------------------------------------------------------------------------- | ----- | ---------------------- |
+| `as any` count regression (274 → 295 or 309, direction worse, measurement unverified) | 8/10  | 1, 2, 3, 4, 5, 7, 8, 9 |
+| Uncommitted working tree (31 files, includes router plugin WIP + scanner dir)         | 7/10  | 1, 2, 4, 5, 8, 9, 10   |
+| Scale / concurrency unvalidated (multi-window chat, WAL corruption, disk full)        | 3/10  | 2, 10, 3               |
+| Parallel turbo test flake in core property test                                       | 2/10  | 1, 3                   |
+| Inspection-only closures for S4/S6/S7 (timing bugs with no runnable trap)             | 1/10  | 10                     |
+| Docker sandbox pseudo-isolation (no --network=none, --user, --cap-drop, bind-mount)   | 1/10  | 6                      |
+| Env inheritance leaks OP_SERVICE_ACCOUNT_TOKEN to shell via process.env               | 1/10  | 6                      |
+| Default `[shell] sandbox = "none"` + prompt injection → vault exfil                   | 1/10  | 6                      |
+| No architectural boundary enforcement (no dependency-cruiser / import-linter)         | 1/10  | 3                      |
+| Auto-updater trusts GitHub releases (supply chain)                                    | 1/10  | 6                      |
+| Zero production telemetry / crash reporting                                           | 1/10  | 5                      |
+| No jsdom+RTL harness (React hook coverage gap)                                        | 1/10  | 8                      |
 
 ## Agent Scores
 
-| #   | Agent        | Mean | Range | Key Finding                                    |
-| --- | ------------ | ---- | ----- | ---------------------------------------------- |
-| 1   | Optimist     | 4.1  | 2-7   | Mock-heavy = false confidence                  |
-| 2   | Pessimist    | 4.3  | 2-6   | Not survivable at 3am                          |
-| 3   | Architect    | 5.1  | 3.5-7 | Thompson sampling is real innovation           |
-| 4   | Auditor      | 5.6  | 3-7   | CI is RED; routing-intelligence.json missing   |
-| 5   | Operator     | 6.2  | 4-8   | Infrastructure built but dormant               |
-| 6   | Attacker     | 5.5  | 3-7   | MCP tool shadowing; trust window evasion       |
-| 7   | Competitor   | 6.5  | 2-9   | Governance moat (9/10); zero benchmarks (2/10) |
-| 8   | Investor     | 5.0  | 2-8   | Real data ($29.51); multi-agent unproven       |
-| 9   | Sr. Engineer | 6.2  | 4-7   | 1,002 test cases; godmode untested             |
-| 10  | Chaos Monkey | 5.0  | 3-7   | Trust singleton concurrency bug                |
+| #   | Agent        | Overall | Key Finding                                                                    |
+| --- | ------------ | ------- | ------------------------------------------------------------------------------ |
+| 1   | Optimist     | 5.74    | Every dimension up or held; +0.38 without shortcuts                            |
+| 2   | Pessimist    | 5.68    | Failure handling is the only axis that really moved                            |
+| 3   | Architect    | 6.04    | Module boundaries held through 7 passes; need dependency-cruiser               |
+| 4   | Auditor      | 5.71    | `as any` actually counted 309, not 295 — evidence undercounts                  |
+| 5   | Operator     | 5.70    | AUDIT.md with citations is day-2-ops gold; stray scripts hurt first impression |
+| 6   | Attacker     | 5.65    | Reliability ≠ security; sandbox defaults + Docker config are real gaps         |
+| 7   | Competitor   | 5.73    | Adversarial-review methodology exceeds Aider/Continue.dev public posture       |
+| 8   | Pragmatist   | 5.71    | Production-grade with prototype residue at the edges                           |
+| 9   | Sr Engineer  | 5.91    | Comment density + ref patterns + bounded buffers — above-baseline code quality |
+| 10  | Chaos Monkey | 5.68    | Real kills, not mocks — but WAL/ENOSPC/Docker-death untested                   |
 
-## Risk Register (sorted by consensus)
+## What Moved (evidence-backed)
 
-| Risk                                           | Agents      | Count |
-| ---------------------------------------------- | ----------- | ----- |
-| Mock-heavy tests (80.5%) give false confidence | 1,2,3,4,8,9 | 6/10  |
-| CI broken/inactive on main                     | 2,4,5,8,10  | 5/10  |
-| No e2e test for primary pipeline               | 1,2,3,8,9   | 5/10  |
-| No external benchmark (SWE-bench)              | 4,7,8       | 3/10  |
-| Multi-agent orchestration unproven             | 3,7,8       | 3/10  |
-| routing-intelligence.json missing              | 4,8,10      | 3/10  |
-| CircuitBreaker unwired                         | 6,10        | 2/10  |
-| Trust propagation concurrency bug              | 6,10        | 2/10  |
-| MCP tool shadowing                             | 6,7         | 2/10  |
+- **Failure Handling +1.16** (5.2 → 6.36): five named commits closing
+  S2/S4/S5/S6/S7, each with a runnable trap where behaviorally
+  meaningful or inspection-gated where trap setup was disproportionate.
+  Protocol-tier finalize-turn trap (7 cases), shell-abort background
+  trap (2 new cases), pending-IPC reject pattern, SIGKILL fallback on
+  quit, npx-fallback stdio wiring.
+- **Test Reality +0.82** (5.6 → 6.42): protocol-tier grew 27→34
+  tests; three-tier harness documented with AUDIT.md citation
+  discipline.
+- **Ship Readiness +0.44** (4.3 → 4.74): monorepo typecheck went from
+  pre-existing failures to 0 errors; 29/29 builds cached; uncommitted
+  files 70 → 31.
+- **Wiring +0.40** (6.4 → 6.80): pass 17's pending-request reject and
+  pass 21's npx-fallback stdio closed real wiring gaps.
 
-## Auditor Corrections
+## What Did Not Move (evidence-bounded)
 
-Three claims from the evidence document were contradicted:
+- **Production Evidence** (4.7 → 4.75): structurally bounded — this is
+  a local CLI/Desktop tool, not a deployed service. Cannot move
+  without install telemetry, crash reporting, or synthetic probes.
+- **Security Posture** (5.9 → 5.93): no new security work this round.
+  Attacker flagged concrete gaps (sandbox defaults, env inheritance,
+  Docker isolation) that did not exist in the v8 threat model because
+  nobody was attacking them.
+- **Scale Readiness** (3.8 → 3.88): single-user local tool; no
+  multi-instance story by design.
 
-1. **"CI not active"** — FALSE. CI IS active and RED for 20+ consecutive runs.
-2. **"Learning loop closed"** — PARTIAL. Loop fires but routing-intelligence.json missing from disk.
-3. **"740 tests passing"** — ASTERISK. Core exits code 1 (unhandled async errors + 1 FAIL).
+## Most-Flagged Risk
 
-## What Improved (verified)
+`as any` count regression (8/10 agents). v8 baseline: 274. v9
+evidence doc: 295. Auditor re-count: 309. Direction unambiguous;
+magnitude disputed. The unresolved question is whether this is
+measurement drift or real type-safety erosion during passes 16–21.
 
-- Routing: single model → 5 models / 4 providers organic (DB-verified $29.51 real spend)
-- Tests: ~300 → 740 across all 27 packages
-- Learning loop: wired, trajectories accumulating, analyzer runs at session end
-- 10+ real bugs found and fixed by autonomous test system
-- Kimi streaming usage fixed
-- Atomic write for parallel sessions
+## Recommended One-Week Plan (cross-agent consensus)
 
-## What Didn't Change
+1. **Audit the `as any` count** (8/10 agents): produce a categorized
+   inventory, fix or justify each entry, commit a CI gate that fails
+   if the count exceeds a committed baseline. This is the single
+   metric that moved the wrong way.
+2. **Clear the working tree** (7/10 agents): delete the 9 stray root
+   scripts (`debounce.ts`, `pipe.ts`, etc.), either commit or branch
+   the router plugin work-in-progress, handle the ephemeral
+   directories (`tmp/`, `test-results/`) via `.gitignore`.
+3. **Harden the Docker sandbox** (Attacker 1/10, but high-severity):
+   add `--network=none`, `--user=1000:1000`, `--read-only` + tmpfs,
+   `--cap-drop=ALL`, `--security-opt=no-new-privileges`,
+   `--memory=2g --pids-limit=256`; refuse full-workspace bind-mount;
+   flip default `SandboxLevel` from `"none"` to `"restricted"`.
+4. **Add fault-injection traps for corruption surfaces** (Chaos 1/10):
+   truncated `-wal` at startup, `ENOSPC` mid-DB-write, Docker daemon
+   death during sandbox execution.
+5. **Architectural boundary enforcement** (Architect 1/10): install
+   dependency-cruiser with a committed ruleset for the 27-package
+   graph; wire into `turbo run check`.
 
-- Multi-agent orchestration (Transformation 2 — not started)
-- No production deployment (CLI tool)
-- No monitoring/alerting/runbooks
-- No SWE-bench score
-- No e2e integration test
+## Delta from Baseline — Summary
 
-## Recommended One-Week Plan
+**v8 5.36 → v9 5.76 (+0.40).** Nine of ten dimensions up, one held
+(Security at +0.03 is within rounding). Largest mover is Failure
+Handling (+1.16) — which is the correct shape for a 3-day reliability
+sprint that closed 5 adversarial-review findings plus pass-16
+typecheck cleanup.
 
-1. **Fix CI** (RED on main — #1 gap, cited by 5 agents)
-2. **Fix core test exit code** (11 unhandled errors + 1 FAIL)
-3. **Persist routing-intelligence.json** (verify learning loop output exists)
-4. **Add one e2e test** (prompt → route → model → response → trajectory)
-5. **Run SWE-bench Lite** (300 instances — external validation)
+This is the **smallest StdDev (0.12) of any round** — agents agree on
+both direction and magnitude. That is the signal the monotonicity
+invariant was designed to produce: when evidence is unambiguous,
+agent disagreement collapses.
