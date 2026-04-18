@@ -55,6 +55,16 @@ let backend: ChildProcess | null = null;
 let backendReady = false;
 let spawnRetries = 0;
 /**
+ * Flips to true when the global `brainstorm` binary isn't found on
+ * PATH. All subsequent spawn attempts route through `npx brainstorm`
+ * so `spawnBackend()` can give the npx child the same stdout/stderr/
+ * exit wiring as the primary — previously the inline fallback
+ * reassigned `backend` to an npx child but never attached the
+ * readline/stderr/exit listeners, so a fresh-Mac DMG launch appeared
+ * to hang with no error surfaced to the user.
+ */
+let useNpxFallback = false;
+/**
  * Per-request pending handlers. Stored as {settle, reject} so that
  * backend-exit can reject the promise cleanly, rather than resolving
  * with an `{error:"..."}` sentinel that every caller would have to
@@ -127,11 +137,22 @@ function notifyCliMissing(detail: string): void {
 }
 
 function spawnBackend(): void {
-  // Find brainstorm CLI — try global install first, then npx
-  const cmd = process.platform === "win32" ? "brainstorm.cmd" : "brainstorm";
+  // Primary: global `brainstorm` binary. Fallback: `npx brainstorm` —
+  // gated by the useNpxFallback module flag so the rest of this
+  // function (rl/stderr/exit wiring) is applied uniformly to whichever
+  // child we end up with.
+  const isWindows = process.platform === "win32";
+  const cmd = useNpxFallback
+    ? isWindows
+      ? "npx.cmd"
+      : "npx"
+    : isWindows
+      ? "brainstorm.cmd"
+      : "brainstorm";
+  const args = useNpxFallback ? ["brainstorm", "ipc"] : ["ipc"];
 
   try {
-    backend = spawn(cmd, ["ipc"], {
+    backend = spawn(cmd, args, {
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env },
     });
@@ -142,32 +163,27 @@ function spawnBackend(): void {
     return;
   }
 
-  // If the primary spawn emits ENOENT asynchronously, fall through to an
-  // npx retry. The retry is best-effort — a packaged DMG on a brand-new
-  // Mac may not have npm installed at all.
+  // Async ENOENT path. On failure of the primary, flip the npx flag
+  // and recursively call spawnBackend() — that way the fallback child
+  // gets the full rl/stderr/exit setup below, NOT the dead primary.
+  // Previously the fallback ran inline and left the npx child with no
+  // stdio wiring, so the app silently hung on fresh-Mac launches with
+  // no `brainstorm` on PATH. If the fallback ALSO ENOENTs (no npx
+  // either), bubble up via notifyCliMissing — can't recover further.
   backend.once("error", (err: NodeJS.ErrnoException) => {
-    if (err.code === "ENOENT") {
-      logToFile(`brainstorm CLI not on PATH — trying npx fallback`);
-      try {
-        backend = spawn("npx", ["brainstorm", "ipc"], {
-          stdio: ["pipe", "pipe", "pipe"],
-          env: { ...process.env },
-        });
-        backend.once("error", (npxErr: NodeJS.ErrnoException) => {
-          notifyCliMissing(
-            npxErr.code === "ENOENT"
-              ? "neither brainstorm nor npx is on PATH"
-              : npxErr.message,
-          );
-        });
-      } catch (npxErr) {
-        notifyCliMissing(
-          npxErr instanceof Error ? npxErr.message : String(npxErr),
-        );
-      }
-    } else {
-      notifyCliMissing(err.message);
+    if (err.code === "ENOENT" && !useNpxFallback) {
+      logToFile(`brainstorm CLI not on PATH — retrying via npx`);
+      useNpxFallback = true;
+      spawnBackend();
+      return;
     }
+    notifyCliMissing(
+      err.code === "ENOENT"
+        ? useNpxFallback
+          ? "neither brainstorm nor npx is on PATH"
+          : "brainstorm not on PATH"
+        : err.message,
+    );
   });
 
   if (!backend.stdout) return;
