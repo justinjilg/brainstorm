@@ -1,140 +1,183 @@
-# Stochastic Assessment Synthesis v9 — 2026-04-18
+# Stochastic Assessment Synthesis v10 — 2026-04-18
 
-Previous: v8 scored 5.36/10 on 2026-04-15 (3 days ago). This round covers
-reliability passes 16–21 closing the Apr-2026 adversarial review (S1–S7).
+Previous: v9 scored 5.76/10 earlier the same day. v10 measures
+whether passes 22–26 (as-any ratchet, working-tree cleanup, Docker
+hardening, env scrub, WAL recovery trap — all landed after v9's
+synthesis) moved the score and the risk register.
 
-## Overall Score: 5.76 / 10 (StdDev: 0.12)
+## Overall Score: 5.96 / 10 (StdDev: 0.07)
 
-Delta from v8: **+0.40 points.** Range: 5.65 (Attacker) to 6.04 (Architect).
+Delta from v9: **+0.20 points.** Range: 5.80 (Chaos Monkey) to 6.08 (Operator).
 
 Monotonicity invariant held: no dimension regressed. No UNCERTAIN
-dimensions (all StdDev ≤ 0.30). No calibration drift corrections
-required.
+dimensions (max σ = 0.42 for Security Posture, well under 1.5). No
+calibration drift corrections required. Cross-agent agreement tightened
+further (σ 0.12 → 0.07).
 
 ## 10-Agent Score Matrix
 
-| Dimension             | A1  | A2  | A3  | A4  | A5  | A6  | A7  | A8  | A9  | A10 | Min | Max | Mean     | σ    | v8  | Δ     |
-| --------------------- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | -------- | ---- | --- | ----- |
-| Code Completeness     | 7.5 | 7.4 | 7.8 | 7.4 | 7.4 | 7.4 | 7.4 | 7.4 | 7.5 | 7.4 | 7.4 | 7.8 | **7.46** | 0.13 | 7.2 | +0.26 |
-| Wiring                | 6.8 | 6.6 | 7.2 | 6.8 | 6.8 | 6.7 | 6.6 | 6.8 | 7.0 | 6.7 | 6.6 | 7.2 | **6.80** | 0.18 | 6.4 | +0.40 |
-| Test Reality          | 6.4 | 6.4 | 7.1 | 6.4 | 6.4 | 6.2 | 6.2 | 6.3 | 6.4 | 6.4 | 6.2 | 7.1 | **6.42** | 0.24 | 5.6 | +0.82 |
-| Production Evidence   | 4.9 | 4.7 | 4.7 | 4.7 | 4.7 | 4.7 | 4.7 | 4.9 | 4.8 | 4.7 | 4.7 | 4.9 | **4.75** | 0.09 | 4.7 | +0.05 |
-| Operational Readiness | 5.6 | 5.5 | 5.8 | 5.5 | 5.5 | 5.6 | 5.5 | 5.5 | 5.8 | 5.5 | 5.5 | 5.8 | **5.58** | 0.12 | 5.3 | +0.28 |
-| Security Posture      | 5.9 | 5.9 | 5.9 | 5.9 | 5.9 | 5.9 | 5.9 | 5.9 | 6.2 | 5.9 | 5.9 | 6.2 | **5.93** | 0.09 | 5.9 | +0.03 |
-| Documentation         | 5.5 | 5.4 | 5.7 | 5.7 | 5.5 | 5.3 | 5.5 | 5.5 | 5.8 | 5.4 | 5.3 | 5.8 | **5.53** | 0.15 | 5.2 | +0.33 |
-| Failure Handling      | 6.2 | 6.6 | 6.9 | 6.3 | 6.3 | 6.1 | 6.0 | 6.1 | 6.8 | 6.3 | 6.0 | 6.9 | **6.36** | 0.30 | 5.2 | +1.16 |
-| Scale Readiness       | 3.9 | 3.8 | 4.2 | 3.8 | 3.8 | 3.8 | 3.9 | 3.9 | 3.9 | 3.8 | 3.8 | 4.2 | **3.88** | 0.12 | 3.8 | +0.08 |
-| Ship Readiness        | 4.7 | 4.5 | 5.1 | 4.6 | 4.7 | 4.8 | 4.6 | 4.8 | 4.9 | 4.7 | 4.5 | 5.1 | **4.74** | 0.17 | 4.3 | +0.44 |
+| Dimension             | A1   | A2  | A3   | A4   | A5   | A6  | A7   | A8   | A9   | A10  | Min  | Max  | Mean     | σ    | v9   | Δ         |
+| --------------------- | ---- | --- | ---- | ---- | ---- | --- | ---- | ---- | ---- | ---- | ---- | ---- | -------- | ---- | ---- | --------- |
+| Code Completeness     | 7.60 | 7.5 | 7.6  | 7.60 | 7.60 | 7.5 | 7.60 | 7.55 | 7.55 | 7.55 | 7.5  | 7.60 | **7.57** | 0.04 | 7.46 | +0.11     |
+| Wiring                | 6.85 | 6.9 | 6.9  | 6.90 | 6.90 | 7.0 | 6.90 | 6.85 | 6.80 | 6.80 | 6.80 | 7.0  | **6.88** | 0.06 | 6.80 | +0.08     |
+| Test Reality          | 6.65 | 6.6 | 6.6  | 6.65 | 6.65 | 6.4 | 6.70 | 6.55 | 6.80 | 6.60 | 6.4  | 6.80 | **6.62** | 0.11 | 6.42 | +0.20     |
+| Production Evidence   | 4.80 | 4.8 | 4.75 | 4.75 | 4.75 | 4.8 | 4.75 | 4.85 | 4.75 | 4.75 | 4.75 | 4.85 | **4.78** | 0.04 | 4.75 | +0.02     |
+| Operational Readiness | 5.75 | 5.8 | 5.75 | 5.75 | 6.00 | 5.7 | 5.80 | 5.75 | 5.75 | 5.58 | 5.58 | 6.00 | **5.76** | 0.10 | 5.58 | +0.18     |
+| Security Posture      | 6.40 | 6.5 | 6.75 | 6.55 | 6.80 | 7.6 | 6.70 | 6.55 | 7.10 | 5.93 | 5.93 | 7.6  | **6.69** | 0.42 | 5.93 | **+0.76** |
+| Documentation         | 5.60 | 5.7 | 5.6  | 5.55 | 6.20 | 5.6 | 5.55 | 5.55 | 5.80 | 5.60 | 5.55 | 6.20 | **5.68** | 0.19 | 5.53 | +0.15     |
+| Failure Handling      | 6.65 | 6.6 | 6.7  | 6.60 | 6.70 | 6.5 | 6.70 | 6.55 | 6.80 | 6.55 | 6.5  | 6.80 | **6.64** | 0.09 | 6.36 | +0.28     |
+| Scale Readiness       | 4.00 | 4.0 | 4.1  | 4.05 | 4.10 | 3.9 | 4.05 | 3.95 | 3.95 | 3.88 | 3.88 | 4.10 | **4.00** | 0.07 | 3.88 | +0.12     |
+| Ship Readiness        | 4.95 | 5.2 | 5.1  | 4.95 | 5.10 | 5.0 | 4.85 | 4.95 | 5.10 | 4.78 | 4.78 | 5.2  | **5.00** | 0.12 | 4.74 | +0.26     |
 
 ## UNCERTAIN Dimensions (StdDev > 1.5)
 
-None. All dimensions had StdDev ≤ 0.30 — the tightest cross-agent
-agreement in any round of this assessment.
+None. Security Posture's 0.42 is the highest σ but well within tolerance —
+the spread reflects Chaos Monkey scoring 5.93 (unchanged, security not in
+scope for that perspective) vs Attacker's 7.60 (explicitly closed three
+attack paths they flagged at v9).
 
 ## Calibration Drift Corrections
 
-None required. No agent scored a dimension below baseline without
-citing regression evidence. Every score is HIGHER or SAME.
+None required. No agent scored below baseline.
+
+**Contradiction flagged by Phase-4 Auditor (not score-moving):** The
+Attacker (Agent 6) Risk #3 claimed `"restricted"` mode runs host
+children with `process.env` unchanged, because "line 86 short-circuits
+scrubbing when level is `"none"` ... the container path is the only
+one that scrubs." This is factually wrong: `shell.ts:85-95`
+short-circuits ONLY when `level === "none"`; under `"restricted"` (the
+default per line 106) the scrub loop runs, and both host spawn sites
+(foreground line 374, background line 485) call `buildChildEnv(current
+SandboxLevel)`. `shell-sandbox.test.ts:176-227` explicitly asserts
+this. The Attacker simultaneously awarded Security Posture 7.60
+(highest of any agent, crediting the scrub closure) AND flagged this
+inconsistent risk — an internal contradiction. The 7.60 is kept in
+the mean because the Auditor's recount with the Attacker's score
+removed gives Security 6.54, still +0.61 over v9; the finding holds
+either way. Flagged for v11 methodology: Phase-2 prompts should
+include a "verify before you claim" requirement for any code-level
+assertion.
 
 ## Risk Register (sorted by agent consensus)
 
-| Risk                                                                                  | Count | Agents                 |
-| ------------------------------------------------------------------------------------- | ----- | ---------------------- |
-| `as any` count regression (274 → 295 or 309, direction worse, measurement unverified) | 8/10  | 1, 2, 3, 4, 5, 7, 8, 9 |
-| Uncommitted working tree (31 files, includes router plugin WIP + scanner dir)         | 7/10  | 1, 2, 4, 5, 8, 9, 10   |
-| Scale / concurrency unvalidated (multi-window chat, WAL corruption, disk full)        | 3/10  | 2, 10, 3               |
-| Parallel turbo test flake in core property test                                       | 2/10  | 1, 3                   |
-| Inspection-only closures for S4/S6/S7 (timing bugs with no runnable trap)             | 1/10  | 10                     |
-| Docker sandbox pseudo-isolation (no --network=none, --user, --cap-drop, bind-mount)   | 1/10  | 6                      |
-| Env inheritance leaks OP_SERVICE_ACCOUNT_TOKEN to shell via process.env               | 1/10  | 6                      |
-| Default `[shell] sandbox = "none"` + prompt injection → vault exfil                   | 1/10  | 6                      |
-| No architectural boundary enforcement (no dependency-cruiser / import-linter)         | 1/10  | 3                      |
-| Auto-updater trusts GitHub releases (supply chain)                                    | 1/10  | 6                      |
-| Zero production telemetry / crash reporting                                           | 1/10  | 5                      |
-| No jsdom+RTL harness (React hook coverage gap)                                        | 1/10  | 8                      |
+| Risk                                                                | Count    | Agents            |
+| ------------------------------------------------------------------- | -------- | ----------------- |
+| Multi-window + disk-full scale scenarios still open                 | **6/10** | 2, 3, 4, 7, 9, 10 |
+| Auto-updater GitHub supply-chain trust                              | **3/10** | 4, 6, 7           |
+| Zero production telemetry                                           | **3/10** | 4, 7, 8           |
+| Uncommitted WIP (router plugin, code-graph scanner)                 | **3/10** | 2, 4, 5           |
+| ENOSPC mid-DB-write untrapped                                       | **2/10** | 2, 10             |
+| Parallel turbo test flake unchanged                                 | **2/10** | 1, 9              |
+| `sandbox=none` escape hatch can revert hardening                    | **2/10** | 2, 6              |
+| CI ratchet not wired into `.github/workflows/*.yml`                 | 1/10     | 5 (Operator)      |
+| Docker daemon death untrapped                                       | 1/10     | 10 (Chaos)        |
+| No dependency-cruiser for 27-package graph                          | 1/10     | 3 (Architect)     |
+| No jsdom+RTL harness (React hook coverage gap)                      | 1/10     | 8 (Pragmatist)    |
+| S/A/C series naming glossary missing                                | 1/10     | 5 (Operator)      |
+| GITHUB_TOKEN allowlist still enables gh-based exfil                 | 1/10     | 6 (Attacker)      |
+| `buildChildEnv` scrub doesn't catch user-added unusual secret names | 1/10     | 9 (Sr Eng)        |
+| Docker `--user=1000:1000` vs host UID mismatch                      | 1/10     | 9 (Sr Eng)        |
 
 ## Agent Scores
 
-| #   | Agent        | Overall | Key Finding                                                                    |
-| --- | ------------ | ------- | ------------------------------------------------------------------------------ |
-| 1   | Optimist     | 5.74    | Every dimension up or held; +0.38 without shortcuts                            |
-| 2   | Pessimist    | 5.68    | Failure handling is the only axis that really moved                            |
-| 3   | Architect    | 6.04    | Module boundaries held through 7 passes; need dependency-cruiser               |
-| 4   | Auditor      | 5.71    | `as any` actually counted 309, not 295 — evidence undercounts                  |
-| 5   | Operator     | 5.70    | AUDIT.md with citations is day-2-ops gold; stray scripts hurt first impression |
-| 6   | Attacker     | 5.65    | Reliability ≠ security; sandbox defaults + Docker config are real gaps         |
-| 7   | Competitor   | 5.73    | Adversarial-review methodology exceeds Aider/Continue.dev public posture       |
-| 8   | Pragmatist   | 5.71    | Production-grade with prototype residue at the edges                           |
-| 9   | Sr Engineer  | 5.91    | Comment density + ref patterns + bounded buffers — above-baseline code quality |
-| 10  | Chaos Monkey | 5.68    | Real kills, not mocks — but WAL/ENOSPC/Docker-death untested                   |
+| #   | Agent        | Overall | Key finding                                                               |
+| --- | ------------ | ------- | ------------------------------------------------------------------------- |
+| 1   | Optimist     | 5.93    | All 8 dimensions up, 2 held; same-day movement trustworthy                |
+| 2   | Pessimist    | 5.96    | Gains narrow; disk-full + multi-window still open                         |
+| 3   | Architect    | 5.99    | CI ratchet pattern is structural win; extend to dep-cruiser               |
+| 4   | Auditor      | 5.93    | All 5 verification checks passed; counts match, traps green               |
+| 5   | Operator     | 6.08    | Highest score; but CI ratchet not actually wired in `.github/workflows/*` |
+| 6   | Attacker     | 6.00    | 3 named v9 attack paths closed; Security Posture +1.67                    |
+| 7   | Competitor   | 5.96    | 4 capabilities now technically exceed public posture of Aider/Continue    |
+| 8   | Pragmatist   | 5.91    | Crossed "dressed-up prototype" → "early production-grade"                 |
+| 9   | Sr Engineer  | 6.04    | `buildChildEnv` + WAL trap are reference-quality engineering              |
+| 10  | Chaos Monkey | 5.80    | Lowest score; 1/3 corruption surfaces closed (WAL); 2/3 remain            |
 
 ## What Moved (evidence-backed)
 
-- **Failure Handling +1.16** (5.2 → 6.36): five named commits closing
-  S2/S4/S5/S6/S7, each with a runnable trap where behaviorally
-  meaningful or inspection-gated where trap setup was disproportionate.
-  Protocol-tier finalize-turn trap (7 cases), shell-abort background
-  trap (2 new cases), pending-IPC reject pattern, SIGKILL fallback on
-  quit, npx-fallback stdio wiring.
-- **Test Reality +0.82** (5.6 → 6.42): protocol-tier grew 27→34
-  tests; three-tier harness documented with AUDIT.md citation
-  discipline.
-- **Ship Readiness +0.44** (4.3 → 4.74): monorepo typecheck went from
-  pre-existing failures to 0 errors; 29/29 builds cached; uncommitted
-  files 70 → 31.
-- **Wiring +0.40** (6.4 → 6.80): pass 17's pending-request reject and
-  pass 21's npx-fallback stdio closed real wiring gaps.
+- **Security Posture +0.76** (5.93 → 6.69): biggest single-dimension
+  gain. Three v9 Attacker findings closed with traps:
+  - A1 Docker hardening (6 flags: `--network=none`, `--user=1000:1000`,
+    `--cap-drop=ALL`, `--security-opt=no-new-privileges`, memory/cpus/
+    pids limits) + container UUID name.
+  - A2 `buildChildEnv()` scrubs `OP_SERVICE_ACCOUNT_TOKEN`, every
+    provider key, AWS creds, DB URLs — 20 explicit names + regex
+    pattern. GITHUB_TOKEN allowlisted.
+  - Default sandbox flipped `"none"` → `"restricted"`.
+- **Failure Handling +0.28** (6.36 → 6.64): C1 SQLite WAL truncation
+  recovery trap (`wal-recovery.test.ts`, 3 cases — zero-length,
+  mid-frame, corrupt MAIN file).
+- **Ship Readiness +0.26** (4.74 → 5.00): working tree 31 → 9,
+  `as any` count 291 → 285, CI ratchet committed.
+- **Test Reality +0.20** (6.42 → 6.62): +10 targeted trap tests
+  (tools 96→103, db 30→33).
 
-## What Did Not Move (evidence-bounded)
+## What Did Not Move
 
-- **Production Evidence** (4.7 → 4.75): structurally bounded — this is
-  a local CLI/Desktop tool, not a deployed service. Cannot move
-  without install telemetry, crash reporting, or synthetic probes.
-- **Security Posture** (5.9 → 5.93): no new security work this round.
-  Attacker flagged concrete gaps (sandbox defaults, env inheritance,
-  Docker isolation) that did not exist in the v8 threat model because
-  nobody was attacking them.
-- **Scale Readiness** (3.8 → 3.88): single-user local tool; no
-  multi-instance story by design.
+- **Production Evidence +0.02** (4.75 → 4.78): structurally bounded,
+  no telemetry stream.
+- **Wiring +0.08** (6.80 → 6.88): no new subsystems required wiring.
+- **Code Completeness +0.11** (7.46 → 7.57): small fix-pass volume.
 
-## Most-Flagged Risk
+## Most-Flagged Risk (v10)
 
-`as any` count regression (8/10 agents). v8 baseline: 274. v9
-evidence doc: 295. Auditor re-count: 309. Direction unambiguous;
-magnitude disputed. The unresolved question is whether this is
-measurement drift or real type-safety erosion during passes 16–21.
+**Multi-window + disk-full scale scenarios still open** (6/10 agents).
+The v9 consensus on `as any` (8/10) and working tree (7/10) has been
+supplanted by the chaos-monkey class of risks: WAL is closed but two
+sibling scenarios remain untrapped. This is the natural shape for
+round-over-round risk migration — close the loud risks, the next
+round's loudest risk is the next layer down.
+
+## Agent Agreement Analysis
+
+σ dropped from v9's 0.12 to **0.07** — tightest agreement in any round.
+Four possible causes:
+
+1. Evidence is unambiguous (5 closed commits, each with a named trap)
+2. Shared-evidence-doc anchoring (same critique v9's Auditor raised)
+3. Same-day re-scoring effect (agents saw the delta clearly)
+4. Monotonicity invariant working as designed
+
+Likely a mix. The Attacker's 5.93 → 6.00 (lowest mover) and Operator's
+5.70 → 6.08 (highest mover) track their personas: Attacker rewards
+closed attack paths; Operator rewards operator-facing docs + runbooks.
 
 ## Recommended One-Week Plan (cross-agent consensus)
 
-1. **Audit the `as any` count** (8/10 agents): produce a categorized
-   inventory, fix or justify each entry, commit a CI gate that fails
-   if the count exceeds a committed baseline. This is the single
-   metric that moved the wrong way.
-2. **Clear the working tree** (7/10 agents): delete the 9 stray root
-   scripts (`debounce.ts`, `pipe.ts`, etc.), either commit or branch
-   the router plugin work-in-progress, handle the ephemeral
-   directories (`tmp/`, `test-results/`) via `.gitignore`.
-3. **Harden the Docker sandbox** (Attacker 1/10, but high-severity):
-   add `--network=none`, `--user=1000:1000`, `--read-only` + tmpfs,
-   `--cap-drop=ALL`, `--security-opt=no-new-privileges`,
-   `--memory=2g --pids-limit=256`; refuse full-workspace bind-mount;
-   flip default `SandboxLevel` from `"none"` to `"restricted"`.
-4. **Add fault-injection traps for corruption surfaces** (Chaos 1/10):
-   truncated `-wal` at startup, `ENOSPC` mid-DB-write, Docker daemon
-   death during sandbox execution.
-5. **Architectural boundary enforcement** (Architect 1/10): install
-   dependency-cruiser with a committed ruleset for the 27-package
-   graph; wire into `turbo run check`.
+1. **Wire the as-any CI ratchet into `.github/workflows/ci.yml`** (1/10
+   Operator, high-leverage): the gate exists but CI doesn't invoke it.
+   Single-line fix. Without this, pass 22's ratchet is advisory, not
+   enforced.
+2. **Close the remaining 2/3 chaos-corruption traps** (6/10 consensus
+   on scale): port the WAL test template to `enospc.test.ts` and
+   `docker-daemon-death.test.ts`. Same filesystem-isolation pattern.
+3. **Multi-window SQLite concurrency trap** (6/10 consensus): two
+   Database handles on one path, interleaved writes, assert no
+   `SQLITE_BUSY` escapes.
+4. **Add dep-cruiser layer** (1/10 Architect): extends the pass-22
+   ratchet pattern to the 27-package graph. Pre-empts 5-year rot.
+5. **Opt-in telemetry beacon** (3/10 Auditor/Competitor/Pragmatist):
+   first move toward lifting Production Evidence past the 4.78
+   structural ceiling.
 
 ## Delta from Baseline — Summary
 
-**v8 5.36 → v9 5.76 (+0.40).** Nine of ten dimensions up, one held
-(Security at +0.03 is within rounding). Largest mover is Failure
-Handling (+1.16) — which is the correct shape for a 3-day reliability
-sprint that closed 5 adversarial-review findings plus pass-16
-typecheck cleanup.
+**v9 5.76 → v10 5.96 (+0.20).** Every dimension up or held. Largest
+movers: Security Posture (+0.76), Failure Handling (+0.28), Ship
+Readiness (+0.26). No dimension regressed.
 
-This is the **smallest StdDev (0.12) of any round** — agents agree on
-both direction and magnitude. That is the signal the monotonicity
-invariant was designed to produce: when evidence is unambiguous,
-agent disagreement collapses.
+Over two rounds: **v8 5.36 → v9 5.76 → v10 5.96.** +0.60 total across
+the session. The slope is the signal — narrowing (+0.40, then +0.20)
+suggests the highest-value fixes are behind us and the remaining
+risks are structural (telemetry, supply chain) or infrastructure
+(dep-cruiser, jsdom+RTL) rather than surgical.
+
+## Methodology Notes
+
+Same agent framework as v9. σ tightened further — 0.07 is the
+lowest in any round. The Attacker was the lowest scorer at v9 (5.65)
+and is now mid-pack at 6.00, reflecting that their v9 findings
+translated into real commits with traps. The Chaos Monkey is now the
+lowest (5.80), reflecting the unclosed chaos-corruption scenarios —
+which is the correct signal for the persona, and the natural next
+target.
