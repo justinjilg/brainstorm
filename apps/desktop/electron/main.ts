@@ -587,9 +587,39 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
-  if (backend) {
-    backend.stdin?.end();
-    backend.kill();
-    backend = null;
+  if (!backend) return;
+  // Ordered tear-down: close stdin so the child sees EOF, send a
+  // SIGTERM to let it flush open DB transactions, then — if the child
+  // hasn't exited inside a short grace window — force-kill with
+  // SIGKILL. Without the SIGKILL fallback a slow DB flush (Argon2id
+  // vault close, WAL checkpoint, etc.) could leave an orphan process
+  // running after Electron has already closed its window. The live-
+  // harness teardown test (tests-live/teardown.live.spec.ts) catches
+  // exactly this shape — before the fallback landed, the orphan
+  // assertion fired intermittently under suite load.
+  const child = backend;
+  backend = null;
+  try {
+    child.stdin?.end();
+  } catch {
+    /* stdin may already be closed — harmless */
   }
+  try {
+    child.kill("SIGTERM");
+  } catch {
+    /* already dead — harmless */
+  }
+  // Use an unref'd timer so the kill watchdog doesn't block Electron's
+  // own exit. If the child is still around after 1.5s, blast it. The
+  // main process is on its way out anyway — we don't wait for confirmation.
+  const killer = setTimeout(() => {
+    if (!child.killed) {
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        /* raced with the child's own exit */
+      }
+    }
+  }, 1_500);
+  killer.unref?.();
 });
