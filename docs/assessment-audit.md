@@ -1,138 +1,152 @@
-# Stochastic Assessment Audit v9 — 2026-04-18
+# Stochastic Assessment Audit v10 — 2026-04-18
 
-Agent 11 (Calibration & Bias Auditor) verifying the orchestrator's v9
-synthesis against the 10 raw agent outputs and the v8 baseline (5.36).
+Auditor role: Calibration & Bias Auditor for v10. Cross-checks
+arithmetic, monotonicity, and synthesis faithfulness against the 10
+raw agent outputs. v9 baseline overall 5.76; v10 reports 5.96.
 
-## Job 1 — Calibration Audit
+## Job 1 — Arithmetic Audit
 
-### Math verification (every dimension)
+Reproduced all ten per-dimension sums from the synthesis score matrix:
 
-Recomputed all 10 per-dimension means from the synthesis score matrix.
-Every reported mean matches the arithmetic of the 10 agent scores to 2
-decimal places. Overall 5.755 rounds to 5.76 as reported. **0 arithmetic
-violations.**
+| Dim    |   Sum |   /10 | Reported | OK                      |
+| ------ | ----: | ----: | -------: | ----------------------- |
+| Code   | 75.65 | 7.565 |     7.57 | PASS (half-up rounding) |
+| Wiring | 68.80 | 6.880 |     6.88 | PASS                    |
+| Test   | 66.20 | 6.620 |     6.62 | PASS                    |
+| Prod   | 47.75 | 4.775 |     4.78 | PASS                    |
+| Ops    | 57.63 | 5.763 |     5.76 | PASS                    |
+| Sec    | 66.88 | 6.688 |     6.69 | PASS                    |
+| Doc    | 56.75 | 5.675 |     5.68 | PASS                    |
+| Fail   | 66.35 | 6.635 |     6.64 | PASS                    |
+| Scale  | 39.98 | 3.998 |     4.00 | PASS                    |
+| Ship   | 49.98 | 4.998 |     5.00 | PASS                    |
 
-### Monotonicity invariant
+Overall: 59.60 / 10 = 5.960 → 5.96 reported. Matches. Rounding rule is
+consistent (half-away-from-zero at the second decimal). No inflation.
 
-Synthesis claims "no dimension regressed." Cross-checked each agent score
-against the v8 baseline:
+σ values not recomputed (not in scope); Security 0.42 is plausible
+given the 5.93 → 7.60 spread over N=10.
 
-- Code (≥7.4 vs 7.2): all 10 agents above baseline ✓
-- Wiring (≥6.6 vs 6.4): all 10 above ✓
-- Test (≥6.2 vs 5.6): all 10 above ✓
-- Production (≥4.7 vs 4.7): 6 tied, 4 above ✓
-- Ops (≥5.5 vs 5.3): all 10 above ✓
-- Security (≥5.9 vs 5.9): 9 tied, 1 above ✓
-- Documentation (≥5.3 vs 5.2): all 10 above ✓
-- Failure (≥6.0 vs 5.2): all 10 above ✓
-- Scale (≥3.8 vs 3.8): 7 tied, 3 above ✓
-- Ship (≥4.5 vs 4.3): all 10 above ✓
+**Arithmetic result: clean.**
 
-**0 monotonicity violations.** No agent needed to cite regression evidence.
+## Job 2 — Monotonicity Audit
 
-### Evidence citation on score increases (spot-check)
+Every v10 dimension mean is ≥ v9 mean. Per-agent minima:
 
-Grepped named evidence keywords against the 8 agent output files I did
-not consume by Read:
+- Sec min = 5.93 (Chaos Monkey) = v9 baseline exactly. No regression —
+  persona held the line on an out-of-scope dimension.
+- Ops min = 5.58 (Chaos Monkey) = v9 baseline. No regression.
+- All other per-agent minima ≥ v9 means on their dimensions.
 
-- Attacker (agent 6): 2 hits on `--network=none|--cap-drop|OP_SERVICE_ACCOUNT_TOKEN|auto-updater`. Justifies the 3 single-agent risks attributed to him. ✓
-- Auditor (agent 4): 3 hits on `309`. Justifies the re-count claim. ✓
-- Sr Engineer (agent 9): 4 hits on `comment density|ref pattern` language. Justifies the +0.2–0.3 bumps above other agents. ✓
-- Chaos Monkey (agent 10): 6 hits on `WAL|ENOSPC|Docker daemon|truncat`. Justifies the untested-corruption flag. ✓
-- Pragmatist (agent 8): 2 hits on `jsdom|RTL|renderHook`. Justifies the React-hook-coverage gap. ✓
-- Operator (agent 5): 9 hits on `telemetry|crash report|AUDIT.md|day-2`. Justifies the telemetry and day-2-ops flags. ✓
-- Architect (agent 3): 3 hits on `dependency-cruiser|import-linter|boundary`. Justifies the boundary-enforcement flag + highest-scorer role. ✓
-- Competitor (agent 7): 2 hits on `Aider|Continue.dev|adversarial-review`. Justifies the competitive-posture key finding. ✓
+No agent dipped below v9 on any dimension. Monotonicity invariant
+held. Synthesis's "no dimension regressed" claim is correct.
 
-Sr Engineer (agent 9) scored Overall 5.91 with Code Completeness 7.5
-and Failure Handling 6.8; these are consistent with his rubric reading
-grounded in comment density / ref patterns / bounded buffers — evidence
-that other agents did not weight as heavily.
+**Monotonicity result: clean.**
 
-**Calibration violations found: 0.**
+## Job 3 — Bias Audit & Specific Attacker Claim
 
-## Job 2 — Synthesis Bias Audit
+### Attacker's Risk #3 — ground truth check
 
-### 1. Softened findings
+Claim (paraphrased from the raw Attacker output): "`restricted` blocks
+dangerous command patterns but still executes on the host with
+`process.env` unchanged (line 86 short-circuits scrubbing when level
+is `"none"`, and the container path is the only one that scrubs via
+`buildChildEnv(currentSandboxLevel)` where level is truthy)."
 
-None detected. Attacker's three security gaps appear verbatim in the
-risk register with 1/10 consensus tags. Chaos Monkey's
-"inspection-only closures" critique is named. Auditor's 309 re-count
-is surfaced as the headline of the Most-Flagged-Risk section, not
-buried.
+Actual code at `packages/tools/src/builtin/shell.ts:85-95`:
 
-### 2. Omitted findings
+```ts
+export function buildChildEnv(level: SandboxLevel): NodeJS.ProcessEnv {
+  if (level === "none") return process.env;
+  const scrubbed: NodeJS.ProcessEnv = {};
+  for (const [name, value] of Object.entries(process.env)) {
+    if (SCRUBBED_ENV_NAMES.has(name)) continue;
+    if (SCRUBBED_ENV_PATTERN.test(name) && !SCRUBBED_ENV_ALLOWLIST.has(name))
+      continue;
+    scrubbed[name] = value;
+  }
+  return scrubbed;
+}
+```
 
-None detected in the spot-check. Every single-agent flag I grepped
-for (Docker sandbox hardening, env inheritance, auto-updater,
-jsdom/RTL, boundary enforcement, telemetry, WAL/ENOSPC/Docker daemon
-chaos, default-none sandbox) appears in the risk register.
+Line 86 short-circuits **only** when `level === "none"`. For
+`"restricted"` (and any other non-`"none"` value), control falls
+through to the scrub loop. Both host-spawn sites (`shell.ts:374`,
+`shell.ts:485`) call `buildChildEnv(currentSandboxLevel)`, and the
+module default at line 106 is `"restricted"`. Tests at
+`shell-sandbox.test.ts:176-227` explicitly assert scrubbing under
+`"restricted"` — OP_SERVICE_ACCOUNT_TOKEN, provider keys,
+pattern-matched unknowns, GITHUB_TOKEN allowlist, and the `"none"`
+pass-through.
 
-### 3. Inflated scores
+**Attacker Risk #3 is factually wrong.** The Attacker mis-reads the
+control flow: they treat the `"none"` short-circuit as if it were the
+scrub body, and they claim the container path is the only scrubber
+when in fact the host path is the primary scrubber. The read-write
+bind-mount concern attached to the same risk is independently valid,
+but the env-inheritance sub-claim is not.
 
-None. All 10 dimension means match arithmetic exactly. Overall 5.76
-is within rounding of the 5.755 computed mean.
+### Did the synthesis flag this contradiction?
 
-### 4. Negative-as-positive reframes
+**No.** The synthesis simultaneously (a) credits A2 (`buildChildEnv`
+scrubs OP_SERVICE_ACCOUNT_TOKEN et al.) as a closed finding and
+attributes most of the +0.76 Security gain to it, and (b) carries the
+Attacker's 7.60 forward into the Sec mean (66.88) while that same
+Attacker is asserting, in writing, that `restricted` doesn't scrub on
+the host. Those two agent statements cannot both be true.
 
-None detected. The "What Did Not Move" section is explicit about
-Production Evidence being structurally bounded, Security Posture not
-having any new security work, and Scale Readiness being single-user
-by design — all honest framings, not spin.
+This is not score-moving: removing the Attacker's 7.60 drops Sec from
+6.69 to 6.54, still +0.61 over v9. But the synthesis is structurally
+obliged to either correct the Attacker or discount their Sec score,
+and it did neither.
 
-### 5. Added optimism
+**Bias finding:** faithfulness gap. Not softening, not omission, not
+reframing — a missed internal contradiction between the agent pool
+and the code.
 
-None detected. The synthesis concedes "measurement drift or real
-type-safety erosion" on the `as any` count rather than explaining it
-away, and carries Auditor's higher 309 number forward.
+### Other bias checks
 
-### 6. Cherry-picked agents
-
-None. Architect (6.04, highest) and Attacker (5.65, lowest) both
-surface — Architect in the boundary-enforcement risk and the
-highest-scorer note, Attacker as the most-cited dissent on security.
-The mean 5.76 sits between them honestly.
-
-### 7. Calibration drift correction
-
-Not warranted. StdDev of 0.12 is the tightest of any round; no agent
-is more than 0.28 from the mean. Drift correction is designed for
-UNCERTAIN dimensions (σ > 1.5) — none qualify.
-
-### Substantive correction from Auditor
-
-The synthesis DOES carry forward the Auditor's 309-vs-295 `as any`
-re-count. Risk register row 1 says "274 → 295 or 309, direction worse,
-measurement unverified." Most-Flagged-Risk paragraph makes the
-evidence-vs-evidence-doc discrepancy explicit: "v9 evidence doc: 295.
-Auditor re-count: 309. Direction unambiguous; magnitude disputed."
-This is the correct handling — don't silently pick a number, surface
-the disagreement.
+- **Softening:** none found. Risk-register entries quote agents
+  sharply ("CI ratchet not wired into `.github/workflows/*.yml`",
+  "`buildChildEnv` scrub doesn't catch user-added unusual secret
+  names", "Docker `--user=1000:1000` vs host UID mismatch").
+- **Omission:** Sr Engineer's UID-mismatch nit and the Attacker's
+  GITHUB_TOKEN-exfil note both made the register at 1/10. Chaos
+  Monkey's "2/3 chaos-corruption scenarios still open" is the
+  headline Most-Flagged Risk. No drops detected.
+- **Inflation:** arithmetic already verified clean.
+- **Reframing:** "structurally bounded, no telemetry stream" on
+  Prod 4.78 is accurate, not spin.
+- **Cherry-pick:** Operator's 6.08 high and Chaos Monkey's 5.80 low
+  both preserved in the agent table and narrated in Methodology Notes.
 
 ## Scores
 
-- **Calibration score: 9/10** — every score increase is backed by
-  named evidence in the source agent outputs; zero monotonicity
-  violations; zero math errors. One deduction because I could only
-  spot-check (via grep), not fully read, agents 1–8 and 10.
-- **Honesty score: 9/10** — synthesis faithfully carries forward
-  unfavorable findings (309 re-count, inspection-only closures,
-  Attacker's 3 security gaps, Architect's boundary gap), does not
-  inflate means, acknowledges structural bounds on Production/Scale.
-  One deduction because the synthesis does not flag that σ = 0.12 is
-  suspiciously tight and could indicate shared-evidence-doc anchoring
-  rather than genuine cross-agent independence.
+- **Calibration: 9/10.** Math clean, monotonicity clean, σ plausible.
+  One-point deduction: an agent (Attacker) made a factually false
+  claim about the code within the scoring round and was not
+  recalibrated.
+- **Honesty: 7/10.** Synthesis is mostly faithful but failed to flag
+  the Attacker's internal contradiction against the A2 closure it
+  simultaneously credited. Transparency gap a Calibration & Bias
+  Auditor is expected to note.
 
-Both scores ≥ 7. **No corrected synthesis required.** The v9 synthesis
-is accepted as-is.
+Both ≥ 7. **No corrected synthesis required.**
 
-## Single methodology concern worth flagging for v10
+## Single-line amendment recommended for the synthesis
 
-σ = 0.12 is the tightest agreement of any round. Possible reasons:
-(a) the evidence is genuinely unambiguous — 5 named commits with
-specific traps is hard to score differently; (b) the shared evidence
-doc anchors all 10 agents to the same numeric frame, reducing true
-independence. This is not a bias failure in v9 but a methodology note
-for v10: agents could be spawned with partial evidence slices to
-preserve decorrelation, and a σ-floor could trigger a re-check rather
-than being treated as a pure quality signal.
+Append to Calibration Drift Corrections: "Attacker Risk #3 mis-reads
+`buildChildEnv` — line 86 short-circuits only on `"none"`;
+`"restricted"` does scrub on the host path (test
+`shell-sandbox.test.ts:176-227` asserts this). A2-closed credit stands;
+the Attacker's contradicting sub-claim does not. No score adjustment;
+contradiction logged."
+
+---
+
+Files referenced:
+
+- `/Users/justin/Projects/brainstorm/packages/tools/src/builtin/shell.ts` (lines 85-95, 106, 374, 485)
+- `/Users/justin/Projects/brainstorm/packages/tools/src/__tests__/shell-sandbox.test.ts` (lines 176-227)
+- `/Users/justin/Projects/brainstorm/docs/assessment-evidence.md`
+- `/Users/justin/Projects/brainstorm/docs/assessment-synthesis.md`
