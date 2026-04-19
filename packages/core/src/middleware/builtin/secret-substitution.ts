@@ -103,16 +103,24 @@ export function injectSecrets(
   input: Record<string, unknown>,
   scrubMap: Map<string, string>,
 ): void {
-  // Build reverse: "$VAULT_NAME" → resolvedValue
-  const injectMap = new Map<string, string>();
+  // Build reverse: "$VAULT_NAME" → resolvedValue. Sort by placeholder
+  // length DESC so that when one placeholder is a prefix of another
+  // (e.g. "$VAULT_AB" prefixes "$VAULT_ABCD"), the longer one is
+  // substituted first. Otherwise: a string `"$VAULT_ABCD-more"`
+  // would first have "$VAULT_AB" matched, leaving `"<valueAB>CD-more"`
+  // and the ABCD placeholder would never fire — leak of the shorter
+  // secret into what should have been the ABCD value.
+  const sortedInjects: Array<[string, string]> = [];
   for (const [value, placeholder] of scrubMap) {
-    injectMap.set(placeholder, value);
+    sortedInjects.push([placeholder, value]);
   }
+  sortedInjects.sort((a, b) => b[0].length - a[0].length);
+
   for (const key of Object.keys(input)) {
     if (key === "_vaultSubstitutions") continue;
     input[key] = transform(input[key], (s) => {
       let result = s;
-      for (const [placeholder, value] of injectMap) {
+      for (const [placeholder, value] of sortedInjects) {
         result = result.replaceAll(placeholder, value);
       }
       return result;
@@ -129,9 +137,20 @@ export function scrubSecrets(
   scrubMap: Map<string, string>,
 ): unknown {
   if (scrubMap.size === 0) return obj;
+  // Sort secrets by length DESC — when two secret values share a
+  // prefix (e.g., `abc` and `abcdef`), the longer one MUST be
+  // replaced first, or a tool-output fragment like "abcdef" would
+  // have its "abc" prefix replaced with the placeholder, leaving
+  // "<$VAULT_SHORT>def" — leaking "def", the tail of the longer
+  // secret, into the model context. Real scenario: rotating keys
+  // where old and new share a random prefix; or secrets where one
+  // is derived from the other (e.g., password + salt concatenation).
+  const sortedEntries = [...scrubMap.entries()].sort(
+    (a, b) => b[0].length - a[0].length,
+  );
   return transform(obj, (s) => {
     let result = s;
-    for (const [secret, placeholder] of scrubMap) {
+    for (const [secret, placeholder] of sortedEntries) {
       // Only scrub secrets of meaningful length to avoid false positives
       if (secret.length >= 4) {
         result = result.replaceAll(secret, placeholder);

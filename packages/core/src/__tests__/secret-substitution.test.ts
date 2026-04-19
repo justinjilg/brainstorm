@@ -168,5 +168,43 @@ describe("secret-substitution", () => {
         "has $VAULT_X in it",
       );
     });
+
+    it("replaces the longer of two prefix-sharing secrets first (leak guard)", () => {
+      // Two secrets where one is a prefix of the other. A naive
+      // Map-order scrub would replace `abcd` first, leaving
+      // `<$VAULT_SHORT>1234` — leaking `1234`, the tail of the
+      // longer secret. Real scenario: rotating keys where old +
+      // new values share a random prefix. Fix sorts by length DESC.
+      const scrubMap = new Map<string, string>([
+        ["abcd", "$VAULT_SHORT"],
+        ["abcd1234", "$VAULT_LONG"],
+      ]);
+      const scrubbed = scrubSecrets(
+        { text: "contains abcd1234 verbatim" },
+        scrubMap,
+      ) as any;
+      // The longer secret must be fully replaced — no tail leak.
+      expect(scrubbed.text).toBe("contains $VAULT_LONG verbatim");
+      expect(scrubbed.text).not.toContain("1234");
+    });
+  });
+
+  describe("injectSecrets — prefix collision", () => {
+    it("replaces the longer of two prefix-sharing placeholders first", () => {
+      // Same bug class in the inject direction: $VAULT_AB is a
+      // prefix of $VAULT_ABCD. Without length-sort, a tool arg of
+      // "$VAULT_ABCD" could match $VAULT_AB first, leaving
+      // "<valueAB>CD" — leaking the partial placeholder and
+      // inserting the WRONG secret value.
+      const scrubMap = new Map<string, string>([
+        ["valueAB", "$VAULT_AB"],
+        ["valueABCD", "$VAULT_ABCD"],
+      ]);
+      const input: Record<string, unknown> = {
+        command: "echo $VAULT_ABCD and $VAULT_AB",
+      };
+      injectSecrets(input, scrubMap);
+      expect(input.command).toBe("echo valueABCD and valueAB");
+    });
   });
 });
