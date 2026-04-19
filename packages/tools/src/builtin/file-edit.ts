@@ -143,7 +143,11 @@ export const fileEditTool = defineTool({
     const cp = getCheckpointManager();
     if (cp) cp.snapshot(safePath);
 
-    const updated = content.replace(old_string, new_string);
+    // Function-form replacement so $1/$&/etc. in new_string don't get
+    // interpreted as regex backreferences. Agent-generated content
+    // often contains literal `$` (shell vars, regex patterns, jQuery,
+    // template literals) and losing them silently corrupts the write.
+    const updated = content.replace(old_string, () => new_string);
 
     // Pre-validate content before writing (non-blocking)
     const { preValidate } = await import("../pre-validate.js");
