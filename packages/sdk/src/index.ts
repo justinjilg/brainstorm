@@ -81,11 +81,21 @@ export class Brainstorm {
     const db = getDb();
     const keyMap = new Map<string, string>();
 
-    // Apply any provided API keys
+    // Apply any provided API keys. Pre-fix, we also did
+    // `process.env[key] = value` which MUTATES the parent process's
+    // environment — a spec bug for a programmatic SDK:
+    //   1. Keys leak into subsequent SDK calls that didn't provide them
+    //   2. Shell-tool env scrubbing sees them (they get scrubbed, which
+    //      is harmless here but defeats the contract "keys are scoped
+    //      to this instance")
+    //   3. Parallel Brainstorm instances with different apiKeys trample
+    //      each other's env
+    // Now: keys stay in keyMap only. createProviderRegistry reads
+    // through resolvedKeys.get(), which checks keyMap first and then
+    // falls back to process.env for keys not provided here.
     if (this.opts.apiKeys) {
       for (const [key, value] of Object.entries(this.opts.apiKeys)) {
         keyMap.set(key, value);
-        process.env[key] = value;
       }
     }
 
