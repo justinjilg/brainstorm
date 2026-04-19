@@ -139,10 +139,13 @@ export class TriggerRunner {
       return result;
     }
 
-    // Respect concurrency limit
-    const currentlyRunning = this.runs
-      .listRecent(this.maxConcurrent * 2)
-      .filter((r) => r.status === "running").length;
+    // Respect concurrency limit. Query the exact running count via
+    // the repository — `listRecent(maxConcurrent * 2).filter(running)`
+    // could undercount when running rows fell outside the N-most-
+    // recent window (e.g., long-lived zombie runs that hadn't been
+    // swept yet). countRunning is an index-backed COUNT, so it's
+    // cheap AND authoritative.
+    const currentlyRunning = this.runs.countRunning();
 
     const available = Math.max(0, this.maxConcurrent - currentlyRunning);
     const toRun = dueTasks.slice(0, available);
