@@ -20,7 +20,10 @@ function ensureSafePath(filePath: string): string {
     resolved.startsWith("/var/folders/") ||
     resolved.startsWith("/private/var/folders/") ||
     resolved.startsWith("/var/tmp/") ||
-    resolved.startsWith("/private/var/tmp/");
+    resolved.startsWith("/private/var/tmp/") ||
+    // Linux tmpdir — see file-read.ts.
+    resolved === "/tmp" ||
+    resolved.startsWith("/tmp/");
   if (!isSafeTmpVar && resolved.startsWith("/var")) {
     throw new Error(`Path blocked: "${filePath}" is a protected system path`);
   }

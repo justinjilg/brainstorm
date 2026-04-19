@@ -24,7 +24,14 @@ function ensureSafePath(filePath: string): string {
     resolved.startsWith("/var/folders/") ||
     resolved.startsWith("/private/var/folders/") ||
     resolved.startsWith("/var/tmp/") ||
-    resolved.startsWith("/private/var/tmp/");
+    resolved.startsWith("/private/var/tmp/") ||
+    // Linux tmpdir. os.tmpdir() returns `/tmp` on Linux, not `/var/tmp`;
+    // without this, file_read/edit/write on any Linux host (including
+    // GitHub Actions Ubuntu runners) could never read tmp files — a
+    // silent break that CI caught via the sensitive-paths false-
+    // positive guard.
+    resolved === "/tmp" ||
+    resolved.startsWith("/tmp/");
   if (!isSafeTmpVar && resolved.startsWith("/var")) {
     throw new Error(`Path blocked: "${filePath}" is a protected system path`);
   }
