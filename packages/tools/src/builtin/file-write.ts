@@ -4,6 +4,7 @@ import { dirname, resolve, relative } from "node:path";
 import { randomUUID } from "node:crypto";
 import { defineTool } from "../base.js";
 import { getWorkspace } from "../workspace-context.js";
+import { assertNotSensitivePath } from "./sensitive-paths.js";
 
 import { homedir } from "node:os";
 
@@ -14,6 +15,10 @@ function ensureSafePath(filePath: string): string {
   const cwd = getWorkspace();
   const resolved = resolve(cwd, filePath);
   const home = homedir();
+
+  // Block credential files (e.g. overwriting ~/.ssh/id_rsa via file_write
+  // would be just as bad as reading it). See sensitive-paths.ts.
+  assertNotSensitivePath(resolved);
 
   // Block system paths.
   // Note: /var is NOT blocked because macOS tmpdir lives at /var/folders/...

@@ -4,11 +4,16 @@ import { resolve, relative } from "node:path";
 import { homedir } from "node:os";
 import { defineTool } from "../base.js";
 import { getWorkspace } from "../workspace-context.js";
+import { assertNotSensitivePath } from "./sensitive-paths.js";
 
 function ensureSafePath(filePath: string): string {
   const cwd = getWorkspace();
   const resolved = resolve(cwd, filePath);
   const home = homedir();
+
+  // Block credential files before the home-dir allowance — see
+  // file-read.ts / sensitive-paths.ts for the rationale.
+  assertNotSensitivePath(resolved);
 
   // /var is NOT blocked because macOS tmpdir is /var/folders/... — see file-write.ts
   const isSafeTmpVar =
