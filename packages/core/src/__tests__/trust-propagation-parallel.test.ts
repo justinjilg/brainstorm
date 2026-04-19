@@ -53,12 +53,14 @@ describe("trust-propagation — parallel tool calls", () => {
       name: "web_fetch",
       ok: true,
       output: "fetched content",
+      durationMs: 0,
     });
     middleware.afterToolResult!({
       toolCallId: "call-B",
       name: "shell",
       ok: true,
       output: { stdout: "done" },
+      durationMs: 0,
     });
 
     // Flush in reverse order — also a parallel-interleaving shape
