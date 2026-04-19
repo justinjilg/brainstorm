@@ -31,10 +31,7 @@ export {
   flushTrustWindow,
   clearCurrentTaint,
 } from "./builtin/trust-propagation.js";
-export {
-  createToolSequenceDetectorMiddleware,
-  setSequenceDetectorTrustRef,
-} from "./builtin/tool-sequence-detector.js";
+export { createToolSequenceDetectorMiddleware } from "./builtin/tool-sequence-detector.js";
 export { createEgressMonitorMiddleware } from "./builtin/egress-monitor.js";
 export { createToolContractMiddleware } from "./builtin/tool-contract-enforcement.js";
 export { createContentInjectionFilterMiddleware } from "./builtin/content-injection-filter.js";

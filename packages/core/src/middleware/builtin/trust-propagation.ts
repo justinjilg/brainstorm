@@ -142,3 +142,18 @@ export function clearCurrentTaint(callId: string): void {
     _activeWindows.set(callId, clearTaint());
   }
 }
+
+/**
+ * Read-only accessor for the active trust window. Used by sibling
+ * security middleware (notably tool-sequence-detector) that needs
+ * the current trust state during wrapToolCall for its OWN decisions
+ * — without duplicating the sync/flush bracketing.
+ *
+ * Returns undefined when the callId has no active window (no sync
+ * ran, or flush already happened). Callers should default to
+ * "fully trusted" (minTrust=1.0) when undefined, same as the
+ * pre-integration behavior.
+ */
+export function getActiveTrustWindow(callId: string): TrustWindow | undefined {
+  return _activeWindows.get(callId);
+}

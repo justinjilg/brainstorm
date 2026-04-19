@@ -21,6 +21,7 @@ import type {
   MiddlewareToolResult,
   MiddlewareBlock,
 } from "../types.js";
+import { getActiveTrustWindow } from "./trust-propagation.js";
 import { createLogger } from "@brainst0rm/shared";
 
 const log = createLogger("tool-sequence-detector");
@@ -171,11 +172,6 @@ const SEQUENCE_RULES: SequenceRule[] = [
 const SEQUENCE_HISTORY_KEY = "_toolSequenceHistory";
 const TRUST_WINDOW_KEY = "_trustWindow";
 
-interface TrustWindowLike {
-  minTrust: number;
-  tainted: boolean;
-}
-
 export function createToolSequenceDetectorMiddleware(): AgentMiddleware {
   let history: ToolEvent[] = [];
   const preScannedCalls = new Set<string>(); // Track pre-scanned call IDs to avoid double-recording
@@ -212,8 +208,21 @@ export function createToolSequenceDetectorMiddleware(): AgentMiddleware {
         }
       }
 
-      // Get current trust from the trust propagation middleware
-      const trustWindow = _currentTrustRef;
+      // Get current trust from the trust-propagation middleware's
+      // per-callId store. Pre-fix this read from `_currentTrustRef`,
+      // a module-level variable that was never set in production —
+      // `setSequenceDetectorTrustRef()` was exported but never called.
+      // The consequence: `currentTrust` defaulted to 1.0 for every
+      // call, and the trust-threshold bypass (`if (currentTrust >=
+      // rule.trustThreshold) continue`) skipped every rule except
+      // the one with a 1.1 threshold. The 5 rules with thresholds
+      // 0.5/0.6 were effectively dead code.
+      //
+      // Now reads from the same Map trust-propagation uses, keyed by
+      // call.id. If trust-propagation hasn't synced (not in a
+      // wrapped-execute path, or called pre-integration), fall back
+      // to the 1.0 default for backward compatibility.
+      const trustWindow = getActiveTrustWindow(call.id);
       const currentTrust = trustWindow?.minTrust ?? 1.0;
 
       for (const rule of SEQUENCE_RULES) {
@@ -305,18 +314,15 @@ function looksLikeSecrets(content: string): boolean {
   return patterns.some((p) => p.test(content));
 }
 
-// ── Trust Window Bridge ────────────────────────────────────────────
-
-// Module-level trust window reference — same concurrency limitation as trust-propagation.ts.
-// Safe for single-threaded Node.js; needs per-session scoping for concurrent isolation.
-let _currentTrustRef: TrustWindowLike | null = null;
-
-/**
- * Set the trust window reference for the sequence detector.
- * Called by the middleware pipeline to share trust state.
- */
-export function setSequenceDetectorTrustRef(
-  trustWindow: TrustWindowLike | null,
-): void {
-  _currentTrustRef = trustWindow;
-}
+// Historic module-level trust-ref bridge removed — it was exported
+// (`setSequenceDetectorTrustRef`) but never called in production,
+// making 5 of 6 sequence rules dead code. The integration now goes
+// through `getActiveTrustWindow(call.id)` from trust-propagation,
+// which shares the same per-callId Map and is properly populated by
+// loop.ts's syncTrustWindow bracket.
+//
+// Callers who previously imported `setSequenceDetectorTrustRef`
+// should remove the call — it's a no-op that's been deleted. If
+// you're reaching this comment via a git-blame, the replacement is
+// automatic (no caller code change needed beyond deleting the
+// obsolete set).
