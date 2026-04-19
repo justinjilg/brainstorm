@@ -1046,7 +1046,13 @@ export class MemoryManager {
     }
 
     try {
-      writeFileSync(globalIndexPath, JSON.stringify(index, null, 2), "utf-8");
+      // atomicWriteFile — write-to-temp then rename, so a crash
+      // mid-write never leaves a partially-written index that the
+      // next JSON.parse() would reject. Prior plain writeFileSync
+      // left that gap; the parse catch above silently reset the
+      // index to {} on the first successful re-read, losing every
+      // concept the partial-write instance had merged in.
+      atomicWriteFile(globalIndexPath, JSON.stringify(index, null, 2));
     } catch (e) {
       log.warn({ err: e }, "Failed to update global memory index");
     }
