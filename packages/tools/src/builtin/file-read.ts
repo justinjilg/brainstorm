@@ -3,6 +3,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { resolve, relative } from "node:path";
 import { defineTool } from "../base.js";
 import { getWorkspace } from "../workspace-context.js";
+import { assertNotSensitivePath } from "./sensitive-paths.js";
 
 import { homedir } from "node:os";
 
@@ -10,6 +11,12 @@ function ensureSafePath(filePath: string): string {
   const cwd = getWorkspace();
   const resolved = resolve(cwd, filePath);
   const home = homedir();
+
+  // Block credential files BEFORE the home-dir allowance below. The
+  // prior version allowed anything under $HOME including ~/.ssh/,
+  // ~/.aws/, etc. — making file_read a prompt-injection exfiltration
+  // vector that the shell sandbox already closed at the command level.
+  assertNotSensitivePath(resolved);
 
   // Allow: paths within cwd OR within home directory OR safe tmp workspaces.
   // macOS tmpdir lives at /var/folders/... so /var is not blanket-blocked.
