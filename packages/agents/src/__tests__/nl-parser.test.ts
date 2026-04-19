@@ -37,6 +37,27 @@ describe("parseAgentNL", () => {
     );
     expect(intent).not.toBeNull();
     expect(intent!.budgetDaily).toBe(50);
+    // Pre-fix, the per-workflow regex ALSO matched the same `$50`,
+    // double-setting `budget=50`. "daily budget" means daily, not
+    // both daily and per-workflow.
+    expect(intent!.budget).toBeUndefined();
+  });
+
+  it("detects per-workflow budget without double-setting daily", () => {
+    const { intent } = parseAgentNL("architect using opus with $30 budget");
+    expect(intent).not.toBeNull();
+    expect(intent!.budget).toBe(30);
+    expect(intent!.budgetDaily).toBeUndefined();
+  });
+
+  it("detects both when both are explicit", () => {
+    // Each $-amount belongs to its specific modifier.
+    const { intent } = parseAgentNL(
+      "coder using sonnet with $10 budget and $50 daily",
+    );
+    expect(intent).not.toBeNull();
+    expect(intent!.budget).toBe(10);
+    expect(intent!.budgetDaily).toBe(50);
   });
 
   it("defaults to auto:quality model when none specified", () => {

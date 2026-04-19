@@ -81,20 +81,30 @@ export function parseAgentNL(input: string): ParseResult {
     modelId = MODEL_ALIASES[alias] ?? alias;
   }
 
-  // Extract budget (per-workflow)
-  let budget: number | undefined;
-  const budgetMatch = lower.match(
-    /\$(\d+(?:\.\d+)?)\s*(?:budget|per.?workflow)?/,
-  );
-  if (budgetMatch) {
-    budget = parseFloat(budgetMatch[1]);
-  }
-
-  // Extract daily budget
+  // Extract daily budget FIRST so the per-workflow extractor can
+  // skip the same $-amount. Pre-fix, input like "$50 daily budget"
+  // set BOTH budget=50 AND budgetDaily=50 because the per-workflow
+  // regex had `(?:budget|per.?workflow)?` as an optional trailing
+  // group; the first `$50` matched it regardless of what followed.
+  // Result: user gets double-billed because both budget caps fire.
   let budgetDaily: number | undefined;
+  let dailyMatchIndex = -1;
   const dailyMatch = lower.match(/\$(\d+(?:\.\d+)?)\s*(?:daily|per.?day)/);
   if (dailyMatch) {
     budgetDaily = parseFloat(dailyMatch[1]);
+    dailyMatchIndex = dailyMatch.index ?? -1;
+  }
+
+  // Extract per-workflow budget, skipping the index where the daily
+  // match already consumed a $N. Walk every $N occurrence (global
+  // flag) and pick the first one that isn't the daily match's spot.
+  let budget: number | undefined;
+  const budgetRe = /\$(\d+(?:\.\d+)?)\s*(?:budget|per.?workflow)?/g;
+  let bm: RegExpExecArray | null;
+  while ((bm = budgetRe.exec(lower)) !== null) {
+    if (bm.index === dailyMatchIndex) continue;
+    budget = parseFloat(bm[1]);
+    break;
   }
 
   // Extract PII guardrails
