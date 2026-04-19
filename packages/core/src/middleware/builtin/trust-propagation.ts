@@ -46,10 +46,13 @@ export function createTrustPropagationMiddleware(): AgentMiddleware {
     wrapToolCall(
       call: MiddlewareToolCall,
     ): MiddlewareToolCall | MiddlewareBlock | void {
-      // Read trust window from _activeWindow (set by syncTrustWindow per tool call).
-      // This is per-session: loop.ts calls syncTrustWindow(sessionMetadata)
-      // before each tool execution, scoping trust to the calling session.
-      const window = _activeWindow;
+      // Scope trust state by call.id — AI SDK v6 can invoke tool
+      // execute() in parallel (default `parallelToolCalls: true`
+      // from streamText). A module-level `_activeWindow` pre-fix
+      // would be overwritten by the second tool's syncTrustWindow()
+      // while the first is awaiting its execute(), corrupting both
+      // windows.
+      const window = _activeWindows.get(call.id);
       if (!window) return;
 
       const check = checkToolTrust(window, call.name);
@@ -72,46 +75,70 @@ export function createTrustPropagationMiddleware(): AgentMiddleware {
     },
 
     afterToolResult(result: MiddlewareToolResult): MiddlewareToolResult | void {
-      // Record the trust level of this tool's output into the active window
-      if (_activeWindow) {
-        _activeWindow = recordToolTrust(_activeWindow, result.name);
+      // Record the trust level of this tool's output into the
+      // call-scoped window.
+      const window = _activeWindows.get(result.toolCallId);
+      if (window) {
+        _activeWindows.set(
+          result.toolCallId,
+          recordToolTrust(window, result.name),
+        );
       }
     },
   };
 }
 
-// Per-tool-call active window. Set by syncTrustWindow() before each tool
-// execution and flushed back to per-session metadata by flushTrustWindow().
-// This is NOT shared across sessions — each session's metadata holds its own
-// TrustWindow, and sync/flush bracket each tool call in loop.ts.
-let _activeWindow: TrustWindow | null = null;
+// Per-tool-call active windows keyed by call.id / result.toolCallId.
+// Previous implementation used a single module-level variable, which
+// broke under parallel tool calls (AI SDK v6 default). sync/flush
+// bracket each tool execution in loop.ts and manage entries by id.
+const _activeWindows = new Map<string, TrustWindow>();
+
+// Soft cap — if a caller ever forgets to flush, bound memory rather
+// than grow unbounded. Each entry is tiny but the invariant matters.
+const MAX_ACTIVE_WINDOWS = 1000;
 
 /**
- * Set the active trust window from per-session middleware metadata.
- * Called by loop.ts before runWrapToolCall() for each tool execution.
+ * Set the active trust window for a specific tool call. Called by
+ * loop.ts before runWrapToolCall() for each tool execution.
  */
-export function syncTrustWindow(metadata: Record<string, unknown>): void {
-  _activeWindow =
-    (metadata[TRUST_WINDOW_KEY] as TrustWindow) ?? createTrustWindow();
-}
-
-/**
- * Write the active trust window back to per-session middleware metadata.
- * Called by loop.ts after runAfterToolResult() for each tool execution.
- */
-export function flushTrustWindow(metadata: Record<string, unknown>): void {
-  if (_activeWindow) {
-    metadata[TRUST_WINDOW_KEY] = _activeWindow;
+export function syncTrustWindow(
+  metadata: Record<string, unknown>,
+  callId: string,
+): void {
+  if (_activeWindows.size >= MAX_ACTIVE_WINDOWS) {
+    // Evict the oldest — this indicates a flush-leak bug upstream,
+    // but we'd rather leak one old window than pile up forever.
+    const firstKey = _activeWindows.keys().next().value;
+    if (firstKey !== undefined) _activeWindows.delete(firstKey);
   }
-  _activeWindow = null; // Clear between tool calls to prevent cross-session leakage
+  _activeWindows.set(
+    callId,
+    (metadata[TRUST_WINDOW_KEY] as TrustWindow) ?? createTrustWindow(),
+  );
 }
 
 /**
- * Clear taint on the current window (e.g., after human approves a tool call).
- * Must be called within a sync/flush bracket.
+ * Write the active trust window for a specific tool call back to
+ * per-session metadata. Called by loop.ts after runAfterToolResult().
  */
-export function clearCurrentTaint(): void {
-  if (_activeWindow) {
-    _activeWindow = clearTaint();
+export function flushTrustWindow(
+  metadata: Record<string, unknown>,
+  callId: string,
+): void {
+  const window = _activeWindows.get(callId);
+  if (window) {
+    metadata[TRUST_WINDOW_KEY] = window;
+    _activeWindows.delete(callId);
+  }
+}
+
+/**
+ * Clear taint on a specific call's active window (e.g., after human
+ * approval). Must be called between sync and flush for the same callId.
+ */
+export function clearCurrentTaint(callId: string): void {
+  if (_activeWindows.has(callId)) {
+    _activeWindows.set(callId, clearTaint());
   }
 }

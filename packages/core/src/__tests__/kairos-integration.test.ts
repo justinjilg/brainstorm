@@ -245,13 +245,15 @@ describe("KAIROS Integration", () => {
         metadata: metadata2,
       });
 
-      // Sync session 1, do work, flush
-      syncTrustWindow(metadata1);
-      flushTrustWindow(metadata1);
+      // Sync session 1, do work, flush — callId scopes state per
+      // tool call (API changed to require callId after the parallel-
+      // tool-call race fix in trust-propagation.ts).
+      syncTrustWindow(metadata1, "test-call-1");
+      flushTrustWindow(metadata1, "test-call-1");
 
       // Sync session 2 — should get session 2's window, not session 1's
-      syncTrustWindow(metadata2);
-      flushTrustWindow(metadata2);
+      syncTrustWindow(metadata2, "test-call-2");
+      flushTrustWindow(metadata2, "test-call-2");
 
       // Both sessions should have independent trust windows
       expect(metadata1["_trustWindow"]).toBeDefined();

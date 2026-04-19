@@ -1,4 +1,5 @@
 import { streamText, stepCountIs } from "ai";
+import { randomUUID } from "node:crypto";
 import type { ConversationMessage } from "../session/manager.js";
 import type { BrainstormConfig } from "@brainst0rm/config";
 import type { ProviderRegistry } from "@brainst0rm/providers";
@@ -663,17 +664,23 @@ export async function* runAgentLoop(
       if (toolObj && typeof toolObj === "object" && "execute" in toolObj) {
         const originalExecute = (toolObj as any).execute;
         (toolObj as any).execute = async (input: any, opts: any) => {
-          // Pre-execution: check if middleware blocks this call
+          // Pre-execution: check if middleware blocks this call.
+          // The mwCall.id must be unique across parallel tool calls —
+          // Date.now() has 1ms resolution and AI SDK v6 can invoke
+          // multiple execute()s in the same millisecond (and does,
+          // when parallelToolCalls is enabled). randomUUID is
+          // guaranteed-unique per call.
           const mwCall = {
-            id: `mw-${Date.now()}`,
+            id: `mw-${randomUUID()}`,
             name: toolName,
             input: input ?? {},
           };
-          // Sync trust window from per-session metadata before security checks
-          syncTrustWindow(mwMetadata);
+          // Sync trust window — scoped to this tool's call.id so
+          // parallel tool executions don't corrupt each other's state.
+          syncTrustWindow(mwMetadata, mwCall.id);
           const wrapped = pipeline.runWrapToolCall(mwCall);
           if ("blocked" in wrapped && wrapped.blocked) {
-            flushTrustWindow(mwMetadata);
+            flushTrustWindow(mwMetadata, mwCall.id);
             return {
               error: `Blocked by security policy: ${wrapped.reason}`,
               blocked: true,
@@ -745,7 +752,7 @@ export async function* runAgentLoop(
             durationMs,
           });
           // Flush trust window back to per-session metadata after taint recording
-          flushTrustWindow(mwMetadata);
+          flushTrustWindow(mwMetadata, mwCall.id);
           return result;
         };
       }
