@@ -41,6 +41,16 @@ export function isOpAvailable(): boolean {
 /** TTL cache for op read results — avoids shelling out on every call. */
 const OP_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes (shorter to detect credential rotation faster)
 const OP_FAILURE_TTL_MS = 60 * 1000; // 60 seconds for failed lookups (self-heal from transient errors)
+/**
+ * Size cap for the cache. The TTL (above) prevents STALE reads but
+ * doesn't prevent unbounded GROWTH — every unique (vault, key) pair
+ * queried gets its own entry and nothing evicts. A prompt-injection
+ * or test harness that probes many key names would pile up failure-
+ * cached entries indefinitely. 200 covers the typical Dev Keys
+ * vault (60 items) plus reasonable headroom for multi-vault setups
+ * and transient miss-cache noise.
+ */
+const OP_CACHE_MAX_ENTRIES = 200;
 const opCache = new Map<string, { value: string | null; fetchedAt: number }>();
 
 /**
@@ -72,10 +82,26 @@ export function opRead(keyName: string, vaultName?: string): string | null {
       .toString()
       .trim();
     const result = value || null;
-    opCache.set(cacheKey, { value: result, fetchedAt: Date.now() });
+    storeInCache(cacheKey, { value: result, fetchedAt: Date.now() });
     return result;
   } catch {
-    opCache.set(cacheKey, { value: null, fetchedAt: Date.now() });
+    storeInCache(cacheKey, { value: null, fetchedAt: Date.now() });
     return null;
   }
+}
+
+/**
+ * Insert into the cache, evicting the oldest entry when over cap.
+ * Map iteration is insertion-order, so the first key is the oldest.
+ * This isn't strict LRU but it's bounded and preserves recent reads.
+ */
+function storeInCache(
+  key: string,
+  entry: { value: string | null; fetchedAt: number },
+): void {
+  if (opCache.size >= OP_CACHE_MAX_ENTRIES && !opCache.has(key)) {
+    const oldest = opCache.keys().next().value;
+    if (oldest !== undefined) opCache.delete(oldest);
+  }
+  opCache.set(key, entry);
 }
