@@ -45,10 +45,14 @@ export class DailyLog {
   private sessionId?: string;
 
   constructor(options: DailyLogOptions = {}) {
-    this.logDir = (options.logDir ?? "~/.brainstorm/logs").replace(
-      "~",
-      homedir(),
-    );
+    // Only expand `~` when it's the path prefix — the bare
+    // `.replace("~", home)` substituted the first occurrence
+    // anywhere in the string, so a legitimate path like
+    // `/Users/alice/back~up/logs` would mangle to
+    // `/Users/alice/back<home>/logs`.
+    const raw = options.logDir ?? "~/.brainstorm/logs";
+    this.logDir =
+      raw === "~" || raw.startsWith("~/") ? join(homedir(), raw.slice(2)) : raw;
     this.repo = options.repo;
     this.sessionId = options.sessionId;
   }
