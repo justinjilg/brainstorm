@@ -122,10 +122,18 @@ function loadSkillsFromDir(
         systemPrompt,
       } = parseFrontmatter(content);
 
-      // Inject temporal template variables + skill directory path
+      // Inject temporal template variables + skill directory path.
+      // The function-form replacement bypasses String.replace's
+      // special treatment of $1/$&/etc. in the REPLACEMENT string —
+      // a skillDir like "/Users/ann/$1/skills" would otherwise have
+      // "$1" (an unmatched backreference) silently stripped, giving
+      // the agent a bogus path. Unusual in Unix filesystems but
+      // common on Windows paths with literal dollar signs or user-
+      // generated skill directories with special characters.
       let processedBody = injectTemporalVars(body);
       if (skillDir) {
-        processedBody = processedBody.replace(/<SKILL_DIR>/g, skillDir);
+        const dir = skillDir;
+        processedBody = processedBody.replace(/<SKILL_DIR>/g, () => dir);
       }
 
       skills.push({
