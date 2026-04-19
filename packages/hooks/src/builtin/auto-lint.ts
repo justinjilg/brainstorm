@@ -163,7 +163,18 @@ export function createAutoLintHooks(projectPath: string): HookDefinition[] {
       event: "PostToolUse",
       matcher: "file_write|file_edit|multi_edit|batch_edit",
       type: "command" as const,
-      command: `${lintCommand} "$FILE"`,
+      // NO outer double-quotes around $FILE. The hook manager's
+      // variable expansion passes context.filePath through
+      // shellEscape() — which wraps in single quotes:
+      //   filePath = "/Users/ann/src/foo.ts"
+      //   shellEscape → '/Users/ann/src/foo.ts'
+      // The prior template `"$FILE"` then produced the literal
+      // string `"'/Users/ann/src/foo.ts'"`. Inside double quotes
+      // single quotes stay literal, so the shell passed prettier an
+      // argument with embedded single quotes — prettier then tried
+      // to open a file named `'/Users/ann/src/foo.ts'` (with quotes)
+      // and failed silently. Auto-lint never actually ran.
+      command: `${lintCommand} $FILE`,
       blocking: false,
       description: `Auto-lint with ${linter} after file writes`,
     },
