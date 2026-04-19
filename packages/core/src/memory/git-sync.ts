@@ -87,7 +87,7 @@ export class GitMemorySync {
     }
 
     if (!pushChanges(this.memoryDir, "origin", this.branch)) {
-      log.debug("Memory push failed ��� will retry on next write");
+      log.debug("Memory push failed — will retry on next write");
     }
   }
 
