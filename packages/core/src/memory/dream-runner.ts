@@ -14,6 +14,9 @@ import {
   existsSync,
   statSync,
   mkdirSync,
+  openSync,
+  writeSync,
+  closeSync,
 } from "node:fs";
 import { join } from "node:path";
 import { createLogger } from "@brainst0rm/shared";
@@ -103,8 +106,8 @@ function writeDreamState(memoryDir: string, state: DreamState): void {
 function acquireLock(memoryDir: string): boolean {
   const lockPath = getLockPath(memoryDir);
 
+  // Clear a stale lock so the O_EXCL create below can succeed.
   if (existsSync(lockPath)) {
-    // Check if lock is stale
     try {
       const stat = statSync(lockPath);
       const ageMs = Date.now() - stat.mtimeMs;
@@ -114,22 +117,39 @@ function acquireLock(memoryDir: string): boolean {
         return false;
       }
       log.warn({ ageMs }, "Stale dream lock found, overriding");
+      try {
+        unlinkSync(lockPath);
+      } catch {
+        // Another process may have cleaned it up first; the O_EXCL
+        // create below is the authoritative race-winner check.
+      }
     } catch {
       // stat failed — lock file may have been removed, proceed
     }
   }
 
+  // O_CREAT | O_EXCL: atomic "create if not exists". Closes the
+  // TOCTOU window between existsSync() and writeFileSync() that the
+  // previous implementation had — two processes passing the stale
+  // check at the same instant both called writeFileSync() and both
+  // proceeded into the dream cycle.
+  let fd: number;
   try {
-    writeFileSync(
-      lockPath,
-      JSON.stringify({ pid: process.pid, acquiredAt: Date.now() }),
-      "utf-8",
-    );
-    return true;
-  } catch (err) {
-    log.error({ err }, "Failed to acquire dream lock");
+    fd = openSync(lockPath, "wx");
+  } catch (err: any) {
+    if (err?.code === "EEXIST") {
+      log.info("Dream lock acquired by another process in the race window");
+    } else {
+      log.error({ err }, "Failed to acquire dream lock");
+    }
     return false;
   }
+  try {
+    writeSync(fd, JSON.stringify({ pid: process.pid, acquiredAt: Date.now() }));
+  } finally {
+    closeSync(fd);
+  }
+  return true;
 }
 
 function releaseLock(memoryDir: string): void {
