@@ -4,7 +4,7 @@
  * Injected as context so the agent knows what worked and what didn't.
  */
 
-export type ReactionSignal = 'accepted' | 'rejected' | 'neutral';
+export type ReactionSignal = "accepted" | "rejected" | "neutral";
 
 export interface ReactionEntry {
   turn: number;
@@ -12,15 +12,31 @@ export interface ReactionEntry {
   userMessage: string;
 }
 
+// Anchored to start-of-message AND require a word boundary after the
+// token. Pre-fix the regex was `/^(perfect|great|...)/i` — which
+// matched "perfectly bad" (starts with "perfect") as ACCEPTED even
+// though the message is clearly negative. Same class for "greatly
+// disappointed", "thankfully not", "oksymoron", etc. Adding `\b`
+// requires the match to end on a word boundary, so "perfect!" or
+// "perfect." still match but "perfectly" does not.
 const POSITIVE_PATTERNS = [
-  /^(perfect|great|thanks|good|nice|awesome|yes|ok|looks good|lgtm)/i,
-  /\bthat works\b/i, /\bthat's right\b/i, /\bexactly\b/i,
+  /^(perfect|great|thanks|good|nice|awesome|yes|ok|looks good|lgtm)\b/i,
+  /\bthat works\b/i,
+  /\bthat's right\b/i,
+  /\bexactly\b/i,
 ];
 
 const NEGATIVE_PATTERNS = [
-  /^(no|wrong|undo|revert|fix|that's not|that isn't)/i,
-  /\bstill broken\b/i, /\bdoesn't work\b/i, /\btry again\b/i,
-  /\bnot what I\b/i, /\bwhat I asked\b/i,
+  // Same word-boundary fix. Before, "not sure" (uncertainty, not
+  // rejection) matched "no" at start and was classified as
+  // REJECTED. The `\b` makes "no" require a word boundary, so
+  // "no, that's wrong" still matches but "not sure" does not.
+  /^(no|wrong|undo|revert|fix|that's not|that isn't)\b/i,
+  /\bstill broken\b/i,
+  /\bdoesn't work\b/i,
+  /\btry again\b/i,
+  /\bnot what I\b/i,
+  /\bwhat I asked\b/i,
 ];
 
 export class ReactionTracker {
@@ -29,7 +45,11 @@ export class ReactionTracker {
   /** Analyze a user message and record the reaction signal. */
   record(turn: number, userMessage: string): ReactionSignal {
     const signal = classifyReaction(userMessage);
-    this.reactions.push({ turn, signal, userMessage: userMessage.slice(0, 100) });
+    this.reactions.push({
+      turn,
+      signal,
+      userMessage: userMessage.slice(0, 100),
+    });
 
     // Keep only last 20 reactions
     if (this.reactions.length > 20) {
@@ -47,18 +67,18 @@ export class ReactionTracker {
   /** Format reaction context for system prompt injection. */
   formatReactionContext(): string {
     const recent = this.getRecent(5);
-    if (recent.length === 0) return '';
+    if (recent.length === 0) return "";
 
-    const accepted = recent.filter((r) => r.signal === 'accepted').length;
-    const rejected = recent.filter((r) => r.signal === 'rejected').length;
+    const accepted = recent.filter((r) => r.signal === "accepted").length;
+    const rejected = recent.filter((r) => r.signal === "rejected").length;
 
-    if (rejected === 0 && accepted === 0) return '';
+    if (rejected === 0 && accepted === 0) return "";
 
     const parts: string[] = [];
     if (accepted > 0) parts.push(`${accepted} accepted`);
     if (rejected > 0) parts.push(`${rejected} rejected`);
 
-    return `[Recent reactions: ${parts.join(', ')} out of last ${recent.length} responses]`;
+    return `[Recent reactions: ${parts.join(", ")} out of last ${recent.length} responses]`;
   }
 
   clear(): void {
@@ -71,18 +91,18 @@ function classifyReaction(message: string): ReactionSignal {
 
   // Check positive patterns
   for (const p of POSITIVE_PATTERNS) {
-    if (p.test(trimmed)) return 'accepted';
+    if (p.test(trimmed)) return "accepted";
   }
 
   // Check negative patterns
   for (const p of NEGATIVE_PATTERNS) {
-    if (p.test(trimmed)) return 'rejected';
+    if (p.test(trimmed)) return "rejected";
   }
 
   // If message immediately follows with a new task (no comment on previous), treat as accepted
-  if (trimmed.length > 50 && !trimmed.includes('?')) {
-    return 'accepted'; // Long message with new instructions = moved on
+  if (trimmed.length > 50 && !trimmed.includes("?")) {
+    return "accepted"; // Long message with new instructions = moved on
   }
 
-  return 'neutral';
+  return "neutral";
 }
