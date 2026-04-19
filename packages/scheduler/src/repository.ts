@@ -173,6 +173,23 @@ export class TaskRunRepository {
       .map(rowToRun);
   }
 
+  /**
+   * Return the count of runs currently in 'running' status. Used by
+   * the trigger to enforce maxConcurrent. Counts ALL running rows
+   * via an index lookup — cheaper and more correct than
+   * listRecent(N).filter(), which could miss running rows that
+   * fell outside the N-most-recent window if zombie sweeps were
+   * delayed.
+   */
+  countRunning(): number {
+    const row = this.db
+      .prepare(
+        "SELECT COUNT(*) AS c FROM scheduled_task_runs WHERE status = 'running'",
+      )
+      .get() as { c: number };
+    return row.c;
+  }
+
   getById(id: string): ScheduledTaskRun | undefined {
     const row = this.db
       .prepare("SELECT * FROM scheduled_task_runs WHERE id = ?")
