@@ -25,10 +25,8 @@ export class KeyResolver {
    */
   async get(name: string): Promise<string | null> {
     // 1. Vault — lazy unlock (re-prompts if previous attempt failed)
-    let vaultUnlockAttempted = false;
     if (this.vault?.exists()) {
       if (!this.vault.isOpen() && this.promptPassword) {
-        vaultUnlockAttempted = true;
         try {
           const password = await this.promptPassword();
           this.vault.open(password);
