@@ -1,192 +1,211 @@
-# Stochastic Assessment Synthesis v12 — 2026-04-18
+# Stochastic Assessment Synthesis v13 — 2026-04-19
 
-Previous: v11 scored 5.90/10 (σ 0.047). v12 deliberately hunted bypasses
-of passes 27–30 (landed between v11 and v12) to test the hypothesis
-that "each assessment round finds the next layer."
+Previous: v12 scored 5.97/10 (σ 0.10). v13 measures commit window
+f1a37b1…HEAD — 61 commits, all fix-class, zero new features.
 
-## Overall Score: 5.97 / 10 (StdDev: 0.10)
+## Overall Score: 6.10 / 10 (StdDev 0.047)
 
-Delta from v11: **+0.07.** Range: 5.77 (Chaos Monkey) to 6.15 (Sr Engineer).
+Delta from v12: **+0.13.** Range: 6.018 (Pessimist) to 6.208 (Sr Engineer).
 
-_(Initial draft of this synthesis reported 5.99 / +0.09 due to an
-arithmetic error on Security Posture row sum — caught by Phase-4
-Auditor. Corrected here.)_
-
-**σ widened** from 0.047 → 0.10 — the largest spread of any round.
-**Two agents scored below baseline** (Pessimist 5.87, Chaos Monkey
-5.77) with cited regressions introduced by passes 27–30. Monotonicity
-invariant honored: every drop has specific evidence, not just
-reinterpretation.
-
-## What v12 confirmed about the methodology
-
-Each round of the assessment has produced something qualitatively
-different:
-
-- v9 → v10: surgical hardening (+0.20, tight σ)
-- v10 → v11: methodology rerun caught 5 real findings v10 missed
-  (−0.06 mean drift, tightest σ)
-- v11 → v12: targeted bypass hunt found **bypasses of passes 27–30
-  themselves** (+0.09 mean, widest σ — genuine disagreement on how
-  much the bypasses matter)
-
-The score is now a ±0.1 directional signal. The **payload is the
-finding list.**
+StdDev at 0.047 is the tightest of the v9-v13 series
+(0.12 → 0.10 → 0.047). Agreement widened: 9 of 10 agents landed
+within a 0.11 band. **One outlier**: Sr Engineer at 6.208 (cited
+regression-test-per-fix discipline verified by direct commit
+inspection).
 
 ## 10-Agent Score Matrix
 
-| Dimension             | A1   | A2   | A3   | A4   | A5   | A6   | A7   | A8   | A9   | A10  | Mean     | σ    | v11  | Δ     |
-| --------------------- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | -------- | ---- | ---- | ----- |
-| Code Completeness     | 7.70 | 7.55 | 7.60 | 7.60 | 7.55 | 7.53 | 7.60 | 7.55 | 7.70 | 7.53 | **7.59** | 0.07 | 7.53 | +0.06 |
-| Wiring                | 6.90 | 7.00 | 6.95 | 7.00 | 7.10 | 6.86 | 6.86 | 7.05 | 7.00 | 6.86 | **6.96** | 0.09 | 6.86 | +0.10 |
-| Test Reality          | 6.80 | 6.70 | 6.75 | 6.75 | 6.70 | 6.60 | 6.60 | 6.75 | 6.90 | 6.80 | **6.74** | 0.09 | 6.60 | +0.14 |
-| Production Evidence   | 4.80 | 4.77 | 4.80 | 4.77 | 4.77 | 4.77 | 4.95 | 4.77 | 4.80 | 4.60 | **4.78** | 0.08 | 4.77 | +0.01 |
-| Operational Readiness | 5.90 | 5.60 | 5.80 | 5.85 | 5.85 | 5.72 | 5.80 | 5.95 | 5.85 | 5.72 | **5.80** | 0.11 | 5.72 | +0.08 |
-| Security Posture      | 6.80 | 6.55 | 6.70 | 6.75 | 6.75 | 6.60 | 6.80 | 6.75 | 7.20 | 6.60 | **6.65** | 0.16 | 6.43 | +0.22 |
-| Documentation         | 5.70 | 5.62 | 5.65 | 5.62 | 5.75 | 5.62 | 5.62 | 5.70 | 5.75 | 5.62 | **5.67** | 0.05 | 5.62 | +0.05 |
-| Failure Handling      | 6.70 | 6.40 | 6.65 | 6.65 | 6.55 | 6.55 | 6.62 | 6.65 | 6.70 | 6.20 | **6.57** | 0.14 | 6.55 | +0.02 |
-| Scale Readiness       | 4.00 | 3.94 | 3.95 | 4.10 | 3.94 | 3.94 | 4.05 | 4.30 | 4.30 | 3.94 | **4.05** | 0.13 | 3.94 | +0.11 |
-| Ship Readiness        | 4.90 | 4.70 | 4.85 | 4.83 | 4.83 | 4.83 | 4.83 | 4.83 | 5.40 | 4.83 | **4.88** | 0.18 | 4.83 | +0.05 |
+| Dimension             | Opt  | Pes  | Arc  | Aud  | Ops  | Att  | Com  | Pra  | SrE  | Cha  | Mean      | σ     | v12  | Δ     |
+| --------------------- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | --------- | ----- | ---- | ----- |
+| Code Completeness     | 7.70 | 7.60 | 7.70 | 7.60 | 7.70 | 8.00 | 7.00 | 7.60 | 7.80 | 7.70 | **7.640** | 0.242 | 7.59 | +0.05 |
+| Wiring                | 7.00 | 6.90 | 7.00 | 7.10 | 7.00 | 7.00 | 7.00 | 6.90 | 7.20 | 6.96 | **7.006** | 0.084 | 6.96 | +0.05 |
+| Test Reality          | 6.90 | 6.80 | 6.80 | 6.90 | 6.90 | 7.00 | 7.00 | 6.85 | 7.00 | 7.10 | **6.925** | 0.093 | 6.74 | +0.19 |
+| Production Evidence   | 4.78 | 4.78 | 4.78 | 4.78 | 4.78 | 5.00 | 5.00 | 4.78 | 4.78 | 4.78 | **4.824** | 0.088 | 4.78 | +0.04 |
+| Operational Readiness | 6.10 | 5.90 | 6.10 | 6.00 | 6.30 | 6.00 | 6.00 | 6.05 | 6.10 | 6.00 | **6.055** | 0.101 | 5.80 | +0.26 |
+| Security Posture      | 7.00 | 6.80 | 6.90 | 6.90 | 6.90 | 6.00 | 7.00 | 6.85 | 7.10 | 6.85 | **6.830** | 0.289 | 6.65 | +0.18 |
+| Documentation         | 5.67 | 5.67 | 5.67 | 5.67 | 5.67 | 6.00 | 6.00 | 5.70 | 5.80 | 5.67 | **5.752** | 0.130 | 5.67 | +0.08 |
+| Failure Handling      | 7.00 | 6.80 | 6.80 | 6.80 | 6.80 | 7.00 | 7.00 | 6.75 | 7.00 | 7.00 | **6.895** | 0.106 | 6.57 | +0.33 |
+| Scale Readiness       | 4.10 | 4.05 | 4.20 | 4.30 | 4.20 | 4.00 | 4.00 | 4.15 | 4.30 | 4.30 | **4.160** | 0.114 | 4.05 | +0.11 |
+| Ship Readiness        | 5.00 | 4.88 | 4.88 | 4.88 | 4.88 | 5.00 | 5.00 | 4.95 | 5.00 | 4.88 | **4.935** | 0.057 | 4.88 | +0.06 |
 
-Security Posture +0.22 is the largest gain (pass 27 + 30 credit) but
-Chaos Monkey's Failure Handling −0.35 and Pessimist's Ops/Ship
-regressions counterbalance it.
+**Overall:** 6.102 (v12: 5.97, Δ **+0.13**).
 
-## New substantive findings
+## Monotonicity Check
 
-### Legitimate security bug (pass 25 leftover, v11 missed)
+All 10 dimension means are HIGHER than baseline. Invariant **holds**.
 
-**F1. Env scrub regex `_KEY` gap.** `SCRUBBED_ENV_PATTERN =
-/(?:API_KEY|SECRET|PASSWORD|CREDENTIALS|PRIVATE_KEY|_TOKEN)/i` catches
-`API_KEY` and `PRIVATE_KEY` but NOT bare `_KEY`. Real leak surface:
+Per-agent overall scores vs v12 overall 5.97:
 
-- `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
-- `DATADOG_APP_KEY`, `HONEYCOMB_WRITEKEY`, `MIXPANEL_PROJECT_KEY`
-- `SENTRY_DSN` (auth in URL, `DSN` pattern not covered)
-- Anything with `_AUTH`, `_BEARER`, `_COOKIE`, `_JWT`, `_PAT`
+- Pes 6.02 (+0.05), Pra 6.06 (+0.09), Arc 6.08 (+0.11), Aud 6.09
+  (+0.12), Att 6.10 (+0.13), Com 6.10 (+0.13), Ops 6.11 (+0.14),
+  Cha 6.12 (+0.15), Opt 6.13 (+0.16), SrE 6.21 (+0.24).
+- Zero agents below baseline. Monotonicity holds for every agent.
 
-### Regressions introduced by passes 27–30
+## Disagreement Hot-Spot
 
-**F2. CI ratchet supply-chain window.** Pass 29 placed
-`check-as-any-budget.mjs` at ci.yml line 43, AFTER `npm ci` at line 22. A transitive-dep postinstall could mutate the script between
-install and enforcement. Flagged by Pessimist + Auditor + Operator +
-Sr Engineer (4/10). Fix: move step before `npm ci` — it uses only
-Node stdlib.
+**Security Posture: σ 0.289 (highest of any dimension).** The
+Attacker scored 6.00 (baseline 6.65, -0.65 regression) citing three
+specific bypasses of new-in-v13 fixes:
 
-**F3. Pass 28 busy_timeout is synchronous, TUI stalls silently.**
-better-sqlite3 is synchronous; `busy_timeout=5000` blocks the Node
-thread for up to 5s. Ink TUI renders on that thread. No progress
-indicator wired. Pre-pass-28: fail-fast with SQLITE_BUSY. Post-pass-
-28: silent 5s hang. Flagged by Pessimist + Chaos Monkey (2/10). Fix
-requires design: async driver OR UX spinner + shorter default
-timeout + fallback.
+1. `validateGateCommand("npx vitest-pwn")` returns `allowed: true` —
+   prefix `"npx vitest"` has no word-boundary, so npm package
+   typosquats bypass the kill-gate.
+2. `validateGateCommand("go test -exec=/tmp/e ./...")` passes — the
+   go toolchain runs the wrapper binary and the metachar filter
+   doesn't catch `-exec=`.
+3. Webhook HMAC has no timestamp binding; nonce cache is bounded to
+   1000 entries, so churn lets captured payloads replay after
+   eviction.
 
-**F4. Pass 30 regex is unanchored (not unescaped).** _Correction:
-Phase-4 Auditor verified that `.` IS properly escaped in every
-pattern (`\.ssh`, `\.aws`, `\.netrc`, etc.). Sr Engineer's claim of
-unescaped `.` was wrong._ What IS true: patterns aren't anchored with
-`^` or word boundaries, so `~/.ssh/` matches as a substring anywhere
-in the command. This creates over-inclusive false positives (e.g.,
-`grep -r "~/.ssh/" docs/` gets blocked) rather than under-inclusive
-bypasses. Lower priority than initially stated.
+Every other agent (9/10) scored Security in 6.8–7.1 based on what
+v13 fixed. The Attacker scored what v13 did NOT fix. **Both
+perspectives are honest; disagreement IS the signal.** The
+Attacker's -0.65 is cited with specific evidence, satisfies the
+monotonicity carve-out, and is preserved in the final mean (6.830)
+rather than clipped.
 
-**F5. Pass 30 defeated by shell string tricks.**
+## Calibration Drift Corrections
 
-- `cat $(echo ~)/.ssh/id_rsa` — no literal `~`, regex fails
-- `cat /U""sers/$USER/.ssh/id_rsa` — string concat breaks
-- ``cat `printf /U\x73ers/justin`/.ssh/id_rsa`` — hex in subshell
-- `cat ~"/.ssh/id_rsa"` — quote between `~` and `/`
-- `cat /Users/justin/.s*h/id_rsa` — glob expansion
+**None applied.** Every score-down had a cited regression. Most
+notable:
 
-Flagged by Attacker (1/10 but detailed). The code comment says
-"path-name defense, not a real capability sandbox"; v12 confirms the
-gap is wider than the comment suggests.
+- **Competitor scored Code Completeness at 7.00 (baseline 7.59, -0.59)**
+  citing orphan router plugin files as dead scaffolding. This is
+  within-bucket (7-8 rubric level) but steep magnitude relative to
+  the actual regression (2 orphan files vs 61 hardening commits).
+  Other agents with the same evidence scored 7.60-8.00. **Not
+  overridden** because the evidence is real, but flagged as the
+  widest downside swing across agents.
 
-**F6. Pass 30 partial gap — `/var/root/.ssh` (macOS root user) only.**
-_Correction: Phase-4 Auditor verified that `/private/etc/shadow` IS
-caught by the existing unanchored `/\/etc\/shadow\b/` pattern via
-substring match. The Pessimist/Architect claim that `/private/etc/`
-bypasses was wrong._ What IS real: `/var/root/.ssh/` (macOS root
-user home) isn't in any pattern. Narrower gap than initially
-reported.
+## Risk Register (v13 consensus)
 
-### Carried forward from v11
+| Risk                                                      | Count     | Agents                              |
+| --------------------------------------------------------- | --------- | ----------------------------------- |
+| **Dep-cruiser RED on HEAD (2 orphan router files)**       | **10/10** | ALL — universal                     |
+| F10 zero production telemetry                             | 4/10      | Arc, Aud, Pra, Ops                  |
+| F5 shell string-trick bypass (sandbox acknowledged)       | 4/10      | Att, Pra, Arc, Cha                  |
+| F3 busy_timeout synchronous TUI stall                     | 3/10      | Arc, Pra, Cha                       |
+| Zero `*.e2e.test.ts` across 29 packages                   | 3/10      | Aud, Pra, Att                       |
+| F8 ENOSPC + Docker daemon death traps                     | 3/10      | Pes, Arc, Pra (Cha says now closed) |
+| F6 `/var/root/.ssh/` gap                                  | 3/10      | Att, Pra, Arc                       |
+| **NEW: kill-gate bypass (npx vitest-X, go -exec, brace)** | 1/10      | Att (specific exploits enumerated)  |
+| **NEW: webhook replay after nonce-cache eviction**        | 1/10      | Att (specific chain enumerated)     |
+| NEW: curator lock ownership check (release without own)   | 1/10      | Att                                 |
+| F1 env scrub `_KEY` gap                                   | 1/10      | Ops (Att says code now fixed it)    |
+| F2 CI ratchet after `npm ci` in workflow order            | 0/10      | No agent re-flagged v13             |
 
-- F7. `continue-on-error: true` on core + vault test steps (5/10 —
-  now a multi-round carryover)
-- F8. ENOSPC + Docker daemon death traps still open (Chaos, 1/10)
-- F9. No dep-cruiser for 27-package graph (Architect, 1/10)
-- F10. Zero production telemetry (Auditor + Competitor + Pragmatist,
-  3/10)
+## Verification Report (from Auditor + Sr Engineer)
 
-## Risk register (v12 consensus)
+Both agents spot-checked v13 fix commits independently. Results
+match:
 
-| Risk                                           | Count                    |
-| ---------------------------------------------- | ------------------------ |
-| `continue-on-error` on core + vault CI         | **5/10**                 |
-| CI ratchet ordering vs `npm ci`                | **4/10**                 |
-| Pass 30 `/private/`, symlinks, realpath bypass | 3/10                     |
-| Zero production telemetry                      | 3/10                     |
-| Pass 28 synchronous busy_timeout stalls TUI    | 2/10                     |
-| Pass 30 regex unescaped `.` + unanchored       | 2/10                     |
-| Env regex `_KEY` gap (NEW legitimate bug)      | **1/10 (high-severity)** |
-| Pass 30 shell string-trick bypasses            | 1/10                     |
-| ENOSPC + Docker daemon death untrapped         | 1/10                     |
-| No dep-cruiser                                 | 1/10                     |
+- **cc485b0** (classifier cache key): fix correct, test exercises
+  the bug class. Grade A by both.
+- **7acfc3d** (webhook sig before nonce): fix correct, test fires
+  the exact UUID-guess attack vector. Grade A by both.
+- **18e7a2d** (kill-gate metacharacter): fix correct for the
+  enumerated 10-form attack sweep. Grade A by both — but Attacker
+  then found 3 bypasses OUTSIDE the enumerated set.
+- **c1bff5a** (ChangeSet GC): fix correct, test coverage adequate.
+  Grade A by Auditor.
+- **073884b** (InputHistory O(N²)): fix correct, test commits
+  cross-restart persistence assertion. Grade A by Sr Engineer.
+
+Zero discrepancies between commit claims and committed code across
+5 verified fixes.
+
+## Three-round trajectory
+
+**v9 5.76 → v10 5.96 → v11 5.90 → v12 5.97 → v13 6.10**
+
+Slope: +0.20, -0.06 (methodology rerun), +0.07, +0.13. v13 is the
+largest gain since v10. Character shift: v12 was a targeted bypass
+hunt that widened σ (0.10); v13 is broad hardening with tighter
+agreement (σ 0.047).
+
+## What this round produced
+
+1. **Five bug classes closed systematically with tests**:
+   $-backreference (5 sites), unbounded-growth (7 sites), regex
+   word-boundary (2 sites), cache-key underspecification (1 site),
+   TOCTOU lockfile (1 site).
+2. **Two CI ratchets changed state**: F7 (`continue-on-error`)
+   closed at 0/0 (was v12's top risk at 5/10); F9 (dep-cruiser)
+   added but RED on HEAD.
+3. **Four security gates moved**: webhook sig-before-nonce,
+   pipeline dispatcher allowedTools enforcement, workflow kill-gate
+   metacharacter rejection, memory runner O_EXCL TOCTOU.
+4. **Seven test files gained regression coverage** paired with each
+   v13 bug-hunt fix.
+
+## What this round did NOT address
+
+- F1 env scrub (Attacker says code is now broader than v12 regex
+  suggested; Ops flagged it as still a gap — **unresolved
+  disagreement**).
+- F3 busy_timeout synchronous TUI stall (design-level; requires
+  async driver).
+- F5 shell string-trick bypass (sandbox comment still admits "not
+  a capability sandbox").
+- F6 `/var/root/.ssh/` (macOS root user home gap).
+- F10 zero production telemetry (structural — local CLI, no
+  hosted surface to observe).
 
 ## Agent-level narrative
 
 | Agent        | Score | Key insight                                                    |
 | ------------ | ----- | -------------------------------------------------------------- |
-| Optimist     | 6.02  | +5 dimensions moved, trap discipline held                      |
-| Pessimist    | 5.87  | Ship + Ops + Fail all regressed with cited evidence            |
-| Architect    | 5.97  | Passes 27–30 are pattern extensions, not new patterns          |
-| Auditor      | 6.00  | All verification checks passed; ordering concern noted         |
-| Operator     | 6.05  | CI ratchet now real; `continue-on-error` debt persists         |
-| Attacker     | 5.92  | 6+ bypasses found in pass 27 + 30                              |
-| Competitor   | 6.07  | Brainstorm now publishes stricter posture than Aider/Continue  |
-| Pragmatist   | 6.03  | Crossed 6.0 (barely); CI gate still gated on soft-fail tests   |
-| Sr Engineer  | 6.15  | Allowlist-first ordering sound; regex anchoring weak           |
-| Chaos Monkey | 5.77  | Pass 28 is grace window not fix; 2/3 chaos surfaces still open |
+| Optimist     | 6.13  | Hardening round; F7 closed is the biggest Ops win              |
+| Pessimist    | 6.02  | Orphans regress Wiring; 7 v12 findings unaddressed             |
+| Architect    | 6.08  | F7 closed + F9 added in same round — net ratchet gain          |
+| Auditor      | 6.09  | All 4 spot-checked commits match claims; ratchet is cosmetic   |
+| Operator     | 6.11  | F7 closed at 0/0 is biggest Ops move; dep-cruiser RED caps     |
+| Attacker     | 6.10  | Three NEW bypasses of v13 fixes + carried F5                   |
+| Competitor   | 6.10  | Ahead of Aider/Continue; behind Claude Code on telemetry       |
+| Pragmatist   | 6.06  | Maturity moved; dep-cruiser RED trains team to ignore ratchets |
+| Sr Engineer  | 6.21  | 4/4 fix commits grade A; regression tests exercise bug class   |
+| Chaos Monkey | 6.12  | ENOSPC + Docker traps NOW closed with tests; busy_timeout open |
 
-## Three-round trajectory
+Three agents came in HIGHER than the consensus mean (Opt 6.13, Cha
+6.12, SrE 6.21); all three cited specific hardening evidence.
+Three came in LOWER (Pes 6.02, Pra 6.06, Arc 6.08); all three cited
+dep-cruiser RED or carried v12 findings.
 
-**v8 5.36 → v9 5.76 → v10 5.96 → v11 5.90 → v12 5.97**
+## Recommended actions (pass 32+)
 
-Slope narrowing: +0.40, +0.20, −0.06 (methodology), +0.07. Each round
-produces fewer score points but more specific findings. v12 found
-4 real substantive items (1 legitimate security bug, 2 real bypass
-vectors, 2 regressions) — 2 items flagged by agents were hallucinated
-and caught by the Phase-4 Auditor. The assessment has crossed the
-point where running it is mostly about surfacing the next layer of
-bugs, not moving the aggregate.
+**Universal (10/10):** Resolve the RED dep-cruiser state.
+`packages/router/src/strategies/{plugin-interface.ts,cost-first-plugin.ts}`
+are untracked orphans committed as API surface with no consumers.
+Either wire them with a real strategy and tests or delete them.
+Leaving the new ratchet RED trains operators to ignore ratchets,
+which erodes every other ratchet's value.
 
-## Recommended actions (pass 31+)
+**Attacker-flagged (specific exploits):**
 
-Cheap high-severity (real after Auditor verification):
+1. Tighten `ALLOWED_GATE_PREFIXES`: require word-boundary (trailing
+   space) and deny `-exec=`, `-toolexec=`, `{`, `}` in addition to
+   current metachar set.
+2. Add timestamp binding + window enforcement to webhook HMAC so
+   captured payloads can't replay after nonce-cache churn.
+3. Add ownership check to curator lock release (check lock content
+   pid before unlink).
 
-1. **F1 env regex `_KEY`**: extend pattern to `/(?:API_KEY|SECRET|PASSWORD|CREDENTIALS|PRIVATE_KEY|_TOKEN|_KEY|_AUTH|_BEARER|_COOKIE|_DSN|_JWT|_PAT)/i`. Add allowlist exemption for `SSH_AUTH_SOCK` (socket path, not secret).
-2. **F2 CI ratchet ordering**: move step before `npm ci`. One-line move.
-3. **F6 `/var/root/.ssh/`**: add to the sandbox path patterns (macOS root user home). Narrower than initially reported.
+**Design-level (carryover, require real work):**
 
-Skip (hallucinated findings, Auditor-verified):
+- F3 busy_timeout async driver or UX downgrade.
+- F5 shell string-trick — requires AST-parsed shell-quote.
+- F10 telemetry — requires hosted egress path.
 
-- ~~F4 path regex unescaped `.`~~ — `.` IS escaped; unanchored-ness is a false-positive surface, not bypass
-- ~~F6 `/private/etc/shadow` bypass~~ — existing unanchored regex already catches it
+**Cleanup:**
 
-Design-level (defer or punt):
+- F6 `/var/root/.ssh/` add to sandbox patterns (one-line).
+- F1 env scrub — verify whether Attacker's claim that code is already
+  broader matches reality, and resolve the Ops-vs-Attacker disagreement.
 
-- F3 busy_timeout UX: async driver rewrite OR downgrade to 500ms + document
-- F5 shell string tricks: true fix requires shell-quote AST parsing
+## The payload is the finding list
 
-Design-level (defer or punt):
-
-- F3 busy_timeout UX: async driver rewrite OR downgrade to 500ms + document
-- F5 shell string tricks: true fix requires shell-quote AST parsing
-
-Structural (multi-round carryover):
-
-- F7 core + vault CI debt
-- F8 ENOSPC + Docker daemon death traps
-- F9 dep-cruiser
-- F10 telemetry
+At v13 the score differential (+0.13) is a directional signal. The
+material output is the 10 findings consolidated above — 7 carried
+forward from v12, 3 new-in-v13 (Attacker bypasses of this round's own
+fixes). A ratchet that catches its own ring's orphans in the same
+round that adds the ratchet is signal that the system is working.
