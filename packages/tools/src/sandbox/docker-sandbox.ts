@@ -247,5 +247,8 @@ function maskHostPaths(
   hostWorkspace: string,
   containerWorkspace: string,
 ): string {
-  return output.replaceAll(hostWorkspace, containerWorkspace);
+  // Function form — containerWorkspace might contain `$` in custom
+  // configs, and String.replaceAll's string form would interpret
+  // $1/$&/etc. Defaults are $-free but don't rely on that.
+  return output.replaceAll(hostWorkspace, () => containerWorkspace);
 }
