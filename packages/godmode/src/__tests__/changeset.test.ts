@@ -277,4 +277,25 @@ describe("ChangeSet state machine", () => {
     expect(retry.success).toBe(false);
     expect(retry.message).toMatch(/cannot retry/);
   });
+
+  it("stamps terminalAt on executed/failed/rejected changesets", async () => {
+    // The terminal-status timestamp is the retention anchor for
+    // in-memory GC. Without it, the long-running daemon `changesets`
+    // Map grew forever. This trap holds the contract: every terminal
+    // transition records `terminalAt`.
+    const action = `terminal-${Math.random()}`;
+    registerExecutor(action, async () => ({ success: true, message: "ok" }));
+
+    const cs = createDraft({ action });
+    const before = Date.now();
+    await approveChangeSet(cs.id);
+    const after = Date.now();
+
+    expect(cs.status).toBe("executed");
+    expect(cs.terminalAt).toBeDefined();
+    expect(cs.terminalAt!).toBeGreaterThanOrEqual(before);
+    expect(cs.terminalAt!).toBeLessThanOrEqual(after);
+    // On executed, terminalAt should equal executedAt.
+    expect(cs.terminalAt).toBe(cs.executedAt);
+  });
 });
