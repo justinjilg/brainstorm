@@ -206,5 +206,23 @@ describe("secret-substitution", () => {
       injectSecrets(input, scrubMap);
       expect(input.command).toBe("echo valueABCD and valueAB");
     });
+
+    it("preserves literal $ in secret values (no backreference corruption)", () => {
+      // Real-world case: user stores a password with literal `$`
+      // characters in the vault. Pre-fix, the string-form
+      // replaceAll() would interpret `$1`/`$&`/etc. in the SECRET
+      // VALUE as regex backreferences — stripping them before the
+      // tool saw the value. The auth call would silently fail
+      // with a truncated password.
+      const tricky = "MyP$1$&ssword$";
+      const scrubMap = new Map<string, string>([[tricky, "$VAULT_MY_PW"]]);
+      const input: Record<string, unknown> = {
+        command: "curl -u user:$VAULT_MY_PW https://api.example.com",
+      };
+      injectSecrets(input, scrubMap);
+      expect(input.command).toBe(
+        `curl -u user:${tricky} https://api.example.com`,
+      );
+    });
   });
 });

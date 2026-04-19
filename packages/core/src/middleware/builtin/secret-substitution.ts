@@ -121,7 +121,14 @@ export function injectSecrets(
     input[key] = transform(input[key], (s) => {
       let result = s;
       for (const [placeholder, value] of sortedInjects) {
-        result = result.replaceAll(placeholder, value);
+        // Function-form — replaceAll with a string replacement
+        // interprets $1/$&/$`/$' in `value` as regex specials.
+        // `value` is a resolved SECRET: passwords often contain
+        // literal `$1`, `$&`, etc., and corrupting those before
+        // sending to a tool means auth fails silently (or worse,
+        // a truncated value is used in an api request).
+        const v = value;
+        result = result.replaceAll(placeholder, () => v);
       }
       return result;
     });
