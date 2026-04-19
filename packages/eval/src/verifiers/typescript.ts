@@ -32,7 +32,14 @@ export function verifyTypeScriptCompiles(filePath: string): {
         filePath,
       ],
       {
-        timeout: 15000,
+        // 45s. The prior 15s timeout flaked intermittently on CI
+        // Ubuntu runners where `npx tsc` cold-start (resolution +
+        // tsc process boot) ate 10-14s before real compilation
+        // even began. The scorer test "returns a perfect score"
+        // hit exactly 15051ms several times — always the timeout,
+        // never a genuine compile failure. Raise the ceiling to
+        // comfortably cover npx+tsc startup on slow runners.
+        timeout: 45000,
         stdio: "pipe",
       },
     );
