@@ -39,6 +39,20 @@ export function createPipelineDispatcher(
         ? `${systemPrompt}\n\n---\n\nTask:\n${prompt}`
         : prompt;
 
+      // Pass agent-level allowedTools through as the privilege ceiling
+      // for the subagent. Pre-fix this was extracted from the profile
+      // but NEVER passed — an agent declaring `allowedTools: ["file_read"]`
+      // would still have its subagent run shell, git_commit, etc.,
+      // because the default subagent type's tool list was used
+      // unmodified. Now it flows into parentToolNames, which
+      // spawnSubagent intersects with the type's default list (see
+      // subagent.ts:367-376) as a strict upper bound.
+      //
+      // `"all"` means "no restriction" — don't pass parentToolNames
+      // so the subagent's type-level defaults apply.
+      const parentToolNames =
+        allowedTools && allowedTools !== "all" ? allowedTools : undefined;
+
       const result = await spawnSubagent(fullPrompt, {
         ...subagentOptions,
         type: subagentType as SubagentType,
@@ -46,6 +60,7 @@ export function createPipelineDispatcher(
         maxSteps: maxSteps || undefined,
         budgetLimit: opts.budget,
         projectPath: opts.projectPath,
+        parentToolNames,
       });
 
       return {
@@ -56,6 +71,34 @@ export function createPipelineDispatcher(
     },
 
     async runParallel(specs, opts) {
+      // Collect each spec's agent-level allowedTools and compute the
+      // strictest intersection for the shared parentToolNames. spawnParallel
+      // accepts ONE options set for all specs — so if agents in the batch
+      // have different allowedTools, we take the intersection as a safe
+      // floor. "all" contributes no restriction. If any spec declares
+      // an explicit tool list, parallel agents are all restricted to
+      // tools every agent in the batch can use. Same-batch parallel
+      // agents with wildly different restrictions should probably be
+      // sequential runPhase calls instead.
+      const perAgentAllowed: Array<string[] | undefined> = specs.map((s) => {
+        const agentFile = findAgentFile(opts.projectPath, s.agentId);
+        const t = agentFile?.profile.allowedTools;
+        return t && t !== "all" ? t : undefined;
+      });
+      const explicitLists = perAgentAllowed.filter(
+        (t): t is string[] => t !== undefined,
+      );
+      let parentToolNames: string[] | undefined;
+      if (explicitLists.length > 0) {
+        // Intersection of all explicit lists. If any agent has no
+        // explicit list ("all"), we can't compute a meaningful
+        // intersection for them — so we use the intersection of the
+        // ones that DO have lists as the floor for the whole batch.
+        parentToolNames = explicitLists.reduce((acc, list) =>
+          acc.filter((t) => list.includes(t)),
+        );
+      }
+
       const parallelSpecs = specs.map((s) => {
         const agentFile = findAgentFile(opts.projectPath, s.agentId);
         const systemPrompt = agentFile?.profile.systemPrompt;
@@ -73,6 +116,7 @@ export function createPipelineDispatcher(
         ...subagentOptions,
         budgetLimit: opts.budget,
         projectPath: opts.projectPath,
+        parentToolNames,
       });
 
       return results.map((r, i) => ({
