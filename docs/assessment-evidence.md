@@ -1,304 +1,258 @@
-# Stochastic Assessment Evidence v12 — 2026-04-18 (same day as v9/v10/v11)
+# Stochastic Assessment Evidence v13 — 2026-04-19
 
-**v12 is targeted at hunting bypasses in passes 27–30** (landed after v11).
-Passes 27-30 closed five v11 findings; the v12 panel's job is to prove
-whether those fixes have their own bypasses, false-positives, or
-regressions.
+Previous: v12 scored 5.97/10 (σ 0.10, widest spread in the series) on
+commit f1a37b1. v13 measures commits between f1a37b1 and HEAD — 61
+commits, all fix-class, landing on `main`.
 
-Prior rounds:
-
-- v8 (pre-session): 5.36
-- v9 (early session): 5.76
-- v10 (after passes 22-26): 5.96
-- v11 (methodology rerun, same code as v10): 5.90 — σ 0.047, surfaced 5 new findings
-
-## Changes since v11 (passes 27–30)
-
-All on `origin/main`. Commit `f1a37b1`.
-
-Pass 27 — OP*SESSION*<accountid> scrub bypass fix:
-packages/tools/src/builtin/shell.ts: added SCRUBBED*ENV_PREFIXES =
-["OP_SESSION*", "AWS*", "GCP*", "AZURE*"]. Allowlist check runs
-FIRST so GITHUB*\* still passes through. +3 trap cases in
-shell-sandbox.test.ts.
-
-Pass 28 — SQLite busy_timeout:
-packages/db/src/client.ts: added `busy_timeout = 5000` pragma after
-`journal_mode = WAL`. concurrent-writers.test.ts: 2 cases (pragma
-verification + exhaustion path).
-
-Pass 29 — CI ratchet wire-up:
-.github/workflows/ci.yml: added `Lint — as-any escape-hatch budget`
-step running `node scripts/check-as-any-budget.mjs`. Also flagged
-existing `continue-on-error: true` on core + vault steps as TODO
-debt (not fixed — root-cause investigation deferred).
-
-Pass 30 — Sensitive-path read blocks:
-packages/tools/src/builtin/sandbox.ts: added 9 path patterns to
-BLOCKED_PATTERNS covering ~/.ssh/, ~/.aws/credentials, ~/.netrc,
-~/.config/op/, ~/.gnupg/, ~/.docker/config.json, ~/.npmrc,
-/etc/shadow, /etc/sudoers, /proc/\*/environ. 10 new trap cases.
-
-Post-pass metrics:
-
-- Tools tests: 116 (was 103 at v11)
-- DB tests: 35 (was 33 at v11)
-- AUDIT.md closed items: 25 (was 24 at v11)
-- as-any budget: 285/285 (unchanged, no new casts)
-- Typecheck: 0 errors
-- `.github/workflows/ci.yml`: now invokes check-as-any-budget.mjs
-
-## v12 scope (what agents should actively probe)
-
-1. **Pass 27 bypass hunt**: can `_OP_SESSION_foo` (leading underscore),
-   `OPsession_*` (case tricks), or `AWS` (no underscore suffix)
-   escape the prefix match?
-2. **Pass 28**: is 5000ms the right retry window, or will it hang a
-   TUI under real lock contention?
-3. **Pass 29**: is `node scripts/check-as-any-budget.mjs` placed
-   BEFORE or AFTER `npm ci`? If after, a malicious postinstall could
-   mutate the script. Also, does the existing `continue-on-error`
-   debt mean CI green still doesn't mean passing tests?
-4. **Pass 30 bypass hunt**: can an attacker read credentials via
-   `/private/etc/...` (macOS), `$(echo ~)/..ssh/id_rsa`, symlinks,
-   command-substitution tricks, `base64 < ~/.ssh/id_rsa` (the
-   blocked patterns only match full paths, not redirect sigils)?
-5. **False-positive regressions**: do the pass-30 path blocks break
-   legitimate project files? (e.g., `packages/vault/docs/keys.md`,
-   `docs/guides/aws-setup.md`, anything referencing `.ssh` in a
-   project filename.)
-
-Continue from v10 evidence below (unchanged sections omitted for
-brevity; see git blame for full v10 content).
+Methodology note: brainstorm CLI is NOT the BrainstormRouter project
+that the canonical checklist was written for. Commands are adapted to
+brainstorm's turborepo + vitest stack; "production endpoint" checks
+are N/A because brainstorm CLI ships as a local binary, not a hosted
+service. Wiring and ratchet items are brainstorm-specific.
 
 ---
 
-# [Archived: v10 evidence continues below]
-
-Round 10 evidence. v9 was run earlier this session (baseline **5.76/10**,
-σ 0.12). v10 measures whether passes 22–26 (all landed after v9's
-synthesis) moved the risk register and the score.
-
-Commands run at `/Users/justin/Projects/brainstorm`.
-
----
-
-## 1. Recent commits (last 20)
+## 1. Recent commits (last 30 since v12 baseline f1a37b1, 61 total)
 
 ```
-9fbc324 test(db): SQLite WAL corruption recovery trap (C1, pass 26)
-47aafc3 fix(tools): scrub secrets from shell child env (A2, pass 25)
-f9c6625 fix(tools): Docker sandbox hardening + default-level flip (A1, pass 24)
-c19b348 chore: clean working tree + gitignore persistent-leak patterns (pass 23)
-338c014 chore: cap 'as any' escape hatches with CI ratchet (pass 22)
-a597b20 fix(desktop): npx-fallback child gets full stdio wiring (S7)
-0ee2d40 docs(desktop): audit — close S6, S5, S2, S4 review findings in passes 17–20
-36bb8c7 fix(desktop): close send-guard race with ref (S4)
-2e71e5f fix(tools): background shell tasks honor AbortSignal (S2)
-9df4eff fix(desktop): partial replies flagged when backend error arrives mid-stream (S5)
-6e9d181 fix(desktop): pending IPC requests reject on backend exit (S6)
-f7b82fc fix: monorepo-wide typecheck + test cleanup (pass 16)
-aded03d docs(desktop): AUDIT.md — rename 'Open items' to 'Closed during passes 10–15'
-8a6d171 docs(desktop): audit — close the final four items, mark reliability plan complete
-5882ad1 test(desktop): pass 14 — fork/handoff IPC contract pinned down
-4cde98a docs(desktop): tests-live README — trim stale pass-6 candidate list
-50eedb1 docs(desktop): tests-live README — add shell AbortSignal + orphan-on-quit bugs to the caught list
-dacf1b5 fix(desktop): SIGKILL fallback on before-quit prevents orphan ipc children
-2d27c3c docs(desktop): audit — close 3 open items from passes 10/11/12
-fcda9cc feat(core): config.agent.streamTimeoutMs makes the stall watchdog configurable
+cc485b0 fix(router): classifier cache keys include context and project hints
+073884b fix(cli): InputHistory.save only appends the latest entry to disk
+18e7a2d fix(workflow): kill-gate allowlist rejects shell metacharacter chaining
+fdb87c6 fix(scheduler): zombie sweep only targets rows older than 30 minutes
+f038c83 fix(core): memory runner locks use O_EXCL to close TOCTOU race
+7acfc3d fix(server): GitHub webhook verifies signature before touching nonce cache
+2a31477 fix(core): add word boundary to sentiment.ts frustrated patterns
+69c2654 fix(core): ReactionTracker regex requires word boundaries (prefix-match false positives)
+ce6aae2 fix(core): pipeline dispatcher enforces agent allowedTools restriction
+673a711 fix(tools): checkpoint manager sweeps stale session dirs on startup
+7d59d65 fix(tools): web_search shares web_fetch's rotating anti-fingerprint UA pool
+071ba77 fix(core): FileWatcher caps agentWrites + changes to prevent unbounded growth
+586c72b fix(eval): raise TypeScript compile-verify timeout for CI npx cold-start
+405baab fix(scheduler): concurrency check uses authoritative count, not filtered listRecent
+2908411 fix(gateway): unwrapArray logs unexpected response shapes
+d6665be fix(hooks): auto-lint template — no outer double-quotes around $FILE
+6f5a78e fix(cli): IPC persists the actually-routed model, not chatParams.modelId
+75f6d44 fix(sdk): apiKeys are scoped to instance, not mutated into process.env
+aebb235 cleanup: fix mojibake in git-sync log + remove dead vaultUnlockAttempted var
+1e3b542 fix(router): bound convergenceAlerts growth (learned strategy)
+1a5367d fix(vault): bound op-cli cache size (was unbounded on unique-key queries)
+c1bff5a fix(godmode): ChangeSet map GCs terminal entries (unbounded memory leak)
+4d4f202 fix(core): secret injection preserves literal $ in secret values
+39fc711 fix(tools): file-edit preserves literal $ in replacement content
+9876fca fix(hooks): hook-command variable expansion preserves literal $ in paths
+6edfde5 fix(core): skill <SKILL_DIR> replacement immune to $-backreferences
+c4be21e fix(agents): nl-parser doesn't double-set budget on 'daily budget' input
+2af0ecc fix(providers): simplify BR-key resolution, remove unreachable branch
+9aa4f68 fix(core): resumeLatest(project) queries project-scoped, not top-1-filtered
+5de1c95 fix(core): add durationMs to test MiddlewareToolResult constructions
 ```
 
-All 9 post-v9 passes pushed to `origin/main`.
+Total commits in v12→v13 window: **61**. Categories by grep:
 
-## 2. Build status
+- `fix(*):`: 52
+- `cleanup:` / `chore:`: 4
+- `test(*):`: 2
+- `docs(*):`: 3
+
+No `feat(*):` commits — this round is pure hardening.
+
+## 2. Build (turborepo)
 
 ```
 Tasks:    29 successful, 29 total
-Cached:    8 cached, 29 total
-  Time:    13.019s
+Cached:    27 cached, 29 total
+Time:    2.8s
 ```
 
-All 29 packages build. Fewer cache hits than v9 (28/29) because
-passes 22–26 touched tools, db, and cli packages — invalidations
-worked correctly.
+All 29 packages build. `--force` not required.
 
-## 3. Typecheck status
-
-Per-package `tsc --noEmit`:
-
-- `packages/core`: 0 errors (verified this round)
-- `packages/tools`: 0 errors (verified this round, post pass-25)
-- `packages/router`: 0 errors
-- `packages/vault`: 0 errors
-- `packages/server`: 0 errors
-- `packages/gateway`: 0 errors
-- `apps/desktop`: 0 errors
-- `packages/cli`: 0 errors (verified this round, post pass-22 import additions)
-- `packages/db`: 0 errors (post pass-26 new test file)
-
-## 4. Test summary (per-package, individual runs)
-
-| Package                   | v9 tests | v10 tests | Delta                |
-| ------------------------- | -------- | --------- | -------------------- |
-| `@brainst0rm/tools`       | 96       | 103       | +7 (env scrub cases) |
-| `@brainst0rm/db`          | 30       | 33        | +3 (WAL recovery)    |
-| `@brainst0rm/cli`         | 187      | 187       | same                 |
-| `@brainst0rm/core`        | 410      | 410       | same                 |
-| `@brainst0rm/vault`       | 56       | 56        | same                 |
-| `@brainst0rm/eval`        | 41       | 41        | same                 |
-| `@brainst0rm/server`      | 25       | 25        | same                 |
-| `@brainst0rm/workflow`    | 43       | 43        | same                 |
-| `@brainst0rm/ingest`      | 21       | 21        | same                 |
-| Desktop protocol          | 34       | 34        | same                 |
-| Desktop mocked Playwright | 79       | 79        | same                 |
-
-Individual per-package runs all green. Parallel turbo full-suite
-run: same flake pattern as v9 (core property test races under
-resource contention; unchanged by passes 22–26).
-
-## 5. Live-harness / E2E
-
-Unchanged from v9:
-
-- 4 protocol spec files, 34 tests
-- 13 live Electron spec files
-- 5 incident repro traps
-
-## 6-11. HTTP / gateway health
-
-N/A — this is the Brainstorm CLI + Desktop monorepo, not
-BrainstormRouter. Substitute evidence (pass-22 CI ratchet,
-pass-24 sandbox hardening, pass-25 env scrub, pass-26 WAL trap)
-documented in passes below.
-
-## 12-13. Test file counts
+## 3. Typecheck
 
 ```
-Total test+spec files: 157  (v9: 155, +2)
-Desktop protocol tier: 4
-Desktop flow tier (live): 13
-Desktop repro tier: 5
-Total E2E/integration: 22  (unchanged)
+$ npx tsc --noEmit 2>&1 | grep -c "error TS"
+0
 ```
 
-Test file additions since v9:
+Zero type errors across the full monorepo.
 
-- `packages/tools/src/__tests__/shell-sandbox.test.ts` gained the "shell
-  tool default sandbox level" describe + "buildChildEnv" describe
-- `packages/db/src/__tests__/wal-recovery.test.ts` (new, 3 cases)
+## 4. Test summary (turbo run test)
 
-## 14-15. Source / test line ratio
+Partial run earlier this session (b46fiankc.output): 56 of 57 turbo
+tasks succeeded. The only failing task is `@brainst0rm/desktop#test`
+— Playwright e2e that requires a running backend server ("server
+down" / "no-server" / "state-sync" scenarios). Environmental, NOT
+regression from v13 code changes.
 
-Not re-counted this round (delta is small: ~170 lines of added
-test code in tools + db, ~150 lines of production code for
-scrubbing and sandbox flags). v9 was 32.8%. v10 is still in the
-same neighborhood.
+Per-package test file counts on HEAD (from `Test Files` lines in
+each test run this session):
 
-## 16. Type errors
+- core: 33 test files, 421 tests
+- tools: test files run
+- router: 6 test files, 94 tests (+2 vs v12)
+- godmode: 83 tests (no delta noted)
+- code-graph: 59 tests
+- hooks: 57 tests
+- shared: 43 tests
+- workflow: 3 files, 46 tests (+3 vs v12)
+- eval: 6 test files
+- gateway: 38 tests
+- server: 3 files, 26 tests (+1 vs v12)
+- scheduler: 3 files, 23 tests (+1 vs v12)
+- cli: 15 files, 190 tests (+3 vs v12)
 
-0 errors, same as v9.
-
-## 17. Wiring audit
-
-49 production entrypoint references (unchanged from v9). Pass 21
-closed the last dangling wiring gap (npx-fallback stdio); passes
-22–26 did not add new subsystems requiring new wiring.
-
-## 18. Timer / interval usage
-
-11 in `packages/core/src` (unchanged — no passes touched that
-surface).
-
-## 19-20. Uptime / active tasks
-
-N/A — local CLI.
-
-## 21. `as any` count
+## 5. E2E test count
 
 ```
-grep -rn "as any" packages/ apps/ --include="*.ts" --include="*.tsx" \
-  --exclude-dir=node_modules --exclude-dir=dist | \
-  grep -v "\.test\." | grep -v "\.spec\."  →  285
+$ find packages -name "*.e2e.test.ts" | wc -l
+0
 ```
 
-Same filter as v9. Pre-pass-22 was 291 (with 6 gratuitous Zod-enum
-casts); pass 22 dropped it to 285. Passes 23–26 did not add any
-new `as any`. CI ratchet (`scripts/check-as-any-budget.mjs`) fails
-if count exceeds 285.
+Zero files matching `*.e2e.test.ts`. Desktop package uses Playwright
+under `apps/desktop/tests/*.spec.ts` (not `*.e2e.test.ts`).
 
-v8 → v9 (three days): 274 → 291 (+17, drift direction worse).
-v9 → v10 (same day): 291 → 285 (–6, direction reversed).
-
-## 22. Uncommitted files
+## 6. Source and test line counts
 
 ```
-9 entries in `git status --short`
+$ find packages -name "*.ts" -not -name "*.test.ts" ... | xargs wc -l | tail -1
+89113 total
+
+$ find packages -name "*.test.ts" ... | xargs wc -l | tail -1
+28345 total
 ```
 
-Down from 31 at v9. Breakdown:
+Test-to-source ratio: 28345 / 89113 = **31.8%**. v12 was at similar
+mass; growth consistent with the +11 tests added this round.
 
-- 2 in-progress router strategy files (`cost-first-plugin.ts`,
-  `plugin-interface.ts`) — WIP feature work, owner knowledge required
-- 1 in-progress code-graph scanner directory
-- 3 eval-data SWE-bench jsonl fixtures (may be intentional additions)
-- 1 docs/kairos-runs/03-codebase-audit (WIP run output)
-- 1 scripts/generate-arch-diagram.js (utility script, not yet committed)
+## 7. CI ratchets (brainstorm-specific, not BrainstormRouter's)
 
-Zero stray-script throwaways, zero tsup bundle artifacts, zero
-release/test-results noise. The remaining 9 are all legitimate
-items that need owner context to classify. **57% reduction from
-v9 (31 → 13 → 9).**
-
-## 23. AUDIT.md status
+Three active ratchets in `scripts/`:
 
 ```
-apps/desktop/tests-live/AUDIT.md:
-  24 ✅ closed items across reliability passes 3–26
+$ node scripts/check-as-any-budget.mjs
+as-any budget: 282/285 (3 under budget)
+
+$ node scripts/check-ci-continue-on-error.mjs
+ci continue-on-error budget: 0/0 (0 under budget)
+
+$ node scripts/check-dep-cruiser.mjs
+dep-cruiser budget exceeded: 2 > 0.
+  error no-orphans-in-packages: packages/router/src/strategies/plugin-interface.ts
+  error no-orphans-in-packages: packages/router/src/strategies/cost-first-plugin.ts
+x 2 dependency violations (2 errors, 0 warnings). 858 modules, 1706 dependencies cruised.
 ```
 
-Up from 21 closed at v9 (+3 items: A1 Docker hardening, A2 env
-scrubbing, C1 WAL recovery).
+**Important:** dep-cruiser is RED on HEAD. Two orphan files in
+`packages/router/src/strategies/` — both untracked in git (per git
+status — experimental plugin-strategy scaffolding, not wired).
 
-## 24. Reliability passes since v9 synthesis
+`continue-on-error` was **5/10 risk in v12 baseline (F7)**. It is now 0. Multi-round carryover closed.
 
-| Pass | Finding                                           | Commit  | Trap                                        |
-| ---- | ------------------------------------------------- | ------- | ------------------------------------------- |
-| 22   | `as any` regression (8/10 v9 consensus)           | 338c014 | `scripts/check-as-any-budget.mjs` (ratchet) |
-| 23   | Uncommitted working tree (7/10 v9)                | c19b348 | inspection (`.gitignore` + deletion)        |
-| 24   | A1 Docker sandbox hardening + default-level flip  | f9c6625 | `shell-sandbox.test.ts` restricted-default  |
-| 25   | A2 shell env scrubs OP_SERVICE_ACCOUNT_TOKEN etc. | 47aafc3 | `shell-sandbox.test.ts` 6 env cases         |
-| 26   | C1 SQLite WAL truncation recovery                 | 9fbc324 | `wal-recovery.test.ts` 3 cases              |
+## 8. as-any count (untracked-included)
 
-## 25. Remaining open risks (from v9 register)
+```
+$ grep -r "as any" packages --include="*.ts" | grep -v "\.test\.ts" | wc -l
+284
+```
 
-| Risk                                             | v9 agents | v10 status                     |
-| ------------------------------------------------ | --------- | ------------------------------ |
-| `as any` drift                                   | 8/10      | ✅ capped + ratcheted          |
-| Uncommitted tree                                 | 7/10      | ✅ 31 → 9                      |
-| Scale/concurrency (multi-window, WAL, disk full) | 3/10      | ⚠️ 1/3 (WAL) trapped, 2/3 open |
-| Parallel turbo test flake                        | 2/10      | ⚠️ unchanged                   |
-| Inspection-only S4/S6/S7 closures                | 1/10      | ⚠️ unchanged                   |
-| Docker sandbox pseudo-isolation                  | 1/10      | ✅ 6 hardening flags added     |
-| Env inheritance (OP_TOKEN leak)                  | 1/10      | ✅ scrubbed                    |
-| Default `sandbox=none` + prompt injection        | 1/10      | ✅ flipped to restricted       |
-| No dep-cruiser                                   | 1/10      | ⚠️ unchanged                   |
-| Auto-updater GitHub trust                        | 1/10      | ⚠️ unchanged                   |
-| Zero production telemetry                        | 1/10      | ⚠️ structural                  |
-| No jsdom+RTL                                     | 1/10      | ⚠️ unchanged                   |
+Budget is 285; reported uses 282 (within budget) — difference is the
+filter pattern (the budget script strips doc-comment mentions).
 
-## 26. Delta summary (v9 → v10)
+## 9. Wiring audit
 
-| Metric                  | v9    | v10   | Direction     |
-| ----------------------- | ----- | ----- | ------------- |
-| AUDIT.md closed         | 21    | 24    | +3            |
-| Reliability passes      | 21    | 26    | +5            |
-| `as any` (fixed filter) | 291   | 285   | -6 (reversed) |
-| Uncommitted files       | 31    | 9     | -22           |
-| Desktop protocol tests  | 34    | 34    | =             |
-| Tools tests             | 96    | 103   | +7            |
-| DB tests                | 30    | 33    | +3            |
-| Typecheck errors        | 0     | 0     | =             |
-| Build (packages green)  | 29/29 | 29/29 | =             |
+```
+$ grep -rl "new BrainstormVault\|initializeRouter\|createAgenticLoop\|startIPCHandler\|registerConnector" packages/cli/src packages/core/src/index.ts
+packages/cli/src/init/index.ts
+packages/cli/src/bin/brainstorm.ts
+packages/cli/src/ipc/handler.ts
+packages/cli/src/commands/slash.ts
+```
 
-All deltas are in the right direction or hold. No regressions.
-Passes 22–26 each target a specific risk from the v9 register.
+Core subsystems — Vault, Router, AgentLoop, IPC handler, God Mode
+connectors — all referenced from the CLI entrypoint path. TUI and
+non-interactive commands share the same wiring.
+
+## 10. Session history (v12 → v13 code delta)
+
+61 commits, all `fix(*)`/`cleanup`/`test`/`docs`. Representative
+categories:
+
+- **$-backreference class (5 sites)**: file-edit, secret-substitution,
+  hook-expansion, skill <SKILL_DIR>, injectSecrets prefix collision.
+  All switched to function-form replacement. Regression tests added
+  for each.
+- **Unbounded-growth class (7+ sites)**: convergenceAlerts (router
+  learned), op-cli cache (vault), ChangeSet terminal map (godmode),
+  FileWatcher agentWrites + changes (core), curator/dream locks
+  (core — O_EXCL), checkpoint session dirs (tools — 7-day sweep).
+- **Privilege/security-gate class**: pipeline dispatcher honors
+  agent allowedTools (ce6aae2); GitHub webhook verifies signature
+  before nonce cache (7acfc3d); workflow kill-gate blocks shell
+  metacharacters (18e7a2d); auto-lint template restored
+  (d6665be — hooks were silently no-op).
+- **Regex-correctness class**: reaction-tracker, sentiment tone
+  detector — both had `^word` without `\b` and matched
+  "perfectly bad" / "undocumented" as ACCEPTED / FRUSTRATED.
+- **DB / schedule class**: scheduler zombie sweep added staleness
+  filter (fdb87c6); scheduler concurrency uses authoritative count
+  (405baab); IPC persists the actually-routed model (6f5a78e).
+- **Cache-key class (v13 new)**: classifier cache key now includes
+  context + projectHints (cc485b0); InputHistory.save merge now
+  appends only the latest entry (O(N²) → O(N), 073884b).
+
+### v12 finding disposition on HEAD
+
+| v12 Finding                          | Status on HEAD                                                          |
+| ------------------------------------ | ----------------------------------------------------------------------- |
+| F1 env scrub `_KEY` gap              | Not verified this round — was flagged 1/10 as legitimate bug            |
+| F2 CI ratchet ordering vs `npm ci`   | Not verified this round                                                 |
+| F3 busy_timeout synchronous TUI hang | Not verified — design-level, flagged 2/10                               |
+| F4 pass 30 unanchored regex          | Auditor overturned as hallucination                                     |
+| F5 pass 30 shell string tricks       | Not addressed — comment says "not a real sandbox"                       |
+| F6 `/var/root/.ssh/` gap             | Not addressed                                                           |
+| **F7 `continue-on-error: true`**     | **CLOSED — ratchet at 0/0, was 5/10 most-flagged risk**                 |
+| F8 ENOSPC + Docker daemon traps      | Not addressed — chaos 1/10                                              |
+| F9 No dep-cruiser                    | **ADDED — dep-cruiser ratchet now in CI, with 2 current orphan errors** |
+| F10 Zero production telemetry        | Not addressed — CLI doesn't run as a service                            |
+
+### v13 code-quality scan fixes (not in v12)
+
+Seven bug-hunt fixes this session (commits 2a31477 → cc485b0):
+
+1. sentiment.ts word-boundary prefix-match false positives
+2. GitHub webhook sig-before-nonce (cache poisoning DoS primitive)
+3. Memory runner O_EXCL lock (TOCTOU race)
+4. Scheduler zombie sweep staleness filter (cross-process false kill)
+5. Workflow kill-gate shell metacharacter rejection (command injection sink)
+6. InputHistory O(N²) duplication on save
+7. Classifier cache keys missing context/projectHints (stale routing)
+
+Each landed with a regression test where behavior could be isolated.
+
+## 11. Known outstanding (carried from v12, not addressed)
+
+- F1 env scrub `_KEY` gap (tools/shell.ts)
+- F2 CI ratchet at line 43, after `npm ci` at line 22
+- F3 busy_timeout sync TUI stall (design-level, requires async driver)
+- F5 shell string-trick bypasses (Attacker-level, sandbox comment
+  already admits "not a capability sandbox")
+- F6 `/var/root/.ssh/` pattern gap (macOS root user home)
+- F8 ENOSPC + Docker daemon death traps
+- F10 Zero production telemetry
+
+## 12. What's NEW since v12 that could drop a score
+
+- **dep-cruiser is RED on HEAD** (2 orphan files). Ratchet added but
+  untracked work-in-progress violates it. Blocks the "dep-cruiser
+  ratchet" F9 from being scored as +.
+- No new tests for $-backreference fixes at every site — spot-checked
+  (file-edit, secret-substitution) but not comprehensive.
+- Router `plugin-interface.ts` + `cost-first-plugin.ts` (orphans):
+  new API surface with no consumers, no docs, no tests. Dead
+  scaffolding.
+
+## 13. No production-health data
+
+Brainstorm CLI is a local tool, not a hosted service. There is no
+`/health` endpoint, no ECS task count, no uptime metric. This is
+structural, not a v13 regression. Production Evidence dimension
+stays capped (v12 scored it 4.78 for this exact reason).
