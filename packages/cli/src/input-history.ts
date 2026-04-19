@@ -10,8 +10,8 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { atomicWriteFile } from "@brainst0rm/shared";
 
-const HISTORY_DIR = join(homedir(), ".brainstorm");
-const HISTORY_FILE = join(HISTORY_DIR, "input-history.json");
+const DEFAULT_HISTORY_DIR = join(homedir(), ".brainstorm");
+const DEFAULT_HISTORY_FILE = join(DEFAULT_HISTORY_DIR, "input-history.json");
 const MAX_MEMORY = 100;
 const MAX_PERSIST = 500;
 
@@ -19,8 +19,18 @@ export class InputHistory {
   private entries: string[] = [];
   private cursor = -1;
   private draft = "";
+  private readonly historyDir: string;
+  private readonly historyFile: string;
 
-  constructor() {
+  /**
+   * @param historyFile Optional override path. Primary use is test
+   *   isolation — the default reads homedir() at module load, which
+   *   makes it impossible to redirect writes in-process. Callers
+   *   should leave this unset in production.
+   */
+  constructor(historyFile?: string) {
+    this.historyFile = historyFile ?? DEFAULT_HISTORY_FILE;
+    this.historyDir = this.historyFile.replace(/\/[^/]*$/, "");
     this.load();
   }
 
@@ -103,8 +113,8 @@ export class InputHistory {
 
   private load(): void {
     try {
-      if (existsSync(HISTORY_FILE)) {
-        const data = JSON.parse(readFileSync(HISTORY_FILE, "utf-8"));
+      if (existsSync(this.historyFile)) {
+        const data = JSON.parse(readFileSync(this.historyFile, "utf-8"));
         if (Array.isArray(data)) {
           this.entries = data.slice(-MAX_MEMORY);
         }
@@ -117,25 +127,32 @@ export class InputHistory {
 
   private save(): void {
     try {
-      if (!existsSync(HISTORY_DIR)) mkdirSync(HISTORY_DIR, { recursive: true });
+      if (!existsSync(this.historyDir))
+        mkdirSync(this.historyDir, { recursive: true });
 
-      // Load full history from disk, append new entries, trim
+      // Load full history from disk, append ONLY the just-pushed entry, trim.
+      //
+      // Previously this merge appended EVERY entry in `this.entries` (up to
+      // 100 items loaded on startup) to `fullHistory`, deduped only against
+      // the running tail. So each save re-appended the whole in-memory
+      // buffer, and disk grew at O(N²) until MAX_PERSIST clipped the tail —
+      // the user's history became `[A, B, C, A, B, C, D, A, B, C, D, E, …]`.
+      // save() is called once per push() so only the last entry is new; the
+      // rest are already on disk (they came from load() or a prior save()).
       let fullHistory: string[] = [];
       try {
-        if (existsSync(HISTORY_FILE)) {
-          const data = JSON.parse(readFileSync(HISTORY_FILE, "utf-8"));
+        if (existsSync(this.historyFile)) {
+          const data = JSON.parse(readFileSync(this.historyFile, "utf-8"));
           if (Array.isArray(data)) fullHistory = data;
         }
       } catch {
         // Start fresh
       }
 
-      // Merge: disk history + memory entries (deduped at tail)
       const merged = [...fullHistory];
-      for (const entry of this.entries) {
-        if (merged[merged.length - 1] !== entry) {
-          merged.push(entry);
-        }
+      const latest = this.entries[this.entries.length - 1];
+      if (latest !== undefined && merged[merged.length - 1] !== latest) {
+        merged.push(latest);
       }
 
       const trimmed = merged.slice(-MAX_PERSIST);
@@ -144,7 +161,7 @@ export class InputHistory {
       // old shared ".tmp" path. A collision there previously left
       // input-history.json corrupt and loadPersisted() silently reset
       // entries to [], losing the user's history.
-      atomicWriteFile(HISTORY_FILE, JSON.stringify(trimmed));
+      atomicWriteFile(this.historyFile, JSON.stringify(trimmed));
     } catch {
       // Non-fatal — history is a convenience feature
     }
