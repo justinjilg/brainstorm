@@ -13,6 +13,13 @@ import type {
   TriggerType,
 } from "@brainst0rm/shared";
 
+/**
+ * A run is considered a crash artefact only after this many seconds
+ * in 'running' state. Task cost + turn caps keep legitimate runs well
+ * under this threshold, so anything older is almost certainly dead.
+ */
+const ZOMBIE_STALE_SECONDS = 30 * 60;
+
 function rowToTask(row: any): ScheduledTask {
   return {
     id: row.id,
@@ -264,12 +271,27 @@ export class TaskRunRepository {
    * Sweep rows stuck in status='running' from a previous process crash.
    * Updates them to 'crashed' with the current timestamp so observers see
    * a real completed_at, and returns the ids that were swept.
+   *
+   * Only rows whose started_at is older than ZOMBIE_STALE_SECONDS are
+   * swept. Scheduled tasks have turn + cost caps that keep them under
+   * a few minutes; a row still "running" after 30 minutes is a crash
+   * artefact. Filtering by age prevents the constructor sweep from
+   * killing a task that a concurrent TriggerRunner process is
+   * legitimately running right now — previously, a second storm
+   * instance starting mid-run would mark the first's active run as
+   * 'crashed', causing a duplicate re-dispatch and a write race on
+   * completion.
    */
   sweepZombieRunning(): string[] {
     const now = Math.floor(Date.now() / 1000);
+    const staleCutoff = now - ZOMBIE_STALE_SECONDS;
     const rows = this.db
-      .prepare(`SELECT id FROM scheduled_task_runs WHERE status = 'running'`)
-      .all() as Array<{ id: string }>;
+      .prepare(
+        `SELECT id FROM scheduled_task_runs
+         WHERE status = 'running'
+           AND (started_at IS NULL OR started_at < ?)`,
+      )
+      .all(staleCutoff) as Array<{ id: string }>;
     const ids = rows.map((r) => r.id);
     if (ids.length === 0) return [];
 

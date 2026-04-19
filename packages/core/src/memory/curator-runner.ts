@@ -16,6 +16,9 @@ import {
   existsSync,
   statSync,
   mkdirSync,
+  openSync,
+  writeSync,
+  closeSync,
 } from "node:fs";
 import { join } from "node:path";
 import { createLogger } from "@brainst0rm/shared";
@@ -90,22 +93,39 @@ function acquireLock(memoryDir: string): boolean {
         return false;
       }
       log.warn("Stale curator lock found, overriding");
+      try {
+        unlinkSync(lockPath);
+      } catch {
+        // Another process may have unlinked it first; O_EXCL below
+        // is the authoritative race-winner check.
+      }
     } catch {
       // stat failed — proceed
     }
   }
 
+  // O_CREAT | O_EXCL: atomic "create if not exists". The previous
+  // implementation used writeFileSync() which truncates-or-creates,
+  // so two processes passing the stale check in the same instant
+  // both won the lock and ran curator cycles concurrently against
+  // the same memory dir.
+  let fd: number;
   try {
-    writeFileSync(
-      lockPath,
-      JSON.stringify({ pid: process.pid, acquiredAt: Date.now() }),
-      "utf-8",
-    );
-    return true;
-  } catch (err) {
-    log.error({ err }, "Failed to acquire curator lock");
+    fd = openSync(lockPath, "wx");
+  } catch (err: any) {
+    if (err?.code === "EEXIST") {
+      log.info("Curator lock acquired by another process in the race window");
+    } else {
+      log.error({ err }, "Failed to acquire curator lock");
+    }
     return false;
   }
+  try {
+    writeSync(fd, JSON.stringify({ pid: process.pid, acquiredAt: Date.now() }));
+  } finally {
+    closeSync(fd);
+  }
+  return true;
 }
 
 function releaseLock(memoryDir: string): void {

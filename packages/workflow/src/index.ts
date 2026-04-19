@@ -1,4 +1,9 @@
-export { runWorkflow, type WorkflowEngineOptions } from "./engine.js";
+export {
+  runWorkflow,
+  validateGateCommand,
+  ALLOWED_GATE_PREFIXES,
+  type WorkflowEngineOptions,
+} from "./engine.js";
 export { buildStepContext, type FilteredContext } from "./context-filter.js";
 export {
   extractConfidence,

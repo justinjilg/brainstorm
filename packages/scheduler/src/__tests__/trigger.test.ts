@@ -145,7 +145,10 @@ describe("TriggerRunner", () => {
 
   it("sweeps zombie 'running' rows left over from a prior process crash", async () => {
     // Seed a zombie: a running row directly in the DB, as if the previous
-    // process had crashed mid-run without finishing the row.
+    // process had crashed mid-run without finishing the row. Backdate
+    // started_at past the 30-minute staleness threshold so the sweep
+    // picks it up — fresh running rows belong to a concurrent process
+    // and must NOT be killed (see the sibling regression test below).
     const task = taskRepo.create({
       projectId: "proj-1",
       name: "Zombie Owner",
@@ -153,6 +156,10 @@ describe("TriggerRunner", () => {
     });
     const before = runRepo.create({ taskId: task.id, triggerType: "cron" });
     runRepo.markRunning(before.id);
+    const ancient = Math.floor(Date.now() / 1000) - 2 * 60 * 60; // 2h old
+    db.prepare(
+      `UPDATE scheduled_task_runs SET started_at = ? WHERE id = ?`,
+    ).run(ancient, before.id);
     // Confirm the zombie exists before restart.
     expect(runRepo.getById(before.id)?.status).toBe("running");
 
@@ -163,6 +170,29 @@ describe("TriggerRunner", () => {
     const after = runRepo.getById(before.id);
     expect(after?.status).toBe("crashed");
     expect(after?.completedAt).toBeTypeOf("number");
+  });
+
+  it("does NOT sweep a fresh 'running' row owned by a concurrent process", async () => {
+    // Regression: the constructor sweep used to mark every row in
+    // status='running' as 'crashed', regardless of age. If a second
+    // storm instance started while the first was mid-run, the second's
+    // constructor would kill the first's active task, causing a
+    // duplicate dispatch and a write race when the real run completed.
+    // Rows younger than ZOMBIE_STALE_SECONDS must be left alone.
+    const task = taskRepo.create({
+      projectId: "proj-1",
+      name: "Actively Running",
+      prompt: "real work",
+    });
+    const live = runRepo.create({ taskId: task.id, triggerType: "cron" });
+    runRepo.markRunning(live.id);
+    // started_at defaults to now — fresh, not stale.
+
+    new TriggerRunner(db, { maxConcurrent: 2 });
+
+    const after = runRepo.getById(live.id);
+    expect(after?.status).toBe("running");
+    expect(after?.completedAt).toBeUndefined();
   });
 
   it("does not stamp completed_at on the running transition", async () => {

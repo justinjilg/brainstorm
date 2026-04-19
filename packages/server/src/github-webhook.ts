@@ -169,17 +169,12 @@ export function createWebhookHandler(opts: WebhookHandlerOptions) {
     body: string,
     headers: Record<string, string | undefined>,
   ): Promise<{ status: number; body: Record<string, unknown> }> => {
-    // Replay protection — reject duplicate deliveries
-    const deliveryId = headers["x-github-delivery"];
-    if (isReplay(deliveryId)) {
-      log.warn(
-        { deliveryId },
-        "Replay detected — rejecting duplicate delivery",
-      );
-      return { status: 200, body: { received: true, duplicate: true } };
-    }
-
-    // Verify signature
+    // Verify signature FIRST — isReplay() mutates the nonce cache, so
+    // checking it before signature verification would let an
+    // unauthenticated attacker poison the cache with a guessed delivery
+    // ID and cause the subsequent legit GitHub delivery with the same ID
+    // to be silently dropped as "duplicate". Delivery IDs are UUIDv4 so
+    // guessing is not practical, but correct ordering costs nothing.
     const signature = headers["x-hub-signature-256"];
     if (
       !signature ||
@@ -187,6 +182,18 @@ export function createWebhookHandler(opts: WebhookHandlerOptions) {
     ) {
       log.warn("Invalid or missing webhook signature");
       return { status: 401, body: { error: "Invalid signature" } };
+    }
+
+    // Replay protection — only runs for payloads that already passed
+    // signature verification, so the nonce cache cannot be poisoned by
+    // unauthenticated traffic.
+    const deliveryId = headers["x-github-delivery"];
+    if (isReplay(deliveryId)) {
+      log.warn(
+        { deliveryId },
+        "Replay detected — rejecting duplicate delivery",
+      );
+      return { status: 200, body: { received: true, duplicate: true } };
     }
 
     const eventType = headers["x-github-event"] ?? "unknown";
