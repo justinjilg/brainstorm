@@ -630,8 +630,14 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
             const e = event as any;
             if (e.type === "text-delta" && typeof e.delta === "string") {
               assistantText += e.delta;
-            } else if (e.type === "routing" && e.model?.id) {
-              assistantModelId = e.model.id;
+            } else if (e.type === "routing" && e.decision?.model?.id) {
+              // AgentEvent routing shape is `{ type: "routing", decision:
+              // RoutingDecision }` where decision.model.id is the actual
+              // chosen model. Pre-fix we read `e.model?.id` — wrong path,
+              // always undefined, so assistantModelId fell through to
+              // chatParams.modelId. That meant the DB history persisted
+              // the user's REQUESTED model, never the actually-routed one.
+              assistantModelId = e.decision.model.id;
             }
             sendEvent(req.id, e.type ?? "event", event);
           }
