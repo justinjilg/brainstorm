@@ -15,14 +15,19 @@ const USER_AGENTS = [
 ];
 
 let uaIndex = 0;
-function getNextUserAgent(): string {
+/**
+ * Rotating User-Agent. Exported so other web-adjacent tools
+ * (web_search in particular) can share the anti-fingerprinting
+ * pool rather than each inventing their own static string.
+ */
+export function getNextUserAgent(): string {
   const ua = USER_AGENTS[uaIndex % USER_AGENTS.length];
   uaIndex++;
   return ua;
 }
 
 /** Standard browser-like headers to avoid fingerprinting. */
-function getBrowserHeaders(): Record<string, string> {
+export function getBrowserHeaders(): Record<string, string> {
   return {
     "User-Agent": getNextUserAgent(),
     Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
