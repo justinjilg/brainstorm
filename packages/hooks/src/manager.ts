@@ -132,27 +132,34 @@ export class HookManager {
 
       if (hook.type === "command") {
         try {
-          // Expand variables in command (shell-escaped to prevent injection)
+          // Expand variables in command (shell-escaped to prevent injection).
+          // Function-form replacement — the STRING form interprets
+          // $1/$2/$&/$`/$' in the REPLACEMENT as regex backreferences,
+          // so a shellEscape() output containing literal `$` (e.g.,
+          // a file path like `/Users/me/$Recycle.Bin/foo`) would be
+          // mangled. With the function form, the returned string is
+          // inserted verbatim — no $-pattern interpretation.
           let cmd = hook.command;
-          if (context?.filePath)
-            cmd = cmd.replace(/\$FILE/g, shellEscape(context.filePath));
-          if (context?.toolName)
-            cmd = cmd.replace(/\$TOOL/g, shellEscape(context.toolName));
-          if (context?.subagentType)
-            cmd = cmd.replace(
-              /\$SUBAGENT_TYPE/g,
-              shellEscape(String(context.subagentType)),
-            );
-          if (context?.subagentCost !== undefined)
-            cmd = cmd.replace(
-              /\$SUBAGENT_COST/g,
-              shellEscape(String(context.subagentCost)),
-            );
-          if (context?.subagentModel)
-            cmd = cmd.replace(
-              /\$SUBAGENT_MODEL/g,
-              shellEscape(String(context.subagentModel)),
-            );
+          if (context?.filePath) {
+            const escaped = shellEscape(context.filePath);
+            cmd = cmd.replace(/\$FILE/g, () => escaped);
+          }
+          if (context?.toolName) {
+            const escaped = shellEscape(context.toolName);
+            cmd = cmd.replace(/\$TOOL/g, () => escaped);
+          }
+          if (context?.subagentType) {
+            const escaped = shellEscape(String(context.subagentType));
+            cmd = cmd.replace(/\$SUBAGENT_TYPE/g, () => escaped);
+          }
+          if (context?.subagentCost !== undefined) {
+            const escaped = shellEscape(String(context.subagentCost));
+            cmd = cmd.replace(/\$SUBAGENT_COST/g, () => escaped);
+          }
+          if (context?.subagentModel) {
+            const escaped = shellEscape(String(context.subagentModel));
+            cmd = cmd.replace(/\$SUBAGENT_MODEL/g, () => escaped);
+          }
 
           const { stdout, stderr } = await execFileAsync(
             "/bin/sh",

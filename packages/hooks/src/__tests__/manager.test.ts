@@ -276,6 +276,32 @@ describe("HookManager", () => {
       const lines = (results[0].output ?? "").split("\n");
       expect(lines).toHaveLength(1);
     });
+
+    it("preserves literal $ in filePath (no String.replace backreference munging)", async () => {
+      // Pre-fix, the string-form `cmd.replace(/\$FILE/g, shellEscape(path))`
+      // interpreted `$1`/`$&`/`$\`` in the REPLACEMENT as regex
+      // backreferences. A file path like `/tmp/$Recycle.Bin/foo.txt`
+      // would lose the `$` prefix: replacement string `'/tmp/$Recycle…'`
+      // gets `$R` interpreted as an unmatched backreference → "". The
+      // hook would then run against `/tmp/ecycle.Bin/foo.txt`, a
+      // completely different (probably non-existent) path.
+      //
+      // The function-form fix inserts the replacement verbatim.
+      manager.register({
+        event: "PreToolUse",
+        type: "command",
+        command: "echo $FILE",
+      });
+      const weirdPath = "/tmp/$Recycle.Bin/$1/foo.txt";
+      const results = await manager.fire("PreToolUse", {
+        toolName: "shell",
+        filePath: weirdPath,
+      });
+      expect(results).toHaveLength(1);
+      expect(results[0].success).toBe(true);
+      expect(results[0].output).toContain("$Recycle.Bin");
+      expect(results[0].output).toContain("$1");
+    });
   });
 
   describe("permission decisions", () => {
