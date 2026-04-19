@@ -10,10 +10,7 @@ import {
 } from "./local/openai-compat.js";
 import { discoverLocalModels } from "./local/discovery.js";
 import { CLOUD_MODELS } from "./cloud/models.js";
-import {
-  createBrainstormSaaSProvider,
-  getBrainstormApiKey,
-} from "./cloud/brainstorm-saas.js";
+import { createBrainstormSaaSProvider } from "./cloud/brainstorm-saas.js";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
@@ -63,10 +60,16 @@ export async function createProviderRegistry(
   // BrainstormRouter SaaS — only enabled with an explicit API key.
   // The embedded community key is NOT used implicitly to prevent sending
   // prompts/code to a remote service without explicit opt-in.
-  const explicitBrKey = getKey("BRAINSTORM_API_KEY");
-  const brApiKey =
-    explicitBrKey ??
-    (process.env.BRAINSTORM_API_KEY ? getBrainstormApiKey() : null);
+  //
+  // (Prior code had a second branch that tried
+  // `getBrainstormApiKey()` when `explicitBrKey` was null but
+  // process.env.BRAINSTORM_API_KEY was set — unreachable, because
+  // getKey() ALREADY falls through to process.env, so
+  // explicitBrKey is never null when env is set. Removed to make
+  // the "explicit opt-in" invariant non-fragile: a future
+  // refactor can't accidentally revive the implicit community-key
+  // path by changing getKey's fallthrough order.)
+  const brApiKey = getKey("BRAINSTORM_API_KEY");
   const hasBrainstormSaaS = !!brApiKey;
   if (brApiKey) {
     providers.brainstormrouter = createBrainstormSaaSProvider(brApiKey);
