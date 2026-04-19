@@ -82,12 +82,20 @@ export function createContentInjectionFilterMiddleware(): AgentMiddleware {
           ? { ...(result.output as Record<string, unknown>) }
           : { content: String(result.output) };
 
-      // Swap in sanitized content
+      // Swap in sanitized content. Must write to the SAME field
+      // extractContent() read from — a result shape with only `body`
+      // (no `content`, no `text`) previously had its content
+      // sanitized in metadata but NEVER substituted back into the
+      // output, because the branches only covered content/text.
+      // The model then saw the original unsanitized body while the
+      // filter's metadata claimed it had been cleaned.
       if (sanitized.modified) {
         if ("content" in output) {
           output.content = sanitized.content;
         } else if ("text" in output) {
           output.text = sanitized.content;
+        } else if ("body" in output) {
+          output.body = sanitized.content;
         }
       }
 
