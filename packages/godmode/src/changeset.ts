@@ -193,6 +193,7 @@ export async function approveChangeSet(
       if (result.success) {
         cs.status = "executed";
         cs.executedAt = Date.now();
+        cs.terminalAt = cs.executedAt;
         cs.rollbackData = result.rollbackData;
       } else {
         // Execution returned failure. Previously we reverted to "draft" to
@@ -201,6 +202,7 @@ export async function approveChangeSet(
         // silently replayed. Mark as "failed" and require an explicit
         // retryChangeSet() call to rehydrate — operator intervention.
         cs.status = "failed";
+        cs.terminalAt = Date.now();
       }
       // Always audit both success and failure
       logChangeSet(cs);
@@ -211,6 +213,7 @@ export async function approveChangeSet(
       };
     } catch (error) {
       cs.status = "failed";
+      cs.terminalAt = Date.now();
       logChangeSet(cs); // Audit the failure
       const msg = error instanceof Error ? error.message : String(error);
       return {
@@ -270,6 +273,7 @@ export function rejectChangeSet(id: string): {
   const cs = changesets.get(id);
   if (!cs) return { success: false, message: `ChangeSet ${id} not found` };
   cs.status = "rejected";
+  cs.terminalAt = Date.now();
   return { success: true, message: `ChangeSet ${id} rejected` };
 }
 
@@ -388,11 +392,39 @@ function identifyRiskFactors(
 
 // ── Expiry ───────────────────────────────────────────────────────
 
+/**
+ * Retention after terminal state. Keep failed/expired drafts for
+ * this long so operators can retryChangeSet() them; anything
+ * beyond this is garbage-collected from the in-memory map.
+ *
+ * Executed/rejected changesets keep the same window — they're
+ * read-only after that anyway and the audit log is the durable
+ * record.
+ */
+const TERMINAL_RETENTION_MS = 60 * 60 * 1000; // 1 hour
+
 function expireStale(): void {
   const now = Date.now();
   for (const [id, cs] of changesets) {
     if (cs.status === "draft" && now > cs.expiresAt) {
       cs.status = "expired";
+      // Track WHEN a draft transitioned to expired so GC can use
+      // the transition time (not the original createdAt) as its
+      // retention anchor. For non-expired terminal states the
+      // timestamp is set at the state transition (approve/reject).
+      cs.terminalAt = now;
+    }
+  }
+  // GC terminal entries past the retention window. Pre-fix, the
+  // `changesets` Map grew unbounded for the lifetime of the
+  // process — a long-running daemon creating 100/hour would
+  // retain ~2.4M entries over a month. Each entry carries its
+  // full simulation payload, so this mattered in practice.
+  for (const [id, cs] of changesets) {
+    if (cs.status === "draft") continue;
+    const anchor = cs.terminalAt ?? cs.executedAt ?? cs.createdAt;
+    if (now - anchor > TERMINAL_RETENTION_MS) {
+      changesets.delete(id);
     }
   }
 }

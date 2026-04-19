@@ -106,6 +106,12 @@ export interface ChangeSet {
   /** 5-minute TTL on drafts. */
   expiresAt: number;
   executedAt?: number;
+  /**
+   * Timestamp of the transition to a terminal status (executed,
+   * failed, expired, or rejected). Used as the retention anchor
+   * for in-memory GC. Absent for drafts.
+   */
+  terminalAt?: number;
   approvedBy?: "user" | "auto";
 }
 
