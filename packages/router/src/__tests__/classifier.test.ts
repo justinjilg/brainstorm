@@ -282,6 +282,31 @@ describe("classifyTask", () => {
     });
   });
 
+  describe("memoization cache keys by all inputs", () => {
+    it("re-classifies the same message when context changes", () => {
+      // Regression: the cache key hashed only `message`, so the second
+      // call with the same text returned the first call's profile even
+      // when context.fileCount flipped from 1 to 50. File count drives
+      // complexity (fileCount > 5 → "complex"), which drives the
+      // output-token multiplier. Stale cache would return the warmup
+      // complexity for the second call.
+      const uniq = `cache-key-context-${Date.now()}-${Math.random()}`;
+      const warmup = classifyTask(uniq, { fileCount: 1 });
+      const withMoreFiles = classifyTask(uniq, { fileCount: 50 });
+      expect(warmup.complexity).not.toBe(withMoreFiles.complexity);
+    });
+
+    it("re-classifies when project hints change", () => {
+      const uniq = `cache-key-hints-${Date.now()}-${Math.random()}`;
+      const noHints = classifyTask(uniq);
+      const withHints = classifyTask(uniq, undefined, {
+        typical_complexity: "expert",
+      } as any);
+      expect(withHints.complexity).toBe("expert");
+      expect(noHints.complexity).not.toBe(withHints.complexity);
+    });
+  });
+
   describe("reasoning requirement", () => {
     it("should require reasoning for debugging tasks", () => {
       const result = classifyTask("fix the bug in the authentication flow");
