@@ -160,11 +160,15 @@ describe("createAutoLintHooks", () => {
     const hooks = createAutoLintHooks(projectPath);
 
     expect(hooks).toHaveLength(1);
+    // No outer double-quotes around $FILE — the hook manager's
+    // variable expansion uses shellEscape() which already
+    // single-quotes the path, making the additional double-quotes
+    // produce a literal-quoted filename for the linter.
     expect(hooks[0]).toMatchObject({
       event: "PostToolUse",
       matcher: "file_write|file_edit|multi_edit|batch_edit",
       type: "command",
-      command: 'npx biome check --fix "$FILE"',
+      command: "npx biome check --fix $FILE",
       blocking: false,
       description: "Auto-lint with biome after file writes",
     });
@@ -181,7 +185,7 @@ describe("createAutoLintHooks", () => {
     expect(hooks[0]).toMatchObject({
       event: "PostToolUse",
       type: "command",
-      command: 'npx eslint --fix "$FILE"',
+      command: "npx eslint --fix $FILE",
     });
   });
 
@@ -196,7 +200,7 @@ describe("createAutoLintHooks", () => {
     expect(hooks[0]).toMatchObject({
       event: "PostToolUse",
       type: "command",
-      command: 'npx prettier --write "$FILE"',
+      command: "npx prettier --write $FILE",
     });
   });
 
@@ -211,7 +215,7 @@ describe("createAutoLintHooks", () => {
     expect(hooks[0]).toMatchObject({
       event: "PostToolUse",
       type: "command",
-      command: 'go vet ./... "$FILE"',
+      command: "go vet ./... $FILE",
     });
   });
 });
