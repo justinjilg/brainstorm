@@ -7,12 +7,49 @@ import {
   readdirSync,
   unlinkSync,
   lstatSync,
+  rmSync,
+  statSync,
 } from "node:fs";
 import { join, dirname, basename, relative } from "node:path";
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
 
 const CHECKPOINT_DIR = join(homedir(), ".brainstorm", "checkpoints");
+
+/**
+ * Age after which a session's checkpoint directory is GC'd on the
+ * NEXT session startup. CheckpointManager.cleanup() is exposed as
+ * an explicit API but has no callers — so without a startup sweep
+ * every session's snapshots accrued in ~/.brainstorm/checkpoints/
+ * indefinitely, keeping snapshots of every file the agent ever
+ * touched for the life of the installation.
+ */
+const CHECKPOINT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+function sweepOldSessions(): void {
+  if (!existsSync(CHECKPOINT_DIR)) return;
+  const cutoff = Date.now() - CHECKPOINT_RETENTION_MS;
+  try {
+    const sessions = readdirSync(CHECKPOINT_DIR);
+    for (const session of sessions) {
+      const sessionDir = join(CHECKPOINT_DIR, session);
+      try {
+        const stat = statSync(sessionDir);
+        if (!stat.isDirectory()) continue;
+        // mtimeMs — updated whenever files are added/removed inside.
+        // A session that was last used more than 7 days ago is
+        // dead and safe to drop.
+        if (stat.mtimeMs < cutoff) {
+          rmSync(sessionDir, { recursive: true, force: true });
+        }
+      } catch {
+        // Can't stat or remove this entry — skip, move on.
+      }
+    }
+  } catch {
+    // Checkpoint dir gone or unreadable — nothing to sweep.
+  }
+}
 
 /**
  * CheckpointManager — snapshots files before modification.
@@ -31,6 +68,10 @@ export class CheckpointManager {
     this.sessionId = sessionId;
     this.sessionDir = join(CHECKPOINT_DIR, sessionId);
     mkdirSync(this.sessionDir, { recursive: true, mode: 0o700 });
+    // Best-effort sweep of stale session directories on every
+    // startup. Cheap (stat-only) for young dirs; only deletes
+    // entries older than the retention window.
+    sweepOldSessions();
   }
 
   /**
