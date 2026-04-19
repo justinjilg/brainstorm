@@ -1,5 +1,8 @@
 import { randomBytes } from "node:crypto";
+import { createLogger } from "@brainst0rm/shared";
 import { gatewayRequest } from "./http.js";
+
+const log = createLogger("gateway-client");
 
 import type {
   GatewaySelf,
@@ -370,13 +373,33 @@ export class BrainstormGateway {
 
 /**
  * Safely unwrap an API response array from various envelope shapes.
- * Throws if the result is not an array (catches API errors masquerading as data).
+ * Returns [] if no known envelope key holds an array AND the body
+ * isn't itself an array — but LOGS a warning so operators can see
+ * that the response didn't match the expected shape. Previously
+ * the return-empty was silent, which meant an API that returned an
+ * error envelope with HTTP 200 (deprecation notices, rate-limit
+ * nudges, some gateway 2xx quirks) looked to the caller exactly
+ * like "no items" — indistinguishable from a legitimately empty
+ * list.
  */
 function unwrapArray(data: any, ...keys: string[]): any[] {
   for (const key of keys) {
     if (Array.isArray(data?.[key])) return data[key];
   }
   if (Array.isArray(data)) return data;
+  // Log the unexpected shape so ops can distinguish "gateway
+  // returned nothing" from "gateway returned something we
+  // didn't recognize." Don't include the full body (could be
+  // large / PII); just the top-level keys.
+  log.warn(
+    {
+      expectedKeys: keys,
+      actualKeys:
+        data && typeof data === "object" ? Object.keys(data).slice(0, 10) : [],
+      dataType: Array.isArray(data) ? "array" : typeof data,
+    },
+    "Gateway response did not match any expected array envelope shape — returning empty",
+  );
   return [];
 }
 
