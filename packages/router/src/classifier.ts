@@ -210,8 +210,16 @@ export function classifyTask(
   },
   projectHints?: ProjectHints,
 ): TaskProfile {
-  // Check memoization cache
-  const cacheKey = hashMessage(message);
+  // Cache key must include every input that changes the classification.
+  // Previously it hashed only `message`, so the second call with the same
+  // text but different `context.hasErrors` or `conversationLength` would
+  // return the first call's profile — e.g., "fix the bug" typed early
+  // in a session (classified as simple-edit) stayed misclassified after
+  // errors appeared, and the router kept routing debugging turns to a
+  // simple-edit tier.
+  const cacheKey = hashMessage(
+    JSON.stringify({ m: message, c: context ?? null, h: projectHints ?? null }),
+  );
   const cached = _classifyCache.get(cacheKey);
   if (cached) return cached;
 

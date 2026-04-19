@@ -27,6 +27,59 @@ import {
   isReviewApproved,
 } from "./confidence.js";
 
+/**
+ * Shell commands that may run as a workflow kill-gate. Each entry is a
+ * prefix; the gate is accepted only if it starts with one of these AND
+ * contains no shell metacharacters. Exported so tests can assert the
+ * surface directly without spinning up a full workflow run.
+ */
+export const ALLOWED_GATE_PREFIXES = [
+  "npm test",
+  "npm run ",
+  "npx turbo run ",
+  "npx vitest",
+  "git diff --quiet",
+  "git status --porcelain",
+  "make ",
+  "cargo test",
+  "cargo build",
+  "go test",
+  "pytest",
+] as const;
+
+/**
+ * Validate a kill-gate command string before execution. Gates run via
+ * /bin/sh -c, so a prefix match alone is not safe — "npm test; rm -rf /"
+ * starts with "npm test" but chains a second command. This helper also
+ * rejects any shell metacharacter that could chain, pipe, redirect, or
+ * substitute ( `;`, `&`, `|`, backtick, `$`, `<`, `>`, parens, newlines ).
+ * Plain whitespace-delimited arguments such as "npm run build --if-present"
+ * still pass.
+ */
+export function validateGateCommand(gate: string): {
+  allowed: boolean;
+  reason?: string;
+} {
+  const trimmed = gate.trimStart();
+  const prefixOk = ALLOWED_GATE_PREFIXES.some((prefix) =>
+    trimmed.startsWith(prefix),
+  );
+  if (!prefixOk) {
+    return {
+      allowed: false,
+      reason: `Gate rejected: command not in allowlist. Allowed prefixes: ${ALLOWED_GATE_PREFIXES.join(", ")}`,
+    };
+  }
+  if (/[;&|`$<>\n\r()]/.test(trimmed)) {
+    return {
+      allowed: false,
+      reason:
+        "Gate rejected: command contains shell metacharacters that would allow chaining or substitution",
+    };
+  }
+  return { allowed: true };
+}
+
 export interface WorkflowEngineOptions {
   config: BrainstormConfig;
   db: any;
@@ -254,33 +307,15 @@ export async function* runWorkflow(
 
       yield { type: "step-completed", step: stepRun, artifact };
 
-      // Kill gates: shell commands that must exit 0 before proceeding.
-      // Gates are validated against an allowlist to prevent arbitrary command execution.
-      const ALLOWED_GATE_PREFIXES = [
-        "npm test",
-        "npm run ",
-        "npx turbo run ",
-        "npx vitest",
-        "git diff --quiet",
-        "git status --porcelain",
-        "make ",
-        "cargo test",
-        "cargo build",
-        "go test",
-        "pytest",
-      ];
-
       if (stepDef.killGates && stepDef.killGates.length > 0) {
         for (const gate of stepDef.killGates) {
-          const isAllowed = ALLOWED_GATE_PREFIXES.some((prefix) =>
-            gate.trimStart().startsWith(prefix),
-          );
-          if (!isAllowed) {
+          const verdict = validateGateCommand(gate);
+          if (!verdict.allowed) {
             yield {
               type: "gate-failed" as const,
               step: stepRun,
               gate,
-              output: `Gate rejected: command not in allowlist. Allowed prefixes: ${ALLOWED_GATE_PREFIXES.join(", ")}`,
+              output: verdict.reason ?? "Gate rejected",
             };
             run.status = "paused";
             return;
