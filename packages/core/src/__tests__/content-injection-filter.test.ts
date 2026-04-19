@@ -31,6 +31,7 @@ function makeResult(output: unknown): MiddlewareToolResult {
     name: "web_fetch",
     ok: true,
     output,
+    durationMs: 0,
   };
 }
 
@@ -77,6 +78,7 @@ describe("content-injection-filter — output swap", () => {
       name: "shell",
       ok: true,
       output: { content: DANGEROUS_CONTENT },
+      durationMs: 0,
     });
     // Returning undefined means "no change" — web-tool-only filter.
     expect(result).toBeUndefined();
@@ -88,6 +90,7 @@ describe("content-injection-filter — output swap", () => {
       name: "web_fetch",
       ok: false,
       output: { error: "network error" },
+      durationMs: 0,
     });
     expect(result).toBeUndefined();
   });
