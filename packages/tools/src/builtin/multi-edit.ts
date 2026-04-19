@@ -12,11 +12,16 @@ import { randomUUID } from "node:crypto";
 import { defineTool } from "../base.js";
 import { applyEdits } from "./edit-common.js";
 import { getWorkspace } from "../workspace-context.js";
+import { assertNotSensitivePath } from "./sensitive-paths.js";
 
 function ensureSafePath(filePath: string): string {
   const cwd = getWorkspace();
   const resolved = resolve(cwd, filePath);
   const home = homedir();
+
+  // Block credential files before the home-dir allowance — same
+  // F5-class fix as file-read/edit/write. See sensitive-paths.ts.
+  assertNotSensitivePath(resolved);
 
   // Match file-write.ts/file-edit.ts: /var is NOT blocked wholesale because
   // macOS tmpdir lives at /var/folders/... (symlinked from /private/var/folders).
@@ -27,7 +32,10 @@ function ensureSafePath(filePath: string): string {
     resolved.startsWith("/var/folders/") ||
     resolved.startsWith("/private/var/folders/") ||
     resolved.startsWith("/var/tmp/") ||
-    resolved.startsWith("/private/var/tmp/");
+    resolved.startsWith("/private/var/tmp/") ||
+    // Linux tmpdir — see file-read.ts for rationale.
+    resolved === "/tmp" ||
+    resolved.startsWith("/tmp/");
   if (!isSafeTmpVar && resolved.startsWith("/var")) {
     throw new Error(`Path blocked: "${filePath}" is a protected system path`);
   }

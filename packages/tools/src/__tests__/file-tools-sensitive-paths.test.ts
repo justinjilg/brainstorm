@@ -24,6 +24,7 @@ import { tmpdir } from "node:os";
 import { fileReadTool } from "../builtin/file-read.js";
 import { fileWriteTool } from "../builtin/file-write.js";
 import { fileEditTool } from "../builtin/file-edit.js";
+import { multiEditTool } from "../builtin/multi-edit.js";
 
 const HOME = homedir();
 
@@ -115,6 +116,35 @@ describe("file tools — sensitive-path blocks", () => {
         path: target,
         old_string: "hello",
         new_string: "goodbye",
+      });
+      expect(isBlocked(result)).toBe(false);
+    });
+  });
+
+  describe("multi_edit", () => {
+    // multi_edit had the same F5 gap as the single file_edit before
+    // acfe878 + 850abd8 + this commit. An attacker using multi_edit
+    // to slip credential-file edits past the scan would have the
+    // same exfil/persistence vector.
+    it("blocks editing ~/.ssh/authorized_keys", async () => {
+      const result = await multiEditTool.execute({
+        path: join(HOME, ".ssh", "authorized_keys"),
+        edits: [
+          {
+            old_string: "existing-key",
+            new_string: "attacker-key\nexisting-key",
+          },
+        ],
+      });
+      expect(isBlocked(result)).toBe(true);
+    });
+    it("still allows editing a tmp file (false-positive guard)", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "brainstorm-multi-edit-probe-"));
+      const target = join(dir, "multi-probe.txt");
+      writeFileSync(target, "a b c\n");
+      const result = await multiEditTool.execute({
+        path: target,
+        edits: [{ old_string: "a", new_string: "A" }],
       });
       expect(isBlocked(result)).toBe(false);
     });
