@@ -50,6 +50,23 @@ export interface ConvergenceAlert {
 const auditLog: OutcomeAuditEntry[] = [];
 const convergenceAlerts: ConvergenceAlert[] = [];
 const MAX_AUDIT_ENTRIES = 500;
+/**
+ * Bound convergenceAlerts same way auditLog is bounded. The 5-
+ * minute dedup window prevents RAPID growth from the same task/
+ * model pair, but over long-running daemons with many task types
+ * the alert list still grows without limit. 200 is plenty for
+ * "most recent alerts" consumers; the logger is the durable record.
+ */
+const MAX_CONVERGENCE_ALERTS = 200;
+
+function trimAlerts(): void {
+  if (convergenceAlerts.length > MAX_CONVERGENCE_ALERTS) {
+    convergenceAlerts.splice(
+      0,
+      convergenceAlerts.length - MAX_CONVERGENCE_ALERTS,
+    );
+  }
+}
 
 /** Threshold: if one model gets >80% of recent outcomes, flag it. */
 const CONVERGENCE_THRESHOLD = 0.8;
@@ -229,6 +246,7 @@ function checkConvergence(taskType: string): void {
           timestamp: Date.now(),
         };
         convergenceAlerts.push(alert);
+        trimAlerts();
 
         log.warn(
           { taskType, modelId, ratio, sampleCount: recent.length },
@@ -261,6 +279,7 @@ function checkConvergence(taskType: string): void {
           detail: `${shifts} model switches in last 10 outcomes for "${taskType}". Sampling may be unstable.`,
           timestamp: Date.now(),
         });
+        trimAlerts();
       }
     }
   }
