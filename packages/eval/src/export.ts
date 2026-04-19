@@ -1,6 +1,7 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { atomicWriteFile } from "@brainst0rm/shared";
 import type { EvalRun, CapabilityDimension } from "./types.js";
 import type { CapabilityScores } from "@brainst0rm/shared";
 import { createLogger } from "@brainst0rm/shared";
@@ -92,7 +93,11 @@ function saveAllCapabilityScores(
   data: Record<string, { scores: CapabilityScores; evaluatedAt: number }>,
 ): void {
   if (!existsSync(SCORES_DIR)) mkdirSync(SCORES_DIR, { recursive: true });
-  writeFileSync(SCORES_FILE, JSON.stringify(data, null, 2), "utf-8");
+  // Crash-safe write — a SIGKILL/power-loss between buffer-write
+  // and fsync would otherwise leave capability-scores.json partial,
+  // triggering the JSON.parse() catch in loadAllCapabilityScores()
+  // and silently wiping every model's persisted scores on next run.
+  atomicWriteFile(SCORES_FILE, JSON.stringify(data, null, 2));
 }
 
 /** Push capability scores to BrainstormRouter gateway. */
