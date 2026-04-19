@@ -90,6 +90,29 @@ export class SessionRepository {
     }));
   }
 
+  /**
+   * List the most-recent sessions for a specific project. Used by
+   * resumeLatest(projectPath) which previously filtered the top-1
+   * global session — and returned null whenever the user's latest
+   * session was in a different project, even though a relevant
+   * session existed elsewhere in the history.
+   */
+  listRecentByProject(projectPath: string, limit = 10): Session[] {
+    const rows = this.db
+      .prepare(
+        "SELECT * FROM sessions WHERE project_path = ? ORDER BY updated_at DESC LIMIT ?",
+      )
+      .all(projectPath, limit) as any[];
+    return rows.map((row) => ({
+      id: row.id,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      projectPath: row.project_path,
+      totalCost: row.total_cost,
+      messageCount: row.message_count,
+    }));
+  }
+
   /** Mark a session as daemon-mode and set initial tick interval. */
   markDaemon(id: string, tickIntervalMs: number): void {
     this.db

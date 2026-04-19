@@ -65,11 +65,15 @@ export class SessionManager {
 
   /** Resume the most recent session for the given project path. */
   resumeLatest(projectPath?: string): Session | null {
-    const recent = this.sessions.listRecent(1);
-    if (recent.length === 0) return null;
+    // Pre-fix the listRecent(1) + find-by-project filter would return
+    // null whenever the user's MOST-recent session was in a different
+    // project — even if a relevant session existed deeper in the
+    // history. A user who opened brainstorm in project B to do one
+    // thing and then came back to project A would not find their
+    // project-A session. Fixed by going to a project-scoped query.
     const target = projectPath
-      ? recent.find((s) => s.projectPath === projectPath)
-      : recent[0];
+      ? this.sessions.listRecentByProject(projectPath, 1)[0]
+      : this.sessions.listRecent(1)[0];
     if (!target) return null;
     return this.resume(target.id);
   }
