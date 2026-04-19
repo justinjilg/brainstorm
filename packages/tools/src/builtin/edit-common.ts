@@ -14,19 +14,33 @@ export interface EditResult {
  * Apply a single string replacement to content.
  * Returns the updated content if successful, or an error message if not.
  */
-export function applyEdit(content: string, oldString: string, newString: string): EditResult {
+export function applyEdit(
+  content: string,
+  oldString: string,
+  newString: string,
+): EditResult {
   const occurrences = content.split(oldString).length - 1;
 
   if (occurrences === 0) {
-    return { applied: false, error: 'not found' };
+    return { applied: false, error: "not found" };
   }
   if (occurrences > 1) {
-    return { applied: false, error: `${occurrences} occurrences (must be unique)`, occurrences };
+    return {
+      applied: false,
+      error: `${occurrences} occurrences (must be unique)`,
+      occurrences,
+    };
   }
 
+  // Function-form replacement — the STRING form interprets $1/$&/$`/$'
+  // in newString as regex backreferences. Without this, a tool call
+  // like file_edit({ new_string: "regex /^(foo)$/" }) would have "$/"
+  // and other $-sequences silently stripped on write. Matters for
+  // agent-generated shell scripts, regex patterns, and any code with
+  // dollar signs (e.g., `${VAR}` expansion, jQuery `$()`, etc.).
   return {
     applied: true,
-    content: content.replace(oldString, newString),
+    content: content.replace(oldString, () => newString),
   };
 }
 
@@ -37,7 +51,11 @@ export function applyEdit(content: string, oldString: string, newString: string)
 export function applyEdits(
   content: string,
   edits: Array<{ old_string: string; new_string: string }>,
-): { content: string; results: Array<{ old: string; applied: boolean; reason?: string }>; appliedCount: number } {
+): {
+  content: string;
+  results: Array<{ old: string; applied: boolean; reason?: string }>;
+  appliedCount: number;
+} {
   let current = content;
   const results: Array<{ old: string; applied: boolean; reason?: string }> = [];
   let appliedCount = 0;
@@ -49,7 +67,11 @@ export function applyEdits(
       results.push({ old: edit.old_string.slice(0, 40), applied: true });
       appliedCount++;
     } else {
-      results.push({ old: edit.old_string.slice(0, 40), applied: false, reason: result.error });
+      results.push({
+        old: edit.old_string.slice(0, 40),
+        applied: false,
+        reason: result.error,
+      });
     }
   }
 

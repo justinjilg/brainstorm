@@ -232,7 +232,12 @@ export function translatePath(
   containerWorkspace: string,
 ): string {
   if (path.startsWith(hostWorkspace + "/") || path === hostWorkspace) {
-    return path.replace(hostWorkspace, containerWorkspace);
+    // Function-form replacement — containerWorkspace could
+    // contain `$` and String.replace's string form would interpret
+    // $1/$&/etc. as backreferences, corrupting the translated path.
+    // Default container workspace is "/workspace" (no $), but the
+    // constructor accepts overrides.
+    return path.replace(hostWorkspace, () => containerWorkspace);
   }
   return path;
 }
