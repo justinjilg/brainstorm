@@ -76,44 +76,75 @@ This section describes the benchmark we _will_ run. Results table is intentional
 
 **Reproducibility.** All raw responses, judge votes, and routing decisions stored in `eval-data/br-vs-cf-ai-platform-2026-04.jsonl`. Anyone can re-run with `npx storm eval --suite br-vs-cf-ai-platform`.
 
-### Results
+### Results — Run 1 (2026-04-21)
 
-**Status (2026-04-21): harness built and pipeline-validated. Full run blocked on Cloudflare AI Platform credentials and BR upstream issues found during smoke test.**
+**Headline: Cloudflare Workers AI returned a response for every query (25/25). BrainstormRouter strategies completed 7–11 of 25.** Quality on completed responses favored BR (mean 7.78–9.14 vs CF's 6.48), but the failure rate (56–72%) overwhelms that lead in this snapshot.
 
-#### What's runnable
+The pre-stated hypotheses were largely wrong. Stating that up front — that's what `feedback_completeness_over_dopamine.md` requires.
 
-- BR auth works via 1Password (`op read "op://Dev Keys/BrainstormRouter API Key/credential"`)
-- 25-query corpus + rubric + judge pipeline all wired and tested
-- BR routing strategies addressable via `X-BR-Routing-Strategy` header + `model: "auto"` body
-- Judge can be Bypass-Cache'd to avoid stale scores
-- `node scripts/run-br-vs-cf-benchmark.mjs --dry-run` validates without API spend
+#### Aggregate table
 
-#### What's blocked
+| Strategy               | n successful | failures (of 25) |   Total cost | p50 latency | p95 latency | Mean quality |
+| ---------------------- | -----------: | ---------------: | -----------: | ----------: | ----------: | -----------: |
+| AI Platform / failover |       **25** |            **0** | $0.00 (note) |       10.2s |       13.0s |         6.48 |
+| BR / quality-first     |            7 |               18 |      $0.0075 |       21.0s |       29.0s |     **9.14** |
+| BR / cost-first        |            9 |               16 |      $0.0082 |        1.3s |       28.5s |         8.78 |
+| BR / combined          |            9 |               16 |      $0.0008 |        0.8s |       15.2s |         8.22 |
+| BR / capability        |            9 |               16 |      $0.0021 |        0.9s |       23.8s |         7.78 |
+| BR / learned           |            9 |               16 |      $0.0017 |        0.8s |       18.7s |         9.00 |
+| BR / rule-based        |           11 |               14 |      $0.0128 |       18.8s |       28.6s |         8.36 |
 
-- **Cloudflare condition: needs a Workers-AI-scoped API token.** Tried the "Cloudflare Global API Key" from 1Password — returns 401 against `accounts/{id}/ai/run/{model}`. AI Platform requires a token created in the CF dashboard with Workers AI permission. ~5 min user action.
-- **BR `combined` strategy returned 500 on 2 of 3 smoke-test queries (cq-02, cq-03).** Both queries timed out at ~30s with no model attribution. Failure pattern is non-trivial — both are real prompts (Python bug-finding, async/await conversion). Either BR's combined strategy is picking models that are down, an upstream provider is currently degraded, or there's a strategy-specific bug. Worth root-causing before treating any benchmark numbers from `combined` as ground truth.
+Total benchmark cost: **~$0.04 inference** + **~$0.09 judge calls**. Reproducible from `eval-data/br-vs-cf-ai-platform-2026-04.jsonl`.
 
-#### What the smoke test produced (3 queries, BR / combined)
+#### Success rate by category (5 queries each)
 
-| Query                            | Status | Model                        | Latency | Cost      | Judge |
-| -------------------------------- | ------ | ---------------------------- | ------- | --------- | ----- |
-| cq-01 (refactor for testability) | ✓      | google/gemini-2.5-flash-lite | 3.1s    | $0.000200 | 10/10 |
-| cq-02 (find Python bugs)         | 500    | n/a                          | 31.1s   | $0        | n/a   |
-| cq-03 (callback → async/await)   | 500    | n/a                          | 30.8s   | $0        | n/a   |
+| Strategy           | code-quality | symbol-lookup | architectural | bulk-edit | adversarial |
+| ------------------ | :----------: | :-----------: | :-----------: | :-------: | :---------: |
+| CF / failover      |     5/5      |      5/5      |      5/5      |    5/5    |     5/5     |
+| BR / quality-first |     1/5      |      3/5      |      2/5      |  **0/5**  |     1/5     |
+| BR / cost-first    |     2/5      |      4/5      |      2/5      |  **0/5**  |     1/5     |
+| BR / combined      |     2/5      |      2/5      |      2/5      |  **0/5**  |     3/5     |
+| BR / capability    |     2/5      |      3/5      |      2/5      |    1/5    |     1/5     |
+| BR / learned       |     1/5      |      4/5      |      1/5      |    1/5    |     2/5     |
+| BR / rule-based    |     1/5      |      5/5      |      3/5      |  **0/5**  |     2/5     |
 
-Total: $0.000200 across 3 queries (2 failures returned no charge). Judge gave the one successful response a 10 — independent verification recommended before publishing the score.
+**The bulk-edit column is the most concerning pattern.** 5 of 7 BR strategies returned 0/5 successes on bulk-edit prompts. These are the longest, reasoning-heaviest prompts in the corpus (47-file rename plans, license-header sed scripts, codemod approaches). BR routes them to DeepSeek-Reasoner (visible in the raw rows), which then times out at the 30-second ceiling. CF / failover hit Llama 3.1 70b for every one and got an answer in time.
 
-#### Bug surfaced by the smoke test (already fixed)
+#### Quality where both succeeded — symbol-lookup
 
-The first version of the judge prompt scored an empty/failed response as 9/10 because the judge ignored the empty `RESPONSE:` block and answered the `QUERY:` itself. Fix: judge prompt now explicitly forbids generating facts not in the response and shortcuts to score=0 when the response is empty (see `scripts/run-br-vs-cf-benchmark.mjs:judge`). This is exactly the failure mode integration testing exposes that schema tests would have hidden.
+The most apples-to-apples slice: short factual queries, both gateways completed all five. CF mean = 8.2; BR strategy means = 8.0 (quality-first), 8.3 (cost-first), 8.6 (rule-based). **No meaningful quality difference.** This contradicts the pre-stated hypothesis that BR routing would dominate; for cheap factual queries, llama-3.1-70b is fine.
 
-#### Path to a publishable result
+Where BR quality leads genuinely stand out, on completed responses — code-quality and architectural categories, means 7.0–10.0 — the n is 1–3 per BR condition. Not statistically meaningful. Needs a re-run with higher completion rate before publishing those differences as signal.
 
-1. User creates a CF API token with Workers AI permission, stores in 1Password as `Cloudflare AI Platform Token`, sets `CLOUDFLARE_AI_PLATFORM_TOKEN` and `CF_ACCOUNT_ID` env before running.
-2. Investigate BR `combined` strategy 500s. Either fix or document as known degradation in the post.
-3. Run `node scripts/run-br-vs-cf-benchmark.mjs` (full set, ~700 API calls, est. cost $5–30 depending on which models BR picks).
-4. Inspect `eval-data/br-vs-cf-ai-platform-2026-04.jsonl` raw rows; verify judge scores against a hand-sampled subset.
-5. Replace this section with the real aggregated table.
+### Caveats — three that change what this run can claim
+
+1. **Cost data is incomplete.** Cloudflare Workers AI doesn't return per-call cost in response headers; the table reads "$0.00" for CF, but the Workers AI rate card applies. Reconcile from billing dashboard before publishing any cost-per-quality-point number.
+
+2. **The cache-bypass header probably didn't work.** ~70% of "successful" BR responses came back with a `cache/` prefix on the model name (e.g. `cache/deepseek/deepseek-reasoner`). The script set `X-BR-Bypass-Cache: 1` on every call. Sub-second p50 latencies on BR combined/capability/learned (786ms, 887ms, 796ms) corroborate cache hits. **A re-run with verified cache bypass is required before treating BR strategy differences as real.** Until then, the BR strategies in this table are partially measuring BR's cache hit rate, not its routing intelligence.
+
+3. **Routing diversity was thin.** Despite invoking 6 different strategies, the model attributions show BR converged on DeepSeek-Reasoner for almost every successful query. Only ~3 queries across the whole run hit Gemini variants. The strategies aren't being differentiated by this corpus + auto-router combo — they're effectively picking the same model. A corpus that pushes BR into different cost/quality regimes (force-quality prompts for capability, force-cheap prompts for cost-first) would actually compare the strategies.
+
+### What the prior hypotheses got wrong (and right)
+
+| Hypothesis                                                      | Actual                                                                                 |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| BR / combined will score lower cost-per-quality-point by 25–50% | **Not measurable** — CF cost not returned and BR responses mostly cache-hit            |
+| CF will tie or beat BR on individual-request latency            | **Mostly true.** CF p50 10.2s; BR p50 0.8–21s. BR wins on cache-hit; CF on consistency |
+| BR / learned will beat BR / rule-based after >100 samples       | Not measurable on n=9                                                                  |
+| BR / cost-first will fail more on adversarial                   | **No clear pattern** — all BR strategies failed similarly across categories            |
+| CF will win on no-failures for first 5 queries                  | **CF won on no-failures for all 25 queries.** Hypothesis was much too weak             |
+
+### What this run actually says — one paragraph
+
+For a workload of mid-difficulty real coding prompts hitting both gateways with defaults, **Cloudflare Workers AI with Llama 3.1 70b was the most reliable choice in this snapshot** — every response, 10s p50, 6.48/10 quality. BrainstormRouter's intelligent routing produced higher-quality responses on the slice it completed, but the failure rate negates the win. Correct next step: re-run with verified cache bypass, raise the per-call timeout above 30s (or drop DeepSeek-Reasoner from routable pool for long prompts), and diversify the corpus so strategies actually differentiate. Without those, the current benchmark can only say "CF was more reliable today; BR quality is real but conditional on completion."
+
+### Action items before Run 2
+
+1. **Confirm the right cache-bypass mechanism.** Check BR docs or headers on `api.brainstormrouter.com` for the canonical header name and set it properly.
+2. **Investigate BR timeout on bulk-edit.** Either exclude DeepSeek-Reasoner from the routable pool for long prompts, raise the per-call timeout above 30s in the runner, or document as a known limitation.
+3. **Reconcile CF cost from Workers AI billing.** Record the pricing reference alongside the results.
+4. **Diversify the corpus.** Add prompts that distinctly favor cheap-fast vs slow-thorough model selection so the strategies actually pick different models.
+5. **Re-run weekly until results stabilize.** Single snapshots lie.
 
 ### What we expect to find (stated up front so we can be wrong publicly)
 
