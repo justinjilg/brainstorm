@@ -260,6 +260,13 @@ const godmodeSchema = z.object({
   autoApproveRiskThreshold: z.number().min(0).max(100).default(20),
   /** Per-connector configuration. Key is connector name ("msp", "email", "vm", etc.). */
   connectors: z.record(godmodeConnectorSchema).default({}),
+  /**
+   * Code Mode: register connector tools with `deferred` set so their schemas
+   * stay out of the prompt until discovered via `tool_search`. Reduces tool
+   * catalog token cost when many connectors are healthy. Off by default to
+   * preserve the eager-loading behavior current sessions assume.
+   */
+  deferToolSchemas: z.boolean().default(false),
 });
 
 // ── Serve Config ────────────────────────────────────────────────────

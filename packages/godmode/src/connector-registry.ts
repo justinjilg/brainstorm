@@ -90,9 +90,14 @@ export async function connectGodMode(
       continue;
     }
 
-    // Register all tools from this connector
+    // Register all tools from this connector. When Code Mode is enabled,
+    // mark each as deferred so the schema stays out of the prompt until
+    // the model resolves it via `tool_search`.
     const tools = connector.getTools();
     for (const tool of tools) {
+      if (config.deferToolSchemas) {
+        tool.deferred = true;
+      }
       registry.register(tool);
     }
 

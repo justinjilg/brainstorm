@@ -71,6 +71,14 @@ export interface GodModeConfig {
   autoApproveRiskThreshold: number;
   /** Per-connector configs. Key is connector name ("msp", "vm", etc.). */
   connectors: Record<string, ConnectorConfig>;
+  /**
+   * Code Mode: register connector tools as deferred so their schemas only
+   * enter the prompt after the model resolves them via `tool_search`.
+   * Defaults to false to preserve the eager-load behavior current sessions
+   * assume. The connector-registry sets the per-tool `deferred` flag based
+   * on this value.
+   */
+  deferToolSchemas?: boolean;
 }
 
 // ── ChangeSet ────────────────────────────────────────────────────

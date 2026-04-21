@@ -43,6 +43,7 @@ export function buildGodModePrompt(
   connected: GodModeConnectionResult["connectedSystems"],
   config: GodModeConfig,
 ): { text: string; cacheable: boolean } {
+  const deferred = config.deferToolSchemas === true;
   if (connected.length === 0) {
     return {
       text: "## God Mode\n\nNo systems connected. Configure connectors in brainstorm.toml [godmode] section.",
@@ -63,6 +64,18 @@ You have authority over ${connected.length} connected system(s). Translate natur
       .map((c) => CAPABILITY_LABELS[c] ?? c)
       .join(", ");
     sections.push(`- **${sys.displayName}** (${sys.latencyMs}ms): ${caps}`);
+  }
+
+  if (deferred) {
+    sections.push(`
+### Tool Discovery
+
+Connector tool schemas are deferred — only their names and descriptions are
+loaded. To use a connector tool, first call \`tool_search\` with keywords
+that match the capability you need (e.g. "isolate endpoint", "quarantine
+message", "create vm"). Matching tools become available in the next turn.
+ChangeSet meta-tools (\`gm_changeset_*\`) are always available without
+search.`);
   }
 
   // Safety protocol

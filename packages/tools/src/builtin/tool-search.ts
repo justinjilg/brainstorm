@@ -3,20 +3,24 @@ import { defineTool } from "../base.js";
 import type { ToolRegistry } from "../registry.js";
 
 /**
- * Create the tool_search tool — discovers and resolves deferred MCP tools.
+ * Create the tool_search tool — discovers and resolves deferred tools.
  *
- * MCP tool schemas are loaded lazily: only names + descriptions at startup.
- * When the model needs an MCP tool, it calls tool_search to find matching
- * tools by keyword. Matched tools are resolved (deferred flag cleared),
- * making their full schemas available in subsequent turns.
+ * Deferred tools (MCP servers, GodMode connectors when Code Mode is on,
+ * and any plugin that opts in) ship only their names + descriptions until
+ * the model resolves them. This keeps the per-prompt tool catalog small.
+ *
+ * When the model needs a deferred tool, it calls tool_search with
+ * keywords. Matched tools have their `deferred` flag cleared, making
+ * their full schemas available in subsequent turns.
  */
 export function createToolSearchTool(registry: ToolRegistry) {
   return defineTool({
     name: "tool_search",
     description:
-      "Search for available MCP tools by keyword. Returns matching tool names and descriptions. " +
-      "Matched tools become available for use in subsequent turns. Use this when you need a " +
-      "specialized tool that isn't in your current tool set (e.g., database, API, or service tools).",
+      "Search for deferred tools by keyword and resolve them for use. Covers MCP server tools, " +
+      "God Mode connector tools (when Code Mode is enabled), and any plugin tool that ships deferred. " +
+      "Returns matching tool names and descriptions; resolved tools become available in the next turn. " +
+      'Use "select:name1,name2" to resolve specific tools by exact name when you already know what you need.',
     permission: "auto",
     concurrent: true,
     readonly: true,
