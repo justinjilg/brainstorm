@@ -146,6 +146,17 @@ For a workload of mid-difficulty real coding prompts hitting both gateways with 
 4. **Diversify the corpus.** Add prompts that distinctly favor cheap-fast vs slow-thorough model selection so the strategies actually pick different models.
 5. **Re-run weekly until results stabilize.** Single snapshots lie.
 
+### Postmortem — what investigation found after Run 1
+
+The runner sent `X-BR-Routing-Strategy` and `X-BR-Bypass-Cache` headers. **Neither header exists in the BR server source.** Strategy is set via `body.route.strategy`; cache bypass via `body.cache = false` or `body.x_no_cache = true`. The strategy names the runner used (`quality-first`, `cost-first`, `combined`, `capability`, `learned`, `rule-based`) also don't exist server-side — the real `RoutingStrategy` enum is `price | latency | throughput | priority | quality | cascade`, and 4 of the 6 client-side names have no server counterpart at all.
+
+So all 7 BR conditions in Run 1 were effectively the same configuration: **default strategy, cache enabled.** The CF result (25/25, 6.48 mean quality) is real. The BR-side strategy-comparison story is unproven and the table cannot be used to differentiate strategies.
+
+Full postmortem (with code-level pointers) lives in the brainstormrouter project:
+**`~/Projects/brainstormrouter/docs/benchmarks/2026-04-21-vs-cf-ai-platform-postmortem.md`**
+
+That postmortem documents 5 actionable bugs in BR (naming drift between client and server packages, missing public API docs for strategy/cache bypass, no fallback when DeepSeek-Reasoner times out, cost not in response body, cache key may not include strategy) plus the path to Run 2. The work belongs in that repo, not this one.
+
 ### What we expect to find (stated up front so we can be wrong publicly)
 
 1. **BR / combined will score lower cost-per-quality-point than AI Platform / failover** by 25–50%. Reason: failover sends every request to the model the engineer named, so symbol-lookups pay Opus rates when Sonnet would suffice. Routing intelligence picks the right model per task; failover doesn't try to.
