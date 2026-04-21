@@ -38,7 +38,7 @@ The honest read: **AI Platform wins on distribution and free-tier reach. Brainst
 
 ### Methodology
 
-This section describes the benchmark we _will_ run. Results table is intentionally empty until the run completes.
+This section describes the planned shape of the benchmark. **Run 1 (results below) deviated from the plan in two material ways:** (a) on Cloudflare we ran every query against a single pinned model (`@cf/meta/llama-3.1-70b-instruct`) rather than the planned multi-model swap, because that's the realistic default for a "pick a model and use AI Platform's failover" user; (b) on BR, instead of pinning models per condition, we sent `model: "auto"` with the strategy header so each strategy's auto-router picked. Run 2 should narrow these.
 
 **Query set:** 25 prompts across five categories, 5 each.
 
@@ -50,7 +50,7 @@ This section describes the benchmark we _will_ run. Results table is intentional
 | Bulk-edit     | "Rename `tenantId` → `orgId` across 47 files"       | Throughput; many simple ops                 |
 | Adversarial   | "Prove this code is incorrect"                      | Capability heterogeneous across models      |
 
-**Models in scope (both systems):** Sonnet 4.6, Opus 4.6, GPT-5.4, Gemini 3.1 Pro, Kimi K2.5, DeepSeek-V3.5. Six models, available on both gateways (or substituted to nearest equivalent on AI Platform where the exact model isn't hosted).
+**Models in scope (planned, both systems):** Sonnet 4.6, Opus 4.6, GPT-5.4, Gemini 3.1 Pro, Kimi K2.5, DeepSeek-V3.5. **In Run 1, the actual models that handled traffic were `@cf/meta/llama-3.1-70b-instruct` (CF, pinned) and `deepseek/deepseek-reasoner` (BR auto-router, ~95% of successful BR responses).** Run 2 should compare frontier-tier models on both gateways for a more interesting capability-quality tradeoff.
 
 **Conditions:**
 
