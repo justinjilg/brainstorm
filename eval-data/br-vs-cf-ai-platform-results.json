@@ -1,0 +1,79 @@
+{
+  "cf-failover": {
+    "label": "AI Platform / failover",
+    "n": 25,
+    "totalCost": "0.0000",
+    "meanLatencyMs": 10601,
+    "p50Ms": 10152,
+    "p95Ms": 13009,
+    "meanQuality": 6.48,
+    "costPerQualityPoint": 0,
+    "failures": 0
+  },
+  "br-quality": {
+    "label": "BR / quality-first",
+    "n": 7,
+    "totalCost": "0.0075",
+    "meanLatencyMs": 14242,
+    "p50Ms": 20992,
+    "p95Ms": 28986,
+    "meanQuality": 9.14,
+    "costPerQualityPoint": 0.0001,
+    "failures": 18
+  },
+  "br-cost": {
+    "label": "BR / cost-first",
+    "n": 9,
+    "totalCost": "0.0082",
+    "meanLatencyMs": 11639,
+    "p50Ms": 1318,
+    "p95Ms": 28535,
+    "meanQuality": 8.78,
+    "costPerQualityPoint": 0.0001,
+    "failures": 16
+  },
+  "br-combined": {
+    "label": "BR / combined",
+    "n": 9,
+    "totalCost": "0.0008",
+    "meanLatencyMs": 2620,
+    "p50Ms": 786,
+    "p95Ms": 15248,
+    "meanQuality": 8.22,
+    "costPerQualityPoint": 0,
+    "failures": 16
+  },
+  "br-capability": {
+    "label": "BR / capability",
+    "n": 9,
+    "totalCost": "0.0021",
+    "meanLatencyMs": 4156,
+    "p50Ms": 887,
+    "p95Ms": 23761,
+    "meanQuality": 7.78,
+    "costPerQualityPoint": 0,
+    "failures": 16
+  },
+  "br-learned": {
+    "label": "BR / learned",
+    "n": 9,
+    "totalCost": "0.0017",
+    "meanLatencyMs": 2802,
+    "p50Ms": 796,
+    "p95Ms": 18708,
+    "meanQuality": 9,
+    "costPerQualityPoint": 0,
+    "failures": 16
+  },
+  "br-rule": {
+    "label": "BR / rule-based",
+    "n": 11,
+    "totalCost": "0.0128",
+    "meanLatencyMs": 13997,
+    "p50Ms": 18801,
+    "p95Ms": 28555,
+    "meanQuality": 8.36,
+    "costPerQualityPoint": 0.0001,
+    "failures": 14
+  }
+}
