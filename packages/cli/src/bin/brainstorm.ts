@@ -7970,6 +7970,8 @@ program
                 totalTools: godModeResult.totalTools,
               }
             : undefined,
+          routingStreamEnabled: config.routing?.routingStream ?? false,
+          routingStreamUrl: config.routing?.routingStreamUrl,
           memoryInfo: await (async () => {
             try {
               const { MemoryManager } = await import("@brainst0rm/core");

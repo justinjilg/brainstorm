@@ -15,3 +15,10 @@ export {
   type SyncWorkerOptions,
   type SyncWorkerStats,
 } from "./sync-worker.js";
+export {
+  RoutingEventStream,
+  type RoutingDecision,
+  type RoutingStreamEvent,
+  type RoutingStreamOptions,
+  type ConnectionState,
+} from "./routing-stream.js";
