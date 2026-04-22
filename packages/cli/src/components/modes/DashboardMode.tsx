@@ -19,6 +19,8 @@ import { Gauge } from "../viz/Gauge.js";
 import { Sparkline } from "../viz/Sparkline.js";
 import { getProviderColor } from "../../theme.js";
 import type { BRDashboardData } from "../../hooks/useBRData.js";
+import { useRoutingStream } from "../../hooks/useRoutingStream.js";
+import { LiveRoutingPanel } from "../LiveRoutingPanel.js";
 
 interface RoutingEntry {
   model: string;
@@ -56,6 +58,10 @@ interface DashboardModeProps {
     errors: Array<{ name: string; error: string }>;
     totalTools: number;
   };
+  /** Opt-in flag from config.routing.routingStream. When false, panel shows an enable hint. */
+  routingStreamEnabled?: boolean;
+  /** Optional BR base URL override from config.routing.routingStreamUrl. */
+  routingStreamUrl?: string;
 }
 
 function formatElapsed(ms: number): string {
@@ -105,11 +111,20 @@ export function DashboardMode({
   brData,
   onRefreshBR,
   godModeInfo,
+  routingStreamEnabled = false,
+  routingStreamUrl,
 }: DashboardModeProps) {
   const elapsed = Date.now() - sessionStart;
   const costPerHour = elapsed > 60000 ? (sessionCost / elapsed) * 3600000 : 0;
   const gm = godModeInfo;
   const domainGroups = gm ? groupToolsByDomain(gm.connectedSystems) : [];
+
+  const routerApiKey = process.env.BRAINSTORM_ROUTER_API_KEY;
+  const routingStream = useRoutingStream({
+    enabled: routingStreamEnabled,
+    baseUrl: routingStreamUrl,
+    apiKey: routerApiKey,
+  });
 
   useEffect(() => {
     if (onRefreshBR && (!brData || brData.lastFetched === 0)) {
@@ -428,6 +443,23 @@ export function DashboardMode({
             </>
           )}
         </Box>
+      </Box>
+
+      {/* Row 3: Live Routing panel (push-first SSE stream from BR) */}
+      <Box
+        marginTop={1}
+        borderStyle="round"
+        borderColor="gray"
+        paddingX={1}
+        flexDirection="column"
+      >
+        <LiveRoutingPanel
+          events={routingStream.events}
+          state={routingStream.state}
+          gapCount={routingStream.gapCount}
+          enabled={routingStreamEnabled}
+          hasApiKey={!!routerApiKey}
+        />
       </Box>
 
       {/* Bottom: Status bar */}

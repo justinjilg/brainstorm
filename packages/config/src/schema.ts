@@ -301,6 +301,22 @@ export const brainstormConfigSchema = z.object({
           "openai/gpt-5.4",
           "anthropic/claude-haiku-4.5",
         ]),
+      /**
+       * Opt into BR's push-first routing-intelligence stream. When true and
+       * `BRAINSTORM_ROUTER_API_KEY` is set, the CLI subscribes to BR's
+       * `GET /v1/routing-stream` SSE endpoint and surfaces decisions in the
+       * Dashboard's "Live Routing" panel in real time. Local routing
+       * strategies also update their in-memory state from these events
+       * instead of waiting for the file-cache TTL. Default false while the
+       * feature is new; flip to true per-tenant once BR Phase 1 ships.
+       */
+      routingStream: z.boolean().default(false),
+      /**
+       * Override the BR base URL used by the routing stream subscriber.
+       * Defaults to the same URL used by the gateway client. Useful for
+       * local dev (`http://localhost:8000`) or preview environments.
+       */
+      routingStreamUrl: z.string().url().optional(),
     })
     .default({}),
   memory: z

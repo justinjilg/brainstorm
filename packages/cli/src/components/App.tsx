@@ -67,6 +67,10 @@ interface AppProps {
     errors: Array<{ name: string; error: string }>;
     totalTools: number;
   };
+  /** Opt-in flag from config.routing.routingStream. */
+  routingStreamEnabled?: boolean;
+  /** Optional BR base URL override from config.routing.routingStreamUrl. */
+  routingStreamUrl?: string;
 }
 
 interface RoutingEntry {
@@ -300,6 +304,8 @@ export function App(props: AppProps) {
           brData={brData}
           onRefreshBR={refreshBR}
           godModeInfo={props.godModeInfo}
+          routingStreamEnabled={props.routingStreamEnabled}
+          routingStreamUrl={props.routingStreamUrl}
         />
       )}
 
