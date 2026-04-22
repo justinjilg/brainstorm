@@ -157,6 +157,80 @@ Full postmortem (with code-level pointers) lives in the brainstormrouter project
 
 That postmortem documents 5 actionable bugs in BR (naming drift between client and server packages, missing public API docs for strategy/cache bypass, no fallback when DeepSeek-Reasoner times out, cost not in response body, cache key may not include strategy) plus the path to Run 2. The work belongs in that repo, not this one.
 
+### Results — Run 2 (2026-04-22)
+
+**Headline:** the runner now talks to BR with its real interface (`body.route.strategy`, real strategy enum). The strategies finally differentiate. **BR / quality** — the only condition where most calls weren't cache hits — gives the cleanest signal: 19/25 success, 7.37 mean quality, p50 17.3s, $0.045 total cost. CF row carries forward from Run 1 unchanged (server hasn't moved). **BR / cascade is fully broken** (25/25 internal server errors). The cache bypass headers (`body.cache:false`, `body.x_no_cache:true`, `X-BR-Cache-Privacy: private`) are still being ignored on most calls — most "fast" BR strategy responses are stale cache hits, not real model selections.
+
+#### Aggregate table — Run 2
+
+| Strategy                       |   n | failures | Total cost | p50 latency | p95 latency | Mean quality | Cache hit rate |
+| ------------------------------ | --: | -------: | ---------: | ----------: | ----------: | -----------: | -------------: |
+| AI Platform / failover (Run 1) |  25 |        0 | ~$0 (note) |       10.2s |       13.0s |         6.48 |            n/a |
+| BR / quality                   |  19 |        6 |    $0.0453 |       17.3s |       30.7s |     **7.37** |           1/19 |
+| BR / price                     |  20 |        5 |    $0.0186 |        0.7s |       30.1s |         7.45 |          14/20 |
+| BR / latency                   |  23 |        2 |    $0.0127 |        0.7s |       24.4s |         7.04 |          19/23 |
+| BR / throughput                |  24 |        1 |    $0.0085 |        0.6s |       15.1s |         7.08 |          21/24 |
+| BR / priority                  |  24 |        1 |    $0.0011 |        0.7s |        1.3s |         7.17 |          23/24 |
+| BR / cascade                   |   0 |       25 |         $0 |         n/a |         n/a |            0 |            n/a |
+
+#### Success rate by category (5 queries each) — Run 2
+
+| Strategy        | code-quality | symbol-lookup | architectural | bulk-edit | adversarial |
+| --------------- | :----------: | :-----------: | :-----------: | :-------: | :---------: |
+| BR / quality    |     5/5      |      5/5      |      3/5      |    3/5    |     3/5     |
+| BR / price      |     5/5      |      5/5      |      4/5      |    3/5    |     3/5     |
+| BR / latency    |     5/5      |      5/5      |      4/5      |    4/5    |     5/5     |
+| BR / throughput |     5/5      |      5/5      |      5/5      |    4/5    |     5/5     |
+| BR / priority   |     5/5      |      5/5      |      5/5      |    4/5    |     5/5     |
+| BR / cascade    |     0/5      |      0/5      |      0/5      |    0/5    |     0/5     |
+
+Reliability is much higher than Run 1 across the board (priority and throughput hit 24/25 vs Run 1's BR strategies hitting 7–11/25). But see the cache caveat — most of the "successes" on fast strategies are not actual model invocations.
+
+#### What's clean signal vs cache artifact
+
+| Condition       | Cache hit rate | Reading the data                                                                                                                                                                                                       |
+| --------------- | -------------: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| BR / quality    |           1/19 | **Clean.** This strategy routes to expensive models (DeepSeek-Reasoner uncached at full latency); not finding cache matches. The 7.37 quality and 17.3s p50 reflect actual model behavior.                             |
+| BR / price      |          14/20 | Mostly cached. Use with caution.                                                                                                                                                                                       |
+| BR / latency    |          19/23 | Mostly cached.                                                                                                                                                                                                         |
+| BR / throughput |          21/24 | Mostly cached.                                                                                                                                                                                                         |
+| BR / priority   |          23/24 | **Almost entirely cached.** The 0.7s p50 / 1.3s p95 isn't BR routing being fast; it's serving prior responses. The 7.17 quality reflects whatever was previously cached, not what priority would actually return live. |
+| BR / cascade    |              0 | **Hard-broken.** Every call returns "Internal server error" after ~30s. There's a bug in the cascade strategy implementation; needs server-side investigation.                                                         |
+
+#### Apples-to-apples comparison: BR / quality vs CF / failover
+
+The cleanest comparison this run supports — both completed a meaningful chunk of the corpus, both made real model calls, neither was significantly cache-distorted:
+
+| Metric             |            CF / failover | BR / quality | Direction                         |
+| ------------------ | -----------------------: | -----------: | --------------------------------- |
+| Reliability        |             25/25 (100%) |  19/25 (76%) | CF wins                           |
+| Mean judge quality |                     6.48 |         7.37 | BR wins (+14%)                    |
+| p50 latency        |                    10.2s |        17.3s | CF wins (1.7x faster)             |
+| p95 latency        |                    13.0s |        30.7s | CF wins (2.4x faster)             |
+| Cost / 25 queries  | unknown ($0 in response) |      $0.0453 | unclear without CF reconciliation |
+
+So at the routing-intelligence-actually-engaged comparison: **CF wins on reliability and latency. BR wins on quality (modestly).** Both findings are real this time. Run 1's "CF dominates" headline was correct for what Run 1 actually measured (default strategy with cache); Run 2's quality-strategy comparison gives the more nuanced picture.
+
+#### Cache bypass: still broken in deployed BR
+
+The bigger-than-expected finding: even with `body.cache:false`, `body.x_no_cache:true`, AND `X-BR-Cache-Privacy: private` set on every request, 78% of "fast strategy" responses came back with `cacheHit=true` and `model=cache/...`. That's a real production bug worth filing back to brainstormrouter. The earlier postmortem fix (commit `e22023e29`) made the cache key include strategy, which is why BR / quality cache hits are 1/19 instead of higher — quality wasn't in the cache from prior runs. But the bypass mechanism itself isn't disabling reads on most strategies.
+
+Smoke test earlier today proved the bypass DOES work for unique novel prompts ("Reply with one word: ready" produced no cache hit on two consecutive calls). So the bug is more like: **bypass works for uncached prompts, fails for prompts with prior cached entries.** That's a head-scratcher and probably worth a follow-up postmortem update.
+
+#### Updated hypotheses scorecard (post Run 2)
+
+| Hypothesis                                   | Run 1 verdict      | Run 2 verdict                                                                                                        |
+| -------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| BR / combined wins on cost-per-quality-point | Not measurable     | "combined" doesn't exist server-side; BR / quality is +14% on quality vs CF but at 1.7x worse latency, mixed on cost |
+| CF beats BR on individual-request latency    | Mostly true        | **Confirmed.** CF p50 10.2s vs BR / quality 17.3s                                                                    |
+| BR / learned beats BR / rule-based           | Not measurable     | Neither exists server-side                                                                                           |
+| BR / cost-first fails more on adversarial    | No clear pattern   | "cost-first" doesn't exist; BR / price hit 3/5 on adversarial, similar to other BR strategies                        |
+| CF wins on no-failures                       | Confirmed in Run 1 | Still true (25/25 vs BR's best 24/25)                                                                                |
+
+#### What Run 2 actually says — one paragraph
+
+The runner finally talks to BR's real interface, so we now have evidence that BR's routing strategies do differentiate (quality strategy spent $0.045 to deliver 7.37 quality at 17s latency; lighter strategies are faster and cheaper but mostly serve cached responses on this corpus). Against CF / failover on the only clean apples-to-apples slice (BR / quality vs CF), **CF wins on reliability (25/25 vs 19/25) and latency (10s vs 17s p50); BR wins on judge-rated quality by a modest +14% (7.37 vs 6.48)**. Cascade strategy is broken; cache bypass is partially broken. The honest read: BR's routing intelligence is real but produces a quality/latency/cost tradeoff curve, not a free lunch — which is what you'd expect from a router that actually picks different models for different goals.
+
 ### What we expect to find (stated up front so we can be wrong publicly)
 
 1. **BR / combined will score lower cost-per-quality-point than AI Platform / failover** by 25–50%. Reason: failover sends every request to the model the engineer named, so symbol-lookups pay Opus rates when Sonnet would suffice. Routing intelligence picks the right model per task; failover doesn't try to.
