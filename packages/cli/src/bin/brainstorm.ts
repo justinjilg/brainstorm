@@ -1367,6 +1367,180 @@ agentCmd
     }
   });
 
+// ── Peer coordination (Phase 3) ─────────────────────────────────────
+//
+// Manual test surface for the localhost broker. Each invocation talks to
+// the running broker directly (auto-spawning if needed) rather than joining
+// the peer mesh as a long-running session. Useful for operators and for
+// integration tests that exercise cross-session messaging without a live
+// storm chat process.
+
+const peerCmd = program
+  .command("peer")
+  .description("Cross-session peer coordination via local broker");
+
+async function peerEphemeralClient(summary: string): Promise<{
+  client: import("@brainst0rm/broker").BrokerClient;
+  id: string;
+}> {
+  const apiKey = process.env.BRAINSTORM_ROUTER_API_KEY;
+  if (!apiKey) {
+    console.error(
+      "peer commands require BRAINSTORM_ROUTER_API_KEY (tenant fingerprint source)",
+    );
+    process.exit(1);
+  }
+  const { BrokerClient, ensureBroker } = await import("@brainst0rm/broker");
+  const port = await ensureBroker();
+  const client = new BrokerClient({
+    port,
+    apiKey,
+    pid: process.pid,
+    cwd: process.cwd(),
+    summary,
+    // Short-lived — no heartbeats needed; we'll unregister on completion.
+    heartbeatIntervalMs: 60_000,
+    pollIntervalMs: 60_000,
+  });
+  const id = await client.start();
+  return { client, id };
+}
+
+peerCmd
+  .command("list")
+  .description("List other storm CLI sessions visible to this tenant")
+  .option(
+    "--scope <scope>",
+    "machine | directory | repo (default: machine)",
+    "machine",
+  )
+  .action(async (opts: { scope?: string }) => {
+    const { client } = await peerEphemeralClient("peer list (one-shot)");
+    try {
+      const scope = (opts.scope ?? "machine") as
+        | "machine"
+        | "directory"
+        | "repo";
+      const peers = await client.listPeers(scope);
+      if (peers.length === 0) {
+        console.log("(no peers)");
+      } else {
+        for (const p of peers) {
+          const parts = [
+            p.id,
+            `pid=${p.pid}`,
+            p.cwd,
+            p.tty ? `tty=${p.tty}` : "",
+          ].filter(Boolean);
+          console.log(parts.join("  "));
+          if (p.summary) console.log(`  ${p.summary}`);
+        }
+      }
+    } finally {
+      await client.stop();
+    }
+  });
+
+peerCmd
+  .command("send")
+  .description("Send a message to a peer by id")
+  .argument("<peerId>", "target peer id (from `peer list`)")
+  .argument("<message...>", "message text")
+  .action(async (peerId: string, words: string[]) => {
+    const text = words.join(" ");
+    const { client } = await peerEphemeralClient("peer send (one-shot)");
+    try {
+      await client.sendMessage(peerId, text);
+      console.log(`sent to ${peerId}`);
+    } catch (err) {
+      console.error(
+        `send failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      process.exit(1);
+    } finally {
+      await client.stop();
+    }
+  });
+
+peerCmd
+  .command("messages")
+  .description("Drain pending inbound messages for this session")
+  .action(async () => {
+    const { client } = await peerEphemeralClient("peer messages (one-shot)");
+    try {
+      // One-shot: trigger a poll immediately by registering a handler +
+      // directly calling the broker. Simpler: subscribe and wait 1.2s
+      // so the poll timer fires once (pollInterval=60s; we'd wait too long).
+      // Instead, call the poll endpoint directly via the client's http path.
+      const collected: Array<{
+        from_id: string;
+        text: string;
+        sent_at: string;
+      }> = [];
+      const unsub = client.onMessage((msg) => {
+        collected.push({
+          from_id: msg.from_id,
+          text: msg.text,
+          sent_at: msg.sent_at,
+        });
+      });
+      // Force a poll — cheaper than waiting for the interval.
+      const port = process.env.BRAINSTORM_BROKER_PORT ?? "7900";
+      await fetch(`http://127.0.0.1:${port}/poll-messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: client.getPeerId() }),
+      }).then(async (res) => {
+        const body = (await res.json()) as {
+          messages: Array<{
+            from_id: string;
+            text: string;
+            sent_at: string;
+          }>;
+        };
+        for (const m of body.messages) collected.push(m);
+      });
+      unsub();
+      if (collected.length === 0) {
+        console.log("(no pending messages)");
+      } else {
+        for (const m of collected) {
+          console.log(`[${m.sent_at}] from ${m.from_id}: ${m.text}`);
+        }
+      }
+    } finally {
+      await client.stop();
+    }
+  });
+
+peerCmd
+  .command("set-summary")
+  .description("Update the summary shown to other peers")
+  .argument("<summary...>", "summary text")
+  .action(async (words: string[]) => {
+    const summary = words.join(" ");
+    const { client } = await peerEphemeralClient(summary);
+    try {
+      await client.setSummary(summary);
+      console.log(`summary updated: ${summary}`);
+    } finally {
+      await client.stop();
+    }
+  });
+
+peerCmd
+  .command("health")
+  .description("Check broker liveness + peer count")
+  .action(async () => {
+    const { client } = await peerEphemeralClient("peer health (one-shot)");
+    try {
+      const h = await client.health();
+      console.log(JSON.stringify(h, null, 2));
+    } finally {
+      await client.stop();
+    }
+  });
+
 // ── Workflow Commands ──────────────────────────────────────────────
 
 const workflowCmd = program
@@ -7961,6 +8135,25 @@ program
         });
         attachStreamToLearnedStrategy(sharedRoutingStream);
         sharedRoutingStream.start();
+      }
+
+      // Phase 3: peer coordination. Auto-spawn the local broker (no-op if
+      // already running), register this session, start heartbeat + inbound
+      // message poll. Tenant boundary is a fingerprint of the router API
+      // key — sessions without a key skip peer coordination entirely. Never
+      // throws; a broken broker does not take down the CLI.
+      const { startPeerCoordination } = await import("../peer/peer-client.js");
+      const activePeer = await startPeerCoordination({
+        cwd: process.cwd(),
+        summary: `storm chat in ${process.cwd().split("/").pop() ?? "workspace"}`,
+        apiKey: routerApiKeyForStream,
+      });
+      if (activePeer) {
+        const peerShutdown = () => {
+          void activePeer.shutdown();
+        };
+        process.once("SIGINT", peerShutdown);
+        process.once("SIGTERM", peerShutdown);
       }
 
       render(
