@@ -104,16 +104,35 @@ export async function startMCPServer(): Promise<void> {
       shape[key] = field;
     }
 
+    // Inject a common `wait_seconds` param on every god-mode tool so operators
+    // can override the default 30s poll wall-time for slow tools. Cap at 300s
+    // (5 min) to match MSP's documented max; server-side stale-sweep is 5 min
+    // so polling beyond that just adds latency with no gain.
+    shape.wait_seconds = z
+      .number()
+      .int()
+      .min(1)
+      .max(300)
+      .optional()
+      .describe(
+        "Optional: max seconds to wait for the agent's result (default 30, cap 300). Useful for slow tools.",
+      );
+
     server.tool(
       mcpName,
       `[${tool.product}] ${tool.description}`,
       shape,
       async (params) => {
+        const { wait_seconds, ...toolParams } = params as {
+          wait_seconds?: number;
+          [k: string]: unknown;
+        };
         const result = await executeGodModeTool(
           tool._baseUrl,
           tool._apiKeyName,
           tool.name,
-          params,
+          toolParams,
+          wait_seconds,
         );
 
         return {
@@ -319,11 +338,98 @@ async function discoverProducts(): Promise<ConnectedProduct[]> {
 
 // ── God Mode Tool Execution ────────────────────────────────────
 
+// Retry-classification map, mirrored from MSP's god_mode_executions.error_code enum.
+// Keep in sync with app/api/god_mode.py constant.
+const RETRYABLE_ERROR_CODES = new Set([
+  "AGENT_OFFLINE",
+  "TIMEOUT",
+  "INTERNAL_ERROR",
+]);
+
+interface ExecutionRecord {
+  id: string;
+  trace_id: string;
+  test_id?: string | null;
+  tool: string;
+  risk_level?: string;
+  agent_id?: string;
+  params?: Record<string, unknown>;
+  dispatched_at?: string;
+  completed_at?: string | null;
+  status: "dispatched" | "completed" | "failed" | "timed_out";
+  result?: unknown;
+  error?: string | null;
+  error_code?: string | null;
+  api_key_id?: string | null;
+  agent_version_at_dispatch?: string | null;
+  execution_target?: string;
+  created_by?: string | null;
+}
+
+async function pollExecution(
+  baseUrl: string,
+  apiKey: string,
+  commandId: string,
+  waitSeconds: number,
+): Promise<ExecutionRecord | { error: string; status?: number }> {
+  const deadline = Date.now() + waitSeconds * 1000;
+  const backoffMs = [500, 1000, 2000, 4000, 5000];
+  let attempt = 0;
+
+  while (Date.now() < deadline) {
+    const res = await fetch(
+      `${baseUrl}/api/v1/god-mode/executions/${commandId}`,
+      {
+        headers: { Authorization: `Bearer ${apiKey}` },
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
+
+    if (res.status === 200) {
+      return (await res.json()) as ExecutionRecord;
+    }
+
+    if (res.status === 202) {
+      // Non-terminal — honor Retry-After if present (capped at 5s), else exp backoff.
+      const retryAfter = parseInt(res.headers.get("Retry-After") ?? "", 10);
+      const nextDelay = Number.isFinite(retryAfter)
+        ? Math.min(retryAfter * 1000, 5_000)
+        : backoffMs[Math.min(attempt, backoffMs.length - 1)];
+      attempt++;
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      await new Promise((r) => setTimeout(r, Math.min(nextDelay, remaining)));
+      continue;
+    }
+
+    if (res.status === 404) {
+      // Tenant mismatch OR missing — same response by design (no existence leak).
+      return {
+        error: "execution record not found (tenant mismatch or expired)",
+        status: 404,
+      };
+    }
+
+    if (res.status === 403) {
+      return { error: "forbidden (auth role / token issue)", status: 403 };
+    }
+
+    const body = await res.text().catch(() => "");
+    return {
+      error: `poll failed: ${res.status}: ${body.slice(0, 200)}`,
+      status: res.status,
+    };
+  }
+
+  return { error: `poll timed out after ${waitSeconds}s (no terminal status)` };
+}
+
 async function executeGodModeTool(
   baseUrl: string,
   apiKeyName: string,
   toolName: string,
   params: Record<string, unknown>,
+  waitSeconds = 30,
 ): Promise<unknown> {
   const apiKey = process.env[apiKeyName];
   if (!apiKey) {
@@ -346,8 +452,52 @@ async function executeGodModeTool(
       return { error: `${res.status}: ${body.slice(0, 200)}` };
     }
 
-    const data = (await res.json()) as any;
-    return data.data ?? data;
+    const data = (await res.json()) as {
+      data?: unknown;
+      command_id?: string;
+      trace_id?: string;
+      [k: string]: unknown;
+    };
+
+    // Extract command_id from wherever MSP put it (top-level or nested under .data).
+    const commandId =
+      data.command_id ??
+      (data.data as { command_id?: string } | undefined)?.command_id;
+
+    if (!commandId) {
+      // Legacy path — pre-MSP-1b dispatch, or internal MSP tool that
+      // doesn't route through the agent dispatcher. Return the inline
+      // synchronous response as before. Preserves backward compat.
+      return data.data ?? data;
+    }
+
+    // New path — poll the execution endpoint for the terminal record.
+    const record = await pollExecution(baseUrl, apiKey, commandId, waitSeconds);
+
+    if ("error" in record) {
+      return {
+        error: record.error,
+        command_id: commandId,
+        trace_id: data.trace_id,
+      };
+    }
+
+    return {
+      tool: record.tool,
+      status: record.status,
+      result: record.result,
+      error: record.error,
+      error_code: record.error_code,
+      retryable: record.error_code
+        ? RETRYABLE_ERROR_CODES.has(record.error_code)
+        : record.status === "completed",
+      command_id: record.id,
+      trace_id: record.trace_id,
+      agent_id: record.agent_id,
+      dispatched_at: record.dispatched_at,
+      completed_at: record.completed_at,
+      execution_target: record.execution_target,
+    };
   } catch (err) {
     return { error: err instanceof Error ? err.message : String(err) };
   }
