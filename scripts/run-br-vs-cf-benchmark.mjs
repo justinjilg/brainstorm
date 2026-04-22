@@ -61,46 +61,51 @@ const CONDITIONS = [
     ],
     requires: [], // back-compat with old check; the requirement check below handles requiresAny
   },
+  // BR strategy names match the server-side enum exactly (see brainstormrouter
+  // src/router/model-router-types.ts:94 — RoutingStrategy = "price" | "latency"
+  // | "throughput" | "priority" | "quality" | "cascade"). Run 1 used client-side
+  // names that don't exist server-side; the server fell back to default for all
+  // 6 conditions, which is why they all converged on the same model.
   {
     id: "br-quality",
-    label: "BR / quality-first",
+    label: "BR / quality",
     backend: "br",
-    strategy: "quality-first",
+    strategy: "quality",
     requires: ["BRAINSTORM_ROUTER_API_KEY"],
   },
   {
-    id: "br-cost",
-    label: "BR / cost-first",
+    id: "br-price",
+    label: "BR / price",
     backend: "br",
-    strategy: "cost-first",
+    strategy: "price",
     requires: ["BRAINSTORM_ROUTER_API_KEY"],
   },
   {
-    id: "br-combined",
-    label: "BR / combined",
+    id: "br-latency",
+    label: "BR / latency",
     backend: "br",
-    strategy: "combined",
+    strategy: "latency",
     requires: ["BRAINSTORM_ROUTER_API_KEY"],
   },
   {
-    id: "br-capability",
-    label: "BR / capability",
+    id: "br-throughput",
+    label: "BR / throughput",
     backend: "br",
-    strategy: "capability",
+    strategy: "throughput",
     requires: ["BRAINSTORM_ROUTER_API_KEY"],
   },
   {
-    id: "br-learned",
-    label: "BR / learned",
+    id: "br-priority",
+    label: "BR / priority",
     backend: "br",
-    strategy: "learned",
+    strategy: "priority",
     requires: ["BRAINSTORM_ROUTER_API_KEY"],
   },
   {
-    id: "br-rule",
-    label: "BR / rule-based",
+    id: "br-cascade",
+    label: "BR / cascade",
     backend: "br",
-    strategy: "rule-based",
+    strategy: "cascade",
     requires: ["BRAINSTORM_ROUTER_API_KEY"],
   },
 ];
@@ -170,11 +175,18 @@ async function callCloudflare(prompt, model = "@cf/meta/llama-3.1-70b-instruct")
 
 async function callBR(prompt, strategy) {
   const key = process.env.BRAINSTORM_ROUTER_API_KEY;
-  // BR exposes an OpenAI-compatible endpoint at api.brainstormrouter.com/v1.
-  // Strategy is selected via the X-BR-Routing-Strategy header.
-  // Model: "auto" tells BR to apply the strategy rather than pin a specific model.
-  // X-BR-Bypass-Cache: 1 disables the semantic cache so the strategy gets
-  // exercised on every call — otherwise repeat queries short-circuit.
+  // OpenAI-compatible endpoint at api.brainstormrouter.com/v1.
+  //
+  // Real interface (verified against brainstormrouter src/, Run 2 onward):
+  // - Strategy: body.route.strategy ∈ {price,latency,throughput,priority,quality,cascade}
+  //   (NOT a header — server doesn't read X-BR-Routing-Strategy)
+  // - Cache bypass: body.cache = false (NOT X-BR-Bypass-Cache header)
+  // - Cost: usage.cost_usd in body, plus x-br-actual-cost header for back-compat
+  // - Selected model: x-br-routed-model header
+  //
+  // Run 1 (2026-04-21) used header-based selection that the server ignored,
+  // so all 7 BR conditions effectively ran with default strategy + cache on.
+  // Postmortem: brainstormrouter/docs/benchmarks/2026-04-21-vs-cf-ai-platform-postmortem.md
   const url = "https://api.brainstormrouter.com/v1/chat/completions";
 
   const start = Date.now();
@@ -183,12 +195,18 @@ async function callBR(prompt, strategy) {
     headers: {
       Authorization: `Bearer ${key}`,
       "Content-Type": "application/json",
-      "X-BR-Routing-Strategy": strategy,
-      "X-BR-Bypass-Cache": "1",
+      // X-BR-Cache-Privacy: private is the documented header-level bypass.
+      // Belt-and-suspenders alongside body.cache:false and body.x_no_cache:true,
+      // because smoke testing showed at least one strategy still hit the cache
+      // when only body.cache was set.
+      "X-BR-Cache-Privacy": "private",
     },
     body: JSON.stringify({
       model: "auto",
       messages: [{ role: "user", content: prompt }],
+      route: { strategy },
+      cache: false,
+      x_no_cache: true,
     }),
   });
   const latencyMs = Date.now() - start;
@@ -201,11 +219,19 @@ async function callBR(prompt, strategy) {
   }
 
   if (!res.ok) {
-    return { ok: false, error: json.error?.message ?? `HTTP ${res.status}`, latencyMs };
+    return {
+      ok: false,
+      error: json.error?.message ?? `HTTP ${res.status}`,
+      latencyMs,
+    };
   }
 
-  // BR exposes cost/routing metadata via headers (lowercase per server convention).
-  const cost = parseFloat(res.headers.get("x-br-actual-cost") ?? "0");
+  // Cost: prefer body.usage.cost_usd (added in BR commit e22023e29), fall back
+  // to x-br-actual-cost header for older deployments.
+  const cost =
+    json.usage?.cost_usd != null
+      ? Number(json.usage.cost_usd)
+      : parseFloat(res.headers.get("x-br-actual-cost") ?? "0");
   const model =
     res.headers.get("x-br-routed-model") ?? json.model ?? "unknown";
   const cacheHit = res.headers.get("x-br-cache") === "hit";
