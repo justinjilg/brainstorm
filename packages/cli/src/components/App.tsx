@@ -71,6 +71,13 @@ interface AppProps {
   routingStreamEnabled?: boolean;
   /** Optional BR base URL override from config.routing.routingStreamUrl. */
   routingStreamUrl?: string;
+  /**
+   * Pre-built RoutingEventStream owned by the CLI boot code (Phase 2).
+   * When provided, the dashboard reuses this connection instead of opening
+   * a second one. The observer for learned-strategy updates is also attached
+   * to this same stream at boot.
+   */
+  routingStream?: import("@brainst0rm/gateway").RoutingEventStream;
 }
 
 interface RoutingEntry {
@@ -306,6 +313,7 @@ export function App(props: AppProps) {
           godModeInfo={props.godModeInfo}
           routingStreamEnabled={props.routingStreamEnabled}
           routingStreamUrl={props.routingStreamUrl}
+          routingStream={props.routingStream}
         />
       )}
 

@@ -27,3 +27,8 @@ export {
   type ToolAdaptation,
 } from "./tool-adapter.js";
 export { PROVIDER_TOOL_NAMES, getProviderFamily } from "./tool-mappings.js";
+export {
+  attachStreamToLearnedStrategy,
+  type StreamObserverOptions,
+  type StreamObserverStats,
+} from "./stream-observer.js";

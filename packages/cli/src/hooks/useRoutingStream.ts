@@ -1,14 +1,18 @@
 /**
- * useRoutingStream — wraps RoutingEventStream lifecycle for the TUI.
+ * useRoutingStream — wraps RoutingEventStream consumption for the TUI.
  *
- * Opens the SSE subscriber on mount (when enabled + credentials present),
- * captures the last N events into a rolling window, exposes the current
- * connection state, and tears down cleanly on unmount.
+ * Two modes:
  *
- * Phase 1 scope: owned at the component that displays the Live Routing
- * panel (DashboardMode). Phase 2 moves this up to the App root so that
- * local routing strategies (learned/Thompson, capability/Wilson) can also
- * subscribe without re-opening the connection.
+ * 1. **External stream (Phase 2 default).** Pass an already-running
+ *    `RoutingEventStream` via `externalStream`. The hook subscribes to
+ *    its events/state and does NOT own its lifecycle — the caller (the
+ *    CLI boot code) controls start/stop so both the dashboard UI and
+ *    non-UI consumers (the learned-strategy observer) share one connection.
+ *
+ * 2. **Self-owned stream (fallback).** If no external stream is provided
+ *    but `enabled` + `apiKey` are set, the hook creates and owns its own
+ *    stream. Useful for standalone rendering paths; not used in the
+ *    normal CLI boot post-Phase-2.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -27,6 +31,12 @@ export interface UseRoutingStreamOptions {
   apiKey?: string;
   /** Max events to retain in the rolling window. Default 50. */
   windowSize?: number;
+  /**
+   * Already-running stream owned by someone else (typically the CLI boot
+   * code). When provided, the hook subscribes but does NOT start/stop the
+   * stream. Takes precedence over `enabled`/`apiKey` self-creation.
+   */
+  externalStream?: RoutingEventStream;
 }
 
 export interface UseRoutingStreamResult {
@@ -50,6 +60,30 @@ export function useRoutingStream(
   windowSizeRef.current = windowSize;
 
   useEffect(() => {
+    const external = opts.externalStream;
+
+    // Mode 1: subscribe to caller-owned stream. Don't start/stop it.
+    if (external) {
+      const unsubEvent = external.onEvent((evt) => {
+        setEvents((prev) => {
+          const next = [...prev, evt];
+          const cap = windowSizeRef.current;
+          return next.length > cap ? next.slice(next.length - cap) : next;
+        });
+        setLastEventId(evt.eventId);
+      });
+      const unsubGap = external.onGap((gap) => {
+        setGapCount((prev) => prev + gap);
+      });
+      const unsubState = external.onState(setState);
+      return () => {
+        unsubEvent();
+        unsubGap();
+        unsubState();
+      };
+    }
+
+    // Mode 2: self-owned stream (fallback).
     if (!opts.enabled || !opts.apiKey) {
       setState({ phase: "idle" });
       return;
@@ -81,7 +115,7 @@ export function useRoutingStream(
       unsubState();
       stream.stop("component unmount");
     };
-  }, [opts.enabled, opts.baseUrl, opts.apiKey]);
+  }, [opts.enabled, opts.baseUrl, opts.apiKey, opts.externalStream]);
 
   return { events, state, gapCount, lastEventId };
 }

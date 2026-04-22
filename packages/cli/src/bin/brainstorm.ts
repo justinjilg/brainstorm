@@ -18,7 +18,11 @@ import {
   getBrainstormApiKey,
   isCommunityKey,
 } from "@brainst0rm/providers";
-import { BrainstormRouter, CostTracker } from "@brainst0rm/router";
+import {
+  BrainstormRouter,
+  CostTracker,
+  attachStreamToLearnedStrategy,
+} from "@brainst0rm/router";
 import {
   createDefaultToolRegistry,
   createWiredMemoryTool,
@@ -57,6 +61,7 @@ import {
   createGatewayClient,
   createIntelligenceClient,
   formatGatewayFeedback,
+  RoutingEventStream,
 } from "@brainst0rm/gateway";
 import { MCPClientManager } from "@brainst0rm/mcp";
 import { BrainstormVault, KeyResolver } from "@brainst0rm/vault";
@@ -7940,6 +7945,24 @@ program
 
       const brGateway = createGatewayClient();
 
+      // Phase 2: push-first coordination. When routingStream is opted-in
+      // and a router API key is resolvable, open ONE SSE connection at the
+      // boot layer and share it between (a) the dashboard panel and (b) the
+      // learned-strategy observer. This way strategies learn from BR's
+      // decisions regardless of which TUI mode is active.
+      const routerApiKeyForStream = process.env.BRAINSTORM_ROUTER_API_KEY;
+      let sharedRoutingStream: RoutingEventStream | undefined;
+      if ((config.routing?.routingStream ?? false) && routerApiKeyForStream) {
+        sharedRoutingStream = new RoutingEventStream({
+          baseUrl:
+            config.routing?.routingStreamUrl ??
+            "https://api.brainstormrouter.com",
+          apiKey: routerApiKeyForStream,
+        });
+        attachStreamToLearnedStrategy(sharedRoutingStream);
+        sharedRoutingStream.start();
+      }
+
       render(
         React.createElement(App, {
           strategy: config.general.defaultStrategy,
@@ -7972,6 +7995,7 @@ program
             : undefined,
           routingStreamEnabled: config.routing?.routingStream ?? false,
           routingStreamUrl: config.routing?.routingStreamUrl,
+          routingStream: sharedRoutingStream,
           memoryInfo: await (async () => {
             try {
               const { MemoryManager } = await import("@brainst0rm/core");

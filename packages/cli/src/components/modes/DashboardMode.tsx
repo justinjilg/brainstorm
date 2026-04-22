@@ -62,6 +62,11 @@ interface DashboardModeProps {
   routingStreamEnabled?: boolean;
   /** Optional BR base URL override from config.routing.routingStreamUrl. */
   routingStreamUrl?: string;
+  /**
+   * Pre-built RoutingEventStream owned by boot code. When present, the
+   * dashboard subscribes to this shared stream instead of opening its own.
+   */
+  routingStream?: import("@brainst0rm/gateway").RoutingEventStream;
 }
 
 function formatElapsed(ms: number): string {
@@ -113,6 +118,7 @@ export function DashboardMode({
   godModeInfo,
   routingStreamEnabled = false,
   routingStreamUrl,
+  routingStream: externalStream,
 }: DashboardModeProps) {
   const elapsed = Date.now() - sessionStart;
   const costPerHour = elapsed > 60000 ? (sessionCost / elapsed) * 3600000 : 0;
@@ -124,6 +130,7 @@ export function DashboardMode({
     enabled: routingStreamEnabled,
     baseUrl: routingStreamUrl,
     apiKey: routerApiKey,
+    externalStream,
   });
 
   useEffect(() => {
