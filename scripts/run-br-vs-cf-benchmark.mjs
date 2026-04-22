@@ -20,9 +20,10 @@
  * Each condition runs every query once. Judge runs three times per response.
  *
  * Usage:
- *   node scripts/run-br-vs-cf-benchmark.mjs --dry-run        # validate plumbing, no API calls
- *   node scripts/run-br-vs-cf-benchmark.mjs --conditions=br  # BR strategies only (no CF)
- *   node scripts/run-br-vs-cf-benchmark.mjs                  # full run
+ *   node scripts/run-br-vs-cf-benchmark.mjs --dry-run            # validate plumbing, no API calls
+ *   node scripts/run-br-vs-cf-benchmark.mjs --conditions=br      # BR strategies only (no CF)
+ *   node scripts/run-br-vs-cf-benchmark.mjs --corpus=v2          # harder corpus + per-run cache busting
+ *   node scripts/run-br-vs-cf-benchmark.mjs                      # full run, v1 corpus (default)
  */
 
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
@@ -33,7 +34,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
 const EVAL_DIR = join(ROOT, "eval-data");
 
-const QUERIES_PATH = join(EVAL_DIR, "br-vs-cf-ai-platform-queries.jsonl");
+// Default to v1 corpus for back-compat; --corpus=v2 selects the harder set.
+const QUERIES_FILES = {
+  v1: "br-vs-cf-ai-platform-queries.jsonl",
+  v2: "br-vs-cf-ai-platform-queries-v2.jsonl",
+};
 const RUBRIC_PATH = join(EVAL_DIR, "br-vs-cf-ai-platform-rubric.md");
 const RAW_OUT = join(EVAL_DIR, "br-vs-cf-ai-platform-2026-04.jsonl");
 const RESULTS_OUT = join(EVAL_DIR, "br-vs-cf-ai-platform-results.json");
@@ -46,6 +51,19 @@ const conditionsArg = args.find((a) => a.startsWith("--conditions="));
 const conditionsFilter = conditionsArg
   ? conditionsArg.split("=")[1].split(",")
   : null;
+const corpusArg = args.find((a) => a.startsWith("--corpus="));
+const corpusKey = corpusArg ? corpusArg.split("=")[1] : "v1";
+if (!QUERIES_FILES[corpusKey]) {
+  console.error(
+    `Unknown corpus '${corpusKey}'. Valid: ${Object.keys(QUERIES_FILES).join(", ")}`,
+  );
+  process.exit(1);
+}
+const QUERIES_PATH = join(EVAL_DIR, QUERIES_FILES[corpusKey]);
+// Per-run identifier for cache busting. v2 prompts include {{RUN_ID}} which is
+// substituted at request time so semantic-cache entries from prior runs cannot
+// match. v1 prompts ignore it (no substitution token present).
+const RUN_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 // ── Conditions ────────────────────────────────────────────────────────
 
@@ -408,13 +426,17 @@ async function main() {
   for (const cond of runnable) {
     console.log(`\n=== ${cond.label} ===`);
     for (const q of queries) {
+      // Substitute {{RUN_ID}} so cache-busting prefix is unique per run.
+      // v1 prompts have no token and pass through unchanged.
+      const promptText = q.prompt.replaceAll("{{RUN_ID}}", RUN_ID);
       const callFn =
         cond.backend === "cloudflare"
-          ? () => callCloudflare(q.prompt)
-          : () => callBR(q.prompt, cond.strategy);
+          ? () => callCloudflare(promptText)
+          : () => callBR(promptText, cond.strategy);
       const resp = await callFn();
+      // Judge sees the substituted prompt too — it's the actual question asked.
       const judgeResult = resp.ok
-        ? await judge(rubric, q.prompt, resp.text)
+        ? await judge(rubric, promptText, resp.text)
         : { medianScore: null, scores: [], error: "no response to judge" };
 
       const row = {
