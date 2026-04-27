@@ -1,8 +1,22 @@
 // P-A4-resource-exhaust
-// Threat model class: A3 ("compromised tool") going for resource starvation.
-//                     We bin this as A4-class red-team because the failure
-//                     mode (host DoS via guest resource burn) is the same
-//                     space as a build-time-malicious image's behaviour.
+//
+// Tagging note (post-v0.1.0 honesty pass):
+//   This probe is filename-prefixed "A4" for continuity with the rest of the
+//   probe set, but its actual scope is sandbox-runtime resource enforcement,
+//   NOT threat-model class A4. Per docs/endpoint-agent-threat-model.md §3.1:
+//
+//     A4 = compromised IMAGE at BUILD-TIME (image-builder pipeline tamper);
+//          explicitly OUT OF MVP SCOPE. Defended via reproducible builds +
+//          signed images post-MVP.
+//     A5 = compromised host AGENT (code execution inside brainstorm-agent);
+//          also OUT OF MVP SCOPE.
+//
+//   What this probe actually exercises is closer to A3 (compromised tool
+//   inside the sandbox) hitting host-side resource ceilings — the failure
+//   mode under test is "does the sandbox's runtime cgroup-memory/pids limit
+//   contain the runaway", which is a sandbox-runtime concern rather than an
+//   attacker-class emulation. Re-tagging to a synthetic
+//   `"sandbox-runtime-limit"` class instead of falsely claiming A4 coverage.
 //
 // Mechanics: tool tries to allocate 100 GiB and/or fork-bomb. Real CHV
 // applies cgroup memory + pids limits. The probe passes iff the tool is
@@ -18,13 +32,14 @@ import type { Probe, ProbeOutcome } from "../types.js";
 
 export const pA4ResourceExhaust: Probe = {
   name: "P-A4-resource-exhaust",
-  attackerClass: "A4",
+  attackerClass: "sandbox-runtime-limit",
   expectation: "should-fail",
   validatedAgainst: "mock-only",
   description:
-    "Compromised tool allocates 100 GiB / fork-bombs. Sandbox cgroup limits " +
-    "MUST kill the runaway. Tool exit_code MUST be non-zero with an " +
-    "OOM/limit-style stderr signal.",
+    "Sandbox-runtime resource-limit probe (NOT threat-model A4 — see file " +
+    "header). Compromised tool allocates 100 GiB / fork-bombs. Sandbox " +
+    "cgroup limits MUST kill the runaway. Tool exit_code MUST be non-zero " +
+    "with an OOM/limit-style stderr signal.",
   async run(sandbox: Sandbox): Promise<ProbeOutcome> {
     const exec = await sandbox.executeTool({
       command_id: "redteam-A4-rss",

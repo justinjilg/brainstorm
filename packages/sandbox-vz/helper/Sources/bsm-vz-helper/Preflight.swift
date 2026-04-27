@@ -20,8 +20,12 @@ import Virtualization
 enum Preflight {
     /// Build the preflight result and emit it as a single NDJSON line on
     /// stdout. Returns the exit code the caller should `exit(...)` with.
+    ///
+    /// The TS-side `PreflightResult` schema is frozen at protocol v1.0.0
+    /// (no `reason` field). Diagnostic text for `ok=false` cases is
+    /// written to stderr — operator-visible, but kept off the wire.
     static func run() -> Int32 {
-        let result = computeResult()
+        let (result, diagnostic) = computeResult()
         do {
             let line = try WireEncoding.line(result)
             FileHandle.standardOutput.write(Data(line.utf8))
@@ -33,12 +37,20 @@ enum Preflight {
             )
             return HelperExitCode.internalBug.rawValue
         }
+        if !result.ok, let diagnostic, !diagnostic.isEmpty {
+            FileHandle.standardError.write(
+                Data("preflight: \(diagnostic)\n".utf8)
+            )
+        }
         return result.ok
             ? HelperExitCode.ok.rawValue
             : HelperExitCode.preflightFail.rawValue
     }
 
-    static func computeResult() -> PreflightResult {
+    /// Compute the preflight verdict plus an optional human-readable
+    /// diagnostic. The diagnostic is NOT serialized on the wire — it is
+    /// only used by `run()` to emit stderr context on failure.
+    static func computeResult() -> (PreflightResult, String?) {
         let macVersion = currentMacOSVersion()
         let arch = currentArch()
         let entitled = entitlementPresent()
@@ -53,7 +65,7 @@ enum Preflight {
 
         let ok = archIsSupported && macOSIsSupported && entitled && frameworkAvailable
 
-        var reason: String? = nil
+        var diagnostic: String? = nil
         if !ok {
             var pieces: [String] = []
             if !macOSIsSupported {
@@ -68,17 +80,17 @@ enum Preflight {
             if !entitled {
                 pieces.append("missing com.apple.security.virtualization entitlement")
             }
-            reason = pieces.joined(separator: "; ")
+            diagnostic = pieces.joined(separator: "; ")
         }
 
-        return PreflightResult(
+        let result = PreflightResult(
             ok: ok,
             macos_version: macVersion.string,
             arch: arch,
             fast_snapshot_supported: fastSnapshot,
-            entitlement_present: entitled,
-            reason: reason
+            entitlement_present: entitled
         )
+        return (result, diagnostic)
     }
 
     // MARK: - Internals
