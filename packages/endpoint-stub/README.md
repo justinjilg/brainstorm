@@ -100,6 +100,107 @@ Returning `exit_code !== 0` produces a `failed` `CommandResult` with code
 `SANDBOX_TOOL_ERROR`. Throwing an exception does the same with the error
 message in `error.message`.
 
+## Real CHV sandbox executor (`BSM_USE_CHV_EXECUTOR=1`)
+
+The stub ships with a built-in `ChvSandboxExecutor` that wires the
+pluggable executor seam to a real `ChvSandbox` from
+[`@brainst0rm/sandbox`](../sandbox). When you set
+`BSM_USE_CHV_EXECUTOR=1`, the bin constructs a `ChvSandboxExecutor`
+from the same env contract `first-light.sh` uses and hands it to the
+`EndpointStub` instead of the default echo-style `stubExecutor`.
+
+```bash
+export BSM_USE_CHV_EXECUTOR=1
+export BSM_KERNEL=/srv/bsm/sandbox/bsm-sandbox-kernel
+export BSM_INITRAMFS=/srv/bsm/sandbox/bsm-sandbox-initramfs   # if modular kernel
+export BSM_ROOTFS=/srv/bsm/sandbox/bsm-sandbox-rootfs.img
+export BSM_VSOCK_SOCKET=/tmp/bsm-endpoint-stub.sock           # default
+export BSM_API_SOCKET=/tmp/bsm-endpoint-stub-api.sock         # default
+export BSM_GUEST_PORT=52000                                   # default; matches image-builder vsock-init
+# optional: BSM_CH_BIN, BSM_CHREMOTE_BIN to override PATH lookup
+
+# everything below is the standard stub config — unchanged
+export BRAINSTORM_RELAY_URL_WS=ws://127.0.0.1:8443
+export BRAINSTORM_RELAY_URL_HTTP=http://127.0.0.1:8444
+export BRAINSTORM_ENDPOINT_BOOTSTRAP=...
+export BRAINSTORM_ENDPOINT_TENANT_ID=tenant-dev
+export BRAINSTORM_ENDPOINT_ID=...
+export BRAINSTORM_ENDPOINT_TENANT_PUBKEY_HEX=...
+
+brainstorm-endpoint-stub
+```
+
+When the env var is unset (or any value other than `"1"`), the stub
+falls back to `stubExecutor` — the existing echo-back behaviour. So
+turning the real sandbox on and off is a single env flip; nothing else
+changes about the stub's wiring.
+
+### Honest cost: cold-boot-per-dispatch (~600ms latency floor)
+
+The MVP picks the simpler of the two patterns from the design space:
+
+- **Cold-boot-per-dispatch** (what's shipped): boot a fresh `ChvSandbox`
+  per command, `executeTool`, `shutdown`. ~600ms latency floor on
+  Hetzner node-2 per PR #277. Zero steady-state RAM. No
+  shared-state-between-tools concerns. Failure modes are local — a
+  boot failure on one dispatch does not poison subsequent dispatches.
+- **Pool of N pre-booted sandboxes** (deferred): take from pool →
+  `executeTool` → `reset` → return to pool. ~2-30ms per dispatch
+  (matches the steady-state numbers in PR #277). Higher steady-state
+  RAM. Adds reset machinery on the critical path. We're holding off
+  until we have real dispatch-rate data to size the pool.
+
+Operators dispatching many commands in tight succession will feel the
+600ms floor. If your workload is sub-100ms-sensitive, do not enable
+`BSM_USE_CHV_EXECUTOR=1` until the pool variant lands.
+
+### Error mapping (executor → operator)
+
+| Sandbox event                  | `ToolExecutorResult.exit_code` | `stderr`                                   | EndpointStub maps to                     |
+| ------------------------------ | ------------------------------ | ------------------------------------------ | ---------------------------------------- |
+| `boot()` throws                | `126`                          | `chv-executor: sandbox boot failed: …`     | `failed` / `SANDBOX_TOOL_ERROR`          |
+| `executeTool()` throws         | `125`                          | `chv-executor: sandbox executeTool failed` | `failed` / `SANDBOX_TOOL_ERROR`          |
+| `executeTool()` exit_code != 0 | preserved (faithful)           | preserved (faithful)                       | `failed` / `SANDBOX_TOOL_ERROR`          |
+| `shutdown()` throws            | n/a — logged + swallowed       | n/a                                        | result already produced; not re-reported |
+
+`shutdown()` always runs, even on the boot-failure path (the `Sandbox`
+interface documents `shutdown()` as idempotent).
+
+### Programmatic usage of the executor
+
+```typescript
+import { ChvSandboxExecutor, EndpointStub } from "@brainst0rm/endpoint-stub";
+
+const executor = new ChvSandboxExecutor({
+  config: {
+    apiSocketPath: "/tmp/api.sock",
+    kernel: { path: "/srv/bsm/sandbox/bsm-sandbox-kernel" },
+    rootfs: { path: "/srv/bsm/sandbox/bsm-sandbox-rootfs.img" },
+    vsock: { socketPath: "/tmp/vsock.sock", guestPort: 52000 },
+  },
+});
+
+const stub = new EndpointStub({
+  // ...
+  executor: executor.execute,
+});
+```
+
+### Honest gaps in the executor
+
+- **Per-tool timeout above the sandbox's `deadline_ms`**: the executor
+  does not add a parallel wall-clock fence; the sandbox itself enforces
+  the deadline. If the sandbox's deadline machinery wedges, the
+  executor will wait with it.
+- **Queueing under load**: 10 simultaneous dispatches → 10 parallel
+  cold boots. Relay-side serialisation is the current backstop.
+- **Shared image-pool / page-cache priming**: every boot reads kernel
+  - initramfs + rootfs from disk. A `posix_fadvise(WILLNEED)` warmer
+    or shared image cache would reduce IO under burst.
+- **Reset between commands**: cold-boot-per-dispatch makes reset moot
+  — each command gets a fresh guest. The pool variant will need to
+  call `reset()` between dispatches.
+
 ## Protocol contract enforced
 
 The stub verifies, in order, before executing any tool:
