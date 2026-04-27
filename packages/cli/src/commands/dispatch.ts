@@ -153,7 +153,7 @@ async function runSession(args: {
     );
     return 5;
   }
-  const preview = previewFrame as {
+  const preview = previewFrame as unknown as {
     request_id: string;
     command_id: string;
     preview_summary: string;
@@ -198,7 +198,7 @@ async function runSession(args: {
     const frame = await inbound.next();
     switch (frame.type) {
       case "ProgressEvent": {
-        const p = frame as {
+        const p = frame as unknown as {
           lifecycle_state: string;
           progress?: { fraction?: number; message?: string };
         };
@@ -214,7 +214,7 @@ async function runSession(args: {
         continue;
       }
       case "ResultEvent": {
-        const r = frame as {
+        const r = frame as unknown as {
           lifecycle_state: string;
           payload?: { stdout?: string; stderr?: string; exit_code?: number };
           error?: { code: string; message: string };
@@ -238,7 +238,7 @@ async function runSession(args: {
       }
       case "ErrorEvent":
         printError(frame);
-        return mapErrorCode(frame as { code: string });
+        return mapErrorCode(frame as unknown as { code: string });
       default:
         // Unexpected frame; ignore
         continue;
