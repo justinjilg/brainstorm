@@ -168,22 +168,24 @@ struct HelperErrorPayload: Encodable {
 
 // MARK: - Preflight
 
-/// Result of `bsm-vz-helper preflight` — exact shape from helper-protocol.ts:
+/// Result of `bsm-vz-helper preflight` — exact shape from helper-protocol.ts
+/// `PreflightResult`:
 ///   { ok: bool,
 ///     macos_version: "14.4.1",
 ///     arch: "arm64",
 ///     fast_snapshot_supported: bool,
 ///     entitlement_present: bool }
+///
+/// The TS schema (`packages/sandbox-vz/src/helper-protocol.ts`) is FROZEN at
+/// v1.0.0 of the endpoint-agent protocol. No extra fields permitted on the
+/// Swift side; adding fields belongs in v1.1.0. Diagnostic text on
+/// preflight failure is surfaced via stderr instead (see `Preflight.run`).
 struct PreflightResult: Encodable {
     let ok: Bool
     let macos_version: String
     let arch: String
     let fast_snapshot_supported: Bool
     let entitlement_present: Bool
-    /// Optional human-readable diagnostic. NOT part of the strict TS
-    /// shape, but TS will tolerate extra fields (JSON.parse doesn't
-    /// reject unknowns). Useful when ok=false to surface why.
-    let reason: String?
 }
 
 // MARK: - AnyCodable

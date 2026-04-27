@@ -31,7 +31,13 @@ export type AttackerClass =
   | "A8" // cross-endpoint replay
   | "A9" // cross-context replay
   | "A10" // replay after agent restart
-  | "LAT"; // synthetic class for latency-distribution probes
+  | "LAT" // synthetic class for latency-distribution probes
+  | "sandbox-runtime-limit"; // synthetic class — sandbox-runtime resource/deadline
+  // limits, NOT one of the formal A1..A10 attacker classes. Used by probes that
+  // exercise host-side enforcement (cgroup OOM kill, deadline_ms cancellation)
+  // rather than emulating an actual attacker. See p-a4-resource-exhaust.ts and
+  // p-a5-time-bomb.ts for the rationale (the names are kept for filename
+  // continuity but the tagging is honest about scope).
 
 export type ProbeExpectation = "should-pass" | "should-fail";
 

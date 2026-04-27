@@ -4,7 +4,10 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 // Scorer tests spawn tsc --noEmit which takes ~6s. Increase timeout for full-suite runs.
-vi.setConfig({ testTimeout: 15_000 });
+// Bumped 15s -> 30s per issue #278: GitHub Actions runners are ~2x slower than local
+// dev machines; the existing 15s ceiling intermittently times out on CI for the
+// "returns a perfect score" case which does real FS+score work.
+vi.setConfig({ testTimeout: 30_000 });
 import { scoreProbe, type ProbeOutput } from "../scorer.js";
 import type { Probe } from "../types.js";
 

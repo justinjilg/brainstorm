@@ -253,7 +253,7 @@ final class NDJSONLoopTests: XCTestCase {
 
 final class PreflightTests: XCTestCase {
     func testPreflightResultShape() {
-        let r = Preflight.computeResult()
+        let (r, _diagnostic) = Preflight.computeResult()
         // Shape required by helper-protocol.ts.
         XCTAssertFalse(r.macos_version.isEmpty)
         XCTAssertFalse(r.arch.isEmpty)
@@ -267,6 +267,25 @@ final class PreflightTests: XCTestCase {
         } else {
             XCTAssertFalse(r.fast_snapshot_supported)
         }
+    }
+
+    func testPreflightEncodingHasNoReasonField() throws {
+        // Protocol v1.0.0 freezes the wire schema. The Swift Encodable
+        // for PreflightResult MUST NOT emit a `reason` key — the TS side
+        // (helper-protocol.ts `PreflightResult`) doesn't model it and
+        // strict consumers would fail to parse.
+        let (r, _) = Preflight.computeResult()
+        let line = try WireEncoding.line(r)
+        let data = Data(line.dropLast().utf8)
+        let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        XCTAssertNotNil(obj)
+        XCTAssertNil(obj?["reason"], "PreflightResult must not emit a `reason` field — TS schema is frozen at v1.0.0")
+        // Spot-check the five fields the TS schema DOES expect.
+        XCTAssertNotNil(obj?["ok"])
+        XCTAssertNotNil(obj?["macos_version"])
+        XCTAssertNotNil(obj?["arch"])
+        XCTAssertNotNil(obj?["fast_snapshot_supported"])
+        XCTAssertNotNil(obj?["entitlement_present"])
     }
 }
 
