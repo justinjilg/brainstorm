@@ -1,14 +1,16 @@
 # Brainstorm Endpoint Agent Protocol v1
 
-**Status:** DRAFT v3 (post-crd4sdom-cross-review) — 2026-04-26
+**Status:** **FROZEN — v1.0.0** (frozen 2026-04-27)
 **Scope:** Wire protocol for Brainstorm endpoint agent dispatch (Operator ↔ Relay ↔ Endpoint ↔ Sandbox)
-**Spec freeze gate:** orchestrator draft → Codex adversarial review (v1→v2) → crd4sdom cross-review (v2→v3) → 0bz7aztr cross-review tomorrow → re-Codex on v3 → mark FROZEN
+
+This is the contract that downstream implementers (the TypeScript reference relay/stub in PR #276; crd4sdom's Go `brainstorm-agent` in P1.3; future endpoint runtimes) pin against. Field-name or shape changes from here on bump the major version (v2) and require a compat window during which receivers accept both.
 
 **Revision history:**
 
 - **v1 → v2** addressed 20 Codex findings (6 blocking + 13 important + 1 nit). See §16.
-- **v2 → v3** (this version) addresses 8 cross-review findings from crd4sdom: ACK message structural gap (Q4-main), NFC ordering ambiguity (Q1), chunk_data base64-vs-bytes hashing (Q2-hash), length-prefix size pinning (Q2-prefix), GuestQuery message type for integrity monitor (TM-Touchpoint-2), common vmm_api_state vocabulary (TM-Touchpoint-1), persistent-nonce-store implementation cost honestly disclosed (Q3), `delegating_principal_id` chain semantics verification (Q4-secondary). Plan v3.2 estimate bumps reflect Q3.
-- **v3 + Codex re-verification** (post-application of crd4sdom findings): 5 important + 1 nit findings, no new blocking. Fixes applied: ACK timer relay-observable (V3-ACK-01), CommandAck full JSON Schema (V3-ACK-02), GuestQuery `query_id` UUIDv4 + uniqueness (V3-GQ-01), GuestResponse per-kind result schemas + timeout consequence (V3-GQ-02), vmm_api_state lowercase examples (V3-VMM-01), changelog count reconciliation (V3-MAP-01).
+- **v2 → v3** addressed 8 cross-review findings from crd4sdom: ACK message structural gap (Q4-main), NFC ordering ambiguity (Q1), chunk_data base64-vs-bytes hashing (Q2-hash), length-prefix size pinning (Q2-prefix), GuestQuery message type for integrity monitor (TM-Touchpoint-2), common vmm_api_state vocabulary (TM-Touchpoint-1), persistent-nonce-store implementation cost honestly disclosed (Q3), `delegating_principal_id` chain semantics verification (Q4-secondary). Plan v3.2 estimate bumps reflect Q3.
+- **v3 + Codex re-verification**: 5 important + 1 nit findings, no new blocking. Fixes applied: ACK timer relay-observable (V3-ACK-01), CommandAck full JSON Schema (V3-ACK-02), GuestQuery `query_id` UUIDv4 + uniqueness (V3-GQ-01), GuestResponse per-kind result schemas + timeout consequence (V3-GQ-02), vmm_api_state lowercase examples (V3-VMM-01), changelog count reconciliation (V3-MAP-01).
+- **v3 → v1.0.0 freeze** (2026-04-27): TypeScript reference implementation landed (PR #276 — 131 relay tests + 9 endpoint-stub tests passing) with no new protocol findings. Spec is now stable.
 
 ---
 
