@@ -31,6 +31,7 @@
     "test:dogfood": "npx tsx tests/dogfood/run-dogfood.ts",
     "test:workflow": "npx tsx tests/workflow-demo/run-demo.ts",
     "typecheck": "turbo run typecheck",
+    "postinstall": "npm rebuild better-sqlite3",
     "prepare": "husky",
     "changeset": "changeset",
     "version-packages": "changeset version",

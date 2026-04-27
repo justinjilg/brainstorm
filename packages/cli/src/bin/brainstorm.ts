@@ -7049,6 +7049,84 @@ program
     await new Promise(() => {});
   });
 
+// ── Dispatch Command (P1.2) ──────────────────────────────────────
+
+program
+  .command("dispatch <tool>")
+  .description(
+    "Dispatch a tool to a Brainstorm endpoint via the relay (governed channel)",
+  )
+  .requiredOption(
+    "--endpoint <id>",
+    "target endpoint_id (UUID, registered via /v1/endpoint/enroll)",
+  )
+  .option("--params <json>", "tool params as JSON object", "{}")
+  .option(
+    "--relay-url <url>",
+    "relay base URL (default ws://127.0.0.1:8443; env BRAINSTORM_RELAY_URL)",
+  )
+  .option(
+    "--api-key <key>",
+    "operator API key (default env BRAINSTORM_OPERATOR_API_KEY)",
+  )
+  .option(
+    "--operator-id <id>",
+    "operator id (default env BRAINSTORM_OPERATOR_ID or 'operator@local')",
+  )
+  .option(
+    "--tenant-id <id>",
+    "tenant id (default env BRAINSTORM_TENANT_ID or 'tenant-local')",
+  )
+  .option(
+    "--correlation-id <id>",
+    "cross-product correlation id (default: auto-generated)",
+  )
+  .option("--yes", "auto-confirm ChangeSet preview without prompt")
+  .option("--no-stream-progress", "disable streaming ProgressEvent updates")
+  .option(
+    "--deadline-ms <ms>",
+    "operator-side dispatch deadline in milliseconds",
+    "30000",
+  )
+  .action(
+    async (
+      tool: string,
+      opts: {
+        endpoint: string;
+        params?: string;
+        relayUrl?: string;
+        apiKey?: string;
+        operatorId?: string;
+        tenantId?: string;
+        correlationId?: string;
+        yes?: boolean;
+        streamProgress?: boolean;
+        deadlineMs?: string;
+      },
+    ) => {
+      try {
+        const { runDispatch } = await import("../commands/dispatch.js");
+        const exitCode = await runDispatch({
+          tool,
+          endpoint: opts.endpoint,
+          paramsJson: opts.params,
+          relayUrl: opts.relayUrl,
+          apiKey: opts.apiKey,
+          operatorId: opts.operatorId,
+          tenantId: opts.tenantId,
+          correlationId: opts.correlationId,
+          yes: opts.yes,
+          noStreamProgress: opts.streamProgress === false,
+          deadlineMs: opts.deadlineMs ? parseInt(opts.deadlineMs, 10) : 30_000,
+        });
+        process.exit(exitCode);
+      } catch (e) {
+        console.error(`[dispatch] ${(e as Error).message}`);
+        process.exit(5);
+      }
+    },
+  );
+
 // ── Chat Command ──────────────────────────────────────────────────
 
 program
