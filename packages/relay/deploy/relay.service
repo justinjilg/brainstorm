@@ -1,0 +1,38 @@
+[Unit]
+Description=Brainstorm endpoint-dispatch relay
+Documentation=https://github.com/justinjilg/brainstorm/tree/main/packages/relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=brainstorm-relay
+Group=brainstorm-relay
+WorkingDirectory=/opt/brainstorm-relay/packages/relay
+EnvironmentFile=/etc/brainstorm-relay/env
+ExecStart=/usr/bin/node /opt/brainstorm-relay/packages/relay/dist/bin.js
+Restart=on-failure
+RestartSec=5s
+LimitNOFILE=65536
+
+# Hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/brainstorm-relay /var/log/brainstorm-relay
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictRealtime=yes
+SystemCallArchitectures=native
+
+# Logging
+StandardOutput=append:/var/log/brainstorm-relay/relay.log
+StandardError=append:/var/log/brainstorm-relay/relay.err
+
+[Install]
+WantedBy=multi-user.target
