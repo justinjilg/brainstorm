@@ -1,0 +1,23 @@
+{
+  "name": "@brainst0rm/image-builder",
+  "version": "0.1.0-alpha.0",
+  "private": true,
+  "type": "module",
+  "description": "Reproducible Linux microVM image builder for the Brainstorm endpoint sandbox (P3.4). Produces a minimal kernel + rootfs that boots under Cloud Hypervisor (Linux/P3.1a) and Apple Virtualization.framework (macOS/P3.1b).",
+  "license": "Apache-2.0",
+  "scripts": {
+    "build": "bash scripts/build.sh",
+    "build:rootfs": "bash scripts/build.sh --target rootfs",
+    "build:kernel": "bash scripts/build.sh --target kernel",
+    "build:vsock-init": "bash scripts/build.sh --target vsock-init",
+    "checksums": "bash scripts/checksums.sh",
+    "clean": "rm -rf artifacts/*.img artifacts/*.tar.gz artifacts/*.bin artifacts/checksums.txt",
+    "test": "echo 'image-builder has no unit tests; the smoke test is scripts/build.sh on a Linux/Docker host'"
+  },
+  "files": [
+    "build/",
+    "scripts/",
+    "vsock-init/",
+    "README.md"
+  ]
+}

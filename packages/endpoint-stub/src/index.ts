@@ -25,6 +25,13 @@
 // `{ stub: true }` in payload metadata so consumers can see they're
 // not running against a real isolated endpoint.
 
+export {
+  ChvSandboxExecutor,
+  defaultSandboxFactory,
+  type ChvSandboxExecutorOptions,
+  type SandboxFactory,
+} from "./chv-executor.js";
+
 import { randomUUID, randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";

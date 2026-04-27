@@ -1,0 +1,185 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-04-27T19:46:14.318Z",
+  "backend": "chv",
+  "final_sandbox_state": "not_booted",
+  "probes": [
+    {
+      "name": "P-LAT-boot",
+      "attacker_class": "LAT",
+      "expectation": "should-pass",
+      "validated_against": "validated-chv",
+      "description": "1000-iteration cold-boot latency distribution. Each iteration creates a fresh Sandbox (no warm-cache reuse). Real-CHV path: each boot is a real cloud-hypervisor spawn + vsock handshake.",
+      "passed": true,
+      "reason": "collected 1000 samples (1000 successful iterations)",
+      "duration_ms": 0,
+      "errored": false,
+      "evidence": {
+        "distribution": {
+          "samples": 1000,
+          "p50_ms": 586,
+          "p90_ms": 592,
+          "p95_ms": 594,
+          "p99_ms": 597,
+          "mean_ms": 586.597,
+          "min_ms": 576,
+          "max_ms": 604
+        },
+        "iterations_attempted": 1000,
+        "iterations_succeeded": 1000,
+        "iterations_failed": 0,
+        "failure_phases": {
+          "boot": 0,
+          "exec": 0,
+          "shutdown": 0
+        }
+      }
+    },
+    {
+      "name": "P-LAT-roundtrip",
+      "attacker_class": "LAT",
+      "expectation": "should-pass",
+      "validated_against": "validated-chv",
+      "description": "1000-iteration cold-roundtrip latency distribution. Each iteration creates a fresh Sandbox (no warm-cache reuse). Real-CHV path: each boot is a real cloud-hypervisor spawn + vsock handshake.",
+      "passed": true,
+      "reason": "collected 1000 samples (1000 successful iterations)",
+      "duration_ms": 0,
+      "errored": false,
+      "evidence": {
+        "distribution": {
+          "samples": 1000,
+          "p50_ms": 2,
+          "p90_ms": 2,
+          "p95_ms": 2,
+          "p99_ms": 2,
+          "mean_ms": 1.631,
+          "min_ms": 1,
+          "max_ms": 2
+        },
+        "iterations_attempted": 1000,
+        "iterations_succeeded": 1000,
+        "iterations_failed": 0,
+        "failure_phases": {
+          "boot": 0,
+          "exec": 0,
+          "shutdown": 0
+        }
+      }
+    },
+    {
+      "name": "P-LAT-shutdown",
+      "attacker_class": "LAT",
+      "expectation": "should-pass",
+      "validated_against": "validated-chv",
+      "description": "1000-iteration cold-shutdown latency distribution. Each iteration creates a fresh Sandbox (no warm-cache reuse). Real-CHV path: each boot is a real cloud-hypervisor spawn + vsock handshake.",
+      "passed": true,
+      "reason": "collected 1000 samples (1000 successful iterations)",
+      "duration_ms": 0,
+      "errored": false,
+      "evidence": {
+        "distribution": {
+          "samples": 1000,
+          "p50_ms": 24,
+          "p90_ms": 30,
+          "p95_ms": 31,
+          "p99_ms": 36,
+          "mean_ms": 23.475,
+          "min_ms": 14,
+          "max_ms": 46
+        },
+        "iterations_attempted": 1000,
+        "iterations_succeeded": 1000,
+        "iterations_failed": 0,
+        "failure_phases": {
+          "boot": 0,
+          "exec": 0,
+          "shutdown": 0
+        }
+      }
+    },
+    {
+      "name": "P-LAT-total",
+      "attacker_class": "LAT",
+      "expectation": "should-pass",
+      "validated_against": "validated-chv",
+      "description": "1000-iteration cold-total latency distribution. Each iteration creates a fresh Sandbox (no warm-cache reuse). Real-CHV path: each boot is a real cloud-hypervisor spawn + vsock handshake.",
+      "passed": true,
+      "reason": "collected 1000 samples (1000 successful iterations)",
+      "duration_ms": 0,
+      "errored": false,
+      "evidence": {
+        "distribution": {
+          "samples": 1000,
+          "p50_ms": 611,
+          "p90_ms": 620,
+          "p95_ms": 622,
+          "p99_ms": 628,
+          "mean_ms": 611.82,
+          "min_ms": 596,
+          "max_ms": 638
+        },
+        "iterations_attempted": 1000,
+        "iterations_succeeded": 1000,
+        "iterations_failed": 0,
+        "failure_phases": {
+          "boot": 0,
+          "exec": 0,
+          "shutdown": 0
+        }
+      }
+    }
+  ],
+  "latency": {
+    "P-LAT-boot": {
+      "samples": 1000,
+      "p50_ms": 586,
+      "p90_ms": 592,
+      "p95_ms": 594,
+      "p99_ms": 597,
+      "mean_ms": 586.597,
+      "min_ms": 576,
+      "max_ms": 604
+    },
+    "P-LAT-roundtrip": {
+      "samples": 1000,
+      "p50_ms": 2,
+      "p90_ms": 2,
+      "p95_ms": 2,
+      "p99_ms": 2,
+      "mean_ms": 1.631,
+      "min_ms": 1,
+      "max_ms": 2
+    },
+    "P-LAT-shutdown": {
+      "samples": 1000,
+      "p50_ms": 24,
+      "p90_ms": 30,
+      "p95_ms": 31,
+      "p99_ms": 36,
+      "mean_ms": 23.475,
+      "min_ms": 14,
+      "max_ms": 46
+    },
+    "P-LAT-total": {
+      "samples": 1000,
+      "p50_ms": 611,
+      "p90_ms": 620,
+      "p95_ms": 622,
+      "p99_ms": 628,
+      "mean_ms": 611.82,
+      "min_ms": 596,
+      "max_ms": 638
+    }
+  },
+  "summary": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "errored": 0,
+    "skipped": 0
+  },
+  "notes": [
+    "total wall-clock: 611853ms (611.9ms/iter avg)",
+    "validation-provenance: mock-only=0 validated-chv=4 validated-vf=0 validated-chv-and-vf=0 (total=4)"
+  ]
+}

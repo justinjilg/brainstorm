@@ -1,0 +1,33 @@
+{
+  "name": "@brainst0rm/sandbox",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "MicroVM sandbox abstraction for the Brainstorm endpoint agent. Defines the Sandbox interface (boot/executeTool/reset/shutdown) consumed by the endpoint dispatcher (P3.3) and provides a Cloud Hypervisor backend (P3.1a, Linux track). Apple Virtualization.framework backend (P3.1b) lives elsewhere.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/src/index.js"
+    },
+    "./scripts/first-light": {
+      "import": "./dist/scripts/first-light.js"
+    },
+    "./scripts/snapshot-create": {
+      "import": "./dist/scripts/snapshot-create.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@brainst0rm/relay": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

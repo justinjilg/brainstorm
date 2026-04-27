@@ -1,0 +1,416 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "20260427-213555",
+  "host": {
+    "hostname": "compute-hel1-02",
+    "kernel": "6.8.0-100-generic",
+    "arch": "x86_64"
+  },
+  "knobs": {
+    "iterations": 1000,
+    "concurrency": 8
+  },
+  "artifacts": {
+    "kernel": "/var/lib/firstlight/brainstorm/packages/image-builder/artifacts/bsm-sandbox-kernel",
+    "initramfs": "/var/lib/firstlight/brainstorm/packages/image-builder/artifacts/bsm-sandbox-initramfs",
+    "rootfs": "/var/lib/firstlight/brainstorm/packages/image-builder/artifacts/bsm-sandbox-rootfs.img"
+  },
+  "steps": {
+    "smoke": {
+      "status": "pass"
+    },
+    "latency": {
+      "status": "pass",
+      "report_path": "/var/lib/firstlight/latency-20260427-213555.json",
+      "report": {
+        "schema_version": "1.0",
+        "generated_at": "2026-04-27T19:46:14.318Z",
+        "backend": "chv",
+        "final_sandbox_state": "not_booted",
+        "probes": [
+          {
+            "name": "P-LAT-boot",
+            "attacker_class": "LAT",
+            "expectation": "should-pass",
+            "validated_against": "validated-chv",
+            "description": "1000-iteration cold-boot latency distribution. Each iteration creates a fresh Sandbox (no warm-cache reuse). Real-CHV path: each boot is a real cloud-hypervisor spawn + vsock handshake.",
+            "passed": true,
+            "reason": "collected 1000 samples (1000 successful iterations)",
+            "duration_ms": 0,
+            "errored": false,
+            "evidence": {
+              "distribution": {
+                "samples": 1000,
+                "p50_ms": 586,
+                "p90_ms": 592,
+                "p95_ms": 594,
+                "p99_ms": 597,
+                "mean_ms": 586.597,
+                "min_ms": 576,
+                "max_ms": 604
+              },
+              "iterations_attempted": 1000,
+              "iterations_succeeded": 1000,
+              "iterations_failed": 0,
+              "failure_phases": {
+                "boot": 0,
+                "exec": 0,
+                "shutdown": 0
+              }
+            }
+          },
+          {
+            "name": "P-LAT-roundtrip",
+            "attacker_class": "LAT",
+            "expectation": "should-pass",
+            "validated_against": "validated-chv",
+            "description": "1000-iteration cold-roundtrip latency distribution. Each iteration creates a fresh Sandbox (no warm-cache reuse). Real-CHV path: each boot is a real cloud-hypervisor spawn + vsock handshake.",
+            "passed": true,
+            "reason": "collected 1000 samples (1000 successful iterations)",
+            "duration_ms": 0,
+            "errored": false,
+            "evidence": {
+              "distribution": {
+                "samples": 1000,
+                "p50_ms": 2,
+                "p90_ms": 2,
+                "p95_ms": 2,
+                "p99_ms": 2,
+                "mean_ms": 1.631,
+                "min_ms": 1,
+                "max_ms": 2
+              },
+              "iterations_attempted": 1000,
+              "iterations_succeeded": 1000,
+              "iterations_failed": 0,
+              "failure_phases": {
+                "boot": 0,
+                "exec": 0,
+                "shutdown": 0
+              }
+            }
+          },
+          {
+            "name": "P-LAT-shutdown",
+            "attacker_class": "LAT",
+            "expectation": "should-pass",
+            "validated_against": "validated-chv",
+            "description": "1000-iteration cold-shutdown latency distribution. Each iteration creates a fresh Sandbox (no warm-cache reuse). Real-CHV path: each boot is a real cloud-hypervisor spawn + vsock handshake.",
+            "passed": true,
+            "reason": "collected 1000 samples (1000 successful iterations)",
+            "duration_ms": 0,
+            "errored": false,
+            "evidence": {
+              "distribution": {
+                "samples": 1000,
+                "p50_ms": 24,
+                "p90_ms": 30,
+                "p95_ms": 31,
+                "p99_ms": 36,
+                "mean_ms": 23.475,
+                "min_ms": 14,
+                "max_ms": 46
+              },
+              "iterations_attempted": 1000,
+              "iterations_succeeded": 1000,
+              "iterations_failed": 0,
+              "failure_phases": {
+                "boot": 0,
+                "exec": 0,
+                "shutdown": 0
+              }
+            }
+          },
+          {
+            "name": "P-LAT-total",
+            "attacker_class": "LAT",
+            "expectation": "should-pass",
+            "validated_against": "validated-chv",
+            "description": "1000-iteration cold-total latency distribution. Each iteration creates a fresh Sandbox (no warm-cache reuse). Real-CHV path: each boot is a real cloud-hypervisor spawn + vsock handshake.",
+            "passed": true,
+            "reason": "collected 1000 samples (1000 successful iterations)",
+            "duration_ms": 0,
+            "errored": false,
+            "evidence": {
+              "distribution": {
+                "samples": 1000,
+                "p50_ms": 611,
+                "p90_ms": 620,
+                "p95_ms": 622,
+                "p99_ms": 628,
+                "mean_ms": 611.82,
+                "min_ms": 596,
+                "max_ms": 638
+              },
+              "iterations_attempted": 1000,
+              "iterations_succeeded": 1000,
+              "iterations_failed": 0,
+              "failure_phases": {
+                "boot": 0,
+                "exec": 0,
+                "shutdown": 0
+              }
+            }
+          }
+        ],
+        "latency": {
+          "P-LAT-boot": {
+            "samples": 1000,
+            "p50_ms": 586,
+            "p90_ms": 592,
+            "p95_ms": 594,
+            "p99_ms": 597,
+            "mean_ms": 586.597,
+            "min_ms": 576,
+            "max_ms": 604
+          },
+          "P-LAT-roundtrip": {
+            "samples": 1000,
+            "p50_ms": 2,
+            "p90_ms": 2,
+            "p95_ms": 2,
+            "p99_ms": 2,
+            "mean_ms": 1.631,
+            "min_ms": 1,
+            "max_ms": 2
+          },
+          "P-LAT-shutdown": {
+            "samples": 1000,
+            "p50_ms": 24,
+            "p90_ms": 30,
+            "p95_ms": 31,
+            "p99_ms": 36,
+            "mean_ms": 23.475,
+            "min_ms": 14,
+            "max_ms": 46
+          },
+          "P-LAT-total": {
+            "samples": 1000,
+            "p50_ms": 611,
+            "p90_ms": 620,
+            "p95_ms": 622,
+            "p99_ms": 628,
+            "mean_ms": 611.82,
+            "min_ms": 596,
+            "max_ms": 638
+          }
+        },
+        "summary": {
+          "total": 4,
+          "passed": 4,
+          "failed": 0,
+          "errored": 0,
+          "skipped": 0
+        },
+        "notes": [
+          "total wall-clock: 611853ms (611.9ms/iter avg)",
+          "validation-provenance: mock-only=0 validated-chv=4 validated-vf=0 validated-chv-and-vf=0 (total=4)"
+        ]
+      }
+    },
+    "concurrent": {
+      "status": "pass",
+      "report_path": "/var/lib/firstlight/concurrent-20260427-213555.json",
+      "report": {
+        "schema_version": "1.0",
+        "generated_at": "2026-04-27T19:46:16.130Z",
+        "backend": "chv",
+        "final_sandbox_state": "not_booted",
+        "probes": [
+          {
+            "name": "P-CONC-instance-0",
+            "attacker_class": "LAT",
+            "expectation": "should-pass",
+            "validated_against": "validated-chv",
+            "description": "Concurrent fleet member 0/8: cold-boot + echo dispatch + shutdown alongside 7 other instances. Verifies cross-instance isolation (unique cid + unique vsock socket).",
+            "passed": true,
+            "reason": "boot=734ms exec=1ms shutdown=29ms exit_code=0",
+            "duration_ms": 764,
+            "errored": false,
+            "evidence": {
+              "boot_ms": 734,
+              "exec_ms": 1,
+              "shutdown_ms": 29,
+              "exit_code": 0,
+              "stdout_preview": "concurrent-probe-0\n"
+            }
+          },
+          {
+            "name": "P-CONC-instance-1",
+            "attacker_class": "LAT",
+            "expectation": "should-pass",
+            "validated_against": "validated-chv",
+            "description": "Concurrent fleet member 1/8: cold-boot + echo dispatch + shutdown alongside 7 other instances. Verifies cross-instance isolation (unique cid + unique vsock socket).",
+            "passed": true,
+            "reason": "boot=725ms exec=3ms shutdown=36ms exit_code=0",
+            "duration_ms": 764,
+            "errored": false,
+            "evidence": {
+              "boot_ms": 725,
+              "exec_ms": 3,
+              "shutdown_ms": 36,
+              "exit_code": 0,
+              "stdout_preview": "concurrent-probe-1\n"
+            }
+          },
+          {
+            "name": "P-CONC-instance-2",
+            "attacker_class": "LAT",
+            "expectation": "should-pass",
+            "validated_against": "validated-chv",
+            "description": "Concurrent fleet member 2/8: cold-boot + echo dispatch + shutdown alongside 7 other instances. Verifies cross-instance isolation (unique cid + unique vsock socket).",
+            "passed": true,
+            "reason": "boot=724ms exec=2ms shutdown=29ms exit_code=0",
+            "duration_ms": 755,
+            "errored": false,
+            "evidence": {
+              "boot_ms": 724,
+              "exec_ms": 2,
+              "shutdown_ms": 29,
+              "exit_code": 0,
+              "stdout_preview": "concurrent-probe-2\n"
+            }
+          },
+          {
+            "name": "P-CONC-instance-3",
+            "attacker_class": "LAT",
+            "expectation": "should-pass",
+            "validated_against": "validated-chv",
+            "description": "Concurrent fleet member 3/8: cold-boot + echo dispatch + shutdown alongside 7 other instances. Verifies cross-instance isolation (unique cid + unique vsock socket).",
+            "passed": true,
+            "reason": "boot=725ms exec=3ms shutdown=36ms exit_code=0",
+            "duration_ms": 764,
+            "errored": false,
+            "evidence": {
+              "boot_ms": 725,
+              "exec_ms": 3,
+              "shutdown_ms": 36,
+              "exit_code": 0,
+              "stdout_preview": "concurrent-probe-3\n"
+            }
+          },
+          {
+            "name": "P-CONC-instance-4",
+            "attacker_class": "LAT",
+            "expectation": "should-pass",
+            "validated_against": "validated-chv",
+            "description": "Concurrent fleet member 4/8: cold-boot + echo dispatch + shutdown alongside 7 other instances. Verifies cross-instance isolation (unique cid + unique vsock socket).",
+            "passed": true,
+            "reason": "boot=726ms exec=2ms shutdown=36ms exit_code=0",
+            "duration_ms": 764,
+            "errored": false,
+            "evidence": {
+              "boot_ms": 726,
+              "exec_ms": 2,
+              "shutdown_ms": 36,
+              "exit_code": 0,
+              "stdout_preview": "concurrent-probe-4\n"
+            }
+          },
+          {
+            "name": "P-CONC-instance-5",
+            "attacker_class": "LAT",
+            "expectation": "should-pass",
+            "validated_against": "validated-chv",
+            "description": "Concurrent fleet member 5/8: cold-boot + echo dispatch + shutdown alongside 7 other instances. Verifies cross-instance isolation (unique cid + unique vsock socket).",
+            "passed": true,
+            "reason": "boot=725ms exec=3ms shutdown=36ms exit_code=0",
+            "duration_ms": 764,
+            "errored": false,
+            "evidence": {
+              "boot_ms": 725,
+              "exec_ms": 3,
+              "shutdown_ms": 36,
+              "exit_code": 0,
+              "stdout_preview": "concurrent-probe-5\n"
+            }
+          },
+          {
+            "name": "P-CONC-instance-6",
+            "attacker_class": "LAT",
+            "expectation": "should-pass",
+            "validated_against": "validated-chv",
+            "description": "Concurrent fleet member 6/8: cold-boot + echo dispatch + shutdown alongside 7 other instances. Verifies cross-instance isolation (unique cid + unique vsock socket).",
+            "passed": true,
+            "reason": "boot=726ms exec=2ms shutdown=36ms exit_code=0",
+            "duration_ms": 764,
+            "errored": false,
+            "evidence": {
+              "boot_ms": 726,
+              "exec_ms": 2,
+              "shutdown_ms": 36,
+              "exit_code": 0,
+              "stdout_preview": "concurrent-probe-6\n"
+            }
+          },
+          {
+            "name": "P-CONC-instance-7",
+            "attacker_class": "LAT",
+            "expectation": "should-pass",
+            "validated_against": "validated-chv",
+            "description": "Concurrent fleet member 7/8: cold-boot + echo dispatch + shutdown alongside 7 other instances. Verifies cross-instance isolation (unique cid + unique vsock socket).",
+            "passed": true,
+            "reason": "boot=726ms exec=2ms shutdown=36ms exit_code=0",
+            "duration_ms": 764,
+            "errored": false,
+            "evidence": {
+              "boot_ms": 726,
+              "exec_ms": 2,
+              "shutdown_ms": 36,
+              "exit_code": 0,
+              "stdout_preview": "concurrent-probe-7\n"
+            }
+          }
+        ],
+        "latency": {
+          "P-CONC-boot": {
+            "samples": 8,
+            "p50_ms": 725,
+            "p90_ms": 734,
+            "p95_ms": 734,
+            "p99_ms": 734,
+            "mean_ms": 726.375,
+            "min_ms": 724,
+            "max_ms": 734
+          },
+          "P-CONC-exec": {
+            "samples": 8,
+            "p50_ms": 2,
+            "p90_ms": 3,
+            "p95_ms": 3,
+            "p99_ms": 3,
+            "mean_ms": 2.25,
+            "min_ms": 1,
+            "max_ms": 3
+          },
+          "P-CONC-shutdown": {
+            "samples": 8,
+            "p50_ms": 36,
+            "p90_ms": 36,
+            "p95_ms": 36,
+            "p99_ms": 36,
+            "mean_ms": 34.25,
+            "min_ms": 29,
+            "max_ms": 36
+          }
+        },
+        "summary": {
+          "total": 8,
+          "passed": 8,
+          "failed": 0,
+          "errored": 0,
+          "skipped": 0
+        },
+        "notes": [
+          "concurrent-8: 8/8 instances succeeded in 765ms wall-clock (parallel)",
+          "validation-provenance: mock-only=0 validated-chv=8 validated-vf=0 validated-chv-and-vf=0 (total=8)"
+        ]
+      }
+    },
+    "reset": {
+      "status": "skipped",
+      "reason": "P3.2a reset machinery (snapshot/restore + 3-source verification) not in this checkout \u2014 packages/sandbox/scripts/reset-cycle.sh does not exist. Re-run after P3.2a lands."
+    }
+  },
+  "log": "/var/lib/firstlight/full-validation-20260427-213555.log"
+}

@@ -1,0 +1,500 @@
+[    0.099845] rodata_test: all tests were succe
+[chv-sandbox] [chv stdout] ssful
+[    0.099886] R
+[chv-sandbox] [chv stdout] un /init as init process
+[chv-sandbox] [chv stdout] [    0.087491] Segment Routing w
+[chv-sandbox] [chv stdout] ith IPv6
+[    0.087537] In-situ OAM (IOAM
+[chv-sandbox] [chv stdout] ) with IPv6
+[chv-sandbox] [chv stdout] [    0.087638] K
+[chv-sandbox] [chv stdout] ey type dns_resolver registered
+[chv-sandbox] [chv stdout] [    0.087740] I
+[chv-sandbox] [chv stdout] PI shorthand broadcast: enabled
+[chv-sandbox] [chv stdout] [    0.113561] L
+[chv-sandbox] [chv stdout] oaded X.509 cert 'alpinelinux.org: Alpine Linux
+[chv-sandbox] [chv stdout] kernel key: d76a695f66ad9cd28f5c
+[chv-sandbox] [chv stdout] 22a8508f36e91f52
+[chv-sandbox] [chv stdout] 1f7a'
+[chv-sandbox] [chv stdout] [    0.090468] registered taskst
+[chv-sandbox] [chv stdout] ats version 1
+[chv-sandbox] [chv stdout] [    0.090585] L
+[chv-sandbox] [chv stdout] oading compiled-in X.509 certificates
+[chv-sandbox] [chv stdout] [    0.101789] Key type .fscrypt registered
+[chv-sandbox] [chv stdout] [    0.101841] Key type fscrypt-provisioning registered
+[chv-sandbox] [chv stdout] [    0.089543] sched_clock: Mark
+[chv-sandbox] [chv stdout] ing stable (85246846, 2379283)->(111599680, -23973551)
+[chv-sandbox] [chv stdout] [    0.102319] Freeing unused kernel image (initmem) memory: 2728K
+[chv-sandbox] [chv stdout] [    0.102369] Write protecting
+[chv-sandbox] [chv stdout] the kernel read-only data: 24576k
+[chv-sandbox] [chv stdout] [    0.115868] Key type .fscrypt
+[chv-sandbox] [chv stdout]  registered
+[    0.115926] Key type fscrypt-provisioning registered
+[chv-sandbox] [chv stdout] [    0.103251] F
+[chv-sandbox] [chv stdout] reeing unused kernel image (rodata/data gap) memory: 1944K
+[    0.103326] r
+[chv-sandbox] [chv stdout] odata_test: all tests were successful
+[chv-sandbox] [chv stdout] [    0.103370] Run /init as init
+[chv-sandbox] [chv stdout]  process
+[chv-sandbox] [chv stdout] [    0.100098] Freeing initrd me
+[chv-sandbox] [chv stdout] mory: 9356K
+[chv-sandbox] [chv stdout] [    0.116913] Freeing unused ke
+[chv-sandbox] [chv stdout] rnel image (initmem) memory: 272
+[chv-sandbox] [chv stdout] 8K
+[chv-sandbox] [chv stdout] [    0.117020] Write protecting
+[chv-sandbox] [chv stdout] the kernel read-only data: 24576
+[chv-sandbox] [chv stdout] k
+[chv-sandbox] [chv stdout] [    0.105974] Freeing initrd me
+[chv-sandbox] [chv stdout] [    0.117468] Freeing unused kernel image (rodata/data gap) memory: 1944K
+[    0.117538] rodata_test: all
+[chv-sandbox] [chv stdout] mory: 9356K
+[chv-sandbox] [chv stdout] tests were successful
+[    0.117579] Run /init as init process
+[chv-sandbox] [chv stdout] [    0.094482] Loaded X.509 cert
+[chv-sandbox] [chv stdout]  'alpinelinux.org: Alpine Linux kernel key: d76a695f66ad9cd28f5c22a8508f36e91f521f7a'
+[chv-sandbox] [chv stdout] [    0.093464] registered taskstats version 1
+[chv-sandbox] [chv stdout] [    0.093618] Loading compiled-in X.509 certificates
+[chv-sandbox] [chv stdout] [    0.119620] Alpine Init 3.10.
+[chv-sandbox] [chv stdout] 1-r0
+[chv-sandbox] [chv stdout] Alpine Init 3.10.1-r0
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] [    0.096278] Key type .fscrypt
+[chv-sandbox] [chv stdout]  registered
+[    0.096331] Key type fscrypt-provisioning registered
+[chv-sandbox] [chv stdout] [    0.119889] Loading boot driv
+[chv-sandbox] [chv stdout] ers...
+[chv-sandbox] [chv stdout]  * Loading boot drivers:
+[chv-sandbox] [chv stdout] [    0.096785] Freeing unused kernel image (init
+[chv-sandbox] [chv stdout] mem) memory: 2728K
+[    0.096859] Write protecting the kernel read-only data: 24576k
+[chv-sandbox] [chv stdout] [    0.097205] Freeing unused kernel image (roda
+[chv-sandbox] [chv stdout] ta/data gap) memory: 1944K
+[    0.097275] rodata_test: all tests were succe
+[chv-sandbox] [chv stdout] [    0.107416] Alpine Init 3.10.1-r0
+Alpine Init 3.10.1-r0
+[    0.107638] Loading boot drivers...
+ * Loading boot drivers:
+[chv-sandbox] [chv stdout] ssful
+[    0.097339] Run /init as init process
+[chv-sandbox] [chv stdout] [    0.111259] Loaded X.509 cert 'alpinelinux.org: Alpine Linux
+[chv-sandbox] [chv stdout] kernel key: d76a695f66ad9cd28f5c22a8508f36e91f521f7a'
+[chv-sandbox] [chv stdout] [    0.110311] Alpine Init 3.10.
+[chv-sandbox] [chv stdout] 1-r0
+[chv-sandbox] [chv stdout] Alpine Init 3.10.1-r0
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] [    0.110539] Loading boot driv
+[chv-sandbox] [chv stdout] ers...
+ * Loading boot drivers:
+[chv-sandbox] [chv stdout] [    0.106749] Loaded X.509 cert
+[chv-sandbox] [chv stdout]  'alpinelinux.org: Alpine Linux kernel key: d76a695f66ad9cd28f5c
+[chv-sandbox] [chv stdout] 22a8508f36e91f521f7a'
+[chv-sandbox] [chv stdout] [    0.097919] Loaded X.509 cert 'alpinelinux.org: Alpine Linux
+[chv-sandbox] [chv stdout] kernel key: d76a695f66ad9cd28f5c22a8508f36e91f521f7a'
+[chv-sandbox] [chv stdout] [    0.113045] Key type .fscrypt
+[chv-sandbox] [chv stdout]  registered
+[    0.113099] Key type fscrypt-provisioning registered
+[chv-sandbox] [chv stdout] [    0.113531] F
+[chv-sandbox] [chv stdout] reeing unused kernel image (initmem) memory: 2728K
+[chv-sandbox] [chv stdout] [    0.113602] Write protecting
+[chv-sandbox] [chv stdout] the kernel read-only data: 24576k
+[chv-sandbox] [chv stdout] [    0.108449] Key type .fscrypt
+[chv-sandbox] [chv stdout]  registered
+[    0.108495] Key type fscrypt-
+[chv-sandbox] [chv stdout] provisioning registered
+[chv-sandbox] [chv stdout] [    0.113972] F
+[chv-sandbox] [chv stdout] reeing unused kernel image (rodata/data gap) mem
+[chv-sandbox] [chv stdout] ory: 1944K
+[    0.114033] r
+[chv-sandbox] [chv stdout] odata_test: all tests were succe
+[chv-sandbox] [chv stdout] ssful
+[    0.114073] R
+[chv-sandbox] [chv stdout] un /init as init process
+[chv-sandbox] [chv stdout] [    0.125553] A
+[chv-sandbox] [chv stdout] lpine Init 3.10.1-r0
+[chv-sandbox] [chv stdout] Alpine Init 3.10.1-r0
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] [    0.108928] Freeing unused kernel image (initmem) memory: 272
+[chv-sandbox] [chv stdout] 8K
+[    0.108976] W
+[chv-sandbox] [chv stdout] rite protecting the kernel read-only data: 24576
+[chv-sandbox] [chv stdout] k
+[chv-sandbox] [chv stdout] [    0.125801] L
+[chv-sandbox] [chv stdout] oading boot drivers...
+[chv-sandbox] [chv stdout] [    0.100224] Key type .fscrypt
+[chv-sandbox] [chv stdout]  registered
+[    0.100269] K
+[chv-sandbox] [chv stdout] ey type fscrypt-provisioning reg
+[chv-sandbox] [chv stdout] istered
+[chv-sandbox] [chv stdout] [    0.109305] Freeing unused ke
+[chv-sandbox] [chv stdout] rnel image (rodata/data gap) memory: 1944K
+[chv-sandbox] [chv stdout] [    0.109362] r
+[chv-sandbox] [chv stdout] odata_test: all tests were succe
+[chv-sandbox] [chv stdout] ssful
+[chv-sandbox] [chv stdout] [    0.109399] Run /init as init
+[chv-sandbox] [chv stdout]  process
+[chv-sandbox] [chv stdout] [    0.100741] Freeing unused ke
+[chv-sandbox] [chv stdout] rnel image (initmem) memory: 272
+[chv-sandbox] [chv stdout] 8K
+[    0.100789] W
+[chv-sandbox] [chv stdout] rite protecting the kernel read-
+[chv-sandbox] [chv stdout] only data: 24576k
+[chv-sandbox] [chv stdout] [    0.101168] F
+[chv-sandbox] [chv stdout] reeing unused kernel image (roda
+[chv-sandbox] [chv stdout] ta/data gap) mem
+[chv-sandbox] [chv stdout] ory: 1944K
+[chv-sandbox] [chv stdout] [    0.101218] rodata_test: all
+[chv-sandbox] [chv stdout] tests were succe
+[chv-sandbox] [chv stdout] ssful
+[chv-sandbox] [chv stdout] [    0.101255] Run /init as init
+[chv-sandbox] [chv stdout]  process
+[chv-sandbox] [chv stdout]  * Loading boot drivers:
+[chv-sandbox] [chv stdout] [    0.104628] Alpine Init 3.10.
+[chv-sandbox] [chv stdout] 1-r0
+Alpine Init 3.10.1-r0
+[chv-sandbox] [chv stdout] [    0.104830] Loading boot driv
+[chv-sandbox] [chv stdout] ers...
+ * Loading boot drivers:
+[chv-sandbox] [chv stdout] [    0.120685] Alpine Init 3.10.1-r0
+[chv-sandbox] [chv stdout] Alpine Init 3.10.1-r0
+[    0.120889] Loading boot driv
+[chv-sandbox] [chv stdout] ers...
+[chv-sandbox] [chv stdout] [    0.115621] Alpine Init 3.10.1-r0
+[chv-sandbox] [chv stdout]  * Loading boot drivers:
+[chv-sandbox] [chv stdout] Alpine Init 3.10.1-r0
+[chv-sandbox] [chv stdout] [    0.115830] Loading boot driv
+[chv-sandbox] [chv stdout] ers...
+[chv-sandbox] [chv stdout]  * Loading boot drivers:
+[chv-sandbox] [chv stdout] [    0.108605] Alpine Init 3.10.1-r0
+[chv-sandbox] [chv stdout] Alpine Init 3.10.1-r0
+[chv-sandbox] [chv stdout] [    0.108826] L
+[chv-sandbox] [chv stdout] oading boot drivers...
+ * Loading boot drivers:
+[chv-sandbox] [chv stdout] [    0.149468] loop: module loaded
+[chv-sandbox] [chv stdout] [    0.150606] loop: module load
+[chv-sandbox] [chv stdout] ed
+[chv-sandbox] [chv stdout] [    0.165553] loop: module load
+[chv-sandbox] [chv stdout] ed
+[chv-sandbox] [chv stdout] [    0.167831] loop: module load
+[chv-sandbox] [chv stdout] ed
+[chv-sandbox] [chv stdout] [    0.146505] loop: module loaded
+[chv-sandbox] [chv stdout] [    0.153529] loop: module load
+[chv-sandbox] [chv stdout] ed
+[chv-sandbox] [chv stdout] [    0.159893] loop: module loaded
+[chv-sandbox] [chv stdout] [    0.149561] loop: module loaded
+[chv-sandbox] [chv stdout] [    0.166865] ACPI: bus type drm_connector registered
+[chv-sandbox] [chv stdout] [    0.184704] ACPI: bus type drm_connector registered
+[chv-sandbox] [chv stdout] [    0.171924] A
+[chv-sandbox] [chv stdout] CPI: bus type drm_connector registered
+[chv-sandbox] [chv stdout] [    0.185830] A
+[chv-sandbox] [chv stdout] CPI: bus type drm_connector registered
+[chv-sandbox] [chv stdout] [    0.170334] A
+[chv-sandbox] [chv stdout] CPI: bus type drm_connector registered
+[chv-sandbox] [chv stdout] [    0.164255] ACPI: bus type dr
+[chv-sandbox] [chv stdout] m_connector registered
+[chv-sandbox] [chv stdout] [    0.176568] ACPI: bus type dr
+[chv-sandbox] [chv stdout] m_connector registered
+[chv-sandbox] [chv stdout] [    0.166645] ACPI: bus type drm_connector regi
+[chv-sandbox] [chv stdout] stered
+[chv-sandbox] [chv stdout] [    0.181290] Loading boot drivers: ok.
+[chv-sandbox] [chv stdout] ok.
+[chv-sandbox] [chv stdout] [    0.182233] Mounting root...
+[chv-sandbox] [chv stdout] 
+ * Mounting root:
+[chv-sandbox] [chv stdout] [    0.186180] Loading boot drivers: ok.
+[chv-sandbox] [chv stdout] ok.
+[chv-sandbox] [chv stdout] [    0.199765] Loading boot driv
+[chv-sandbox] [chv stdout] ers: ok.
+ok.
+[chv-sandbox] [chv stdout] [    0.187316] Mounting root...
+[chv-sandbox] [chv stdout] 
+ * Mounting root:
+[chv-sandbox] [chv stdout] [    0.200941] Mounting root...
+[chv-sandbox] [chv stdout] 
+ * Mounting root:
+[chv-sandbox] [chv stdout] [    0.200711] Loading boot drivers: ok.
+ok.
+[chv-sandbox] [chv stdout] [    0.201845] Mounting root...
+[chv-sandbox] [chv stdout]  * Mounting root:
+[chv-sandbox] [chv stdout] [    0.185183] Loading boot drivers: ok.
+ok.
+[chv-sandbox] [chv stdout] [    0.191026] Loading boot driv
+[chv-sandbox] [chv stdout] ers: ok.
+ok.
+[chv-sandbox] [chv stdout] [    0.179741] Loading boot drivers: ok.
+[chv-sandbox] [chv stdout] ok.
+[chv-sandbox] [chv stdout] [    0.186309] Mounting root...
+ * Mounting root:
+[chv-sandbox] [chv stdout] [    0.192048] Mounting root...
+[chv-sandbox] [chv stdout] 
+ * Mounting root:
+[chv-sandbox] [chv stdout] [    0.180871] Mounting root...
+[chv-sandbox] [chv stdout]  * Mounting root:
+[chv-sandbox] [chv stdout] [    0.195398] virtio_blk virtio1: 1/0/0 default
+[chv-sandbox] [chv stdout] /read/poll queues
+[chv-sandbox] [chv stdout] [    0.183638] Loading boot driv
+[chv-sandbox] [chv stdout] ers: ok.
+ok.
+[chv-sandbox] [chv stdout] [    0.196604] virtio_blk virtio1: [vda] 524288
+[chv-sandbox] [chv stdout] 512-byte logical blocks (268 MB/256 MiB)
+[chv-sandbox] [chv stdout] [    0.185062] Mounting root...
+[chv-sandbox] [chv stdout]  * Mounting root:
+[chv-sandbox] [chv stdout] [    0.214683] virtio_blk virtio1: 1/0/0 default/read/poll queues
+[chv-sandbox] [chv stdout] [    0.216755] virtio_blk virtio
+[chv-sandbox] [chv stdout] 1: [vda] 524288 512-byte logical blocks (268 MB/256 MiB)
+[chv-sandbox] [chv stdout] cat: can't open '/sys/class/virtio-ports/vport0p0/name': No such file or directory
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] cat: can't open '/sys/class/virtio-ports/vport0p0/name': No such file or directory
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] [    0.209459] virtio_blk virtio1: 1/0/0 default/read/poll queue
+[chv-sandbox] [chv stdout] s
+[chv-sandbox] [chv stdout] [    0.199574] virtio_blk virtio
+[chv-sandbox] [chv stdout] 1: 1/0/0 default/read/poll queues
+[chv-sandbox] [chv stdout] cat: can't open '/sys/class/virtio-ports/vport0p0/name': No such file or directory
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] [    0.200693] virtio_blk virtio
+[chv-sandbox] [chv stdout] 1: [vda] 524288 512-byte logical blocks (268 MB/256 MiB)
+[chv-sandbox] [chv stdout] [    0.212555] virtio_blk virtio
+[chv-sandbox] [chv stdout] 1: 1/0/0 default/read/poll queues
+[chv-sandbox] [chv stdout] cat: can't open '/sys/class/virtio-ports/vport0p0/name': No such file or directory
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] [    0.210593] v
+[chv-sandbox] [chv stdout] irtio_blk virtio1: [vda] 524288 512-byte logical
+[chv-sandbox] [chv stdout] [    0.222976] v
+[chv-sandbox] [chv stdout] irtio_blk virtio1: 1/0/0 default/read/poll queues
+[chv-sandbox] [chv stdout] [    0.213657] v
+[chv-sandbox] [chv stdout] irtio_blk virtio1: [vda] 524288 512-byte logical
+[chv-sandbox] [chv stdout]  blocks (268 MB/256 MiB)
+[chv-sandbox] [chv stdout] [    0.208739] virtio_blk virtio
+[chv-sandbox] [chv stdout] 1: 1/0/0 default/read/poll queues
+[chv-sandbox] [chv stdout]  blocks (268 MB/256 MiB)
+[chv-sandbox] [chv stdout] [    0.226338] virtio_blk virtio
+[chv-sandbox] [chv stdout] 1: [vda] 524288 512-byte logical blocks (268 MB/256 MiB)
+[chv-sandbox] [chv stdout] [    0.209843] virtio_blk virtio
+[chv-sandbox] [chv stdout] 1: [vda] 524288
+[chv-sandbox] [chv stdout] 512-byte logical blocks (268 MB/
+[chv-sandbox] [chv stdout] 256 MiB)
+[chv-sandbox] [chv stdout] [    0.202953] virtio_blk virtio1: 1/0/0 default/read/poll queue
+[chv-sandbox] [chv stdout] s
+[chv-sandbox] [chv stdout] cat: can't open '/sys/class/virtio-ports/vport0p0/name': No such file or directory
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] cat: can't open '/sys/class/virtio-ports/vport0p0/name': No such file or directory
+[chv-sandbox] [chv stdout] [    0.203982] virtio_blk virtio1: [vda] 524288
+[chv-sandbox] [chv stdout] 512-byte logical blocks (268 MB/256 MiB)
+[chv-sandbox] [chv stdout] cat: can't open '/sys/class/virtio-ports/vport0p0/name': No such file or directory
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] cat: can't open '/sys/class/virtio-ports/vport0p0/name': No such file or directory
+[chv-sandbox] [chv stdout] [    0.300763] EXT4-fs (vda): wr
+[chv-sandbox] [chv stdout] ite access unavailable, skipping orphan cleanup
+[    0.301001] EXT4-fs (vda): mo
+[chv-sandbox] [chv stdout] unted filesystem e3c129f9-ded9-439c-b8a0-d29e1059430a ro with ordered data mode.
+[chv-sandbox] [chv stdout]  Quota mode: none.
+[chv-sandbox] [chv stdout] [    0.301269] Mounting root: ok
+[chv-sandbox] [chv stdout] .
+ok.
+[chv-sandbox] [chv stdout] [    0.316443] EXT4-fs (vda): write access unavailable, skipping
+[chv-sandbox] [chv stdout]  orphan cleanup
+[    0.316564] EXT4-fs (vda): mounted filesystem e3c129f9-ded9-439c-b8a0-d29e1059430a ro with ordered data mode. Quota mode: none.
+[chv-sandbox] [chv stdout] [    0.316810] Mounting root: ok
+[chv-sandbox] [chv stdout] .
+ok.
+[chv-sandbox] [chv stdout] [    0.293898] EXT4-fs (vda): write access unavailable, skipping
+[chv-sandbox] [chv stdout]  orphan cleanup
+[    0.294015] EXT4-fs (vda): mounted filesystem e3c129f9-ded9-439c-b8a0-d29e1059430a ro with ordered data mode.
+[chv-sandbox] [chv stdout] [    0.319559] EXT4-fs (vda): write access unavailable, skipping orphan cleanup
+[chv-sandbox] [chv stdout] [    0.306789] EXT4-fs (vda): write access unavailable, skipping orphan cleanup
+[chv-sandbox] [chv stdout]  Quota mode: none.
+[chv-sandbox] [chv stdout] [    0.306905] EXT4-fs (vda): mounted filesystem e3c129f9-ded9-439c-b8a0-d29e1059430a ro with or
+[chv-sandbox] [chv stdout] dered data mode. Quota mode: none.
+[chv-sandbox] [chv stdout] [    0.294325] M
+[chv-sandbox] [chv stdout] ounting root: ok.
+ok.
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] [    0.307154] Mounting root: ok.
+ok.
+[chv-sandbox] [chv stdout] [    0.303505] EXT4-fs (vda): write access unavailable, skipping orphan cleanup
+[chv-sandbox] [chv stdout] [    0.303634] EXT4-fs (vda): mounted filesystem e3c129f9-ded9-439c-b8a0-d29e1059430a ro with ordered data mode.
+[chv-sandbox] [chv stdout]  Quota mode: none.
+[chv-sandbox] [chv stdout] [    0.303890] Mounting root: ok
+[chv-sandbox] [chv stdout] .
+ok.
+[chv-sandbox] [chv stdout] [    0.319661] E
+[chv-sandbox] [chv stdout] XT4-fs (vda): mounted filesystem e3c129f9-ded9-4
+[chv-sandbox] [chv stdout] 39c-b8a0-d29e1059430a ro with ordered data mode. Quota mode: none.
+[chv-sandbox] [chv stdout] [    0.309754] EXT4-fs (vda): wr
+[chv-sandbox] [chv stdout] ite access unavailable, skipping orphan cleanup
+[chv-sandbox] [chv stdout] [    0.309849] EXT4-fs (vda): mo
+[chv-sandbox] [chv stdout] unted filesystem e3c129f9-ded9-4
+[chv-sandbox] [chv stdout] 39c-b8a0-d29e1059430a ro with ordered data mode. Quota mode: none.
+[chv-sandbox] [chv stdout] [    0.321364] Mounting root: ok.
+ok.
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] [    0.298193] EXT4-fs (vda): write access unava
+[chv-sandbox] [chv stdout] ilable, skipping orphan cleanup
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] [    0.298300] EXT4-fs (vda): mo
+[chv-sandbox] [chv stdout] unted filesystem e3c129f9-ded9-439c-b8a0-d29e105
+[chv-sandbox] [chv stdout] 9430a ro with ordered data mode.
+[chv-sandbox] [chv stdout] [    0.310121] Mounting root: ok.
+[chv-sandbox] [chv stdout]  Quota mode: none.
+[chv-sandbox] [chv stdout] ok.
+[chv-sandbox] [chv stdout] [    0.298568] Mounting root: ok
+[chv-sandbox] [chv stdout] .
+[chv-sandbox] [chv stdout] ok.
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] [    0.320143] NET: Registered P
+[chv-sandbox] [chv stdout] F_VSOCK protocol
+[chv-sandbox] [chv stdout]  family
+[chv-sandbox] [chv stdout] vsock-init: modprobe vsock: ok
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] [    0.335489] N
+[chv-sandbox] [chv stdout] ET: Registered PF_VSOCK protocol family
+[chv-sandbox] [chv stdout] vsock-init: modprobe vsock: ok
+[chv-sandbox] [chv stdout] [    0.327155] NET: Registered PF_VSOCK protocol
+[chv-sandbox] [chv stdout]  family
+[chv-sandbox] [chv stdout] [    0.323603] NET: Registered P
+[chv-sandbox] [chv stdout] F_VSOCK protocol family
+[chv-sandbox] [chv stdout] vsock-init: modprobe vsock: ok
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] [    0.317691] N
+[chv-sandbox] [chv stdout] ET: Registered PF_VSOCK protocol family
+[chv-sandbox] [chv stdout] vsock-init: modprobe vsock: ok
+[chv-sandbox] [chv stdout] [    0.315622] NET: Registered P
+[chv-sandbox] [chv stdout] F_VSOCK protocol family
+[chv-sandbox] [chv stdout] [    0.341341] N
+[chv-sandbox] [chv stdout] ET: Registered PF_VSOCK protocol family
+[chv-sandbox] [chv stdout] vsock-init: modprobe vsock: ok
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] [    0.330223] NET: Registered P
+[chv-sandbox] [chv stdout] F_VSOCK protocol family
+[chv-sandbox] [chv stdout] vsock-init: modprobe vmw_vsock_virtio_transport_common: ok
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] vsock-init: modprobe vsock: ok
+[chv-sandbox] [chv stdout] vsock-init: modprobe vsock: ok
+[chv-sandbox] [chv stdout] vsock-init: modprobe vsock: ok
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] vsock-init: modprobe vmw_vsock_virtio_transport_common: ok
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] vsock-init: modprobe vmw_vsock_virtio_transport_common: ok
+[chv-sandbox] [chv stdout] vsock-init: modprobe vmw_vsock_virtio_transport_common: ok
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] vsock-init: modprobe vmw_vsock_virtio_transport_common: ok
+[chv-sandbox] [chv stdout] vsock-init: modprobe vmw_vsock_virtio_transport_common: ok
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] vsock-init: modprobe vmw_vsock_virtio_transport_common: ok
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] vsock-init: modprobe vmw_vsock_virtio_transport: ok
+[chv-sandbox] [chv stdout] vsock-init: modprobe vmw_vsock_virtio_transport_common: ok
+[chv-sandbox] [chv stdout] vsock-init: modprobe vmw_vsock_virtio_transport: ok
+[chv-sandbox] [chv stdout] vsock-init: modprobe vmw_vsock_virtio_transport: ok
+[chv-sandbox] [chv stdout] vsock-init: modprobe virtio_vsock: exit status 1 (output: modprobe: FATAL: Module virtio_vsock not found in directory /lib/modules/6.6.134-0-virt
+)
+vsock-init: about to vsock.Listen(port=52000)
+[chv-sandbox] [chv stdout] vsock-init: Listen returned ok; listening on vsock port 52000
+[chv-sandbox] [chv stdout] vsock-init: modprobe vmw_vsock_virtio_transport: ok
+[chv-sandbox] [chv stdout] vsock-init: entering accept() loop
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] vsock-init: modprobe vmw_vsock_virtio_transport: ok
+[chv-sandbox] [chv stdout] vsock-init: modprobe virtio_vsock: exit status 1 (output: modprobe: FATAL: Module virtio_vsock not found in directory /lib/modules/6.6.134-0-virt
+)
+vsock-init: about to vsock.Listen(port=52000)
+[chv-sandbox] [chv stdout] vsock-init: Listen returned ok; listening on vsock port 52000
+[chv-sandbox] [chv stdout] vsock-init: modprobe vmw_vsock_virtio_transport: ok
+[chv-sandbox] [chv stdout] vsock-init: entering accept() loop
+[chv-sandbox] [chv stdout] vsock-init: modprobe virtio_vsock: exit status 1 (output: modprobe: FATAL: Module virtio_vsock not found in directory /lib/modules/6.6.134-0-virt
+[chv-sandbox] [chv stdout] 
+)
+[chv-sandbox] [chv stdout] vsock-init: about to vsock.Listen(port=52000)
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] vsock-init: modprobe vmw_vsock_virtio_transport: ok
+[chv-sandbox] [chv stdout] vsock-init: Listen returned ok; listening on vsock port 52000
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] vsock-init: modprobe virtio_vsock: exit status 1 (output: modprobe: FATAL: Module virtio_vsock not found in directory /lib/modules/6.6.134-0-virt
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] )
+[chv-sandbox] [chv stdout] vsock-init: entering accept() loop
+[chv-sandbox] [chv stdout] vsock-init: about to vsock.Listen(port=52000)
+[chv-sandbox] [chv stdout] vsock-init: Listen returned ok; listening on vsock port 52000
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] vsock-init: modprobe virtio_vsock: exit status 1 (output: modprobe: FATAL: Module virtio_vsock not found in directory /lib/modules/6.6.134-0-virt
+[chv-sandbox] [chv stdout] 
+)
+vsock-init: about to vsock.Listen(port=52000)
+[chv-sandbox] [chv stdout] vsock-init: entering accept() loop
+[chv-sandbox] [chv stdout] vsock-init: Listen returned ok; listening on vsock port 52000
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] vsock-init: entering accept() loop
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] vsock-init: modprobe virtio_vsock: exit status 1 (output: modprobe: FATAL: Module virtio_vsock not found in directory /lib/modules/6.6.134-0-virt
+[chv-sandbox] [chv stdout] 
+)
+vsock-init: about to vsock.Listen(port=52000)
+[chv-sandbox] [chv stdout] vsock-init: Listen returned ok; listening on vsock port 52000
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] vsock-init: entering accept() loop
+[chv-sandbox] [chv stdout] vsock-init: modprobe virtio_vsock: exit status 1 (output: modprobe: FATAL: Module virtio_vsock not found in directory /lib/modules/6.6.134-0-virt
+)
+vsock-init: about to vsock.Listen(port=52000)
+[chv-sandbox] [chv stdout] vsock-init: Listen returned ok; listening on vsock port 52000
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] vsock-init: entering accept() loop
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] vsock-init: modprobe vmw_vsock_virtio_transport: ok
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] vsock-init: modprobe virtio_vsock: exit status 1 (output: modprobe: FATAL: Module virtio_vsock not found in directory /lib/modules/6.6.134-0-virt
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] )
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] vsock-init: about to vsock.Listen(port=52000)
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] vsock-init: Listen returned ok; listening on vsock port 52000
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [chv stdout] vsock-init: entering accept() loop
+[chv-sandbox] [chv stdout] 
+[chv-sandbox] [vsock] handshake ok: connected to guest port 52000 as source 1073741825
+[chv-sandbox] [vsock] handshake succeeded on attempt 2 (took 654ms total)
+[chv-sandbox] [chv stdout] vsock-init: accepted connection host(2):1073741825 -> vm(5):52000
+[chv-sandbox] [vsock] handshake ok: connected to guest port 52000 as source 1073741825
+[chv-sandbox] [vsock] handshake succeeded on attempt 2 (took 655ms total)
+[chv-sandbox] [vsock] handshake ok: connected to guest port 52000 as source 1073741825
+[chv-sandbox] [vsock] handshake succeeded on attempt 2 (took 655ms total)
+[chv-sandbox] [vsock] handshake ok: connected to guest port 52000 as source 1073741825
+[chv-sandbox] [vsock] handshake succeeded on attempt 2 (took 655ms total)
+[chv-sandbox] [vsock] handshake ok: connected to guest port 52000 as source 1073741825
+[chv-sandbox] [vsock] handshake succeeded on attempt 2 (took 656ms total)
+[chv-sandbox] [chv stdout] vsock-init: accepted connection host(2):1073741825 -> vm(6):52000
+[chv-sandbox] [chv stdout] vsock-init: accepted connection host(2):1073741825 -> vm(4):52000
+[chv-sandbox] [chv stdout] vsock-init: accepted connection host(2):1073741825 -> vm(8):52000
+[chv-sandbox] [chv stdout] vsock-init: accepted connection host(2):1073741825 -> vm(9):52000
+[chv-sandbox] [vsock] handshake ok: connected to guest port 52000 as source 1073741825
+[chv-sandbox] [vsock] handshake succeeded on attempt 2 (took 656ms total)
+[chv-sandbox] [chv stdout] vsock-init: accepted connection host(2):1073741825 -> vm(10):52000
+[chv-sandbox] [chv stdout] vsock-init: accepted connection host(2):1073741825 -> vm(7):52000
+[chv-sandbox] [vsock] handshake ok: connected to guest port 52000 as source 1073741825
+[chv-sandbox] [vsock] handshake succeeded on attempt 2 (took 656ms total)
+[chv-sandbox] [vsock] handshake ok: connected to guest port 52000 as source 1073741825
+[chv-sandbox] [vsock] handshake succeeded on attempt 2 (took 665ms total)
+[chv-sandbox] [chv stdout] vsock-init: accepted connection host(2):1073741825 -> vm(3):52000
+bsm-redteam: report written to /var/lib/firstlight/concurrent-20260427-213555.json
+bsm-redteam: total=8 passed=8 failed=0 errored=0 skipped=0
+bsm-redteam: provenance mock-only=0 validated-chv=8 validated-vf=0
+concurrent-8: PASS — report at /var/lib/firstlight/concurrent-20260427-213555.json
+
+  -- phase cleanup (post-concurrent): killing any stragglers + reclaiming sockets
+  -- no stragglers (clean tear-down)
+
+=== step 7: reset cycle test ===
+reset cycle test SKIPPED: P3.2a reset machinery (snapshot/restore + 3-source verification) not in this checkout — packages/sandbox/scripts/reset-cycle.sh does not exist. Re-run after P3.2a lands.
+
+=== summary ===
+smoke:      pass
+latency:    pass (/var/lib/firstlight/latency-20260427-213555.json)
+concurrent: pass (/var/lib/firstlight/concurrent-20260427-213555.json)
+reset:      skipped
+log:        /var/lib/firstlight/full-validation-20260427-213555.log
+summary:    /var/lib/firstlight/validation-20260427-213555.json
+
+JSON summary: /var/lib/firstlight/validation-20260427-213555.json
+
+  -- phase cleanup (trap-on-exit): killing any stragglers + reclaiming sockets
+  -- no stragglers (clean tear-down)

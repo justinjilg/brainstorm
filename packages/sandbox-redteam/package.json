@@ -1,0 +1,31 @@
+{
+  "name": "@brainst0rm/sandbox-redteam",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "P3.5a red-team test framework for the Brainstorm endpoint-agent sandbox abstraction. Runs a configurable battery of probes (A1-A10 attacker classes) against any concrete Sandbox implementation (CHV, VF, mock) and emits a structured RedTeamReport. Validation layer that — once a real sandbox first-boots — proves it actually contains tool execution. Today probes are validated against a mock Sandbox; real CHV/VF runs are gated until first-boot.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "bsm-redteam": "dist/bin/bsm-redteam.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@brainst0rm/relay": "0.1.0",
+    "@brainst0rm/sandbox": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
