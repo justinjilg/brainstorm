@@ -1,0 +1,195 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-04-27T19:46:16.130Z",
+  "backend": "chv",
+  "final_sandbox_state": "not_booted",
+  "probes": [
+    {
+      "name": "P-CONC-instance-0",
+      "attacker_class": "LAT",
+      "expectation": "should-pass",
+      "validated_against": "validated-chv",
+      "description": "Concurrent fleet member 0/8: cold-boot + echo dispatch + shutdown alongside 7 other instances. Verifies cross-instance isolation (unique cid + unique vsock socket).",
+      "passed": true,
+      "reason": "boot=734ms exec=1ms shutdown=29ms exit_code=0",
+      "duration_ms": 764,
+      "errored": false,
+      "evidence": {
+        "boot_ms": 734,
+        "exec_ms": 1,
+        "shutdown_ms": 29,
+        "exit_code": 0,
+        "stdout_preview": "concurrent-probe-0\n"
+      }
+    },
+    {
+      "name": "P-CONC-instance-1",
+      "attacker_class": "LAT",
+      "expectation": "should-pass",
+      "validated_against": "validated-chv",
+      "description": "Concurrent fleet member 1/8: cold-boot + echo dispatch + shutdown alongside 7 other instances. Verifies cross-instance isolation (unique cid + unique vsock socket).",
+      "passed": true,
+      "reason": "boot=725ms exec=3ms shutdown=36ms exit_code=0",
+      "duration_ms": 764,
+      "errored": false,
+      "evidence": {
+        "boot_ms": 725,
+        "exec_ms": 3,
+        "shutdown_ms": 36,
+        "exit_code": 0,
+        "stdout_preview": "concurrent-probe-1\n"
+      }
+    },
+    {
+      "name": "P-CONC-instance-2",
+      "attacker_class": "LAT",
+      "expectation": "should-pass",
+      "validated_against": "validated-chv",
+      "description": "Concurrent fleet member 2/8: cold-boot + echo dispatch + shutdown alongside 7 other instances. Verifies cross-instance isolation (unique cid + unique vsock socket).",
+      "passed": true,
+      "reason": "boot=724ms exec=2ms shutdown=29ms exit_code=0",
+      "duration_ms": 755,
+      "errored": false,
+      "evidence": {
+        "boot_ms": 724,
+        "exec_ms": 2,
+        "shutdown_ms": 29,
+        "exit_code": 0,
+        "stdout_preview": "concurrent-probe-2\n"
+      }
+    },
+    {
+      "name": "P-CONC-instance-3",
+      "attacker_class": "LAT",
+      "expectation": "should-pass",
+      "validated_against": "validated-chv",
+      "description": "Concurrent fleet member 3/8: cold-boot + echo dispatch + shutdown alongside 7 other instances. Verifies cross-instance isolation (unique cid + unique vsock socket).",
+      "passed": true,
+      "reason": "boot=725ms exec=3ms shutdown=36ms exit_code=0",
+      "duration_ms": 764,
+      "errored": false,
+      "evidence": {
+        "boot_ms": 725,
+        "exec_ms": 3,
+        "shutdown_ms": 36,
+        "exit_code": 0,
+        "stdout_preview": "concurrent-probe-3\n"
+      }
+    },
+    {
+      "name": "P-CONC-instance-4",
+      "attacker_class": "LAT",
+      "expectation": "should-pass",
+      "validated_against": "validated-chv",
+      "description": "Concurrent fleet member 4/8: cold-boot + echo dispatch + shutdown alongside 7 other instances. Verifies cross-instance isolation (unique cid + unique vsock socket).",
+      "passed": true,
+      "reason": "boot=726ms exec=2ms shutdown=36ms exit_code=0",
+      "duration_ms": 764,
+      "errored": false,
+      "evidence": {
+        "boot_ms": 726,
+        "exec_ms": 2,
+        "shutdown_ms": 36,
+        "exit_code": 0,
+        "stdout_preview": "concurrent-probe-4\n"
+      }
+    },
+    {
+      "name": "P-CONC-instance-5",
+      "attacker_class": "LAT",
+      "expectation": "should-pass",
+      "validated_against": "validated-chv",
+      "description": "Concurrent fleet member 5/8: cold-boot + echo dispatch + shutdown alongside 7 other instances. Verifies cross-instance isolation (unique cid + unique vsock socket).",
+      "passed": true,
+      "reason": "boot=725ms exec=3ms shutdown=36ms exit_code=0",
+      "duration_ms": 764,
+      "errored": false,
+      "evidence": {
+        "boot_ms": 725,
+        "exec_ms": 3,
+        "shutdown_ms": 36,
+        "exit_code": 0,
+        "stdout_preview": "concurrent-probe-5\n"
+      }
+    },
+    {
+      "name": "P-CONC-instance-6",
+      "attacker_class": "LAT",
+      "expectation": "should-pass",
+      "validated_against": "validated-chv",
+      "description": "Concurrent fleet member 6/8: cold-boot + echo dispatch + shutdown alongside 7 other instances. Verifies cross-instance isolation (unique cid + unique vsock socket).",
+      "passed": true,
+      "reason": "boot=726ms exec=2ms shutdown=36ms exit_code=0",
+      "duration_ms": 764,
+      "errored": false,
+      "evidence": {
+        "boot_ms": 726,
+        "exec_ms": 2,
+        "shutdown_ms": 36,
+        "exit_code": 0,
+        "stdout_preview": "concurrent-probe-6\n"
+      }
+    },
+    {
+      "name": "P-CONC-instance-7",
+      "attacker_class": "LAT",
+      "expectation": "should-pass",
+      "validated_against": "validated-chv",
+      "description": "Concurrent fleet member 7/8: cold-boot + echo dispatch + shutdown alongside 7 other instances. Verifies cross-instance isolation (unique cid + unique vsock socket).",
+      "passed": true,
+      "reason": "boot=726ms exec=2ms shutdown=36ms exit_code=0",
+      "duration_ms": 764,
+      "errored": false,
+      "evidence": {
+        "boot_ms": 726,
+        "exec_ms": 2,
+        "shutdown_ms": 36,
+        "exit_code": 0,
+        "stdout_preview": "concurrent-probe-7\n"
+      }
+    }
+  ],
+  "latency": {
+    "P-CONC-boot": {
+      "samples": 8,
+      "p50_ms": 725,
+      "p90_ms": 734,
+      "p95_ms": 734,
+      "p99_ms": 734,
+      "mean_ms": 726.375,
+      "min_ms": 724,
+      "max_ms": 734
+    },
+    "P-CONC-exec": {
+      "samples": 8,
+      "p50_ms": 2,
+      "p90_ms": 3,
+      "p95_ms": 3,
+      "p99_ms": 3,
+      "mean_ms": 2.25,
+      "min_ms": 1,
+      "max_ms": 3
+    },
+    "P-CONC-shutdown": {
+      "samples": 8,
+      "p50_ms": 36,
+      "p90_ms": 36,
+      "p95_ms": 36,
+      "p99_ms": 36,
+      "mean_ms": 34.25,
+      "min_ms": 29,
+      "max_ms": 36
+    }
+  },
+  "summary": {
+    "total": 8,
+    "passed": 8,
+    "failed": 0,
+    "errored": 0,
+    "skipped": 0
+  },
+  "notes": [
+    "concurrent-8: 8/8 instances succeeded in 765ms wall-clock (parallel)",
+    "validation-provenance: mock-only=0 validated-chv=8 validated-vf=0 validated-chv-and-vf=0 (total=8)"
+  ]
+}

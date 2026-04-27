@@ -24,7 +24,11 @@
 import { join } from "node:path";
 import { homedir } from "node:os";
 
-import { EndpointStub } from "./index.js";
+import {
+  ChvSandboxExecutor,
+  EndpointStub,
+  type ToolExecutor,
+} from "./index.js";
 
 interface Config {
   wsUrl: string;
@@ -103,14 +107,86 @@ async function enrollIfNeeded(args: {
   throw new Error(`enrollment failed: ${resp.status} ${text}`);
 }
 
+/**
+ * If BSM_USE_CHV_EXECUTOR=1, build a `ChvSandboxExecutor` from the
+ * BSM_KERNEL / BSM_INITRAMFS / BSM_ROOTFS / BSM_VSOCK_SOCKET /
+ * BSM_API_SOCKET / BSM_GUEST_PORT env contract — same as the
+ * `first-light.sh` smoke test. Otherwise return undefined and let the
+ * EndpointStub fall back to its built-in `stubExecutor`.
+ *
+ * Honesty: cold-boot-per-dispatch on Hetzner node-2 = ~600ms latency
+ * floor. The README documents this. Don't enable BSM_USE_CHV_EXECUTOR
+ * for a workload that needs sub-100ms tool dispatch.
+ */
+function loadChvExecutorIfRequested(): ToolExecutor | undefined {
+  const env = process.env;
+  if (env.BSM_USE_CHV_EXECUTOR !== "1") return undefined;
+
+  const kernel = env.BSM_KERNEL;
+  const initramfs = env.BSM_INITRAMFS;
+  const rootfs = env.BSM_ROOTFS;
+  if (kernel === undefined) {
+    throw new Error(
+      "BSM_USE_CHV_EXECUTOR=1 but BSM_KERNEL is unset (path to bsm-sandbox-kernel)",
+    );
+  }
+  if (rootfs === undefined) {
+    throw new Error(
+      "BSM_USE_CHV_EXECUTOR=1 but BSM_ROOTFS is unset (path to bsm-sandbox-rootfs.img)",
+    );
+  }
+
+  const vsockSocket = env.BSM_VSOCK_SOCKET ?? "/tmp/bsm-endpoint-stub.sock";
+  const apiSocket = env.BSM_API_SOCKET ?? "/tmp/bsm-endpoint-stub-api.sock";
+  let guestPort = 52000;
+  if (env.BSM_GUEST_PORT !== undefined) {
+    const parsed = parseInt(env.BSM_GUEST_PORT, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 65535) {
+      throw new Error(
+        `BSM_GUEST_PORT must be a positive integer (1-65535); got '${env.BSM_GUEST_PORT}'`,
+      );
+    }
+    guestPort = parsed;
+  }
+
+  console.log(
+    `[endpoint-stub] BSM_USE_CHV_EXECUTOR=1 — wiring ChvSandboxExecutor\n` +
+      `[endpoint-stub]   kernel=${kernel}\n` +
+      `[endpoint-stub]   initramfs=${initramfs ?? "(none)"}\n` +
+      `[endpoint-stub]   rootfs=${rootfs}\n` +
+      `[endpoint-stub]   vsock=${vsockSocket} (guest port ${guestPort})\n` +
+      `[endpoint-stub]   api=${apiSocket}\n` +
+      `[endpoint-stub]   pattern=cold-boot-per-dispatch (~600ms latency floor)`,
+  );
+
+  const executor = new ChvSandboxExecutor({
+    config: {
+      cloudHypervisorBin: env.BSM_CH_BIN,
+      chRemoteBin: env.BSM_CHREMOTE_BIN,
+      apiSocketPath: apiSocket,
+      kernel: { path: kernel, initramfs },
+      rootfs: { path: rootfs, readonly: true },
+      vsock: {
+        socketPath: vsockSocket,
+        guestPort,
+      },
+      cpus: 2,
+      memMib: 1024,
+    },
+  });
+  return executor.execute;
+}
+
 async function main(): Promise<void> {
   const config = loadConfig();
+  const executor = loadChvExecutorIfRequested();
   const stub = new EndpointStub({
     relayUrl: config.wsUrl,
     tenantId: config.tenantId,
     identityPath: config.identityPath,
     endpointId: config.endpointId,
     tenantPublicKey: config.tenantPublicKey,
+    executor,
   });
   await enrollIfNeeded({
     httpUrl: config.httpUrl,
