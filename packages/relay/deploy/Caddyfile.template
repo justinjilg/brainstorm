@@ -1,0 +1,35 @@
+# Brainstorm relay — Caddy TLS termination
+# Templated by bootstrap.sh: @@RELAY_HOSTNAME@@, @@WS_PORT@@, @@HTTP_PORT@@.
+#
+# Caddy auto-acquires Let's Encrypt certs for the hostname; if running
+# behind a load balancer that already terminates TLS, set SKIP_CADDY=1
+# in the bootstrap and route traffic directly to 8443/8444 with your
+# own TLS layer.
+
+@@RELAY_HOSTNAME@@ {
+    # WebSocket endpoints (operator + endpoint connect)
+    handle_path /v1/operator {
+        reverse_proxy 127.0.0.1:@@WS_PORT@@
+    }
+    handle_path /v1/endpoint/connect {
+        reverse_proxy 127.0.0.1:@@WS_PORT@@
+    }
+
+    # HTTP enrollment endpoints
+    handle /v1/endpoint/enroll {
+        reverse_proxy 127.0.0.1:@@HTTP_PORT@@
+    }
+    handle /v1/admin/endpoint/* {
+        reverse_proxy 127.0.0.1:@@HTTP_PORT@@
+    }
+
+    # Default: 404 on anything not whitelisted above
+    handle {
+        respond "Not Found" 404
+    }
+
+    log {
+        output file /var/log/caddy/brainstorm-relay.log
+        format json
+    }
+}
