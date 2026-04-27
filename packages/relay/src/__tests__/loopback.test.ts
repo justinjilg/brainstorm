@@ -374,7 +374,8 @@ describe("P1.4 Stage 1.0 loopback validation", () => {
       hello as unknown as Record<string, unknown>,
       env.operatorHmacKey,
     );
-    hello.operator.auth_proof.signature = bytesToBase64(helloDigest);
+    (hello.operator.auth_proof as { signature: string }).signature =
+      bytesToBase64(helloDigest);
     await op.send(hello);
 
     const helloAck = await op.receive();
@@ -404,13 +405,14 @@ describe("P1.4 Stage 1.0 loopback validation", () => {
       dispatchReq as unknown as Record<string, unknown>,
       env.operatorHmacKey,
     );
-    dispatchReq.operator.auth_proof.signature = bytesToBase64(dispatchDigest);
+    (dispatchReq.operator.auth_proof as { signature: string }).signature =
+      bytesToBase64(dispatchDigest);
     await op.send(dispatchReq);
 
     // 6. Operator receives ChangeSetPreview
     const previewFrame = await op.receive();
     expect(previewFrame.type).toBe("ChangeSetPreview");
-    const preview = previewFrame as ChangeSetPreview;
+    const preview = previewFrame as unknown as ChangeSetPreview;
 
     // 7. Operator sends ConfirmRequest
     await op.send({

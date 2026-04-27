@@ -284,7 +284,7 @@ describe("DispatchOrchestrator.produceEnvelope", () => {
       // Verify with tenant pub key — signature should be valid
       const ok = await verifyEnvelope(
         SIGN_CONTEXT.COMMAND_ENVELOPE,
-        r.envelope,
+        r.envelope as unknown as Parameters<typeof verifyEnvelope>[1],
         pub,
       );
       expect(ok).toBe(true);

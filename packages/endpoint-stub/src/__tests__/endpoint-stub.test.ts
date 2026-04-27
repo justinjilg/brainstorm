@@ -302,7 +302,8 @@ async function operatorHello(
     hello as unknown as Record<string, unknown>,
     env.operatorHmacKey,
   );
-  hello.operator.auth_proof.signature = bytesToBase64(sig);
+  (hello.operator.auth_proof as { signature: string }).signature =
+    bytesToBase64(sig);
   await op.send(hello);
   const ack = await op.receive();
   expect(ack.type).toBe("OperatorHelloAck");
@@ -341,12 +342,13 @@ async function operatorDispatch(args: {
     dispatchReq as unknown as Record<string, unknown>,
     args.env.operatorHmacKey,
   );
-  dispatchReq.operator.auth_proof.signature = bytesToBase64(sig);
+  (dispatchReq.operator.auth_proof as { signature: string }).signature =
+    bytesToBase64(sig);
   await args.op.send(dispatchReq);
 
   const previewFrame = await args.op.receive();
   expect(previewFrame.type).toBe("ChangeSetPreview");
-  const preview = previewFrame as ChangeSetPreview;
+  const preview = previewFrame as unknown as ChangeSetPreview;
 
   await args.op.send({
     type: "ConfirmRequest",
