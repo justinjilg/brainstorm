@@ -1,0 +1,29 @@
+{
+  "name": "@brainst0rm/harness-drift",
+  "version": "0.13.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@brainst0rm/harness-fs": "0.13.0",
+    "@brainst0rm/harness-index": "0.13.0",
+    "@brainst0rm/shared": "0.13.0"
+  },
+  "devDependencies": {
+    "tsup": "^8",
+    "typescript": "^5.7",
+    "vitest": "^3"
+  },
+  "description": "DriftDetector + ChangeSet primitives — typed surfaces for FS-index, intent-runtime, observation, and bilateral drift (Decision #9 revised)",
+  "license": "Apache-2.0"
+}
