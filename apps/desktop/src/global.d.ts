@@ -43,6 +43,19 @@ interface BrainstormBridge {
   >;
   /** Close the active index session. */
   closeHarnessSession(): Promise<{ ok: true }>;
+  /** List indexed artifacts under a folder prefix (e.g. "team", "products"). */
+  listHarnessFolder(folderSlug: string): Promise<{
+    folder: string;
+    artifacts: Array<{
+      relative_path: string;
+      artifact_kind: string;
+      owner: string | null;
+      status: string | null;
+      reviewed_at: string | null;
+      size_bytes: number;
+      mtime_ms: number;
+    }>;
+  }>;
   /**
    * Query main for the current sticky backendReady flag. Used at mount
    * to resolve the race where main emits "backend-ready" before React

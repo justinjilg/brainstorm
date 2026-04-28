@@ -60,6 +60,11 @@ contextBridge.exposeInMainWorld("brainstorm", {
   /** Close the active index session. Called on harness close. */
   closeHarnessSession: () => ipcRenderer.invoke("harness.closeSession"),
 
+  /** List indexed artifacts whose relative_path starts with the folder slug.
+   *  Backs the per-folder panels in BusinessHarnessView. */
+  listHarnessFolder: (folderSlug) =>
+    ipcRenderer.invoke("harness.listFolder", folderSlug),
+
   /**
    * Query main for the current sticky backendReady state. Used at mount
    * time by useBackendReady to resolve a race where the backend emits

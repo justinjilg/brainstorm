@@ -656,6 +656,47 @@ function registerIPC(): void {
     }
   });
 
+  /**
+   * List artifacts in the active harness whose relative_path starts with
+   * the given folder slug. Used by BusinessHarnessView's per-folder panels.
+   */
+  ipcMain.handle(
+    "harness.listFolder",
+    async (
+      _event,
+      folderSlug: string,
+    ): Promise<{
+      folder: string;
+      artifacts: Array<{
+        relative_path: string;
+        artifact_kind: string;
+        owner: string | null;
+        status: string | null;
+        reviewed_at: string | null;
+        size_bytes: number;
+        mtime_ms: number;
+      }>;
+    }> => {
+      if (!activeSession) {
+        return { folder: folderSlug, artifacts: [] };
+      }
+      const all = activeSession.index.allArtifacts();
+      const prefix = folderSlug.endsWith("/") ? folderSlug : `${folderSlug}/`;
+      const matched = all
+        .filter((a) => a.relative_path.startsWith(prefix))
+        .map((a) => ({
+          relative_path: a.relative_path,
+          artifact_kind: a.artifact_kind,
+          owner: a.owner,
+          status: a.status,
+          reviewed_at: a.reviewed_at,
+          size_bytes: a.size_bytes,
+          mtime_ms: a.mtime_ms,
+        }));
+      return { folder: folderSlug, artifacts: matched };
+    },
+  );
+
   // Chat abort
   ipcMain.handle("chat-abort", async () => {
     const id = `abort-${nextId++}`;

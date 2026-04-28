@@ -13,6 +13,7 @@
  * IPC delivers it, React renders it) before any panel design lands.
  */
 
+import { useEffect, useState } from "react";
 import type { BusinessToml } from "@brainst0rm/config";
 import type { HarnessSessionVerify } from "../../lib/harness-types";
 
@@ -22,6 +23,16 @@ interface BusinessHarnessViewProps {
   /** Cold-open verification result. null while pending or unavailable. */
   sessionVerify: HarnessSessionVerify | null;
   onClose: () => void;
+}
+
+interface FolderArtifact {
+  relative_path: string;
+  artifact_kind: string;
+  owner: string | null;
+  status: string | null;
+  reviewed_at: string | null;
+  size_bytes: number;
+  mtime_ms: number;
 }
 
 const SEVEN_FOLDERS: Array<{ slug: string; label: string; why: string }> = [
@@ -48,6 +59,35 @@ export function BusinessHarnessView({
   sessionVerify,
   onClose,
 }: BusinessHarnessViewProps) {
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+  const [folderContents, setFolderContents] = useState<FolderArtifact[]>([]);
+  const [folderLoading, setFolderLoading] = useState(false);
+
+  useEffect(() => {
+    if (!selectedFolder) {
+      setFolderContents([]);
+      return;
+    }
+    const bridge = window.brainstorm;
+    if (!bridge) {
+      setFolderContents([]);
+      setFolderLoading(false);
+      return;
+    }
+    setFolderLoading(true);
+    bridge
+      .listHarnessFolder(selectedFolder)
+      .then((res) => {
+        if (res.folder === selectedFolder) {
+          setFolderContents(res.artifacts);
+        }
+      })
+      .catch(() => {
+        setFolderContents([]);
+      })
+      .finally(() => setFolderLoading(false));
+  }, [selectedFolder]);
+
   return (
     <div
       className="flex-1 overflow-y-auto"
@@ -194,47 +234,70 @@ export function BusinessHarnessView({
               gap: 12,
             }}
           >
-            {SEVEN_FOLDERS.map((folder) => (
-              <div
-                key={folder.slug}
-                style={{
-                  padding: 16,
-                  background: "var(--ctp-surface0)",
-                  borderRadius: 12,
-                  border: "1px solid var(--border-subtle)",
-                }}
-              >
-                <div
+            {SEVEN_FOLDERS.map((folder) => {
+              const isSelected = selectedFolder === folder.slug;
+              return (
+                <button
+                  key={folder.slug}
+                  onClick={() =>
+                    setSelectedFolder(isSelected ? null : folder.slug)
+                  }
+                  className="interactive"
                   style={{
-                    fontFamily: "var(--font-mono, monospace)",
-                    fontSize: "var(--text-2xs)",
-                    color: "var(--ctp-overlay0)",
-                    marginBottom: 4,
+                    padding: 16,
+                    background: isSelected
+                      ? "var(--ctp-surface1)"
+                      : "var(--ctp-surface0)",
+                    borderRadius: 12,
+                    border: `1px solid ${
+                      isSelected ? "var(--ctp-blue)" : "var(--border-subtle)"
+                    }`,
+                    cursor: "pointer",
+                    textAlign: "left",
+                    color: "inherit",
+                    font: "inherit",
                   }}
                 >
-                  {folder.slug}/
-                </div>
-                <div
-                  style={{
-                    fontSize: "var(--text-sm)",
-                    fontWeight: 500,
-                    color: "var(--ctp-text)",
-                    marginBottom: 4,
-                  }}
-                >
-                  {folder.label}
-                </div>
-                <div
-                  style={{
-                    fontSize: "var(--text-xs)",
-                    color: "var(--ctp-subtext1)",
-                  }}
-                >
-                  {folder.why}
-                </div>
-              </div>
-            ))}
+                  <div
+                    style={{
+                      fontFamily: "var(--font-mono, monospace)",
+                      fontSize: "var(--text-2xs)",
+                      color: "var(--ctp-overlay0)",
+                      marginBottom: 4,
+                    }}
+                  >
+                    {folder.slug}/
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "var(--text-sm)",
+                      fontWeight: 500,
+                      color: "var(--ctp-text)",
+                      marginBottom: 4,
+                    }}
+                  >
+                    {folder.label}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "var(--text-xs)",
+                      color: "var(--ctp-subtext1)",
+                    }}
+                  >
+                    {folder.why}
+                  </div>
+                </button>
+              );
+            })}
           </div>
+          {selectedFolder && (
+            <FolderPanel
+              folderSlug={selectedFolder}
+              artifacts={folderContents}
+              loading={folderLoading}
+              onClose={() => setSelectedFolder(null)}
+            />
+          )}
         </section>
 
         {/* Federation pointers */}
@@ -347,31 +410,173 @@ export function BusinessHarnessView({
             />
           </div>
         </section>
+      </div>
+    </div>
+  );
+}
 
-        {/* Build status notice */}
+function FolderPanel({
+  folderSlug,
+  artifacts,
+  loading,
+  onClose,
+}: {
+  folderSlug: string;
+  artifacts: FolderArtifact[];
+  loading: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      style={{
+        marginTop: 16,
+        padding: 20,
+        background: "var(--ctp-surface0)",
+        borderRadius: 12,
+        border: "1px solid var(--border-subtle)",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "baseline",
+          marginBottom: 12,
+        }}
+      >
         <div
           style={{
-            padding: 24,
-            background: "var(--ctp-surface0)",
-            border: "1px dashed var(--border-default)",
-            borderRadius: 12,
-            color: "var(--ctp-subtext1)",
+            fontFamily: "var(--font-mono, monospace)",
             fontSize: "var(--text-sm)",
-            lineHeight: 1.6,
+            fontWeight: 600,
+            color: "var(--ctp-text)",
           }}
         >
-          <div style={{ fontWeight: 600, marginBottom: 6 }}>
-            v1 placeholder view
-          </div>
-          <div>
-            Per-folder Environment Panels (drift detection, runtime integration,
-            ChangeSet UI) are deferred to subsequent build phases per the
-            implementation order in{" "}
-            <code>## Index Coherence and Drift Architecture</code>. Today this
-            view proves the manifest parses, the IPC bridge delivers it, and the
-            seven-folder skeleton is the navigation primitive.
-          </div>
+          {folderSlug}/
+          <span
+            style={{
+              marginLeft: 8,
+              color: "var(--ctp-overlay1)",
+              fontWeight: 400,
+              fontSize: "var(--text-xs)",
+            }}
+          >
+            {loading
+              ? "loading…"
+              : `${artifacts.length} artifact${artifacts.length === 1 ? "" : "s"}`}
+          </span>
         </div>
+        <button
+          onClick={onClose}
+          className="interactive"
+          style={{
+            fontSize: "var(--text-2xs)",
+            color: "var(--ctp-overlay1)",
+            background: "transparent",
+            border: "1px solid var(--border-subtle)",
+            borderRadius: 6,
+            padding: "4px 10px",
+            cursor: "pointer",
+          }}
+        >
+          Close
+        </button>
+      </div>
+
+      {!loading && artifacts.length === 0 && (
+        <div
+          style={{
+            padding: 12,
+            fontSize: "var(--text-xs)",
+            color: "var(--ctp-overlay1)",
+            fontStyle: "italic",
+          }}
+        >
+          No indexed artifacts under this folder yet. Run{" "}
+          <code>brainstorm harness reindex</code> after adding files, or
+          materialize a starter template via{" "}
+          <code>brainstorm harness init --template</code>.
+        </div>
+      )}
+
+      {artifacts.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {artifacts.map((a) => (
+            <FolderRow key={a.relative_path} artifact={a} folder={folderSlug} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FolderRow({
+  artifact,
+  folder,
+}: {
+  artifact: FolderArtifact;
+  folder: string;
+}) {
+  const trimmedPath = artifact.relative_path.startsWith(`${folder}/`)
+    ? artifact.relative_path.slice(folder.length + 1)
+    : artifact.relative_path;
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "1fr 110px 140px 80px",
+        gap: 12,
+        alignItems: "baseline",
+        padding: "8px 12px",
+        background: "var(--ctp-mantle)",
+        borderRadius: 6,
+        border: "1px solid var(--border-subtle)",
+      }}
+    >
+      <div
+        style={{
+          fontFamily: "var(--font-mono, monospace)",
+          fontSize: "var(--text-xs)",
+          color: "var(--ctp-text)",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+        title={artifact.relative_path}
+      >
+        {trimmedPath}
+      </div>
+      <div
+        style={{
+          fontSize: "var(--text-2xs)",
+          color: "var(--ctp-overlay0)",
+          textTransform: "uppercase",
+          letterSpacing: "0.08em",
+        }}
+      >
+        {artifact.artifact_kind}
+      </div>
+      <div
+        style={{
+          fontSize: "var(--text-2xs)",
+          color: "var(--ctp-subtext1)",
+          fontFamily: "var(--font-mono, monospace)",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+        title={artifact.owner ?? ""}
+      >
+        {artifact.owner ?? "—"}
+      </div>
+      <div
+        style={{
+          fontSize: "var(--text-2xs)",
+          color: "var(--ctp-overlay0)",
+          textAlign: "right",
+        }}
+      >
+        {(artifact.size_bytes / 1024).toFixed(1)} KB
       </div>
     </div>
   );
