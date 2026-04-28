@@ -322,7 +322,16 @@ async function handleRequest(args: {
     return;
   }
 
-  const body = await readBody(req);
+  let body: string;
+  try {
+    body = await readBody(req);
+  } catch (e) {
+    if (e instanceof RequestBodyTooLargeError) {
+      sendJson(res, 413, { code: "PAYLOAD_TOO_LARGE", message: e.message });
+      return;
+    }
+    throw e;
+  }
   let parsedBody: Record<string, unknown>;
   try {
     parsedBody = JSON.parse(body) as Record<string, unknown>;
@@ -417,10 +426,34 @@ function checkAdminAuth(req: IncomingMessage, adminToken: string): boolean {
   return diff === 0;
 }
 
+// Cap admin/enrollment request bodies. Both real payloads are tiny
+// (tenant_id + maybe public_key + a couple identifiers); 64 KiB is
+// generous and prevents authenticated-DoS via oversized JSON. See
+// issue #289.
+const MAX_REQUEST_BODY_BYTES = 64 * 1024;
+
+class RequestBodyTooLargeError extends Error {
+  readonly code = "PAYLOAD_TOO_LARGE";
+  constructor() {
+    super(
+      `request body exceeds ${MAX_REQUEST_BODY_BYTES} bytes (relay enforces a hard cap to prevent authenticated DoS)`,
+    );
+  }
+}
+
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
+  let total = 0;
   for await (const chunk of req) {
-    chunks.push(chunk as Buffer);
+    const buf = chunk as Buffer;
+    total += buf.length;
+    if (total > MAX_REQUEST_BODY_BYTES) {
+      // Stop reading; the rest of the body is discarded by the stream
+      // teardown when we throw. Caller turns this into a 413 response
+      // and prevents further allocation.
+      throw new RequestBodyTooLargeError();
+    }
+    chunks.push(buf);
   }
   return Buffer.concat(chunks).toString("utf-8");
 }
