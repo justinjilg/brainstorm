@@ -1,0 +1,29 @@
+{
+  "name": "@brainst0rm/harness-loop",
+  "version": "0.13.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@brainst0rm/harness-drift": "0.13.0",
+    "@brainst0rm/harness-fs": "0.13.0",
+    "@brainst0rm/harness-index": "0.13.0"
+  },
+  "devDependencies": {
+    "tsup": "^8",
+    "typescript": "^5.7",
+    "vitest": "^3"
+  },
+  "description": "Periodic loop runner — indexer, drift detector, stale-artifact watchdog (plan item 7)",
+  "license": "Apache-2.0"
+}

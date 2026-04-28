@@ -16,6 +16,7 @@
 import { useEffect, useState } from "react";
 import type { BusinessToml } from "@brainst0rm/config";
 import type { HarnessSessionVerify } from "../../lib/harness-types";
+import type { HarnessLoopEvent } from "../../global";
 
 interface BusinessHarnessViewProps {
   root: string;
@@ -62,6 +63,27 @@ export function BusinessHarnessView({
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [folderContents, setFolderContents] = useState<FolderArtifact[]>([]);
   const [folderLoading, setFolderLoading] = useState(false);
+  const [loopEvents, setLoopEvents] = useState<HarnessLoopEvent[]>([]);
+
+  useEffect(() => {
+    const bridge = window.brainstorm;
+    if (!bridge) return;
+    let mounted = true;
+    bridge
+      .recentHarnessLoopEvents(20)
+      .then((events) => {
+        if (mounted) setLoopEvents(events);
+      })
+      .catch(() => {});
+    const unsub = bridge.onHarnessLoopEvent((event) => {
+      if (!mounted) return;
+      setLoopEvents((prev) => [...prev.slice(-29), event]);
+    });
+    return () => {
+      mounted = false;
+      unsub();
+    };
+  }, []);
 
   useEffect(() => {
     if (!selectedFolder) {
@@ -222,6 +244,12 @@ export function BusinessHarnessView({
               />
             </div>
           )}
+        </section>
+
+        {/* AI loops — live event stream */}
+        <section style={{ marginBottom: 32 }}>
+          <h2 style={sectionTitleStyle}>AI Loops</h2>
+          <LoopEventLog events={loopEvents} />
         </section>
 
         {/* Seven universal folders */}
@@ -931,4 +959,90 @@ function describeRuntime(runtime: Record<string, unknown>): string {
     .slice(0, 3)
     .map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`)
     .join(" · ");
+}
+
+function LoopEventLog({ events }: { events: HarnessLoopEvent[] }) {
+  const recent = events.slice(-8).reverse();
+  if (recent.length === 0) {
+    return (
+      <div
+        style={{
+          padding: 14,
+          background: "var(--ctp-mantle)",
+          borderRadius: 8,
+          border: "1px solid var(--border-subtle)",
+          fontSize: "var(--text-xs)",
+          color: "var(--ctp-overlay1)",
+        }}
+      >
+        Loops are scheduled — first events arrive within seconds of opening the
+        session.
+      </div>
+    );
+  }
+  return (
+    <div
+      style={{
+        background: "var(--ctp-mantle)",
+        borderRadius: 8,
+        border: "1px solid var(--border-subtle)",
+        overflow: "hidden",
+      }}
+    >
+      {recent.map((event, idx) => (
+        <LoopEventRow key={`${event.at}-${event.loop}-${idx}`} event={event} />
+      ))}
+    </div>
+  );
+}
+
+function LoopEventRow({ event }: { event: HarnessLoopEvent }) {
+  const statusColor =
+    event.status === "failed"
+      ? "var(--ctp-red)"
+      : event.status === "completed"
+        ? "var(--ctp-green)"
+        : "var(--ctp-overlay1)";
+  const detail = event.error
+    ? `error: ${event.error}`
+    : event.summary
+      ? Object.entries(event.summary)
+          .map(([k, v]) => `${k}=${formatLoopValue(v)}`)
+          .join(" · ")
+      : "";
+  const time = new Date(event.at).toLocaleTimeString();
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "82px 130px 70px 1fr",
+        gap: 10,
+        padding: "6px 12px",
+        fontFamily: "var(--font-mono, monospace)",
+        fontSize: "var(--text-2xs)",
+        borderTop: "1px solid var(--border-subtle)",
+      }}
+    >
+      <div style={{ color: "var(--ctp-overlay0)" }}>{time}</div>
+      <div style={{ color: "var(--ctp-text)" }}>{event.loop}</div>
+      <div style={{ color: statusColor }}>{event.status}</div>
+      <div
+        style={{
+          color: "var(--ctp-subtext1)",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+        title={detail}
+      >
+        {detail}
+      </div>
+    </div>
+  );
+}
+
+function formatLoopValue(v: unknown): string {
+  if (v === null || v === undefined) return "—";
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
 }

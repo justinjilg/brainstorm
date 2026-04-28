@@ -7,6 +7,16 @@ import type { OpenDialogResult } from "./lib/harness-types";
 // variant since they don't open dialogs.
 type DetectOrParseResult = Exclude<OpenDialogResult, { kind: "cancel" }>;
 
+/** Mirror of LoopEvent from @brainst0rm/harness-loop — typed locally so
+ *  the renderer doesn't need a workspace dep. Kept in sync manually. */
+export interface HarnessLoopEvent {
+  loop: "indexer" | "customer-drift" | "stale-watchdog";
+  status: "started" | "completed" | "failed";
+  at: number;
+  summary?: Record<string, unknown>;
+  error?: string;
+}
+
 interface BrainstormBridge {
   request(method: string, params?: Record<string, unknown>): Promise<unknown>;
   chatStream(params: Record<string, unknown>): Promise<void>;
@@ -68,6 +78,14 @@ interface BrainstormBridge {
     }>;
     unobserved_accounts: string[];
   }>;
+  /** Last N harness-loop events from the live runner. */
+  recentHarnessLoopEvents(limit?: number): Promise<HarnessLoopEvent[]>;
+  /** Force one immediate run of a named loop. */
+  runHarnessLoopOnce(
+    loopName: "indexer" | "customer-drift" | "stale-watchdog",
+  ): Promise<HarnessLoopEvent | { ok: false; error: string }>;
+  /** Subscribe to live loop events. Returns an unsubscribe fn. */
+  onHarnessLoopEvent(cb: (event: HarnessLoopEvent) => void): () => void;
   /**
    * Query main for the current sticky backendReady flag. Used at mount
    * to resolve the race where main emits "backend-ready" before React

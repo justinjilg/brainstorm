@@ -28,6 +28,10 @@ import {
 } from "@brainst0rm/harness-index";
 import { HarnessWriter } from "@brainst0rm/harness-fs";
 import { CustomerAccountDriftDetector } from "@brainst0rm/harness-drift";
+import {
+  HarnessLoopRunner,
+  type LoopEvent as HarnessLoopEvent,
+} from "@brainst0rm/harness-loop";
 import { createHash } from "node:crypto";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -562,8 +566,22 @@ function registerIPC(): void {
     harnessId: string;
     index: HarnessIndexStore;
     writer: HarnessWriter;
+    loop: HarnessLoopRunner;
   };
   let activeSession: ActiveHarnessSession | null = null;
+  /**
+   * Ring buffer of recent loop events the renderer subscribes to. We hold
+   * the most recent 200 across all loops; the desktop renders this as a
+   * live event log in the harness session header.
+   */
+  const recentLoopEvents: HarnessLoopEvent[] = [];
+  function recordLoopEvent(event: HarnessLoopEvent): void {
+    recentLoopEvents.push(event);
+    if (recentLoopEvents.length > 200) recentLoopEvents.shift();
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send("harness.loop-event", event);
+    }
+  }
 
   function harnessIdFromRoot(root: string): string {
     // Stable id per-harness-root: SHA-256 of the absolute path. This is
@@ -575,6 +593,7 @@ function registerIPC(): void {
 
   function closeActiveSession(): void {
     if (activeSession) {
+      activeSession.loop.stop();
       activeSession.index.close();
       activeSession = null;
     }
@@ -610,7 +629,15 @@ function registerIPC(): void {
         // Cold-open verify per spec performance budget
         const verify = index.coldOpenVerify(root);
 
-        activeSession = { root, harnessId, index, writer };
+        const loop = new HarnessLoopRunner({
+          harnessRoot: root,
+          index,
+          onEvent: (event) => recordLoopEvent(event),
+        });
+        activeSession = { root, harnessId, index, writer, loop };
+        // Start scheduled loops only after the session is fully wired so
+        // events have a destination to flow to.
+        loop.start();
         return { ok: true, harnessId, verify };
       } catch (e) {
         return {
@@ -733,6 +760,43 @@ function registerIPC(): void {
         })),
         unobserved_accounts: unobserved,
       };
+    },
+  );
+
+  /**
+   * Return the most recent N loop events (default 50). Used by the
+   * desktop's harness session header to populate the live event log on
+   * mount, before subscribing to harness.loop-event.
+   */
+  ipcMain.handle(
+    "harness.recentLoopEvents",
+    async (_event, limit?: number): Promise<HarnessLoopEvent[]> => {
+      const n = typeof limit === "number" && limit > 0 ? limit : 50;
+      return recentLoopEvents.slice(-n);
+    },
+  );
+
+  /**
+   * Trigger one immediate run of a named loop in the active session.
+   * Returns the resulting LoopEvent (which is also broadcast).
+   */
+  ipcMain.handle(
+    "harness.runLoopOnce",
+    async (
+      _event,
+      loopName: "indexer" | "customer-drift" | "stale-watchdog",
+    ): Promise<HarnessLoopEvent | { ok: false; error: string }> => {
+      if (!activeSession) {
+        return { ok: false, error: "no active harness session" };
+      }
+      try {
+        return await activeSession.loop.runOnce(loopName);
+      } catch (e) {
+        return {
+          ok: false,
+          error: e instanceof Error ? e.message : String(e),
+        };
+      }
     },
   );
 
