@@ -47,3 +47,4 @@ export {
   BUSINESS_MANIFEST_FILE,
   type LoadBusinessHarnessResult,
 } from "./business-loader.js";
+export { type TemplateFile, type StarterTemplate } from "./starter-template.js";
