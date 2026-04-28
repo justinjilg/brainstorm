@@ -54,6 +54,23 @@ export interface ToolExecutorContext {
   params: Record<string, unknown>;
   /** Caller-supplied deadline for the tool. Tools that exceed should fail. */
   deadline_ms: number;
+  /**
+   * Correlation id from the inbound CommandEnvelope. Per protocol §13 +
+   * peer 12xnwqbb's federation design: when an executor makes outbound
+   * LLM calls (or any HTTP call to BR / GTM / MSP from inside the
+   * endpoint), it MUST forward this value as `X-Correlation-Id` so BR
+   * can join cross-product audit chains.
+   *
+   * The endpoint-stub passes this through verbatim. Whether and how an
+   * executor uses it is the executor's responsibility:
+   *   - chv-executor: ignores it (the CHV sandbox boots a one-shot guest
+   *     that doesn't make outbound HTTP calls).
+   *   - msp-executor (parallel WIP): forwards it on every outbound call
+   *     into MSP product APIs.
+   *   - future BR-bound executors: forward it as both `X-Correlation-Id`
+   *     header AND in the LLM request body if BR's API takes it.
+   */
+  correlation_id: string;
 }
 
 export interface ToolExecutorResult {
@@ -404,7 +421,9 @@ export class EndpointStub {
       ts: new Date().toISOString(),
     });
 
-    // Execute
+    // Execute. correlation_id is the cross-product audit-chain key per
+    // protocol §13 + peer 12xnwqbb's federation design — passed verbatim
+    // to the executor for downstream HTTP propagation.
     let executorResult: ToolExecutorResult;
     try {
       executorResult = await this.executor({
@@ -412,6 +431,7 @@ export class EndpointStub {
         tool: envelope.tool,
         params: envelope.params,
         deadline_ms: 30_000,
+        correlation_id: envelope.correlation_id,
       });
     } catch (e) {
       const failed: FailedCommandResult = {

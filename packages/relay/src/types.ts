@@ -31,9 +31,9 @@ export type ChannelOfOrigin =
 // --- Operator class envelope (D11 v3.1 refinement) ------------------------
 
 export type AuthProof =
-  | { kind: "hmac_signed_envelope"; signature: string }
-  | { kind: "jwt"; token: string }
-  | { kind: "caf_mtls"; cert_fingerprint: string };
+  | { mode: "hmac"; signature: string }
+  | { mode: "jwt"; token: string }
+  | { mode: "caf_mtls"; cert_fingerprint: string };
 
 export interface OperatorHuman {
   kind: "human";

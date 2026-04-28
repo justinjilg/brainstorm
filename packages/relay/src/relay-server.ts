@@ -43,7 +43,9 @@ import type { DispatchOrchestrator } from "./dispatch.js";
 import type { ResultRouter } from "./result-router.js";
 import type { AckTimeoutManager } from "./ack-timeout.js";
 import type { AuditLog } from "./audit.js";
-import { verifyOperatorHmac, verifyConnectionProof } from "./verification.js";
+import { verifyConnectionProof, verifyOperatorAuth } from "./verification.js";
+import type { CafVerifier } from "./caf-verifier.js";
+import type { BrOutcomeReporter } from "./br-outcome-reporter.js";
 
 // ---------------------------------------------------------------------------
 
@@ -62,6 +64,24 @@ export interface RelayServerOptions {
   /** Look up an endpoint's Ed25519 public key by endpoint_id. Returns null
    *  if endpoint not enrolled. */
   endpointPublicKey: (endpoint_id: string) => Uint8Array | null;
+  /**
+   * Optional CAF mTLS verifier. When supplied, operators presenting an
+   * `auth_proof: { mode: "caf_mtls", cert_fingerprint }` will be verified
+   * through this seam (in addition to the always-on HMAC path). v0.1.0 does
+   * not wire end-to-end TLS peer-certificate extraction: that requires Caddy
+   * mTLS termination plus `req.socket.getPeerCertificate(true)` plumbing in
+   * the WS upgrade path. When cafVerifier is configured but no cert is
+   * presented, the relay correctly returns AUTH_MODE_NOT_SUPPORTED,
+   * preserving pre-flag rejection behavior.
+   */
+  cafVerifier?: CafVerifier;
+  /**
+   * Optional BR outcome reporter. When supplied, every terminal command
+   * lifecycle (completed/failed/timed_out) triggers a fire-and-forget POST
+   * to BR's `/v1/agents/${agentId}/dispatch-outcomes` endpoint. When
+   * undefined, no BR call is made — preserving pre-flag runtime behavior.
+   */
+  brOutcomeReporter?: BrOutcomeReporter;
   /** Now provider for testability. */
   now?: () => Date;
 }
@@ -99,6 +119,13 @@ export class RelayServer {
   async acceptOperatorHello(args: {
     transport: TransportHandle;
     helloBytes: Uint8Array;
+    /**
+     * TLS-presented operator cert (PEM string or DER bytes), surfaced from
+     * the WS upgrade context's `req.socket.getPeerCertificate(true)`. CAF
+     * verification is intentionally exposed as a seam here; the real WS
+     * binding does not yet extract this in v0.1.0.
+     */
+    presentedCert?: string | Buffer | Uint8Array;
   }): Promise<
     | { ok: true; ack: OperatorHelloAck; operator_session_id: string }
     | { ok: false; error: ErrorEventRelayToOperator }
@@ -118,13 +145,15 @@ export class RelayServer {
       };
     }
 
-    // For OperatorHello, the auth_proof is over the OperatorHello frame
-    // itself. We need an HMAC key — looked up from operator_id+tenant_id.
+    // HMAC key lookup is best-effort — for caf_mtls operators it's not
+    // required, so a null key is acceptable when CAF is configured. The
+    // unified verifier dispatches by auth_proof.mode.
     const hmacKey = this.opts.operatorHmacKey(
       hello.operator.id,
       hello.tenant_id,
     );
-    if (hmacKey === null) {
+    const authProofMode = hello.operator.auth_proof?.mode;
+    if (hmacKey === null && authProofMode === "hmac") {
       return {
         ok: false,
         error: this.makeOperatorError(
@@ -136,11 +165,13 @@ export class RelayServer {
       };
     }
 
-    // Verify HMAC over the hello payload (treats the hello as a request
-    // with auth_proof.signature on the operator field).
-    const verifyResult = verifyOperatorHmac({
+    // Dispatch to HMAC or CAF mTLS path per auth_proof.mode. Both modes
+    // coexist; pre-flag behavior preserved when cafVerifier is undefined.
+    const verifyResult = await verifyOperatorAuth({
       request: hello as unknown as Record<string, unknown>,
-      hmacKey,
+      hmacKey: hmacKey ?? undefined,
+      cafVerifier: this.opts.cafVerifier,
+      presentedCert: args.presentedCert,
     });
     if (!verifyResult.ok) {
       return {
@@ -190,6 +221,21 @@ export class RelayServer {
     | { ok: true; preview: ChangeSetPreview }
     | { ok: false; error: ErrorEventRelayToOperator }
   > {
+    const correlationResult = validateCorrelationId(
+      (args.request as { correlation_id?: unknown }).correlation_id,
+    );
+    if (!correlationResult.ok) {
+      return {
+        ok: false,
+        error: this.makeOperatorError(
+          args.request.request_id,
+          null,
+          "CORRELATION_ID_INVALID",
+          correlationResult.message,
+        ),
+      };
+    }
+
     const session = this.opts.sessions.getOperator(args.operator_session_id);
     if (session === undefined) {
       return {
@@ -308,7 +354,9 @@ export class RelayServer {
       return { ok: false, error: result.error };
     }
 
-    // Register inflight in the result router so endpoint frames fan out
+    // Register inflight in the result router so endpoint frames fan out.
+    // We thread correlation_id + started_at + payload_size_in through so
+    // the BR outcome reporter has everything it needs at terminal lifecycle.
     this.opts.router.registerInflight({
       command_id: pending.command_id,
       request_id: pending.request_id,
@@ -316,6 +364,9 @@ export class RelayServer {
       endpoint_id: pending.request.target_endpoint_id,
       endpoint_session_id: endpointSession.session_id,
       dispatch_request: { tool: pending.request.tool },
+      correlation_id: pending.request.correlation_id,
+      started_at: this.now().toISOString(),
+      payload_size_in: estimateRequestPayloadSize(pending.request.params),
     });
     endpointSession.inflight_command_ids.add(pending.command_id);
 
@@ -534,4 +585,44 @@ function parseFrame<T extends { type: string }>(
     );
   }
   return obj;
+}
+
+/**
+ * UTF-8 byte length of a JSON-serialised request params object. Used as
+ * the BR `payload_size_in` metric. Catches stringify failures and falls
+ * back to 0 since this is observability data, not protocol data.
+ */
+function estimateRequestPayloadSize(params: unknown): number {
+  if (params === null || params === undefined) return 0;
+  try {
+    return Buffer.byteLength(JSON.stringify(params), "utf-8");
+  } catch {
+    return 0;
+  }
+}
+
+function validateCorrelationId(
+  value: unknown,
+): { ok: true } | { ok: false; message: string } {
+  if (typeof value !== "string") {
+    return {
+      ok: false,
+      message: "DispatchRequest.correlation_id must be a string",
+    };
+  }
+  if (value.length < 1 || value.length > 256) {
+    return {
+      ok: false,
+      message:
+        "DispatchRequest.correlation_id length must be between 1 and 256",
+    };
+  }
+  if (!/^[\x21-\x7e]+$/.test(value)) {
+    return {
+      ok: false,
+      message:
+        "DispatchRequest.correlation_id must be printable ASCII without whitespace or control characters",
+    };
+  }
+  return { ok: true };
 }

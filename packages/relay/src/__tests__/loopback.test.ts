@@ -365,7 +365,7 @@ describe("P1.4 Stage 1.0 loopback validation", () => {
       operator: {
         kind: "human",
         id: "alice@local",
-        auth_proof: { kind: "hmac_signed_envelope", signature: "" },
+        auth_proof: { mode: "hmac", signature: "" },
       },
       tenant_id: "tenant-loopback",
       client_protocol_version: "v1",
@@ -393,7 +393,7 @@ describe("P1.4 Stage 1.0 loopback validation", () => {
       operator: {
         kind: "human",
         id: "alice@local",
-        auth_proof: { kind: "hmac_signed_envelope", signature: "" },
+        auth_proof: { mode: "hmac", signature: "" },
       },
       options: {
         auto_confirm: false,

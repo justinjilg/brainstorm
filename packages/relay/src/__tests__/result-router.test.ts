@@ -95,8 +95,30 @@ function registerInflight(
     endpoint_id: "ep-1",
     endpoint_session_id: opts?.endpoint_session_id ?? "s-1",
     dispatch_request: { tool: "echo" },
+    correlation_id: "corr-1",
+    started_at: "2026-04-27T12:00:00.000Z",
+    payload_size_in: 17,
   });
 }
+
+describe("ResultRouter — registerInflight validation", () => {
+  it("throws when BR outcome metadata is missing", () => {
+    const f = setup();
+    expect(() =>
+      f.router.registerInflight({
+        command_id: "cmd-1",
+        request_id: "req-1",
+        operator_session_id: "op-1",
+        endpoint_id: "ep-1",
+        endpoint_session_id: "s-1",
+        dispatch_request: { tool: "echo" },
+        correlation_id: "",
+        started_at: "2026-04-27T12:00:00.000Z",
+        payload_size_in: 1,
+      }),
+    ).toThrow(/valid correlation_id is required/);
+  });
+});
 
 describe("ResultRouter — CommandAck", () => {
   it("forwards ACK as ProgressEvent { lifecycle_state: 'started' }", () => {

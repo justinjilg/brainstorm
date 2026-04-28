@@ -195,7 +195,7 @@ async function buildSignedOperatorHello(args: {
     operator: {
       kind: "human",
       id: args.operator_id,
-      auth_proof: { kind: "hmac_signed_envelope", signature: "" },
+      auth_proof: { mode: "hmac", signature: "" },
     },
     tenant_id: args.tenant_id,
     client_protocol_version: "v1",
@@ -254,7 +254,7 @@ async function buildSignedDispatchRequest(args: {
     operator: {
       kind: "human",
       id: "alice@example.com",
-      auth_proof: { kind: "hmac_signed_envelope", signature: "" },
+      auth_proof: { mode: "hmac", signature: "" },
     },
     options: { auto_confirm: false, stream_progress: true, deadline_ms: 30000 },
   };

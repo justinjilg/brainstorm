@@ -69,9 +69,22 @@ export {
 export {
   verifyOperatorHmac,
   verifyConnectionProof,
+  verifyOperatorAuth,
   type OperatorHmacVerifyResult,
   type ConnectionProofVerifyResult,
+  type OperatorAuthVerifyResult,
 } from "./verification.js";
+export {
+  CafVerifier,
+  type CafVerifierOptions,
+  type CafVerifyResult,
+} from "./caf-verifier.js";
+export {
+  BrOutcomeReporter,
+  type BrOutcomeReporterOptions,
+  type DispatchOutcomeReport,
+  type DispatchOutcome,
+} from "./br-outcome-reporter.js";
 export { RelayServer, type RelayServerOptions } from "./relay-server.js";
 export {
   startWsBinding,

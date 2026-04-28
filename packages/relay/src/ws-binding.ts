@@ -173,6 +173,13 @@ function handleOperatorConnection(ctx: OperatorConnectionContext): void {
 
     if (operator_session_id === null) {
       // First frame must be OperatorHello
+      // CAF mTLS note: RelayServer.cafVerifier is the verification seam, but
+      // the real WS binding does not yet extract TLS peer certificates in
+      // v0.1.0. Full presentedCert plumbing requires Caddy mTLS termination
+      // plus `req.socket.getPeerCertificate(true)` on the upgrade request.
+      // When cafVerifier is configured and no cert is presented here, the
+      // relay returns AUTH_MODE_NOT_SUPPORTED, preserving pre-flag rejection
+      // behavior instead of accepting unauthenticated CAF claims.
       const accept = await ctx.server.acceptOperatorHello({
         transport,
         helloBytes: bytes,

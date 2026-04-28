@@ -293,7 +293,7 @@ async function operatorHello(
     operator: {
       kind: "human",
       id: "alice@local",
-      auth_proof: { kind: "hmac_signed_envelope", signature: "" },
+      auth_proof: { mode: "hmac", signature: "" },
     },
     tenant_id: "tenant-stub",
     client_protocol_version: "v1",
@@ -330,7 +330,7 @@ async function operatorDispatch(args: {
     operator: {
       kind: "human",
       id: "alice@local",
-      auth_proof: { kind: "hmac_signed_envelope", signature: "" },
+      auth_proof: { mode: "hmac", signature: "" },
     },
     options: {
       auto_confirm: false,
