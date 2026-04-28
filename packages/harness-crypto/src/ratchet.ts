@@ -1,5 +1,12 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  readdirSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
+import { randomBytes } from "node:crypto";
 import TOML from "@iarna/toml";
 import { z } from "zod";
 
@@ -298,7 +305,6 @@ export function findActiveRatchet(
   if (!existsSync(ratchetsDir)) return null;
   // Read every sentinel; quick because the count is small (at most one
   // per concurrent ratchet operation).
-  const { readdirSync } = require("node:fs") as typeof import("node:fs");
   let files: string[];
   try {
     files = readdirSync(ratchetsDir);
@@ -383,10 +389,8 @@ export function verifyRecipientSetCoherence(opts: {
 // ── helpers ─────────────────────────────────────────────────
 
 function randomSlug(): string {
-  // 12 chars of url-safe randomness — small enough for a sentinel filename,
+  // 16 chars of hex randomness — small enough for a sentinel filename,
   // large enough to avoid collisions. Avoids randomUUID() so the slug
   // matches the schema regex /^[a-z0-9_-]+$/.
-  const { randomBytes } =
-    require("node:crypto") as typeof import("node:crypto");
   return randomBytes(8).toString("hex");
 }
