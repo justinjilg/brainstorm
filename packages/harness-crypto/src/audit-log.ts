@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { createHash } from "node:crypto";
 
 /**
  * Audit log writer for the harness.
@@ -207,9 +208,5 @@ export function auditLogPath(harnessRoot: string): string {
 }
 
 function sha256(content: string): string {
-  // Avoid importing node:crypto module at the top to keep the surface
-  // narrow; this is the only crypto call in this file.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { createHash } = require("node:crypto") as typeof import("node:crypto");
   return createHash("sha256").update(content).digest("hex");
 }
