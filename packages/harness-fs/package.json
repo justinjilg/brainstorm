@@ -1,0 +1,31 @@
+{
+  "name": "@brainst0rm/harness-fs",
+  "version": "0.13.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@brainst0rm/shared": "0.13.0",
+    "@iarna/toml": "^2.2",
+    "chokidar": "^4"
+  },
+  "devDependenciesNote": "@types/iarna__toml is available in workspace root",
+  "devDependencies": {
+    "@types/iarna__toml": "^2.0",
+    "tsup": "^8",
+    "typescript": "^5.7",
+    "vitest": "^3"
+  },
+  "description": "Harness filesystem operations: atomic write-through with WAL, file watcher, reconciliation primitives (per spec ## Index Coherence)",
+  "license": "Apache-2.0"
+}
