@@ -250,11 +250,65 @@ The AI's first guided-fill question will iterate on this.
 `,
   );
 
-  // Self-describing harness metadata (Decision #3)
+  // Self-describing harness metadata (Decision #3 + plan item 8).
+  // .harness/schema.toml records the universal-skeleton folder list + version
+  // so future migrations know what shape this harness is on. .harness/
+  // archetype.toml records which overlay package was applied (or "none" for
+  // bare init).
+  const createdAt = new Date().toISOString();
   writeFileSync(
     join(root, ".harness", "schema.toml"),
-    `schema_version = "${BUSINESS_SCHEMA_VERSION}"
-created_at     = ${new Date().toISOString().replace("T", "T").slice(0, 19)}
+    `# Self-describing harness metadata.
+# Record what universal-skeleton version this harness was bootstrapped with
+# so migration tooling knows what shape to expect.
+
+schema_version = "${BUSINESS_SCHEMA_VERSION}"
+created_at     = "${createdAt}"
+
+# Universal seven-folder skeleton — the load-bearing structure every
+# harness inherits regardless of archetype. Listed here so the migration
+# tool can detect missing/extra top-level folders and prompt accordingly.
+universal_folders = [
+  "identity",
+  "team",
+  "customers",
+  "products",
+  "operations",
+  "market",
+  "governance",
+]
+`,
+  );
+
+  writeFileSync(
+    join(root, ".harness", "archetype.toml"),
+    `# Active archetype manifest.
+# Records which overlay package was applied at init time (if any) and what
+# files it materialized. Used by upgrade tooling to compare against newer
+# archetype versions and surface drift.
+
+archetype = "${effectiveArchetype}"
+${
+  template
+    ? `template_slug    = "${template.slug}"
+template_package = "@brainst0rm/archetype-${template.slug}"
+files_materialized = ${template.files.length}`
+    : `# No starter template applied — bare progressive bootstrap (Decision #2).
+template_slug      = ""
+files_materialized = 0`
+}
+applied_at = "${createdAt}"
+`,
+  );
+
+  writeFileSync(
+    join(root, ".harness", ".gitignore"),
+    `# Local-only derived artifacts under .harness/ should not be committed.
+# Per Decision #11 — index is per-user; sentinels and locks are per-machine.
+
+index.db
+index.db-*
+locks/
 `,
   );
 
