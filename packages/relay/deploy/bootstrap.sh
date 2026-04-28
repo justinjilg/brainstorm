@@ -109,9 +109,13 @@ if [[ ! -d "$INSTALL_DIR/.git" ]]; then
   rm -rf "$INSTALL_DIR"
   git clone --depth=1 --branch="$REPO_REF" "$REPO_URL" "$INSTALL_DIR"
 else
+  # `git fetch --depth=1 origin <ref>` populates FETCH_HEAD but does
+  # NOT always update `origin/<ref>` for non-default branches. Use
+  # FETCH_HEAD directly so re-running with BRAINSTORM_REPO_REF=feature
+  # branches works without depending on remote-tracking refs being
+  # established. (See issue #284 — third deploy bug.)
   git -C "$INSTALL_DIR" fetch --depth=1 origin "$REPO_REF"
-  git -C "$INSTALL_DIR" checkout "$REPO_REF"
-  git -C "$INSTALL_DIR" reset --hard "origin/$REPO_REF"
+  git -C "$INSTALL_DIR" reset --hard FETCH_HEAD
 fi
 cd "$INSTALL_DIR"
 npm install --no-audit --no-fund
