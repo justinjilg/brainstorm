@@ -22,7 +22,7 @@ describe("SessionStore — operator sessions", () => {
       operator: {
         kind: "human",
         id: "alice",
-        auth_proof: { kind: "hmac_signed_envelope", signature: "x" },
+        auth_proof: { mode: "hmac", signature: "x" },
       },
       tenant_id: "tenant-1",
       opened_at: new Date().toISOString(),
@@ -40,7 +40,7 @@ describe("SessionStore — operator sessions", () => {
       operator: {
         kind: "human" as const,
         id: "alice",
-        auth_proof: { kind: "hmac_signed_envelope" as const, signature: "x" },
+        auth_proof: { mode: "hmac" as const, signature: "x" },
       },
       tenant_id: "tenant-1",
       opened_at: new Date().toISOString(),
@@ -58,7 +58,7 @@ describe("SessionStore — operator sessions", () => {
       operator: {
         kind: "human",
         id: "alice",
-        auth_proof: { kind: "hmac_signed_envelope", signature: "x" },
+        auth_proof: { mode: "hmac", signature: "x" },
       },
       tenant_id: "tenant-1",
       opened_at: new Date().toISOString(),

@@ -121,6 +121,7 @@ function makeContext(
     tool: "echo",
     params: { message: "hello" },
     deadline_ms: 5_000,
+    correlation_id: "corr-test-001",
     ...overrides,
   };
 }
