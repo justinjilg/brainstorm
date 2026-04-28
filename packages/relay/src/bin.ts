@@ -14,8 +14,20 @@
 //   BRAINSTORM_RELAY_ADMIN_TOKEN     — required for /v1/admin/* endpoints
 //   BRAINSTORM_RELAY_TENANT_KEY_HEX  — Ed25519 private key for tenant-1 (32 bytes hex)
 //                                       For MVP single-tenant; multi-tenant is post-MVP.
-//   BRAINSTORM_RELAY_OPERATOR_HMAC_KEY_HEX — operator HMAC key (32 bytes hex)
-//                                       For MVP single-operator; multi-operator post-MVP.
+//   BRAINSTORM_RELAY_OPERATOR_API_KEY — operator api_key (any string, ≥16 chars).
+//                                       Per protocol §3.2 mandate: the relay
+//                                       derives the verify HMAC key via
+//                                       HKDF-SHA-256(api_key, salt, info) at
+//                                       boot. The SDK does the same on the
+//                                       operator side, producing the same
+//                                       32-byte key. Rotate this to rotate
+//                                       the operator credential.
+//   BRAINSTORM_RELAY_OPERATOR_HMAC_KEY_HEX — DEPRECATED 32-byte raw hex key.
+//                                       Only consulted if API_KEY is not set,
+//                                       used as-is (no HKDF). Kept for
+//                                       backward-compat with pre-2026-04-28
+//                                       deploys; will be removed in a future
+//                                       release. Issue #288.
 //   BRAINSTORM_RELAY_OPERATOR_ID     — operator id (default "operator@local")
 //   BRAINSTORM_RELAY_TENANT_ID       — tenant id (default "tenant-local")
 
@@ -33,6 +45,7 @@ import { DispatchOrchestrator } from "./dispatch.js";
 import { RelayServer } from "./relay-server.js";
 import { startWsBinding } from "./ws-binding.js";
 import { EndpointRegistry, startEnrollmentHttp } from "./enrollment.js";
+import { deriveOperatorHmacKey } from "./operator-key.js";
 
 interface Config {
   wsPort: number;
@@ -72,16 +85,46 @@ function loadConfig(): Config {
     );
   }
 
-  const operatorHmacHex = process.env.BRAINSTORM_RELAY_OPERATOR_HMAC_KEY_HEX;
-  if (!operatorHmacHex) {
-    throw new Error(
-      "BRAINSTORM_RELAY_OPERATOR_HMAC_KEY_HEX is required (32 bytes hex, HMAC key)",
-    );
-  }
-  const operatorHmacKey = hexToBytes(operatorHmacHex);
-  if (operatorHmacKey.length !== 32) {
-    throw new Error(
-      `BRAINSTORM_RELAY_OPERATOR_HMAC_KEY_HEX must decode to 32 bytes; got ${operatorHmacKey.length}`,
+  // Per protocol §3.2: HMAC key MUST be derived symmetrically via HKDF
+  // on both sides. Prefer BRAINSTORM_RELAY_OPERATOR_API_KEY (new): we
+  // derive the 32-byte verify key from it at boot, matching what the
+  // SDK does with the same api_key. Fall back to the legacy raw-hex
+  // env var (treated as the final 32-byte key, no HKDF) for back-compat
+  // with pre-2026-04-28 deploys. See issue #288.
+  const operatorId =
+    process.env.BRAINSTORM_RELAY_OPERATOR_ID ?? "operator@local";
+  const tenantId = process.env.BRAINSTORM_RELAY_TENANT_ID ?? "tenant-local";
+
+  const operatorApiKey = process.env.BRAINSTORM_RELAY_OPERATOR_API_KEY;
+  let operatorHmacKey: Uint8Array;
+  if (operatorApiKey) {
+    if (operatorApiKey.length < 16) {
+      throw new Error(
+        `BRAINSTORM_RELAY_OPERATOR_API_KEY must be at least 16 chars; got ${operatorApiKey.length}`,
+      );
+    }
+    operatorHmacKey = deriveOperatorHmacKey({
+      apiKey: operatorApiKey,
+      operatorId,
+      tenantId,
+    });
+  } else {
+    const operatorHmacHex = process.env.BRAINSTORM_RELAY_OPERATOR_HMAC_KEY_HEX;
+    if (!operatorHmacHex) {
+      throw new Error(
+        "BRAINSTORM_RELAY_OPERATOR_API_KEY is required (preferred), or " +
+          "the deprecated BRAINSTORM_RELAY_OPERATOR_HMAC_KEY_HEX (32 bytes hex)",
+      );
+    }
+    operatorHmacKey = hexToBytes(operatorHmacHex);
+    if (operatorHmacKey.length !== 32) {
+      throw new Error(
+        `BRAINSTORM_RELAY_OPERATOR_HMAC_KEY_HEX must decode to 32 bytes; got ${operatorHmacKey.length}`,
+      );
+    }
+    console.warn(
+      "[brainstorm-relay] WARNING: using deprecated BRAINSTORM_RELAY_OPERATOR_HMAC_KEY_HEX. " +
+        "Migrate to BRAINSTORM_RELAY_OPERATOR_API_KEY (HKDF-derived per protocol §3.2). See issue #288.",
     );
   }
 
@@ -93,8 +136,8 @@ function loadConfig(): Config {
     adminToken,
     tenantKeyBytes,
     operatorHmacKey,
-    operatorId: process.env.BRAINSTORM_RELAY_OPERATOR_ID ?? "operator@local",
-    tenantId: process.env.BRAINSTORM_RELAY_TENANT_ID ?? "tenant-local",
+    operatorId,
+    tenantId,
   };
 }
 

@@ -129,7 +129,11 @@ if [[ -f "$ENV_FILE" ]]; then
 else
   ADMIN_TOKEN=$(openssl rand -hex 32)
   TENANT_KEY_HEX=$(openssl rand -hex 32)
-  OPERATOR_HMAC_KEY_HEX=$(openssl rand -hex 32)
+  # Operator API key — input to HKDF-SHA-256 per protocol §3.2. Both
+  # the relay and the operator's SDK derive the 32-byte HMAC verify key
+  # from this string; rotate this to rotate the operator credential.
+  # 32 hex chars = 128 bits of entropy, plenty for HKDF input.
+  OPERATOR_API_KEY=$(openssl rand -hex 32)
 
   cat > "$ENV_FILE" <<EOF
 # Brainstorm relay environment
@@ -140,7 +144,7 @@ BRAINSTORM_RELAY_PORT_HTTP=$HTTP_PORT
 BRAINSTORM_RELAY_DATA_DIR=$DATA_DIR
 BRAINSTORM_RELAY_ADMIN_TOKEN=$ADMIN_TOKEN
 BRAINSTORM_RELAY_TENANT_KEY_HEX=$TENANT_KEY_HEX
-BRAINSTORM_RELAY_OPERATOR_HMAC_KEY_HEX=$OPERATOR_HMAC_KEY_HEX
+BRAINSTORM_RELAY_OPERATOR_API_KEY=$OPERATOR_API_KEY
 BRAINSTORM_RELAY_OPERATOR_ID=operator@local
 BRAINSTORM_RELAY_TENANT_ID=tenant-local
 EOF
@@ -197,7 +201,9 @@ cat <<EOF
 # HTTP endpoint:      https://$RELAY_HOSTNAME/v1/admin/endpoint/enroll
 # Admin token:        $(grep BRAINSTORM_RELAY_ADMIN_TOKEN "$ENV_FILE" | cut -d= -f2)
 # Tenant pubkey hex:  $TENANT_PUBKEY_HEX
-# Operator HMAC key:  $(grep BRAINSTORM_RELAY_OPERATOR_HMAC_KEY_HEX "$ENV_FILE" | cut -d= -f2)
+# Operator API key:   $(grep BRAINSTORM_RELAY_OPERATOR_API_KEY "$ENV_FILE" | cut -d= -f2)
+#                     (HKDF-SHA-256 input per protocol §3.2 — feed this
+#                      to the SDK as opts.apiKey, NOT the derived key)
 # Operator id:        operator@local
 # Tenant id:          tenant-local
 #
