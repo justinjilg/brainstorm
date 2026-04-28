@@ -99,6 +99,12 @@ chown "$SVC_USER:$SVC_GROUP" "$DATA_DIR" "$LOG_DIR"
 chmod 700 "$ETC_DIR"
 
 step "3. Cloning + building brainstorm relay"
+# Step 3 ends by `chown -R "$SVC_USER" "$INSTALL_DIR"`, so on second
+# (idempotent) runs the clone is owned by brainstorm-relay while we're
+# executing as root. git refuses cross-user repos by default ("dubious
+# ownership"); whitelist the install dir so re-runs pick up upstream
+# changes cleanly. (See issue #284.)
+git config --global --add safe.directory "$INSTALL_DIR"
 if [[ ! -d "$INSTALL_DIR/.git" ]]; then
   rm -rf "$INSTALL_DIR"
   git clone --depth=1 --branch="$REPO_REF" "$REPO_URL" "$INSTALL_DIR"
@@ -140,7 +146,17 @@ EOF
 fi
 
 step "5. Installing systemd unit"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# When this script runs via `curl ... | sudo bash`, BASH_SOURCE[0] is
+# empty and dirname/cd would either fail under set -u or pick `.`. By
+# step 5 the repo is always cloned at $INSTALL_DIR (step 3), so use
+# the in-tree deploy dir as the canonical companion-file source.
+# Fall back to BASH_SOURCE if it's set (clone-and-run invocation).
+# (See issue #284.)
+if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+else
+  SCRIPT_DIR="$INSTALL_DIR/packages/relay/deploy"
+fi
 install -m 644 "$SCRIPT_DIR/relay.service" /etc/systemd/system/brainstorm-relay.service
 systemctl daemon-reload
 

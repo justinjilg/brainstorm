@@ -23,6 +23,11 @@
         reverse_proxy 127.0.0.1:@@HTTP_PORT@@
     }
 
+    # Health check (unauthenticated, cheap — for K8s probes and external monitoring)
+    handle /v1/health {
+        reverse_proxy 127.0.0.1:@@HTTP_PORT@@
+    }
+
     # Default: 404 on anything not whitelisted above
     handle {
         respond "Not Found" 404

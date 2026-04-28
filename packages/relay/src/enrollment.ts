@@ -295,6 +295,23 @@ async function handleRequest(args: {
   const { req, res, opts } = args;
   const url = req.url ?? "";
 
+  // /v1/health — unauthenticated liveness probe.
+  // GET is intentionally cheap: no DB hit, no key crypto. Confirms the
+  // HTTP listener is up and the process is alive. Suitable for K8s
+  // liveness and readiness probes (Agent C's K8s deploy-target
+  // requirements doc flagged the absence of an HTTP probe as a deploy
+  // gap; this closes it without committing to a richer /v1/status
+  // surface yet). Non-GET on this path returns 405 (path exists for
+  // GET only) rather than falling through to the generic 404.
+  if (url === "/v1/health") {
+    if (req.method === "GET") {
+      sendJson(res, 200, { ok: true, ts: new Date().toISOString() });
+      return;
+    }
+    sendJson(res, 405, { code: "METHOD_NOT_ALLOWED" });
+    return;
+  }
+
   if (req.method !== "POST") {
     sendJson(res, 405, { code: "METHOD_NOT_ALLOWED" });
     return;
