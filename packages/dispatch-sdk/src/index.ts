@@ -362,7 +362,7 @@ export class Dispatcher {
       operator: {
         kind: "agent" as const,
         id: this.opts.agentId,
-        auth_proof: { kind: "hmac_signed_envelope" as const, signature: "" },
+        auth_proof: { mode: "hmac" as const, signature: "" },
         originating_human_id: this.opts.parentHumanId,
         ...(this.opts.delegatingPrincipalId !== undefined
           ? { delegating_principal_id: this.opts.delegatingPrincipalId }
@@ -395,7 +395,7 @@ export class Dispatcher {
       operator: {
         kind: "agent" as const,
         id: this.opts.agentId,
-        auth_proof: { kind: "hmac_signed_envelope" as const, signature: "" },
+        auth_proof: { mode: "hmac" as const, signature: "" },
         originating_human_id: this.opts.parentHumanId,
         ...(this.opts.delegatingPrincipalId !== undefined
           ? { delegating_principal_id: this.opts.delegatingPrincipalId }

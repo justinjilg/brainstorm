@@ -26,7 +26,7 @@ describe("dispatch helpers — operator HMAC roundtrip", () => {
       operator: {
         kind: "human",
         id: operatorId,
-        auth_proof: { kind: "hmac_signed_envelope", signature: "" },
+        auth_proof: { mode: "hmac", signature: "" },
       },
       tenant_id: tenantId,
       client_protocol_version: "v1",
@@ -71,7 +71,7 @@ describe("dispatch helpers — operator HMAC roundtrip", () => {
       operator: {
         kind: "human",
         id: "alice",
-        auth_proof: { kind: "hmac_signed_envelope", signature: "" },
+        auth_proof: { mode: "hmac", signature: "" },
       },
       options: {
         auto_confirm: false,
