@@ -69,4 +69,20 @@ contextBridge.exposeInMainWorld("brainstorm", {
   /** Run the customer-account drift detector. Returns list of intent ↔
    *  runtime mismatches plus accounts missing runtime.toml. */
   detectCustomerDrift: () => ipcRenderer.invoke("harness.detectCustomerDrift"),
+
+  /** Last N loop events from the live runner (default 50). */
+  recentHarnessLoopEvents: (limit?: number) =>
+    ipcRenderer.invoke("harness.recentLoopEvents", limit),
+
+  /** Force one immediate run of a named loop. */
+  runHarnessLoopOnce: (
+    loopName: "indexer" | "customer-drift" | "stale-watchdog",
+  ) => ipcRenderer.invoke("harness.runLoopOnce", loopName),
+
+  /** Subscribe to live loop events. Returns an unsubscribe fn. */
+  onHarnessLoopEvent: (cb: (event: unknown) => void) => {
+    const handler = (_e: unknown, payload: unknown) => cb(payload);
+    ipcRenderer.on("harness.loop-event", handler);
+    return () => ipcRenderer.removeListener("harness.loop-event", handler);
+  },
 });

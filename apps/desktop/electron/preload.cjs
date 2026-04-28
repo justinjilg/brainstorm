@@ -68,6 +68,21 @@ contextBridge.exposeInMainWorld("brainstorm", {
   /** Run the customer-account drift detector. */
   detectCustomerDrift: () => ipcRenderer.invoke("harness.detectCustomerDrift"),
 
+  /** Recent loop events from the live runner. */
+  recentHarnessLoopEvents: (limit) =>
+    ipcRenderer.invoke("harness.recentLoopEvents", limit),
+
+  /** Force one immediate run of a named loop. */
+  runHarnessLoopOnce: (loopName) =>
+    ipcRenderer.invoke("harness.runLoopOnce", loopName),
+
+  /** Subscribe to live loop events. Returns an unsubscribe fn. */
+  onHarnessLoopEvent: (cb) => {
+    const handler = (_e, payload) => cb(payload);
+    ipcRenderer.on("harness.loop-event", handler);
+    return () => ipcRenderer.removeListener("harness.loop-event", handler);
+  },
+
   /**
    * Query main for the current sticky backendReady state. Used at mount
    * time by useBackendReady to resolve a race where the backend emits
