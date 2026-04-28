@@ -19,6 +19,10 @@ import type {
 import type { SessionStore } from "./session-store.js";
 import type { LifecycleManager } from "./lifecycle.js";
 import type { AuditLog } from "./audit.js";
+import type {
+  BrOutcomeReporter,
+  DispatchOutcome,
+} from "./br-outcome-reporter.js";
 
 export interface InflightDispatch {
   command_id: string;
@@ -27,12 +31,28 @@ export interface InflightDispatch {
   endpoint_id: string;
   endpoint_session_id: string;
   dispatch_request: { tool: string }; // minimal context for fanout
+  /** Correlation id from the operator DispatchRequest. Forwarded as the
+   *  Idempotency-Key in BR outcome reports + threaded through audit. */
+  correlation_id: string;
+  /** ISO8601 timestamp the relay registered the dispatch (envelope sent).
+   *  Used to compute duration_ms in BR outcome reports. */
+  started_at: string;
+  /** Size in bytes of operator's params (for BR's payload_size_in metric). */
+  payload_size_in: number;
 }
 
 export interface ResultRouterOptions {
   sessions: SessionStore;
   lifecycle: LifecycleManager;
   audit: AuditLog;
+  /**
+   * Optional BR outcome reporter. When supplied, every terminal command
+   * lifecycle (completed/failed/timed_out) triggers a fire-and-forget POST
+   * to BR's `/v1/agents/${agentId}/dispatch-outcomes` endpoint. The
+   * reporter's failures are logged + dropped; this path does NOT block the
+   * audit chain or operator fanout.
+   */
+  brOutcomeReporter?: BrOutcomeReporter;
   now?: () => Date;
 }
 
@@ -55,6 +75,27 @@ export class ResultRouter {
     if (this.inflight.has(d.command_id)) {
       throw new Error(
         `ResultRouter: command_id ${d.command_id} already inflight`,
+      );
+    }
+    if (
+      typeof d.correlation_id !== "string" ||
+      !/^[\x21-\x7e]{1,256}$/.test(d.correlation_id)
+    ) {
+      throw new Error(
+        "ResultRouter: valid correlation_id is required for inflight dispatch",
+      );
+    }
+    if (typeof d.started_at !== "string" || d.started_at.length === 0) {
+      throw new Error(
+        "ResultRouter: started_at is required for inflight dispatch",
+      );
+    }
+    if (
+      typeof d.payload_size_in !== "number" ||
+      !Number.isFinite(d.payload_size_in)
+    ) {
+      throw new Error(
+        "ResultRouter: payload_size_in is required for inflight dispatch",
       );
     }
     this.inflight.set(d.command_id, d);
@@ -216,6 +257,18 @@ export class ResultRouter {
         evidence_hash: result.evidence_hash,
         ts: result.ts,
       };
+      // Fire-and-forget BR outcome report (terminal lifecycle).
+      this.reportToBr(inflight, {
+        outcome:
+          result.lifecycle_state === "completed" ? "completed" : "failed",
+        completed_at: result.ts,
+        success: result.lifecycle_state === "completed",
+        payload_size_out: estimatePayloadSize(
+          result.lifecycle_state === "completed" ? result.payload : null,
+        ),
+        error_class:
+          result.lifecycle_state === "failed" ? result.error.code : undefined,
+      });
       // Cleanup
       this.inflight.delete(result.command_id);
       return { kind: "operator_event", frame: op };
@@ -268,6 +321,15 @@ export class ResultRouter {
         message: err.message,
         ts: err.ts,
       };
+      // Fire-and-forget BR outcome report — endpoint-side reject-before-start
+      // is a `failed` terminal state from BR's analytics POV.
+      this.reportToBr(inflight, {
+        outcome: "failed",
+        completed_at: err.ts,
+        success: false,
+        payload_size_out: 0,
+        error_class: err.code,
+      });
       this.inflight.delete(err.command_id);
       return { kind: "operator_event", frame: op };
     });
@@ -302,14 +364,24 @@ export class ResultRouter {
         ),
       };
     }
+    const ackTimeoutTs = this.now().toISOString();
     const op: ErrorEventRelayToOperator = {
       type: "ErrorEvent",
       request_id: inflight.request_id,
       command_id,
       code: "ENDPOINT_NO_ACK",
       message: "Endpoint did not ACK the CommandEnvelope within T_ack_timeout",
-      ts: this.now().toISOString(),
+      ts: ackTimeoutTs,
     };
+    // Fire-and-forget BR outcome report — ack-timeout is the canonical
+    // `timed_out` terminal state.
+    this.reportToBr(inflight, {
+      outcome: "timed_out",
+      completed_at: ackTimeoutTs,
+      success: false,
+      payload_size_out: 0,
+      error_class: "ENDPOINT_NO_ACK",
+    });
     const target_operator_session_id = inflight.operator_session_id;
     this.inflight.delete(command_id);
     return {
@@ -317,6 +389,49 @@ export class ResultRouter {
       frame: op,
       target_operator_session_id,
     };
+  }
+
+  /**
+   * Build + fire a BR outcome report. No-op when no reporter configured.
+   * Failures are silent (logged inside the reporter); never throws.
+   *
+   * The agentId we report to is the endpoint_id — that's the agent
+   * identity in BR's federation model (per 12xnwqbb's design lock).
+   */
+  private reportToBr(
+    inflight: InflightDispatch,
+    args: {
+      outcome: DispatchOutcome;
+      completed_at: string;
+      success: boolean;
+      payload_size_out: number;
+      error_class?: string;
+    },
+  ): void {
+    const reporter = this.opts.brOutcomeReporter;
+    if (reporter === undefined) return;
+    const startedAt = inflight.started_at;
+    const startedMs = new Date(startedAt).getTime();
+    const completedMs = new Date(args.completed_at).getTime();
+    const duration_ms = Math.max(
+      0,
+      Number.isFinite(completedMs - startedMs) ? completedMs - startedMs : 0,
+    );
+    // Fire-and-forget: do NOT await. The reporter handles its own errors.
+    void reporter.report({
+      agentId: inflight.endpoint_id,
+      correlation_id: inflight.correlation_id,
+      outcome: args.outcome,
+      started_at: startedAt,
+      completed_at: args.completed_at,
+      duration_ms,
+      success: args.success,
+      payload_size_in: inflight.payload_size_in,
+      payload_size_out: args.payload_size_out,
+      ...(args.error_class !== undefined
+        ? { error_class: args.error_class }
+        : {}),
+    });
   }
 
   /**
@@ -409,6 +524,23 @@ type RoutingInner<F> =
   | { kind: "operator_event"; frame: F }
   | { kind: "error"; error: ErrorEventRelayToOperator }
   | null;
+
+/**
+ * Best-effort byte-size estimate of a payload object for BR's
+ * `payload_size_out` metric. JSON-stringified UTF-8 length. Returns 0 for
+ * null/undefined (the spec uses 0 to mean "no payload"). Catches stringify
+ * failures (e.g. circular refs) and returns 0 + logs would happen at the
+ * caller's logger if surfaced, but here we silently fall back since this
+ * metric is non-critical.
+ */
+function estimatePayloadSize(p: unknown): number {
+  if (p === null || p === undefined) return 0;
+  try {
+    return Buffer.byteLength(JSON.stringify(p), "utf-8");
+  } catch {
+    return 0;
+  }
+}
 
 export type RoutingResult<F> =
   | {

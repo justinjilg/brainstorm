@@ -104,6 +104,21 @@ export class DispatchOrchestrator {
     | { ok: true; command_id: string; preview: ChangeSetPreview }
     | { ok: false; error: ErrorEventRelayToOperator }
   > {
+    const correlationResult = validateCorrelationId(
+      (ctx.request as { correlation_id?: unknown }).correlation_id,
+    );
+    if (!correlationResult.ok) {
+      return {
+        ok: false,
+        error: this.makeError(
+          ctx.request.request_id,
+          null,
+          "CORRELATION_ID_INVALID",
+          correlationResult.message,
+        ),
+      };
+    }
+
     // Tenant consistency check — operator's tenant_id must match dispatch's
     if (ctx.request.tenant_id !== ctx.tenant_id) {
       return {
@@ -415,6 +430,32 @@ function stripAuthProof(operator: Operator): Omit<Operator, "auth_proof"> {
   const { auth_proof: _strip, ...rest } = operator;
   void _strip;
   return rest as Omit<Operator, "auth_proof">;
+}
+
+function validateCorrelationId(
+  value: unknown,
+): { ok: true } | { ok: false; message: string } {
+  if (typeof value !== "string") {
+    return {
+      ok: false,
+      message: "DispatchRequest.correlation_id must be a string",
+    };
+  }
+  if (value.length < 1 || value.length > 256) {
+    return {
+      ok: false,
+      message:
+        "DispatchRequest.correlation_id length must be between 1 and 256",
+    };
+  }
+  if (!/^[\x21-\x7e]+$/.test(value)) {
+    return {
+      ok: false,
+      message:
+        "DispatchRequest.correlation_id must be printable ASCII without whitespace or control characters",
+    };
+  }
+  return { ok: true };
 }
 
 export { computePreviewHash };

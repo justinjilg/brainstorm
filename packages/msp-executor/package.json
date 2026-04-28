@@ -1,0 +1,27 @@
+{
+  "name": "@brainst0rm/msp-executor",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "ToolExecutor implementation for @brainst0rm/endpoint-stub that bridges relay-side dispatch into BrainstormMSP's god-mode REST API. Translates a CommandEnvelope into POST /api/v1/god-mode/execute, preserving the relay's command_id end-to-end via X-Brainstorm-Command-Id and Idempotency-Key (which MSP enforces to be equal).",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@brainst0rm/endpoint-stub": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

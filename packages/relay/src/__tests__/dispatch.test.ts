@@ -105,7 +105,7 @@ function makeDispatchRequest(
     operator: {
       kind: "human",
       id: "alice@example.com",
-      auth_proof: { kind: "hmac_signed_envelope", signature: "stub" },
+      auth_proof: { mode: "hmac", signature: "stub" },
     },
     options: {
       auto_confirm: false,
@@ -137,6 +137,22 @@ function registerEndpoint(
 // ----- tests ---------------------------------------------------------------
 
 describe("DispatchOrchestrator.beginDispatch", () => {
+  it("fails CORRELATION_ID_INVALID when correlation_id is empty", async () => {
+    const { ctx } = await makeTenantCtx();
+    const { orch, sessions } = await makeOrchestrator({ tenantCtx: ctx });
+    registerEndpoint(sessions, { session_id: "s-1", endpoint_id: "ep-1" });
+    const request = makeDispatchRequest({ correlation_id: "" });
+    const r = await orch.beginDispatch({
+      operator_session_id: "op-1",
+      operator: request.operator,
+      tenant_id: "tenant-1",
+      request_bytes: new TextEncoder().encode(JSON.stringify(request)),
+      request,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe("CORRELATION_ID_INVALID");
+  });
+
   it("happy path: returns command_id + ChangeSetPreview with preview_hash", async () => {
     const { ctx } = await makeTenantCtx();
     const { orch, sessions, lifecycle } = await makeOrchestrator({
