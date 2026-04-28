@@ -78,7 +78,15 @@ export class BrOutcomeReporter {
   private inflightCount_ = 0;
 
   constructor(opts: BrOutcomeReporterOptions) {
-    this.baseUrl = opts.baseUrl.replace(/\/+$/, "");
+    // Strip trailing slashes without a regex — CodeQL flags `/\/+$/` as
+    // polynomial-on-uncontrolled-data even though the input is config-time
+    // (operator-supplied baseUrl), not network-sourced. A simple loop is
+    // unambiguously linear and side-steps the alert.
+    let normalisedBaseUrl = opts.baseUrl;
+    while (normalisedBaseUrl.endsWith("/")) {
+      normalisedBaseUrl = normalisedBaseUrl.slice(0, -1);
+    }
+    this.baseUrl = normalisedBaseUrl;
     this.apiKey = opts.apiKey;
     this.fetchImpl =
       opts.fetch ??
