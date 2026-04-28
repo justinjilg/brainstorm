@@ -1,4 +1,11 @@
 import type { AgentEvent } from "./lib/api-client";
+import type { OpenDialogResult } from "./lib/harness-types";
+
+// Result returned by detectHarness / parseHarness IPC routes.
+// Matches the discriminated union main.ts emits — see harness-types.ts
+// for the canonical OpenDialogResult; detect/parse omit the "cancel"
+// variant since they don't open dialogs.
+type DetectOrParseResult = Exclude<OpenDialogResult, { kind: "cancel" }>;
 
 interface BrainstormBridge {
   request(method: string, params?: Record<string, unknown>): Promise<unknown>;
@@ -14,6 +21,28 @@ interface BrainstormBridge {
     callback: (payload: { recovery: boolean }) => void,
   ): () => void;
   openFolder(): Promise<string | null>;
+  /** Open folder picker → detect harness → return discriminated result. */
+  openHarnessDialog(): Promise<OpenDialogResult>;
+  /** Walk up from path looking for business.toml; return result. */
+  detectHarness(path: string): Promise<DetectOrParseResult>;
+  /** Re-parse a known harness's manifest. */
+  parseHarness(root: string): Promise<DetectOrParseResult>;
+  /** Open the index session for a harness; runs cold-open verify. */
+  openHarnessSession(root: string): Promise<
+    | {
+        ok: true;
+        harnessId: string;
+        verify: {
+          clean: number;
+          stale: string[];
+          missing: string[];
+          unindexedCount: number;
+        };
+      }
+    | { ok: false; error: string }
+  >;
+  /** Close the active index session. */
+  closeHarnessSession(): Promise<{ ok: true }>;
   /**
    * Query main for the current sticky backendReady flag. Used at mount
    * to resolve the race where main emits "backend-ready" before React

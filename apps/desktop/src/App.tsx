@@ -28,6 +28,8 @@ import { useBackendReady } from "./hooks/useBackendReady";
 import { BootSplash } from "./components/BootSplash";
 import { useErrorToast } from "./hooks/useErrorToast";
 import { useToast } from "./components/Toast";
+import { BusinessHarnessView } from "./components/harness/BusinessHarnessView";
+import type { ActiveHarness } from "./lib/harness-types";
 
 export type AppMode =
   | "chat"
@@ -60,6 +62,13 @@ export function App() {
   const [currentProject, setCurrentProject] = useState<string | null>(
     null, // Set when user selects a project folder
   );
+  // Active harness — discriminated union over { none | code | business }.
+  // Additive to `currentProject`: when activeHarness.kind === "business",
+  // BusinessHarnessView renders in place of the chat workspace; the
+  // existing code-project flow continues to use `currentProject` for cwd.
+  const [activeHarness, setActiveHarness] = useState<ActiveHarness>({
+    kind: "none",
+  });
   const [team, setTeam] = useState<TeamAgent[]>([]);
 
   // State from agent events
@@ -281,13 +290,75 @@ export function App() {
           recentProjects={[]}
           onProjectSelect={setCurrentProject}
           onOpenFolder={async () => {
-            if ("brainstorm" in window && window.brainstorm?.openFolder) {
-              const path = await window.brainstorm!.openFolder();
-              if (path) setCurrentProject(path);
+            // Prefer the harness-aware dialog: opens folder picker, walks
+            // up looking for business.toml, returns a discriminated result.
+            // Falls back to plain folder picker in browser dev mode.
+            const bridge = window.brainstorm;
+            if (bridge?.openHarnessDialog) {
+              const result = await bridge.openHarnessDialog();
+              switch (result.kind) {
+                case "cancel":
+                  return;
+                case "business":
+                  setActiveHarness({
+                    kind: "business",
+                    root: result.root,
+                    manifest: result.manifest,
+                    sessionVerify: null, // populated below
+                  });
+                  setCurrentProject(result.root);
+                  // Open the index session in the background; update the
+                  // ActiveHarness when verify completes. Failure is non-fatal
+                  // — the harness still renders with sessionVerify=null.
+                  if (bridge.openHarnessSession) {
+                    bridge
+                      .openHarnessSession(result.root)
+                      .then((session) => {
+                        if (session.ok) {
+                          setActiveHarness((prev) =>
+                            prev.kind === "business" &&
+                            prev.root === result.root
+                              ? { ...prev, sessionVerify: session.verify }
+                              : prev,
+                          );
+                        } else {
+                          toast.push(
+                            `Index session failed: ${session.error}`,
+                            "error",
+                          );
+                        }
+                      })
+                      .catch((err: unknown) => {
+                        toast.push(
+                          `Index session error: ${err instanceof Error ? err.message : String(err)}`,
+                          "error",
+                        );
+                      });
+                  }
+                  return;
+                case "code":
+                  setActiveHarness({ kind: "code", root: result.root });
+                  setCurrentProject(result.root);
+                  return;
+                case "error":
+                  toast.push(
+                    `business.toml at ${result.root} failed to load: ${result.message}`,
+                    "error",
+                  );
+                  return;
+              }
+            } else if (bridge?.openFolder) {
+              const path = await bridge.openFolder();
+              if (path) {
+                setCurrentProject(path);
+                setActiveHarness({ kind: "code", root: path });
+              }
             } else {
-              // Browser dev mode — prompt fallback
               const path = prompt("Enter project path:");
-              if (path) setCurrentProject(path);
+              if (path) {
+                setCurrentProject(path);
+                setActiveHarness({ kind: "code", root: path });
+              }
             }
           }}
           team={team}
@@ -309,160 +380,185 @@ export function App() {
 
         {/* Main panel */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          {/* Chat always mounted to preserve message history across mode switches */}
-          <div style={{ display: mode === "chat" ? "contents" : "none" }}>
-            <ErrorBoundary fallbackLabel="Chat">
-              <ChatView
-                conversationId={activeConversationId}
-                activeModelId={activeModelId ?? undefined}
-                activeRole={activeRole ?? undefined}
-                activeSkills={activeSkills}
-                onCostUpdate={setSessionCost}
-                onModelUpdate={(model, provider) => {
-                  setActiveModel(model);
-                  setActiveProvider(provider);
-                }}
-                onContextUpdate={setContextPercent}
-                onNewConversation={async () => {
-                  const conv = await createConversation();
-                  if (conv) setActiveConversationId(conv.id);
-                }}
-                onModeChange={setMode}
-                onOpenPalette={() => setPaletteOpen(true)}
-                onAgentEvent={(event) => {
-                  // Capture every routing event into routingDecisions so
-                  // the Dashboard Routing tab has real data to render.
-                  // The trace view captures them too, but this slice is
-                  // scoped to model-pick metadata (no tool noise).
-                  if (event.type === "routing") {
-                    const decision: import("./components/dashboard/DashboardView").RoutingDecision =
-                      {
-                        id: `route-${routingIdCounter.current++}`,
-                        timestamp: Date.now(),
-                        modelName:
-                          (event as any).modelName ??
-                          (event as any).model ??
-                          activeModel,
-                        provider: (event as any).provider ?? activeProvider,
-                        strategy: (event as any).strategy,
-                        reason: (event as any).reason,
-                        cost: (event as any).cost,
-                      };
-                    setRoutingDecisions((prev) => [
-                      ...prev.slice(-199),
-                      decision,
-                    ]);
-                  }
-                  // Capture events for trace view
-                  if (
-                    [
-                      "tool-call-start",
-                      "tool-result",
-                      "routing",
-                      "error",
-                    ].includes(event.type)
-                  ) {
-                    const traceEvent: import("./components/trace/TraceView").TraceEvent =
-                      {
-                        id: `trace-${traceIdCounter.current++}`,
-                        timestamp: Date.now(),
-                        agentRole: activeRole ?? "default",
-                        agentModel: activeModel,
-                        provider: activeProvider,
-                        type:
-                          event.type === "tool-call-start"
-                            ? "tool-call"
-                            : event.type === "tool-result"
-                              ? "tool-result"
-                              : event.type === "routing"
-                                ? "routing"
-                                : "error",
-                        toolName: event.toolName ?? event.name,
-                        toolArgs: event.input
-                          ? JSON.stringify(event.input)
-                          : undefined,
-                        toolOutput: event.output
-                          ? String(event.output)
-                          : undefined,
-                        toolDurationMs: event.durationMs,
-                        toolSuccess: event.ok !== false,
-                        cost: event.cost,
-                      };
-                    setTraceEvents((prev) => [...prev.slice(-499), traceEvent]);
-                  }
+          {/* Business harness view takes precedence over mode-switched
+              workspace when an active business harness is selected.
+              Per the spec: the harness is the primary navigation root;
+              its view replaces the chat workspace until dismissed. */}
+          {activeHarness.kind === "business" ? (
+            <ErrorBoundary fallbackLabel="Business Harness">
+              <BusinessHarnessView
+                root={activeHarness.root}
+                manifest={activeHarness.manifest}
+                sessionVerify={activeHarness.sessionVerify}
+                onClose={() => {
+                  // Close the index session before clearing state so SQLite
+                  // WAL mode doesn't leak journal files between sessions.
+                  window.brainstorm?.closeHarnessSession?.();
+                  setActiveHarness({ kind: "none" });
                 }}
               />
             </ErrorBoundary>
-          </div>
-          {mode === "plan" && (
-            <ErrorBoundary fallbackLabel="Plan">
-              {/* PlanView was rewritten to drop the fake phase pipeline;
+          ) : (
+            <>
+              {/* Chat always mounted to preserve message history across mode switches */}
+              <div style={{ display: mode === "chat" ? "contents" : "none" }}>
+                <ErrorBoundary fallbackLabel="Chat">
+                  <ChatView
+                    conversationId={activeConversationId}
+                    activeModelId={activeModelId ?? undefined}
+                    activeRole={activeRole ?? undefined}
+                    activeSkills={activeSkills}
+                    onCostUpdate={setSessionCost}
+                    onModelUpdate={(model, provider) => {
+                      setActiveModel(model);
+                      setActiveProvider(provider);
+                    }}
+                    onContextUpdate={setContextPercent}
+                    onNewConversation={async () => {
+                      const conv = await createConversation();
+                      if (conv) setActiveConversationId(conv.id);
+                    }}
+                    onModeChange={setMode}
+                    onOpenPalette={() => setPaletteOpen(true)}
+                    onAgentEvent={(event) => {
+                      // Capture every routing event into routingDecisions so
+                      // the Dashboard Routing tab has real data to render.
+                      // The trace view captures them too, but this slice is
+                      // scoped to model-pick metadata (no tool noise).
+                      if (event.type === "routing") {
+                        const decision: import("./components/dashboard/DashboardView").RoutingDecision =
+                          {
+                            id: `route-${routingIdCounter.current++}`,
+                            timestamp: Date.now(),
+                            modelName:
+                              (event as any).modelName ??
+                              (event as any).model ??
+                              activeModel,
+                            provider: (event as any).provider ?? activeProvider,
+                            strategy: (event as any).strategy,
+                            reason: (event as any).reason,
+                            cost: (event as any).cost,
+                          };
+                        setRoutingDecisions((prev) => [
+                          ...prev.slice(-199),
+                          decision,
+                        ]);
+                      }
+                      // Capture events for trace view
+                      if (
+                        [
+                          "tool-call-start",
+                          "tool-result",
+                          "routing",
+                          "error",
+                        ].includes(event.type)
+                      ) {
+                        const traceEvent: import("./components/trace/TraceView").TraceEvent =
+                          {
+                            id: `trace-${traceIdCounter.current++}`,
+                            timestamp: Date.now(),
+                            agentRole: activeRole ?? "default",
+                            agentModel: activeModel,
+                            provider: activeProvider,
+                            type:
+                              event.type === "tool-call-start"
+                                ? "tool-call"
+                                : event.type === "tool-result"
+                                  ? "tool-result"
+                                  : event.type === "routing"
+                                    ? "routing"
+                                    : "error",
+                            toolName: event.toolName ?? event.name,
+                            toolArgs: event.input
+                              ? JSON.stringify(event.input)
+                              : undefined,
+                            toolOutput: event.output
+                              ? String(event.output)
+                              : undefined,
+                            toolDurationMs: event.durationMs,
+                            toolSuccess: event.ok !== false,
+                            cost: event.cost,
+                          };
+                        setTraceEvents((prev) => [
+                          ...prev.slice(-499),
+                          traceEvent,
+                        ]);
+                      }
+                    }}
+                  />
+                </ErrorBoundary>
+              </div>
+              {mode === "plan" && (
+                <ErrorBoundary fallbackLabel="Plan">
+                  {/* PlanView was rewritten to drop the fake phase pipeline;
                   task selection isn't a real affordance in the new shape
                   (no per-task entities to inspect), so no callback. */}
-              <PlanView />
-            </ErrorBoundary>
-          )}
-          {mode === "trace" && (
-            <ErrorBoundary fallbackLabel="Trace">
-              <TraceView
-                events={traceEvents}
-                onEventSelect={(event) => {
-                  setDetailOpen(true);
-                  setInspectorContext({ type: "trace-event", event });
-                }}
-              />
-            </ErrorBoundary>
-          )}
-          {mode === "dashboard" && (
-            <ErrorBoundary fallbackLabel="Dashboard">
-              <DashboardView
-                sessionCost={sessionCost}
-                routingDecisions={routingDecisions}
-              />
-            </ErrorBoundary>
-          )}
-          {mode === "models" && (
-            <ErrorBoundary fallbackLabel="Models">
-              <ModelsView
-                onModelSelect={(id, name, prov) => {
-                  // Set the routing id too, not just the display name. Without
-                  // setActiveModelId, ChatView keeps sending the prior modelId
-                  // to the router and the status rail "switch" is cosmetic.
-                  setActiveModel(name);
-                  setActiveProvider(prov);
-                  setActiveModelId(id);
-                  setMode("chat");
-                }}
-              />
-            </ErrorBoundary>
-          )}
-          {mode === "memory" && (
-            <ErrorBoundary fallbackLabel="Memory">
-              <MemoryView />
-            </ErrorBoundary>
-          )}
-          {mode === "skills" && (
-            <ErrorBoundary fallbackLabel="Skills">
-              <SkillsView
-                activeSkills={activeSkills}
-                onActiveSkillsChange={setActiveSkills}
-              />
-            </ErrorBoundary>
-          )}
-          {mode === "workflows" && (
-            <ErrorBoundary fallbackLabel="Workflows">
-              <WorkflowsView />
-            </ErrorBoundary>
-          )}
-          {mode === "security" && (
-            <ErrorBoundary fallbackLabel="Security">
-              <SecurityView />
-            </ErrorBoundary>
-          )}
-          {mode === "config" && (
-            <ErrorBoundary fallbackLabel="Config">
-              <ConfigView />
-            </ErrorBoundary>
+                  <PlanView />
+                </ErrorBoundary>
+              )}
+              {mode === "trace" && (
+                <ErrorBoundary fallbackLabel="Trace">
+                  <TraceView
+                    events={traceEvents}
+                    onEventSelect={(event) => {
+                      setDetailOpen(true);
+                      setInspectorContext({ type: "trace-event", event });
+                    }}
+                  />
+                </ErrorBoundary>
+              )}
+              {mode === "dashboard" && (
+                <ErrorBoundary fallbackLabel="Dashboard">
+                  <DashboardView
+                    sessionCost={sessionCost}
+                    routingDecisions={routingDecisions}
+                  />
+                </ErrorBoundary>
+              )}
+              {mode === "models" && (
+                <ErrorBoundary fallbackLabel="Models">
+                  <ModelsView
+                    onModelSelect={(id, name, prov) => {
+                      // Set the routing id too, not just the display name. Without
+                      // setActiveModelId, ChatView keeps sending the prior modelId
+                      // to the router and the status rail "switch" is cosmetic.
+                      setActiveModel(name);
+                      setActiveProvider(prov);
+                      setActiveModelId(id);
+                      setMode("chat");
+                    }}
+                  />
+                </ErrorBoundary>
+              )}
+              {mode === "memory" && (
+                <ErrorBoundary fallbackLabel="Memory">
+                  <MemoryView />
+                </ErrorBoundary>
+              )}
+              {mode === "skills" && (
+                <ErrorBoundary fallbackLabel="Skills">
+                  <SkillsView
+                    activeSkills={activeSkills}
+                    onActiveSkillsChange={setActiveSkills}
+                  />
+                </ErrorBoundary>
+              )}
+              {mode === "workflows" && (
+                <ErrorBoundary fallbackLabel="Workflows">
+                  <WorkflowsView />
+                </ErrorBoundary>
+              )}
+              {mode === "security" && (
+                <ErrorBoundary fallbackLabel="Security">
+                  <SecurityView />
+                </ErrorBoundary>
+              )}
+              {mode === "config" && (
+                <ErrorBoundary fallbackLabel="Config">
+                  <ConfigView />
+                </ErrorBoundary>
+              )}
+            </>
           )}
         </div>
 

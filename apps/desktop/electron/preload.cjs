@@ -42,6 +42,24 @@ contextBridge.exposeInMainWorld("brainstorm", {
   /** Open a native folder picker dialog. */
   openFolder: () => ipcRenderer.invoke("open-folder"),
 
+  /** Open folder picker, walk up looking for business.toml, return
+   * discriminated result. See src/lib/harness-types.ts#OpenDialogResult. */
+  openHarnessDialog: () => ipcRenderer.invoke("harness.openDialog"),
+
+  /** Detect a harness at or above the given path. */
+  detectHarness: (path) => ipcRenderer.invoke("harness.detect", path),
+
+  /** Re-parse a harness's business.toml. */
+  parseHarness: (root) => ipcRenderer.invoke("harness.parse", root),
+
+  /** Open the index session for a harness root. Runs cold-open verify
+   *  and returns drift counts (clean/stale/missing) for UI display. */
+  openHarnessSession: (root) =>
+    ipcRenderer.invoke("harness.openSession", root),
+
+  /** Close the active index session. Called on harness close. */
+  closeHarnessSession: () => ipcRenderer.invoke("harness.closeSession"),
+
   /**
    * Query main for the current sticky backendReady state. Used at mount
    * time by useBackendReady to resolve a race where the backend emits
