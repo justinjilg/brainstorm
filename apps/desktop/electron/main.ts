@@ -20,6 +20,14 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
+import { detectBusinessHarness, loadBusinessHarness } from "@brainst0rm/config";
+import {
+  HarnessIndexStore,
+  defaultIndexPath,
+  type VerifyResult,
+} from "@brainst0rm/harness-index";
+import { HarnessWriter } from "@brainst0rm/harness-fs";
+import { createHash } from "node:crypto";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -469,6 +477,183 @@ function registerIPC(): void {
     });
     if (result.canceled || result.filePaths.length === 0) return null;
     return result.filePaths[0];
+  });
+
+  // ── Business harness IPC ──────────────────────────────────────
+  // Per the spec at ~/.claude/plans/snuggly-sleeping-hinton.md, the
+  // desktop's primary navigation root is the harness — a folder
+  // containing business.toml. These three routes detect, parse, and
+  // open harnesses; the renderer composes them into the harness picker.
+
+  /**
+   * Detect a harness by walking up from a given path looking for
+   * business.toml. Returns:
+   *   { kind: "business", root, manifest }  — found and valid
+   *   { kind: "code", root: path }          — no business.toml found
+   *   { kind: "error", root, error, message } — found but invalid
+   */
+  ipcMain.handle("harness.detect", async (_event, path: string) => {
+    const detectResult = detectBusinessHarness(path);
+    if (!detectResult) {
+      // No harness anywhere upward; treat as a code-project root
+      return { kind: "code", root: path };
+    }
+    if (detectResult.ok === true) {
+      return {
+        kind: "business",
+        root: detectResult.root,
+        manifest: detectResult.manifest,
+      };
+    } else {
+      return {
+        kind: "error",
+        root: detectResult.root,
+        manifestPath: detectResult.manifestPath,
+        error: detectResult.error,
+        message: detectResult.message,
+      };
+    }
+  });
+
+  /**
+   * Open native folder picker, then run detect on the selected folder.
+   * One round trip from the renderer's "Open" button.
+   */
+  ipcMain.handle("harness.openDialog", async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ["openDirectory"],
+      title: "Open Business Harness or Code Project",
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { kind: "cancel" };
+    }
+    const path = result.filePaths[0]!;
+    // Reuse the detect logic — opening a folder that turns out to be a
+    // regular code project just becomes the existing code-project flow.
+    const detectResult = detectBusinessHarness(path);
+    if (!detectResult) {
+      return { kind: "code", root: path };
+    }
+    if (detectResult.ok === true) {
+      return {
+        kind: "business",
+        root: detectResult.root,
+        manifest: detectResult.manifest,
+      };
+    } else {
+      return {
+        kind: "error",
+        root: detectResult.root,
+        manifestPath: detectResult.manifestPath,
+        error: detectResult.error,
+        message: detectResult.message,
+      };
+    }
+  });
+
+  // ── Index lifecycle ───────────────────────────────────────────
+  // Per spec ## Index Coherence, the harness opens with a cold-open
+  // verification pass. The index store stays open for the session so
+  // subsequent writes go through write-through cleanly.
+
+  type ActiveHarnessSession = {
+    root: string;
+    harnessId: string;
+    index: HarnessIndexStore;
+    writer: HarnessWriter;
+  };
+  let activeSession: ActiveHarnessSession | null = null;
+
+  function harnessIdFromRoot(root: string): string {
+    // Stable id per-harness-root: SHA-256 of the absolute path. This is
+    // deterministic and machine-local — two clones on the same laptop
+    // share an index id; but per Decision #11, indexes are per-user so
+    // this is correct.
+    return createHash("sha256").update(root).digest("hex").slice(0, 16);
+  }
+
+  function closeActiveSession(): void {
+    if (activeSession) {
+      activeSession.index.close();
+      activeSession = null;
+    }
+  }
+
+  ipcMain.handle(
+    "harness.openSession",
+    async (
+      _event,
+      root: string,
+    ): Promise<
+      | {
+          ok: true;
+          harnessId: string;
+          verify: VerifyResult;
+        }
+      | { ok: false; error: string }
+    > => {
+      try {
+        closeActiveSession();
+        const harnessId = harnessIdFromRoot(root);
+        const index = new HarnessIndexStore(defaultIndexPath(harnessId));
+        const writer = new HarnessWriter(root);
+
+        // Replay any pending WAL entries (crash recovery)
+        const pending = writer.pendingWrites();
+        if (pending.length > 0) {
+          // Just compact for now — actual replay would re-issue index
+          // updates, which requires the full parser pipeline. v1.5+.
+          writer.compactWal();
+        }
+
+        // Cold-open verify per spec performance budget
+        const verify = index.coldOpenVerify(root);
+
+        activeSession = { root, harnessId, index, writer };
+        return { ok: true, harnessId, verify };
+      } catch (e) {
+        return {
+          ok: false,
+          error: e instanceof Error ? e.message : String(e),
+        };
+      }
+    },
+  );
+
+  ipcMain.handle("harness.closeSession", async () => {
+    closeActiveSession();
+    return { ok: true };
+  });
+
+  /**
+   * Cleanup on app quit: close any active index connection cleanly so
+   * SQLite WAL mode doesn't leak journals.
+   */
+  app.on("before-quit", () => {
+    closeActiveSession();
+  });
+
+  /**
+   * Re-parse a harness's business.toml without walking. Used by the
+   * renderer to refresh manifest data after the file changes on disk.
+   */
+  ipcMain.handle("harness.parse", async (_event, root: string) => {
+    const result = loadBusinessHarness(root);
+    if (result.ok === true) {
+      return {
+        kind: "business",
+        root: result.root,
+        manifest: result.manifest,
+      };
+    } else {
+      return {
+        kind: "error",
+        root: result.root,
+        manifestPath: result.manifestPath,
+        error: result.error,
+        message: result.message,
+      };
+    }
   });
 
   // Chat abort
