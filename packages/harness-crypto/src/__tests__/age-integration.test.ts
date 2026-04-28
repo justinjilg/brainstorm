@@ -30,13 +30,14 @@ import {
 import { recipientBundleSchema } from "../recipient-bundle.js";
 
 let testRoot: string;
-let ageReady = false;
-let keygenReady = false;
+// Resolve availability at module load (top-level await) so describe.skipIf
+// sees the actual values at discovery time, not stale defaults populated in
+// beforeEach.
+const ageReady = await isAgeAvailable();
+const keygenReady = await isAgeKeygenAvailable();
 
-beforeEach(async () => {
+beforeEach(() => {
   testRoot = mkdtempSync(join(tmpdir(), "age-test-"));
-  ageReady = await isAgeAvailable();
-  keygenReady = await isAgeKeygenAvailable();
 });
 
 afterEach(() => {
