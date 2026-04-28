@@ -65,6 +65,9 @@ contextBridge.exposeInMainWorld("brainstorm", {
   listHarnessFolder: (folderSlug) =>
     ipcRenderer.invoke("harness.listFolder", folderSlug),
 
+  /** Run the customer-account drift detector. */
+  detectCustomerDrift: () => ipcRenderer.invoke("harness.detectCustomerDrift"),
+
   /**
    * Query main for the current sticky backendReady state. Used at mount
    * time by useBackendReady to resolve a race where the backend emits

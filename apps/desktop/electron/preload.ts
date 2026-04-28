@@ -65,4 +65,8 @@ contextBridge.exposeInMainWorld("brainstorm", {
    *  Backs the per-folder panels in BusinessHarnessView. */
   listHarnessFolder: (folderSlug: string) =>
     ipcRenderer.invoke("harness.listFolder", folderSlug),
+
+  /** Run the customer-account drift detector. Returns list of intent ↔
+   *  runtime mismatches plus accounts missing runtime.toml. */
+  detectCustomerDrift: () => ipcRenderer.invoke("harness.detectCustomerDrift"),
 });
