@@ -293,7 +293,12 @@ async function handleRequest(args: {
   opts: EnrollmentHttpOptions;
 }): Promise<void> {
   const { req, res, opts } = args;
-  const url = req.url ?? "";
+  const rawUrl = req.url ?? "";
+  // Match on the path component only — strip query string + fragment so
+  // `/v1/health?foo=bar` doesn't bypass strict-equality routing. (CodeQL
+  // flagged the previous full-URL match as a user-controlled bypass
+  // vector; defense-in-depth normalisation here addresses it.)
+  const url = rawUrl.split(/[?#]/, 1)[0] ?? "";
 
   // /v1/health — unauthenticated liveness probe.
   // GET is intentionally cheap: no DB hit, no key crypto. Confirms the

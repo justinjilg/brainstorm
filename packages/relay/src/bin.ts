@@ -99,8 +99,12 @@ function loadConfig(): Config {
   let operatorHmacKey: Uint8Array;
   if (operatorApiKey) {
     if (operatorApiKey.length < 16) {
+      // Don't include the length itself in the error: even a length is
+      // information about a credential that flows to logs. CodeQL flags
+      // anything derived from the api_key reaching console.error as
+      // sensitive-data leak.
       throw new Error(
-        `BRAINSTORM_RELAY_OPERATOR_API_KEY must be at least 16 chars; got ${operatorApiKey.length}`,
+        "BRAINSTORM_RELAY_OPERATOR_API_KEY must be at least 16 characters",
       );
     }
     operatorHmacKey = deriveOperatorHmacKey({
