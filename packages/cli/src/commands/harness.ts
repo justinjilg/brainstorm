@@ -346,6 +346,7 @@ async function runReindex(opts: { root?: string }): Promise<void> {
   const store = new HarnessIndexStore(defaultIndexPath(harnessId));
   try {
     const walk = walkHarnessDir(root);
+    const seenPaths = new Set<string>();
     let upserts = 0;
     for (const artifact of walk.artifacts) {
       const fields = extractIndexFields(artifact.frontmatter);
@@ -361,12 +362,27 @@ async function runReindex(opts: { root?: string }): Promise<void> {
         tags: fields.tags,
         references: fields.references,
       });
+      seenPaths.add(artifact.relativePath);
       upserts++;
+    }
+
+    // Prune entries whose files were deleted from disk between reindexes.
+    // Closes the soft-delete-on-disk-but-index-knows-about-it failure mode
+    // (gap_2026-04-28-reindex-doesnt-prune-deleted).
+    let pruned = 0;
+    for (const row of store.allArtifacts()) {
+      if (!seenPaths.has(row.relative_path)) {
+        store.removeArtifact(row.relative_path);
+        pruned++;
+      }
     }
 
     console.log(
       `✓ indexed ${upserts} artifact(s) in ${walk.duration_ms}ms (${walk.parse_errors.length} parse error(s))`,
     );
+    if (pruned > 0) {
+      console.log(`  pruned ${pruned} deleted file(s) from index`);
+    }
     console.log(`  index db: ${defaultIndexPath(harnessId)}`);
   } finally {
     store.close();
