@@ -56,6 +56,18 @@ interface BrainstormBridge {
       mtime_ms: number;
     }>;
   }>;
+  /** Run the customer-account intent ↔ runtime drift detector. */
+  detectCustomerDrift(): Promise<{
+    drifts: Array<{
+      id: string;
+      relative_path: string;
+      field_path: string;
+      intent_value: string | null;
+      observed_value: string | null;
+      severity: string;
+    }>;
+    unobserved_accounts: string[];
+  }>;
   /**
    * Query main for the current sticky backendReady flag. Used at mount
    * to resolve the race where main emits "backend-ready" before React

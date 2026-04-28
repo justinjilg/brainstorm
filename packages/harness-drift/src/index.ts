@@ -23,3 +23,4 @@ export {
   StaleArtifactDetector,
   type StaleArtifactDetectorOptions,
 } from "./stale-artifact-detector.js";
+export { CustomerAccountDriftDetector } from "./customer-account-detector.js";

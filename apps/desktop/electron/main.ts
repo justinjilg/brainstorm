@@ -27,6 +27,7 @@ import {
   type VerifyResult,
 } from "@brainst0rm/harness-index";
 import { HarnessWriter } from "@brainst0rm/harness-fs";
+import { CustomerAccountDriftDetector } from "@brainst0rm/harness-drift";
 import { createHash } from "node:crypto";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -694,6 +695,44 @@ function registerIPC(): void {
           mtime_ms: a.mtime_ms,
         }));
       return { folder: folderSlug, artifacts: matched };
+    },
+  );
+
+  /**
+   * Run the customer-account intent ↔ runtime drift detector against
+   * the active harness session. Returns drifts + accounts that have no
+   * runtime.toml observation file (= "wire a poller" hint).
+   */
+  ipcMain.handle(
+    "harness.detectCustomerDrift",
+    async (): Promise<{
+      drifts: Array<{
+        id: string;
+        relative_path: string;
+        field_path: string;
+        intent_value: string | null;
+        observed_value: string | null;
+        severity: string;
+      }>;
+      unobserved_accounts: string[];
+    }> => {
+      if (!activeSession) {
+        return { drifts: [], unobserved_accounts: [] };
+      }
+      const detector = new CustomerAccountDriftDetector(activeSession.root);
+      const drifts = await detector.detect();
+      const unobserved = detector.unobservedAccounts();
+      return {
+        drifts: drifts.map((d) => ({
+          id: d.id,
+          relative_path: d.relative_path,
+          field_path: d.field_path,
+          intent_value: d.intent_value,
+          observed_value: d.observed_value,
+          severity: d.severity,
+        })),
+        unobserved_accounts: unobserved,
+      };
     },
   );
 
