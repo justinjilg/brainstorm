@@ -293,14 +293,45 @@ async function handleRequest(args: {
   opts: EnrollmentHttpOptions;
 }): Promise<void> {
   const { req, res, opts } = args;
-  const url = req.url ?? "";
+  const rawUrl = req.url ?? "";
+  // Match on the path component only — strip query string + fragment so
+  // `/v1/health?foo=bar` doesn't bypass strict-equality routing. (CodeQL
+  // flagged the previous full-URL match as a user-controlled bypass
+  // vector; defense-in-depth normalisation here addresses it.)
+  const url = rawUrl.split(/[?#]/, 1)[0] ?? "";
+
+  // /v1/health — unauthenticated liveness probe.
+  // GET is intentionally cheap: no DB hit, no key crypto. Confirms the
+  // HTTP listener is up and the process is alive. Suitable for K8s
+  // liveness and readiness probes (Agent C's K8s deploy-target
+  // requirements doc flagged the absence of an HTTP probe as a deploy
+  // gap; this closes it without committing to a richer /v1/status
+  // surface yet). Non-GET on this path returns 405 (path exists for
+  // GET only) rather than falling through to the generic 404.
+  if (url === "/v1/health") {
+    if (req.method === "GET") {
+      sendJson(res, 200, { ok: true, ts: new Date().toISOString() });
+      return;
+    }
+    sendJson(res, 405, { code: "METHOD_NOT_ALLOWED" });
+    return;
+  }
 
   if (req.method !== "POST") {
     sendJson(res, 405, { code: "METHOD_NOT_ALLOWED" });
     return;
   }
 
-  const body = await readBody(req);
+  let body: string;
+  try {
+    body = await readBody(req);
+  } catch (e) {
+    if (e instanceof RequestBodyTooLargeError) {
+      sendJson(res, 413, { code: "PAYLOAD_TOO_LARGE", message: e.message });
+      return;
+    }
+    throw e;
+  }
   let parsedBody: Record<string, unknown>;
   try {
     parsedBody = JSON.parse(body) as Record<string, unknown>;
@@ -395,10 +426,34 @@ function checkAdminAuth(req: IncomingMessage, adminToken: string): boolean {
   return diff === 0;
 }
 
+// Cap admin/enrollment request bodies. Both real payloads are tiny
+// (tenant_id + maybe public_key + a couple identifiers); 64 KiB is
+// generous and prevents authenticated-DoS via oversized JSON. See
+// issue #289.
+const MAX_REQUEST_BODY_BYTES = 64 * 1024;
+
+class RequestBodyTooLargeError extends Error {
+  readonly code = "PAYLOAD_TOO_LARGE";
+  constructor() {
+    super(
+      `request body exceeds ${MAX_REQUEST_BODY_BYTES} bytes (relay enforces a hard cap to prevent authenticated DoS)`,
+    );
+  }
+}
+
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
+  let total = 0;
   for await (const chunk of req) {
-    chunks.push(chunk as Buffer);
+    const buf = chunk as Buffer;
+    total += buf.length;
+    if (total > MAX_REQUEST_BODY_BYTES) {
+      // Stop reading; the rest of the body is discarded by the stream
+      // teardown when we throw. Caller turns this into a 413 response
+      // and prevents further allocation.
+      throw new RequestBodyTooLargeError();
+    }
+    chunks.push(buf);
   }
   return Buffer.concat(chunks).toString("utf-8");
 }

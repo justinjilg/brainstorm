@@ -7,11 +7,27 @@
 # own TLS layer.
 
 @@RELAY_HOSTNAME@@ {
-    # WebSocket endpoints (operator + endpoint connect)
-    handle_path /v1/operator {
+    # Security headers — applied to every response. HSTS (1 year + subdomains)
+    # tells HSTS-aware clients to refuse downgrade. nosniff blocks MIME-sniff
+    # attacks. no-referrer prevents endpoint URLs from leaking via redirects.
+    # `-Server` strips Caddy's version banner. (See issue #290.)
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        -Server
+    }
+
+    # WebSocket endpoints (operator + endpoint connect).
+    # Use `handle` (preserves path) not `handle_path` (strips prefix) —
+    # the relay WS handler in ws-binding.ts dispatches on the exact path
+    # `/v1/operator` or `/v1/endpoint/connect`. handle_path strips the
+    # prefix and forwards `/` upstream, which the relay rejects → 404 →
+    # WebSocket close. (See issue #284.)
+    handle /v1/operator {
         reverse_proxy 127.0.0.1:@@WS_PORT@@
     }
-    handle_path /v1/endpoint/connect {
+    handle /v1/endpoint/connect {
         reverse_proxy 127.0.0.1:@@WS_PORT@@
     }
 
@@ -20,6 +36,11 @@
         reverse_proxy 127.0.0.1:@@HTTP_PORT@@
     }
     handle /v1/admin/endpoint/* {
+        reverse_proxy 127.0.0.1:@@HTTP_PORT@@
+    }
+
+    # Health check (unauthenticated, cheap — for K8s probes and external monitoring)
+    handle /v1/health {
         reverse_proxy 127.0.0.1:@@HTTP_PORT@@
     }
 

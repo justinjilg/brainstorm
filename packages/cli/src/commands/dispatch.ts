@@ -329,7 +329,7 @@ function signOperatorHello(args: {
     operator: {
       kind: "human" as const,
       id: args.operatorId,
-      auth_proof: { kind: "hmac_signed_envelope" as const, signature: "" },
+      auth_proof: { mode: "hmac" as const, signature: "" },
     },
     tenant_id: args.tenantId,
     client_protocol_version: "v1" as const,
@@ -366,7 +366,7 @@ function signDispatchRequest(args: {
     operator: {
       kind: "human" as const,
       id: args.operatorId,
-      auth_proof: { kind: "hmac_signed_envelope" as const, signature: "" },
+      auth_proof: { mode: "hmac" as const, signature: "" },
     },
     options: {
       auto_confirm: args.autoConfirm,

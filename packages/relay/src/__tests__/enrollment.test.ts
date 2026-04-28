@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import * as ed25519 from "@noble/ed25519";
 
-import { EndpointRegistry } from "../enrollment.js";
+import { EndpointRegistry, startEnrollmentHttp } from "../enrollment.js";
 
 const tempDirs: string[] = [];
 
@@ -181,5 +181,76 @@ describe("EndpointRegistry — enrollment", () => {
     expect(retrieved).not.toBeNull();
     expect(Array.from(retrieved!)).toEqual(Array.from(pub2));
     reg.close();
+  });
+});
+
+describe("HTTP /v1/health", () => {
+  it("returns 200 + {ok:true,ts} without auth", async () => {
+    const reg = new EndpointRegistry({ dbPath: ":memory:" });
+    const handle = await startEnrollmentHttp({
+      registry: reg,
+      port: 0,
+      adminToken: "test-admin",
+    });
+    try {
+      const resp = await fetch(`http://127.0.0.1:${handle.port()}/v1/health`);
+      expect(resp.status).toBe(200);
+      const body = (await resp.json()) as { ok: boolean; ts: string };
+      expect(body.ok).toBe(true);
+      expect(typeof body.ts).toBe("string");
+      expect(new Date(body.ts).toString()).not.toBe("Invalid Date");
+    } finally {
+      await handle.close();
+      reg.close();
+    }
+  });
+
+  it("rejects oversized request body with 413 (closes #289)", async () => {
+    const reg = new EndpointRegistry({ dbPath: ":memory:" });
+    const handle = await startEnrollmentHttp({
+      registry: reg,
+      port: 0,
+      adminToken: "test-admin",
+    });
+    try {
+      // 65 KiB body — just past the 64 KiB cap.
+      const oversize = "x".repeat(65 * 1024);
+      const resp = await fetch(
+        `http://127.0.0.1:${handle.port()}/v1/admin/endpoint/enroll`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer test-admin",
+          },
+          body: JSON.stringify({ tenant_id: oversize }),
+        },
+      );
+      expect(resp.status).toBe(413);
+      const body = (await resp.json()) as { code: string };
+      expect(body.code).toBe("PAYLOAD_TOO_LARGE");
+    } finally {
+      await handle.close();
+      reg.close();
+    }
+  });
+
+  it("rejects POST /v1/health with 405", async () => {
+    const reg = new EndpointRegistry({ dbPath: ":memory:" });
+    const handle = await startEnrollmentHttp({
+      registry: reg,
+      port: 0,
+      adminToken: "test-admin",
+    });
+    try {
+      const resp = await fetch(`http://127.0.0.1:${handle.port()}/v1/health`, {
+        method: "POST",
+        body: "{}",
+      });
+      expect(resp.status).toBe(405);
+    } finally {
+      await handle.close();
+      reg.close();
+    }
   });
 });

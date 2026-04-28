@@ -11,10 +11,10 @@
 
 import { describe, it, expect } from "vitest";
 import { deriveOperatorHmacKey, operatorHmac } from "@brainst0rm/relay";
-import { verifyOperatorHmac } from "@brainst0rm/relay";
+import { verifyOperatorAuth } from "@brainst0rm/relay";
 
 describe("dispatch helpers — operator HMAC roundtrip", () => {
-  it("HKDF-derived key produces HMAC that verifies on the relay side", () => {
+  it("HKDF-derived key produces HMAC that verifies on the relay side", async () => {
     const apiKey = "test-api-key-1";
     const operatorId = "alice@example.com";
     const tenantId = "tenant-1";
@@ -26,7 +26,7 @@ describe("dispatch helpers — operator HMAC roundtrip", () => {
       operator: {
         kind: "human",
         id: operatorId,
-        auth_proof: { kind: "hmac_signed_envelope", signature: "" },
+        auth_proof: { mode: "hmac", signature: "" },
       },
       tenant_id: tenantId,
       client_protocol_version: "v1",
@@ -46,14 +46,14 @@ describe("dispatch helpers — operator HMAC roundtrip", () => {
     expect(Buffer.from(hmacKey)).toEqual(Buffer.from(relayHmacKey));
 
     // Verify
-    const verifyResult = verifyOperatorHmac({
+    const verifyResult = await verifyOperatorAuth({
       request: hello as Record<string, unknown>,
       hmacKey: relayHmacKey,
     });
     expect(verifyResult.ok).toBe(true);
   });
 
-  it("tampered request fails verification", () => {
+  it("tampered request fails verification", async () => {
     const apiKey = "test-api-key-2";
     const hmacKey = deriveOperatorHmacKey({
       apiKey,
@@ -71,7 +71,7 @@ describe("dispatch helpers — operator HMAC roundtrip", () => {
       operator: {
         kind: "human",
         id: "alice",
-        auth_proof: { kind: "hmac_signed_envelope", signature: "" },
+        auth_proof: { mode: "hmac", signature: "" },
       },
       options: {
         auto_confirm: false,
@@ -86,7 +86,7 @@ describe("dispatch helpers — operator HMAC roundtrip", () => {
     // Tamper with params
     (req.params as Record<string, unknown>).msg = "tampered";
 
-    const r = verifyOperatorHmac({
+    const r = await verifyOperatorAuth({
       request: req as Record<string, unknown>,
       hmacKey,
     });
