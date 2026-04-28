@@ -12,6 +12,17 @@ import {
 import {
   validateSensitivePaths,
   isEncryptionPipelineReady,
+  encrypt,
+  decrypt,
+  generatePqIdentity,
+  generateClassicalIdentity,
+  loadRecipientBundle,
+  recipientBundlePath,
+  isPqHybridBundle,
+  envelopePath,
+  writeEnvelope,
+  AuditLogWriter,
+  auditLogPath,
 } from "@brainst0rm/harness-crypto";
 import {
   walkHarnessDir,
@@ -156,6 +167,84 @@ export function registerHarnessCommands(program: Command): void {
     .action(async (opts: { root?: string }) => {
       await runSummary(opts);
     });
+
+  // ── keygen ────────────────────────────────────────────────
+  harness
+    .command("keygen")
+    .description(
+      "Generate an age identity (PQ-hybrid by default). Writes secret key to a file you keep private; prints public key.",
+    )
+    .option(
+      "--out <path>",
+      "Path for the secret-key file",
+      "./age-identity.txt",
+    )
+    .option(
+      "--classical",
+      "Generate a classical X25519 identity instead of PQ-hybrid",
+      false,
+    )
+    .action(async (opts: { out: string; classical: boolean }) => {
+      await runKeygen(opts);
+    });
+
+  // ── encrypt ───────────────────────────────────────────────
+  harness
+    .command("encrypt")
+    .description(
+      "Encrypt a file to a recipient bundle. Writes <path>.age + <path>.age.envelope.toml.",
+    )
+    .argument(
+      "<path>",
+      "File to encrypt (relative to harness root or absolute)",
+    )
+    .requiredOption(
+      "--bundle <slug>",
+      "Recipient-bundle slug (looks up .harness/recipients/{slug}.toml)",
+    )
+    .option(
+      "--reason <text>",
+      "Free-text reason for the audit log",
+      "manual encrypt via CLI",
+    )
+    .option("--root <path>", "Harness root; defaults to detection")
+    .action(
+      async (
+        path: string,
+        opts: { bundle: string; reason: string; root?: string },
+      ) => {
+        await runEncrypt(path, opts);
+      },
+    );
+
+  // ── decrypt ───────────────────────────────────────────────
+  harness
+    .command("decrypt")
+    .description(
+      "Decrypt an .age file using a secret-key identity. Outputs to stdout unless --out is given.",
+    )
+    .argument("<path>", "Encrypted file to decrypt (.age)")
+    .requiredOption("--identity <path>", "Path to age secret-key file")
+    .option("--out <path>", "Write decrypted content to file (default: stdout)")
+    .option(
+      "--reason <text>",
+      "Free-text reason for the audit log",
+      "manual decrypt via CLI",
+    )
+    .option("--root <path>", "Harness root; defaults to detection")
+    .action(
+      async (
+        path: string,
+        opts: {
+          identity: string;
+          out?: string;
+          reason: string;
+          root?: string;
+        },
+      ) => {
+        await runDecrypt(path, opts);
+      },
+    );
 }
 
 // ── implementations ─────────────────────────────────────────
@@ -610,4 +699,204 @@ function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// ── keygen / encrypt / decrypt ──────────────────────────────
+
+async function runKeygen(opts: {
+  out: string;
+  classical: boolean;
+}): Promise<void> {
+  const ready = await isEncryptionPipelineReady();
+  if (!ready) {
+    console.error(
+      "✗ encryption pipeline not ready (age + age-keygen must be on $PATH).",
+    );
+    console.error(
+      "  install with `brew install age` (macOS) or your package manager.",
+    );
+    process.exit(1);
+  }
+
+  const id = opts.classical
+    ? await generateClassicalIdentity()
+    : await generatePqIdentity();
+
+  if (existsSync(opts.out)) {
+    console.error(`✗ refuse to overwrite existing file: ${opts.out}`);
+    console.error("  pass --out <new-path> or move the existing file first.");
+    process.exit(1);
+  }
+
+  writeFileSync(opts.out, id.secret_key + "\n", { mode: 0o600 });
+  console.log(`✓ identity generated`);
+  console.log(
+    `  type:       ${opts.classical ? "classical X25519" : "PQ-hybrid (ML-KEM-768 + X25519)"}`,
+  );
+  console.log(`  secret key: ${opts.out}  (chmod 600 — keep this secret!)`);
+  console.log(`  public key: ${id.public_key}`);
+  console.log();
+  console.log(`Add the public key to a recipient bundle:`);
+  console.log(
+    `  .harness/recipients/<bundle>.toml under [[recipients]] public_key = "..."`,
+  );
+}
+
+async function runEncrypt(
+  path: string,
+  opts: { bundle: string; reason: string; root?: string },
+): Promise<void> {
+  const root = resolveRoot(opts.root);
+  const ready = await isEncryptionPipelineReady();
+  if (!ready) {
+    console.error("✗ encryption pipeline not ready — install age first.");
+    process.exit(1);
+  }
+
+  const bundlePath = recipientBundlePath(root, opts.bundle);
+  if (!existsSync(bundlePath)) {
+    console.error(`✗ bundle not found: ${bundlePath}`);
+    console.error(`  create it under .harness/recipients/${opts.bundle}.toml`);
+    process.exit(1);
+  }
+
+  const loaded = loadRecipientBundle(bundlePath);
+  if (!loaded.ok) {
+    console.error(`✗ bundle ${opts.bundle} failed to parse: ${loaded.error}`);
+    if ("message" in loaded) console.error(`  ${loaded.message}`);
+    process.exit(1);
+  }
+
+  // Resolve the input path relative to harness root if not absolute.
+  const inputPath = path.startsWith("/") ? path : join(root, path);
+  if (!existsSync(inputPath)) {
+    console.error(`✗ input file not found: ${inputPath}`);
+    process.exit(1);
+  }
+
+  const plaintext = readFileSync(inputPath);
+  const outputPath = `${inputPath}.age`;
+  if (existsSync(outputPath)) {
+    console.error(`✗ refuse to overwrite existing ciphertext: ${outputPath}`);
+    process.exit(1);
+  }
+
+  const audit = {
+    actor_type: "human" as const,
+    actor_ref: process.env.USER
+      ? `team/humans/${process.env.USER}`
+      : "team/humans/unknown",
+    reason: opts.reason,
+    at: new Date().toISOString(),
+  };
+
+  const result = await encrypt({
+    outputPath,
+    plaintext,
+    bundle: loaded.bundle,
+    audit,
+  });
+
+  // Write the envelope companion file (PQC §4.5)
+  writeEnvelope(outputPath, {
+    artifact: outputPath.slice(root.length + 1),
+    plaintext_sha256: result.plaintext_sha256,
+    ciphertext_sha256: result.ciphertext_sha256,
+    bundles_used: [`${result.bundle_id}@v${result.bundle_version}`],
+    signer: audit.actor_ref,
+    created_at: audit.at,
+    schema: "harness.encrypt.v1",
+  });
+
+  // Append to the audit log (constructor mkdir's the dir if missing)
+  const log = new AuditLogWriter(auditLogPath(root));
+  log.append({
+    kind: "encrypt",
+    at: audit.at,
+    actor_type: audit.actor_type,
+    actor_ref: audit.actor_ref,
+    reason: audit.reason,
+    artifact_path: outputPath.slice(root.length + 1),
+    bundle_id: result.bundle_id,
+    plaintext_sha256: result.plaintext_sha256,
+  });
+
+  const pq = isPqHybridBundle(loaded.bundle) ? " (PQ-hybrid)" : "";
+  console.log(`✓ encrypted${pq}`);
+  console.log(`  ciphertext: ${outputPath}`);
+  console.log(`  envelope:   ${envelopePath(outputPath)}`);
+  console.log(
+    `  bundle:     ${result.bundle_id}@v${result.bundle_version}  (${loaded.bundle.recipients.length} recipient${loaded.bundle.recipients.length === 1 ? "" : "s"})`,
+  );
+  console.log();
+  console.log(`Source plaintext is unchanged. Delete it manually if intended:`);
+  console.log(`  rm ${inputPath}`);
+}
+
+async function runDecrypt(
+  path: string,
+  opts: {
+    identity: string;
+    out?: string;
+    reason: string;
+    root?: string;
+  },
+): Promise<void> {
+  const root = resolveRoot(opts.root);
+  const ready = await isEncryptionPipelineReady();
+  if (!ready) {
+    console.error("✗ encryption pipeline not ready — install age first.");
+    process.exit(1);
+  }
+
+  const inputPath = path.startsWith("/") ? path : join(root, path);
+  if (!existsSync(inputPath)) {
+    console.error(`✗ encrypted file not found: ${inputPath}`);
+    process.exit(1);
+  }
+  if (!existsSync(opts.identity)) {
+    console.error(`✗ identity file not found: ${opts.identity}`);
+    process.exit(1);
+  }
+
+  const audit = {
+    actor_type: "human" as const,
+    actor_ref: process.env.USER
+      ? `team/humans/${process.env.USER}`
+      : "team/humans/unknown",
+    reason: opts.reason,
+    at: new Date().toISOString(),
+  };
+
+  const result = await decrypt({
+    encryptedPath: inputPath,
+    identity: {
+      id: basename(opts.identity),
+      identity_file: opts.identity,
+      hardware_backed: false,
+    },
+    audit,
+  });
+
+  // Append to audit log before emitting plaintext, so the read is recorded
+  // even if the operator pipes to a tool that crashes mid-stream.
+  const log = new AuditLogWriter(auditLogPath(root));
+  log.append({
+    kind: "decrypt",
+    at: audit.at,
+    actor_type: audit.actor_type,
+    actor_ref: audit.actor_ref,
+    reason: audit.reason,
+    artifact_path: inputPath.slice(root.length + 1),
+    bundle_id: result.bundle_id ?? undefined,
+    plaintext_sha256: result.plaintext_sha256,
+  });
+
+  if (opts.out) {
+    writeFileSync(opts.out, result.plaintext);
+    console.error(`✓ decrypted to ${opts.out}`);
+    console.error(`  plaintext_sha256: ${result.plaintext_sha256}`);
+  } else {
+    process.stdout.write(result.plaintext);
+  }
 }
