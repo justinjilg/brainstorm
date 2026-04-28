@@ -7,6 +7,17 @@
 # own TLS layer.
 
 @@RELAY_HOSTNAME@@ {
+    # Security headers — applied to every response. HSTS (1 year + subdomains)
+    # tells HSTS-aware clients to refuse downgrade. nosniff blocks MIME-sniff
+    # attacks. no-referrer prevents endpoint URLs from leaking via redirects.
+    # `-Server` strips Caddy's version banner. (See issue #290.)
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        -Server
+    }
+
     # WebSocket endpoints (operator + endpoint connect).
     # Use `handle` (preserves path) not `handle_path` (strips prefix) —
     # the relay WS handler in ws-binding.ts dispatches on the exact path
