@@ -14,7 +14,13 @@ import { app, BrowserWindow, ipcMain, dialog, session } from "electron";
 // module and destructure — this is the documented interop pattern.
 import electronUpdater from "electron-updater";
 const { autoUpdater } = electronUpdater;
-import { appendFileSync, mkdirSync } from "node:fs";
+import {
+  appendFileSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  existsSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,11 +33,15 @@ import {
   type VerifyResult,
 } from "@brainst0rm/harness-index";
 import { HarnessWriter } from "@brainst0rm/harness-fs";
-import { CustomerAccountDriftDetector } from "@brainst0rm/harness-drift";
+import {
+  CustomerAccountDriftDetector,
+  ApplyIntentToRuntimeChangeSet,
+} from "@brainst0rm/harness-drift";
 import {
   HarnessLoopRunner,
   type LoopEvent as HarnessLoopEvent,
 } from "@brainst0rm/harness-loop";
+import TOML from "@iarna/toml";
 import { createHash } from "node:crypto";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -700,7 +710,7 @@ function registerIPC(): void {
         artifact_kind: string;
         owner: string | null;
         status: string | null;
-        reviewed_at: string | null;
+        reviewed_at: number | null;
         size_bytes: number;
         mtime_ms: number;
       }>;
@@ -760,6 +770,98 @@ function registerIPC(): void {
         })),
         unobserved_accounts: unobserved,
       };
+    },
+  );
+
+  /**
+   * Apply a customer-account intent → runtime ChangeSet. Reads the open
+   * drift from drift_state, constructs ApplyIntentToRuntimeChangeSet
+   * whose apply callback writes the intent value into the matching
+   * runtime.toml `*_observed` field (the v1 stub-runtime — replaced when
+   * a real Stripe/MSP poller is wired). On success, marks the drift
+   * resolved and re-runs the detector so the UI refreshes.
+   */
+  ipcMain.handle(
+    "harness.applyCustomerDrift",
+    async (
+      _event,
+      driftId: string,
+    ): Promise<
+      { ok: true; description: string } | { ok: false; error: string }
+    > => {
+      if (!activeSession) {
+        return { ok: false, error: "no active harness session" };
+      }
+      const open = activeSession.index.unresolvedDrift();
+      const drift = open.find((d) => d.id === driftId);
+      if (!drift) {
+        return {
+          ok: false,
+          error: `drift not found or already resolved: ${driftId}`,
+        };
+      }
+      // Locate the matching runtime.toml — `relative_path` looks like
+      // "customers/accounts/{slug}/account.toml".
+      const accountDir = join(activeSession.root, dirname(drift.relative_path));
+      const runtimePath = join(accountDir, "runtime.toml");
+      const observedField = mapIntentFieldToObserved(drift.field_path);
+      if (!observedField) {
+        return {
+          ok: false,
+          error: `no runtime mapping for intent field ${drift.field_path}`,
+        };
+      }
+      try {
+        const changeset = new ApplyIntentToRuntimeChangeSet({
+          drift: {
+            ...drift,
+            field_class: "intent",
+            detected_at: Date.now(),
+            severity: (drift.severity ?? "medium") as
+              | "informational"
+              | "low"
+              | "medium"
+              | "high"
+              | "critical"
+              | "incident-required",
+          },
+          actor_ref: "team/humans/desktop-user",
+          intent_value: drift.intent_value,
+          apply: (value) => {
+            // v1 stub-runtime: persist the intent value as the new observed
+            // value in runtime.toml. When a real runtime poller is wired,
+            // this callback is replaced with an API call (Stripe.subscriptionUpdate
+            // etc.) and runtime.toml becomes the polled cache it already is.
+            const existing = existsSync(runtimePath)
+              ? (TOML.parse(readFileSync(runtimePath, "utf-8")) as Record<
+                  string,
+                  unknown
+                >)
+              : {};
+            const numericValue = parseValueForToml(value);
+            existing[observedField] = numericValue;
+            writeFileSync(
+              runtimePath,
+              TOML.stringify(existing as TOML.JsonMap),
+              "utf-8",
+            );
+          },
+        });
+        const result = await changeset.apply();
+        if (!result.ok) {
+          return { ok: false, error: result.message ?? "apply failed" };
+        }
+        activeSession.index.resolveDrift(driftId);
+        return {
+          ok: true,
+          description: changeset.simulate().description,
+        };
+      } catch (e) {
+        return {
+          ok: false,
+          error: e instanceof Error ? e.message : String(e),
+        };
+      }
     },
   );
 
@@ -1014,3 +1116,43 @@ app.on("before-quit", () => {
   }, 1_500);
   killer.unref?.();
 });
+
+/**
+ * Map a customer-account intent field name (in account.toml) to its
+ * paired observed-value field name in runtime.toml. Mirrors the
+ * FIELD_PAIRS table in CustomerAccountDriftDetector — kept in sync
+ * here because the detector doesn't expose it publicly.
+ */
+function mapIntentFieldToObserved(intentField: string): string | null {
+  const pairs: Record<string, string> = {
+    mrr_intent: "mrr_observed",
+    status: "status_observed",
+    tier: "tier_observed",
+  };
+  return pairs[intentField] ?? null;
+}
+
+/**
+ * Coerce the drift's serialized intent value back into the type
+ * runtime.toml expects (numbers stay numbers; strings stay strings).
+ * The CustomerAccountDriftDetector serializes via `JSON.stringify` for
+ * non-strings; we reverse that here.
+ */
+function parseValueForToml(
+  value: string | null,
+): string | number | boolean | null {
+  if (value === null) return null;
+  // Quoted JSON strings come through as `"foo"`; unwrap.
+  if (value.startsWith('"') && value.endsWith('"')) {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  }
+  if (value === "true") return true;
+  if (value === "false") return false;
+  const n = Number(value);
+  if (!Number.isNaN(n) && value.trim() !== "") return n;
+  return value;
+}
