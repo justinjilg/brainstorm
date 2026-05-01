@@ -1,22 +1,19 @@
 /**
- * Business · Inspect verb body.
- *
- * Read-only diagnostics for an open harness:
- *   - Cold-open verify summary pills (clean / stale / missing / unindexed)
- *   - AI-loop live event stream
- *   - Customers intent↔runtime drift panel (read-only here — apply
- *     buttons live in the Operate verb body)
- *
- * Pulls the same `detectCustomerDrift` IPC the Operate body uses; cheap
- * call so duplicating across verbs is fine for Phase 1.
+ * Business · Inspect verb body. Read-only diagnostics: cold-open verify
+ * pills, AI-loop event stream, customers intent↔runtime drift list. Apply
+ * actions live in the Operate body.
  */
 import { useEffect, useState } from "react";
 import type { BusinessToml } from "@brainst0rm/config";
 import {
-  DriftStatPill,
+  BusinessBodyHeader,
+  BusinessBodyShell,
+  DriftRow,
+  InlineEmpty,
   LoopEventLog,
+  SessionVerifyPills,
   sectionTitleStyle,
-  type CustomerDrift,
+  useCustomerDrift,
 } from "./BusinessHarnessShared";
 import type { HarnessSessionVerify } from "../../lib/harness-types";
 import type { HarnessLoopEvent } from "../../global";
@@ -46,7 +43,15 @@ export function BusinessInspectBody({
       .catch(() => {});
     const unsub = bridge.onHarnessLoopEvent((event) => {
       if (!mounted) return;
-      setLoopEvents((prev) => [...prev.slice(-29), event]);
+      setLoopEvents((prev) => {
+        // Suppress no-op renders when an identical event is delivered
+        // twice (rare but possible across IPC boundaries).
+        const last = prev[prev.length - 1];
+        if (last && last.at === event.at && last.loop === event.loop) {
+          return prev;
+        }
+        return [...prev.slice(-29), event];
+      });
     });
     return () => {
       mounted = false;
@@ -55,134 +60,34 @@ export function BusinessInspectBody({
   }, []);
 
   return (
-    <div
-      className="flex-1 overflow-y-auto"
-      style={{
-        background: "var(--ctp-base)",
-        color: "var(--ctp-text)",
-        padding: "32px",
-      }}
-    >
-      <div style={{ maxWidth: 960, margin: "0 auto" }}>
-        <header style={{ marginBottom: 32 }}>
-          <div
-            style={{
-              fontSize: "var(--text-2xs)",
-              color: "var(--ctp-overlay0)",
-              letterSpacing: "0.18em",
-              textTransform: "uppercase",
-              marginBottom: 8,
-            }}
-          >
-            Inspect · {manifest.identity.name}
-          </div>
-          <div
-            style={{
-              fontSize: "var(--text-2xs)",
-              color: "var(--ctp-overlay0)",
-              fontFamily: "var(--font-mono, monospace)",
-            }}
-          >
-            {root}
-          </div>
-        </header>
+    <BusinessBodyShell>
+      <BusinessBodyHeader
+        verb="Inspect"
+        archetype={manifest.identity.archetype}
+        name={manifest.identity.name}
+        root={root}
+      />
 
-        <section style={{ marginBottom: 32 }}>
-          <h2 style={sectionTitleStyle}>Index Session</h2>
-          {sessionVerify === null ? (
-            <div
-              style={{
-                padding: 14,
-                background: "var(--ctp-mantle)",
-                borderRadius: 8,
-                border: "1px solid var(--border-subtle)",
-                fontSize: "var(--text-xs)",
-                color: "var(--ctp-overlay1)",
-              }}
-            >
-              Opening index session…
-            </div>
-          ) : (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
-                gap: 8,
-              }}
-            >
-              <DriftStatPill
-                label="clean"
-                value={sessionVerify.clean}
-                color="var(--ctp-green)"
-              />
-              <DriftStatPill
-                label="stale"
-                value={sessionVerify.stale.length}
-                color={
-                  sessionVerify.stale.length > 0
-                    ? "var(--ctp-yellow)"
-                    : undefined
-                }
-              />
-              <DriftStatPill
-                label="missing"
-                value={sessionVerify.missing.length}
-                color={
-                  sessionVerify.missing.length > 0
-                    ? "var(--ctp-red)"
-                    : undefined
-                }
-              />
-              <DriftStatPill
-                label="unindexed"
-                value={sessionVerify.unindexedCount}
-              />
-            </div>
-          )}
-        </section>
+      <section style={{ marginBottom: 32 }}>
+        <h2 style={sectionTitleStyle}>Index Session</h2>
+        <SessionVerifyPills sessionVerify={sessionVerify} />
+      </section>
 
-        <section style={{ marginBottom: 32 }}>
-          <h2 style={sectionTitleStyle}>AI Loops</h2>
-          <LoopEventLog events={loopEvents} />
-        </section>
+      <section style={{ marginBottom: 32 }}>
+        <h2 style={sectionTitleStyle}>AI Loops</h2>
+        <LoopEventLog events={loopEvents} />
+      </section>
 
-        <section style={{ marginBottom: 32 }}>
-          <h2 style={sectionTitleStyle}>Customers · Drift Detection</h2>
-          <CustomersDriftPanel />
-        </section>
-      </div>
-    </div>
+      <section style={{ marginBottom: 32 }}>
+        <h2 style={sectionTitleStyle}>Customers · Drift Detection</h2>
+        <CustomersDriftPanel />
+      </section>
+    </BusinessBodyShell>
   );
 }
 
-/**
- * Read-only customers drift surface — same `detectCustomerDrift` IPC
- * the Operate body uses, but renders only the drift list (no apply
- * button) and the unobserved-accounts hint. Apply lives in Operate.
- */
 function CustomersDriftPanel() {
-  const [drifts, setDrifts] = useState<CustomerDrift[]>([]);
-  const [unobserved, setUnobserved] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const bridge = window.brainstorm;
-    if (!bridge) {
-      setLoading(false);
-      return;
-    }
-    bridge
-      .detectCustomerDrift()
-      .then((res) => {
-        setDrifts(res.drifts);
-        setUnobserved(res.unobserved_accounts);
-      })
-      .catch((e) => {
-        setError(e instanceof Error ? e.message : String(e));
-      })
-      .finally(() => setLoading(false));
-  }, []);
+  const { drifts, unobserved, loading, error } = useCustomerDrift();
 
   return (
     <div
@@ -221,15 +126,7 @@ function CustomersDriftPanel() {
       )}
 
       {!loading && !error && drifts.length === 0 && unobserved.length === 0 && (
-        <div
-          style={{
-            fontSize: "var(--text-xs)",
-            color: "var(--ctp-overlay1)",
-            fontStyle: "italic",
-          }}
-        >
-          No drift detected. (No accounts under customers/accounts/.)
-        </div>
+        <InlineEmpty text="No drift detected. (No accounts under customers/accounts/.)" />
       )}
 
       {drifts.length > 0 && (
@@ -242,7 +139,7 @@ function CustomersDriftPanel() {
           }}
         >
           {drifts.map((d) => (
-            <ReadOnlyDriftRow key={d.id} drift={d} />
+            <DriftRow key={d.id} drift={d} />
           ))}
           <div
             style={{
@@ -300,72 +197,6 @@ function CustomersDriftPanel() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function ReadOnlyDriftRow({ drift }: { drift: CustomerDrift }) {
-  const severityColor =
-    drift.severity === "critical"
-      ? "var(--ctp-red)"
-      : drift.severity === "high"
-        ? "var(--ctp-yellow)"
-        : "var(--ctp-overlay1)";
-
-  return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "1fr 100px 1fr 1fr",
-        gap: 12,
-        alignItems: "baseline",
-        padding: "8px 12px",
-        background: "var(--ctp-mantle)",
-        borderRadius: 6,
-        border: `1px solid ${severityColor}`,
-        borderLeftWidth: 3,
-      }}
-    >
-      <div
-        style={{
-          fontFamily: "var(--font-mono, monospace)",
-          fontSize: "var(--text-xs)",
-          color: "var(--ctp-text)",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-        title={drift.relative_path}
-      >
-        {drift.relative_path}
-      </div>
-      <div
-        style={{
-          fontFamily: "var(--font-mono, monospace)",
-          fontSize: "var(--text-2xs)",
-          color: "var(--ctp-subtext1)",
-        }}
-      >
-        {drift.field_path}
-      </div>
-      <div
-        style={{
-          fontSize: "var(--text-xs)",
-          color: "var(--ctp-text)",
-          fontFamily: "var(--font-mono, monospace)",
-        }}
-      >
-        intent: {drift.intent_value ?? "—"}
-      </div>
-      <div
-        style={{
-          fontSize: "var(--text-xs)",
-          color: severityColor,
-          fontFamily: "var(--font-mono, monospace)",
-        }}
-      >
-        observed: {drift.observed_value ?? "—"}
-      </div>
     </div>
   );
 }

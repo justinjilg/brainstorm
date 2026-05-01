@@ -1,21 +1,8 @@
 /**
- * Business workspace.
- *
- * Group B (this commit) split the legacy BusinessHarnessView into three
- * verb-specific bodies:
- *   - Plan    → identity header, seven folders + per-folder artifact
- *               panel, federation pointers (products / runtimes /
- *               external systems / access tiers / AI-loop budget).
- *   - Inspect → cold-open drift summary pills, AI-loop event stream,
- *               read-only customers drift detection panel.
- *   - Operate → focused open-drifts list with apply buttons + a
- *               disabled "Run indexer loop now" placeholder (wired in
- *               Group E).
- *
- * Configure remains a placeholder until the manifest editor lands.
- *
- * If no harness is open, every verb falls through to the same
- * empty-state card pointing at "Open existing" / "Create new".
+ * Business workspace. Routes to a verb-specific body when a harness is
+ * open; otherwise renders an empty-state card with Open/Create actions.
+ * Plan / Inspect / Operate / Configure each render in their own body
+ * file under ../business/.
  */
 import { Placeholder } from "./Placeholder";
 import { BusinessPlanBody } from "../business/BusinessPlanBody";
@@ -80,7 +67,6 @@ export function BusinessWorkspace({
           <BusinessOperateBody
             root={activeHarness.root}
             manifest={activeHarness.manifest}
-            sessionVerify={activeHarness.sessionVerify}
           />
         </ErrorBoundary>
       );
