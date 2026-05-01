@@ -32,7 +32,7 @@ import {
   VERBS_BY_ENTITY,
   defaultVerbFor,
   isVerbAvailable,
-  loadSelection,
+  resolveInitialSelection,
   saveSelection,
   type EntityKind,
   type VerbKind,
@@ -78,13 +78,33 @@ const TALK_ENTITIES: ReadonlySet<EntityKind> = new Set([
 ]);
 
 export function App() {
-  const [selection, setSelection] = useState<WorkspaceSelection>(
-    () => loadSelection() ?? { entity: "conversation", verb: "talk" },
+  // Priority-ordered first-run landing with persistence guard:
+  //   1. Saved selection (if its entity is reachable)
+  //   2. Has active conversation       → Conversation · Talk
+  //   3. Has project, no conversation  → Project · Talk
+  //   4. Has business harness          → Business · Plan
+  //   5. Has nothing                   → Self · Plan (welcome card)
+  //
+  // Today `currentProject`, `activeHarness`, and `activeConversationId`
+  // are not persisted across launches, so at this initializer all three
+  // flags are false and the resolver lands on Self · Plan unless a valid
+  // saved selection exists. Once those gain persistence, the resolver
+  // will automatically pick the higher-priority destination.
+  //
+  // Persistence guard: a saved `{ entity: "business" }` is discarded
+  // here because `hasHarness` is false — the user lands on the welcome
+  // card instead of an empty Business workspace.
+  const [selection, setSelection] = useState<WorkspaceSelection>(() =>
+    resolveInitialSelection({
+      hasProject: false,
+      hasHarness: false,
+      hasConversation: false,
+    }),
   );
 
-  // Persist (entity, verb) across launches. Skipped for transient verbs
-  // like "talk" with no harness/project — fine because reload re-evaluates
-  // empty states.
+  // Persist (entity, verb) across launches. The useState initializer
+  // above runs first synchronously, so this effect never writes before
+  // the saved selection has been read.
   useEffect(() => {
     saveSelection(selection);
   }, [selection]);

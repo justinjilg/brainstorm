@@ -129,3 +129,77 @@ export function saveSelection(selection: WorkspaceSelection): void {
     // Quota exceeded or storage disabled — non-fatal.
   }
 }
+
+/**
+ * Reachability of an entity given current runtime state. Determines whether
+ * a saved selection on that entity should be honored at startup, or whether
+ * we should fall back to the welcome card.
+ *
+ * - `conversation` is always reachable — the chat works without a project.
+ * - `platform` and `self` are always reachable — they have no prerequisites.
+ * - `project` requires a current project to be open.
+ * - `business` requires an active business harness.
+ */
+export interface FirstRunState {
+  hasProject: boolean;
+  hasHarness: boolean;
+  hasConversation: boolean;
+}
+
+export function isEntityReachable(
+  entity: EntityKind,
+  state: FirstRunState,
+): boolean {
+  switch (entity) {
+    case "conversation":
+    case "platform":
+    case "self":
+      return true;
+    case "project":
+      return state.hasProject;
+    case "business":
+      return state.hasHarness;
+  }
+}
+
+/**
+ * Priority-ordered first-run landing per the navigation plan:
+ *
+ *   1. Has active conversation        → Conversation · Talk
+ *   2. Has project, no conversation   → Project · Talk
+ *   3. Has business harness           → Business · Plan
+ *   4. Has nothing                    → Self · Plan (welcome card)
+ *
+ * Today, `currentProject`, `activeHarness`, and `activeConversationId` are
+ * not persisted across launches, so on a fresh launch the priority reduces
+ * to "has nothing → Self · Plan". Once those gain persistence, this helper
+ * automatically picks the higher-priority destination.
+ */
+export function firstRunSelection(state: FirstRunState): WorkspaceSelection {
+  if (state.hasConversation) {
+    return { entity: "conversation", verb: "talk" };
+  }
+  if (state.hasProject) {
+    return { entity: "project", verb: "talk" };
+  }
+  if (state.hasHarness) {
+    return { entity: "business", verb: "plan" };
+  }
+  return { entity: "self", verb: "plan" };
+}
+
+/**
+ * Resolve the initial selection at startup. Applies the persistence guard:
+ * if a saved selection points at an unreachable entity (e.g. Business but
+ * no harness is open), discard it and fall back to the priority-ordered
+ * first-run selection.
+ */
+export function resolveInitialSelection(
+  state: FirstRunState,
+): WorkspaceSelection {
+  const saved = loadSelection();
+  if (saved && isEntityReachable(saved.entity, state)) {
+    return saved;
+  }
+  return firstRunSelection(state);
+}
