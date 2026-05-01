@@ -1,14 +1,20 @@
 /**
- * Shared presentational helpers for the Business harness verb bodies
- * (Plan / Inspect / Operate). Extracted from the original monolithic
- * BusinessHarnessView during the Group B split so each verb body can
- * compose them without duplication.
- *
- * No behavior change — these are the same components as before, just
- * lifted to a shared module.
+ * Shared presentational helpers and hooks for the Business harness verb
+ * bodies (Plan / Inspect / Operate). Each verb composes these so the
+ * same drift fetch, body wrapper, and section pills aren't reimplemented
+ * three times.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { HarnessLoopEvent } from "../../global";
+import type { HarnessSessionVerify } from "../../lib/harness-types";
+
+export type DriftSeverity =
+  | "informational"
+  | "low"
+  | "medium"
+  | "high"
+  | "critical"
+  | "incident-required";
 
 export interface FolderArtifact {
   relative_path: string;
@@ -26,7 +32,9 @@ export interface CustomerDrift {
   field_path: string;
   intent_value: string | null;
   observed_value: string | null;
-  severity: string;
+  /** Severity tier; the detector emits the canonical strings, but typo-
+   *  safety is light-touch — unknown values fall through to "medium". */
+  severity: DriftSeverity | string;
 }
 
 export const SEVEN_FOLDERS: ReadonlyArray<{
@@ -247,16 +255,18 @@ export function FolderRow({
 }
 
 /**
- * Apply-button row for a single intent↔runtime drift. Lives in the
- * Operate verb body. Calls `applyCustomerDrift` IPC and notifies the
- * parent so it can drop the row from the open-drifts list.
+ * Drift row. When `onApplied` is provided, renders an apply button that
+ * calls `applyCustomerDrift` IPC; on success notifies the parent so it
+ * can drop the row. When omitted, the row is read-only — same layout,
+ * no actions. This is how Inspect (read-only) and Operate (actionable)
+ * share one component instead of two near-identical ones.
  */
 export function DriftRow({
   drift,
   onApplied,
 }: {
   drift: CustomerDrift;
-  onApplied: (driftId: string) => void;
+  onApplied?: (driftId: string) => void;
 }) {
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -270,7 +280,7 @@ export function DriftRow({
 
   async function handleApply() {
     const bridge = window.brainstorm;
-    if (!bridge) return;
+    if (!bridge || !onApplied) return;
     setApplying(true);
     setError(null);
     try {
@@ -291,7 +301,9 @@ export function DriftRow({
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "1fr 100px 1fr 1fr 80px",
+        gridTemplateColumns: onApplied
+          ? "1fr 100px 1fr 1fr 80px"
+          : "1fr 100px 1fr 1fr",
         gap: 12,
         alignItems: "baseline",
         padding: "8px 12px",
@@ -341,28 +353,30 @@ export function DriftRow({
       >
         observed: {drift.observed_value ?? "—"}
       </div>
-      <button
-        onClick={handleApply}
-        disabled={applying}
-        className="interactive"
-        style={{
-          fontSize: "var(--text-2xs)",
-          color: "var(--ctp-text)",
-          background: "var(--ctp-surface1)",
-          border: "1px solid var(--border-subtle)",
-          borderRadius: 4,
-          padding: "4px 8px",
-          cursor: applying ? "default" : "pointer",
-          opacity: applying ? 0.5 : 1,
-        }}
-        title={
-          error
-            ? `Last error: ${error}`
-            : `Apply intent (${drift.intent_value}) to runtime`
-        }
-      >
-        {applying ? "applying…" : "apply"}
-      </button>
+      {onApplied && (
+        <button
+          onClick={handleApply}
+          disabled={applying}
+          className="interactive"
+          style={{
+            fontSize: "var(--text-2xs)",
+            color: "var(--ctp-text)",
+            background: "var(--ctp-surface1)",
+            border: "1px solid var(--border-subtle)",
+            borderRadius: 4,
+            padding: "4px 8px",
+            cursor: applying ? "default" : "pointer",
+            opacity: applying ? 0.5 : 1,
+          }}
+          title={
+            error
+              ? `Last error: ${error}`
+              : `Apply intent (${drift.intent_value}) to runtime`
+          }
+        >
+          {applying ? "applying…" : "apply"}
+        </button>
+      )}
     </div>
   );
 }
@@ -451,4 +465,262 @@ export function formatLoopValue(v: unknown): string {
   if (v === null || v === undefined) return "—";
   if (typeof v === "object") return JSON.stringify(v);
   return String(v);
+}
+
+/**
+ * Shared outer scroll container for every Business verb body. Same
+ * background/padding/max-width that Plan/Inspect/Operate were each
+ * inlining before this extraction.
+ */
+export function BusinessBodyShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      className="flex-1 overflow-y-auto"
+      style={{
+        background: "var(--ctp-base)",
+        color: "var(--ctp-text)",
+        padding: "32px",
+      }}
+    >
+      <div style={{ maxWidth: 960, margin: "0 auto" }}>{children}</div>
+    </div>
+  );
+}
+
+/**
+ * Standard verb-body header: small uppercase verb chip on top, large
+ * business name as the H1, monospace root path as a footnote. `actions`
+ * renders right-aligned (e.g., the Plan body's Close button).
+ */
+export function BusinessBodyHeader({
+  verb,
+  archetype,
+  name,
+  legalName,
+  root,
+  actions,
+}: {
+  verb: string;
+  archetype: string;
+  name: string;
+  legalName?: string;
+  root: string;
+  actions?: React.ReactNode;
+}) {
+  return (
+    <header
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "flex-start",
+        marginBottom: 32,
+      }}
+    >
+      <div>
+        <div
+          style={{
+            fontSize: "var(--text-2xs)",
+            color: "var(--ctp-overlay0)",
+            letterSpacing: "0.18em",
+            textTransform: "uppercase",
+            marginBottom: 8,
+          }}
+        >
+          {verb} · {archetype}
+        </div>
+        <h1
+          style={{
+            fontSize: "var(--text-3xl, 28px)",
+            fontWeight: 600,
+            color: "var(--ctp-text)",
+            margin: 0,
+          }}
+        >
+          {name}
+        </h1>
+        {legalName && legalName !== name && (
+          <div
+            style={{
+              fontSize: "var(--text-sm)",
+              color: "var(--ctp-subtext1)",
+              marginTop: 4,
+            }}
+          >
+            {legalName}
+          </div>
+        )}
+        <div
+          style={{
+            fontSize: "var(--text-2xs)",
+            color: "var(--ctp-overlay0)",
+            marginTop: 8,
+            fontFamily: "var(--font-mono, monospace)",
+          }}
+        >
+          {root}
+        </div>
+      </div>
+      {actions}
+    </header>
+  );
+}
+
+/**
+ * Cold-open verify drift summary (clean / stale / missing / unindexed).
+ * Plan and Inspect both surface it as their first signal that the index
+ * is healthy.
+ */
+export function SessionVerifyPills({
+  sessionVerify,
+}: {
+  sessionVerify: HarnessSessionVerify | null;
+}) {
+  if (sessionVerify === null) {
+    return (
+      <div
+        style={{
+          padding: 14,
+          background: "var(--ctp-mantle)",
+          borderRadius: 8,
+          border: "1px solid var(--border-subtle)",
+          fontSize: "var(--text-xs)",
+          color: "var(--ctp-overlay1)",
+        }}
+      >
+        Opening index session…
+      </div>
+    );
+  }
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+        gap: 8,
+      }}
+    >
+      <DriftStatPill
+        label="clean"
+        value={sessionVerify.clean}
+        color="var(--ctp-green)"
+      />
+      <DriftStatPill
+        label="stale"
+        value={sessionVerify.stale.length}
+        color={sessionVerify.stale.length > 0 ? "var(--ctp-yellow)" : undefined}
+      />
+      <DriftStatPill
+        label="missing"
+        value={sessionVerify.missing.length}
+        color={sessionVerify.missing.length > 0 ? "var(--ctp-red)" : undefined}
+      />
+      <DriftStatPill label="unindexed" value={sessionVerify.unindexedCount} />
+    </div>
+  );
+}
+
+/**
+ * Inline empty-state card. Italic, mantle-background, bordered. Used
+ * when a section legitimately has nothing to show ("No open drifts",
+ * "No indexed artifacts under this folder yet"). Distinct from
+ * Placeholder — that's a "Phase 2" coming-soon card; this is real
+ * content saying "nothing here right now."
+ */
+export function InlineEmpty({
+  text,
+  hint,
+}: {
+  text: string;
+  hint?: React.ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        padding: 12,
+        fontSize: "var(--text-xs)",
+        color: "var(--ctp-overlay1)",
+        fontStyle: "italic",
+        background: "var(--ctp-mantle)",
+        border: "1px solid var(--border-subtle)",
+        borderRadius: 6,
+      }}
+    >
+      {text}
+      {hint && (
+        <div
+          style={{
+            marginTop: 6,
+            fontSize: "var(--text-2xs)",
+            color: "var(--ctp-overlay0)",
+            fontStyle: "normal",
+          }}
+        >
+          {hint}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Hook: fetch open customer-account drifts on mount and expose
+ * `removeDrift(id)` for the Operate body's apply-button flow.
+ *
+ * Inspect and Operate both render drifts (Inspect read-only, Operate with
+ * apply buttons), so without this they'd each fire `detectCustomerDrift`
+ * on mount and the Inspect view wouldn't reflect a drift just resolved
+ * in Operate. Calling sites mount this in their own bodies for now;
+ * Phase 2 may lift to a Workspace-level provider so apply state actually
+ * shares across both bodies without a refetch — for now each verb gets
+ * a fresh detection but Operate's `removeDrift` updates only its local
+ * list (Inspect refetches on next mount).
+ */
+export interface UseCustomerDriftResult {
+  drifts: CustomerDrift[];
+  unobserved: string[];
+  loading: boolean;
+  error: string | null;
+  removeDrift: (id: string) => void;
+}
+
+export function useCustomerDrift(): UseCustomerDriftResult {
+  const [drifts, setDrifts] = useState<CustomerDrift[]>([]);
+  const [unobserved, setUnobserved] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const bridge = window.brainstorm;
+    if (!bridge) {
+      setLoading(false);
+      return;
+    }
+    let mounted = true;
+    bridge
+      .detectCustomerDrift()
+      .then((res) => {
+        if (!mounted) return;
+        setDrifts(res.drifts);
+        setUnobserved(res.unobserved_accounts);
+      })
+      .catch((e) => {
+        if (!mounted) return;
+        setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  return {
+    drifts,
+    unobserved,
+    loading,
+    error,
+    removeDrift: (id: string) =>
+      setDrifts((prev) => prev.filter((d) => d.id !== id)),
+  };
 }

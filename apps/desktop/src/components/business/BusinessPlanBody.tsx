@@ -1,22 +1,19 @@
 /**
- * Business · Plan verb body.
- *
- * Holds the "what is this business" surface: identity header, the
- * Seven Universal Folders nav grid + per-folder artifact panel, and
- * the federation pointer rows (products, runtimes, external systems,
- * access tiers, AI-loop budget).
- *
- * Drift detection and the AI-loop event stream live in the Inspect verb
- * body now (Group B split). The customers folder panel here is a plain
- * artifact list — no embedded drift sub-panel.
+ * Business · Plan verb body. Identity header, the Seven Universal Folders
+ * nav grid + per-folder artifact panel, and federation pointer rows
+ * (products, runtimes, external systems, access tiers, AI-loop budget).
+ * Drift detection + AI-loop event stream live under Inspect.
  */
 import { useEffect, useState } from "react";
 import type { BusinessToml } from "@brainst0rm/config";
 import {
   SEVEN_FOLDERS,
-  DriftStatPill,
+  BusinessBodyHeader,
+  BusinessBodyShell,
+  InlineEmpty,
   PointerRow,
   FolderRow,
+  SessionVerifyPills,
   describeRuntime,
   sectionTitleStyle,
   listStyle,
@@ -52,84 +49,35 @@ export function BusinessPlanBody({
       setFolderLoading(false);
       return;
     }
+    let mounted = true;
     setFolderLoading(true);
     bridge
       .listHarnessFolder(selectedFolder)
       .then((res) => {
-        if (res.folder === selectedFolder) {
+        if (mounted && res.folder === selectedFolder) {
           setFolderContents(res.artifacts);
         }
       })
       .catch(() => {
-        setFolderContents([]);
+        if (mounted) setFolderContents([]);
       })
-      .finally(() => setFolderLoading(false));
+      .finally(() => {
+        if (mounted) setFolderLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
   }, [selectedFolder]);
 
   return (
-    <div
-      className="flex-1 overflow-y-auto"
-      style={{
-        background: "var(--ctp-base)",
-        color: "var(--ctp-text)",
-        padding: "32px",
-      }}
-    >
-      <div style={{ maxWidth: 960, margin: "0 auto" }}>
-        {/* Header — identity */}
-        <header
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "flex-start",
-            marginBottom: 32,
-          }}
-        >
-          <div>
-            <div
-              style={{
-                fontSize: "var(--text-2xs)",
-                color: "var(--ctp-overlay0)",
-                letterSpacing: "0.18em",
-                textTransform: "uppercase",
-                marginBottom: 8,
-              }}
-            >
-              Business Harness · {manifest.identity.archetype}
-            </div>
-            <h1
-              style={{
-                fontSize: "var(--text-3xl, 28px)",
-                fontWeight: 600,
-                color: "var(--ctp-text)",
-                margin: 0,
-              }}
-            >
-              {manifest.identity.name}
-            </h1>
-            {manifest.identity.legal_name &&
-              manifest.identity.legal_name !== manifest.identity.name && (
-                <div
-                  style={{
-                    fontSize: "var(--text-sm)",
-                    color: "var(--ctp-subtext1)",
-                    marginTop: 4,
-                  }}
-                >
-                  {manifest.identity.legal_name}
-                </div>
-              )}
-            <div
-              style={{
-                fontSize: "var(--text-2xs)",
-                color: "var(--ctp-overlay0)",
-                marginTop: 8,
-                fontFamily: "var(--font-mono, monospace)",
-              }}
-            >
-              {root}
-            </div>
-          </div>
+    <BusinessBodyShell>
+      <BusinessBodyHeader
+        verb="Business Harness"
+        archetype={manifest.identity.archetype}
+        name={manifest.identity.name}
+        legalName={manifest.identity.legal_name}
+        root={root}
+        actions={
           <button
             onClick={onClose}
             className="interactive"
@@ -145,238 +93,201 @@ export function BusinessPlanBody({
           >
             Close
           </button>
-        </header>
+        }
+      />
 
-        {/* Slim cold-open verify summary — full diagnostics live under Inspect.
-            We keep pills here so Plan is glanceable; Inspect reuses the same
-            data plus the AI-loop log + drift. */}
-        {sessionVerify && (
-          <section style={{ marginBottom: 32 }}>
-            <h2 style={sectionTitleStyle}>Index Session</h2>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
-                gap: 8,
-              }}
-            >
-              <DriftStatPill
-                label="clean"
-                value={sessionVerify.clean}
-                color="var(--ctp-green)"
-              />
-              <DriftStatPill
-                label="stale"
-                value={sessionVerify.stale.length}
-                color={
-                  sessionVerify.stale.length > 0
-                    ? "var(--ctp-yellow)"
-                    : undefined
-                }
-              />
-              <DriftStatPill
-                label="missing"
-                value={sessionVerify.missing.length}
-                color={
-                  sessionVerify.missing.length > 0
-                    ? "var(--ctp-red)"
-                    : undefined
-                }
-              />
-              <DriftStatPill
-                label="unindexed"
-                value={sessionVerify.unindexedCount}
-              />
-            </div>
-          </section>
-        )}
+      {sessionVerify && (
+        <section style={{ marginBottom: 32 }}>
+          <h2 style={sectionTitleStyle}>Index Session</h2>
+          <SessionVerifyPills sessionVerify={sessionVerify} />
+        </section>
+      )}
 
-        {/* Seven universal folders */}
-        <section style={{ marginBottom: 40 }}>
-          <h2 style={sectionTitleStyle}>Seven Universal Folders</h2>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: 12,
-            }}
-          >
-            {SEVEN_FOLDERS.map((folder) => {
-              const isSelected = selectedFolder === folder.slug;
-              return (
-                <button
-                  key={folder.slug}
-                  onClick={() =>
-                    setSelectedFolder(isSelected ? null : folder.slug)
-                  }
-                  className="interactive"
+      {/* Seven universal folders */}
+      <section style={{ marginBottom: 40 }}>
+        <h2 style={sectionTitleStyle}>Seven Universal Folders</h2>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 12,
+          }}
+        >
+          {SEVEN_FOLDERS.map((folder) => {
+            const isSelected = selectedFolder === folder.slug;
+            return (
+              <button
+                key={folder.slug}
+                onClick={() =>
+                  setSelectedFolder(isSelected ? null : folder.slug)
+                }
+                className="interactive"
+                style={{
+                  padding: 16,
+                  background: isSelected
+                    ? "var(--ctp-surface1)"
+                    : "var(--ctp-surface0)",
+                  borderRadius: 12,
+                  border: `1px solid ${
+                    isSelected ? "var(--ctp-blue)" : "var(--border-subtle)"
+                  }`,
+                  cursor: "pointer",
+                  textAlign: "left",
+                  color: "inherit",
+                  font: "inherit",
+                }}
+              >
+                <div
                   style={{
-                    padding: 16,
-                    background: isSelected
-                      ? "var(--ctp-surface1)"
-                      : "var(--ctp-surface0)",
-                    borderRadius: 12,
-                    border: `1px solid ${
-                      isSelected ? "var(--ctp-blue)" : "var(--border-subtle)"
-                    }`,
-                    cursor: "pointer",
-                    textAlign: "left",
-                    color: "inherit",
-                    font: "inherit",
+                    fontFamily: "var(--font-mono, monospace)",
+                    fontSize: "var(--text-2xs)",
+                    color: "var(--ctp-overlay0)",
+                    marginBottom: 4,
                   }}
                 >
-                  <div
-                    style={{
-                      fontFamily: "var(--font-mono, monospace)",
-                      fontSize: "var(--text-2xs)",
-                      color: "var(--ctp-overlay0)",
-                      marginBottom: 4,
-                    }}
-                  >
-                    {folder.slug}/
-                  </div>
-                  <div
-                    style={{
-                      fontSize: "var(--text-sm)",
-                      fontWeight: 500,
-                      color: "var(--ctp-text)",
-                      marginBottom: 4,
-                    }}
-                  >
-                    {folder.label}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: "var(--text-xs)",
-                      color: "var(--ctp-subtext1)",
-                    }}
-                  >
-                    {folder.why}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-          {selectedFolder && (
-            <FolderPanel
-              folderSlug={selectedFolder}
-              artifacts={folderContents}
-              loading={folderLoading}
-              onClose={() => setSelectedFolder(null)}
-            />
-          )}
-        </section>
-
-        {/* Federation pointers */}
-        {manifest.products.length > 0 && (
-          <section style={{ marginBottom: 32 }}>
-            <h2 style={sectionTitleStyle}>
-              Products ({manifest.products.length})
-            </h2>
-            <div style={listStyle}>
-              {manifest.products.map((p) => (
-                <PointerRow
-                  key={p.slug}
-                  label={p.slug}
-                  detail={
-                    p.code.length > 0
-                      ? `code: ${p.code.join(", ")}`
-                      : "no code repos declared"
-                  }
-                  status={p.status}
-                />
-              ))}
-            </div>
-          </section>
+                  {folder.slug}/
+                </div>
+                <div
+                  style={{
+                    fontSize: "var(--text-sm)",
+                    fontWeight: 500,
+                    color: "var(--ctp-text)",
+                    marginBottom: 4,
+                  }}
+                >
+                  {folder.label}
+                </div>
+                <div
+                  style={{
+                    fontSize: "var(--text-xs)",
+                    color: "var(--ctp-subtext1)",
+                  }}
+                >
+                  {folder.why}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        {selectedFolder && (
+          <FolderPanel
+            folderSlug={selectedFolder}
+            artifacts={folderContents}
+            loading={folderLoading}
+            onClose={() => setSelectedFolder(null)}
+          />
         )}
+      </section>
 
-        {Object.keys(manifest.runtimes).length > 0 && (
-          <section style={{ marginBottom: 32 }}>
-            <h2 style={sectionTitleStyle}>
-              Runtime Systems ({Object.keys(manifest.runtimes).length})
-            </h2>
-            <div style={listStyle}>
-              {Object.entries(manifest.runtimes).map(([name, runtime]) => (
-                <PointerRow
-                  key={name}
-                  label={name}
-                  detail={describeRuntime(runtime)}
-                />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {Object.keys(manifest.external_systems).length > 0 && (
-          <section style={{ marginBottom: 32 }}>
-            <h2 style={sectionTitleStyle}>
-              External Systems ({Object.keys(manifest.external_systems).length})
-            </h2>
-            <div style={listStyle}>
-              {Object.entries(manifest.external_systems).map(([name, sys]) => (
-                <PointerRow
-                  key={name}
-                  label={name}
-                  detail={describeRuntime(sys)}
-                />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {(manifest.access.sensitive.length > 0 ||
-          manifest.access.confidential.length > 0 ||
-          manifest.access.restricted.length > 0) && (
-          <section style={{ marginBottom: 32 }}>
-            <h2 style={sectionTitleStyle}>Access Tiers</h2>
-            <div style={listStyle}>
-              {manifest.access.sensitive.length > 0 && (
-                <PointerRow
-                  label="sensitive (Tier 2)"
-                  detail={`${manifest.access.sensitive.length} glob(s)`}
-                />
-              )}
-              {manifest.access.confidential.length > 0 && (
-                <PointerRow
-                  label="confidential (Tier 2)"
-                  detail={`${manifest.access.confidential.length} glob(s)`}
-                />
-              )}
-              {manifest.access.restricted.length > 0 && (
-                <PointerRow
-                  label="restricted (Tier 3)"
-                  detail={`${manifest.access.restricted.length} glob(s)`}
-                />
-              )}
-              {manifest.access.externalized_only.length > 0 && (
-                <PointerRow
-                  label="externalized only (Tier 4)"
-                  detail={`${manifest.access.externalized_only.length} glob(s)`}
-                />
-              )}
-            </div>
-          </section>
-        )}
-
+      {/* Federation pointers */}
+      {manifest.products.length > 0 && (
         <section style={{ marginBottom: 32 }}>
-          <h2 style={sectionTitleStyle}>AI-Loop Budget</h2>
+          <h2 style={sectionTitleStyle}>
+            Products ({manifest.products.length})
+          </h2>
           <div style={listStyle}>
-            <PointerRow
-              label="monthly cap"
-              detail={`$${manifest.ai_loops.monthly_budget_usd.toLocaleString()}`}
-            />
-            <PointerRow
-              label="peak per run"
-              detail={`$${manifest.ai_loops.peak_run_dollars.toLocaleString()}`}
-            />
-            <PointerRow
-              label="throttle mode"
-              detail={manifest.ai_loops.detector_throttle_mode}
-            />
+            {manifest.products.map((p) => (
+              <PointerRow
+                key={p.slug}
+                label={p.slug}
+                detail={
+                  p.code.length > 0
+                    ? `code: ${p.code.join(", ")}`
+                    : "no code repos declared"
+                }
+                status={p.status}
+              />
+            ))}
           </div>
         </section>
-      </div>
-    </div>
+      )}
+
+      {Object.keys(manifest.runtimes).length > 0 && (
+        <section style={{ marginBottom: 32 }}>
+          <h2 style={sectionTitleStyle}>
+            Runtime Systems ({Object.keys(manifest.runtimes).length})
+          </h2>
+          <div style={listStyle}>
+            {Object.entries(manifest.runtimes).map(([name, runtime]) => (
+              <PointerRow
+                key={name}
+                label={name}
+                detail={describeRuntime(runtime)}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {Object.keys(manifest.external_systems).length > 0 && (
+        <section style={{ marginBottom: 32 }}>
+          <h2 style={sectionTitleStyle}>
+            External Systems ({Object.keys(manifest.external_systems).length})
+          </h2>
+          <div style={listStyle}>
+            {Object.entries(manifest.external_systems).map(([name, sys]) => (
+              <PointerRow
+                key={name}
+                label={name}
+                detail={describeRuntime(sys)}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {(manifest.access.sensitive.length > 0 ||
+        manifest.access.confidential.length > 0 ||
+        manifest.access.restricted.length > 0) && (
+        <section style={{ marginBottom: 32 }}>
+          <h2 style={sectionTitleStyle}>Access Tiers</h2>
+          <div style={listStyle}>
+            {manifest.access.sensitive.length > 0 && (
+              <PointerRow
+                label="sensitive (Tier 2)"
+                detail={`${manifest.access.sensitive.length} glob(s)`}
+              />
+            )}
+            {manifest.access.confidential.length > 0 && (
+              <PointerRow
+                label="confidential (Tier 2)"
+                detail={`${manifest.access.confidential.length} glob(s)`}
+              />
+            )}
+            {manifest.access.restricted.length > 0 && (
+              <PointerRow
+                label="restricted (Tier 3)"
+                detail={`${manifest.access.restricted.length} glob(s)`}
+              />
+            )}
+            {manifest.access.externalized_only.length > 0 && (
+              <PointerRow
+                label="externalized only (Tier 4)"
+                detail={`${manifest.access.externalized_only.length} glob(s)`}
+              />
+            )}
+          </div>
+        </section>
+      )}
+
+      <section style={{ marginBottom: 32 }}>
+        <h2 style={sectionTitleStyle}>AI-Loop Budget</h2>
+        <div style={listStyle}>
+          <PointerRow
+            label="monthly cap"
+            detail={`$${manifest.ai_loops.monthly_budget_usd.toLocaleString()}`}
+          />
+          <PointerRow
+            label="peak per run"
+            detail={`$${manifest.ai_loops.peak_run_dollars.toLocaleString()}`}
+          />
+          <PointerRow
+            label="throttle mode"
+            detail={manifest.ai_loops.detector_throttle_mode}
+          />
+        </div>
+      </section>
+    </BusinessBodyShell>
   );
 }
 
@@ -449,19 +360,16 @@ function FolderPanel({
       </div>
 
       {!loading && artifacts.length === 0 && (
-        <div
-          style={{
-            padding: 12,
-            fontSize: "var(--text-xs)",
-            color: "var(--ctp-overlay1)",
-            fontStyle: "italic",
-          }}
-        >
-          No indexed artifacts under this folder yet. Run{" "}
-          <code>brainstorm harness reindex</code> after adding files, or
-          materialize a starter template via{" "}
-          <code>brainstorm harness init --template</code>.
-        </div>
+        <InlineEmpty
+          text="No indexed artifacts under this folder yet."
+          hint={
+            <>
+              Run <code>brainstorm harness reindex</code> after adding files, or
+              materialize a starter template via{" "}
+              <code>brainstorm harness init --template</code>.
+            </>
+          }
+        />
       )}
 
       {artifacts.length > 0 && (
