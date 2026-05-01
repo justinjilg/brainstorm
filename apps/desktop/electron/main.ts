@@ -32,7 +32,14 @@ import {
   defaultIndexPath,
   type VerifyResult,
 } from "@brainst0rm/harness-index";
-import { HarnessWriter } from "@brainst0rm/harness-fs";
+import {
+  HarnessWriter,
+  materializeHarness,
+  type MaterializeHarnessResult,
+} from "@brainst0rm/harness-fs";
+import { SAAS_PLATFORM_TEMPLATE } from "@brainst0rm/archetype-saas-platform";
+import { MSP_TEMPLATE } from "@brainst0rm/archetype-msp";
+import type { StarterTemplate } from "@brainst0rm/config";
 import {
   CustomerAccountDriftDetector,
   ApplyIntentToRuntimeChangeSet,
@@ -664,6 +671,44 @@ function registerIPC(): void {
   });
 
   /**
+   * Scaffold a new business harness on disk. Wraps `materializeHarness`
+   * from @brainst0rm/harness-fs (the same function the CLI uses for
+   * `brainstorm harness init`). The renderer's NewHarnessWizard calls
+   * this; on success the renderer follows up with `harness.openSession`
+   * to load the new harness into a session.
+   *
+   * Templates are resolved here because @brainst0rm/harness-fs deliberately
+   * doesn't depend on archetype packages (those bundle large starter
+   * content that would bloat every harness-fs consumer).
+   */
+  ipcMain.handle(
+    "harness.init",
+    async (
+      _event,
+      params: {
+        name: string;
+        archetype: string;
+        parentRoot: string;
+        templateSlug?: string;
+      },
+    ): Promise<MaterializeHarnessResult> => {
+      const template = resolveTemplate(params.templateSlug);
+      if (params.templateSlug && !template) {
+        return {
+          ok: false,
+          error: `unknown template '${params.templateSlug}' — desktop knows only 'saas-platform' and 'msp'`,
+        };
+      }
+      return materializeHarness({
+        name: params.name,
+        archetype: params.archetype,
+        parentRoot: params.parentRoot,
+        template,
+      });
+    },
+  );
+
+  /**
    * Cleanup on app quit: close any active index connection cleanly so
    * SQLite WAL mode doesn't leak journals.
    */
@@ -1158,4 +1203,23 @@ function parseValueForToml(
   const n = Number(value);
   if (!Number.isNaN(n) && value.trim() !== "") return n;
   return value;
+}
+
+/**
+ * Look up a starter template by slug. Mirrors the CLI's
+ * `harness-templates.ts` registry but kept narrow here so the desktop
+ * doesn't depend on the CLI package.
+ */
+function resolveTemplate(
+  slug: string | undefined,
+): StarterTemplate | undefined {
+  if (!slug) return undefined;
+  switch (slug) {
+    case "saas-platform":
+      return SAAS_PLATFORM_TEMPLATE;
+    case "msp":
+      return MSP_TEMPLATE;
+    default:
+      return undefined;
+  }
 }

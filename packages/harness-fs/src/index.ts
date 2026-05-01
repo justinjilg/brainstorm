@@ -23,3 +23,9 @@ export {
   type WalkStatResult,
   type ArtifactKind,
 } from "./walker.js";
+export {
+  materializeHarness,
+  toBusinessSlug,
+  type MaterializeHarnessOptions,
+  type MaterializeHarnessResult,
+} from "./init.js";

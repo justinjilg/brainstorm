@@ -53,6 +53,26 @@ interface BrainstormBridge {
   >;
   /** Close the active index session. */
   closeHarnessSession(): Promise<{ ok: true }>;
+  /**
+   * Scaffold a fresh business harness on disk. Wraps `materializeHarness`
+   * from @brainst0rm/harness-fs. On success, the renderer should follow up
+   * with `openHarnessSession(root)` to load it into a session.
+   */
+  initHarness(params: {
+    name: string;
+    archetype: string;
+    parentRoot: string;
+    templateSlug?: string;
+  }): Promise<
+    | {
+        ok: true;
+        root: string;
+        slug: string;
+        templateFilesCreated: number;
+        templateApplied: string | null;
+      }
+    | { ok: false; error: string }
+  >;
   /** List indexed artifacts under a folder prefix (e.g. "team", "products"). */
   listHarnessFolder(folderSlug: string): Promise<{
     folder: string;
