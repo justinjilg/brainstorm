@@ -1,20 +1,26 @@
 /**
- * Navigator — the left panel. Combines project selector, team builder,
- * conversation history, and KAIROS status.
+ * Navigator — left panel.
  *
- * Replaces the old Sidebar with a purpose-built navigation experience.
+ * Replaces the flat 10-mode layout with a hybrid entity-first structure:
+ * the EntityRail picks the subject (Conversation / Project / Business /
+ * Platform / Self); per-entity content renders below it. Verb tabs render
+ * at the top of the workspace itself, not in the Navigator.
+ *
+ * KAIROS status display stays glanceable via the StatusRail (bottom of
+ * the app, separate component); start/stop controls have moved into
+ * Platform · Operate.
  */
 
-import type { AppMode } from "../../App";
-import type { Conversation } from "../../lib/api-client";
 import { ProjectSelector } from "./ProjectSelector";
 import { TeamBuilder, type TeamAgent } from "./TeamBuilder";
-// GodModeWidget available for future use
+import { EntityRail } from "./EntityRail";
+import type { Conversation } from "../../lib/api-client";
+import type { EntityKind } from "../../lib/workspace";
 
 interface NavigatorProps {
   collapsed: boolean;
-  activeMode: AppMode;
-  onModeChange: (mode: AppMode) => void;
+  activeEntity: EntityKind;
+  onEntityChange: (entity: EntityKind) => void;
   // Project
   currentProject: string | null;
   recentProjects: Array<{ path: string; name: string; lastOpened: string }>;
@@ -31,37 +37,15 @@ interface NavigatorProps {
   onNewConversation: () => void;
   // Palette
   onOpenPalette: () => void;
-  // KAIROS
-  kairosStatus: "running" | "sleeping" | "paused" | "stopped";
-  onKairosStart: () => void;
-  onKairosStop: () => void;
-  activeRole: string | null;
+  // Business — Group C wires onCreateHarness to the wizard
+  onOpenHarness?: () => void;
+  onCreateHarness?: () => void;
 }
-
-const WORKSPACE_MODES: { mode: AppMode; label: string }[] = [
-  { mode: "chat", label: "Chat" },
-  { mode: "dashboard", label: "Dashboard" },
-  { mode: "models", label: "Models" },
-  { mode: "memory", label: "Memory" },
-  { mode: "plan", label: "Plan" },
-  { mode: "trace", label: "Trace" },
-  { mode: "skills", label: "Skills" },
-  { mode: "workflows", label: "Workflows" },
-  { mode: "security", label: "Security" },
-  { mode: "config", label: "Config" },
-];
-
-const KAIROS_STATUS: Record<string, { label: string; color: string }> = {
-  running: { label: "Running", color: "var(--ctp-green)" },
-  sleeping: { label: "Sleeping", color: "var(--ctp-blue)" },
-  paused: { label: "Paused", color: "var(--ctp-yellow)" },
-  stopped: { label: "Stopped", color: "var(--ctp-overlay0)" },
-};
 
 export function Navigator({
   collapsed,
-  activeMode,
-  onModeChange,
+  activeEntity,
+  onEntityChange,
   currentProject,
   recentProjects,
   onProjectSelect,
@@ -74,39 +58,24 @@ export function Navigator({
   onConversationSelect,
   onNewConversation,
   onOpenPalette,
-  kairosStatus,
-  onKairosStart,
-  onKairosStop,
+  onOpenHarness,
+  onCreateHarness,
 }: NavigatorProps) {
-  const kairosInfo = KAIROS_STATUS[kairosStatus];
-
   if (collapsed) {
     return (
       <div
-        className="flex flex-col items-center py-4 gap-2 shrink-0"
+        className="flex flex-col items-center shrink-0"
         style={{
           width: 56,
           background: "var(--ctp-mantle)",
           borderRight: "1px solid var(--border-subtle)",
         }}
       >
-        {WORKSPACE_MODES.slice(0, 5).map(({ mode, label }) => (
-          <button
-            key={mode}
-            onClick={() => onModeChange(mode)}
-            className="interactive w-10 h-10 rounded-xl flex items-center justify-center"
-            style={{
-              fontSize: "var(--text-xs)",
-              color:
-                activeMode === mode ? "var(--ctp-text)" : "var(--ctp-overlay0)",
-              background:
-                activeMode === mode ? "var(--ctp-surface0)" : "transparent",
-            }}
-            title={label}
-          >
-            {label.charAt(0)}
-          </button>
-        ))}
+        <EntityRail
+          active={activeEntity}
+          onSelect={onEntityChange}
+          collapsed={true}
+        />
       </div>
     );
   }
@@ -121,16 +90,8 @@ export function Navigator({
         transition: "width var(--duration-normal) var(--ease-out)",
       }}
     >
-      {/* Project Selector */}
-      <ProjectSelector
-        currentProject={currentProject}
-        recentProjects={recentProjects}
-        onProjectSelect={onProjectSelect}
-        onOpenFolder={onOpenFolder}
-      />
-
       {/* Search / Command bar */}
-      <div className="px-3 pb-1">
+      <div className="px-3 pt-3 pb-2">
         <div
           onClick={onOpenPalette}
           data-testid="search-bar"
@@ -147,56 +108,98 @@ export function Navigator({
         </div>
       </div>
 
-      {/* Workspace modes */}
-      <div className="px-3 py-1">
-        <div className="flex flex-wrap gap-1">
-          {WORKSPACE_MODES.map(({ mode, label }) => (
-            <button
-              key={mode}
-              onClick={() => onModeChange(mode)}
-              data-testid={`mode-${mode}`}
-              className="interactive px-2 py-1 rounded-md"
-              style={{
-                fontSize: "var(--text-2xs)",
-                color:
-                  activeMode === mode
-                    ? "var(--ctp-text)"
-                    : "var(--ctp-overlay0)",
-                background:
-                  activeMode === mode ? "var(--ctp-surface0)" : "transparent",
-              }}
-              title={`⌘${WORKSPACE_MODES.findIndex((m) => m.mode === mode) + 1}`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+      {/* Entity rail */}
+      <EntityRail
+        active={activeEntity}
+        onSelect={onEntityChange}
+        collapsed={false}
+      />
+
+      {/* Per-entity content */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        {activeEntity === "conversation" && (
+          <ConversationContent
+            conversations={conversations}
+            activeConversationId={activeConversationId}
+            onConversationSelect={onConversationSelect}
+            onNewConversation={onNewConversation}
+          />
+        )}
+        {activeEntity === "project" && (
+          <ProjectContent
+            currentProject={currentProject}
+            recentProjects={recentProjects}
+            onProjectSelect={onProjectSelect}
+            onOpenFolder={onOpenFolder}
+          />
+        )}
+        {activeEntity === "business" && (
+          <BusinessContent
+            onOpenHarness={onOpenHarness ?? onOpenFolder}
+            onCreateHarness={onCreateHarness}
+          />
+        )}
+        {/* Platform and Self have no per-Navigator content — their
+            workspaces carry everything. Leave the area empty so the
+            user's eye lands on the verb tabs in the workspace itself. */}
       </div>
 
       {/* Divider */}
       <div
         style={{
           borderBottom: "1px solid var(--border-subtle)",
-          margin: "4px 12px",
+          margin: "0 12px",
         }}
       />
 
-      {/* Team Builder */}
+      {/* Team Builder — always visible, cross-cutting */}
       <TeamBuilder
         team={team}
         onTeamChange={onTeamChange}
         totalBudget={totalBudget}
       />
+    </div>
+  );
+}
 
-      {/* Divider */}
-      <div
-        style={{
-          borderBottom: "1px solid var(--border-subtle)",
-          margin: "4px 12px",
-        }}
-      />
+// ── Per-entity Navigator content ───────────────────────────────────
 
-      {/* Conversations */}
+function ConversationContent({
+  conversations,
+  activeConversationId,
+  onConversationSelect,
+  onNewConversation,
+}: {
+  conversations: Conversation[];
+  activeConversationId: string | null;
+  onConversationSelect: (id: string | null) => void;
+  onNewConversation: () => void;
+}) {
+  return (
+    <div className="flex flex-col">
+      <div className="px-3 pb-2">
+        <button
+          onClick={onNewConversation}
+          data-testid="new-conversation"
+          className="interactive w-full flex items-center justify-between px-3 py-2 rounded-xl"
+          style={{
+            border: "1px solid var(--border-default)",
+            fontSize: "var(--text-xs)",
+            color: "var(--ctp-subtext0)",
+          }}
+        >
+          <span>+ New Conversation</span>
+          <span
+            className="font-mono"
+            style={{
+              fontSize: "var(--text-2xs)",
+              color: "var(--ctp-overlay0)",
+            }}
+          >
+            ⌘N
+          </span>
+        </button>
+      </div>
       <div
         className="px-4 py-1.5"
         style={{
@@ -208,7 +211,7 @@ export function Navigator({
       >
         History
       </div>
-      <div className="flex-1 overflow-y-auto px-2">
+      <div className="px-2">
         {conversations.length === 0 ? (
           <div
             className="px-3 py-3 text-center"
@@ -251,114 +254,80 @@ export function Navigator({
           })
         )}
       </div>
+    </div>
+  );
+}
 
-      {/* KAIROS + Systems */}
-      <div
-        className="px-3 py-2"
-        style={{ borderTop: "1px solid var(--border-subtle)" }}
-      >
-        <div
-          data-testid="kairos-widget"
-          role="button"
-          tabIndex={0}
-          onClick={() => onModeChange("config")}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") onModeChange("config");
-          }}
-          title="KAIROS — click to view config & state"
-          className="flex items-center justify-between px-3 py-2 rounded-xl"
-          style={{
-            background: "var(--ctp-surface0)",
-            border: "1px solid var(--border-subtle)",
-            cursor: "pointer",
-          }}
-        >
-          <div className="flex items-center gap-2">
-            <span
-              className={`w-2 h-2 rounded-full ${kairosStatus === "running" ? "animate-pulse-glow" : ""}`}
-              style={{ background: kairosInfo.color }}
-            />
-            <span
-              className="font-medium"
-              style={{
-                fontSize: "var(--text-xs)",
-                color: "var(--ctp-subtext1)",
-              }}
-            >
-              KAIROS
-            </span>
-            <span
-              style={{
-                fontSize: "var(--text-2xs)",
-                color: kairosInfo.color,
-              }}
-            >
-              {kairosInfo.label}
-            </span>
-          </div>
-          {kairosStatus === "stopped" ? (
-            <button
-              onClick={(e) => {
-                // The wrapping widget opens config on click; don't trigger
-                // that when the user hits Start/Stop.
-                e.stopPropagation();
-                onKairosStart();
-              }}
-              data-testid="kairos-start"
-              className="interactive text-[10px] px-2 py-0.5 rounded"
-              style={{
-                background: "var(--ctp-green)",
-                color: "var(--ctp-crust)",
-              }}
-            >
-              Start
-            </button>
-          ) : (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onKairosStop();
-              }}
-              data-testid="kairos-stop"
-              className="interactive text-[10px] px-2 py-0.5 rounded"
-              style={{
-                color: "var(--ctp-red)",
-                border: "1px solid var(--ctp-red)",
-              }}
-            >
-              Stop
-            </button>
-          )}
-        </div>
-      </div>
+function ProjectContent({
+  currentProject,
+  recentProjects,
+  onProjectSelect,
+  onOpenFolder,
+}: {
+  currentProject: string | null;
+  recentProjects: Array<{ path: string; name: string; lastOpened: string }>;
+  onProjectSelect: (path: string) => void;
+  onOpenFolder: () => void;
+}) {
+  return (
+    <ProjectSelector
+      currentProject={currentProject}
+      recentProjects={recentProjects}
+      onProjectSelect={onProjectSelect}
+      onOpenFolder={onOpenFolder}
+    />
+  );
+}
 
-      {/* New conversation */}
-      <div
-        className="px-3 pb-3"
-        style={{ borderTop: "1px solid var(--border-subtle)" }}
+function BusinessContent({
+  onOpenHarness,
+  onCreateHarness,
+}: {
+  onOpenHarness: () => void;
+  onCreateHarness?: () => void;
+}) {
+  return (
+    <div className="px-3 py-2 flex flex-col gap-2">
+      <button
+        onClick={onOpenHarness}
+        className="interactive w-full px-3 py-2 rounded-xl text-left"
+        style={{
+          background: "var(--ctp-surface0)",
+          border: "1px solid var(--border-subtle)",
+          fontSize: "var(--text-xs)",
+          color: "var(--ctp-text)",
+        }}
       >
+        Open existing harness
+      </button>
+      {onCreateHarness ? (
         <button
-          onClick={onNewConversation}
-          data-testid="new-conversation"
-          className="interactive w-full flex items-center justify-between px-3 py-2 rounded-xl"
+          onClick={onCreateHarness}
+          className="interactive w-full px-3 py-2 rounded-xl text-left"
           style={{
-            border: "1px solid var(--border-default)",
+            background: "var(--ctp-blue)",
+            border: "1px solid var(--ctp-blue)",
             fontSize: "var(--text-xs)",
-            color: "var(--ctp-subtext0)",
+            fontWeight: 600,
+            color: "var(--ctp-base)",
           }}
         >
-          <span>+ New Conversation</span>
-          <span
-            className="font-mono"
-            style={{
-              fontSize: "var(--text-2xs)",
-              color: "var(--ctp-overlay0)",
-            }}
-          >
-            ⌘N
-          </span>
+          Create new harness
         </button>
-      </div>
+      ) : (
+        <div
+          style={{
+            padding: "8px 10px",
+            fontSize: "var(--text-2xs)",
+            color: "var(--ctp-overlay0)",
+            background: "var(--ctp-base)",
+            border: "1px dashed var(--border-subtle)",
+            borderRadius: 8,
+          }}
+        >
+          Create-new wizard ships in Group C.
+        </div>
+      )}
     </div>
   );
 }
