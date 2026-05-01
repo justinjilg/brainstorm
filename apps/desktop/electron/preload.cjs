@@ -60,6 +60,9 @@ contextBridge.exposeInMainWorld("brainstorm", {
   /** Close the active index session. Called on harness close. */
   closeHarnessSession: () => ipcRenderer.invoke("harness.closeSession"),
 
+  /** Scaffold a fresh business harness on disk. Same code path as the CLI. */
+  initHarness: (params) => ipcRenderer.invoke("harness.init", params),
+
   /** List indexed artifacts whose relative_path starts with the folder slug.
    *  Backs the per-folder panels in BusinessHarnessView. */
   listHarnessFolder: (folderSlug) =>

@@ -1,14 +1,9 @@
 import { Command } from "commander";
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { existsSync, writeFileSync, readFileSync } from "node:fs";
 import { join, basename } from "node:path";
 import { homedir } from "node:os";
 import { createHash } from "node:crypto";
-import {
-  detectBusinessHarness,
-  loadBusinessHarness,
-  BUSINESS_MANIFEST_FILE,
-  BUSINESS_SCHEMA_VERSION,
-} from "@brainst0rm/config";
+import { detectBusinessHarness, loadBusinessHarness } from "@brainst0rm/config";
 import {
   validateSensitivePaths,
   isEncryptionPipelineReady,
@@ -29,6 +24,7 @@ import {
   detectKind,
   extractIndexFields,
   hashContent,
+  materializeHarness,
 } from "@brainst0rm/harness-fs";
 import {
   HarnessIndexStore,
@@ -257,17 +253,9 @@ async function runInit(
   name: string,
   opts: { archetype: string; root: string; template?: string },
 ): Promise<void> {
-  const slug = toSlug(name);
-  const root = join(opts.root, slug);
-
-  if (existsSync(join(root, BUSINESS_MANIFEST_FILE))) {
-    console.error(`✗ harness already exists at ${root}`);
-    process.exit(1);
-  }
-
-  // Resolve archetype: --template overrides --archetype if both set, since
-  // each template targets a specific archetype.
-  let effectiveArchetype = opts.archetype;
+  // Resolve template up-front so the CLI can give a precise error before
+  // we touch the filesystem. The materialization itself lives in
+  // packages/harness-fs/src/init.ts so the desktop IPC handler shares it.
   let template = null as ReturnType<typeof getTemplate>;
   if (opts.template) {
     template = getTemplate(opts.template);
@@ -277,151 +265,28 @@ async function runInit(
       );
       process.exit(1);
     }
-    effectiveArchetype = template.archetype;
   }
 
-  mkdirSync(root, { recursive: true });
-  mkdirSync(join(root, "identity"), { recursive: true });
-  mkdirSync(join(root, ".harness"), { recursive: true });
+  const result = materializeHarness({
+    name,
+    archetype: opts.archetype,
+    parentRoot: opts.root,
+    template: template ?? undefined,
+  });
 
-  // Manifest — minimum viable per Decision #2 (progressive bootstrap)
-  const id = `biz_${slug.replace(/-/g, "_")}`;
-  writeFileSync(
-    join(root, BUSINESS_MANIFEST_FILE),
-    `[identity]
-id        = "${id}"
-name      = "${name}"
-archetype = "${effectiveArchetype}"
-schema    = "${BUSINESS_SCHEMA_VERSION}"
-
-# Federation pointers — fill in as systems integrate.
-# [[products]]
-# slug    = "your-product"
-# code    = ["~/Projects/your-product"]
-# runtime = { deploy = "..." }
-
-# [runtimes.billing]
-# provider = "stripe"
-# account_id = "acct_..."
-
-[validation]
-strict   = ["business.toml", "identity/identity.toml"]
-lenient  = ["customers/", "products/", "operations/"]
-advisory = ["**/*.md"]
-
-[access]
-sensitive = []
-
-[ai_loops]
-monthly_budget_usd      = 500
-peak_run_dollars        = 50
-detector_throttle_mode  = "skip"
-alert_threshold_pct     = 0.8
-`,
-  );
-
-  // Identity stubs — the only non-manifest files Decision #2 ships
-  writeFileSync(
-    join(root, "identity", "identity.toml"),
-    `id           = "${id}"
-name         = "${name}"
-archetype    = "${effectiveArchetype}"
-status       = "active"
-`,
-  );
-  writeFileSync(
-    join(root, "identity", "mission.md"),
-    `# Mission
-
-[Replace with one or two paragraphs naming why this business exists.]
-
-The AI's first guided-fill question will iterate on this.
-`,
-  );
-
-  // Self-describing harness metadata (Decision #3 + plan item 8).
-  // .harness/schema.toml records the universal-skeleton folder list + version
-  // so future migrations know what shape this harness is on. .harness/
-  // archetype.toml records which overlay package was applied (or "none" for
-  // bare init).
-  const createdAt = new Date().toISOString();
-  writeFileSync(
-    join(root, ".harness", "schema.toml"),
-    `# Self-describing harness metadata.
-# Record what universal-skeleton version this harness was bootstrapped with
-# so migration tooling knows what shape to expect.
-
-schema_version = "${BUSINESS_SCHEMA_VERSION}"
-created_at     = "${createdAt}"
-
-# Universal seven-folder skeleton — the load-bearing structure every
-# harness inherits regardless of archetype. Listed here so the migration
-# tool can detect missing/extra top-level folders and prompt accordingly.
-universal_folders = [
-  "identity",
-  "team",
-  "customers",
-  "products",
-  "operations",
-  "market",
-  "governance",
-]
-`,
-  );
-
-  writeFileSync(
-    join(root, ".harness", "archetype.toml"),
-    `# Active archetype manifest.
-# Records which overlay package was applied at init time (if any) and what
-# files it materialized. Used by upgrade tooling to compare against newer
-# archetype versions and surface drift.
-
-archetype = "${effectiveArchetype}"
-${
-  template
-    ? `template_slug    = "${template.slug}"
-template_package = "@brainst0rm/archetype-${template.slug}"
-files_materialized = ${template.files.length}`
-    : `# No starter template applied — bare progressive bootstrap (Decision #2).
-template_slug      = ""
-files_materialized = 0`
-}
-applied_at = "${createdAt}"
-`,
-  );
-
-  writeFileSync(
-    join(root, ".harness", ".gitignore"),
-    `# Local-only derived artifacts under .harness/ should not be committed.
-# Per Decision #11 — index is per-user; sentinels and locks are per-machine.
-
-index.db
-index.db-*
-locks/
-`,
-  );
-
-  // Materialize starter-template files if --template was specified.
-  // Per Decision #2: this is the "starter library" option (the shortcut
-  // alternative to progressive guided fill).
-  let templateFileCount = 0;
-  if (template) {
-    for (const file of template.files) {
-      const abs = join(root, file.path);
-      mkdirSync(join(abs, ".."), { recursive: true });
-      writeFileSync(abs, file.content);
-      templateFileCount++;
-    }
+  if (!result.ok) {
+    console.error(`✗ ${result.error}`);
+    process.exit(1);
   }
 
-  console.log(`✓ initialized harness at ${root}`);
-  if (template) {
+  console.log(`✓ initialized harness at ${result.root}`);
+  if (result.templateApplied) {
     console.log(
-      `  template: ${template.slug} — ${templateFileCount} starter files materialized`,
+      `  template: ${result.templateApplied} — ${result.templateFilesCreated} starter files materialized`,
     );
   }
   console.log(
-    `  next: cd ${root} && brainstorm harness reindex && brainstorm harness summary`,
+    `  next: cd ${result.root} && brainstorm harness reindex && brainstorm harness summary`,
   );
 }
 
@@ -685,14 +550,6 @@ function resolveRoot(explicit?: string): string {
 
 function harnessIdFromRoot(root: string): string {
   return createHash("sha256").update(root).digest("hex").slice(0, 16);
-}
-
-function toSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60);
 }
 
 function formatBytes(n: number): string {

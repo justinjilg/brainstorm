@@ -3,6 +3,7 @@ import { Navigator } from "./components/navigator/Navigator";
 import { VerbTabs } from "./components/navigator/VerbTabs";
 import type { TeamAgent } from "./components/navigator/TeamBuilder";
 import { ChatView } from "./components/chat/ChatView";
+import { NewHarnessWizard } from "./components/business/NewHarnessWizard";
 import { ConversationWorkspace } from "./components/workspaces/ConversationWorkspace";
 import { ProjectWorkspace } from "./components/workspaces/ProjectWorkspace";
 import { BusinessWorkspace } from "./components/workspaces/BusinessWorkspace";
@@ -97,6 +98,7 @@ export function App() {
   const [keyboardOverlayOpen, setKeyboardOverlayOpen] = useState(false);
   const [rolePickerOpen, setRolePickerOpen] = useState(false);
   const [modelSwitcherOpen, setModelSwitcherOpen] = useState(false);
+  const [newHarnessWizardOpen, setNewHarnessWizardOpen] = useState(false);
   const [inspectorContext, setInspectorContext] = useState<InspectorContext>({
     type: "none",
   });
@@ -264,6 +266,67 @@ export function App() {
     setActiveHarness({ kind: "none" });
   }, []);
 
+  const openCreateHarnessWizard = useCallback(() => {
+    setNewHarnessWizardOpen(true);
+  }, []);
+
+  /**
+   * After the wizard scaffolds a new harness on disk, open the index
+   * session, parse the manifest into state, and route to Business · Plan
+   * so the user lands on the new harness immediately.
+   */
+  const onHarnessCreated = useCallback(
+    async (root: string) => {
+      const bridge = window.brainstorm;
+      if (!bridge) return;
+      try {
+        const parsed = await bridge.parseHarness(root);
+        if (parsed.kind === "business") {
+          setActiveHarness({
+            kind: "business",
+            root,
+            manifest: parsed.manifest,
+            sessionVerify: null,
+          });
+          setCurrentProject(root);
+          setSelection({ entity: "business", verb: "plan" });
+          // Open the index session in the background — same pattern as
+          // openFolderOrHarness.
+          bridge
+            .openHarnessSession(root)
+            .then((session) => {
+              if (session.ok) {
+                setActiveHarness((prev) =>
+                  prev.kind === "business" && prev.root === root
+                    ? { ...prev, sessionVerify: session.verify }
+                    : prev,
+                );
+              } else {
+                toast.push(`Index session failed: ${session.error}`, "error");
+              }
+            })
+            .catch((err: unknown) => {
+              toast.push(
+                `Index session error: ${err instanceof Error ? err.message : String(err)}`,
+                "error",
+              );
+            });
+        } else if (parsed.kind === "error") {
+          toast.push(
+            `Harness created but manifest failed to parse: ${parsed.message}`,
+            "error",
+          );
+        }
+      } catch (err) {
+        toast.push(
+          `Failed to load new harness: ${err instanceof Error ? err.message : String(err)}`,
+          "error",
+        );
+      }
+    },
+    [toast],
+  );
+
   // Keyboard shortcuts:
   //   Cmd+1..5         → switch entity (Conversation / Project / Business / Platform / Self)
   //   Cmd+Shift+1..5   → switch verb within current entity
@@ -414,7 +477,7 @@ export function App() {
           onProjectSelect={setCurrentProject}
           onOpenFolder={openFolderOrHarness}
           onOpenHarness={openFolderOrHarness}
-          // onCreateHarness wired in Group C
+          onCreateHarness={openCreateHarnessWizard}
           team={team}
           onTeamChange={setTeam}
           totalBudget={5.0}
@@ -549,7 +612,7 @@ export function App() {
                     activeHarness={activeHarness}
                     onCloseHarness={closeActiveHarness}
                     onOpenHarness={openFolderOrHarness}
-                    // onCreateHarness wired in Group C
+                    onCreateHarness={openCreateHarnessWizard}
                   />
                 )}
                 {selection.entity === "platform" && (
@@ -575,7 +638,7 @@ export function App() {
                     onActiveSkillsChange={setActiveSkills}
                     onOpenFolder={openFolderOrHarness}
                     onOpenHarness={openFolderOrHarness}
-                    // onCreateHarness wired in Group C
+                    onCreateHarness={openCreateHarnessWizard}
                   />
                 )}
               </>
@@ -594,6 +657,24 @@ export function App() {
       <KeyboardOverlay
         open={keyboardOverlayOpen}
         onClose={() => setKeyboardOverlayOpen(false)}
+      />
+
+      <NewHarnessWizard
+        open={newHarnessWizardOpen}
+        onClose={() => setNewHarnessWizardOpen(false)}
+        onSubmit={async (params) => {
+          const bridge = window.brainstorm;
+          if (!bridge?.initHarness) {
+            return {
+              ok: false,
+              error: "Desktop bridge unavailable (initHarness missing)",
+            };
+          }
+          const res = await bridge.initHarness(params);
+          if (res.ok) return { ok: true, root: res.root };
+          return { ok: false, error: res.error };
+        }}
+        onCreated={onHarnessCreated}
       />
 
       <ModelSwitcher
