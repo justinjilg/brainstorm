@@ -12,10 +12,14 @@ export {
 } from "./watcher.js";
 export {
   walkHarnessDir,
+  walkHarnessDirStat,
+  readArtifactDeep,
   detectKind,
   extractIndexFields,
   type WalkedArtifact,
+  type WalkedArtifactStat,
   type WalkOptions,
   type WalkResult,
+  type WalkStatResult,
   type ArtifactKind,
 } from "./walker.js";

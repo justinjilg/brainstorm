@@ -1064,9 +1064,12 @@ app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
+  // Quit on last-window-close on every platform — this is a
+  // single-window app with no menu-bar value-add, so leaving the
+  // process alive on macOS just keeps the harness loops (indexer,
+  // customer-drift, stale-watchdog) running against a closed UI,
+  // which is how the v1 build leaked memory in long sessions.
+  app.quit();
 });
 
 app.on("before-quit", () => {

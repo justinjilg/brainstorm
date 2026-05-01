@@ -65,7 +65,34 @@ export interface WalkOptions {
   /** Maximum depth to recurse. Default 12 — far past any reasonable
    *  harness layout, defends against pathological symlink loops. */
   maxDepth?: number;
+  /**
+   * Files above this byte threshold skip content-read + content_hash. A
+   * synthetic hash from `(path, mtime, size)` is recorded instead so the
+   * artifact is still indexed and changes are still detected via mtime/size
+   * drift. Default 2 MiB — large enough to cover every real harness file
+   * type (TOML, MD, ADRs), small enough that a stray PDF/video doesn't
+   * cause the indexer to load hundreds of MB into memory each cycle.
+   */
+  maxContentReadBytes?: number;
 }
+
+/** Lightweight artifact descriptor — stat metadata only, no content read. */
+export interface WalkedArtifactStat {
+  absolutePath: string;
+  relativePath: string;
+  mtime_ms: number;
+  size_bytes: number;
+  /** Path-only kind hint; refined later if/when the file is deep-read. */
+  kind: ArtifactKind;
+}
+
+export interface WalkStatResult {
+  artifacts: WalkedArtifactStat[];
+  total_dirs_seen: number;
+  duration_ms: number;
+}
+
+const DEFAULT_MAX_CONTENT_READ_BYTES = 2 * 1024 * 1024;
 
 export interface WalkResult {
   /** All walked artifacts with parsed metadata where available. */
@@ -102,6 +129,8 @@ export function walkHarnessDir(
   const ignored = new Set(options.ignoredDirs ?? DEFAULT_IGNORED_DIRS);
   const parseExts = options.parseExtensions ?? DEFAULT_PARSE_EXTENSIONS;
   const maxDepth = options.maxDepth ?? 12;
+  const maxContentReadBytes =
+    options.maxContentReadBytes ?? DEFAULT_MAX_CONTENT_READ_BYTES;
 
   const startedAt = Date.now();
   const result: WalkResult = {
@@ -151,6 +180,21 @@ export function walkHarnessDir(
       } else if (stats.isFile()) {
         result.total_files_seen++;
         result.total_bytes += stats.size;
+
+        // Skip content-read for large files; record a synthetic hash so the
+        // artifact is still indexed and detectable via mtime/size drift.
+        if (stats.size > maxContentReadBytes) {
+          result.artifacts.push({
+            absolutePath: abs,
+            relativePath: rel,
+            mtime_ms: stats.mtimeMs,
+            size_bytes: stats.size,
+            content_hash: syntheticHash(rel, stats.mtimeMs, stats.size),
+            frontmatter: null,
+            kind: detectKind(rel, null),
+          });
+          continue;
+        }
 
         let buffer: Buffer;
         try {
@@ -358,6 +402,160 @@ function parseMarkdownFrontmatter(
   // simple key: value pairs only. Caller can hand off to a real YAML
   // parser if richer fields are needed.
   return parseSimpleYamlPairs(block);
+}
+
+/**
+ * Stat-only walk — same traversal as `walkHarnessDir` but returns just
+ * `(path, mtime, size)` per file. No `readFileSync`, no hashing, no TOML
+ * parse. The periodic indexer uses this to diff against the SQLite index
+ * and only deep-read files whose stats actually changed since last cycle.
+ *
+ * Memory profile: O(file count), independent of file content size.
+ */
+export function walkHarnessDirStat(
+  harnessRoot: string,
+  options: Pick<WalkOptions, "ignoredDirs" | "maxDepth"> = {},
+): WalkStatResult {
+  const ignored = new Set(options.ignoredDirs ?? DEFAULT_IGNORED_DIRS);
+  const maxDepth = options.maxDepth ?? 12;
+  const startedAt = Date.now();
+  const result: WalkStatResult = {
+    artifacts: [],
+    total_dirs_seen: 0,
+    duration_ms: 0,
+  };
+  const queue: Array<{ dir: string; depth: number }> = [
+    { dir: harnessRoot, depth: 0 },
+  ];
+
+  while (queue.length > 0) {
+    const { dir, depth } = queue.shift()!;
+    if (depth > maxDepth) continue;
+
+    let entries: string[];
+    try {
+      entries = readdirSync(dir);
+    } catch {
+      continue;
+    }
+    result.total_dirs_seen++;
+
+    for (const name of entries) {
+      const abs = join(dir, name);
+      const rel = relative(harnessRoot, abs);
+      const shouldSkip = Array.from(ignored).some(
+        (p) => rel === p || rel.startsWith(p + "/"),
+      );
+      if (shouldSkip) continue;
+
+      let stats;
+      try {
+        stats = statSync(abs);
+      } catch {
+        continue;
+      }
+
+      if (stats.isDirectory()) {
+        queue.push({ dir: abs, depth: depth + 1 });
+      } else if (stats.isFile()) {
+        result.artifacts.push({
+          absolutePath: abs,
+          relativePath: rel,
+          mtime_ms: stats.mtimeMs,
+          size_bytes: stats.size,
+          kind: detectKind(rel, null),
+        });
+      }
+    }
+  }
+
+  result.duration_ms = Date.now() - startedAt;
+  return result;
+}
+
+/**
+ * Read a single artifact from disk and produce its full `WalkedArtifact`
+ * record. Used by the periodic indexer when stat-diff says a file changed
+ * (or is new). Honors the same `maxContentReadBytes` cap as `walkHarnessDir`
+ * — files above the cap get a synthetic hash and null frontmatter.
+ *
+ * Returns `null` if the file is unreadable.
+ */
+export function readArtifactDeep(
+  stat: WalkedArtifactStat,
+  options: Pick<WalkOptions, "parseExtensions" | "maxContentReadBytes"> = {},
+): WalkedArtifact | null {
+  const parseExts = options.parseExtensions ?? DEFAULT_PARSE_EXTENSIONS;
+  const maxContentReadBytes =
+    options.maxContentReadBytes ?? DEFAULT_MAX_CONTENT_READ_BYTES;
+
+  if (stat.size_bytes > maxContentReadBytes) {
+    return {
+      absolutePath: stat.absolutePath,
+      relativePath: stat.relativePath,
+      mtime_ms: stat.mtime_ms,
+      size_bytes: stat.size_bytes,
+      content_hash: syntheticHash(
+        stat.relativePath,
+        stat.mtime_ms,
+        stat.size_bytes,
+      ),
+      frontmatter: null,
+      kind: stat.kind,
+    };
+  }
+
+  let buffer: Buffer;
+  try {
+    buffer = readFileSync(stat.absolutePath);
+  } catch {
+    return null;
+  }
+
+  const content_hash = hashContent(buffer);
+  const ext = extOf(stat.relativePath);
+  let frontmatter: Record<string, unknown> | null = null;
+
+  if (parseExts.includes(ext)) {
+    if (ext === ".toml") {
+      try {
+        frontmatter = TOML.parse(buffer.toString("utf-8")) as Record<
+          string,
+          unknown
+        >;
+      } catch {
+        // parse error — leave frontmatter null; caller doesn't track
+        // parse errors at the per-file level.
+      }
+    } else if (ext === ".md") {
+      frontmatter = parseMarkdownFrontmatter(buffer.toString("utf-8"));
+    }
+  }
+
+  return {
+    absolutePath: stat.absolutePath,
+    relativePath: stat.relativePath,
+    mtime_ms: stat.mtime_ms,
+    size_bytes: stat.size_bytes,
+    content_hash,
+    frontmatter,
+    kind: detectKind(stat.relativePath, frontmatter),
+  };
+}
+
+/**
+ * Hash for files we deliberately don't content-hash (above the size cap).
+ * Format: `synthetic:<sha256-of-(path|mtime|size)>`. Distinct prefix so
+ * downstream code can detect that this isn't a real content hash.
+ */
+function syntheticHash(
+  relativePath: string,
+  mtime_ms: number,
+  size_bytes: number,
+): string {
+  return `synthetic:${hashContent(
+    Buffer.from(`${relativePath}|${mtime_ms}|${size_bytes}`),
+  )}`;
 }
 
 function parseSimpleYamlPairs(block: string): Record<string, unknown> {

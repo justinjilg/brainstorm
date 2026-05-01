@@ -19,8 +19,10 @@ function writeFile(rel: string, content: string) {
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "loop-"));
-  dbPath = join(root, ".harness", "index.db");
-  mkdirSync(join(root, ".harness"), { recursive: true });
+  // Keep the SQLite db OUTSIDE the harness root so the indexer's own
+  // writes don't perturb a file the walker would see — matches the
+  // production layout (~/.brainstorm/harness-index/<id>.db).
+  dbPath = mkdtempSync(join(tmpdir(), "loop-db-")) + "/index.db";
   store = new HarnessIndexStore(dbPath);
   // Minimal harness so the walker doesn't fail.
   writeFile(
@@ -80,6 +82,30 @@ status = "active"
       pruned: 0,
     });
     expect(events.filter((e) => e.loop === "indexer")).toHaveLength(2);
+  });
+
+  test("runOnce(indexer) skips unchanged files on a second run", async () => {
+    writeFile("team/humans/justin.toml", `id = "person_justin"\n`);
+
+    const runner = new HarnessLoopRunner({
+      harnessRoot: root,
+      index: store,
+      now: () => NOW_MS,
+    });
+
+    const first = await runner.runOnce("indexer");
+    expect(first.summary?.upserts).toBeGreaterThan(0);
+    expect(first.summary?.unchanged).toBe(0);
+
+    // Second run with no file changes — every artifact should land in
+    // `unchanged` and zero upserts should fire. This is the load-bearing
+    // behavior that prevents the periodic indexer from re-reading every
+    // file every cycle (the v1 memory-leak shape).
+    const second = await runner.runOnce("indexer");
+    expect(second.summary?.upserts).toBe(0);
+    expect(second.summary?.unchanged).toBeGreaterThan(0);
+    expect(second.summary?.unchanged).toBe(first.summary?.upserts);
+    expect(second.summary?.pruned).toBe(0);
   });
 
   test("runOnce(indexer) prunes deleted files between runs", async () => {
