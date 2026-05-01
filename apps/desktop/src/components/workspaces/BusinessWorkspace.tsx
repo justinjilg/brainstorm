@@ -1,17 +1,26 @@
 /**
  * Business workspace.
  *
- * Phase 1: Plan mounts the existing BusinessHarnessView (manifest + 7
- * folders + drift panel + loop log) — Group B will split this across
- * Plan/Inspect/Operate. For now the whole thing renders under Plan and
- * Inspect/Operate/Configure show placeholders that name what's coming.
+ * Group B (this commit) split the legacy BusinessHarnessView into three
+ * verb-specific bodies:
+ *   - Plan    → identity header, seven folders + per-folder artifact
+ *               panel, federation pointers (products / runtimes /
+ *               external systems / access tiers / AI-loop budget).
+ *   - Inspect → cold-open drift summary pills, AI-loop event stream,
+ *               read-only customers drift detection panel.
+ *   - Operate → focused open-drifts list with apply buttons + a
+ *               disabled "Run indexer loop now" placeholder (wired in
+ *               Group E).
  *
- * If no harness is open (`activeHarness.kind !== 'business'`), every
- * verb shows the same empty-state card pointing at "Open existing" and
- * "Create new" actions. The latter wires up in Group C (NewHarnessWizard).
+ * Configure remains a placeholder until the manifest editor lands.
+ *
+ * If no harness is open, every verb falls through to the same
+ * empty-state card pointing at "Open existing" / "Create new".
  */
 import { Placeholder } from "./Placeholder";
-import { BusinessHarnessView } from "../harness/BusinessHarnessView";
+import { BusinessPlanBody } from "../business/BusinessPlanBody";
+import { BusinessInspectBody } from "../business/BusinessInspectBody";
+import { BusinessOperateBody } from "../business/BusinessOperateBody";
 import { ErrorBoundary } from "../ErrorBoundary";
 import type { ActiveHarness } from "../../lib/harness-types";
 import type { VerbKind } from "../../lib/workspace";
@@ -46,8 +55,8 @@ export function BusinessWorkspace({
       return null; // App-level ChatView
     case "plan":
       return (
-        <ErrorBoundary fallbackLabel="Business Harness">
-          <BusinessHarnessView
+        <ErrorBoundary fallbackLabel="Business Plan">
+          <BusinessPlanBody
             root={activeHarness.root}
             manifest={activeHarness.manifest}
             sessionVerify={activeHarness.sessionVerify}
@@ -57,17 +66,23 @@ export function BusinessWorkspace({
       );
     case "inspect":
       return (
-        <Placeholder
-          title="Drift · Index · AI Loops"
-          description="The drift detector results, index coherence, and harness-loop event stream split out from the Plan view. Group B move."
-        />
+        <ErrorBoundary fallbackLabel="Business Inspect">
+          <BusinessInspectBody
+            root={activeHarness.root}
+            manifest={activeHarness.manifest}
+            sessionVerify={activeHarness.sessionVerify}
+          />
+        </ErrorBoundary>
       );
     case "operate":
       return (
-        <Placeholder
-          title="Init · Apply · Encrypt"
-          description="Create a new harness (Group C wizard), apply intent→runtime ChangeSets, encrypt artifacts via age + sops, rotate keys. Wraps harness-fs init + harness-crypto."
-        />
+        <ErrorBoundary fallbackLabel="Business Operate">
+          <BusinessOperateBody
+            root={activeHarness.root}
+            manifest={activeHarness.manifest}
+            sessionVerify={activeHarness.sessionVerify}
+          />
+        </ErrorBoundary>
       );
     case "configure":
       return (
