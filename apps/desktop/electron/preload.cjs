@@ -68,6 +68,10 @@ contextBridge.exposeInMainWorld("brainstorm", {
   /** Run the customer-account drift detector. */
   detectCustomerDrift: () => ipcRenderer.invoke("harness.detectCustomerDrift"),
 
+  /** Apply an intent → runtime ChangeSet for a drift. */
+  applyCustomerDrift: (driftId) =>
+    ipcRenderer.invoke("harness.applyCustomerDrift", driftId),
+
   /** Recent loop events from the live runner. */
   recentHarnessLoopEvents: (limit) =>
     ipcRenderer.invoke("harness.recentLoopEvents", limit),

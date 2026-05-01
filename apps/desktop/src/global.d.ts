@@ -61,7 +61,7 @@ interface BrainstormBridge {
       artifact_kind: string;
       owner: string | null;
       status: string | null;
-      reviewed_at: string | null;
+      reviewed_at: number | null;
       size_bytes: number;
       mtime_ms: number;
     }>;
@@ -78,6 +78,10 @@ interface BrainstormBridge {
     }>;
     unobserved_accounts: string[];
   }>;
+  /** Apply an intent → runtime ChangeSet for a drift. */
+  applyCustomerDrift(
+    driftId: string,
+  ): Promise<{ ok: true; description: string } | { ok: false; error: string }>;
   /** Last N harness-loop events from the live runner. */
   recentHarnessLoopEvents(limit?: number): Promise<HarnessLoopEvent[]>;
   /** Force one immediate run of a named loop. */

@@ -70,6 +70,10 @@ contextBridge.exposeInMainWorld("brainstorm", {
    *  runtime mismatches plus accounts missing runtime.toml. */
   detectCustomerDrift: () => ipcRenderer.invoke("harness.detectCustomerDrift"),
 
+  /** Apply an intent → runtime ChangeSet for a customer-account drift. */
+  applyCustomerDrift: (driftId: string) =>
+    ipcRenderer.invoke("harness.applyCustomerDrift", driftId),
+
   /** Last N loop events from the live runner (default 50). */
   recentHarnessLoopEvents: (limit?: number) =>
     ipcRenderer.invoke("harness.recentLoopEvents", limit),

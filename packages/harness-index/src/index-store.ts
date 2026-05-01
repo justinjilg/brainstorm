@@ -378,10 +378,13 @@ export class HarnessIndexStore {
     field_class: string;
     detector_name: string;
     severity: string | null;
+    intent_value: string | null;
+    observed_value: string | null;
   }> {
     return this.db
       .prepare(
-        `SELECT id, relative_path, field_path, field_class, detector_name, severity
+        `SELECT id, relative_path, field_path, field_class, detector_name,
+                severity, intent_value, observed_value
          FROM drift_state
          WHERE resolved_at IS NULL
          ORDER BY detected_at DESC`,
@@ -393,6 +396,8 @@ export class HarnessIndexStore {
       field_class: string;
       detector_name: string;
       severity: string | null;
+      intent_value: string | null;
+      observed_value: string | null;
     }>;
   }
 

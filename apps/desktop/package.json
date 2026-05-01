@@ -52,6 +52,7 @@
     "@brainst0rm/harness-index": "0.13.0",
     "@brainst0rm/harness-loop": "0.13.0",
     "@brainst0rm/parties": "0.13.0",
+    "@iarna/toml": "^2.2",
     "@fontsource-variable/geist-mono": "^5.2.7",
     "@fontsource-variable/jetbrains-mono": "^5.2.8",
     "@fontsource/figtree": "^5.2.10",

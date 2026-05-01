@@ -31,7 +31,7 @@ interface FolderArtifact {
   artifact_kind: string;
   owner: string | null;
   status: string | null;
-  reviewed_at: string | null;
+  reviewed_at: number | null;
   size_bytes: number;
   mtime_ms: number;
 }
@@ -638,7 +638,13 @@ function CustomersDriftPanel() {
           }}
         >
           {drifts.map((d) => (
-            <DriftRow key={d.id} drift={d} />
+            <DriftRow
+              key={d.id}
+              drift={d}
+              onApplied={(id) =>
+                setDrifts((prev) => prev.filter((x) => x.id !== id))
+              }
+            />
           ))}
         </div>
       )}
@@ -692,6 +698,7 @@ function CustomersDriftPanel() {
 
 function DriftRow({
   drift,
+  onApplied,
 }: {
   drift: {
     id: string;
@@ -701,18 +708,42 @@ function DriftRow({
     observed_value: string | null;
     severity: string;
   };
+  onApplied: (driftId: string) => void;
 }) {
+  const [applying, setApplying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const severityColor =
     drift.severity === "critical"
       ? "var(--ctp-red)"
       : drift.severity === "high"
         ? "var(--ctp-yellow)"
         : "var(--ctp-overlay1)";
+
+  async function handleApply() {
+    const bridge = window.brainstorm;
+    if (!bridge) return;
+    setApplying(true);
+    setError(null);
+    try {
+      const res = await bridge.applyCustomerDrift(drift.id);
+      if (res.ok) {
+        onApplied(drift.id);
+      } else {
+        setError(res.error);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setApplying(false);
+    }
+  }
+
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "1fr 100px 1fr 1fr",
+        gridTemplateColumns: "1fr 100px 1fr 1fr 80px",
         gap: 12,
         alignItems: "baseline",
         padding: "8px 12px",
@@ -762,6 +793,28 @@ function DriftRow({
       >
         observed: {drift.observed_value ?? "—"}
       </div>
+      <button
+        onClick={handleApply}
+        disabled={applying}
+        className="interactive"
+        style={{
+          fontSize: "var(--text-2xs)",
+          color: "var(--ctp-text)",
+          background: "var(--ctp-surface1)",
+          border: "1px solid var(--border-subtle)",
+          borderRadius: 4,
+          padding: "4px 8px",
+          cursor: applying ? "default" : "pointer",
+          opacity: applying ? 0.5 : 1,
+        }}
+        title={
+          error
+            ? `Last error: ${error}`
+            : `Apply intent (${drift.intent_value}) to runtime`
+        }
+      >
+        {applying ? "applying…" : "apply"}
+      </button>
     </div>
   );
 }
