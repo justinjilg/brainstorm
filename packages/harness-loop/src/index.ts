@@ -3,7 +3,11 @@ import {
   StaleArtifactDetector,
   IndexDriftDetector,
 } from "@brainst0rm/harness-drift";
-import { walkHarnessDir, extractIndexFields } from "@brainst0rm/harness-fs";
+import {
+  walkHarnessDirStat,
+  readArtifactDeep,
+  extractIndexFields,
+} from "@brainst0rm/harness-fs";
 import { HarnessIndexStore } from "@brainst0rm/harness-index";
 
 /**
@@ -43,7 +47,9 @@ export interface LoopRunnerOptions {
 }
 
 const DEFAULT_CADENCE_MS: Record<LoopName, number> = {
-  indexer: 5 * 60 * 1000, // 5 min — cheap, keeps queries fresh
+  // Indexer is now stat-diff first, deep-read only on change — but keep a
+  // conservative default since most cycles have no work to do anyway.
+  indexer: 15 * 60 * 1000, // 15 min
   "customer-drift": 15 * 60 * 1000, // 15 min — more expensive
   "stale-watchdog": 60 * 60 * 1000, // 1 hr — review SLAs are daily-coarse
 };
@@ -134,10 +140,45 @@ export class HarnessLoopRunner {
   }
 
   private async runIndexer(): Promise<Record<string, unknown>> {
-    const walk = walkHarnessDir(this.opts.harnessRoot);
+    // Stat-only walk — no readFileSync, no hashing, no TOML parse. Cheap
+    // even on huge harness trees because it's bounded by file count, not
+    // file content size.
+    const walk = walkHarnessDirStat(this.opts.harnessRoot);
+
+    // Build a baseline from the existing index so we can skip files whose
+    // (mtime_ms, size_bytes) haven't drifted since last cycle.
+    const baseline = new Map<
+      string,
+      { mtime_ms: number; size_bytes: number }
+    >();
+    for (const row of this.opts.index.allArtifacts()) {
+      baseline.set(row.relative_path, {
+        mtime_ms: row.mtime_ms,
+        size_bytes: row.size_bytes,
+      });
+    }
+
     const seen = new Set<string>();
     let upserts = 0;
-    for (const artifact of walk.artifacts) {
+    let unchanged = 0;
+    for (const stat of walk.artifacts) {
+      seen.add(stat.relativePath);
+      const prior = baseline.get(stat.relativePath);
+      // Same mtime + size => content unchanged; index row is still valid.
+      // (The Math.floor matches coldOpenVerify's tolerance for fs mtime
+      // resolution drift.)
+      if (
+        prior !== undefined &&
+        prior.size_bytes === stat.size_bytes &&
+        Math.floor(prior.mtime_ms) === Math.floor(stat.mtime_ms)
+      ) {
+        unchanged++;
+        continue;
+      }
+
+      const artifact = readArtifactDeep(stat);
+      if (artifact === null) continue;
+
       const fields = extractIndexFields(artifact.frontmatter);
       this.opts.index.upsertArtifact({
         relative_path: artifact.relativePath,
@@ -154,22 +195,23 @@ export class HarnessLoopRunner {
         tags: fields.tags,
         references: fields.references,
       });
-      seen.add(artifact.relativePath);
       upserts++;
     }
+
     let pruned = 0;
-    for (const row of this.opts.index.allArtifacts()) {
-      if (!seen.has(row.relative_path)) {
-        this.opts.index.removeArtifact(row.relative_path);
+    for (const relPath of baseline.keys()) {
+      if (!seen.has(relPath)) {
+        this.opts.index.removeArtifact(relPath);
         pruned++;
       }
     }
+
     return {
       walked: walk.artifacts.length,
       upserts,
+      unchanged,
       pruned,
       duration_ms: walk.duration_ms,
-      parse_errors: walk.parse_errors.length,
     };
   }
 
