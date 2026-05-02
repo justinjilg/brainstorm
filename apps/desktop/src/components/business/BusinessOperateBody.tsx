@@ -3,7 +3,9 @@
  * apply intent→runtime ChangeSets per open drift, and run AI loops on
  * demand.
  */
+import { useState } from "react";
 import type { BusinessToml } from "@brainst0rm/config";
+import type { HarnessLoopEvent } from "../../global";
 import {
   BusinessBodyHeader,
   BusinessBodyShell,
@@ -18,11 +20,52 @@ interface BusinessOperateBodyProps {
   manifest: BusinessToml;
 }
 
+type LoopRunResult = HarnessLoopEvent | { ok: false; error: string };
+
 export function BusinessOperateBody({
   root,
   manifest,
 }: BusinessOperateBodyProps) {
   const { drifts, loading, error, removeDrift } = useCustomerDrift();
+  const [loopPending, setLoopPending] = useState(false);
+  const [loopResult, setLoopResult] = useState<LoopRunResult | null>(null);
+
+  const runIndexerLoop = async () => {
+    const bridge = window.brainstorm;
+    if (!bridge?.runHarnessLoopOnce) return;
+    setLoopPending(true);
+    setLoopResult(null);
+    try {
+      const result = await bridge.runHarnessLoopOnce("indexer");
+      setLoopResult(result);
+    } catch (err) {
+      setLoopResult({
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setLoopPending(false);
+    }
+  };
+
+  const isBridgeError = (r: LoopRunResult): r is { ok: false; error: string } =>
+    "ok" in r && r.ok === false;
+  const loopFailed =
+    loopResult !== null &&
+    (isBridgeError(loopResult) || loopResult.status === "failed");
+  const loopStatusLabel = loopResult
+    ? isBridgeError(loopResult)
+      ? "failed"
+      : loopResult.status
+    : "";
+  const loopDetail = loopResult
+    ? isBridgeError(loopResult)
+      ? loopResult.error
+      : (loopResult.error ??
+        (loopResult.summary
+          ? JSON.stringify(loopResult.summary)
+          : "(no summary)"))
+    : "";
 
   return (
     <BusinessBodyShell>
@@ -57,26 +100,54 @@ export function BusinessOperateBody({
             Trigger the indexer loop on demand instead of waiting for the
             schedule. Useful after editing files outside the desktop app.
           </div>
-          {/* Group E lands the wiring; the placeholder ships disabled
-              rather than absent so the layout doesn't shift on activation. */}
           <button
-            disabled
+            onClick={runIndexerLoop}
+            disabled={loopPending}
             className="interactive"
             style={{
               fontSize: "var(--text-xs)",
-              color: "var(--ctp-overlay1)",
+              color: loopPending ? "var(--ctp-overlay1)" : "var(--ctp-text)",
               background: "var(--ctp-surface1)",
               border: "1px solid var(--border-subtle)",
               borderRadius: 6,
               padding: "8px 14px",
-              cursor: "not-allowed",
-              opacity: 0.6,
+              cursor: loopPending ? "wait" : "pointer",
+              opacity: loopPending ? 0.6 : 1,
               whiteSpace: "nowrap",
             }}
           >
-            Run indexer loop now
+            {loopPending ? "Running…" : "Run indexer loop now"}
           </button>
         </div>
+        {loopResult !== null && (
+          <div
+            style={{
+              marginTop: 8,
+              padding: "8px 12px",
+              background: "var(--ctp-mantle)",
+              borderRadius: 8,
+              border: `1px solid ${loopFailed ? "var(--ctp-red)" : "var(--border-subtle)"}`,
+              fontSize: "var(--text-2xs)",
+              color: loopFailed ? "var(--ctp-red)" : "var(--ctp-subtext1)",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+            }}
+          >
+            <span
+              style={{
+                fontFamily: "var(--font-mono)",
+                color: "var(--ctp-overlay1)",
+                textTransform: "uppercase",
+                letterSpacing: "0.1em",
+              }}
+            >
+              indexer
+            </span>
+            <span style={{ fontWeight: 600 }}>{loopStatusLabel}</span>
+            <span style={{ color: "var(--ctp-overlay1)" }}>{loopDetail}</span>
+          </div>
+        )}
       </section>
 
       <section style={{ marginBottom: 32 }}>

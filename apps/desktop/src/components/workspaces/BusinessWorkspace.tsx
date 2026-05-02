@@ -4,6 +4,7 @@
  * Plan / Inspect / Operate / Configure each render in their own body
  * file under ../business/.
  */
+import { useEffect, useState } from "react";
 import { Placeholder } from "./Placeholder";
 import { BusinessPlanBody } from "../business/BusinessPlanBody";
 import { BusinessInspectBody } from "../business/BusinessInspectBody";
@@ -16,9 +17,11 @@ interface BusinessWorkspaceProps {
   verb: VerbKind;
   activeHarness: ActiveHarness;
   onCloseHarness: () => void;
-  onOpenHarness: () => void;
+  onOpenHarness: (root?: string) => void;
   /** Wired in Group C — opens the NewHarnessWizard. */
   onCreateHarness?: () => void;
+  /** Project path currently open (if any) — used to detect ancestor harness. */
+  currentProject?: string | null;
 }
 
 export function BusinessWorkspace({
@@ -27,12 +30,14 @@ export function BusinessWorkspace({
   onCloseHarness,
   onOpenHarness,
   onCreateHarness,
+  currentProject,
 }: BusinessWorkspaceProps) {
   if (activeHarness.kind !== "business") {
     return (
       <NoHarnessOpen
         onOpenHarness={onOpenHarness}
         onCreateHarness={onCreateHarness}
+        currentProject={currentProject ?? null}
       />
     );
   }
@@ -85,10 +90,42 @@ export function BusinessWorkspace({
 function NoHarnessOpen({
   onOpenHarness,
   onCreateHarness,
+  currentProject,
 }: {
-  onOpenHarness: () => void;
+  onOpenHarness: (root?: string) => void;
   onCreateHarness?: () => void;
+  currentProject: string | null;
 }) {
+  const [detectedHarnessRoot, setDetectedHarnessRoot] = useState<string | null>(
+    null,
+  );
+
+  useEffect(() => {
+    let mounted = true;
+    if (!currentProject) {
+      setDetectedHarnessRoot(null);
+      return;
+    }
+    const bridge = window.brainstorm;
+    if (!bridge?.detectHarness) return;
+    bridge
+      .detectHarness(currentProject)
+      .then((result) => {
+        if (!mounted) return;
+        if (result.kind === "business") {
+          setDetectedHarnessRoot(result.root);
+        } else {
+          setDetectedHarnessRoot(null);
+        }
+      })
+      .catch(() => {
+        if (mounted) setDetectedHarnessRoot(null);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [currentProject]);
+
   return (
     <div
       style={{
@@ -152,7 +189,7 @@ function NoHarnessOpen({
           }}
         >
           <button
-            onClick={onOpenHarness}
+            onClick={() => onOpenHarness()}
             className="interactive"
             style={{
               padding: "10px 18px",
@@ -186,6 +223,41 @@ function NoHarnessOpen({
             </button>
           )}
         </div>
+        {detectedHarnessRoot && (
+          <div
+            style={{
+              marginTop: 16,
+              padding: 12,
+              background: "var(--ctp-surface0)",
+              border: "1px solid var(--border-subtle)",
+              borderRadius: 8,
+              fontSize: "var(--text-xs)",
+              color: "var(--ctp-subtext1)",
+              textAlign: "left",
+            }}
+          >
+            <div style={{ marginBottom: 8 }}>
+              Detected a business harness at an ancestor of the current project.
+            </div>
+            <button
+              onClick={() => onOpenHarness(detectedHarnessRoot)}
+              className="interactive"
+              style={{
+                padding: "8px 14px",
+                fontSize: "var(--text-xs)",
+                fontWeight: 500,
+                color: "var(--ctp-text)",
+                background: "var(--ctp-surface1)",
+                border: "1px solid var(--border-subtle)",
+                borderRadius: 6,
+                cursor: "pointer",
+                fontFamily: "var(--font-mono)",
+              }}
+            >
+              Open detected harness at {detectedHarnessRoot}
+            </button>
+          </div>
+        )}
         {!onCreateHarness && (
           <div
             style={{
