@@ -213,30 +213,31 @@ export function App() {
    * up; if found, opens an index session and routes to Business · Plan.
    * Otherwise treats the folder as a code project and routes to
    * Project · Talk.
+   *
+   * When called with an explicit `presetRoot` (e.g. from the empty-state
+   * detect-harness button), skip the dialog and parse that root directly.
    */
-  const openFolderOrHarness = useCallback(async () => {
-    const bridge = window.brainstorm;
-    if (bridge?.openHarnessDialog) {
-      const result = await bridge.openHarnessDialog();
-      switch (result.kind) {
-        case "cancel":
-          return;
-        case "business":
+  const openFolderOrHarness = useCallback(
+    async (presetRoot?: string) => {
+      const bridge = window.brainstorm;
+      if (presetRoot && bridge?.parseHarness) {
+        const parsed = await bridge.parseHarness(presetRoot);
+        if (parsed.kind === "business") {
           setActiveHarness({
             kind: "business",
-            root: result.root,
-            manifest: result.manifest,
+            root: presetRoot,
+            manifest: parsed.manifest,
             sessionVerify: null,
           });
-          setCurrentProject(result.root);
+          setCurrentProject(presetRoot);
           setSelection({ entity: "business", verb: "plan" });
           if (bridge.openHarnessSession) {
             bridge
-              .openHarnessSession(result.root)
+              .openHarnessSession(presetRoot)
               .then((session) => {
                 if (session.ok) {
                   setActiveHarness((prev) =>
-                    prev.kind === "business" && prev.root === result.root
+                    prev.kind === "business" && prev.root === presetRoot
                       ? { ...prev, sessionVerify: session.verify }
                       : prev,
                   );
@@ -251,35 +252,83 @@ export function App() {
                 );
               });
           }
-          return;
-        case "code":
-          setActiveHarness({ kind: "code", root: result.root });
-          setCurrentProject(result.root);
-          setSelection({ entity: "project", verb: "talk" });
-          return;
-        case "error":
+        } else if (parsed.kind === "error") {
           toast.push(
-            `business.toml at ${result.root} failed to load: ${result.message}`,
+            `business.toml at ${presetRoot} failed to load: ${parsed.message}`,
             "error",
           );
-          return;
+        }
+        return;
       }
-    } else if (bridge?.openFolder) {
-      const path = await bridge.openFolder();
-      if (path) {
-        setCurrentProject(path);
-        setActiveHarness({ kind: "code", root: path });
-        setSelection({ entity: "project", verb: "talk" });
+      if (bridge?.openHarnessDialog) {
+        const result = await bridge.openHarnessDialog();
+        switch (result.kind) {
+          case "cancel":
+            return;
+          case "business":
+            setActiveHarness({
+              kind: "business",
+              root: result.root,
+              manifest: result.manifest,
+              sessionVerify: null,
+            });
+            setCurrentProject(result.root);
+            setSelection({ entity: "business", verb: "plan" });
+            if (bridge.openHarnessSession) {
+              bridge
+                .openHarnessSession(result.root)
+                .then((session) => {
+                  if (session.ok) {
+                    setActiveHarness((prev) =>
+                      prev.kind === "business" && prev.root === result.root
+                        ? { ...prev, sessionVerify: session.verify }
+                        : prev,
+                    );
+                  } else {
+                    toast.push(
+                      `Index session failed: ${session.error}`,
+                      "error",
+                    );
+                  }
+                })
+                .catch((err: unknown) => {
+                  toast.push(
+                    `Index session error: ${err instanceof Error ? err.message : String(err)}`,
+                    "error",
+                  );
+                });
+            }
+            return;
+          case "code":
+            setActiveHarness({ kind: "code", root: result.root });
+            setCurrentProject(result.root);
+            setSelection({ entity: "project", verb: "talk" });
+            return;
+          case "error":
+            toast.push(
+              `business.toml at ${result.root} failed to load: ${result.message}`,
+              "error",
+            );
+            return;
+        }
+      } else if (bridge?.openFolder) {
+        const path = await bridge.openFolder();
+        if (path) {
+          setCurrentProject(path);
+          setActiveHarness({ kind: "code", root: path });
+          setSelection({ entity: "project", verb: "talk" });
+        }
+      } else {
+        const path = prompt("Enter project path:");
+        if (path) {
+          setCurrentProject(path);
+          setActiveHarness({ kind: "code", root: path });
+          setSelection({ entity: "project", verb: "talk" });
+        }
       }
-    } else {
-      const path = prompt("Enter project path:");
-      if (path) {
-        setCurrentProject(path);
-        setActiveHarness({ kind: "code", root: path });
-        setSelection({ entity: "project", verb: "talk" });
-      }
-    }
-  }, [toast]);
+    },
+    [toast],
+  );
 
   const closeActiveHarness = useCallback(() => {
     window.brainstorm?.closeHarnessSession?.();
@@ -633,6 +682,7 @@ export function App() {
                     onCloseHarness={closeActiveHarness}
                     onOpenHarness={openFolderOrHarness}
                     onCreateHarness={openCreateHarnessWizard}
+                    currentProject={currentProject}
                   />
                 )}
                 {selection.entity === "platform" && (
