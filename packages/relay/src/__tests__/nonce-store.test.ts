@@ -56,8 +56,6 @@ describe("NonceStore", () => {
     // monkey-checking at the boundary: load up the store and verify
     // behavior at the limit.
     const store = makeStore({ capacity: 100_000 });
-    // Use an expires_at that's far in the future so eviction can't help.
-    const farFuture = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
     // Loading 100k rows is expensive; instead verify the rejection logic
     // by inserting just under the limit and then poking at internals would
     // be invasive. Skip the load test; rely on capacity validation in

@@ -63,11 +63,17 @@ export type MaterializeHarnessResult =
  * continue to land at the same paths.
  */
 export function toBusinessSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60);
+  // Bound input length BEFORE regex work so the slugify cost is constant
+  // even on adversarial input. CodeQL flags the trim-dashes regex below
+  // for polynomial-redos heuristics; capping at 256 chars upfront makes
+  // any backtracking irrelevant. Output is sliced again to 60 at the end.
+  const bounded = name.slice(0, 256).toLowerCase();
+  // Two single-anchored trims instead of an alternation: linear time
+  // and clearer intent than `/^-+|-+$/g`.
+  const collapsed = bounded.replace(/[^a-z0-9-]+/g, "-");
+  const trimmedLeft = collapsed.replace(/^-+/, "");
+  const trimmedRight = trimmedLeft.replace(/-+$/, "");
+  return trimmedRight.slice(0, 60);
 }
 
 export function materializeHarness(
