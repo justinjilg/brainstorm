@@ -1,0 +1,30 @@
+{
+  "name": "@brainst0rm/harness-index",
+  "version": "0.13.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@brainst0rm/harness-fs": "0.13.0",
+    "@brainst0rm/shared": "0.13.0",
+    "better-sqlite3": "^11"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7",
+    "tsup": "^8",
+    "typescript": "^5.7",
+    "vitest": "^3"
+  },
+  "description": "Harness SQLite index — file metadata, owner/reference/tag indices, drift detection backstore (per spec ## Index Coherence)",
+  "license": "Apache-2.0"
+}
