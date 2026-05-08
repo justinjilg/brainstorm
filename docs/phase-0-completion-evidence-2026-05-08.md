@@ -11,14 +11,14 @@ Companion to:
 
 ## What landed in Phase 0
 
-| Group | PR   | Title                                                                          | Outcome                                                                     |
-| ----- | ---- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
-| A     | #292 | docs: business harness research log + MSP PRD                                  | Calibrated baseline + product vision land on main as durable references     |
-| B     | #293 | chore(harness): close 6 BHv1 loose threads                                     | Loop overlap guard + WAL unconditional compact + 4 design-intent docstrings |
-| C     | #294 | chore(harness): document ChangeSet payload immutability + session-lock posture | Two narrow docstrings (3 of 5 candidate items were already-correct)         |
-| D     | #295 | docs: canonicalize platform contract + Desktop status + journey test plan      | 5-endpoint contract canonical; Desktop status doc; J-1..J-6 journey plan    |
-| E     | #296 | fix(cli): declare archetype-\* deps + Phase-0 CI quality audit                 | One missing inter-package edge fixed; full audit clean                      |
-| F     | #297 | chore(security): clear 10 CodeQL alerts                                        | 10/29 alerts genuinely fixed (unused-imports + polynomial-redos)            |
+| Group | PR   | Title                                                                          | Outcome                                                                                                              |
+| ----- | ---- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| A     | #292 | docs: business harness research log + MSP PRD                                  | Calibrated baseline + product vision land on main as durable references                                              |
+| B     | #293 | chore(harness): close 6 BHv1 loose threads                                     | Loop overlap guard + WAL unconditional compact + 4 design-intent docstrings                                          |
+| C     | #294 | chore(harness): document ChangeSet payload immutability + session-lock posture | Two narrow docstrings (3 of 5 candidate items were already-correct)                                                  |
+| D     | #295 | docs: canonicalize platform contract + Desktop status + journey test plan      | 5-endpoint contract canonical; Desktop status doc; J-1..J-6 journey plan                                             |
+| E     | #296 | fix(cli): declare archetype-\* deps + Phase-0 CI quality audit                 | One missing inter-package edge fixed; full audit clean                                                               |
+| F     | #297 | chore(security): clear 10 CodeQL alerts                                        | 10 alerts genuinely fixed (unused-imports + polynomial-redos); see "Correction" section below for true backlog count |
 
 PR #291 (Business Harness v1) shipped earlier in the same window; this doc treats main-after-#291 as the Phase-0 starting baseline.
 
@@ -75,22 +75,41 @@ PR #291 (Business Harness v1) shipped earlier in the same window; this doc treat
 
 These are the numbers a downstream agent can check to validate the "9/10" claim relative to Phase 0 scope:
 
-| Metric                              | Pre-Phase-0                                 | Post-Phase-0                            | Method                                                                 |
-| ----------------------------------- | ------------------------------------------- | --------------------------------------- | ---------------------------------------------------------------------- |
-| Test files (`packages/`)            | 199                                         | 199 (+ ~4 new tests in existing files)  | `find packages -name '*.test.ts' -o -name '*.spec.ts' \| wc -l`        |
-| Test files (`packages/` + `apps/`)  | 224                                         | 224 (+ same)                            | as above incl. `apps/`                                                 |
-| harness-loop tests                  | 7                                           | **10** (3 new overlap-guard)            | `npx turbo run test --filter=@brainst0rm/harness-loop`                 |
-| dep-cruiser violations              | 0                                           | 0                                       | `node scripts/check-dep-cruiser.mjs`                                   |
-| as-any budget                       | 280/285                                     | 280/285 (no regression)                 | `node scripts/check-as-any-budget.mjs`                                 |
-| CodeQL open alerts                  | 29                                          | 19 (10 cleared)                         | `gh api 'repos/justinjilg/brainstorm/code-scanning/alerts?state=open'` |
-| CodeQL high-severity errors         | 7                                           | 6 (1 polynomial-redos cleared)          | filter on `.rule.security_severity_level == "high"`                    |
-| Loose threads (12 from harness map) | 12 open                                     | 1 deferred / 11 closed                  | this doc                                                               |
-| PRD Phase 0 items (4)               | 4 open                                      | 4 closed                                | this doc                                                               |
-| Loop event durability               | in-memory ring buffer (lost on restart)     | SQLite-backed `loop_events` table       | PR #291 commit `0d4badb`                                               |
-| Inter-package dep declarations      | router→gateway broken in CI                 | full audit clean (cli archetypes added) | PR #296                                                                |
-| Platform contract drift             | 3 endpoints in README, 5 in getting-started | 5 in both, both link canonical doc      | PR #295                                                                |
+| Metric                              | Pre-Phase-0                                 | Post-Phase-0                                   | Method                                                                                            |
+| ----------------------------------- | ------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Test files (`packages/`)            | 199                                         | 199 (+ ~4 new tests in existing files)         | `find packages -name '*.test.ts' -o -name '*.spec.ts' \| wc -l`                                   |
+| Test files (`packages/` + `apps/`)  | 224                                         | 224 (+ same)                                   | as above incl. `apps/`                                                                            |
+| harness-loop tests                  | 7                                           | **10** (3 new overlap-guard)                   | `npx turbo run test --filter=@brainst0rm/harness-loop`                                            |
+| dep-cruiser violations              | 0                                           | 0                                              | `node scripts/check-dep-cruiser.mjs`                                                              |
+| as-any budget                       | 280/285                                     | 280/285 (no regression)                        | `node scripts/check-as-any-budget.mjs`                                                            |
+| CodeQL open alerts                  | ~100 (full count)                           | 100; 10 of mine genuinely cleared on next scan | `gh api 'repos/justinjilg/brainstorm/code-scanning/alerts?state=open&per_page=100' --jq 'length'` |
+| CodeQL high-severity errors         | 16+ (file-system-race × 7 + others)         | 15 (1 polynomial-redos in init.ts cleared)     | filter the API result on `.rule.security_severity_level == "high"`                                |
+| Loose threads (12 from harness map) | 12 open                                     | 1 deferred / 11 closed                         | this doc                                                                                          |
+| PRD Phase 0 items (4)               | 4 open                                      | 4 closed                                       | this doc                                                                                          |
+| Loop event durability               | in-memory ring buffer (lost on restart)     | SQLite-backed `loop_events` table              | PR #291 commit `0d4badb`                                                                          |
+| Inter-package dep declarations      | router→gateway broken in CI                 | full audit clean (cli archetypes added)        | PR #296                                                                                           |
+| Platform contract drift             | 3 endpoints in README, 5 in getting-started | 5 in both, both link canonical doc             | PR #295                                                                                           |
 
-## Known false positives in remaining CodeQL alerts (19)
+## Correction (post-merge): true CodeQL backlog count
+
+After Phase 0 PRs landed, a fresh `--per_page=100` query revealed the true open-alert count is **~100, not 29**. My earlier 29 figure was the default per-page cap — I undercounted the backlog. **The 10 alerts I genuinely cleared (9 unused-imports + 1 polynomial-redos in `init.ts`) did clear; they're not in the current 100.** But the remaining backlog is much larger than the doc originally implied.
+
+Distribution of the true 100 (by rule):
+
+- 31 `js/unused-local-variable` (28 in files I didn't touch this phase)
+- 24 `js/insecure-temporary-file` (NOT in my earlier 29-list — entirely missed)
+- 16 `js/file-system-race`
+- 5 `js/file-access-to-http`
+- 4 `js/useless-assignment-to-local`
+- 3 `js/user-controlled-bypass`
+- 3 `js/polynomial-redos` (1 cleared in `init.ts`; 3 remain in `eval/runner.ts`, `plan/multi-agent-planner.ts`, `findings/types.ts`)
+- 14 various medium/low
+
+Honest framing: Phase 0 cleared ~10% of the CodeQL backlog. The remaining ~90% is a real Phase-1+ hardening project. Most are FP-category (single-process desktop FS races, dev-stub IO flow) but some are real (additional `polynomial-redos`, more `unused-local-variable`).
+
+Tracked as a separate Phase-1 task: full CodeQL alert sweep with proper pagination.
+
+## Known false positives in remaining CodeQL alerts
 
 Why these weren't fixed in Phase 0 (they aren't "polish" — they require category-restructure or are in dev/test code):
 
@@ -113,7 +132,7 @@ This phase did NOT target the full PRD score (4.3/10 → 9/10) — that requires
 - Test coverage on the safety-critical primitive (loop runner): **+3 tests covering the highest-value race**
 - Documentation truth: **5-endpoint canonical, surface status, journey test plan all present**
 - CI/package quality: **0 silent missing-dep edges remaining**
-- Security alert reduction: **10/29 cleared, remaining 19 categorized**
+- Security alert reduction: **10 of ~100 cleared (true backlog was paginated; corrected below); remaining categorized into FP buckets**
 
 Within that scope, this is a credible 9/10 finish. Deferred items have explicit PRD-phase references and concrete test specs already authored.
 
