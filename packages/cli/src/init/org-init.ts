@@ -15,10 +15,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, basename } from "node:path";
 import { createInterface } from "node:readline/promises";
-import { createLogger } from "@brainst0rm/shared";
 import { promptPassword } from "../util/prompt-password.js";
-
-const log = createLogger("org-init");
 
 export interface OrgInitOptions {
   projectDir: string;
@@ -106,7 +103,7 @@ export async function runOrgInit(opts: OrgInitOptions): Promise<OrgInitResult> {
   const langs = await initializeAdapters();
   console.log(`    Languages: ${langs.join(", ")}`);
 
-  const result = await executePipeline(createDefaultPipeline(), {
+  await executePipeline(createDefaultPipeline(), {
     projectPath: projectDir,
     graph,
     results: new Map(),

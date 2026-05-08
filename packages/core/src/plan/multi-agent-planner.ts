@@ -233,8 +233,11 @@ export function parseDecomposition(
   const direct = tryParse(text.trim());
   if (direct) return direct;
 
-  // Try fenced code blocks.
-  const fenceMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
+  // Try fenced code blocks. Cap input at 256 KB before the lazy-match
+  // regex so polynomial-redos can't trip on adversarial LLM output;
+  // real planner output is well under 64 KB.
+  const bounded = text.slice(0, 256 * 1024);
+  const fenceMatch = bounded.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
   if (fenceMatch) {
     const fenced = tryParse(fenceMatch[1].trim());
     if (fenced) return fenced;

@@ -211,7 +211,6 @@ function buildSectorTickMessage(
   const completed = plan.objectives.filter(
     (o) => o.status === "completed",
   ).length;
-  const pending = plan.objectives.filter((o) => o.status === "pending").length;
   const blocked = plan.objectives.filter((o) => o.status === "blocked").length;
 
   lines.push(

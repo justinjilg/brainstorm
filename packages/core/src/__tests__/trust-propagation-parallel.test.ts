@@ -44,8 +44,8 @@ describe("trust-propagation — parallel tool calls", () => {
     // wrapToolCall must not blow up and must respect each window
     // independently. We don't assert a specific allow/block here —
     // the point is that the call IDs are what scope the lookup.
-    const resA = middleware.wrapToolCall!(callA);
-    const resB = middleware.wrapToolCall!(callB);
+    middleware.wrapToolCall!(callA);
+    middleware.wrapToolCall!(callB);
 
     // Record results on each call
     middleware.afterToolResult!({

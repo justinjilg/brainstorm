@@ -4,8 +4,6 @@ import {
   EmailConnector,
   createEmailConnector,
 } from "../../../connectors/email/index.js";
-import { EmailClient } from "../../../connectors/email/client.js";
-
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
 

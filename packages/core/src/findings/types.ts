@@ -169,10 +169,15 @@ export function makeFindingId(
   title: string,
   lineStart?: number,
 ): string {
-  const base = `${file}:${lineStart ?? 0}:${title}`;
+  // Bound input length BEFORE regex work so the slugify cost is constant
+  // even on adversarial input. Same defense as harness-fs/init.ts
+  // toBusinessSlug; CodeQL's polynomial-redos heuristic flagged the
+  // alternation regex below.
+  const base = `${file}:${lineStart ?? 0}:${title}`.slice(0, 256);
   return base
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
+    .replace(/^-+/, "")
+    .replace(/-+$/, "")
     .slice(0, 60);
 }

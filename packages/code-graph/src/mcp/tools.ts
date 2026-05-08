@@ -625,7 +625,6 @@ export function registerCodeIntelTools(
         results: new Map(),
       });
 
-      const summary = result.stages.find((s) => s.id === "summary");
       return textResult({
         success: result.stages.every((s) => s.success),
         totalDurationMs: result.totalDurationMs,
