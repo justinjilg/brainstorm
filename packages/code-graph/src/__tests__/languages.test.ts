@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -15,11 +15,7 @@ import { createJavaAdapter } from "../languages/java.js";
 import type { ParsedFile } from "../parser.js";
 
 function tmpFile(ext: string, content: string): string {
-  const dir = join(
-    tmpdir(),
-    `lang-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-  );
-  mkdirSync(dir, { recursive: true });
+  const dir = mkdtempSync(join(tmpdir(), `lang-test-`));
   const path = join(dir, `test${ext}`);
   writeFileSync(path, content, "utf-8");
   return path;
