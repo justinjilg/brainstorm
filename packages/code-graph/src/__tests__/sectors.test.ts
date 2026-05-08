@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdirSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { CodeGraph } from "../graph.js";
@@ -35,7 +35,7 @@ beforeAll(async () => {
   registerAdapter(createPythonAdapter());
 
   // Create a project with clear sector boundaries
-  projectDir = join(tmpdir(), `sectors-test-${Date.now()}`);
+  projectDir = mkdtempSync(join(tmpdir(), `sectors-test-`));
 
   // Auth sector — critical (crypto/auth keywords)
   mkdirSync(join(projectDir, "src", "auth"), { recursive: true });
@@ -113,8 +113,7 @@ def normalize(data):
   );
 
   // Build graph
-  const dbDir = join(tmpdir(), `sectors-db-${Date.now()}`);
-  mkdirSync(dbDir, { recursive: true });
+  const dbDir = mkdtempSync(join(tmpdir(), `sectors-db-`));
   graph = new CodeGraph({ dbPath: join(dbDir, "test.db") });
 
   await executePipeline(createDefaultPipeline(), {

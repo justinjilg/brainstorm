@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { CodeGraph } from "../graph.js";
@@ -138,8 +138,7 @@ describe("Pipeline DAG", () => {
 
     it("runs the full pipeline on a multi-language project", async () => {
       const projectDir = createFixtureProject();
-      const dbDir = join(tmpdir(), `pipeline-db-${Date.now()}`);
-      mkdirSync(dbDir, { recursive: true });
+      const dbDir = mkdtempSync(join(tmpdir(), `pipeline-db-`));
       graph = new CodeGraph({ dbPath: join(dbDir, "test.db") });
 
       const progressMessages: string[] = [];
@@ -177,8 +176,7 @@ describe("Pipeline DAG", () => {
 
     it("handles failed stages by skipping dependents", async () => {
       const projectDir = createFixtureProject();
-      const dbDir = join(tmpdir(), `pipeline-fail-${Date.now()}`);
-      mkdirSync(dbDir, { recursive: true });
+      const dbDir = mkdtempSync(join(tmpdir(), `pipeline-fail-`));
       graph = new CodeGraph({ dbPath: join(dbDir, "test.db") });
 
       const failingStage = {

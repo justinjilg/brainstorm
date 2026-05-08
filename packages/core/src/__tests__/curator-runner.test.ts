@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
-  mkdirSync,
+  mkdtempSync,
   writeFileSync,
   existsSync,
   unlinkSync,
@@ -25,12 +25,7 @@ vi.mock("../agent/subagent.js", () => ({
 }));
 
 function createTestDir(): string {
-  const dir = join(
-    tmpdir(),
-    `curator-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-  );
-  mkdirSync(dir, { recursive: true });
-  return dir;
+  return mkdtempSync(join(tmpdir(), `curator-test-`));
 }
 
 function writeMemoryFile(dir: string, name: string, content: string): void {

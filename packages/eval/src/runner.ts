@@ -9,7 +9,13 @@ import {
   SessionManager,
 } from "@brainst0rm/core";
 import { createLogger } from "@brainst0rm/shared";
-import { mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  writeFileSync,
+  rmSync,
+  existsSync,
+} from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import type { Probe, ProbeResult } from "./types.js";
@@ -41,11 +47,15 @@ export async function runProbe(
   // Sandbox directory for probe setup files AND for code-correctness runs.
   // Always created — scorer checks it for code_compiles — but the agent's
   // actual workspace depends on probe.workspace.
-  const sandboxDir = join(
-    tmpdir(),
-    `brainstorm-eval-${probe.id}-${Date.now()}`,
+  //
+  // mkdtempSync (rather than join + mkdirSync with a Date.now() suffix)
+  // closes the TOCTOU window CodeQL flagged: an attacker on the same
+  // machine could otherwise pre-create the predictable path as a
+  // symlink to a sensitive directory before our mkdir runs, causing
+  // the subsequent writeFileSync to land outside the intended sandbox.
+  const sandboxDir = mkdtempSync(
+    join(tmpdir(), `brainstorm-eval-${probe.id}-`),
   );
-  mkdirSync(sandboxDir, { recursive: true });
 
   try {
     // Write setup files. Probe definitions come from arbitrary JSONL

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { CodeGraph } from "../graph.js";
@@ -43,7 +43,7 @@ beforeAll(async () => {
   registerAdapter(createPythonAdapter());
 
   // Create fixture project
-  projectDir = join(tmpdir(), `mcp-test-${Date.now()}`);
+  projectDir = mkdtempSync(join(tmpdir(), `mcp-test-`));
   mkdirSync(join(projectDir, "src"), { recursive: true });
   mkdirSync(join(projectDir, "lib"), { recursive: true });
 
@@ -114,7 +114,7 @@ def transform(data):
   }
 
   // Build graph via pipeline
-  const dbDir = join(tmpdir(), `mcp-db-${Date.now()}`);
+  const dbDir = mkdtempSync(join(tmpdir(), `mcp-db-`));
   mkdirSync(dbDir, { recursive: true });
   graph = new CodeGraph({ dbPath: join(dbDir, "test.db") });
 
