@@ -191,6 +191,23 @@ function defaultEqual<T>(a: T | null, b: T | null): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+/**
+ * Stable id for a drift, used as the primary key in the index's
+ * `drift_state` table. Hashes the parts (detector_name, relative_path,
+ * field_path) so re-running the same detector against the same field
+ * produces the same id — that's how the index stays idempotent across
+ * detector ticks and avoids row duplication.
+ *
+ * Intentional non-property: the id does NOT include the intent or
+ * observed values. Two different intent values for the same field
+ * produce the same id; the row simply overwrites with the latest
+ * observation. This is correct under the v1 model (one drift per
+ * field, latest-write-wins) but means a "drift was X→Y, then X→Z"
+ * sequence loses the intermediate transition. If transition history
+ * matters in the future, add a `drift_history` table; do NOT change
+ * this id shape, since the index column is referenced as a stable
+ * primary key elsewhere.
+ */
 function stableDriftId(...parts: string[]): string {
   return (
     "drift_" +

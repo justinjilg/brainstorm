@@ -214,4 +214,72 @@ status = "active"
     expect(loops.has("customer-drift")).toBe(true);
     expect(loops.has("stale-watchdog")).toBe(true);
   });
+
+  test("overlap guard: concurrent runOnce(loop) yields one started + one skipped", async () => {
+    const events: LoopEvent[] = [];
+    const runner = new HarnessLoopRunner({
+      harnessRoot: root,
+      index: store,
+      now: () => NOW_MS,
+      onEvent: (e) => events.push(e),
+    });
+
+    // Kick off two runs concurrently. The first acquires the guard; the
+    // second sees inFlight and emits a skipped event without running.
+    const [first, second] = await Promise.all([
+      runner.runOnce("indexer"),
+      runner.runOnce("indexer"),
+    ]);
+
+    const skippedCount = [first, second].filter(
+      (e) => e.status === "skipped",
+    ).length;
+    const completedCount = [first, second].filter(
+      (e) => e.status === "completed",
+    ).length;
+    expect(skippedCount).toBe(1);
+    expect(completedCount).toBe(1);
+
+    const skipped = events.find((e) => e.status === "skipped");
+    expect(skipped).toBeDefined();
+    expect(skipped?.loop).toBe("indexer");
+    expect(skipped?.summary).toMatchObject({
+      reason: "previous run still in-flight",
+    });
+  });
+
+  test("overlap guard releases after completion — next runOnce works", async () => {
+    const runner = new HarnessLoopRunner({
+      harnessRoot: root,
+      index: store,
+      now: () => NOW_MS,
+    });
+
+    const first = await runner.runOnce("indexer");
+    expect(first.status).toBe("completed");
+
+    // Sequential — guard already released; second call must run normally.
+    const second = await runner.runOnce("indexer");
+    expect(second.status).toBe("completed");
+  });
+
+  test("overlap guard is per-loop — different loops can run concurrently", async () => {
+    const events: LoopEvent[] = [];
+    const runner = new HarnessLoopRunner({
+      harnessRoot: root,
+      index: store,
+      now: () => NOW_MS,
+      onEvent: (e) => events.push(e),
+    });
+
+    const [a, b] = await Promise.all([
+      runner.runOnce("indexer"),
+      runner.runOnce("customer-drift"),
+    ]);
+    expect(a.status === "skipped" || b.status === "skipped").toBe(false);
+    // Both should reach a terminal state (completed or failed for missing
+    // accounts dir, depending on detector behavior).
+    expect(["completed", "failed"]).toContain(a.status);
+    expect(["completed", "failed"]).toContain(b.status);
+  });
 });
