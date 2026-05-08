@@ -645,13 +645,15 @@ function registerIPC(): void {
         const index = new HarnessIndexStore(defaultIndexPath(harnessId));
         const writer = new HarnessWriter(root);
 
-        // Replay any pending WAL entries (crash recovery)
-        const pending = writer.pendingWrites();
-        if (pending.length > 0) {
-          // Just compact for now — actual replay would re-issue index
-          // updates, which requires the full parser pipeline. v1.5+.
-          writer.compactWal();
-        }
+        // Always compact the WAL on cold-open. compactWal() rewrites the
+        // log to contain only unfinalized entries, so calling it
+        // unconditionally prevents the WAL from growing unboundedly with
+        // finalized (committed/aborted) entries across successful sessions.
+        // Pending entries (if any) survive the compact and are recoverable
+        // by the next session; coldOpenVerify() below re-detects any drift
+        // they would have caused. Actual replay that re-issues index
+        // updates requires the full parser pipeline — v1.5+.
+        writer.compactWal();
 
         // Cold-open verify per spec performance budget
         const verify = index.coldOpenVerify(root);

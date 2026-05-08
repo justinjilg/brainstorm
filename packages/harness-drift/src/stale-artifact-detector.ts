@@ -11,12 +11,21 @@ import type { Drift, DriftDetector, DriftSeverity } from "./types.js";
  * concept: "Reviewed-at: every artifact has a last-reviewed timestamp.
  * Stale artifacts get flagged by an AI auditor."
  *
+ * Semantics of `reviewed_at` (important — easy to misread):
+ *   - It is OPERATOR-SET, not auto-set. Editing an artifact does not
+ *     bump `reviewed_at`. Bumping it is a deliberate "I reviewed this
+ *     and it is still correct" action by the human or agent.
+ *   - This means a file can be modified yesterday but appear stale
+ *     today if `reviewed_at` is months old. That is the intended
+ *     behavior — review and edit are separate concerns.
+ *   - Reconciliation: open the artifact, decide it's still right, save
+ *     with a fresh `reviewed_at` (or a deliberate ChangeSet that
+ *     updates the field).
+ *
  * Per Decision #9 revised: this detector emits `field_class = "observation"`
  * — runtime is authoritative. The "observation" here is "the audit cadence
  * passed without review"; the file is wrong-by-policy if it's older than
- * the SLA. Reconciliation is "review the artifact and update reviewed_at"
- * (an indirect action — the user actually reads the file, decides it's
- * still right, and saves with a fresh timestamp).
+ * the SLA.
  *
  * Default SLAs (overridable per kind):
  *   - decision      : 365 days   (decisions rarely revisit)

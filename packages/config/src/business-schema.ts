@@ -19,6 +19,15 @@ import { z } from "zod";
 
 // Schema version this code understands. Manifests with newer schemas fail
 // strict checks unless their major version matches.
+//
+// Version-shape note: this is a `"N.N"` string because it tracks the
+// **user-facing manifest format** for `business.toml` — operators edit
+// the file by hand and semver makes "is this manifest compatible?"
+// readable at a glance. It is intentionally distinct from
+// `packages/harness-index/src/schema.ts` `SCHEMA_VERSION` (integer 1),
+// which tracks **internal SQLite migrations** in the per-user index DB
+// and never appears in user-edited files. The two version counters
+// evolve independently; do not unify them.
 export const BUSINESS_SCHEMA_VERSION = "1.0";
 
 // ── Archetype enum ─────────────────────────────────────────

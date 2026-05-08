@@ -79,7 +79,13 @@ export const partyRoleTypeSchema = z.enum([
 const partyRoleSchema = z
   .object({
     type: partyRoleTypeSchema,
-    // Pointer to the per-folder content for this role
+    // Pointer to the per-folder content for this role.
+    //
+    // Advisory only as of v1: the loader does not stat or read the
+    // referenced path. Stale or missing folder_refs do not fail party
+    // load; downstream consumers (UI, detectors) MUST treat this field
+    // as a hint, not a guarantee. A folder_ref-existence detector is a
+    // Phase-1+ candidate (see PRD BH-MSP-005).
     folder_ref: z.string().optional(),
     // Lifecycle of this specific role (a customer can churn while the
     // party remains active as an investor)
