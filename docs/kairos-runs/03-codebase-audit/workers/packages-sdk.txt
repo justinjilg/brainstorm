@@ -1,0 +1,61 @@
+=== packages/sdk ===
+model: Gemini 2.5 Flash
+cost:  $0.0105
+tools: list_dir, file_read, file_read, file_read, file_read, file_read
+tool-call-count: 6
+text-length: 4146
+
+----- raw text -----
+[FINDING]
+{
+  "id": "src/index.ts-85-process-env-mutation",
+  "title": "Direct mutation of `process.env` is not isolated or reversible",
+  "description": "The `run` method directly modifies `process.env` (line 88) with API keys. This can lead to unintended side effects if multiple `Brainstorm` instances are used within the same process, or if the SDK is used in a long-running application where environment variables are expected to remain constant or be managed explicitly. There's no mechanism to revert these changes.",
+  "severity": "high",
+  "category": "correctness",
+  "file": "src/index.ts",
+  "lineStart": 85,
+  "lineEnd": 90,
+  "suggestedFix": "Instead of directly mutating `process.env`, consider passing the `resolvedKeys` map directly to `createProviderRegistry` or using a more isolated method for managing API keys, such as a dedicated context or a local environment variable scope that is cleaned up after the `run` method completes."
+}
+
+[FINDING]
+{
+  "id": "src/index.ts-172-any-type-in-classify",
+  "title": "`any` type used for `registry` in `classify` method",
+  "description": "In the `classify` method, the `registry` constant is explicitly cast to `any` (line 172). This bypasses TypeScript's type checking, reducing code safety and making it harder to refactor or understand the expected interface for the `registry` in this context. While it's noted as 'Minimal for classify-only', a more precise (even if empty) interface would be better.",
+  "severity": "medium",
+  "category": "maintainability",
+  "file": "src/index.ts",
+  "lineStart": 172,
+  "lineEnd": 172,
+  "suggestedFix": "Define a minimal interface for `registry` that only includes the `getModel` method (or whatever parts are truly needed for `classify`), even if `getModel` returns null. This improves type safety and readability."
+}
+
+[FINDING]
+{
+  "id": "src/index.ts-149-closeDb-call",
+  "title": "`closeDb` is called unconditionally, potentially closing a shared database prematurely",
+  "description": "The `closeDb()` function is called at the end of both `run` and `classify` methods (lines 149 and 187). If the database connection is meant to be shared across multiple instances or calls within the same application lifecycle, these unconditional `closeDb` calls could lead to issues where subsequent operations attempt to use a closed database connection. It's unclear from this file alone if `getDb` returns a new connection or a shared instance. If shared, this is a problem.",
+  "severity": "high",
+  "category": "reliability",
+  "file": "src/index.ts",
+  "lineStart": 149,
+  "lineEnd": 149,
+  "suggestedFix": "Investigate the behavior of `@brainst0rm/db`'s `getDb` and `closeDb`. If `getDb` returns a singleton or shared instance, `closeDb` should only be called when the application is truly shutting down, or a more sophisticated connection management strategy (e.g., reference counting, explicit lifecycle management by the SDK consumer) should be implemented. If `getDb` returns a new connection each time, then `closeDb` is appropriate."
+}
+
+[FINDING]
+{
+  "id": "src/__tests__/sdk.test.ts-8-20-extensive-mocking",
+  "title": "Extensive mocking of internal dependencies",
+  "description": "The test file extensively mocks almost all internal dependencies (`loadConfig`, `getDb`, `createProviderRegistry`, `BrainstormRouter`, `CostTracker`, `runAgentLoop`, etc.) at lines 8-20 and 21-55. While mocking is necessary for unit tests, this level of mocking can make tests brittle if the internal interfaces of these dependencies change frequently. It also suggests that the `Brainstorm` class might have too many direct dependencies, making it hard to test in isolation without a complex setup.",
+  "severity": "medium",
+  "category": "maintainability",
+  "file": "src/__tests__/sdk.test.ts",
+  "lineStart": 8,
+  "lineEnd": 55,
+  "suggestedFix": "Consider if some dependencies could be grouped or passed in through a single factory or context object to simplify the `Brainstorm` class constructor and reduce the number of individual mocks. This might involve a re-evaluation of the dependency injection strategy for the SDK."
+}
+[AUDIT-COMPLETE] 4
+----- end -----

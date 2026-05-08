@@ -1,0 +1,478 @@
+=== packages/tools ===
+model: Gemini 2.5 Flash
+cost:  $0.0594
+tools: list_dir, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read
+tool-call-count: 12
+text-length: 37388
+
+----- raw text -----
+[FINDING]
+{
+  "id": "index-redundant-imports",
+  "title": "Redundant imports for re-exported symbols",
+  "description": "Many symbols are both explicitly exported using `export { ... } from './module.js'` and then re-imported within the same file for use in `createDefaultToolRegistry`. The direct export already makes them available, so the re-imports are redundant and add unnecessary lines of code.",
+  "severity": "low",
+  "category": "maintainability",
+  "file": "packages/tools/src/index.ts",
+  "lineStart": 151,
+  "lineEnd": 220,
+  "suggestedFix": "Remove the redundant `import` statements for symbols that are already exported from their respective modules. These symbols can be directly used after `export { ... } from ...`."
+}
+[FINDING]
+{
+  "id": "index-magic-numbers-tool-counts",
+  "title": "Magic numbers in tool category comments",
+  "description": "The comments categorizing tools in `createDefaultToolRegistry` include hardcoded counts (e.g., `// Filesystem (8)`). These 'magic numbers' are prone to becoming outdated if tools are added or removed from a category, leading to incorrect documentation.",
+  "severity": "low",
+  "category": "maintainability",
+  "file": "packages/tools/src/index.ts",
+  "lineStart": 227,
+  "lineEnd": 298,
+  "suggestedFix": "Consider removing the hardcoded counts from comments, or implement a mechanism to dynamically count registered tools per category if such a count is genuinely useful for runtime understanding."
+}
+[FINDING]
+{
+  "id": "index-inconsistent-github-tool-count",
+  "title": "Inconsistent GitHub tool count in comments",
+  "description": "There are two conflicting comments for GitHub tools: `// GitHub (2)` on line 248 and `// GitHub (8)` on line 249. The actual number of GitHub tools registered (lines 250-257) is 8, making the `(2)` count incorrect.",
+  "severity": "medium",
+  "category": "correctness",
+  "file": "packages/tools/src/index.ts",
+  "lineStart": 248,
+  "lineEnd": 249,
+  "suggestedFix": "Correct the comment on line 248 to reflect the accurate count of GitHub tools (8)."
+}
+[FINDING]
+{
+  "id": "index-unclear-stub-tool-handling",
+  "title": "Unclear indication for 'stub' or 'wired at runtime' tools",
+  "description": "Some tools, like `createToolSearchTool`, `pipelineTool`, and `code-graph-tools`, are noted in comments as 'stubs' or 'wired at runtime'. While comments explain this, the code itself doesn't offer a strong type-system or architectural indication of this 'stub' nature. This could lead to confusion for new developers or subtle bugs if a stub tool is used incorrectly without proper wiring.",
+  "severity": "medium",
+  "category": "maintainability",
+  "file": "packages/tools/src/index.ts",
+  "lineStart": 290,
+  "lineEnd": 303,
+  "suggestedFix": "Consider introducing a clearer pattern for 'stub' tools, such as an interface `WirableTool` or factory functions that explicitly return an unwired version which must then be 'wired' with a specific `wire(tool)` function or context, potentially at the type level. This would make the dependency on runtime wiring more explicit."
+}
+[FINDING]
+{
+  "id": "base-execute-any-cast",
+  "title": "Unexplained 'any' type cast in tool definition",
+  "description": "The `execute` function within `toAISDKTool` in `defineTool` is cast to `any`. This bypasses TypeScript's type safety and could hide type mismatches between `BrainstormToolDef`'s `execute` signature and the `ai` library's `tool` definition. While it might resolve a specific type issue, it's generally a practice that reduces maintainability and correctness without clear justification.",
+  "severity": "medium",
+  "category": "correctness",
+  "file": "packages/tools/src/base.ts",
+  "lineStart": 35,
+  "lineEnd": 35,
+  "suggestedFix": "Investigate the type discrepancy and try to resolve it with precise type definitions instead of `any`. If `any` is truly unavoidable, add a detailed comment explaining the specific reason and any known implications."
+}
+[FINDING]
+{
+  "id": "base-missing-deferred-in-definetool",
+  "title": "Missing 'deferred' property in defineTool config",
+  "description": "The `BrainstormToolDef` interface includes a `deferred?: boolean` property, but the `config` object passed to the `defineTool` function does not allow setting this property. This inconsistency means that tools cannot be explicitly marked as deferred during their definition using `defineTool`, potentially limiting flexibility or causing confusion about how deferred tools are managed.",
+  "severity": "medium",
+  "category": "maintainability",
+  "file": "packages/tools/src/base.ts",
+  "lineStart": 20,
+  "lineEnd": 28,
+  "suggestedFix": "Add the `deferred?: boolean` property to the `config` interface of `defineTool` to align it with `BrainstormToolDef`. If `deferred` is strictly an internal property, consider making it private or clarifying its lifecycle."
+}
+[FINDING]
+{
+  "id": "registry-rate-limiter-maxperminute-visibility",
+  "title": "Private property accessed externally in ToolRateLimiter",
+  "description": "The `maxPerMinute` property of `ToolRateLimiter` is declared as private, but it is accessed directly from outside the class (e.g., `getToolRateLimiter()['maxPerMinute']` on line 214). This violates encapsulation and makes the class harder to refactor or maintain without breaking external dependencies.",
+  "severity": "medium",
+  "category": "maintainability",
+  "file": "packages/tools/src/registry.ts",
+  "lineStart": 214,
+  "lineEnd": 214,
+  "suggestedFix": "Provide a public getter method (e.g., `getMaxPerMinute()`) in the `ToolRateLimiter` class if `maxPerMinute` needs to be exposed, or reconsider if external access is truly necessary."
+}
+[FINDING]
+{
+  "id": "registry-global-rate-limiter",
+  "title": "Global state for ToolRateLimiter can hinder testability",
+  "description": "The `_rateLimiter` instance is managed as a global singleton via `getToolRateLimiter()`. This global state can make unit testing more difficult, as tests might interfere with each other's rate limiter configurations or require explicit cleanup/reset operations between tests. It also limits the flexibility to have multiple, independent tool rate limiters if needed in different contexts.",
+  "severity": "low",
+  "category": "testing",
+  "file": "packages/tools/src/registry.ts",
+  "lineStart": 49,
+  "lineEnd": 54,
+  "suggestedFix": "Consider using a dependency injection pattern or passing the `ToolRateLimiter` instance explicitly where it's needed, especially in scenarios where isolated contexts or easier testability are required. If a global singleton is intentional, document its implications and provide a `reset` method for testing purposes."
+}
+[FINDING]
+{
+  "id": "registry-normalize-result-any-types",
+  "title": "'any' types in normalizeResult reduce type safety",
+  "description": "The `normalizeResult` function uses `any` for both its parameter and return type. This completely bypasses TypeScript's type checking, making it difficult to guarantee correctness and identify potential runtime errors if the input `raw` object doesn't conform to expected structures. The complex conditional logic within the function further emphasizes the need for clearer type definitions.",
+  "severity": "high",
+  "category": "correctness",
+  "file": "packages/tools/src/registry.ts",
+  "lineStart": 60,
+  "lineEnd": 91,
+  "suggestedFix": "Define more specific input and output types for `normalizeResult`, possibly using a union type for expected tool results or generics with type guards, to improve type safety and maintainability. Document the expected structure of `raw` thoroughly."
+}
+[FINDING]
+{
+  "id": "registry-normalize-result-complex-failure-logic",
+  "title": "Complex and potentially brittle failure detection in normalizeResult",
+  "description": "The logic within `normalizeResult` for identifying a tool failure (e.g., `raw.message && !raw.ok && !(\"exitCode\" in raw)` on line 67) is complex and relies on a specific combination of property presence and absence. This heuristic approach could be brittle and may fail to correctly classify all error scenarios or might incorrectly classify valid successes as failures if tool result formats evolve or differ.",
+  "severity": "medium",
+  "category": "reliability",
+  "file": "packages/tools/src/registry.ts",
+  "lineStart": 67,
+  "lineEnd": 69,
+  "suggestedFix": "Establish a clearer, more explicit contract for error responses from tools. For example, all errors should consistently return an object with an `error` field and `ok: false`. This would simplify the `normalizeResult` logic and improve its robustness."
+}
+[FINDING]
+{
+  "id": "registry-tools-with-permissions-any-casting",
+  "title": "Extensive 'any' casting in toAISDKToolsWithPermissions",
+  "description": "The `toAISDKToolsWithPermissions` method uses `any` casting and `any` typed parameters extensively (e.g., `(rawTool as any).execute`, `async (input: any, opts: any)`). This undermines type safety in a critical function responsible for wrapping tool executions with permissions and rate limiting, increasing the risk of runtime errors and making the code harder to understand and maintain.",
+  "severity": "high",
+  "category": "correctness",
+  "file": "packages/tools/src/registry.ts",
+  "lineStart": 186,
+  "lineEnd": 237,
+  "suggestedFix": "Refactor `toAISDKToolsWithPermissions` to minimize `any` usage. Define clear interfaces or types for `input` and `opts` (if `opts` is a standard parameter from the `ai` library). Explicitly define the types returned by `toolDef.toAISDKTool()` to avoid casting `rawTool` to `any`."
+}
+[FINDING]
+{
+  "id": "registry-tools-with-permissions-duplicated-logic",
+  "title": "Duplicated permission and rate-limiting logic",
+  "description": "The permission and rate-limiting logic is duplicated within `toAISDKToolsWithPermissions` for tools with and without `inputSchema` (lines 187-195 and 203-217). This code duplication makes the function less maintainable and increases the chance of inconsistencies if the logic needs to be updated in the future.",
+  "severity": "medium",
+  "category": "maintainability",
+  "file": "packages/tools/src/registry.ts",
+  "lineStart": 187,
+  "lineEnd": 217,
+  "suggestedFix": "Refactor the common permission and rate-limiting logic into a reusable helper function or a higher-order function that wraps the `execute` method, regardless of whether `inputSchema` is present."
+}
+[FINDING]
+{
+  "id": "registry-tools-execute-optionality-unclear",
+  "title": "Unclear optionality of 'execute' function on tools without inputSchema",
+  "description": "In `toAISDKToolsWithPermissions`, after checking `!toolDef.inputSchema`, there's a subsequent check `if (rawTool.execute)`. This implies that `toolDef.toAISDKTool()` might return a tool definition without an `execute` function, which is unusual for a 'tool'. The `BrainstormToolDef` interface currently defines `execute` as a mandatory property. This discrepancy creates ambiguity about the expected structure and behavior of tools, especially those that might be 'stubs' or have a different execution mechanism.",
+  "severity": "medium",
+  "category": "correctness",
+  "file": "packages/tools/src/registry.ts",
+  "lineStart": 182,
+  "lineEnd": 184,
+  "suggestedFix": "Clarify the expected structure of `BrainstormToolDef` and the return type of `toAISDKTool()` when `inputSchema` is absent. If `execute` can indeed be optional in certain tool definitions, the `BrainstormToolDef` interface should reflect this. If it's a bug, ensure that `toAISDKTool()` always provides an `execute` function for valid tools."
+}
+[FINDING]
+{
+  "id": "rate-limiter-transparency-and-guidance",
+  "title": "ToolRateLimiter lacks transparency and specific retry guidance",
+  "description": "The `ToolRateLimiter` silently blocks tool calls when the limit is reached. The error message 'Tool 'file_read' rate-limited (max 20/min). Wait before retrying.' does not provide specific guidance on how long to wait, leading to a poor user experience. The current sliding window implementation can make it difficult for users or automated agents to predict when a tool will become available again.",
+  "severity": "medium",
+  "category": "reliability",
+  "file": "packages/tools/src/registry.ts",
+  "lineStart": 15,
+  "lineEnd": 47,
+  "suggestedFix": "Enhance the `ToolRateLimiter` to provide more specific information in its error messages, such as the exact time remaining until the next call is allowed, or a timestamp of when the current window expires. This would improve transparency and enable more intelligent retry logic for consumers of the tools."
+}
+[FINDING]
+{
+  "id": "shell-global-mutable-state",
+  "title": "Extensive use of global mutable variables for shell configuration",
+  "description": "The `shellTool` relies heavily on module-level mutable global variables (e.g., `HEAD_BYTES`, `currentSandboxLevel`, `dockerSandbox`, `backgroundTasks`, `backgroundEventHandler`). This global state makes the `shellTool` difficult to test, reason about, and potentially prone to unexpected side effects in concurrent or multi-threaded environments. Changes made via `configureSandbox` or `setDockerSandbox` affect the entire application.",
+  "severity": "high",
+  "category": "maintainability",
+  "file": "packages/tools/src/builtin/shell.ts",
+  "lineStart": 15,
+  "lineEnd": 27,
+  "suggestedFix": "Refactor the `shellTool` to minimize global state. Consider encapsulating configuration and runtime state within a class instance that can be passed as a dependency, allowing for isolated and testable instances of the shell tool. If some state must be global, clearly document its lifecycle and potential implications."
+}
+[FINDING]
+{
+  "id": "shell-output-collector-maxtaillines-heuristic",
+  "title": "Arbitrary heuristic for OutputCollector.maxTailLines",
+  "description": "The `OutputCollector` uses an arbitrary heuristic (average 80 characters per line) to calculate `maxTailLines` for its circular buffer. If actual average line lengths deviate significantly, this could lead to inefficient memory usage (too much buffer) or premature truncation (too little buffer) of output tail, affecting the quality of diagnostic information.",
+  "severity": "low",
+  "category": "performance",
+  "file": "packages/tools/src/builtin/shell.ts",
+  "lineStart": 143,
+  "lineEnd": 143,
+  "suggestedFix": "Either document the rationale behind the 80-character heuristic or consider making this value configurable to allow for tuning based on typical output patterns. Alternatively, consider a more adaptive approach to buffer sizing if constant memory usage for output is critical."
+}
+[FINDING]
+{
+  "id": "shell-output-collector-line-truncation",
+  "title": "OutputCollector.toString() can truncate lines mid-way",
+  "description": "The `OutputCollector.toString()` method truncates lines from the beginning of the tail if `bytes > this.maxTail` (line 188). This means that a partial line might be included at the start of the tail if its length pushes the total tail bytes over `maxTail`. This could make the output less readable and potentially hide important information if context is lost due to mid-line truncation.",
+  "severity": "medium",
+  "category": "correctness",
+  "file": "packages/tools/src/builtin/shell.ts",
+  "lineStart": 188,
+  "lineEnd": 188,
+  "suggestedFix": "Adjust the `OutputCollector.toString()` logic to ensure that only complete lines are included in the tail, even if it means slightly exceeding `maxTail` bytes or indicating a partial line explicitly. Prioritize readability and integrity of log lines over strict byte limits for the tail."
+}
+[FINDING]
+{
+  "id": "shell-inconsistent-background-error-handling",
+  "title": "Inconsistent error handling between foreground and background tasks",
+  "description": "Error reporting differs for foreground and background shell tasks. In background tasks, `emitCompletion` uses `stderr ?? bgStderr.toString()` (line 319), while foreground tasks use `err.message` from the 'error' event (line 390). This inconsistency could lead to variations in error message format and detail, making debugging and automated error parsing more challenging.",
+  "severity": "medium",
+  "category": "reliability",
+  "file": "packages/tools/src/builtin/shell.ts",
+  "lineStart": 319,
+  "lineEnd": 390,
+  "suggestedFix": "Harmonize the error reporting mechanism for both foreground and background shell tasks. Ensure a consistent format and source of error messages (e.g., always prefer `err.message` if available, or a standardized error object structure) to improve reliability and debuggability."
+}
+[FINDING]
+{
+  "id": "shell-hardcoded-graceful-shutdown-timeout",
+  "title": "Hardcoded timeout for graceful process shutdown",
+  "description": "The graceful shutdown timeout (SIGTERM followed by SIGKILL after 5 seconds) is hardcoded on lines 302-304 and 369-371. This 'magic number' of 5 seconds might not be optimal for all processes – it could be too short for applications requiring longer cleanup or too long for highly responsive processes, potentially impacting reliability or perceived performance.",
+  "severity": "low",
+  "category": "reliability",
+  "file": "packages/tools/src/builtin/shell.ts",
+  "lineStart": 302,
+  "lineEnd": 304,
+  "suggestedFix": "Make the graceful shutdown timeout configurable (e.g., via a constant or an option) to allow for tuning based on the expected behavior of child processes. Document the rationale for the chosen default."
+}
+[FINDING]
+{
+  "id": "shell-max-background-tasks-unenforced",
+  "title": "MAX_BACKGROUND_TASKS limit is not enforced",
+  "description": "The `MAX_BACKGROUND_TASKS` constant is defined (line 74), but there is no logic to prevent new background tasks from being spawned if this limit is reached. The `backgroundTasks` map will continue to grow beyond the intended limit, making the `MAX_BACKGROUND_TASKS` constant ineffective and potentially leading to resource exhaustion.",
+  "severity": "high",
+  "category": "reliability",
+  "file": "packages/tools/src/builtin/shell.ts",
+  "lineStart": 278,
+  "lineEnd": 290,
+  "suggestedFix": "Implement a check before spawning new background tasks to ensure `backgroundTasks.size` does not exceed `MAX_BACKGROUND_TASKS`. If the limit is reached, the tool should return an error indicating that too many background tasks are running, instead of silently continuing."
+}
+[FINDING]
+{
+  "id": "shell-max-pending-events-drops-silently",
+  "title": "MAX_PENDING_EVENTS silently drops background completion events",
+  "description": "The `MAX_PENDING_EVENTS` constant defines a limit for queued background completion events (line 87). When this limit is reached, new events are silently dropped (`if (pendingEvents.length < MAX_PENDING_EVENTS)` on line 324). Silently dropping events can lead to a lack of feedback about background task completions and make it difficult to diagnose issues, potentially affecting the reliability of task tracking.",
+  "severity": "high",
+  "category": "reliability",
+  "file": "packages/tools/src/builtin/shell.ts",
+  "lineStart": 324,
+  "lineEnd": 325,
+  "suggestedFix": "Instead of silently dropping events, consider logging a warning or error when `MAX_PENDING_EVENTS` is reached. If event dropping is intended behavior, it should be clearly documented, and a strategy for informing the user or system about dropped events should be considered to prevent information loss."
+}
+[FINDING]
+{
+  "id": "shell-broad-git-safety-regex",
+  "title": "Broad git safety check regex may lead to false positives",
+  "description": "The regex `/\bgit\b/.test(command)` on line 237 broadly checks for the word 'git' to trigger the git safety check. This approach might lead to false positives, where commands that simply contain the word 'git' but are otherwise benign are subjected to unnecessary safety checks or even blocked. This could impact user experience or flexibility.",
+  "severity": "low",
+  "category": "correctness",
+  "file": "packages/tools/src/builtin/shell.ts",
+  "lineStart": 237,
+  "lineEnd": 237,
+  "suggestedFix": "Refine the regex to be more specific about actual git commands (e.g., `^git\\s` or a more comprehensive list of common git subcommands). If broad matching is desired for maximum safety, document the potential for false positives and provide an escape mechanism if needed."
+}
+[FINDING]
+{
+  "id": "git-safety-redundant-force-push-rules",
+  "title": "Redundant force-push rules in checkGitSafety",
+  "description": "The `checkGitSafety` function includes a specific check for `no-force-push-protected` and then a general check for `no-force-push-main` within `DESTRUCTIVE_PATTERNS`. The code explicitly skips adding `no-force-push-main` if `no-force-push-protected` is already present. This suggests redundancy and could be simplified into a single, comprehensive rule for force-pushing to protected or sensitive branches to improve clarity and reduce potential for future inconsistencies.",
+  "severity": "low",
+  "category": "maintainability",
+  "file": "packages/tools/src/builtin/git-safety.ts",
+  "lineStart": 120,
+  "lineEnd": 145,
+  "suggestedFix": "Consolidate the force-push logic into a single, more robust rule that handles protected branches specifically. Ensure the `isForceToProtected` function is comprehensive, and then remove the redundant `no-force-push-main` pattern from `DESTRUCTIVE_PATTERNS` or clearly delineate their distinct purposes."
+}
+[FINDING]
+{
+  "id": "git-safety-broad-force-push-detection",
+  "title": "Potentially over-broad force push detection in isForceToProtected",
+  "description": "The `isForceToProtected` function on line 109 flags any `git push --force origin` (or similar non-branch specific force push) as suspicious, assuming it might target a protected branch. While prioritizing safety, this could lead to false positives if the current tracking branch is not a protected branch, causing unnecessary blocks or confirmation prompts for benign operations.",
+  "severity": "low",
+  "category": "correctness",
+  "file": "packages/tools/src/builtin/git-safety.ts",
+  "lineStart": 109,
+  "lineEnd": 109,
+  "suggestedFix": "Refine the logic to confirm if the `origin` or implied remote branch is indeed a protected one, rather than making a blanket assumption. This might require additional Git introspection or a more context-aware check."
+}
+[FINDING]
+{
+  "id": "git-safety-unimplemented-credential-scan",
+  "title": "Rule 5: 'Scan staged files for credentials' is not implemented",
+  "description": "The comment block at the top of the file explicitly lists '5. Scan staged files for credentials before commit' as a safety rule. However, there is no corresponding implementation or call to a credential scanning function within `checkGitSafety`. This represents a significant missing security feature.",
+  "severity": "critical",
+  "category": "security",
+  "file": "packages/tools/src/builtin/git-safety.ts",
+  "lineStart": 9,
+  "lineEnd": 9,
+  "suggestedFix": "Implement the credential scanning functionality as described in the rule. This would typically involve inspecting the content of staged files for common credential patterns before allowing a commit. If this functionality is handled elsewhere, update the comment to reflect this."
+}
+[FINDING]
+{
+  "id": "git-safety-unimplemented-confirmation",
+  "title": "Rule 6: 'Require confirmation for destructive ops' is not enforced by module",
+  "description": "The comment block at the top of the file lists '6. Require confirmation for destructive ops (reset --hard, checkout --, clean -f)'. While `checkGitSafety` identifies these as violations and flags them, the module itself does not *require* or implement the confirmation mechanism. If the intention is for `git-safety.ts` to only detect and flag, this should be explicitly stated, and the responsibility for handling confirmation should be clearly documented as residing in a calling module (e.g., `shellTool`).",
+  "severity": "medium",
+  "category": "security",
+  "file": "packages/tools/src/builtin/git-safety.ts",
+  "lineStart": 10,
+  "lineEnd": 10,
+  "suggestedFix": "Clarify the responsibility for enforcing 'confirmation for destructive ops'. If `git-safety.ts` is purely a detection layer, update the comment to reflect that confirmation is handled by the calling tool. If `git-safety.ts` *should* implement confirmation, add the necessary logic (e.g., by returning a specific confirmation requirement in the violation object)."
+}
+[FINDING]
+{
+  "id": "git-safety-format-violations-extra-newlines",
+  "title": "Extra newline characters in formatViolations output",
+  "description": "The `formatViolations` function adds a newline character to the end of each `suggestion` line (`lines.push(\`  → ${v.suggestion}\\n\`);` on line 196). When these lines are then joined by `lines.join(\"\\n\")`, an additional blank line is introduced between violations, making the output more verbose than necessary and potentially harder to read.",
+  "severity": "low",
+  "category": "maintainability",
+  "file": "packages/tools/src/builtin/git-safety.ts",
+  "lineStart": 196,
+  "lineEnd": 196,
+  "suggestedFix": "Remove the trailing `\\n` from `lines.push(\`  → ${v.suggestion}\`);` on line 196. The `lines.join(\"\\n\")` will then correctly separate the lines with a single newline, resulting in cleaner output."
+}
+[FINDING]
+{
+  "id": "git-safety-hard-rules-data-duplication",
+  "title": "Duplication of hard block rule definitions in HARD_RULES",
+  "description": "The `HARD_RULES` set on lines 206-212 duplicates information about which rules are 'hard blocks' that could otherwise be stored directly within the `DESTRUCTIVE_PATTERNS` or `GitSafetyViolation` objects themselves. This duplication can lead to inconsistencies if a rule's severity changes but is not updated in both places, reducing maintainability.",
+  "severity": "low",
+  "category": "maintainability",
+  "file": "packages/tools/src/builtin/git-safety.ts",
+  "lineStart": 206,
+  "lineEnd": 212,
+  "suggestedFix": "Consider integrating the 'hard block' property directly into the `DESTRUCTIVE_PATTERNS` objects (e.g., `isHardBlock: true`) or extending the `GitSafetyViolation` interface to include this flag. This would centralize the definition of rule severity and improve maintainability."
+}
+[FINDING]
+{
+  "id": "sandbox-regex-statefulness-g-flag",
+  "title": "Implicit statefulness of regex due to potential 'g' flag",
+  "description": "The `checkRestricted` function explicitly resets `pattern.lastIndex = 0` before each regex test. While this correctly handles stateful regexes (those with the `g` flag), it implicitly suggests that some `BLOCKED_PATTERNS` might be declared with `g`. If not all patterns require `g`, or if new ones are added without considering it, accidental omission of `lastIndex` reset could lead to subtle bugs where regexes do not match correctly on subsequent calls. It's safer to avoid the `g` flag for simple `test()` checks unless iterative matching is truly intended.",
+  "severity": "low",
+  "category": "correctness",
+  "file": "packages/tools/src/builtin/sandbox.ts",
+  "lineStart": 131,
+  "lineEnd": 144,
+  "suggestedFix": "Review all regex definitions in `BLOCKED_PATTERNS` and `splitChainedCommands`. Remove the `g` flag from any regexes that do not require iterative matching. If `g` is necessary, clearly document why and ensure `lastIndex` is always managed correctly."
+}
+[FINDING]
+{
+  "id": "sandbox-rm-regex-robustness",
+  "title": "Rm regex patterns may not be fully robust against sophisticated attacks",
+  "description": "The `BLOCKED_PATTERNS` for `rm` commands, specifically `rm /` and `rm -rf /`, are critical for security. However, these regexes can be complex to make truly foolproof against all variations of deletion attempts, especially if combined with variable expansion or other shell features. For example, `rm -rf ${HOME}/../..` could bypass a simple `/` check. Additionally, the existing `projectPath` protection focuses on writes, not recursive deletions outside the project directory, leaving a potential gap.",
+  "severity": "high",
+  "category": "security",
+  "file": "packages/tools/src/builtin/sandbox.ts",
+  "lineStart": 21,
+  "lineEnd": 27,
+  "suggestedFix": "Consider enhancing the `rm` blocking patterns to be more resilient to obfuscation or more broadly cover recursive deletions outside a defined project boundary. This might involve a more advanced tokenization or AST-based analysis if regexes prove insufficient. Add specific tests for various `rm` command bypass attempts."
+}
+[FINDING]
+{
+  "id": "sandbox-chmod-777-bypass",
+  "title": "Chmod 777 pattern can be easily bypassed",
+  "description": "The `BLOCKED_PATTERNS` only includes `chmod 777` as a blocked command due to insecure permissions. However, this can be easily bypassed using alternative octal representations (e.g., `0777`) or symbolic modes (e.g., `chmod a=rwx`). This makes the `chmod` protection incomplete and potentially misleading as a security measure.",
+  "severity": "medium",
+  "category": "security",
+  "file": "packages/tools/src/builtin/sandbox.ts",
+  "lineStart": 33,
+  "lineEnd": 33,
+  "suggestedFix": "Expand the `chmod` blocking patterns to cover common equivalent ways of setting world-writable permissions (e.g., `chmod 0777`, `chmod a+rwx`). Alternatively, consider a more generalized approach to identify insecure permission changes if symbolic modes are common."
+}
+[FINDING]
+{
+  "id": "sandbox-inline-script-blocking-reason",
+  "title": "Clarify security rationale for blocking inline script execution",
+  "description": "The `BLOCKED_PATTERNS` includes blocking inline script execution (e.g., `python -c`, `node -e`). The provided reasons in comments, such as 'use a .py file', are more about best practice than a clear security rationale. From a security perspective, inline scripts are often blocked because they are harder to statically analyze for malicious content and easier to obfuscate.",
+  "severity": "low",
+  "category": "security",
+  "file": "packages/tools/src/builtin/sandbox.ts",
+  "lineStart": 68,
+  "lineEnd": 81,
+  "suggestedFix": "Update the reasons for blocking inline script execution to clearly articulate the security risks (e.g., 'Prevents obfuscation and simplifies static analysis for malicious code') to provide better context and justification for the restriction."
+}
+[FINDING]
+{
+  "id": "sandbox-chained-commands-parsing-robustness",
+  "title": "Regex-based splitChainedCommands may lack robustness for complex shell commands",
+  "description": "The `splitChainedCommands` function relies on regex splitting for shell command chains and subshells. While it attempts to handle various separators and subshells, regex-based parsing of shell commands is inherently complex and prone to edge cases (e.g., escaped delimiters, quoted strings containing delimiters, nested subshells). This can lead to incomplete parsing or missed malicious patterns if they are artfully embedded within complex shell logic, potentially impacting the effectiveness of the sandbox.",
+  "severity": "high",
+  "category": "security",
+  "file": "packages/tools/src/builtin/sandbox.ts",
+  "lineStart": 166,
+  "lineEnd": 174,
+  "suggestedFix": "For improved robustness against sophisticated attacks, consider using a proper shell parser (e.g., `bash -n` or a dedicated library if available) to accurately tokenize and parse shell commands. If sticking with regexes, thoroughly document known limitations and edge cases, and add extensive unit tests for various complex shell command scenarios."
+}
+[FINDING]
+{
+  "id": "sandbox-system-paths-write-bypass",
+  "title": "System path write protection could be bypassed by other commands",
+  "description": "The `systemPaths` regex in `checkRestricted` (lines 151-152) aims to prevent writes to common system directories, but it only checks for a limited set of commands (`>`, `tee`, `cp`, `mv`, `install`). Other commands or script snippets that can perform file writes (e.g., `echo '...' > /etc/fstab`, `dd of=/dev/null`, or scripts executed via `python`, `node` if not caught by inline execution blocks) could potentially bypass this specific check. This relies on the comprehensiveness of other `BLOCKED_PATTERNS` for full coverage.",
+  "severity": "medium",
+  "category": "security",
+  "file": "packages/tools/src/builtin/sandbox.ts",
+  "lineStart": 151,
+  "lineEnd": 152,
+  "suggestedFix": "Review and enhance the `systemPaths` protection to cover more commands that can write to arbitrary locations. Alternatively, if a comprehensive approach is not feasible with regexes, explicitly document the scope and limitations of this particular check and rely on a layered security approach with other sandbox rules."
+}
+[FINDING]
+{
+  "id": "parallel-legacy-lists-drift",
+  "title": "Legacy parallel classification lists are prone to drift and errors",
+  "description": "The `PARALLEL_SAFE_LEGACY` and `SEQUENTIAL_REQUIRED_LEGACY` sets contain hardcoded tool names for concurrency classification. As new tools are added or existing ones change their behavior, these lists can easily become outdated, leading to incorrect concurrency decisions. This is a significant maintenance burden and a potential source of subtle performance or correctness bugs if tools are misclassified.",
+  "severity": "high",
+  "category": "maintainability",
+  "file": "packages/tools/src/parallel.ts",
+  "lineStart": 15,
+  "lineEnd": 54,
+  "suggestedFix": "Strongly encourage all `BrainstormToolDef` definitions to explicitly set the `concurrent` property. Consider adding a linter rule or a runtime check to flag tools that don't declare `concurrent` and are not in the legacy lists, or remove the legacy lists entirely once all tools adopt the `concurrent` metadata."
+}
+[FINDING]
+{
+  "id": "parallel-global-tool-registry",
+  "title": "Global mutable _toolRegistry affects parallel classification",
+  "description": "The `_toolRegistry` is a module-level mutable global variable. Modifying this global state via `setToolRegistryForParallel` can affect the concurrency classification (`isParallelSafe`) for all parts of the application. This makes the module stateful, harder to test in isolation, and prone to unexpected interactions in concurrent environments.",
+  "severity": "medium",
+  "category": "maintainability",
+  "file": "packages/tools/src/parallel.ts",
+  "lineStart": 57,
+  "lineEnd": 64,
+  "suggestedFix": "Refactor `isParallelSafe` and `classifyToolBatch` to accept the `ToolRegistry` (or `Map<string, BrainstormToolDef>`) as an explicit parameter, rather than relying on a global mutable variable. This would improve testability and prevent unintended global state changes."
+}
+[FINDING]
+{
+  "id": "parallel-promise-allsettled-error-loss",
+  "title": "Promise.allSettled error handling discards full error objects",
+  "description": "In `executeWithParallelism`, when `Promise.allSettled` catches rejections, the error information is reduced to `s.reason?.message ?? 'Failed'`. This discards the original error object, including its stack trace and specific error types, making it much harder to diagnose the root cause of failures in parallel tool executions.",
+  "severity": "high",
+  "category": "reliability",
+  "file": "packages/tools/src/parallel.ts",
+  "lineStart": 125,
+  "lineEnd": 126,
+  "suggestedFix": "Store the full `s.reason` (the error object) in the `error` field of the result object, rather than just its message. This preserves valuable debugging information. Ensure that the consumer of `executeWithParallelism` can handle and utilize full error objects."
+}
+[FINDING]
+{
+  "id": "parallel-single-call-path-inconsistency",
+  "title": "Inconsistent error handling for single parallel calls",
+  "description": "The `executeWithParallelism` function has a separate code path for a single parallel call, bypassing `Promise.allSettled`. This path does not explicitly include `try...catch` around `await c.execute()`, creating an inconsistency in error handling compared to both multiple parallel calls and sequential calls. A single parallel call might cause an unhandled promise rejection if its `execute` method throws an error.",
+  "severity": "medium",
+  "category": "correctness",
+  "file": "packages/tools/src/parallel.ts",
+  "lineStart": 131,
+  "lineEnd": 134,
+  "suggestedFix": "For consistency and robust error handling, either use `Promise.allSettled` for single parallel calls as well, or add a `try...catch` block around `await c.execute()` in the single parallel call path to ensure errors are caught and reported uniformly."
+}
+[FINDING]
+{
+  "id": "parallel-sequential-error-message-truncation",
+  "title": "Sequential execution error handling truncates error messages",
+  "description": "For sequential tool calls within `executeWithParallelism`, the `catch` block on line 142 only captures `err.message` as the error string. This truncates potentially rich error information (like stack traces, custom properties of an error object) that could be critical for diagnosing issues with sequential tool failures, similar to the `Promise.allSettled` observation.",
+  "severity": "high",
+  "category": "reliability",
+  "file": "packages/tools/src/parallel.ts",
+  "lineStart": 142,
+  "lineEnd": 143,
+  "suggestedFix": "Store the full `err` object (or at least more comprehensive information like `err.stack`) in the `error` field of the result for sequential tool failures to aid in debugging."
+}
+[AUDIT-COMPLETE] 28
+----- end -----

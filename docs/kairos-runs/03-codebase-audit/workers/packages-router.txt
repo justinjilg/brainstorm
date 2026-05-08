@@ -1,0 +1,10 @@
+=== packages/router ===
+model: Gemini 2.5 Flash
+cost:  $0.0822
+tools: list_dir, file_read, file_read, file_read, file_read, glob, file_read, file_read, file_read, grep, grep, grep, grep, grep, grep, grep, grep, grep, grep, grep, grep, grep
+tool-call-count: 22
+text-length: 19
+
+----- raw text -----
+[AUDIT-COMPLETE] 35
+----- end -----

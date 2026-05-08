@@ -1,0 +1,304 @@
+=== packages/core ===
+model: Gemini 2.5 Flash
+cost:  $0.1554
+tools: list_dir, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read
+tool-call-count: 23
+text-length: 22471
+
+----- raw text -----
+```json
+[FINDING]
+{
+  "id": "agent-loop-circuit-breaker-fallback",
+  "title": "Circuit Breaker fallback might still attempt failed model",
+  "description": "If the primary model's circuit is open and no fallbacks have closed circuits, the agent proceeds anyway (line 470). This means it will attempt to use the primary model again, despite its circuit being open, potentially leading to immediate failure and wasted cycles. It might be intended for a probe call, but it's not explicit.",
+  "severity": "medium",
+  "category": "reliability",
+  "file": "src/agent/loop.ts",
+  "lineStart": 451,
+  "lineEnd": 470,
+  "suggestedFix": "Clarify the intended behavior when no fallbacks are available and the primary circuit is open. If it's for a probe, add comments explaining this. Otherwise, consider a more robust fallback strategy or an explicit error when no healthy models are available."
+}
+```
+```json
+[FINDING]
+{
+  "id": "agent-loop-ai-sdk-type-validation-error-swallowing",
+  "title": "Swallowing AI_TypeValidationError could mask issues",
+  "description": "The code explicitly swallows `AI_TypeValidationError` and messages including 'Type validation failed' from the AI SDK (lines 907-910). While this is done to handle a known issue with BrainstormRouter's guardian SSE event, it's a broad catch that could mask other, legitimate type validation errors from the AI SDK, making them harder to debug.",
+  "severity": "medium",
+  "category": "reliability",
+  "file": "src/agent/loop.ts",
+  "lineStart": 903,
+  "lineEnd": 918,
+  "suggestedFix": "Investigate the root cause of the `AI_TypeValidationError` from BrainstormRouter's guardian SSE event and address it upstream if possible. If not, refine the error checking to be more specific (e.g., check for a specific error code or a more precise message pattern) to avoid silently ignoring other potential AI SDK validation issues."
+}
+```
+```json
+[FINDING]
+{
+  "id": "agent-loop-global-ai-sdk-warnings-suppression",
+  "title": "Global AI SDK warnings suppression can hinder debugging",
+  "description": "The code globally suppresses AI SDK warnings (`(globalThis as any).AI_SDK_LOG_WARNINGS = false;`) when `BRAINSTORM_LOG_LEVEL` is not set. This can hide potentially important warnings from the AI SDK that might indicate suboptimal usage or subtle issues, making debugging in non-debug environments more challenging.",
+  "severity": "low",
+  "category": "maintainability",
+  "file": "src/agent/loop.ts",
+  "lineStart": 150,
+  "lineEnd": 152,
+  "suggestedFix": "Consider a more granular approach to AI SDK logging. Instead of a global suppression, configure the AI SDK to only suppress specific known benign warnings, or integrate AI SDK warnings into Brainstorm's own logging system with configurable verbosity."
+}
+```
+```json
+[FINDING]
+{
+  "id": "context-build-repo-map-skills-silent-error",
+  "title": "Silent error handling in buildRepoMapSection and buildSkillsSection",
+  "description": "The functions `buildRepoMapSection` and `buildSkillsSection` both use generic `try...catch` blocks that return `null` on any error. This means issues during repository map generation or skill loading (e.g., malformed skill files, issues with `generateRepoMap`) will be silently ignored, leading to an incomplete system prompt without any warning or indication of the problem. This can make debugging difficult.",
+  "severity": "medium",
+  "category": "reliability",
+  "file": "src/agent/context.ts",
+  "lineStart": 289,
+  "lineEnd": 307,
+  "suggestedFix": "Add logging within the catch blocks of `buildRepoMapSection` and `buildSkillsSection` to report errors at a 'warn' or 'error' level. This will ensure that issues with context generation are visible, even if they don't crash the application."
+}
+```
+```json
+[FINDING]
+{
+  "id": "context-load-memory-require-and-silent-fallback",
+  "title": "Unusual 'require' and silent error in loadMemoryContext",
+  "description": "The `loadMemoryContext` function uses `require(\"../memory/manager.js\")` inside a function, which is often discouraged in modern TypeScript/ESM projects and can lead to module loading complexities. Additionally, both the primary `MemoryManager` call and the fallback `readFileSync` are wrapped in generic `try...catch` blocks that silently return `null` on failure. This can hide issues related to memory management or file access, leading to an incomplete memory context without any user-facing error.",
+  "severity": "medium",
+  "category": "maintainability",
+  "file": "src/agent/context.ts",
+  "lineStart": 390,
+  "lineEnd": 421,
+  "suggestedFix": "Refactor `loadMemoryContext` to use ES module imports for `MemoryManager` if possible, or explain the rationale for `require`. Implement logging for errors in both the `MemoryManager` path and the `readFileSync` fallback to provide visibility when memory context cannot be loaded."
+}
+```
+```json
+[FINDING]
+{
+  "id": "context-parse-at-mentions-file-read-exposure",
+  "title": "Potential sensitive file exposure via @mentions",
+  "description": "The `parseAtMentions` function resolves file paths from user input relative to `projectPath` and then reads their content. While the output is wrapped in a markdown block, a malicious user could craft `@../.env` or similar paths to read sensitive files outside the immediate project directory. Although the prompt advises against writing outside the project, reading is not explicitly restricted in this function, potentially exposing confidential information.",
+  "severity": "high",
+  "category": "security",
+  "file": "src/agent/context.ts",
+  "lineStart": 431,
+  "lineEnd": 471,
+  "suggestedFix": "Implement a stricter path validation in `parseAtMentions` to ensure that only files within the `projectPath` (or explicitly allowed subdirectories) can be read. Alternatively, warn the user when `@mentions` resolve to paths outside the project root and require explicit confirmation."
+}
+```
+```json
+[FINDING]
+{
+  "id": "repo-map-regex-parsing-fragility",
+  "title": "Fragile regex-based code parsing for repo map",
+  "description": "The repository map relies heavily on regular expressions for parsing TypeScript and Python files to extract exports, imports, and symbol signatures. Regex-based parsing is inherently fragile and can easily break with minor syntax variations, comments, or complex language constructs (e.g., multiline declarations, nested blocks), leading to an inaccurate understanding of the codebase structure. While avoiding full AST parsing, this approach introduces significant maintenance risk and potential for incorrect information.",
+  "severity": "high",
+  "category": "correctness",
+  "file": "src/agent/repo-map.ts",
+  "lineStart": 208,
+  "lineEnd": 439,
+  "suggestedFix": "Investigate integrating a more robust parsing solution, such as `tree-sitter` (as noted in comments) or a dedicated language service client. If regex must be used, add extensive unit tests for edge cases and complex syntax to ensure its robustness."
+}
+```
+```json
+[FINDING]
+{
+  "id": "repo-map-find-source-files-silent-git-failure",
+  "title": "Silent failure when `git ls-files` fails in `findSourceFiles`",
+  "description": "The `findSourceFiles` function uses `git ls-files` to discover source files. If the project directory is not a Git repository, or if the `git` command fails for any other reason, the `execFileSync` call will throw an error, which is caught silently. The function then returns an empty array, leading to an empty repository map without any indication to the user that Git context is missing or that file discovery failed.",
+  "severity": "medium",
+  "category": "reliability",
+  "file": "src/agent/repo-map.ts",
+  "lineStart": 157,
+  "lineEnd": 206,
+  "suggestedFix": "Add logging to the `catch` block in `findSourceFiles` to inform the user or developer if the `git ls-files` command fails, explaining that the repository map might be incomplete or unavailable due to the error. Consider a fallback file discovery method (e.g., `glob`) if Git is not present or fails."
+}
+```
+```json
+[FINDING]
+{
+  "id": "repo-map-build-repo-map-silent-file-parsing-errors",
+  "title": "Silent error handling during individual file parsing in `buildRepoMap`",
+  "description": "The `buildRepoMap` function iterates through files and attempts to parse each one. The `try...catch` block around `readFileSync` and `parseFile` (lines 89-104) silently ignores any errors that occur during the reading or parsing of individual files. This means that malformed files or files with permissions issues will be skipped, leading to an incomplete `RepoMap` without any feedback about which files were problematic or why.",
+  "severity": "medium",
+  "category": "reliability",
+  "file": "src/agent/repo-map.ts",
+  "lineStart": 89,
+  "lineEnd": 104,
+  "suggestedFix": "Add logging to the `catch` block in `buildRepoMap` to record errors encountered when reading or parsing individual files, including the filename and error message. This will help diagnose issues with specific files that prevent them from being included in the repository map."
+}
+```
+```json
+[FINDING]
+{
+  "id": "repo-map-python-exported-heuristic-fragility",
+  "title": "Fragile Python 'exported' heuristic based on underscore prefix",
+  "description": "For Python files, the `exported` flag for `SymbolSignature` is determined by a heuristic: `!m[1].startsWith(\"_\")`. While `_` prefix often indicates internal members in Python, it is a convention, not a strict rule. This approach might inaccurately label public functions/classes as non-exported or vice-versa, especially in projects that use `__all__` for explicit exports or have different naming conventions, leading to an imprecise repository map.",
+  "severity": "low",
+  "category": "correctness",
+  "file": "src/agent/repo-map.ts",
+  "lineStart": 423,
+  "lineEnd": 436,
+  "suggestedFix": "Acknowledge the heuristic limitation in comments. If more precision is needed in the future, consider integrating a more sophisticated Python AST parser or a tool that understands module `__all__` definitions to determine exported symbols accurately."
+}
+```
+```json
+[FINDING]
+{
+  "id": "repo-map-build-edges-simplistic-import-resolution",
+  "title": "Simplistic import resolution in `buildEdges` leads to inaccurate graph",
+  "description": "The `buildEdges` function attempts to resolve import paths using a highly simplistic heuristic (lines 556-558) that primarily relies on matching base filenames after stripping '.js' or '.ts' extensions. This approach is prone to errors and will likely miss many valid import relationships (e.g., relative paths, path aliases, index file imports) and incorrectly link others, leading to a significantly inaccurate dependency graph, diminishing the value of the 'Import Graph' section for the agent.",
+  "severity": "high",
+  "category": "correctness",
+  "file": "src/agent/repo-map.ts",
+  "lineStart": 546,
+  "lineEnd": 563,
+  "suggestedFix": "Implement a more robust import resolution mechanism that accounts for Node.js/TypeScript module resolution rules, including relative paths, package aliases, and `tsconfig.json` paths. This might involve using a dedicated library or simulating the module resolution process more accurately."
+}
+```
+```json
+[FINDING]
+{
+  "id": "circuit-breaker-max-retries-unused",
+  "title": "`maxRetries` option in CircuitBreaker is not utilized internally",
+  "description": "The `CircuitBreakerOptions` interface and the `CircuitBreaker` class define and store a `maxRetries` property, and there's a `getMaxRetries()` method. However, the internal logic of the `CircuitBreaker` (state transitions, `canExecute`, `recordSuccess`, `recordFailure`) does not appear to use `maxRetries` to influence its behavior. This option seems to be a dead-end or intended for external consumption, which could lead to confusion about its purpose within the `CircuitBreaker` itself.",
+  "severity": "low",
+  "category": "maintainability",
+  "file": "src/security/circuit-breaker.ts",
+  "lineStart": 31,
+  "lineEnd": 160,
+  "suggestedFix": "Clarify the purpose of `maxRetries` in the documentation for `CircuitBreakerOptions`. If it's solely for external retry mechanisms, consider moving it out of the `CircuitBreakerOptions` or explicitly stating its external nature. If it's intended to be used by the circuit breaker, integrate it into the state transition logic."
+}
+```
+```json
+[FINDING]
+{
+  "id": "middleware-pipeline-synchronous-hooks-limitation",
+  "title": "Middleware pipeline lacks asynchronous hooks, limiting extensibility",
+  "description": "All current middleware hooks (`beforeAgent`, `afterModel`, `wrapToolCall`, `afterToolResult`) in `MiddlewarePipeline` are synchronous. This design choice, while simplifying implementation, restricts the types of operations middleware can perform. Middleware requiring asynchronous operations (e.g., network requests, database lookups, or LLM calls for analysis) cannot be easily integrated, potentially limiting the extensibility and power of the middleware system, especially in a heavily asynchronous agent environment.",
+  "severity": "medium",
+  "category": "maintainability",
+  "file": "src/middleware/pipeline.ts",
+  "lineStart": 43,
+  "lineEnd": 116,
+  "suggestedFix": "Consider adding asynchronous versions of the middleware hooks (e.g., `asyncBeforeAgent`, `asyncWrapToolCall`) that allow middleware to perform `await` operations. This would require changes to the pipeline execution logic to handle promises (e.g., using `await Promise.all` for multiple middleware) but would significantly enhance the capabilities of the middleware system."
+}
+```
+```json
+[FINDING]
+{
+  "id": "red-team-engine-hardcoded-defense-layers",
+  "title": "Hardcoded `DEFENSE_LAYERS` in Red Team Engine",
+  "description": "The `DEFENSE_LAYERS` array (lines 98-106) in `red-team-engine.ts` is hardcoded with specific middleware names. This creates a maintenance burden: any additions, removals, or renamings of security middleware will require a manual update to this array. If not kept in sync, the red team simulation may not accurately assess the full defense posture or may attempt to test non-existent layers, leading to an incomplete or erroneous security evaluation.",
+  "severity": "medium",
+  "category": "maintainability",
+  "file": "src/security/red-team-engine.ts",
+  "lineStart": 98,
+  "lineEnd": 106,
+  "suggestedFix": "Consider dynamically discovering defense layers from the `MiddlewarePipeline` itself, or by registering defense layers in a centralized location. This would ensure that the red team simulation always tests the active and correctly named defense mechanisms without requiring manual updates."
+}
+```
+```json
+[FINDING]
+{
+  "id": "daemon-controller-oncheckpoint-silent-warn",
+  "title": "Silent warning for `onCheckpoint` failures could mask persistence issues",
+  "description": "The `onCheckpoint` callback in `DaemonController` catches any errors and logs them as warnings, labeling them as 'non-fatal' (lines 131-134). While this prevents the daemon from crashing, consistent or frequent failures in checkpointing could indicate underlying issues with data persistence, storage, or external dependencies. Silently warning without further action or more aggressive error reporting could lead to unnoticed data loss or degraded recovery capabilities.",
+  "severity": "medium",
+  "category": "reliability",
+  "file": "src/daemon/controller.ts",
+  "lineStart": 131,
+  "lineEnd": 134,
+  "suggestedFix": "Consider adding metrics or a consecutive error counter for checkpoint failures. If failures persist beyond a certain threshold, escalate the warning to an error, trigger a daemon stop, or implement a more robust retry mechanism. This would ensure that critical persistence issues are not continuously ignored."
+}
+```
+```json
+[FINDING]
+{
+  "id": "daemon-controller-prompt-cache-ttl-hardcoded",
+  "title": "Hardcoded `PROMPT_CACHE_TTL_MS` might limit configuration flexibility",
+  "description": "The `PROMPT_CACHE_TTL_MS` constant (300,000 ms or 5 minutes) is hardcoded within `DaemonController` (line 32). While directly relevant to the daemon's operation, it's a configuration parameter that affects prompt caching behavior system-wide. Hardcoding it here limits the ability to configure this value through `BrainstormConfig` or other centralized configuration mechanisms, potentially leading to inconsistencies if other parts of the system also rely on or configure prompt caching with different values.",
+  "severity": "low",
+  "category": "maintainability",
+  "file": "src/daemon/controller.ts",
+  "lineStart": 32,
+  "lineEnd": 32,
+  "suggestedFix": "Move `PROMPT_CACHE_TTL_MS` to the main `BrainstormConfig` interface or a shared `constants` file. This would allow for external configuration and ensure consistency across the application if other components interact with or need to be aware of the prompt cache's validity period."
+}
+```
+```json
+[FINDING]
+{
+  "id": "orchestration-pipeline-smart-phase-selection-brittleness",
+  "title": "Smart phase selection uses brittle regex heuristics",
+  "description": "The `selectSmartPhases` function relies on regex-based string matching (e.g., `isFeature`, `isFix`) to determine which pipeline phases to include. This heuristic approach is prone to errors, as natural language requests can be ambiguous or use varied phrasing. Misclassifications could lead to an inefficient or incorrect pipeline execution (e.g., skipping a crucial phase or running an unnecessary one). The comment about 'BrainstormLLM v2 kill gate findings' suggests this is a known area of improvement.",
+  "severity": "medium",
+  "category": "correctness",
+  "file": "src/plan/orchestration-pipeline.ts",
+  "lineStart": 127,
+  "lineEnd": 156,
+  "suggestedFix": "Enhance the `selectSmartPhases` logic with more robust natural language understanding, potentially leveraging an LLM-based classifier or a more sophisticated intent recognition system. Alternatively, allow for explicit user override of phase selection to mitigate misclassifications."
+}
+```
+```json
+[FINDING]
+{
+  "id": "orchestration-pipeline-incomplete-feedback-loop",
+  "title": "Incomplete feedback loop for review findings and verify failures",
+  "description": "The pipeline identifies critical review findings and build/test failures (lines 305-313, 340-347) and emits `feedback-loop` events. However, the accompanying `TODO` comment ('Loop back to implementation with findings as context') explicitly states that the mechanism to actually *re-ingest* these findings and trigger a re-run of earlier phases with corrective context is not implemented. This means the agent will proceed in the pipeline despite identified critical issues, significantly impacting the correctness and reliability of the overall development process.",
+  "severity": "high",
+  "category": "reliability",
+  "file": "src/plan/orchestration-pipeline.ts",
+  "lineStart": 305,
+  "lineEnd": 347,
+  "suggestedFix": "Prioritize implementing the full feedback loop. When critical findings or verification failures occur, the pipeline should either automatically re-dispatch to the relevant prior phase (e.g., 'implementation') with the findings injected as context, or explicitly pause and prompt for human intervention with the actionable feedback."
+}
+```
+```json
+[FINDING]
+{
+  "id": "orchestration-pipeline-parse-review-findings-fragility",
+  "title": "Fragile regex-based parsing of review findings",
+  "description": "The `parseReviewFindings` function uses regex to extract review findings and their severity from unstructured text output. This approach is fragile; any slight variation in the format of the review agent's output (e.g., different wording, formatting, or placement of severity keywords) could cause findings to be missed or incorrectly parsed. This makes the `review` phase less reliable in accurately identifying and reporting issues.",
+  "severity": "medium",
+  "category": "correctness",
+  "file": "src/plan/orchestration-pipeline.ts",
+  "lineStart": 440,
+  "lineEnd": 474,
+  "suggestedFix": "Encourage review agents to produce structured output (e.g., JSON or YAML) for findings, which can be parsed robustly. If text parsing is necessary, employ more resilient natural language processing techniques or define a strict output schema for review agents and validate against it."
+}
+```
+```json
+[FINDING]
+{
+  "id": "trajectory-analyzer-hardcoded-tool-lists",
+  "title": "Hardcoded `READ_TOOLS` and `WRITE_TOOLS` arrays",
+  "description": "The `READ_TOOLS` and `WRITE_TOOLS` arrays (lines 152-169) are hardcoded lists of tool names. This makes the trajectory analyzer brittle: if new read or write-related tools are introduced, or existing tool names are changed, these lists must be manually updated. Failure to do so will lead to inaccurate `avgReadEditRatio` and `avgToolSuccessRate` metrics, impacting the quality of the generated routing intelligence.",
+  "severity": "medium",
+  "category": "maintainability",
+  "file": "src/session/trajectory-analyzer.ts",
+  "lineStart": 152,
+  "lineEnd": 169,
+  "suggestedFix": "Consider a more dynamic approach to categorizing tools as 'read' or 'write' operations. This could involve tagging tool definitions themselves (e.g., via metadata in `ToolRegistry`) or using a configurable mapping that can be updated without code changes."
+}
+```
+```json
+[FINDING]
+{
+  "id": "trajectory-analyzer-missing-latency-tracking",
+  "title": "Missing latency tracking in routing intelligence",
+  "description": "The `toHistoricalStats` function explicitly sets `avgLatencyMs: 0` with a comment indicating it's 'Not yet tracked per task-type' (line 616). Latency is a critical performance metric, especially for real-time agent interactions and routing decisions. Its absence means that the `BrainstormRouter` cannot factor in model speed when making routing choices, potentially leading to the selection of slower, more expensive models even if slightly higher success rates don't justify the increased latency.",
+  "severity": "high",
+  "category": "performance",
+  "file": "src/session/trajectory-analyzer.ts",
+  "lineStart": 616,
+  "lineEnd": 616,
+  "suggestedFix": "Implement latency tracking for LLM calls and tool executions in the trajectory recording mechanism. Once available, integrate `avgLatencyMs` into the `RoutingIntelligence` schema and `toHistoricalStats` transformation to enable the `BrainstormRouter` to make more informed, performance-aware routing decisions."
+}
+```
+[AUDIT-COMPLETE] 16
+----- end -----

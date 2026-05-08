@@ -1,0 +1,454 @@
+=== packages/config ===
+model: Gemini 2.5 Flash
+cost:  $0.0288
+tools: glob, glob, glob, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read
+tool-call-count: 27
+text-length: 32817
+
+----- raw text -----
+[FINDING]
+{
+  "id": "loader-deepmerge-typesafety",
+  "title": "Loose type assertions in deepMerge function",
+  "description": "The `deepMerge` function uses `as Record<string, unknown>` type assertions, bypassing TypeScript's type checking. This could lead to runtime errors if the merged objects or their properties are not of the expected shape. While the `brainstormConfigSchema.parse` at the end provides a final validation, it's better to ensure type safety earlier where possible.",
+  "severity": "medium",
+  "category": "correctness",
+  "file": "packages/config/src/loader.ts",
+  "lineStart": 36,
+  "lineEnd": 37,
+  "suggestedFix": "Consider adding more robust runtime type checks within `deepMerge` or using a type-safe deep merge utility. Alternatively, ensure that the types of `tv` and `sv` are correctly inferred or explicitly checked before casting."
+}
+[FINDING]
+{
+  "id": "loader-env-budget-parsefloat",
+  "title": "Potential precision issues with parseFloat for budget",
+  "description": "The `applyEnvOverrides` function uses `parseFloat` for `BRAINSTORM_BUDGET_DAILY`. If `budget.daily` is intended to be an integer (e.g., for currency without cents), `parseFloat` might introduce floating-point inaccuracies. If an integer is expected, `parseInt` with a radix would be more appropriate. If floating-point is intended, this is fine, but it's worth verifying the schema's expectation.",
+  "severity": "low",
+  "category": "correctness",
+  "file": "packages/config/src/loader.ts",
+  "lineStart": 59,
+  "lineEnd": 59,
+  "suggestedFix": "Confirm the expected type for `budget.daily` in the schema. If it's an integer, use `parseInt(..., 10)`. If floating-point, this is acceptable, but ensure documentation or comments clarify this."
+}
+[FINDING]
+{
+  "id": "loader-watchconfig-error-ignore",
+  "title": "Silent error suppression when closing FSWatchers",
+  "description": "In `watchConfig`, errors that occur when closing `FSWatcher` instances are caught and silently ignored. This can hide potential resource leaks or other issues during cleanup. While file watcher cleanup can be tricky, ignoring errors without logging them makes debugging difficult.",
+  "severity": "medium",
+  "category": "reliability",
+  "file": "packages/config/src/loader.ts",
+  "lineStart": 172,
+  "lineEnd": 174,
+  "suggestedFix": "Log errors encountered during `w.close()` at a `warn` level, or at least add a detailed comment explaining why errors are ignored and what the implications are."
+}
+[FINDING]
+{
+  "id": "loader-loadmcpservers-any-cast",
+  "title": "Loose 'any' type assertion when accessing server name",
+  "description": "In `loadMCPServers`, the code uses `(s as any).name` to access the `name` property of server objects. This bypasses TypeScript's type checking and assumes that every object in the `servers` array will have a `name` property. While the schema likely enforces this, a malformed `mcp.json` file could lead to runtime errors.",
+  "severity": "medium",
+  "category": "correctness",
+  "file": "packages/config/src/loader.ts",
+  "lineStart": 93,
+  "lineEnd": 95,
+  "suggestedFix": "Define an interface or type for MCP server objects to provide type safety, and then use type guards or optional chaining (`s?.name`) with appropriate error handling if a `name` might be missing. Alternatively, ensure the schema validation for `mcp.json` is robust enough to guarantee the presence of `name`."
+}
+[FINDING]
+{
+  "id": "stormloader-parsesimpleyaml-fixed-indentation",
+  "title": "parseSimpleYaml's fixed 2-space indentation is brittle",
+  "description": "The `parseSimpleYaml` function relies on a hardcoded 2-space indentation (`^  `) for nested keys. This makes the parser brittle; it will fail to correctly parse frontmatter if users use tabs or a different number of spaces for indentation. While described as a 'lightweight YAML-subset parser', fixed indentation can be a significant source of parsing errors for users.",
+  "severity": "medium",
+  "category": "correctness",
+  "file": "packages/config/src/storm-loader.ts",
+  "lineStart": 138,
+  "lineEnd": 138,
+  "suggestedFix": "Modify the `nestedMatch` regex to be more flexible with leading whitespace, e.g., `^\\s{2,}(\\w[\\w_]*)\\s*:\\s*(.*)$` to allow for at least two spaces, or use a more robust YAML parsing library if broader compatibility is desired."
+}
+[FINDING]
+{
+  "id": "stormloader-parsesimpleyaml-top-level-indentation",
+  "title": "parseSimpleYaml's top-level keys do not handle indentation",
+  "description": "The `topMatch` regex in `parseSimpleYaml` expects top-level keys to have no leading whitespace. If a user accidentally indents a top-level key, it will not be parsed correctly, leading to lost configuration or unexpected behavior. While standard YAML does not indent top-level keys, a lightweight parser might consider adding a warning or gracefully handling this common user error.",
+  "severity": "low",
+  "category": "correctness",
+  "file": "packages/config/src/storm-loader.ts",
+  "lineStart": 144,
+  "lineEnd": 144,
+  "suggestedFix": "Consider adding a check for leading whitespace on top-level keys and either log a warning or adjust the regex to strip leading whitespace before matching the key, if allowing some flexibility is desired."
+}
+[FINDING]
+{
+  "id": "stormloader-parsevalue-escaped-quotes",
+  "title": "parseValue does not handle escaped quotes in strings",
+  "description": "The `parseValue` function's logic for quoted strings (`raw.slice(1, -1)`) does not account for escaped quotes within the string (e.g., `\"It\\'s a test\"`). This will result in the string being incorrectly parsed, potentially leading to data corruption or malformed values.",
+  "severity": "high",
+  "category": "correctness",
+  "file": "packages/config/src/storm-loader.ts",
+  "lineStart": 191,
+  "lineEnd": 197,
+  "suggestedFix": "Implement proper unescaping logic for quoted strings, or consider using a more robust YAML parsing library that handles such cases correctly."
+}
+[FINDING]
+{
+  "id": "stormloader-hierarchical-body-headings",
+  "title": "Hardcoded H1 headings in hierarchical body concatenation",
+  "description": "The `loadHierarchicalStormFiles` function uses hardcoded H1 (`#`) markdown headings when concatenating body parts from global and project files. If the original markdown files also contain H1 headings, this can lead to an inconsistent or confusing document structure. Using a higher heading level (e.g., `##` or `###`) for the inserted context headers would generally be safer and allow the original document's heading structure to be preserved.",
+  "severity": "low",
+  "category": "maintainability",
+  "file": "packages/config/src/storm-loader.ts",
+  "lineStart": 239,
+  "lineEnd": 267,
+  "suggestedFix": "Change the inserted headings to a lower level (e.g., `##` or `###`) to avoid conflicts with potential H1 headings in the source documents. Consider making the heading level configurable."
+}
+[FINDING]
+{
+  "id": "stormloader-max-attempts-safeguard",
+  "title": "MAX_ATTEMPTS in parseStormFile as a safety net for schema issues",
+  "description": "The `MAX_ATTEMPTS = 20` in `parseStormFile` acts as a safeguard against infinite loops during lenient frontmatter parsing. While a good defensive programming practice, a high number of attempts could mask deeper, underlying issues with the `stormFrontmatterSchema` or the parsing logic. This is an 'info' level finding, noting a deliberate design choice.",
+  "severity": "info",
+  "category": "reliability",
+  "file": "packages/config/src/storm-loader.ts",
+  "lineStart": 87,
+  "lineEnd": 87,
+  "suggestedFix": "Review the `stormFrontmatterSchema` and parsing logic periodically to ensure that `MAX_ATTEMPTS` is not frequently triggered, indicating potential for schema improvements or a more direct error resolution strategy."
+}
+[FINDING]
+{
+  "id": "stormloader-parsevalue-float-radix",
+  "title": "parseFloat without radix in parseValue",
+  "description": "The `parseValue` function uses `parseFloat(raw)` to convert string to numbers. While `parseFloat` does not accept a radix argument like `parseInt`, it's worth noting for consistency with `parseInt` best practices, although the regex pre-filters for valid number formats. This is a very minor stylistic point and not a correctness issue given `parseFloat`'s behavior.",
+  "severity": "info",
+  "category": "maintainability",
+  "file": "packages/config/src/storm-loader.ts",
+  "lineStart": 189,
+  "lineEnd": 189,
+  "suggestedFix": "No direct fix needed as `parseFloat` doesn't take radix. This is more of an informational note on numeric parsing style."
+}
+[FINDING]
+{
+  "id": "stormloader-loadstormfile-error-handling",
+  "title": "Generic error handling in loadStormFile",
+  "description": "The `loadStormFile` function catches all errors during file reading and parsing with a generic `catch (error)` block and logs a warning. While preventing crashes, it's a broad catch. Distinguishing between file system errors (e.g., permissions) and parsing errors might allow for more specific logging or user feedback. Currently, it just returns `null` for any error.",
+  "severity": "low",
+  "category": "reliability",
+  "file": "packages/config/src/storm-loader.ts",
+  "lineStart": 41,
+  "lineEnd": 43,
+  "suggestedFix": "Consider refining the error handling to differentiate between types of errors (e.g., `ENOENT` for file not found vs. parsing errors) to provide more specific diagnostics in the logs."
+}
+[FINDING]
+{
+  "id": "stormloader-loadstormfilefromdir-error-handling",
+  "title": "Generic error handling in loadStormFileFromDir",
+  "description": "Similar to `loadStormFile`, the `loadStormFileFromDir` function also uses a generic `catch (error)` block. This makes it difficult to distinguish between different types of file or parsing errors, potentially hindering debugging or specific user guidance. It logs a warning and returns `null` for any error.",
+  "severity": "low",
+  "category": "reliability",
+  "file": "packages/config/src/storm-loader.ts",
+  "lineStart": 292,
+  "lineEnd": 294,
+  "suggestedFix": "Consider refining the error handling to differentiate between types of errors (e.g., `ENOENT` for file not found vs. parsing errors) to provide more specific diagnostics in the logs."
+}
+[FINDING]
+{
+  "id": "stormloader-parsevalue-empty-raw-return",
+  "title": "parseValue returns empty string for empty raw input",
+  "description": "In `parseValue`, if `raw` is an empty string, it explicitly returns `\"\"`. For other types (numbers, booleans), an empty string would typically lead to a failed parse or a default value. Returning an empty string for an empty input might be an intended behavior for string values, but it's worth confirming if this is consistent with how other 'empty' or 'null' like inputs should be handled across different types.",
+  "severity": "info",
+  "category": "correctness",
+  "file": "packages/config/src/storm-loader.ts",
+  "lineStart": 175,
+  "lineEnd": 175,
+  "suggestedFix": "Clarify the expected behavior for empty string inputs across all value types in `parseValue`. If an empty string should be treated as `null` or `undefined` for certain types based on schema, adjust accordingly."
+}
+[FINDING]
+{
+  "id": "stormloader-filepath-homedir-leak",
+  "title": "Potential absolute path exposure in `loadStormFileFromDir`",
+  "description": "The `loadStormFileFromDir` function attempts to sanitize the source path by replacing the home directory with `~`. However, if `filepath` does not start with `homedir()`, it falls back to `filename`, which is just the base name of the file (e.g., 'STORM.md'). This means if the file is outside the home directory AND not within the immediate project directory (where `filename` would be relative to `projectDir`), an absolute path could potentially leak or an unhelpful relative path is returned. The comment mentions 'never leak absolute paths to prompts/providers', but this logic might not fully guarantee it for all edge cases.",
+  "severity": "low",
+  "category": "security",
+  "file": "packages/config/src/storm-loader.ts",
+  "lineStart": 288,
+  "lineEnd": 291,
+  "suggestedFix": "Review the `safeSource` logic to ensure that for all possible file paths, the returned `source` is either a sanitized home-relative path, a project-relative path, or a truly non-identifying path, thereby preventing any unintended absolute path leaks."
+}
+[FINDING]
+{
+  "id": "stormloader-dirs-reverse-efficiency",
+  "title": "Inefficient directory traversal in loadHierarchicalStormFiles",
+  "description": "In `loadHierarchicalStormFiles`, the directories from `cwd` up to `projectRoot` are collected and then `dirs.reverse()` is called. This creates an array, populates it, and then reverses it. For very deep directory structures, this could be slightly less efficient than prepending to the `dirs` array (e.g., `dirs.unshift(current)`) during the `while` loop, which would naturally put `projectRoot` first. This is a micro-optimization, but worth noting for large path depths.",
+  "severity": "info",
+  "category": "performance",
+  "file": "packages/config/src/storm-loader.ts",
+  "lineStart": 257,
+  "lineEnd": 257,
+  "suggestedFix": "Consider using `dirs.unshift(current)` instead of `dirs.push(current)` and then `dirs.reverse()` to avoid the extra array reversal step, which might offer a minor performance improvement for very deep directory structures."
+}
+[FINDING]
+{
+  "id": "schema-budget-optional-no-defaults",
+  "title": "Budget schema fields are optional without default values",
+  "description": "The fields `daily`, `monthly`, `perSession`, and `perProject` in `budgetSchema` are all marked as `optional()` and do not have explicit default values. If these fields are omitted from the configuration, they will be `undefined`. Downstream consumers of this configuration will need to explicitly check for `undefined` or rely on their own default logic, which can be a source of runtime errors if not handled consistently.",
+  "severity": "medium",
+  "category": "correctness",
+  "file": "packages/config/src/schema.ts",
+  "lineStart": 50,
+  "lineEnd": 53,
+  "suggestedFix": "Consider adding sensible default values to the `budgetSchema` fields (e.g., `z.number().optional().default(0)`) if `0` is an acceptable default, or ensure that all code consuming `BudgetConfig` explicitly handles the `undefined` case."
+}
+[FINDING]
+{
+  "id": "schema-loopdetector-redundant-default",
+  "title": "Redundant default for loopDetector in generalSchema",
+  "description": "The `loopDetector` object in `generalSchema` has both its inner properties (`readThreshold`, `repeatThreshold`) defaulted and the `loopDetector` object itself defaulted with `.default({})`. While Zod's merging might prevent issues, this is redundant and can be confusing. It's generally clearer to default the inner properties and only default the parent object if its complete absence should result in an empty object.",
+  "severity": "low",
+  "category": "maintainability",
+  "file": "packages/config/src/schema.ts",
+  "lineStart": 106,
+  "lineEnd": 106,
+  "suggestedFix": "Remove the `.default({})` from the `loopDetector` schema definition. The inner defaults for `readThreshold` and `repeatThreshold` will correctly apply if `loopDetector` is present but those fields are missing."
+}
+[FINDING]
+{
+  "id": "schema-agentconfig-role-enum-size",
+  "title": "Large enum for agent role in agentConfigSchema",
+  "description": "The `role` enum in `agentConfigSchema` contains a significant number of predefined roles. While this provides structure, a very large and potentially growing enum can become a maintenance burden. If new roles are frequently added, it might indicate a need for a more flexible design (e.g., allowing free-form strings for custom roles, or a more dynamic role management system outside of static configuration).",
+  "severity": "info",
+  "category": "maintainability",
+  "file": "packages/config/src/schema.ts",
+  "lineStart": 131,
+  "lineEnd": 147,
+  "suggestedFix": "Periodically review the `role` enum. If it continues to grow rapidly, consider alternative approaches for managing agent roles that offer more flexibility without requiring schema changes for every new role."
+}
+[FINDING]
+{
+  "id": "schema-workflowstep-outputartifact-required",
+  "title": "outputArtifact is a required field for every workflow step",
+  "description": "The `outputArtifact` field in `workflowStepConfigSchema` is a required string. This implies that every single workflow step must explicitly produce a named output artifact. While this promotes structured data flow, it might be overly restrictive for steps that primarily have side effects (e.g., sending notifications, logging), or whose output is implicit and not intended to be a formal artifact. This could force unnecessary 'dummy' artifact declarations.",
+  "severity": "medium",
+  "category": "maintainability",
+  "file": "packages/config/src/schema.ts",
+  "lineStart": 176,
+  "lineEnd": 176,
+  "suggestedFix": "Consider making `outputArtifact` optional if there are valid workflow step scenarios where a formal output artifact is not necessary or appropriate. If it must remain required, ensure that the documentation clearly explains its purpose and how to handle steps without direct output."
+}
+[FINDING]
+{
+  "id": "schema-mcpauth-oauth-only",
+  "title": "MCP authentication schema limited to OAuth",
+  "description": "The `mcpAuthSchema` explicitly defines `type: z.literal(\"oauth\")`. This design choice limits MCP server authentication to OAuth only. If there's a future need to support other authentication methods (e.g., API key, basic authentication), the schema will require modification. This is a current functional limitation reflected in the schema.",
+  "severity": "info",
+  "category": "maintainability",
+  "file": "packages/config/src/schema.ts",
+  "lineStart": 197,
+  "lineEnd": 197,
+  "suggestedFix": "No immediate fix required, but be aware of this limitation if future authentication requirements change. Document this design choice."
+}
+[FINDING]
+{
+  "id": "schema-provider-apikey-consistency",
+  "title": "Inconsistent API key handling across providers",
+  "description": "The `gatewayProviderSchema` defaults `apiKeyEnv` but does not define a direct `apiKey` field, whereas local providers (`ollama`, `lmstudio`, `llamacpp`) use `baseUrl` defaults. This difference in how API keys are expected (via environment variable name vs. direct config field, or not applicable for local) could lead to user confusion or inconsistent configuration patterns for external vs. local providers. This is a design decision, but it's worth noting for user experience.",
+  "severity": "low",
+  "category": "maintainability",
+  "file": "packages/config/src/schema.ts",
+  "lineStart": 7,
+  "lineEnd": 8,
+  "suggestedFix": "Consider if a more unified approach to API key configuration (e.g., all providers having an optional `apiKey` field and an optional `apiKeyEnv` field) would improve consistency and user experience, even if some providers only use one or the other."
+}
+[FINDING]
+{
+  "id": "schema-routing-fallbackmodels-default",
+  "title": "Hardcoded default fallback models in routing schema",
+  "description": "The `routing.fallbackModels` array has a hardcoded default list of models, including specific versions like `\"anthropic/claude-sonnet-4.6\"` and `\"openai/gpt-5.4\"`. As model versions change, this list will become outdated and require manual updates. While it provides a sensible default, it ties the configuration to specific, potentially ephemeral model versions.",
+  "severity": "low",
+  "category": "maintainability",
+  "file": "packages/config/src/schema.ts",
+  "lineStart": 293,
+  "lineEnd": 296,
+  "suggestedFix": "Consider defining fallback models using more generic identifiers (e.g., `\"anthropic/claude-sonnet\"`) or providing a mechanism to dynamically update or recommend current fallback models, rather than hardcoding specific version numbers."
+}
+[FINDING]
+{
+  "id": "schema-godmode-connectors-record",
+  "title": "God Mode connectors use generic record, lacks specific defaults",
+  "description": "The `godmode.connectors` field is defined as `z.record(godmodeConnectorSchema).default({})`. While this allows for flexible definition of connectors, it means there are no predefined or default connectors. If certain 'God Mode' connectors are expected to be available out-of-the-box or have common default configurations, they would need to be manually added by the user. This is a design choice that prioritizes flexibility over opinionated defaults for connectors.",
+  "severity": "info",
+  "category": "maintainability",
+  "file": "packages/config/src/schema.ts",
+  "lineStart": 262,
+  "lineEnd": 262,
+  "suggestedFix": "If common or essential 'God Mode' connectors exist, consider adding them as explicit fields with their own default schemas to the `connectors` object, rather than relying solely on `z.record` for all of them, which would improve discoverability and out-of-the-box experience."
+}
+[FINDING]
+{
+  "id": "schema-daemon-logdir-tilde",
+  "title": "Daemon `dailyLogDir` default uses `~`",
+  "description": "The `daemonSchema.dailyLogDir` defaults to `\"~/.brainstorm/logs\"`. While the tilde (`~`) is commonly understood to represent the home directory, it might not be directly expanded by all environments or tools reading this configuration. It's generally safer and more explicit to resolve the home directory programmatically (as done in `loader.ts` for `GLOBAL_CONFIG_DIR`) rather than relying on `~` expansion in a string literal.",
+  "severity": "low",
+  "category": "correctness",
+  "file": "packages/config/src/schema.ts",
+  "lineStart": 240,
+  "lineEnd": 240,
+  "suggestedFix": "Change the default for `dailyLogDir` to a path that can be programmatically resolved or is relative to a known base directory. If `~` expansion is handled elsewhere, add a comment to clarify this assumption."
+}
+[FINDING]
+{
+  "id": "schema-daemon-compactionthreshold-override",
+  "title": "Daemon compaction threshold override with hardcoded default",
+  "description": "The `daemonSchema` includes a `compactionThreshold` field that overrides the general `compaction.threshold`. This is a sensible design for specific daemon behavior. However, the default for `daemon.compactionThreshold` is hardcoded to `0.6`. If the general `compaction.threshold` default (currently `0.8`) changes in the future, it might be necessary to manually update this daemon-specific override to maintain the intended differential, or to reconsider if the daemon's default should be relative to the general one.",
+  "severity": "info",
+  "category": "maintainability",
+  "file": "packages/config/src/schema.ts",
+  "lineStart": 244,
+  "lineEnd": 244,
+  "suggestedFix": "No immediate fix required. Document the relationship between `daemon.compactionThreshold` and `compaction.threshold` to ensure future changes consider both. Alternatively, consider if the daemon's default could be derived from the general one with an offset."
+}
+[FINDING]
+{
+  "id": "schema-daemon-min-max-ranges",
+  "title": "Daemon config min/max ranges for tick intervals and sleeps",
+  "description": "The `daemonSchema` defines `min` and `max` ranges for `tickIntervalMs`, `maxTicksPerSession`, and `sleepDefaultMs`. These ranges appear well-considered for practical limits. However, ensuring these min/max values are well-documented (e.g., in a central constant or comment) would help maintain consistency and explain the rationale behind these specific bounds, especially if they are critical for system stability or resource management.",
+  "severity": "info",
+  "category": "maintainability",
+  "file": "packages/config/src/schema.ts",
+  "lineStart": 234,
+  "lineEnd": 238,
+  "suggestedFix": "Add comments or refer to a central constant definition for the min/max values of daemon-related timings to provide context and aid future modifications."
+}
+[FINDING]
+{
+  "id": "schema-godmode-autoapproveriskthreshold-range",
+  "title": "God Mode autoApproveRiskThreshold range (0-100)",
+  "description": "The `godmodeSchema.autoApproveRiskThreshold` is defined with a range of `0` to `100`. This implies a percentage-based or score-based risk assessment. It's important that any risk assessment logic producing this score also consistently outputs within this `0-100` range to ensure the threshold functions as expected. Deviations could lead to unexpected auto-approval or denial.",
+  "severity": "info",
+  "category": "correctness",
+  "file": "packages/config/src/schema.ts",
+  "lineStart": 260,
+  "lineEnd": 260,
+  "suggestedFix": "Ensure that any system or model generating the 'risk score' for `autoApproveRiskThreshold` is guaranteed to produce values strictly within the `0-100` range, or add a transformation layer if not."
+}
+[FINDING]
+{
+  "id": "schema-general-costsafetymargin-range",
+  "title": "General config costSafetyMargin range (1-3)",
+  "description": "The `generalSchema.costSafetyMargin` has a `min(1)` and `max(3)` with a default of `1.3`. This suggests a multiplier for cost estimation. The range implies that the safety margin can be between 100% and 300% of the estimated cost. It's important that this range is well-understood and appropriate for the system's cost management strategy. Values outside this range could have significant impact on cost estimates.",
+  "severity": "info",
+  "category": "correctness",
+  "file": "packages/config/src/schema.ts",
+  "lineStart": 100,
+  "lineEnd": 100,
+  "suggestedFix": "No immediate fix needed. Document the rationale for the `1` to `3` range for `costSafetyMargin` and its implications for cost calculation and budgeting."
+}
+[FINDING]
+{
+  "id": "schema-shell-maxoutputbytes-hardcoded",
+  "title": "Shell maxOutputBytes hardcoded default",
+  "description": "The `shellSchema.maxOutputBytes` has a hardcoded default of `50_000` bytes. While a reasonable default, for different use cases or system capabilities, this limit might be too restrictive or too lenient. It's an important operational parameter, and its impact on large command outputs should be considered, especially if shell commands are used for data processing.",
+  "severity": "info",
+  "category": "performance",
+  "file": "packages/config/src/schema.ts",
+  "lineStart": 40,
+  "lineEnd": 40,
+  "suggestedFix": "No immediate fix needed. Document the rationale for the `50_000` byte limit and its potential implications for commands producing large outputs."
+}
+[FINDING]
+{
+  "id": "schema-shell-containerimage-hardcoded",
+  "title": "Shell containerImage hardcoded default",
+  "description": "The `shellSchema.containerImage` defaults to `\"node:22-slim\"`. While this provides a ready-to-use sandbox environment, it hardcodes a specific Docker image. Future projects might require different language runtimes or operating system bases, necessitating a change to this default. This is a design choice that prioritizes a functional default but might not be universally applicable.",
+  "severity": "info",
+  "category": "maintainability",
+  "file": "packages/config/src/schema.ts",
+  "lineStart": 43,
+  "lineEnd": 43,
+  "suggestedFix": "No immediate fix needed. Document the choice of `node:22-slim` and provide guidance on how to change it for different project requirements."
+}
+[FINDING]
+{
+  "id": "schema-general-maxsteps-default",
+  "title": "General config maxSteps default",
+  "description": "The `generalSchema.maxSteps` defaults to `10`. This is a crucial control parameter for preventing runaway agents/workflows. While `10` steps might be reasonable for many simple operations, complex tasks or long-running processes might require a higher limit, or a dynamic adjustment mechanism. If agents frequently hit this limit, it could indicate a need for more nuanced control.",
+  "severity": "info",
+  "category": "reliability",
+  "file": "packages/config/src/schema.ts",
+  "lineStart": 98,
+  "lineEnd": 98,
+  "suggestedFix": "No immediate fix needed. Document the rationale behind the `10` step limit and provide guidance on how to adjust it for different types of agent tasks or workflows."
+}
+[FINDING]
+{
+  "id": "schema-general-outputstyle-default",
+  "title": "General config outputStyle default",
+  "description": "The `generalSchema.outputStyle` defaults to `\"concise\"`. This affects how agents present their output to the user. While 'concise' is often preferred, different users or scenarios might benefit from 'detailed' or 'learning' as defaults. This is a user experience consideration.",
+  "severity": "info",
+  "category": "maintainability",
+  "file": "packages/config/src/schema.ts",
+  "lineStart": 99,
+  "lineEnd": 99,
+  "suggestedFix": "No immediate fix needed. Ensure that the implications of each `outputStyle` are clearly documented so users can choose the best fit for their needs."
+}
+[FINDING]
+{
+  "id": "schema-modeloverride-tiers-range",
+  "title": "Model override quality/speed tiers range (1-5)",
+  "description": "The `modelOverrideSchema` defines `qualityTier` and `speedTier` with a range of `1` to `5`. This implies a qualitative rating system. It's important that any system generating or interpreting these tiers consistently adheres to this `1-5` scale. Deviations could lead to incorrect model selection or prioritization.",
+  "severity": "info",
+  "category": "correctness",
+  "file": "packages/config/src/schema.ts",
+  "lineStart": 77,
+  "lineEnd": 78,
+  "suggestedFix": "No immediate fix needed. Document the meaning and interpretation of the `1-5` quality and speed tiers and ensure all components interacting with these values conform to this scale."
+}
+[FINDING]
+{
+  "id": "schema-general-defaultpermissionmode-enum",
+  "title": "General config defaultPermissionMode enum",
+  "description": "The `generalSchema.defaultPermissionMode` has an enum `\"auto\", \"confirm\", \"plan\"`. This allows for different default security postures. The default is `\"confirm\"`. It's important to document what each mode implies in terms of user interaction and potential risks/benefits, especially for `\"auto\"` (which might bypass confirmations).",
+  "severity": "info",
+  "category": "security",
+  "file": "packages/config/src/schema.ts",
+  "lineStart": 96,
+  "lineEnd": 96,
+  "suggestedFix": "No immediate fix needed. Ensure comprehensive documentation for `defaultPermissionMode` explaining the security implications and user experience for each option."
+}
+[FINDING]
+{
+  "id": "schema-agentconfig-confidencethreshold-range",
+  "title": "Agent config confidenceThreshold range (0-1)",
+  "description": "The `agentConfigSchema.confidenceThreshold` is defined with a range of `0` to `1` and defaults to `0.7`. This implies a probabilistic confidence score. It's crucial that any model or component providing this confidence score outputs values consistently within this `0-1` range. An incorrect range could lead to misinterpretation of agent confidence.",
+  "severity": "info",
+  "category": "correctness",
+  "file": "packages/config/src/schema.ts",
+  "lineStart": 153,
+  "lineEnd": 153,
+  "suggestedFix": "No immediate fix needed. Document the meaning of the `0-1` confidence threshold and ensure all components generating or interpreting it adhere to this range."
+}
+[FINDING]
+{
+  "id": "schema-serve-cors-default",
+  "title": "Serve config CORS default is false",
+  "description": "The `serveSchema.cors` defaults to `false`. This is a secure default for a server, preventing cross-origin requests unless explicitly enabled. However, for development or specific public-facing APIs, users might need to enable it. Clear documentation on how to enable and the security implications of doing so would be beneficial.",
+  "severity": "info",
+  "category": "security",
+  "file": "packages/config/src/schema.ts",
+  "lineStart": 270,
+  "lineEnd": 270,
+  "suggestedFix": "No immediate fix needed. Ensure thorough documentation regarding the `cors` setting, its default (`false`), and the security considerations when enabling it."
+}
+[FINDING]
+{
+  "id": "schema-serve-supabase-keys-optional",
+  "title": "Serve config Supabase keys are optional",
+  "description": "The `serveSchema.supabaseUrl` and `supabaseAnonKey` are optional. This means the server can run without Supabase integration for JWT verification. If JWT verification is a critical security feature, it's important to ensure that if these are missing, the system either disables JWT verification gracefully or enforces their presence for certain operational modes. Lack of these implies no JWT verification will occur.",
+  "severity": "info",
+  "category": "security",
+  "file": "packages/config/src/schema.ts",
+  "lineStart": 272,
+  "lineEnd": 273,
+  "suggestedFix": "No immediate fix needed. Document the implications of `supabaseUrl` and `supabaseAnonKey` being optional, specifically how their absence affects JWT verification and overall API security."
+}
+
+----- end -----

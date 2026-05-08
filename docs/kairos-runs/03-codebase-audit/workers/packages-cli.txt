@@ -1,0 +1,10 @@
+=== packages/cli ===
+model: Gemini 2.5 Flash
+cost:  $0.4351
+tools: list_dir, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read
+tool-call-count: 18
+text-length: 0
+
+----- raw text -----
+
+----- end -----

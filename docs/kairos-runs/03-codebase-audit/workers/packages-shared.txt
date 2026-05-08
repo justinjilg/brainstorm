@@ -1,0 +1,100 @@
+=== packages/shared ===
+model: Gemini 2.5 Flash
+cost:  $0.0244
+tools: list_dir, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read
+tool-call-count: 10
+text-length: 7817
+
+----- raw text -----
+[FINDING]
+{
+  "id": "types-ts-format-turn-context-location",
+  "title": "Move `formatTurnContext` to a utility file",
+  "description": "The `formatTurnContext` function is a utility that formats turn context data. It's currently located in `types.ts`, which is primarily for type definitions. Moving it to a dedicated utility file (e.g., `utils.ts` or `formatters.ts`) would improve separation of concerns and maintainability.",
+  "severity": "low",
+  "category": "maintainability",
+  "file": "packages/shared/src/types.ts",
+  "lineStart": 288,
+  "lineEnd": 317,
+  "suggestedFix": "Create a new file like `src/utils/formatters.ts` and move `formatTurnContext` and its helper `basename` into it. Then, import it where needed."
+}
+[FINDING]
+{
+  "id": "types-ts-basename-function-location",
+  "title": "Move `basename` helper to a utility file",
+  "description": "The `basename` function is a helper for `formatTurnContext` and is currently in `types.ts`. Similar to `formatTurnContext`, it should be moved to a utility file for better organization, or be made an internal helper within `formatTurnContext` if its scope is truly limited.",
+  "severity": "low",
+  "category": "maintainability",
+  "file": "packages/shared/src/types.ts",
+  "lineStart": 319,
+  "lineEnd": 321,
+  "suggestedFix": "Relocate `basename` along with `formatTurnContext` to a dedicated utility file (e.g., `src/utils/formatters.ts`)."
+}[FINDING]
+{
+  "id": "logger-ts-clarify-pino-destination",
+  "title": "Clarify Pino logger destination logic for IPC and debug modes",
+  "description": "The logic determining the `pino` logger's output destination (stdout vs. stderr, especially for IPC) could be slightly clearer. While functionally correct, explicitly defining the target stream once based on `isIPC` and `isDebug` before passing it to `pino`'s configuration might enhance readability and maintainability.",
+  "severity": "low",
+  "category": "maintainability",
+  "file": "packages/shared/src/logger.ts",
+  "lineStart": 7,
+  "lineEnd": 19,
+  "suggestedFix": "Refactor the stream destination logic to define a single `destinationStream` variable based on `isIPC` and `isDebug` and then use this variable in both the `transport` options and the second argument of the `pino` constructor."
+}[FINDING]
+{
+  "id": "sentry-ts-inadequate-pii-scrubbing-in-beforesend",
+  "title": "Inadequate PII scrubbing in Sentry `beforeSend` hook",
+  "description": "The `beforeSend` hook in `src/sentry.ts` attempts to redact sensitive data by checking if the *key* of an `event.extra` entry contains terms like 'key', 'token', 'secret', or 'password'. This approach is insufficient as sensitive information (e.g., an API key, password) could still be present in the *value* of an `event.extra` field that has an innocuous key. This creates a potential security vulnerability where PII or sensitive credentials could be inadvertently sent to Sentry.",
+  "severity": "high",
+  "category": "security",
+  "file": "packages/shared/src/sentry.ts",
+  "lineStart": 41,
+  "lineEnd": 55,
+  "suggestedFix": "Enhance the `beforeSend` hook to also inspect the *values* of `event.extra` (and potentially other parts of the Sentry event like `event.message`, `event.exception.values[].value`) for sensitive patterns. Consider using a more comprehensive PII detection mechanism or library, or relying more heavily on Sentry's default scrubbing if it can be configured to cover these custom fields."
+}[FINDING]
+{
+  "id": "telemetry-ts-suboptimal-optional-field-selection",
+  "title": "Suboptimal optional field selection in telemetry serialization",
+  "description": "In `serializeRoutingMetadata`, the optional fields `lang`, `dom`, and `rs` are added using an `if...else if...else if` chain. This means only the first available field in the priority order (`lang` > `dom` > `rs`) will be included, even if there is ample space in the header for additional fields. This might lead to less informative telemetry when multiple optional fields are available but only one is selected. The intent of 'Add at most 1 optional field' (line 69) is met, but the selection criteria might not be ideal.",
+  "severity": "low",
+  "category": "maintainability",
+  "file": "packages/shared/src/telemetry.ts",
+  "lineStart": 71,
+  "lineEnd": 73,
+  "suggestedFix": "Re-evaluate the prioritization of optional fields. If only one can be added, explicitly document the chosen priority and rationale. If multiple can be added up to the `MAX_HEADER_BYTES` limit, implement logic to add them based on a defined priority until the limit is reached, or remove them starting from the least important if the limit is exceeded."
+}[FINDING]
+{
+  "id": "features-ts-repetitive-switch-statement",
+  "title": "Repetitive switch statement in feature flag resolution",
+  "description": "The `resolve` function in `src/features.ts` uses a highly repetitive `switch` statement to check compile-time feature flags. Each `case` follows an identical pattern of checking `typeof __FEATURE_NAME__ !== \"undefined\"` and returning the global. This boilerplate increases the risk of errors (e.g., typos, forgetting to update when new features are added) and reduces maintainability.",
+  "severity": "medium",
+  "category": "maintainability",
+  "file": "packages/shared/src/features.ts",
+  "lineStart": 72,
+  "lineEnd": 97,
+  "suggestedFix": "Explore alternative patterns to reduce the repetition in the `resolve` function. While direct dynamic access to `declare var` globals is tricky in TypeScript, consider a meta-programming approach if possible, or a code generation step to keep this section synchronized with `FeatureName`. At a minimum, add a comment warning maintainers to update this `switch` statement whenever `FeatureName` is modified."
+}[FINDING]
+{
+  "id": "features-build-ts-duplicate-featurename-profiles",
+  "title": "Duplication of feature names across build profiles",
+  "description": "The `PROFILES` object in `src/features-build.ts` explicitly lists all `FeatureName` values for each build target (`oss`, `saas`, `dev`). When a new feature is added, it must be manually added to all three profiles, leading to boilerplate and a higher risk of inconsistencies or omissions. This violates the DRY (Don't Repeat Yourself) principle.",
+  "severity": "medium",
+  "category": "maintainability",
+  "file": "packages/shared/src/features-build.ts",
+  "lineStart": 18,
+  "lineEnd": 45,
+  "suggestedFix": "Refactor `PROFILES` to reduce duplication. A common pattern is to define a base profile (e.g., `saas` or `dev` where all features are enabled) and then use object spread (`...`) to override only the necessary values (e.g., setting specific features to `false` for the `oss` profile). This ensures new features are included by default and only require modification in `oss` if they need to be disabled."
+}[FINDING]
+{
+  "id": "hack-ts-unclear-purpose-and-potential-tech-debt",
+  "title": "Unclear purpose and potential tech debt in `src/hack.ts`",
+  "description": "The file `src/hack.ts` contains arbitrary code with `console.log(\"Hack function executed.\");` and a `secret` variable. The filename itself suggests it's not a intended production component. Its presence in the shared package indicates potential dead code or technical debt, and it adds an unclear component to the codebase, which can confuse future developers.",
+  "severity": "low",
+  "category": "tech-debt",
+  "file": "packages/shared/src/hack.ts",
+  "lineStart": 1,
+  "lineEnd": 10,
+  "suggestedFix": "Determine the true purpose of `src/hack.ts`. If it's temporary or for experimentation, it should be removed or moved to a dedicated examples/scratchpad area outside of the main source. If it serves a specific, albeit unusual, purpose, it needs clear documentation and a more descriptive name."
+}
+[AUDIT-COMPLETE] 5 observations recorded
+----- end -----

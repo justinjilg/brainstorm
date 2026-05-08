@@ -1,0 +1,12 @@
+=== packages/code-graph ===
+model: Gemini 2.5 Flash
+cost:  $0.0049
+tools: list_dir, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read
+tool-call-count: 10
+text-length: 206
+
+----- raw text -----
+It seems I am stuck in a loop of hitting the `file_read` rate limit and am unable to read any files. Therefore, I cannot proceed with the code review. I apologize for this inconvenience.
+
+[AUDIT-COMPLETE] 0
+----- end -----

@@ -1,0 +1,166 @@
+=== packages/plugin-sdk ===
+model: Gemini 2.5 Flash
+cost:  $0.0146
+tools: list_dir, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read
+tool-call-count: 9
+text-length: 13055
+
+----- raw text -----
+[FINDING]
+{
+  "id": "src-define-ts-plugin-name-regex-message-mismatch",
+  "title": "Plugin name validation regex and error message mismatch",
+  "description": "The regex `/^[a-z][a-z0-9-]*$/` for plugin names disallows underscores, but the error message states that names can only contain 'letters, numbers, and hyphens.' This is a minor inconsistency. If underscores are intended to be disallowed, the error message is correct but could be more explicit. If they should be allowed, the regex needs updating.",
+  "severity": "low",
+  "category": "correctness",
+  "file": "packages/plugin-sdk/src/define.ts",
+  "lineStart": 85,
+  "lineEnd": 88,
+  "suggestedFix": "Either update the regex to allow underscores if they are intended to be valid, or clarify the error message to explicitly state that underscores are not allowed."
+}
+[FINDING]
+{
+  "id": "src-define-ts-duplicate-name-validation-logic",
+  "title": "Duplicate logic for validating unique tool and skill names",
+  "description": "The code blocks for validating unique tool names (lines 103-111) and unique skill names (lines 115-123) are almost identical. This duplication makes the code less DRY and harder to maintain. A shared helper function could be used.",
+  "severity": "low",
+  "category": "maintainability",
+  "file": "packages/plugin-sdk/src/define.ts",
+  "lineStart": 101,
+  "lineEnd": 125,
+  "suggestedFix": "Extract the logic for validating unique names into a generic helper function that takes the array of items and a name accessor function as arguments."
+}
+[FINDING]
+{
+  "id": "src-define-ts-semver-validation-incomplete",
+  "title": "Incomplete SemVer validation for plugin version",
+  "description": "The regex `/^\\d+\\.\\d+\\.\\d+/` used for validating plugin versions only checks for the `MAJOR.MINOR.PATCH` format. It does not account for pre-release identifiers (e.g., `1.0.0-alpha.1`) or build metadata (e.g., `1.0.0+build123`) which are part of the full SemVer 2.0.0 specification. While this might be a conscious restriction, it's a deviation from the full specification.",
+  "severity": "low",
+  "category": "correctness",
+  "file": "packages/plugin-sdk/src/define.ts",
+  "lineStart": 95,
+  "lineEnd": 99,
+  "suggestedFix": "If full SemVer 2.0.0 compliance is desired, update the regex to support pre-release and build metadata, or consider using a dedicated SemVer parsing library. If the current strict format is intentional, add a comment to clarify this design decision."
+}
+[FINDING]
+{
+  "id": "src-loader-ts-arbitrary-code-execution",
+  "title": "Arbitrary code execution via dynamic plugin imports",
+  "description": "The `loadPlugin` function dynamically imports plugin entry points (e.g., `dist/index.js`) using `await import(entryUrl)`. This allows any code within a discovered plugin to be executed directly. While plugins are designed to extend functionality, this mechanism implies a critical security risk: a malicious plugin placed in the global or project plugin directory could execute arbitrary code with the same privileges as the Brainstorm application, leading to system compromise or data loss. There appears to be no sandboxing or privilege separation in place.",
+  "severity": "critical",
+  "category": "security",
+  "file": "packages/plugin-sdk/src/loader.ts",
+  "lineStart": 78,
+  "lineEnd": 80,
+  "suggestedFix": "Implement sandboxing or privilege separation for executing plugin code, or at minimum, provide prominent security warnings and clear guidance to users regarding the risks of installing untrusted plugins. Consider code signing or a trusted plugin registry for higher security environments."
+}
+[FINDING]
+{
+  "id": "src-loader-ts-synchronous-file-io",
+  "title": "Synchronous file I/O operations in plugin loader",
+  "description": "The `loadPluginsFromDir` function uses synchronous file system operations like `readdirSync` and `readFileSync`. While `discoverPlugins` is an async function, the underlying file operations for discovering and loading plugins are blocking. For a large number of plugins or in environments with slow disk I/O, this could lead to performance bottlenecks and block the Node.js event loop, impacting the responsiveness of the application.",
+  "severity": "medium",
+  "category": "performance",
+  "file": "packages/plugin-sdk/src/loader.ts",
+  "lineStart": 38,
+  "lineEnd": 70,
+  "suggestedFix": "Refactor `loadPluginsFromDir` and `loadPlugin` to use asynchronous `node:fs/promises` APIs (e.g., `fs.promises.readdir`, `fs.promises.readFile`) to avoid blocking the event loop and improve overall application responsiveness."
+}
+[FINDING]
+{
+  "id": "src-loader-ts-plugin-entrypoint-path-traversal",
+  "title": "Potential path traversal vulnerability in plugin entry point resolution",
+  "description": "In `loadPlugin`, the `manifest.main` field can specify the plugin's entry point. While `path.join` is used, a malicious `main` field (e.g., `\"../evil-script.js\"`) could potentially resolve to a path outside the intended plugin directory. Although `existsSync` checks the final path, an attacker might craft a `package.json` that attempts to load a sensitive file outside the plugin's sandbox.",
+  "severity": "high",
+  "category": "security",
+  "file": "packages/plugin-sdk/src/loader.ts",
+  "lineStart": 71,
+  "lineEnd": 72,
+  "suggestedFix": "Implement stricter validation for the `manifest.main` field to ensure it is always a relative path *within* the plugin's directory. This could involve normalizing the path and verifying that it does not escape the `pluginDir` boundary before using it with `path.join`."
+}
+[FINDING]
+{
+  "id": "src-loader-ts-limited-error-detail-in-catch",
+  "title": "Limited error detail in plugin loading catch block",
+  "description": "The `try...catch` block in `loadPluginsFromDir` logs only the error message (`err.message`) when a plugin fails to load. While preventing a crash, this limited detail might hinder debugging for plugin developers, especially for complex issues like runtime errors within `onLoad` or intricate dependency problems. A full stack trace could be more informative.",
+  "severity": "low",
+  "category": "reliability",
+  "file": "packages/plugin-sdk/src/loader.ts",
+  "lineStart": 49,
+  "lineEnd": 51,
+  "suggestedFix": "Consider logging the full error object or stack trace (e.g., `console.error(err)`) during development or in a debug mode, while potentially keeping `err.message` for production logs to avoid exposing excessive internal details. This is a trade-off between debuggability and verbosity/security."
+}
+[FINDING]
+{
+  "id": "src-types-ts-pluginhookdef-command-expansion-details",
+  "title": "Missing details on variable expansion for PluginHookDef.command",
+  "description": "The JSDoc for `PluginHookDef.command` mentions 'Use $FILE and $TOOL for variable expansion.' However, it lacks crucial details about *how* this expansion occurs (e.g., shell interpolation, direct string replacement) and the exact format/content of `$FILE` and `$TOOL`. This ambiguity could lead to plugin developers incorrectly crafting commands or potentially introducing shell injection vulnerabilities if the expansion mechanism is not robust and clearly defined.",
+  "severity": "medium",
+  "category": "correctness",
+  "file": "packages/plugin-sdk/src/types.ts",
+  "lineStart": 21,
+  "lineEnd": 21,
+  "suggestedFix": "Enhance the JSDoc for `PluginHookDef.command` to explicitly describe the variable expansion mechanism, the exact values `$FILE` and `$TOOL` will take (e.g., absolute path, base name), and any necessary escaping or security considerations."
+}
+[FINDING]
+{
+  "id": "src-types-ts-pluginmanifest-brainstormversion-unenforced",
+  "title": "PluginManifest.brainstormVersion field is not enforced",
+  "description": "The `PluginManifest` interface includes a `brainstormVersion` field, indicating an intention to specify minimum CLI compatibility. However, in the reviewed `define.ts` and `loader.ts` files, there is no logic that actively reads, parses, or enforces this version constraint against the currently running Brainstorm CLI version. Without such enforcement, plugins declaring a `brainstormVersion` might still be loaded by incompatible CLI versions, potentially leading to runtime errors or unexpected behavior.",
+  "severity": "high",
+  "category": "reliability",
+  "file": "packages/plugin-sdk/src/types.ts",
+  "lineStart": 94,
+  "lineEnd": 94,
+  "suggestedFix": "Implement logic in the `loader.ts` module (or a similar plugin loading/validation component) to read the `brainstormVersion` from the `PluginManifest`, compare it against the current CLI version, and prevent incompatible plugins from loading, providing a clear error message to the user."
+}
+[FINDING]
+{
+  "id": "src-test-plugin-manifest-validation-gap",
+  "title": "Missing validation for name, version, description in PluginManifest",
+  "description": "The `discoverPlugins` test case for 'missing-name' (lines 213-227, 241/249) highlights a gap in validation. While `PluginManifest` defines `name`, `version`, and `description`, the `loadPlugin` function in `loader.ts` does not validate these fields from the `package.json` manifest itself. Instead, it only validates `name` and `version` on the *dynamically imported plugin object*. This means a `package.json` could contain invalid or missing metadata for these crucial fields, but if the exported JavaScript plugin object provides them, the manifest's incorrectness is overlooked, leading to an inconsistent and potentially misleading plugin state.",
+  "severity": "high",
+  "category": "correctness",
+  "file": "packages/plugin-sdk/src/__tests__/plugin-sdk.test.ts",
+  "lineStart": 213,
+  "lineEnd": 249,
+  "suggestedFix": "Modify `loadPlugin` in `loader.ts` to validate the `name`, `description`, and `version` fields directly from the `PluginManifest` (`package.json`) after parsing it, in addition to validating the dynamically imported plugin object. Update the test case to explicitly check for this manifest-level validation failure."
+}
+[FINDING]
+{
+  "id": "src-test-missing-onload-onunload-tests",
+  "title": "Missing tests for plugin `onLoad` and `onUnload` lifecycle hooks",
+  "description": "The `BrainstormPlugin` interface includes `onLoad` and `onUnload` lifecycle methods. However, the `plugin-sdk.test.ts` file does not contain any tests to verify that these hooks are correctly invoked during plugin loading and unloading processes, or that errors within these hooks are handled gracefully (or propagated as expected).",
+  "severity": "medium",
+  "category": "testing",
+  "file": "packages/plugin-sdk/src/__tests__/plugin-sdk.test.ts",
+  "lineStart": 1,
+  "lineEnd": 285,
+  "suggestedFix": "Add test cases to `discoverPlugins loads a valid plugin from disk` or a new test suite to confirm that `onLoad` is called when a plugin is successfully loaded, and `onUnload` (if applicable) is called upon plugin shutdown or removal. Also, test error handling within these hooks."
+}
+[FINDING]
+{
+  "id": "src-test-limited-error-message-assertions",
+  "title": "Limited error message assertions in plugin definition tests",
+  "description": "Many `toThrow()` assertions in the plugin definition tests (e.g., lines 58, 62, 70, 80) simply check if *any* error is thrown, without asserting on the specific error message or type. While some tests use regex for partial message matching, a more robust approach would be to assert on the exact expected error message or a specific error class to ensure the correct validation logic is being triggered.",
+  "severity": "low",
+  "category": "testing",
+  "file": "packages/plugin-sdk/src/__tests__/plugin-sdk.test.ts",
+  "lineStart": 49,
+  "lineEnd": 95,
+  "suggestedFix": "Update `toThrow()` assertions to use more specific error messages (e.g., `toThrow('Expected error message here')`) or to check for specific error classes, providing clearer intent and making tests more resilient to refactoring that changes non-critical parts of error messages."
+}
+[FINDING]
+{
+  "id": "src-test-no-negative-hook-skill-tests",
+  "title": "No negative test cases for `definePluginHook` and `definePluginSkill`",
+  "description": "The `definePluginHook` and `definePluginSkill` functions are only tested for successful definition with valid inputs (lines 131-155). There are no test cases that assert on invalid configurations for hooks (e.g., missing `command`, invalid `event` type) or skills (e.g., missing `name`, `content`). While `defineBrainstormPlugin` might implicitly validate some of these, direct negative tests for the individual `definePluginHook` and `definePluginSkill` functions would improve their robustness and clarity.",
+  "severity": "low",
+  "category": "testing",
+  "file": "packages/plugin-sdk/src/__tests__/plugin-sdk.test.ts",
+  "lineStart": 131,
+  "lineEnd": 155,
+  "suggestedFix": "Add dedicated negative test cases for `definePluginHook` and `definePluginSkill` to verify that they throw appropriate errors when provided with incomplete or invalid configurations (e.g., missing required fields, invalid enum values)."
+}
+[AUDIT-COMPLETE] 10
+----- end -----

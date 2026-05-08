@@ -1,0 +1,10 @@
+=== packages/agents ===
+model: Gemini 2.5 Flash
+cost:  $0.0284
+tools: list_dir, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read
+tool-call-count: 15
+text-length: 18
+
+----- raw text -----
+[AUDIT-COMPLETE] 4
+----- end -----

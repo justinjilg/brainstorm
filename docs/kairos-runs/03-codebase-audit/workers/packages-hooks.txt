@@ -1,0 +1,178 @@
+=== packages/hooks ===
+model: Gemini 2.5 Flash
+cost:  $0.0280
+tools: list_dir, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read, file_read
+tool-call-count: 20
+text-length: 12454
+
+----- raw text -----
+[FINDING]
+{
+  "id": "auto-lint-exec-user-input",
+  "title": "execFileSync directly uses filePath in commands, potential for issues",
+  "description": "The `runLint` function constructs shell commands using `execFileSync` and includes `filePath` directly in the arguments. While `execFileSync`'s `args` array helps prevent shell injection compared to direct shell execution, if the `filePath` itself contains special characters (e.g., a filename like `foo; rm -rf /;`), it could lead to unexpected command execution or errors. The risk is higher for `golangci-lint` and `go-vet` where `golangci-lint` is run directly without `npx`.",
+  "severity": "medium",
+  "category": "security",
+  "file": "packages/hooks/src/builtin/auto-lint.ts",
+  "lineStart": 84,
+  "lineEnd": 135,
+  "suggestedFix": "Sanitize `filePath` or ensure it's always a valid, safe path. Consider using a library that safely escapes shell arguments if such inputs are expected to be arbitrary. For `golangci-lint` and `go-vet`, ensure that the tools are invoked correctly and securely."
+}
+[FINDING]
+{
+  "id": "auto-lint-command-duplication",
+  "title": "Duplication in command construction logic",
+  "description": "The logic for constructing the lint command and its arguments is duplicated between the `runLint` function (using `execFileSync` arguments) and the `createAutoLintHooks` function (constructing a string for the `command` property of `HookDefinition`). This could lead to inconsistencies if the command arguments need to be updated.",
+  "severity": "low",
+  "category": "maintainability",
+  "file": "packages/hooks/src/builtin/auto-lint.ts",
+  "lineStart": 83,
+  "lineEnd": 169,
+  "suggestedFix": "Create a helper function that returns the command and arguments as an array, which can then be used by both `execFileSync` and to construct the `command` string for `HookDefinition`. This would centralize the command logic."
+}
+[FINDING]
+{
+  "id": "go-vet-filepath-usage",
+  "title": "Incorrect filePath usage for go-vet in runLint",
+  "description": "For `go-vet`, the `runLint` function executes `go vet ./...` on the `projectPath`, meaning it vets the *entire project* rather than the specific `filePath` that triggered the hook. The `createAutoLintHooks` still uses `\"${lintCommand} \\\"$FILE\\\"\"` which would lead to `go vet ./... \"$FILE\"`, which is incorrect for `go vet` as it operates on packages, not individual files in that manner.",
+  "severity": "medium",
+  "category": "correctness",
+  "file": "packages/hooks/src/builtin/auto-lint.ts",
+  "lineStart": 129,
+  "lineEnd": 135,
+  "suggestedFix": "Clarify the expected behavior for `go-vet`. If the intent is to lint the entire project, then the `filePath` parameter to `runLint` is misleading. If the intent is to lint the package containing the file, then logic to determine the package path is needed. For `createAutoLintHooks`, the `command` for `go-vet` should not append `\"$FILE\"`."
+}
+[FINDING]
+{
+  "id": "auto-lint-hardcoded-timeouts",
+  "title": "Hardcoded timeouts for linter execution",
+  "description": "The `timeout` values for `execFileSync` are hardcoded (10s, 15s, 30s). While these might be reasonable defaults, in large projects or under heavy load, a linter might legitimately take longer, leading to false-positive timeouts and an incomplete linting process.",
+  "severity": "low",
+  "category": "performance",
+  "file": "packages/hooks/src/builtin/auto-lint.ts",
+  "lineStart": 90,
+  "lineEnd": 133,
+  "suggestedFix": "Consider making timeouts configurable, perhaps via an environment variable or a project-specific setting, to allow for project-specific tuning."
+}
+[FINDING]
+{
+  "id": "auto-lint-error-handling",
+  "title": "Unsafe error handling in runLint catch block",
+  "description": "The `catch` block for `execFileSync` calls captures `err: any`. It then attempts to access `err.stderr` or `err.message`. `execFileSync` can throw errors that don't have these properties or might have them as `Buffer` objects, not strings. Using `slice(0, 500)` on potentially non-string `stderr` could lead to unexpected behavior.",
+  "severity": "medium",
+  "category": "correctness",
+  "file": "packages/hooks/src/builtin/auto-lint.ts",
+  "lineStart": 138,
+  "lineEnd": 142,
+  "suggestedFix": "Improve error handling by explicitly checking `err` type or casting it to `ExecFileSyncReturns` (if it's a specific type) to reliably extract `stderr`. Ensure `stderr` is converted to a string before slicing."
+}
+[FINDING]
+{
+  "id": "auto-verify-execfile-projectpath",
+  "title": "Command injection risk with projectPath in createAutoVerifyHooks",
+  "description": "In `createAutoVerifyHooks`, the `command` for `HookDefinition` is constructed using `cd \"${projectPath}\" && ${buildCmd}` or `cd \"${projectPath}\" && ${testCmds[testRunner]}`. While `projectPath` is enclosed in double quotes, if `projectPath` itself contains a double quote or other shell-breaking characters, it could lead to command injection.",
+  "severity": "medium",
+  "category": "security",
+  "file": "packages/hooks/src/builtin/auto-verify.ts",
+  "lineStart": 203,
+  "lineEnd": 221,
+  "suggestedFix": "Use an array of arguments for `command` in `HookDefinition` if the underlying hook execution mechanism supports it, which is safer than concatenating strings. If not, robustly escape `projectPath` for shell execution or use `cwd` for `execFile` if possible to avoid `cd` in the command string."
+}
+[FINDING]
+{
+  "id": "auto-verify-require-node-fs",
+  "title": "Redundant and inconsistent require('node:fs')",
+  "description": "The `detectBuildCommand` function uses `require(\"node:fs\")` inside a `try...catch` block. The file already imports `existsSync` from `node:fs` at the top. This `require` call is redundant and could potentially lead to issues in environments where `require` is not available or behaves differently than `import`. It's also inconsistent with the rest of the file's import style.",
+  "severity": "high",
+  "category": "correctness",
+  "file": "packages/hooks/src/builtin/auto-verify.ts",
+  "lineStart": 72,
+  "lineEnd": 77,
+  "suggestedFix": "Replace `require(\"node:fs\").readFileSync` with `readFileSync` imported directly from `node:fs` at the top of the file, similar to `existsSync`."
+}
+[FINDING]
+{
+  "id": "auto-verify-command-duplication",
+  "title": "Duplication of command construction logic across auto-verify functions",
+  "description": "The logic for constructing commands and their arguments is duplicated across different functions. For example, lint commands are defined in `lintCmds` within `runVerify` and implicitly in `createAutoLintHooks` (from `auto-lint.ts`), and test commands are duplicated between `runVerify` and `createAutoVerifyHooks`. This increases the chance of inconsistencies.",
+  "severity": "low",
+  "category": "maintainability",
+  "file": "packages/hooks/src/builtin/auto-verify.ts",
+  "lineStart": 114,
+  "lineEnd": 175,
+  "suggestedFix": "Centralize the definitions of these commands (executable and arguments) into shared helper functions or constants."
+}
+[FINDING]
+{
+  "id": "auto-verify-hardcoded-timeouts",
+  "title": "Hardcoded timeouts for verification steps",
+  "description": "Hardcoded timeouts (30s, 120s) for lint, test, and build steps in `runVerify`. These might be too short for large projects or complex builds/test suites, leading to premature termination and false-negative verification results.",
+  "severity": "medium",
+  "category": "performance",
+  "file": "packages/hooks/src/builtin/auto-verify.ts",
+  "lineStart": 124,
+  "lineEnd": 168,
+  "suggestedFix": "Make these timeouts configurable, similar to the suggestion for `auto-lint.ts`."
+}
+[FINDING]
+{
+  "id": "auto-verify-error-handling",
+  "title": "Unsafe error handling in runVerify catch blocks",
+  "description": "The `catch` blocks in `runVerify` for lint, test, and build steps use `err: any` and access `err.stderr`, `err.stdout`, or `err.message`. `execFileAsync` errors can have these as `Buffer` objects, not strings. Direct slicing (`slice(0, 500)`, `slice(0, 1000)`) on potentially non-string types could be problematic.",
+  "severity": "medium",
+  "category": "correctness",
+  "file": "packages/hooks/src/builtin/auto-verify.ts",
+  "lineStart": 127,
+  "lineEnd": 178,
+  "suggestedFix": "Explicitly convert `err.stderr` and `err.stdout` to strings (e.g., using `.toString()`) before attempting to slice them, ensuring robust error message extraction."
+}
+[FINDING]
+{
+  "id": "redos-vulnerability-regex",
+  "title": "ReDoS vulnerability in getCachedRegex heuristic",
+  "description": "The `REDOS_PATTERN` tries to detect nested quantifiers as a ReDoS heuristic. However, this pattern is basic and might not catch all or even most ReDoS-vulnerable regular expressions. More complex ReDoS patterns can exist without direct nested quantifiers, or with more subtle forms that could still lead to exponential time complexity. A determined attacker could craft a malicious `matcher` string that bypasses this heuristic and still causes a ReDoS attack, leading to denial of service.",
+  "severity": "high",
+  "category": "security",
+  "file": "packages/hooks/src/manager.ts",
+  "lineStart": 18,
+  "lineEnd": 39,
+  "suggestedFix": "Implement a more robust ReDoS detection mechanism or use a secure regex library that mitigates ReDoS risks by limiting backtracking or providing safe alternatives. If relying on heuristics, acknowledge their limitations and consider more advanced static analysis for regexes or dynamic monitoring."
+}
+[FINDING]
+{
+  "id": "command-injection-execfileasync",
+  "title": "Command injection risk with execFileAsync('/bin/sh', ['-c', cmd])",
+  "description": "The `fire` method constructs a command string (`cmd`) by replacing placeholders with values from the `context`, escaping them with `shellEscape`. It then executes the command using `execFileAsync(\"/bin/sh\", [\"-c\", cmd])`. While `shellEscape` attempts to protect against injection by quoting and escaping single quotes, relying on `/bin/sh -c` with a concatenated string can be prone to vulnerabilities if the original `hook.command` template or the `shellEscape` function doesn't perfectly handle all edge cases of shell parsing, leading to potential command injection.",
+  "severity": "critical",
+  "category": "security",
+  "file": "packages/hooks/src/manager.ts",
+  "lineStart": 115,
+  "lineEnd": 143,
+  "suggestedFix": "If possible, parse the `hook.command` into an executable path and an array of arguments, then substitute variables into those arguments *before* passing them directly to `execFileAsync` (without `/bin/sh -c`). If `\"/bin/sh -c\"` is unavoidable due to complex shell features, consider a more robust and battle-tested shell escaping library that handles all edge cases."
+}
+[FINDING]
+{
+  "id": "incomplete-prompt-hook",
+  "title": "Incomplete implementation of 'prompt' hook type",
+  "description": "The `prompt` hook type is explicitly mentioned as \"not yet implemented\" and only logs a warning. This implies a feature that is part of the type system but not functional, which can lead to confusion for users who might attempt to use `prompt` hooks based on the type definition.",
+  "severity": "medium",
+  "category": "maintainability",
+  "file": "packages/hooks/src/manager.ts",
+  "lineStart": 175,
+  "lineEnd": 189,
+  "suggestedFix": "Either fully implement `prompt` hooks or remove the `prompt` type until it's ready for implementation. If it's a planned feature, clearly document its status and future roadmap."
+}
+[FINDING]
+{
+  "id": "execfileasync-cwd",
+  "title": "Incorrect current working directory for execFileAsync",
+  "description": "The `execFileAsync` call for command hooks in `HookManager.fire` uses `cwd: process.cwd()`. This means the command will always execute in the directory where the Node.js process was started, *not necessarily the project's root directory*. This can lead to unexpected behavior if hooks assume they are running relative to a specific project. The `builtin/auto-lint.ts` and `builtin/auto-verify.ts` correctly pass `projectPath` to their `execFileSync` calls, but `manager.ts` does not.",
+  "severity": "medium",
+  "category": "correctness",
+  "file": "packages/hooks/src/manager.ts",
+  "lineStart": 141,
+  "lineEnd": 141,
+  "suggestedFix": "The `fire` method should accept a `projectPath` context and pass that as the `cwd` to `execFileAsync` to ensure commands execute in the correct project context."
+}
+[AUDIT-COMPLETE] 14
+----- end -----
