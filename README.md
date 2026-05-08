@@ -72,13 +72,17 @@ brainstorm introspect                                          # Discover capabi
 
 ## How it works
 
-Every product implements the same contract — 3 endpoints:
+Every product implements the same **platform contract** — 5 endpoints, fully specified in [`docs/platform-contract-v1.md`](docs/platform-contract-v1.md):
 
 ```
 GET  /health                    → Is it alive?
 GET  /api/v1/god-mode/tools     → What can it do?
-POST /api/v1/god-mode/execute   → Do it.
+POST /api/v1/god-mode/execute   → Do it (or simulate it for ChangeSet-gated actions).
+POST /api/v1/platform/events    → Push events into the operator timeline.
+POST /api/v1/platform/tenants   → Add/remove tenants on multi-tenant products.
 ```
+
+The first three are core to every product; the last two are required for products that participate in cross-product events or multi-tenant routing.
 
 The CLI discovers products at runtime. Adding a new product = 5 lines of config. Zero code changes.
 

@@ -197,12 +197,16 @@ Every API call is scoped to `platform_tenant_id` from the JWT. Teams get their o
 
 ## Adding a New Product
 
-### 1. Implement 3 endpoints
+### 1. Implement the platform contract (5 endpoints)
+
+The first three are required for every product. The last two are required only if the product participates in cross-product events or multi-tenant routing. Full spec: [`docs/platform-contract-v1.md`](platform-contract-v1.md).
 
 ```
-GET  /health → { status: "healthy", version: "1.0.0", product: "myproduct" }
-GET  /api/v1/god-mode/tools → { product: "myproduct", tools: [...] }
-POST /api/v1/god-mode/execute → { tool: "myproduct.do_thing", params: {...} }
+GET  /health                    → { status: "healthy", version: "1.0.0", product: "myproduct" }
+GET  /api/v1/god-mode/tools     → { product: "myproduct", tools: [...] }
+POST /api/v1/god-mode/execute   → { tool: "myproduct.do_thing", params: {...} }
+POST /api/v1/platform/events    → push events to the operator timeline (optional for read-only products)
+POST /api/v1/platform/tenants   → add/remove tenants (multi-tenant products only)
 ```
 
 ### 2. Add to config
