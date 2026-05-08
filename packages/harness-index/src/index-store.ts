@@ -58,6 +58,33 @@ export interface VerifyResult {
 }
 
 /**
+ * Structural shape of a loop event for persistence. Mirrors
+ * `LoopEvent` in `@brainst0rm/harness-loop` but defined locally to
+ * avoid a circular dep (harness-loop imports harness-index, not the
+ * other way round).
+ */
+export interface LoopEventInput {
+  loop: string;
+  status: string;
+  at: number;
+  summary?: Record<string, unknown>;
+  error?: string;
+}
+
+export interface LoopEventRow extends LoopEventInput {
+  id: number;
+}
+
+export interface RecentLoopEventsOptions {
+  /** Max rows to return. Defaults to 50. */
+  limit?: number;
+  /** Return only events with `at < before` (epoch ms). Page key. */
+  before?: number;
+  /** Restrict to a single loop name. */
+  loop?: string;
+}
+
+/**
  * Run a multi-statement SQL script against a better-sqlite3 db. Wrapped
  * in a helper to keep the call-site simple (better-sqlite3's `exec` method
  * is the canonical way to run schema DDL).
@@ -399,6 +426,93 @@ export class HarnessIndexStore {
       intent_value: string | null;
       observed_value: string | null;
     }>;
+  }
+
+  // ── loop events ──────────────────────────────────────────
+
+  /**
+   * Append a single loop event. Cheap; called on every tick of the
+   * harness-loop runner. Returns the autoincrement id so callers can
+   * paginate or correlate.
+   */
+  recordLoopEvent(event: LoopEventInput): number {
+    const result = this.db
+      .prepare(
+        `INSERT INTO loop_events(loop, status, at, summary_json, error)
+         VALUES(?, ?, ?, ?, ?)`,
+      )
+      .run(
+        event.loop,
+        event.status,
+        event.at,
+        event.summary ? JSON.stringify(event.summary) : null,
+        event.error ?? null,
+      );
+    return Number(result.lastInsertRowid);
+  }
+
+  /**
+   * Read recent loop events, newest first. With no `before` filter
+   * returns the latest `limit` rows; with `before` set returns the
+   * latest `limit` rows with `at < before` for cursor-style pagination.
+   */
+  recentLoopEvents(opts: RecentLoopEventsOptions = {}): LoopEventRow[] {
+    const limit = opts.limit ?? 50;
+    const clauses: string[] = [];
+    const params: Array<string | number> = [];
+    if (typeof opts.before === "number") {
+      clauses.push("at < ?");
+      params.push(opts.before);
+    }
+    if (opts.loop) {
+      clauses.push("loop = ?");
+      params.push(opts.loop);
+    }
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+    const rows = this.db
+      .prepare(
+        `SELECT id, loop, status, at, summary_json, error
+         FROM loop_events
+         ${where}
+         ORDER BY at DESC, id DESC
+         LIMIT ?`,
+      )
+      .all(...params, limit) as Array<{
+      id: number;
+      loop: string;
+      status: string;
+      at: number;
+      summary_json: string | null;
+      error: string | null;
+    }>;
+    return rows.map((r) => ({
+      id: r.id,
+      loop: r.loop,
+      status: r.status,
+      at: r.at,
+      summary: r.summary_json
+        ? (JSON.parse(r.summary_json) as Record<string, unknown>)
+        : undefined,
+      error: r.error ?? undefined,
+    }));
+  }
+
+  /**
+   * Trim the loop_events table to at most `keep` rows by deleting the
+   * oldest. Cheap guard against unbounded growth (~3 loops × 4/hr × 24h
+   * × 365 ≈ 105k rows/year per harness). Defaults are generous; a
+   * higher-level scheduler can call this periodically.
+   */
+  pruneLoopEventsKeepLatest(keep: number): number {
+    const result = this.db
+      .prepare(
+        `DELETE FROM loop_events
+         WHERE id NOT IN (
+           SELECT id FROM loop_events ORDER BY id DESC LIMIT ?
+         )`,
+      )
+      .run(keep);
+    return Number(result.changes);
   }
 
   close(): void {

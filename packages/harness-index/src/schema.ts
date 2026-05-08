@@ -112,4 +112,18 @@ CREATE TABLE IF NOT EXISTS recipient_bundles (
   recipients_json TEXT NOT NULL,
   indexed_at     INTEGER NOT NULL
 );
+
+-- Loop event log — durable history of every harness-loop tick. Replaces
+-- the in-process ring buffer the desktop main process used to keep, so
+-- history survives restarts.
+CREATE TABLE IF NOT EXISTS loop_events (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  loop         TEXT    NOT NULL,
+  status       TEXT    NOT NULL,
+  at           INTEGER NOT NULL,
+  summary_json TEXT,
+  error        TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_loop_events_at   ON loop_events(at);
+CREATE INDEX IF NOT EXISTS idx_loop_events_loop ON loop_events(loop);
 `;

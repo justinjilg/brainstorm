@@ -587,14 +587,24 @@ function registerIPC(): void {
   };
   let activeSession: ActiveHarnessSession | null = null;
   /**
-   * Ring buffer of recent loop events the renderer subscribes to. We hold
-   * the most recent 200 across all loops; the desktop renders this as a
-   * live event log in the harness session header.
+   * Persist + broadcast a loop event. Persistence goes through the active
+   * session's harness-index `loop_events` table so history survives a
+   * desktop restart; the in-memory ring buffer the previous version kept
+   * is gone now that the DB is the source of truth. `onEvent` only fires
+   * after `harness.openSession` succeeds, so `activeSession` is always
+   * set when this runs — but we guard defensively in case that invariant
+   * ever loosens.
    */
-  const recentLoopEvents: HarnessLoopEvent[] = [];
   function recordLoopEvent(event: HarnessLoopEvent): void {
-    recentLoopEvents.push(event);
-    if (recentLoopEvents.length > 200) recentLoopEvents.shift();
+    if (activeSession) {
+      try {
+        activeSession.index.recordLoopEvent(event);
+      } catch (e) {
+        // Persistence is best-effort. If the DB write fails (e.g. mid-
+        // close race), we still broadcast so live UI updates aren't lost.
+        console.warn("loop event persistence failed:", e);
+      }
+    }
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send("harness.loop-event", event);
     }
@@ -913,13 +923,25 @@ function registerIPC(): void {
   /**
    * Return the most recent N loop events (default 50). Used by the
    * desktop's harness session header to populate the live event log on
-   * mount, before subscribing to harness.loop-event.
+   * mount, before subscribing to harness.loop-event. Reads from the
+   * active session's harness-index `loop_events` table so history
+   * survives desktop restarts.
    */
   ipcMain.handle(
     "harness.recentLoopEvents",
     async (_event, limit?: number): Promise<HarnessLoopEvent[]> => {
+      if (!activeSession) return [];
       const n = typeof limit === "number" && limit > 0 ? limit : 50;
-      return recentLoopEvents.slice(-n);
+      // Store returns newest-first; the renderer expects oldest-first
+      // (events are appended bottom-of-list as they arrive). Reverse here.
+      const rows = activeSession.index.recentLoopEvents({ limit: n });
+      return rows.reverse().map((row) => ({
+        loop: row.loop as HarnessLoopEvent["loop"],
+        status: row.status as HarnessLoopEvent["status"],
+        at: row.at,
+        summary: row.summary,
+        error: row.error,
+      }));
     },
   );
 

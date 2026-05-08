@@ -302,3 +302,102 @@ describe("HarnessIndexStore — changesets and drift", () => {
     expect(store.unresolvedDrift()).toHaveLength(0);
   });
 });
+
+// ── loop events ──────────────────────────────────────────────
+
+describe("HarnessIndexStore — loop events", () => {
+  test("recordLoopEvent + recentLoopEvents round-trip preserves shape", () => {
+    const id = store.recordLoopEvent({
+      loop: "indexer",
+      status: "completed",
+      at: 1_700_000_000_000,
+      summary: { upserted: 12, pruned: 3 },
+    });
+    expect(id).toBeGreaterThan(0);
+
+    const rows = store.recentLoopEvents();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      id,
+      loop: "indexer",
+      status: "completed",
+      at: 1_700_000_000_000,
+      summary: { upserted: 12, pruned: 3 },
+    });
+    expect(rows[0].error).toBeUndefined();
+  });
+
+  test("recentLoopEvents orders newest-first and respects limit", () => {
+    for (let i = 0; i < 10; i++) {
+      store.recordLoopEvent({
+        loop: "indexer",
+        status: "completed",
+        at: 1_700_000_000_000 + i,
+      });
+    }
+    const rows = store.recentLoopEvents({ limit: 3 });
+    expect(rows.map((r) => r.at)).toEqual([
+      1_700_000_000_009, 1_700_000_000_008, 1_700_000_000_007,
+    ]);
+  });
+
+  test("recentLoopEvents `before` filter pages backwards", () => {
+    for (let i = 0; i < 5; i++) {
+      store.recordLoopEvent({
+        loop: "indexer",
+        status: "completed",
+        at: 1_000 + i,
+      });
+    }
+    const rows = store.recentLoopEvents({ before: 1_003, limit: 10 });
+    expect(rows.map((r) => r.at)).toEqual([1_002, 1_001, 1_000]);
+  });
+
+  test("recentLoopEvents `loop` filter scopes to one loop", () => {
+    store.recordLoopEvent({ loop: "indexer", status: "completed", at: 1 });
+    store.recordLoopEvent({
+      loop: "customer-drift",
+      status: "completed",
+      at: 2,
+    });
+    store.recordLoopEvent({
+      loop: "indexer",
+      status: "failed",
+      at: 3,
+      error: "boom",
+    });
+
+    const rows = store.recentLoopEvents({ loop: "indexer" });
+    expect(rows).toHaveLength(2);
+    expect(rows.every((r) => r.loop === "indexer")).toBe(true);
+    expect(rows[0].error).toBe("boom");
+  });
+
+  test("pruneLoopEventsKeepLatest deletes oldest, keeps latest N", () => {
+    for (let i = 0; i < 10; i++) {
+      store.recordLoopEvent({ loop: "indexer", status: "completed", at: i });
+    }
+    const deleted = store.pruneLoopEventsKeepLatest(3);
+    expect(deleted).toBe(7);
+
+    const rows = store.recentLoopEvents({ limit: 100 });
+    expect(rows).toHaveLength(3);
+    expect(rows.map((r) => r.at)).toEqual([9, 8, 7]);
+  });
+
+  test("survives store close/reopen — events are durable", () => {
+    store.recordLoopEvent({ loop: "indexer", status: "completed", at: 42 });
+    store.close();
+
+    const reopened = new HarnessIndexStore(dbPath);
+    try {
+      const rows = reopened.recentLoopEvents();
+      expect(rows).toHaveLength(1);
+      expect(rows[0].at).toBe(42);
+    } finally {
+      reopened.close();
+    }
+    // Re-open the original `store` so afterEach's close() succeeds.
+    store = new HarnessIndexStore(dbPath);
+  });
+});
