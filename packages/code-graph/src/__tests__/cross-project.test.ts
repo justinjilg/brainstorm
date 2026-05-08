@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { CodeGraph } from "../graph.js";
@@ -17,7 +17,7 @@ beforeAll(async () => {
   registerAdapter(createTypeScriptAdapter());
 
   // Project A — a backend API
-  const projectA = join(tmpdir(), `cross-a-${Date.now()}`);
+  const projectA = mkdtempSync(join(tmpdir(), `cross-a-`));
   mkdirSync(join(projectA, "src"), { recursive: true });
   writeFileSync(
     join(projectA, "src", "server.ts"),
@@ -54,7 +54,7 @@ export class User {
   );
 
   // Project B — a frontend that calls Project A
-  const projectB = join(tmpdir(), `cross-b-${Date.now()}`);
+  const projectB = mkdtempSync(join(tmpdir(), `cross-b-`));
   mkdirSync(join(projectB, "src"), { recursive: true });
   writeFileSync(
     join(projectB, "src", "client.ts"),
@@ -78,10 +78,8 @@ export function fetchCreateUser(data: any) {
   );
 
   // Build graphs
-  const dbDirA = join(tmpdir(), `cross-db-a-${Date.now()}`);
-  const dbDirB = join(tmpdir(), `cross-db-b-${Date.now()}`);
-  mkdirSync(dbDirA, { recursive: true });
-  mkdirSync(dbDirB, { recursive: true });
+  const dbDirA = mkdtempSync(join(tmpdir(), `cross-db-a-`));
+  const dbDirB = mkdtempSync(join(tmpdir(), `cross-db-b-`));
 
   graphA = new CodeGraph({ dbPath: join(dbDirA, "a.db") });
   graphB = new CodeGraph({ dbPath: join(dbDirB, "b.db") });
@@ -98,8 +96,7 @@ export function fetchCreateUser(data: any) {
   });
 
   // Create cross-project graph
-  const crossDbDir = join(tmpdir(), `cross-db-${Date.now()}`);
-  mkdirSync(crossDbDir, { recursive: true });
+  const crossDbDir = mkdtempSync(join(tmpdir(), `cross-db-`));
   crossGraph = new CrossProjectGraph(join(crossDbDir, "cross.db"));
   crossGraph.addProject("backend", graphA);
   crossGraph.addProject("frontend", graphB);

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { mkdirSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
@@ -12,21 +12,13 @@ import {
 } from "../memory/git.js";
 
 function createTestRepo(): string {
-  const dir = join(
-    tmpdir(),
-    `git-sync-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-  );
-  mkdirSync(dir, { recursive: true });
+  const dir = mkdtempSync(join(tmpdir(), `git-sync-test-`));
   initMemoryRepo(dir);
   return dir;
 }
 
 function createBareRemote(): string {
-  const dir = join(
-    tmpdir(),
-    `git-remote-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-  );
-  mkdirSync(dir, { recursive: true });
+  const dir = mkdtempSync(join(tmpdir(), `git-remote-`));
   // Pin the initial branch so `git clone <remote>` checks out a branch
   // that actually exists once we push `main` to it. Without this, CI
   // Linux (no `init.defaultBranch` set) creates a bare repo with
@@ -109,10 +101,10 @@ describe("git-sync", () => {
       sync.syncAfterWrite();
 
       // Verify: clone remote and check file exists
-      const cloneDir = join(
-        tmpdir(),
-        `clone-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      );
+      const cloneDir = mkdtempSync(join(tmpdir(), `clone-`));
+      // mkdtempSync created the dir; git clone needs it to NOT exist or
+      // be empty — the empty dir from mkdtempSync satisfies "empty," so
+      // clone happily fills it.
       execFileSync("git", ["clone", remote, cloneDir], { stdio: "ignore" });
       expect(existsSync(join(cloneDir, "test.md"))).toBe(true);
     });
