@@ -80,7 +80,25 @@ export interface ChangeSet {
   readonly applied_at?: number;
   readonly reverted_at?: number;
 
-  /** Free-form payload the apply() routine reads. Persisted as JSON. */
+  /**
+   * Free-form payload the apply() routine reads. Persisted as JSON.
+   *
+   * Contract for implementers (important — easy to get wrong on revert):
+   *   - Treat `payload` as immutable after construction. apply() must
+   *     not mutate it, because revert() reads the same payload to roll
+   *     back. If apply() needs derived state, store it in a separate
+   *     field (see e.g. `prior_observed_value` on
+   *     ApplyIntentToRuntimeChangeSet).
+   *   - The shape is per-Kind, not per-instance. Concrete subclasses
+   *     should define an interface that their payload conforms to and
+   *     validate at the boundary (or rely on the constructor types).
+   *   - Schema typing is intentionally `Record<string, unknown>` here
+   *     so the engine can persist any ChangeSet without leaking each
+   *     subclass's internal shape into the engine's public types. A
+   *     fully-typed payload would require a generic on ChangeSet that
+   *     propagates through every store / persistor — deferred until
+   *     persistent ChangeSet drafts ship (PRD BH-CS-001).
+   */
   readonly payload: Record<string, unknown>;
 
   /** Describe what apply() would do. Pure; safe to call repeatedly. */
