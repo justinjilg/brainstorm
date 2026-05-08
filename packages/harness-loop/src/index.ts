@@ -24,7 +24,7 @@ export type LoopName = "indexer" | "customer-drift" | "stale-watchdog";
 
 export interface LoopEvent {
   loop: LoopName;
-  status: "started" | "completed" | "failed";
+  status: "started" | "completed" | "failed" | "skipped";
   at: number;
   /** Run-specific summary; shape varies by loop. */
   summary?: Record<string, unknown>;
@@ -59,6 +59,15 @@ export class HarnessLoopRunner {
   private running = false;
   private readonly cadence: Record<LoopName, number>;
   private readonly now: () => number;
+  /**
+   * Per-loop in-flight guard. If `setInterval` (or a manual runOnce
+   * call) fires while a previous run for the same loop is still
+   * resolving, the new tick is skipped and a `skipped` event is emitted
+   * instead. Without this, overlapping runs can race the index and
+   * produce confusing evidence — especially once detector cadence drops
+   * below the actual walk time on a large harness.
+   */
+  private readonly inFlight = new Set<LoopName>();
 
   constructor(private readonly opts: LoopRunnerOptions) {
     this.cadence = {
@@ -98,8 +107,23 @@ export class HarnessLoopRunner {
     }
   }
 
-  /** Manually trigger one cycle of one loop. Useful for tests + UI buttons. */
+  /**
+   * Manually trigger one cycle of one loop. Useful for tests + UI buttons.
+   * If the same loop already has a run in-flight, emits a `skipped`
+   * event and returns it instead of starting a concurrent run.
+   */
   async runOnce(loop: LoopName): Promise<LoopEvent> {
+    if (this.inFlight.has(loop)) {
+      const event: LoopEvent = {
+        loop,
+        status: "skipped",
+        at: this.now(),
+        summary: { reason: "previous run still in-flight" },
+      };
+      this.emit(event);
+      return event;
+    }
+    this.inFlight.add(loop);
     const startedAt = this.now();
     this.emit({ loop, status: "started", at: startedAt });
     try {
@@ -121,6 +145,8 @@ export class HarnessLoopRunner {
       };
       this.emit(event);
       return event;
+    } finally {
+      this.inFlight.delete(loop);
     }
   }
 

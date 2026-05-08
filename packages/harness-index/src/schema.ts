@@ -15,6 +15,14 @@
  * --full` (which rebuilds from FS).
  */
 
+// SQLite-internal schema version for the per-user harness index DB.
+//
+// Version-shape note: this is an integer because it counts **migration
+// steps** for `~/.brainstorm/harness-index/{harness-id}.db` and is never
+// surfaced to the user. It is intentionally distinct from
+// `packages/config/src/business-schema.ts` `BUSINESS_SCHEMA_VERSION`
+// (string `"1.0"`), which tracks the **user-facing `business.toml`
+// manifest format**. Both counters evolve independently; do not unify.
 export const SCHEMA_VERSION = 1;
 
 export const SCHEMA_SQL = `
