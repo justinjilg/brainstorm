@@ -25,11 +25,7 @@ import type {
   ErrorEventRelayToOperator,
   Operator,
 } from "./types.js";
-import {
-  signEnvelope,
-  verifyEnvelope,
-  type SignableEnvelope,
-} from "./signing.js";
+import { signEnvelope, type SignableEnvelope } from "./signing.js";
 import { SIGN_CONTEXT, canonicalBytes } from "./canonical.js";
 import type { AuditLog } from "./audit.js";
 import type { NonceStore } from "./nonce-store.js";

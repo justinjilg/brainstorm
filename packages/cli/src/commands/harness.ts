@@ -23,7 +23,6 @@ import {
   walkHarnessDir,
   detectKind,
   extractIndexFields,
-  hashContent,
   materializeHarness,
 } from "@brainst0rm/harness-fs";
 import {
