@@ -63,16 +63,6 @@ export interface CuratorCycleResult {
 
 // ── State & Lock ──────────────────────────────────────────────────
 
-function readState(memoryDir: string): CuratorState {
-  const path = join(memoryDir, CURATOR_STATE_FILE);
-  if (!existsSync(path)) return { lastCuratorAt: 0 };
-  try {
-    return JSON.parse(readFileSync(path, "utf-8")) as CuratorState;
-  } catch {
-    return { lastCuratorAt: 0 };
-  }
-}
-
 function writeState(memoryDir: string, state: CuratorState): void {
   mkdirSync(memoryDir, { recursive: true });
   writeFileSync(

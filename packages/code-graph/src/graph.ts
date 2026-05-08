@@ -312,9 +312,14 @@ export class CodeGraph {
         }
       }
 
-      // Create import edges
-      for (const imp of parsed.imports) {
-        // File-level import edge: we create a file node and connect it
+      // Create the file node when this parsed file has imports. The
+      // edges themselves are resolved later by the cross-file pipeline
+      // stage (target is a string path, not a node id, until then).
+      // (Previously this was a `for (const imp of parsed.imports)`
+      // loop that re-inserted the same file node once per import; the
+      // ON CONFLICT made duplicates no-ops but it was wasteful and
+      // CodeQL flagged the unused loop variable.)
+      if (parsed.imports.length > 0) {
         const fileNodeId = hashId(`file:${parsed.file}`);
         nodeStmt.run(
           fileNodeId,
@@ -326,8 +331,6 @@ export class CodeGraph {
           language,
           null,
         );
-        // Edge: file imports module (target is the source path string, not a node)
-        // These cross-file edges get resolved in the cross-file pipeline stage
       }
     });
     tx();

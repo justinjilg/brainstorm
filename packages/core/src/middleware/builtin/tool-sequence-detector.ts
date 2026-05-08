@@ -169,9 +169,6 @@ const SEQUENCE_RULES: SequenceRule[] = [
 
 // ── Middleware ──────────────────────────────────────────────────────
 
-const SEQUENCE_HISTORY_KEY = "_toolSequenceHistory";
-const TRUST_WINDOW_KEY = "_trustWindow";
-
 export function createToolSequenceDetectorMiddleware(): AgentMiddleware {
   let history: ToolEvent[] = [];
   const preScannedCalls = new Set<string>(); // Track pre-scanned call IDs to avoid double-recording

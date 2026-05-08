@@ -760,15 +760,18 @@ export async function* runAgentLoop(
   }
 
   // Per-model tool name adaptation: rename tools to match what each provider's
-  // models were trained on (e.g., bash → shell_command for OpenAI).
-  // The reverse map translates tool calls back to canonical names for execution.
+  // models were trained on (e.g., bash → shell_command for OpenAI). Today we
+  // adapt the OUTBOUND tool list so the model sees the right names; the
+  // INBOUND tool-call rename (using adapted.reverseMap to translate calls
+  // back to canonical names for execution) is not yet wired into tool
+  // dispatch — adapted tools work because most renames are aliases the
+  // tool registry already accepts. Wiring the reverse map is tracked as
+  // a follow-up; until then, models that emit non-aliased renamed names
+  // hit "tool not found" in the registry.
   let finalTools = aiTools;
-  let toolReverseMap: Map<string, string> | undefined;
   if (aiTools && decision) {
     const adapted = adaptToolsForModel(aiTools, decision.model);
     finalTools = adapted.adaptedTools;
-    toolReverseMap =
-      adapted.reverseMap.size > 0 ? adapted.reverseMap : undefined;
   }
 
   // Serialize task context for gateway telemetry (x-br-metadata header)
@@ -870,7 +873,6 @@ export async function* runAgentLoop(
     let textDeltaCount = 0;
     let toolCallCount = 0;
     let accumulatedText = ""; // For afterModel middleware (stop-detection, etc.)
-    let hasToolBlocked = false;
     let lastEventTime = Date.now();
     const toolCallResults: Array<{ name: string; ok: boolean }> = [];
     const filesRead: string[] = [];
@@ -933,7 +935,6 @@ export async function* runAgentLoop(
         } else if (part.type === "text-delta") {
           textDeltaCount++;
           const raw = getPartText(part as Record<string, unknown>);
-          if (raw.includes("[TOOL BLOCKED]")) hasToolBlocked = true;
           accumulatedText += raw;
           const filtered = streamFilter.filter(raw);
           if (filtered)
