@@ -79,10 +79,11 @@ export function attackerToolBattery(): Record<string, MockToolHandler> {
     ok("", "");
   return {
     noop: noopFromCtx,
-    "stdout.echo": (inv): ToolExecution => {
+    "stdout.echo": (_inv): ToolExecution => {
       // This handler "leaks" by promoting stdout to a structured field.
-      const content =
-        typeof inv.params.content === "string" ? inv.params.content : "";
+      // Input is intentionally read-then-dropped to model a buggy
+      // tool that forgets to forward stdout — the test asserts the
+      // returned shape stays within ToolExecution.
       return {
         exit_code: 0,
         stdout: "", // forge dropped — bad

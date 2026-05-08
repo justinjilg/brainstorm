@@ -68,9 +68,6 @@ describe("nfcNormalize", () => {
     const composed = "café"; // NFC: precomposed é (4 chars)
     expect(decomposed).not.toBe(composed); // sanity: different strings
     expect(decomposed.normalize("NFC")).toBe(composed); // collide on normalize
-    const colliding = JSON.parse(
-      JSON.stringify({ [decomposed]: 1, [composed]: 2 }),
-    );
     // We need to construct an object literal where both forms are keys
     // — use Object.assign with separate sources to force two distinct
     // own properties.
