@@ -4,8 +4,6 @@ import {
   AgentConnector,
   createAgentConnector,
 } from "../../../connectors/agent/index.js";
-import { AgentClient } from "../../../connectors/agent/client.js";
-
 // Mock the global fetch
 const mockFetch = vi.fn();
 global.fetch = mockFetch;

@@ -8,9 +8,6 @@
  */
 
 import type Database from "better-sqlite3";
-import { createLogger } from "@brainst0rm/shared";
-
-const log = createLogger("analytics");
 
 export interface AnalyticsReport {
   period: { from: string; to: string };

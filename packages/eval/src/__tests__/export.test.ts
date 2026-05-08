@@ -23,9 +23,10 @@ describe("exportCapabilityScores", () => {
   const createEvalRun = (
     results: ProbeResult[],
     scores: Partial<EvalRun["scores"]> = {},
+    modelId: string = "claude-3-5-sonnet",
   ): EvalRun => ({
     id: "test-run",
-    modelId: "claude-3-5-sonnet",
+    modelId,
     startedAt: Date.now() - 5000,
     completedAt: Date.now(),
     results,

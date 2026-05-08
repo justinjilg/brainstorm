@@ -6552,8 +6552,7 @@ program
     "Bootstrap Brainstorm on this machine — auth, config, MCP, ecosystem context",
   )
   .action(async () => {
-    const { existsSync, mkdirSync, writeFileSync, readFileSync } =
-      await import("node:fs");
+    const { existsSync, readFileSync } = await import("node:fs");
     const { join } = await import("node:path");
     const { homedir } = await import("node:os");
 
@@ -7221,11 +7220,10 @@ program
 
       // Start the sync queue drain worker if a gateway is configured.
       // This is the missing link — without it, retry queue rows sit forever
-      // and the fire-and-forget push path stays broken.
-      let chatSyncWorker: Awaited<
-        ReturnType<typeof startSyncWorkerIfConfigured>
-      > = null;
-      chatSyncWorker = await startSyncWorkerIfConfigured(chatGateway, db);
+      // and the fire-and-forget push path stays broken. We start the worker
+      // for its side effect; the returned handle isn't held because the
+      // worker self-manages via its own scheduler.
+      await startSyncWorkerIfConfigured(chatGateway, db);
 
       // Wire code graph tools — tree-sitter knowledge graph for structural queries
       try {
@@ -7700,7 +7698,6 @@ program
             runTick: (tickMessage: string) => {
               // If sector agents are configured, overlay sector context
               let finalMessage = tickMessage;
-              let sectorBudget: number | undefined;
               let currentSectorId: string | undefined;
 
               if (sectorAgents.length > 0 && sectorGraph && _selectNextSector) {
@@ -7709,7 +7706,12 @@ program
                   if (tick) {
                     finalMessage =
                       tick.tickMessage + "\n\n---\n\n" + tickMessage;
-                    sectorBudget = tick.budgetLimit;
+                    // sectorBudget is computed but not threaded into
+                    // runAgentLoop yet — sector budgets land with the
+                    // sector orchestration work in PRD Phase 1+. Until
+                    // then we read tick.budgetLimit only to surface the
+                    // value in the tick message.
+                    void tick.budgetLimit;
                     currentSectorId = tick.agent.sectorId;
                   }
                 } catch {

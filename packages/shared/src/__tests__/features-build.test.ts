@@ -34,7 +34,7 @@ describe("getFeatureDefines", () => {
 
   it("returns string values for all entries", () => {
     const defines = getFeatureDefines("oss");
-    for (const [key, value] of Object.entries(defines)) {
+    for (const value of Object.values(defines)) {
       expect(typeof value).toBe("string");
       expect(value === "true" || value === "false").toBe(true);
     }

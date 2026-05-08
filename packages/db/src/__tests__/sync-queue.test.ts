@@ -309,7 +309,7 @@ describe("SyncQueueRepository", () => {
         path: "/a",
         idempotencyKey: "a",
       });
-      const b = repo.enqueue({
+      repo.enqueue({
         kind: "x",
         method: "POST",
         path: "/b",

@@ -405,7 +405,7 @@ const TERMINAL_RETENTION_MS = 60 * 60 * 1000; // 1 hour
 
 function expireStale(): void {
   const now = Date.now();
-  for (const [id, cs] of changesets) {
+  for (const [, cs] of changesets) {
     if (cs.status === "draft" && now > cs.expiresAt) {
       cs.status = "expired";
       // Track WHEN a draft transitioned to expired so GC can use

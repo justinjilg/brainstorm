@@ -10,9 +10,6 @@
 
 import type Database from "better-sqlite3";
 import type { TracedArtifact, ArtifactType, TraceLink } from "./trace-id.js";
-import { createLogger } from "@brainst0rm/shared";
-
-const log = createLogger("traceability");
 
 /**
  * Initialize the traceability tables.

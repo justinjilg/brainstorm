@@ -73,7 +73,6 @@ export function generateGraphDoc(graph: GraphLike): GraphDoc {
     .all() as Array<{ name: string; callerCount: number; file: string }>;
 
   // Build call graph edges for the top functions
-  const topNames = new Set(hotspots.map((h) => h.name));
   const callEdges = db
     .prepare(
       `

@@ -29,9 +29,6 @@ export const summaryStage: PipelineStage = {
   async run(ctx: PipelineContext): Promise<PipelineSummary> {
     const scan = ctx.results.get("scan") as ScanResult | undefined;
     const parse = ctx.results.get("parse") as ParseResult | undefined;
-    const graphBuild = ctx.results.get("graph-build") as
-      | GraphBuildResult
-      | undefined;
     const crossFile = ctx.results.get("cross-file") as
       | CrossFileResult
       | undefined;
