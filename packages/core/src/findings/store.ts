@@ -19,12 +19,12 @@ import {
   type CodebaseFinding,
   type FindingSeverity,
   type FindingCategory,
-  FINDING_MARKER,
   serializeFinding,
   parseFinding,
   severityRank,
   makeFindingId,
 } from "./types.js";
+// FINDING_MARKER has no local use; only re-exported below for callers.
 
 export interface FindingsFilter {
   severity?: FindingSeverity | FindingSeverity[];

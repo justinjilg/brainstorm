@@ -73,10 +73,6 @@ const BUILTIN_NAMES = [
   "render",
   "createElement",
 ];
-import {
-  TIER_TO_COMPLEXITY,
-  TIER_TO_QUALITY,
-} from "../community/sector-profile.js";
 import { createLogger } from "@brainst0rm/shared";
 
 const log = createLogger("work-plan");

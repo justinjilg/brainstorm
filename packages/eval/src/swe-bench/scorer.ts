@@ -261,9 +261,12 @@ function buildTestCommand(instance: SWEBenchInstance): string {
   if (repo === "django/django") {
     // Django test IDs come as "name (full.dotted.path.name)"; extract the
     // dotted path so the runner accepts it. Fall back to the raw ID if no
-    // parenthetical group is present.
+    // parenthetical group is present. Cap each test ID at 1024 chars
+    // before the regex so polynomial-redos heuristics can't trip on
+    // adversarial input (real Django test IDs are well under 200 chars).
     const dotted = tests.map((t) => {
-      const m = t.match(/\(([^)]+)\)/);
+      const bounded = t.slice(0, 1024);
+      const m = bounded.match(/\(([^)]+)\)/);
       return m ? m[1] : t;
     });
     const args = dotted.map((t) => `'${t.replace(/'/g, "'\\''")}'`).join(" ");

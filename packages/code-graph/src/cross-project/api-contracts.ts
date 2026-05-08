@@ -102,12 +102,9 @@ export function detectApiContracts(
     ).map((i) => i.source),
   );
 
-  const sharedDeps = clientImports
-    .filter((i) => serverImports.has(i.source))
-    .map((i) => i.source);
-
-  // Shared types suggest cross-project dependency
-  // (not a contract per se, but useful signal)
+  // Shared imports between client and server can be computed here as a
+  // signal for cross-project dependency (vestigial calculation removed
+  // until a consumer needs it).
 
   return contracts;
 }

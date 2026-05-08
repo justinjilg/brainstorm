@@ -5,7 +5,7 @@
  */
 
 import { watch, type FSWatcher } from "node:fs";
-import { join, relative } from "node:path";
+import { join } from "node:path";
 
 const IGNORE_DIRS = new Set([
   "node_modules",
