@@ -21,6 +21,17 @@ import { WriteAheadLog } from "./wal.js";
  * be at intent_hash (atomic-write completed before crash) or not (atomic-
  * write hadn't started); either way the index update is the only thing to
  * re-issue. The hash verification in the index module decides what to do.
+ *
+ * Concurrent session note (advisory — not enforced):
+ *   v1 does NOT take a lockfile against concurrent writers on the same
+ *   harness root. If two desktops or two CLI invocations open the same
+ *   harness simultaneously, FS writes are uncoordinated and the last
+ *   `atomicWriteFile()` wins on any colliding path. The index is
+ *   per-user (Decision #11) so reads never collide; the WAL is also
+ *   per-user. The exposure is limited to the small window when two
+ *   operators are editing the same file in the same harness at the same
+ *   time. A `.harness/.session.lock` advisory file is a Phase-1+
+ *   candidate (PRD BH-SEC-* tier).
  */
 
 export interface HarnessWrite {
