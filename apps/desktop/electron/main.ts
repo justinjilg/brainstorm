@@ -14,12 +14,42 @@ import { app, BrowserWindow, ipcMain, dialog, session } from "electron";
 // module and destructure — this is the documented interop pattern.
 import electronUpdater from "electron-updater";
 const { autoUpdater } = electronUpdater;
-import { appendFileSync, mkdirSync } from "node:fs";
+import {
+  appendFileSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  existsSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
+import { detectBusinessHarness, loadBusinessHarness } from "@brainst0rm/config";
+import {
+  HarnessIndexStore,
+  defaultIndexPath,
+  type VerifyResult,
+} from "@brainst0rm/harness-index";
+import {
+  HarnessWriter,
+  materializeHarness,
+  type MaterializeHarnessResult,
+} from "@brainst0rm/harness-fs";
+import { SAAS_PLATFORM_TEMPLATE } from "@brainst0rm/archetype-saas-platform";
+import { MSP_TEMPLATE } from "@brainst0rm/archetype-msp";
+import type { StarterTemplate } from "@brainst0rm/config";
+import {
+  CustomerAccountDriftDetector,
+  ApplyIntentToRuntimeChangeSet,
+} from "@brainst0rm/harness-drift";
+import {
+  HarnessLoopRunner,
+  type LoopEvent as HarnessLoopEvent,
+} from "@brainst0rm/harness-loop";
+import TOML from "@iarna/toml";
+import { createHash } from "node:crypto";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -471,6 +501,474 @@ function registerIPC(): void {
     return result.filePaths[0];
   });
 
+  // ── Business harness IPC ──────────────────────────────────────
+  // Per the spec at ~/.claude/plans/snuggly-sleeping-hinton.md, the
+  // desktop's primary navigation root is the harness — a folder
+  // containing business.toml. These three routes detect, parse, and
+  // open harnesses; the renderer composes them into the harness picker.
+
+  /**
+   * Detect a harness by walking up from a given path looking for
+   * business.toml. Returns:
+   *   { kind: "business", root, manifest }  — found and valid
+   *   { kind: "code", root: path }          — no business.toml found
+   *   { kind: "error", root, error, message } — found but invalid
+   */
+  ipcMain.handle("harness.detect", async (_event, path: string) => {
+    const detectResult = detectBusinessHarness(path);
+    if (!detectResult) {
+      // No harness anywhere upward; treat as a code-project root
+      return { kind: "code", root: path };
+    }
+    if (detectResult.ok === true) {
+      return {
+        kind: "business",
+        root: detectResult.root,
+        manifest: detectResult.manifest,
+      };
+    } else {
+      return {
+        kind: "error",
+        root: detectResult.root,
+        manifestPath: detectResult.manifestPath,
+        error: detectResult.error,
+        message: detectResult.message,
+      };
+    }
+  });
+
+  /**
+   * Open native folder picker, then run detect on the selected folder.
+   * One round trip from the renderer's "Open" button.
+   */
+  ipcMain.handle("harness.openDialog", async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ["openDirectory"],
+      title: "Open Business Harness or Code Project",
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { kind: "cancel" };
+    }
+    const path = result.filePaths[0]!;
+    // Reuse the detect logic — opening a folder that turns out to be a
+    // regular code project just becomes the existing code-project flow.
+    const detectResult = detectBusinessHarness(path);
+    if (!detectResult) {
+      return { kind: "code", root: path };
+    }
+    if (detectResult.ok === true) {
+      return {
+        kind: "business",
+        root: detectResult.root,
+        manifest: detectResult.manifest,
+      };
+    } else {
+      return {
+        kind: "error",
+        root: detectResult.root,
+        manifestPath: detectResult.manifestPath,
+        error: detectResult.error,
+        message: detectResult.message,
+      };
+    }
+  });
+
+  // ── Index lifecycle ───────────────────────────────────────────
+  // Per spec ## Index Coherence, the harness opens with a cold-open
+  // verification pass. The index store stays open for the session so
+  // subsequent writes go through write-through cleanly.
+
+  type ActiveHarnessSession = {
+    root: string;
+    harnessId: string;
+    index: HarnessIndexStore;
+    writer: HarnessWriter;
+    loop: HarnessLoopRunner;
+  };
+  let activeSession: ActiveHarnessSession | null = null;
+  /**
+   * Persist + broadcast a loop event. Persistence goes through the active
+   * session's harness-index `loop_events` table so history survives a
+   * desktop restart; the in-memory ring buffer the previous version kept
+   * is gone now that the DB is the source of truth. `onEvent` only fires
+   * after `harness.openSession` succeeds, so `activeSession` is always
+   * set when this runs — but we guard defensively in case that invariant
+   * ever loosens.
+   */
+  function recordLoopEvent(event: HarnessLoopEvent): void {
+    if (activeSession) {
+      try {
+        activeSession.index.recordLoopEvent(event);
+      } catch (e) {
+        // Persistence is best-effort. If the DB write fails (e.g. mid-
+        // close race), we still broadcast so live UI updates aren't lost.
+        console.warn("loop event persistence failed:", e);
+      }
+    }
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send("harness.loop-event", event);
+    }
+  }
+
+  function harnessIdFromRoot(root: string): string {
+    // Stable id per-harness-root: SHA-256 of the absolute path. This is
+    // deterministic and machine-local — two clones on the same laptop
+    // share an index id; but per Decision #11, indexes are per-user so
+    // this is correct.
+    return createHash("sha256").update(root).digest("hex").slice(0, 16);
+  }
+
+  function closeActiveSession(): void {
+    if (activeSession) {
+      activeSession.loop.stop();
+      activeSession.index.close();
+      activeSession = null;
+    }
+  }
+
+  ipcMain.handle(
+    "harness.openSession",
+    async (
+      _event,
+      root: string,
+    ): Promise<
+      | {
+          ok: true;
+          harnessId: string;
+          verify: VerifyResult;
+        }
+      | { ok: false; error: string }
+    > => {
+      try {
+        closeActiveSession();
+        const harnessId = harnessIdFromRoot(root);
+        const index = new HarnessIndexStore(defaultIndexPath(harnessId));
+        const writer = new HarnessWriter(root);
+
+        // Replay any pending WAL entries (crash recovery)
+        const pending = writer.pendingWrites();
+        if (pending.length > 0) {
+          // Just compact for now — actual replay would re-issue index
+          // updates, which requires the full parser pipeline. v1.5+.
+          writer.compactWal();
+        }
+
+        // Cold-open verify per spec performance budget
+        const verify = index.coldOpenVerify(root);
+
+        const loop = new HarnessLoopRunner({
+          harnessRoot: root,
+          index,
+          onEvent: (event) => recordLoopEvent(event),
+        });
+        activeSession = { root, harnessId, index, writer, loop };
+        // Start scheduled loops only after the session is fully wired so
+        // events have a destination to flow to.
+        loop.start();
+        return { ok: true, harnessId, verify };
+      } catch (e) {
+        return {
+          ok: false,
+          error: e instanceof Error ? e.message : String(e),
+        };
+      }
+    },
+  );
+
+  ipcMain.handle("harness.closeSession", async () => {
+    closeActiveSession();
+    return { ok: true };
+  });
+
+  /**
+   * Scaffold a new business harness on disk. Wraps `materializeHarness`
+   * from @brainst0rm/harness-fs (the same function the CLI uses for
+   * `brainstorm harness init`). The renderer's NewHarnessWizard calls
+   * this; on success the renderer follows up with `harness.openSession`
+   * to load the new harness into a session.
+   *
+   * Templates are resolved here because @brainst0rm/harness-fs deliberately
+   * doesn't depend on archetype packages (those bundle large starter
+   * content that would bloat every harness-fs consumer).
+   */
+  ipcMain.handle(
+    "harness.init",
+    async (
+      _event,
+      params: {
+        name: string;
+        archetype: string;
+        parentRoot: string;
+        templateSlug?: string;
+      },
+    ): Promise<MaterializeHarnessResult> => {
+      const template = resolveTemplate(params.templateSlug);
+      if (params.templateSlug && !template) {
+        return {
+          ok: false,
+          error: `unknown template '${params.templateSlug}' — desktop knows only 'saas-platform' and 'msp'`,
+        };
+      }
+      return materializeHarness({
+        name: params.name,
+        archetype: params.archetype,
+        parentRoot: params.parentRoot,
+        template,
+      });
+    },
+  );
+
+  /**
+   * Cleanup on app quit: close any active index connection cleanly so
+   * SQLite WAL mode doesn't leak journals.
+   */
+  app.on("before-quit", () => {
+    closeActiveSession();
+  });
+
+  /**
+   * Re-parse a harness's business.toml without walking. Used by the
+   * renderer to refresh manifest data after the file changes on disk.
+   */
+  ipcMain.handle("harness.parse", async (_event, root: string) => {
+    const result = loadBusinessHarness(root);
+    if (result.ok === true) {
+      return {
+        kind: "business",
+        root: result.root,
+        manifest: result.manifest,
+      };
+    } else {
+      return {
+        kind: "error",
+        root: result.root,
+        manifestPath: result.manifestPath,
+        error: result.error,
+        message: result.message,
+      };
+    }
+  });
+
+  /**
+   * List artifacts in the active harness whose relative_path starts with
+   * the given folder slug. Used by BusinessHarnessView's per-folder panels.
+   */
+  ipcMain.handle(
+    "harness.listFolder",
+    async (
+      _event,
+      folderSlug: string,
+    ): Promise<{
+      folder: string;
+      artifacts: Array<{
+        relative_path: string;
+        artifact_kind: string;
+        owner: string | null;
+        status: string | null;
+        reviewed_at: number | null;
+        size_bytes: number;
+        mtime_ms: number;
+      }>;
+    }> => {
+      if (!activeSession) {
+        return { folder: folderSlug, artifacts: [] };
+      }
+      const all = activeSession.index.allArtifacts();
+      const prefix = folderSlug.endsWith("/") ? folderSlug : `${folderSlug}/`;
+      const matched = all
+        .filter((a) => a.relative_path.startsWith(prefix))
+        .map((a) => ({
+          relative_path: a.relative_path,
+          artifact_kind: a.artifact_kind,
+          owner: a.owner,
+          status: a.status,
+          reviewed_at: a.reviewed_at,
+          size_bytes: a.size_bytes,
+          mtime_ms: a.mtime_ms,
+        }));
+      return { folder: folderSlug, artifacts: matched };
+    },
+  );
+
+  /**
+   * Run the customer-account intent ↔ runtime drift detector against
+   * the active harness session. Returns drifts + accounts that have no
+   * runtime.toml observation file (= "wire a poller" hint).
+   */
+  ipcMain.handle(
+    "harness.detectCustomerDrift",
+    async (): Promise<{
+      drifts: Array<{
+        id: string;
+        relative_path: string;
+        field_path: string;
+        intent_value: string | null;
+        observed_value: string | null;
+        severity: string;
+      }>;
+      unobserved_accounts: string[];
+    }> => {
+      if (!activeSession) {
+        return { drifts: [], unobserved_accounts: [] };
+      }
+      const detector = new CustomerAccountDriftDetector(activeSession.root);
+      const drifts = await detector.detect();
+      const unobserved = detector.unobservedAccounts();
+      return {
+        drifts: drifts.map((d) => ({
+          id: d.id,
+          relative_path: d.relative_path,
+          field_path: d.field_path,
+          intent_value: d.intent_value,
+          observed_value: d.observed_value,
+          severity: d.severity,
+        })),
+        unobserved_accounts: unobserved,
+      };
+    },
+  );
+
+  /**
+   * Apply a customer-account intent → runtime ChangeSet. Reads the open
+   * drift from drift_state, constructs ApplyIntentToRuntimeChangeSet
+   * whose apply callback writes the intent value into the matching
+   * runtime.toml `*_observed` field (the v1 stub-runtime — replaced when
+   * a real Stripe/MSP poller is wired). On success, marks the drift
+   * resolved and re-runs the detector so the UI refreshes.
+   */
+  ipcMain.handle(
+    "harness.applyCustomerDrift",
+    async (
+      _event,
+      driftId: string,
+    ): Promise<
+      { ok: true; description: string } | { ok: false; error: string }
+    > => {
+      if (!activeSession) {
+        return { ok: false, error: "no active harness session" };
+      }
+      const open = activeSession.index.unresolvedDrift();
+      const drift = open.find((d) => d.id === driftId);
+      if (!drift) {
+        return {
+          ok: false,
+          error: `drift not found or already resolved: ${driftId}`,
+        };
+      }
+      // Locate the matching runtime.toml — `relative_path` looks like
+      // "customers/accounts/{slug}/account.toml".
+      const accountDir = join(activeSession.root, dirname(drift.relative_path));
+      const runtimePath = join(accountDir, "runtime.toml");
+      const observedField = mapIntentFieldToObserved(drift.field_path);
+      if (!observedField) {
+        return {
+          ok: false,
+          error: `no runtime mapping for intent field ${drift.field_path}`,
+        };
+      }
+      try {
+        const changeset = new ApplyIntentToRuntimeChangeSet({
+          drift: {
+            ...drift,
+            field_class: "intent",
+            detected_at: Date.now(),
+            severity: (drift.severity ?? "medium") as
+              | "informational"
+              | "low"
+              | "medium"
+              | "high"
+              | "critical"
+              | "incident-required",
+          },
+          actor_ref: "team/humans/desktop-user",
+          intent_value: drift.intent_value,
+          apply: (value) => {
+            // v1 stub-runtime: persist the intent value as the new observed
+            // value in runtime.toml. When a real runtime poller is wired,
+            // this callback is replaced with an API call (Stripe.subscriptionUpdate
+            // etc.) and runtime.toml becomes the polled cache it already is.
+            const existing = existsSync(runtimePath)
+              ? (TOML.parse(readFileSync(runtimePath, "utf-8")) as Record<
+                  string,
+                  unknown
+                >)
+              : {};
+            const numericValue = parseValueForToml(value);
+            existing[observedField] = numericValue;
+            writeFileSync(
+              runtimePath,
+              TOML.stringify(existing as TOML.JsonMap),
+              "utf-8",
+            );
+          },
+        });
+        const result = await changeset.apply();
+        if (!result.ok) {
+          return { ok: false, error: result.message ?? "apply failed" };
+        }
+        activeSession.index.resolveDrift(driftId);
+        return {
+          ok: true,
+          description: changeset.simulate().description,
+        };
+      } catch (e) {
+        return {
+          ok: false,
+          error: e instanceof Error ? e.message : String(e),
+        };
+      }
+    },
+  );
+
+  /**
+   * Return the most recent N loop events (default 50). Used by the
+   * desktop's harness session header to populate the live event log on
+   * mount, before subscribing to harness.loop-event. Reads from the
+   * active session's harness-index `loop_events` table so history
+   * survives desktop restarts.
+   */
+  ipcMain.handle(
+    "harness.recentLoopEvents",
+    async (_event, limit?: number): Promise<HarnessLoopEvent[]> => {
+      if (!activeSession) return [];
+      const n = typeof limit === "number" && limit > 0 ? limit : 50;
+      // Store returns newest-first; the renderer expects oldest-first
+      // (events are appended bottom-of-list as they arrive). Reverse here.
+      const rows = activeSession.index.recentLoopEvents({ limit: n });
+      return rows.reverse().map((row) => ({
+        loop: row.loop as HarnessLoopEvent["loop"],
+        status: row.status as HarnessLoopEvent["status"],
+        at: row.at,
+        summary: row.summary,
+        error: row.error,
+      }));
+    },
+  );
+
+  /**
+   * Trigger one immediate run of a named loop in the active session.
+   * Returns the resulting LoopEvent (which is also broadcast).
+   */
+  ipcMain.handle(
+    "harness.runLoopOnce",
+    async (
+      _event,
+      loopName: "indexer" | "customer-drift" | "stale-watchdog",
+    ): Promise<HarnessLoopEvent | { ok: false; error: string }> => {
+      if (!activeSession) {
+        return { ok: false, error: "no active harness session" };
+      }
+      try {
+        return await activeSession.loop.runOnce(loopName);
+      } catch (e) {
+        return {
+          ok: false,
+          error: e instanceof Error ? e.message : String(e),
+        };
+      }
+    },
+  );
+
   // Chat abort
   ipcMain.handle("chat-abort", async () => {
     const id = `abort-${nextId++}`;
@@ -633,9 +1131,12 @@ app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
+  // Quit on last-window-close on every platform — this is a
+  // single-window app with no menu-bar value-add, so leaving the
+  // process alive on macOS just keeps the harness loops (indexer,
+  // customer-drift, stale-watchdog) running against a closed UI,
+  // which is how the v1 build leaked memory in long sessions.
+  app.quit();
 });
 
 app.on("before-quit", () => {
@@ -685,3 +1186,62 @@ app.on("before-quit", () => {
   }, 1_500);
   killer.unref?.();
 });
+
+/**
+ * Map a customer-account intent field name (in account.toml) to its
+ * paired observed-value field name in runtime.toml. Mirrors the
+ * FIELD_PAIRS table in CustomerAccountDriftDetector — kept in sync
+ * here because the detector doesn't expose it publicly.
+ */
+function mapIntentFieldToObserved(intentField: string): string | null {
+  const pairs: Record<string, string> = {
+    mrr_intent: "mrr_observed",
+    status: "status_observed",
+    tier: "tier_observed",
+  };
+  return pairs[intentField] ?? null;
+}
+
+/**
+ * Coerce the drift's serialized intent value back into the type
+ * runtime.toml expects (numbers stay numbers; strings stay strings).
+ * The CustomerAccountDriftDetector serializes via `JSON.stringify` for
+ * non-strings; we reverse that here.
+ */
+function parseValueForToml(
+  value: string | null,
+): string | number | boolean | null {
+  if (value === null) return null;
+  // Quoted JSON strings come through as `"foo"`; unwrap.
+  if (value.startsWith('"') && value.endsWith('"')) {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  }
+  if (value === "true") return true;
+  if (value === "false") return false;
+  const n = Number(value);
+  if (!Number.isNaN(n) && value.trim() !== "") return n;
+  return value;
+}
+
+/**
+ * Look up a starter template by slug. Mirrors the CLI's
+ * `harness-templates.ts` registry but kept narrow here so the desktop
+ * doesn't depend on the CLI package.
+ */
+function resolveTemplate(
+  slug: string | undefined,
+): StarterTemplate | undefined {
+  if (!slug) return undefined;
+  switch (slug) {
+    case "saas-platform":
+      return SAAS_PLATFORM_TEMPLATE;
+    case "msp":
+      return MSP_TEMPLATE;
+    default:
+      return undefined;
+  }
+}

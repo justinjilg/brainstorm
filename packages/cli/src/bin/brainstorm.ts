@@ -393,6 +393,12 @@ program
     await runInit(process.cwd(), opts);
   });
 
+// `brainstorm harness …` — business-harness operator surface
+// (see packages/cli/src/commands/harness.ts and the spec at
+//  ~/.claude/plans/snuggly-sleeping-hinton.md ## Index Coherence)
+import { registerHarnessCommands } from "../commands/harness.js";
+registerHarnessCommands(program);
+
 program
   .command("eval")
   .description("Run capability evaluation probes against a model")
