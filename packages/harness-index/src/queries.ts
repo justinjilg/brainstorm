@@ -70,17 +70,8 @@ export interface TagSummary {
  * Reads via the index's tag table; returns an ordered list.
  */
 export function tagCloud(store: HarnessIndexStore): TagSummary[] {
-  // Pull all artifacts, count tags. Could push this to SQL with GROUP BY
-  // but the JS path is simpler and 20k artifacts × ~3 tags each is trivial.
-  const counts = new Map<string, number>();
-  for (const a of store.allArtifacts()) {
-    // Use the byTag path: each artifact in the loop, fetch its tags…
-    // Simpler approach: query directly. Since allArtifacts doesn't include
-    // tags, fall back to a scan via byTag for known tags. We scan the
-    // tags table directly via the underlying db.
-  }
-  // Direct query through the store's prepared statements — defensive
-  // bracket access avoids leaking internal handles in the .d.ts.
+  // Direct SQL aggregation through the store's prepared statements.
+  // Defensive bracket access avoids leaking internal handles in the .d.ts.
   const db = (
     store as unknown as {
       db: {
@@ -98,9 +89,6 @@ export function tagCloud(store: HarnessIndexStore): TagSummary[] {
        ORDER BY count DESC, tag ASC`,
     )
     .all();
-  // Suppress unused warning; counts map exists for future enhancement
-  // (e.g., merging with computed tags from external sources).
-  void counts;
   return rows;
 }
 

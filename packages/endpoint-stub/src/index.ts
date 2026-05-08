@@ -32,9 +32,8 @@ export {
   type SandboxFactory,
 } from "./chv-executor.js";
 
-import { randomUUID, randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { dirname } from "node:path";
 import WebSocket from "ws";
 import * as ed25519 from "@noble/ed25519";
 import { sha256 } from "@noble/hashes/sha256";
