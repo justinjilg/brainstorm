@@ -1,5 +1,76 @@
 # Changelog
 
+## [Unreleased] — 2026-05-15 — Path-to-90 v14: BR integration refresh
+
+Stochastic assessment v14 promoted baseline from 6.102 (v13) to **6.122 / 10**
+after 11th-auditor calibration. Goal: every dimension ≥ 9.0 ("above 90"). No
+new features in this window — every PR is quality/security/wiring/test/docs
+work toward the threshold. Full assessment in `docs/assessment-{evidence,
+synthesis,audit}.md`; remediation plan in `docs/path-to-90-plan-2026-05-15.md`.
+
+### Assessment infrastructure
+
+- v14 stochastic assessment (10 agents + 11th auditor): baseline 6.122 / 10
+  (+0.020 over v13). Calibration audit ruled 8 of 10 LOWER cites were
+  newly-enumerated chronic conditions, not v14 regressions — class-2
+  override applied per monotonicity invariant.
+- Path-to-90 plan: 11 phases (P1–P11) with per-dimension lift estimates,
+  decision-gate annotations for structurally-bounded dims (D4 Production
+  Evidence, D9 Scale Readiness, D10 Ship Readiness partial), and sequencing.
+
+### BR integration
+
+- **Drift cleanup** (PR #302): `br_health` `/v1/health` → `/health` (auth
+  path mismatch); memory enum `semantic/episodic/procedural` →
+  `human/system/project/general` (matches live `/v1/discovery`); trajectory
+  POST path `/v1/agent/trajectories` → `/v1/agent/trajectory` (singular,
+  matches OpenAPI); `BrOutcomeReporter` feature-flagged for the not-yet-
+  public `/v1/agents/{id}/dispatch-outcomes` endpoint
+  (`BR_DISPATCH_OUTCOMES_ENABLED=true` env override).
+- **Envelope parser (P1a)** (PR #304): new `BrEnvelope` typed parser for
+  BR's full `x-br-*` response envelope (now 37 canonical headers after
+  P5's live-ratchet caught 4 cache-pathway headers missing from the v14
+  evidence fixture). `createBrainstormSaaSProvider(apiKey, { onEnvelope })`
+  fires a typed listener per response. Codex adversarial review passed:
+  `complexityScore` type-aligned with `shared/TaskProfile`, async listener
+  errors caught via fire-and-forget Promise chain, parser surface re-
+  exported from package index.
+- **Live BR contract ratchet (P5)** (PR #304): new
+  `.github/workflows/br-contract.yml` runs the live drift-detection tests
+  in `packages/providers/src/__tests__/br-live-contract.live.test.ts`
+  against `api.brainstormrouter.com` on every PR + nightly cron. Asserts:
+  envelope `unknownHeaders` empty; `/openapi.json` has ≥ 100 paths;
+  `/v1/discovery` memory blocks match the CLI's hardcoded enum. On
+  failure, comments on the PR with triage paths.
+- **BR integration doc refresh** (PR #302):
+  `docs/brainstormrouter-integration.md` rewritten — header table replaced
+  with live 33-header envelope; model count 357+ → 31 (per
+  `brainstormrouter.com/llms.txt`); MCP URL `/mcp/sse` (404) →
+  `/v1/mcp/connect`; added discovery-surface block pointing at
+  `/openapi.json`, `/v1/discovery`, `/llms.txt`, `/attestation`.
+
+### Documentation (P6 — this entry)
+
+- README package count: 27 → 44 (3 places: badge, architecture section,
+  build command).
+- CLAUDE.md package count: 27 → 44 (one place).
+- `docs/br-capability-audit.md`: stale plural `/v1/agent/trajectories`
+  references annotated as canonicalized to singular `/v1/agent/trajectory`
+  in PR #302.
+
+### Notes
+
+- 44 packages on disk (was 27 documented). 17-package growth includes
+  `harness-{crypto,drift,fs,index,loop}`, `dispatch-sdk`, `endpoint-stub`,
+  `image-builder`, `msp-executor`, `parties`, `sandbox-{redteam,vz}`,
+  `archetype-{msp,saas-platform}`, `server`, `vscode`, `code-graph`.
+- 50+ CodeQL alerts cleared in the v14 window via PRs #294, #295, #297,
+  #300, #301 (TOCTOU mkdtempSync fix, polynomial ReDoS caps, crypto
+  governance polish).
+- v13 Attacker bypasses still open and tracked as v15 carry-forward:
+  `npx vitest-pwn` (word-boundary), `go test -exec=` (metachar regex
+  gap), webhook nonce replay (eviction-window). Addressed in Phase 9.
+
 ## [v12.1] — 2026-03-29 — Security Hardening
 
 ### Security
