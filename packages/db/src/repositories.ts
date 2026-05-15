@@ -1148,7 +1148,7 @@ export class ConversationRepository {
 //   "memory-shared"   — POST /v1/memory/shared/store
 //   "memory-approval" — POST /v1/memory/pending/*/approve|reject
 //   "project"         — POST/PUT /v1/projects
-//   "trajectory"      — POST /v1/agent/trajectories
+//   "trajectory"      — POST /v1/agent/trajectory
 //   "capability"      — POST /v1/models/{id}/capabilities
 //   "generic"         — anything else
 //
