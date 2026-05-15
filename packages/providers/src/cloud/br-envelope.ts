@@ -90,6 +90,14 @@ export const CANONICAL_BR_HEADERS = [
   // LIFECYCLE (conditional but documented)
   "x-br-degradation-level",
   "x-br-deprecation",
+  // CACHE (added 2026-05-15 by live ratchet detection on first run —
+  // these headers were not in the 2026-05-15 documentation fixture but
+  // ARE in live responses. The contract test caught them on first PR;
+  // canonicalising here keeps the schema honest.)
+  "x-br-cache",
+  "x-br-cache-age",
+  "x-br-cache-similarity",
+  "x-br-cold-start-ms",
 ] as const;
 
 export type CanonicalBrHeader = (typeof CANONICAL_BR_HEADERS)[number];
@@ -185,6 +193,15 @@ export interface BrEnvelope {
   degradationLevel?: number;
   /** Sunset notice for the routed model. Free-text including migrate-to. */
   deprecation?: string;
+
+  /** Cache state for this request: "hit" / "miss" / "skip" / etc. */
+  cache?: string;
+  /** Age of the cached result in ms when cache=hit. */
+  cacheAge?: number;
+  /** Semantic similarity (0-1) between the request and the cached entry. */
+  cacheSimilarity?: number;
+  /** Cold-start time in ms when the worker had to spin up. */
+  coldStartMs?: number;
 
   /** Headers seen on the response that are NOT in CANONICAL_BR_HEADERS or
    *  KNOWN_OPTIONAL_BR_HEADERS. Populated by the parser; the ratchet test
@@ -304,6 +321,11 @@ export function parseBrEnvelope(
     // lifecycle
     degradationLevel: num(get("x-br-degradation-level")),
     deprecation: get("x-br-deprecation") ?? undefined,
+    // cache
+    cache: get("x-br-cache") ?? undefined,
+    cacheAge: num(get("x-br-cache-age")),
+    cacheSimilarity: num(get("x-br-cache-similarity")),
+    coldStartMs: num(get("x-br-cold-start-ms")),
     // drift
     unknownHeaders,
   };
