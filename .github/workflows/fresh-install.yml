@@ -39,14 +39,6 @@ jobs:
     name: pack + global install + smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # pull-requests:write is required for the "comment on PR on failure"
-    # step to succeed. Without it, the comment step itself failed with
-    # "Resource not accessible by integration", which masked the real
-    # build failure underneath it. Verified against gh run 25947002735
-    # before this commit.
-    permissions:
-      contents: read
-      pull-requests: write
     steps:
       - uses: actions/checkout@v4
 
