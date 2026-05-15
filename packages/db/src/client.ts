@@ -795,4 +795,59 @@ const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_compliance_created ON compliance_events(created_at);
     `,
   },
+  {
+    name: "034_routing_audit",
+    // Per-request audit trail captured from BR's x-br-envelope headers.
+    // Complementary to model_performance_v2 (which holds Thompson-sampling
+    // aggregates): this table is the verifiable per-turn chain — every BR
+    // chat completion records its x-br-audit-hash, x-br-routed-model, cost,
+    // confidence, quality tier, and routing reasoning. Lets us answer
+    // "what did BR decide for request X, and is its audit-hash chain
+    // continuous across this session?" without re-querying BR.
+    //
+    // Drives Path-to-90 D5 (operability — auditable history), D6 (security
+    // — actual provenance chain), D8 (failure traceability).
+    sql: `
+      CREATE TABLE IF NOT EXISTS routing_audit (
+        request_id TEXT PRIMARY KEY,
+        audit_hash TEXT,
+        envelope_mode TEXT,
+        routed_model TEXT,
+        route_reason TEXT,
+        route_confidence REAL,
+        selection_method TEXT,
+        selection_confidence REAL,
+        quality_tier TEXT,
+        quality_score REAL,
+        models_considered INTEGER,
+        actual_cost_usd REAL,
+        estimated_cost_usd REAL,
+        routing_savings_usd REAL,
+        budget_remaining_usd REAL,
+        total_latency_ms REAL,
+        provider_latency_ms REAL,
+        routing_overhead_ms REAL,
+        guardian_overhead_ms REAL,
+        guardian_status TEXT,
+        guardrail_status TEXT,
+        reputation_tier TEXT,
+        tier TEXT,
+        degradation_level INTEGER,
+        deprecation_notice TEXT,
+        cache_state TEXT,
+        cache_age_ms REAL,
+        cold_start_ms REAL,
+        br_build TEXT,
+        routing_reasoning_json TEXT,
+        context_json TEXT,
+        captured_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      CREATE INDEX IF NOT EXISTS idx_routing_audit_captured_at
+        ON routing_audit(captured_at);
+      CREATE INDEX IF NOT EXISTS idx_routing_audit_audit_hash
+        ON routing_audit(audit_hash);
+      CREATE INDEX IF NOT EXISTS idx_routing_audit_routed_model
+        ON routing_audit(routed_model);
+    `,
+  },
 ];

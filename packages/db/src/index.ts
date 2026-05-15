@@ -32,3 +32,8 @@ export {
   type ComplianceEvent,
   type ComplianceSeverity,
 } from "./compliance-repository.js";
+export {
+  RoutingAuditRepository,
+  type RoutingAuditEntry,
+  type RoutingAuditRow,
+} from "./routing-audit-repository.js";
