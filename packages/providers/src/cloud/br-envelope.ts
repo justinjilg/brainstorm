@@ -156,10 +156,16 @@ export interface BrEnvelope {
   /** Quality score for the selected model (0–1). */
   qualityScore?: number;
 
-  /** Task complexity bucket (simple/moderate/complex), or "n/a". */
+  /** Task complexity bucket (simple/moderate/complex), or "n/a". Carries
+   *  the "the classifier returned 'n/a'" signal explicitly, since the numeric
+   *  score collapses to undefined in that case. */
   complexityLevel?: string;
-  /** Numeric complexity score, or "n/a". Kept as string when non-numeric. */
-  complexityScore?: string;
+  /** Numeric complexity score (BR returns numeric or literal "n/a"). The
+   *  "n/a" value collapses to undefined here so downstream consumers can
+   *  use a single numeric type matching the shared TaskProfile contract
+   *  (packages/shared/src/types.ts:194). Check `complexityLevel === "n/a"`
+   *  to distinguish "missing" from "explicitly not applicable". */
+  complexityScore?: number;
 
   /** 64-hex audit-chain pointer for evidence-ledger linking. */
   auditHash?: string;
@@ -286,7 +292,7 @@ export function parseBrEnvelope(
     qualityScore: num(get("x-br-quality-score")),
     // task
     complexityLevel: get("x-br-complexity-level") ?? undefined,
-    complexityScore: get("x-br-complexity-score") ?? undefined,
+    complexityScore: num(get("x-br-complexity-score")),
     // audit
     auditHash: get("x-br-audit-hash") ?? undefined,
     context: tryJson(get("x-br-context")),
@@ -303,5 +309,14 @@ export function parseBrEnvelope(
   };
 }
 
-/** Callback fired per BR response with the parsed envelope. */
-export type BrEnvelopeListener = (envelope: BrEnvelope) => void;
+/**
+ * Callback fired per BR response with the parsed envelope.
+ *
+ * Listeners MAY return a Promise (async listeners are explicitly supported).
+ * Async rejections are caught + logged by the SaaS provider's invocation
+ * site so a misbehaving listener cannot escape into the fetch path as an
+ * unhandled rejection. The fetch path never awaits the listener — it is
+ * fire-and-forget by design (per-turn cost telemetry MUST NOT block the
+ * agent's request/response).
+ */
+export type BrEnvelopeListener = (envelope: BrEnvelope) => void | Promise<void>;

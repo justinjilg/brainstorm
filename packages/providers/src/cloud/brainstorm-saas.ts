@@ -27,9 +27,20 @@ function createGuardianFilterFetch(
     // SSE or one-shot JSON). If the caller didn't supply a listener, the
     // parse still runs (so the ratchet stays exercised) and the result is
     // discarded.
+    //
+    // Listener invocation is fire-and-forget. The fetch path NEVER awaits
+    // the listener — per-turn cost telemetry must not block the request.
+    // Async rejections are flattened via Promise.resolve().catch() so a
+    // misbehaving async listener cannot escape as an unhandled rejection.
     try {
       const envelope = parseBrEnvelope(response.headers);
-      if (onEnvelope) onEnvelope(envelope);
+      if (onEnvelope) {
+        Promise.resolve()
+          .then(() => onEnvelope(envelope))
+          .catch((err) =>
+            console.error("[brainstorm-saas] envelope listener threw:", err),
+          );
+      }
     } catch (err) {
       // Defensive: never let envelope-parser errors leak into the AI SDK
       // fetch path. Log via stderr so ops can see them in the CLI.

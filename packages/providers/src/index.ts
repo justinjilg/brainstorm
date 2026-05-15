@@ -1,8 +1,39 @@
-export { createProviderRegistry, type ProviderRegistry, type ResolvedKeys } from './registry.js';
-export { createOllamaProvider, discoverOllamaModels } from './local/ollama.js';
-export { createLMStudioProvider, createLlamaCppProvider, discoverOpenAICompatModels } from './local/openai-compat.js';
-export { discoverLocalModels, type DiscoveryResult } from './local/discovery.js';
-export { CLOUD_MODELS } from './cloud/models.js';
-export { checkProviderHealth, markDegraded, markUnavailable, markAvailable } from './health.js';
-export { createBrainstormSaaSProvider, getBrainstormApiKey, isCommunityKey } from './cloud/brainstorm-saas.js';
-export { readDiscoveryCache, writeDiscoveryCache, invalidateDiscoveryCache } from './local/cache.js';
+export {
+  createProviderRegistry,
+  type ProviderRegistry,
+  type ResolvedKeys,
+} from "./registry.js";
+export { createOllamaProvider, discoverOllamaModels } from "./local/ollama.js";
+export {
+  createLMStudioProvider,
+  createLlamaCppProvider,
+  discoverOpenAICompatModels,
+} from "./local/openai-compat.js";
+export {
+  discoverLocalModels,
+  type DiscoveryResult,
+} from "./local/discovery.js";
+export { CLOUD_MODELS } from "./cloud/models.js";
+export {
+  checkProviderHealth,
+  markDegraded,
+  markUnavailable,
+  markAvailable,
+} from "./health.js";
+export {
+  createBrainstormSaaSProvider,
+  getBrainstormApiKey,
+  isCommunityKey,
+} from "./cloud/brainstorm-saas.js";
+export {
+  parseBrEnvelope,
+  CANONICAL_BR_HEADERS,
+  KNOWN_OPTIONAL_BR_HEADERS,
+  type BrEnvelope,
+  type BrEnvelopeListener,
+} from "./cloud/br-envelope.js";
+export {
+  readDiscoveryCache,
+  writeDiscoveryCache,
+  invalidateDiscoveryCache,
+} from "./local/cache.js";
