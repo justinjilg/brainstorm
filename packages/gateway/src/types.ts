@@ -80,7 +80,11 @@ export interface DailyInsights {
 
 export interface WasteInsights {
   total_waste_usd: number;
-  suggestions: Array<{ description: string; savings_usd: number; action: string }>;
+  suggestions: Array<{
+    description: string;
+    savings_usd: number;
+    action: string;
+  }>;
 }
 
 export interface BudgetForecast {
@@ -131,17 +135,17 @@ export interface GatewayAgentProfile {
 // ── Response Headers ─────────────────────────────────────────────────
 
 export interface GatewayFeedback {
-  guardianStatus?: string;        // X-BR-Guardian-Status
-  estimatedCost?: number;         // X-BR-Estimated-Cost
-  actualCost?: number;            // X-BR-Actual-Cost
-  efficiency?: number;            // X-BR-Efficiency
-  overheadMs?: number;            // X-BR-Guardian-Overhead-Ms
-  cacheHit?: string;              // X-BR-Cache
-  budgetRemaining?: number;       // X-BR-Budget-Remaining
-  selectedModel?: string;         // X-BR-Routed-Model
-  selectionMethod?: string;       // X-BR-Selection-Method
-  complexityScore?: number;       // X-BR-Complexity-Score
-  requestId?: string;             // X-Request-Id
+  guardianStatus?: string; // X-BR-Guardian-Status
+  estimatedCost?: number; // X-BR-Estimated-Cost
+  actualCost?: number; // X-BR-Actual-Cost
+  efficiency?: number; // X-BR-Efficiency
+  overheadMs?: number; // X-BR-Guardian-Overhead-Ms
+  cacheHit?: string; // X-BR-Cache
+  budgetRemaining?: number; // X-BR-Budget-Remaining
+  selectedModel?: string; // X-BR-Routed-Model
+  selectionMethod?: string; // X-BR-Selection-Method
+  complexityScore?: number; // X-BR-Complexity-Score
+  requestId?: string; // X-Request-Id
 }
 
 // ── Discovery ────────────────────────────────────────────────────────
@@ -151,4 +155,32 @@ export interface GatewayDiscovery {
   budget: { remaining_usd: number; limit_usd: number; period: string };
   models: { available: number; runnable: number };
   capabilities: string[];
+}
+
+// ── Agent Bootstrap (POST /v1/agent/bootstrap) ──────────────────────
+
+export interface BootstrapAgentResponse {
+  profile: {
+    id: string;
+    tenantId: string;
+    agentId: string;
+    displayName: string | null;
+    ownerId: string | null;
+    costCenter: string | null;
+    department: string | null;
+    workerType: string | null;
+    budgetDailyUsd: number | null;
+    budgetMonthlyUsd: number | null;
+    role: string;
+    lifecycleState: string;
+    manifestId: string | null;
+    parentAgentId: string | null;
+    expiresAt: string | null;
+    metadata: Record<string, unknown>;
+    identityProvenance: string;
+    createdAt: string;
+    updatedAt: string;
+  };
+  /** 1-hour JWT — store in memory only; do NOT persist to disk. */
+  jwt: string;
 }

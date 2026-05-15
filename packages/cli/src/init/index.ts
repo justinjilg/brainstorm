@@ -22,7 +22,11 @@ import {
   type InitChoices,
   type GatewayInfo,
 } from "./templates.js";
-import { createGatewayClient } from "@brainst0rm/gateway";
+import {
+  createGatewayClient,
+  loadOrCreateAgentIdentity,
+  saveAgentIdentity,
+} from "@brainst0rm/gateway";
 
 export interface InitOptions {
   yes?: boolean;
@@ -58,6 +62,33 @@ export async function runInit(
             : undefined,
           health: health.status,
         };
+
+        // Path-to-90 P3: claim a real agent_id with BR. Idempotent on
+        // BR side — re-running storm setup is safe. Fire-and-forget so a
+        // bootstrap failure (network, BR-side validation) doesn't break
+        // init; the operator still gets a working storm install with the
+        // community-key fallback for routing.
+        try {
+          const identity = loadOrCreateAgentIdentity();
+          const bootstrap = await gw
+            .bootstrapAgent({
+              agentId: identity.agentId,
+              displayName: identity.displayName,
+              metadata: { source: "brainstorm-cli", version: "0.14.0" },
+            })
+            .catch(() => null);
+          if (bootstrap?.profile?.id && !identity.brProfileId) {
+            // Persist BR's profile UUID for future reference. Idempotent;
+            // re-bootstrap returns the same profile.id for the same
+            // agent_id.
+            saveAgentIdentity({
+              ...identity,
+              brProfileId: bootstrap.profile.id,
+            });
+          }
+        } catch {
+          // Bootstrap is best-effort. Operator still gets a working init.
+        }
       }
     } catch {
       // Gateway not reachable — proceed without it
