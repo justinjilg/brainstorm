@@ -90,10 +90,21 @@ describe("parseBrEnvelope — typed parser", () => {
 
   it('treats "n/a" numeric fields as undefined', () => {
     const env = parseBrEnvelope(LIVE_2026_05_15);
-    // complexityScore stays as the string "n/a" by design (the API may
-    // return numeric or n/a; we surface both).
-    expect(env.complexityScore).toBe("n/a");
+    // complexityScore collapses to undefined when BR returns "n/a" so the
+    // typed shape matches shared/types.ts:194 (number | undefined). The
+    // explicit "n/a" signal is preserved via complexityLevel.
+    expect(env.complexityScore).toBeUndefined();
     expect(env.complexityLevel).toBe("n/a");
+  });
+
+  it("parses numeric complexity-score when BR returns a real number", () => {
+    const env = parseBrEnvelope({
+      ...LIVE_2026_05_15,
+      "x-br-complexity-score": "3.5",
+      "x-br-complexity-level": "moderate",
+    });
+    expect(env.complexityScore).toBe(3.5);
+    expect(env.complexityLevel).toBe("moderate");
   });
 
   it("parses JSON headers into objects", () => {
@@ -251,6 +262,7 @@ describe("parseBrEnvelope — drift ratchet", () => {
     synth["x-br-selection-confidence"] = "1.0";
     synth["x-br-models-considered"] = "3";
     synth["x-br-quality-score"] = "0.85";
+    synth["x-br-complexity-score"] = "2.5";
     synth["x-br-degradation-level"] = "0";
     synth["x-br-routing-reasoning"] = JSON.stringify({ marker: "rr" });
     synth["x-br-context"] = JSON.stringify({ marker: "ctx" });
@@ -270,7 +282,8 @@ describe("parseBrEnvelope — drift ratchet", () => {
     expect(env.selectionMethod).toBe("SENTINEL-selection-method");
     expect(env.qualityTier).toBe("SENTINEL-quality-tier");
     expect(env.complexityLevel).toBe("SENTINEL-complexity-level");
-    expect(env.complexityScore).toBe("SENTINEL-complexity-score");
+    // complexity-score is numeric (sentinel was string by default, overridden above)
+    expect(env.complexityScore).toBe(2.5);
     expect(env.auditHash).toBe("SENTINEL-audit-hash");
     expect(env.guardianStatus).toBe("SENTINEL-guardian-status");
     expect(env.guardrailStatus).toBe("SENTINEL-guardrail-status");
