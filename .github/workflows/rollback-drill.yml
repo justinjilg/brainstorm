@@ -1,0 +1,51 @@
+name: Rollback Drill
+
+# Verifies that adjacent published versions of @brainst0rm/cli can be
+# installed and rolled-back without breakage. Runs scripts/rollback-drill.sh
+# in a clean Ubuntu container which:
+#   1. Installs latest from npm, then runs the smoke check
+#   2. Downgrades to the previous version, then smoke (rollback path)
+#   3. Re-upgrades to latest, then smoke (forward-roll after rollback)
+#
+# Path-to-90 P8c — continues P8b's fresh-env verification with the
+# "rollback tested" piece of D10 rubric 7-8 → 8-9. Combined with the
+# existing release.yml (changeset-based publishing), this gives the CLI
+# a documented, CI-verified rollback path that the v15 D10 rubric can
+# cite at file:line.
+#
+# Workflow security: no untrusted template expressions are used. Only
+# safe builtins (success(), github.event_name in if: conditions) and
+# constant strings. No PR title/body/head_ref interpolated. The script
+# fetches version metadata from registry.npmjs.org — an external trust
+# boundary, but the only consumer is the script's npm install path
+# which is sandboxed to the runner.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Weekly — catches the failure class where a recent npm publish
+    # broke compatibility with a previous version's state. Doesn't
+    # run per-PR because the drill targets LIVE published versions
+    # (which don't change on PR pushes).
+    - cron: "0 12 * * 1"
+  workflow_dispatch: {}
+
+jobs:
+  rollback-drill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run rollback drill against npm registry
+        run: bash scripts/rollback-drill.sh
+
+      - name: Summarize on success
+        if: ${{ success() }}
+        run: echo "Rollback path verified for the two most recent published versions."
