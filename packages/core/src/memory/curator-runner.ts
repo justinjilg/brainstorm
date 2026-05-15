@@ -118,10 +118,71 @@ function acquireLock(memoryDir: string): boolean {
   return true;
 }
 
+/**
+ * Release the curator lock, but ONLY if it still belongs to this process.
+ *
+ * Pre-P9c, releaseLock unlinked the file unconditionally. The v13 Attacker
+ * (re-verified v14) named the resulting race:
+ *
+ *   "releaseLock still doesn't verify PID ownership; process B that took
+ *    over a stale lock can have its lock unlinked by hung process A
+ *    waking up."
+ *
+ * Concretely:
+ *
+ *   T=0     Process A acquires lock (writes pid=A).
+ *   T=1     Process A hangs (GC pause, syscall block, whatever).
+ *   T=300s  Stale window passes; process B acquires lock (writes pid=B).
+ *   T=301s  Process A wakes up, completes its work, calls releaseLock,
+ *           and unlinks B's lock. B now runs unprotected.
+ *
+ * Fix: read the lock file, parse the pid, and unlink ONLY if pid matches
+ * our own. Best-effort: if the file is missing, corrupt, or owned by
+ * another PID, leave it alone. Stale-window cleanup on next acquire
+ * still handles the abandoned-file case.
+ *
+ * Per no-cheating: this closes the specific race v13/v14 Attacker named
+ * (process-A wakeup-unlink-of-B). It does NOT close PID reuse (a recycled
+ * PID matching A's is technically possible but vanishingly probable on
+ * any modern OS with 32-bit pid_t), or clock skew between processes
+ * when computing the stale window. Documented honestly.
+ */
+// Exported for the P9c PID-ownership regression test.
+// Production callers should use runCuratorCycle which handles
+// acquire/release lifecycle as a single unit.
+export { acquireLock as __acquireLockForTests };
+export { releaseLock as __releaseLockForTests };
+
 function releaseLock(memoryDir: string): void {
   const lockPath = join(memoryDir, CURATOR_LOCK_FILE);
+  if (!existsSync(lockPath)) return;
+  let ownPid: number | undefined;
   try {
-    if (existsSync(lockPath)) unlinkSync(lockPath);
+    const raw = readFileSync(lockPath, "utf-8");
+    const parsed = JSON.parse(raw) as { pid?: number };
+    ownPid = typeof parsed.pid === "number" ? parsed.pid : undefined;
+  } catch (err) {
+    // Corrupt lock file — don't touch it. The stale-window cleanup on
+    // next acquire will handle it. Bailing out here is safer than
+    // unlinking a file we can't reason about.
+    log.warn(
+      { err },
+      "Curator lock unreadable on release; leaving in place for stale-window recovery",
+    );
+    return;
+  }
+  if (ownPid !== process.pid) {
+    // Lock belongs to another process — the v13 Attacker race window.
+    // Leaving it alone is correct; the legitimate owner releases it
+    // when its work completes.
+    log.warn(
+      { lockPid: ownPid, ownPid: process.pid },
+      "Curator lock owned by different PID; refusing to release",
+    );
+    return;
+  }
+  try {
+    unlinkSync(lockPath);
   } catch (err) {
     log.warn({ err }, "Failed to release curator lock");
   }
