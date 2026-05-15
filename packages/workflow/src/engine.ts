@@ -29,9 +29,10 @@ import {
 
 /**
  * Shell commands that may run as a workflow kill-gate. Each entry is a
- * prefix; the gate is accepted only if it starts with one of these AND
- * contains no shell metacharacters. Exported so tests can assert the
- * surface directly without spinning up a full workflow run.
+ * prefix; the gate is accepted only if it matches one of these with a
+ * word boundary AND contains no shell metacharacters AND contains no
+ * per-command danger patterns. Exported so tests can assert the surface
+ * directly without spinning up a full workflow run.
  */
 export const ALLOWED_GATE_PREFIXES = [
   "npm test",
@@ -48,34 +49,93 @@ export const ALLOWED_GATE_PREFIXES = [
 ] as const;
 
 /**
+ * Per-allowed-prefix danger patterns. If the gate string passes prefix +
+ * metachar checks but matches any pattern here, it is still rejected.
+ *
+ * `go test -exec=PROGRAM` and `go test -exec PROGRAM` cause `go` to run
+ * PROGRAM as the test binary wrapper — direct arbitrary command execution
+ * without any shell metacharacter. v13 Attacker bypass #2; closed here.
+ *
+ * `cargo test` has a similar `--exec`-shape flag risk; pre-emptively block.
+ */
+const DANGER_PATTERNS: ReadonlyArray<RegExp> = [
+  /(?:^|\s)-{1,2}exec[\s=]/, // -exec / -exec= / --exec / --exec=
+];
+
+/**
  * Validate a kill-gate command string before execution. Gates run via
  * /bin/sh -c, so a prefix match alone is not safe — "npm test; rm -rf /"
- * starts with "npm test" but chains a second command. This helper also
- * rejects any shell metacharacter that could chain, pipe, redirect, or
- * substitute ( `;`, `&`, `|`, backtick, `$`, `<`, `>`, parens, newlines ).
- * Plain whitespace-delimited arguments such as "npm run build --if-present"
- * still pass.
+ * starts with "npm test" but chains a second command. Defenses, in order:
+ *
+ *   1. **Word-bounded prefix match.** Accept either exact equality with
+ *      a prefix OR prefix followed by whitespace. Closes v13 Attacker
+ *      bypass #1: `validateGateCommand("npx vitest-pwn")` no longer
+ *      passes by starting with "npx vitest". The trailing character
+ *      after the prefix MUST be whitespace (or end-of-string).
+ *
+ *   2. **Shell metacharacter deny.** Rejects any character that could
+ *      chain, pipe, redirect, substitute, or expand
+ *      ( `;`, `&`, `|`, backtick, `$`, `<`, `>`, parens, newlines, `{}`,
+ *      `*`, `?`, `~` ). Plain whitespace-delimited arguments such as
+ *      "npm run build --if-present" still pass.
+ *
+ *   3. **Per-command danger pattern deny** (post-metachar). The `-exec`
+ *      flag on `go test` / `cargo test` runs an arbitrary wrapper binary
+ *      directly, bypassing shell metachar checks entirely. Closes v13
+ *      Attacker bypass #2.
+ *
+ * Returns `{allowed: true}` on accept, or `{allowed: false, reason}` on
+ * reject. The reason string is operator-readable; callers should surface
+ * it as-is.
  */
 export function validateGateCommand(gate: string): {
   allowed: boolean;
   reason?: string;
 } {
   const trimmed = gate.trimStart();
-  const prefixOk = ALLOWED_GATE_PREFIXES.some((prefix) =>
-    trimmed.startsWith(prefix),
-  );
+
+  // 1. Word-bounded prefix match.
+  const prefixOk = ALLOWED_GATE_PREFIXES.some((prefix) => {
+    if (trimmed === prefix) return true; // exact match
+    if (!trimmed.startsWith(prefix)) return false;
+    // If the prefix already ends with whitespace ("npm run ",
+    // "npx turbo run ", "make "), the word boundary is baked in by
+    // startsWith — and the next char IS the start of an argument,
+    // which is fine. Only enforce next-char whitespace for prefixes
+    // that DON'T end with whitespace ("npm test", "npx vitest",
+    // "go test", "cargo test", "pytest", etc.) — those would
+    // otherwise collide on shapes like "npx vitest-pwn".
+    if (/\s$/.test(prefix)) return true;
+    const nextChar = trimmed.charAt(prefix.length);
+    return nextChar === " " || nextChar === "\t";
+  });
   if (!prefixOk) {
     return {
       allowed: false,
-      reason: `Gate rejected: command not in allowlist. Allowed prefixes: ${ALLOWED_GATE_PREFIXES.join(", ")}`,
+      reason: `Gate rejected: command not in allowlist or fails word-boundary check. Allowed prefixes: ${ALLOWED_GATE_PREFIXES.join(", ")}`,
     };
   }
-  if (/[;&|`$<>\n\r()]/.test(trimmed)) {
+
+  // 2. Shell metacharacter deny (expanded vs v12 to include {}, *, ?, ~).
+  //    `{a,b}` brace expansion + `*` glob + `~` home expansion are all
+  //    shell-evaluated before arguments reach the command and could
+  //    expand into unexpected forms.
+  if (/[;&|`$<>\n\r(){}*?~]/.test(trimmed)) {
     return {
       allowed: false,
       reason:
-        "Gate rejected: command contains shell metacharacters that would allow chaining or substitution",
+        "Gate rejected: command contains shell metacharacters or expansion forms that would allow chaining, substitution, or argument-shape attack",
     };
+  }
+
+  // 3. Per-command danger patterns.
+  for (const pattern of DANGER_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      return {
+        allowed: false,
+        reason: `Gate rejected: command matches a known dangerous pattern (${pattern.source}) — e.g., go/cargo -exec runs an arbitrary wrapper binary`,
+      };
+    }
   }
   return { allowed: true };
 }
