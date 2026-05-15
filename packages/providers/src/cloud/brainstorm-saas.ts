@@ -1,4 +1,5 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { parseBrEnvelope, type BrEnvelopeListener } from "./br-envelope.js";
 
 /**
  * BrainstormRouter sends a "guardian" SSE event after [DONE] with cost/audit metadata.
@@ -6,10 +7,34 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
  *
  * Fix: simple line-level filter that drops any SSE data line containing guardian JSON
  * and any event: guardian lines. Operates on raw text, no buffering needed.
+ *
+ * 2026-05-15: the wrapper now also extracts the `x-br-*` response envelope
+ * (~33 headers carrying routing/cost/quality/audit/deprecation signals) and
+ * fires `onEnvelope` per response. Before this, every chat turn received the
+ * full envelope and discarded it — the path-to-90 P1 fix. The listener is
+ * optional; if absent, the envelope is parsed-and-dropped (cheap; ~33 string
+ * lookups + a few JSON parses). Errors in the listener are caught and
+ * logged-to-console-error rather than escaping into the fetch path.
  */
-function createGuardianFilterFetch(): typeof globalThis.fetch {
+function createGuardianFilterFetch(
+  onEnvelope?: BrEnvelopeListener,
+): typeof globalThis.fetch {
   return async (input: string | URL | Request, init?: RequestInit) => {
     const response = await globalThis.fetch(input, init);
+
+    // Capture the BR envelope BEFORE we do anything else with the response —
+    // it lives entirely in the headers, regardless of body shape (streaming
+    // SSE or one-shot JSON). If the caller didn't supply a listener, the
+    // parse still runs (so the ratchet stays exercised) and the result is
+    // discarded.
+    try {
+      const envelope = parseBrEnvelope(response.headers);
+      if (onEnvelope) onEnvelope(envelope);
+    } catch (err) {
+      // Defensive: never let envelope-parser errors leak into the AI SDK
+      // fetch path. Log via stderr so ops can see them in the CLI.
+      console.error("[brainstorm-saas] envelope parser threw:", err);
+    }
 
     const contentType = response.headers.get("content-type") ?? "";
     if (!contentType.includes("text/event-stream") || !response.body) {
@@ -96,19 +121,40 @@ function createGuardianFilterFetch(): typeof globalThis.fetch {
 
 /**
  * BrainstormRouter SaaS provider.
- * Uses OpenAI-compatible API at api.brainstormrouter.com.
- * Includes a custom fetch wrapper that filters out guardian SSE events.
+ *
+ * Uses OpenAI-compatible API at api.brainstormrouter.com. The custom fetch
+ * wrapper does two things:
+ *   1. Captures the `x-br-*` response envelope (routing/cost/quality/audit/
+ *      deprecation signals) and fires `onEnvelope` per response. See
+ *      `./br-envelope.ts` for the typed shape.
+ *   2. Filters the "guardian" SSE event the AI SDK parser cannot handle.
+ *
+ * Both apply to every response. `onEnvelope` is optional; absent → parsed-
+ * and-dropped (cheap). Errors in the listener are logged and swallowed.
  */
-export function createBrainstormSaaSProvider(apiKey: string) {
+export function createBrainstormSaaSProvider(
+  apiKey: string,
+  options: { onEnvelope?: BrEnvelopeListener } = {},
+) {
   return createOpenAICompatible({
     name: "brainstormrouter",
     baseURL: "https://api.brainstormrouter.com/v1",
     headers: {
       Authorization: `Bearer ${apiKey}`,
     },
-    fetch: createGuardianFilterFetch(),
+    fetch: createGuardianFilterFetch(options.onEnvelope),
   });
 }
+
+// Re-export the parser surface so callers can build typed envelope handlers
+// without depending on the internal path. Keep this list minimal.
+export {
+  parseBrEnvelope,
+  CANONICAL_BR_HEADERS,
+  KNOWN_OPTIONAL_BR_HEADERS,
+  type BrEnvelope,
+  type BrEnvelopeListener,
+} from "./br-envelope.js";
 
 /**
  * Community tier API key — INTENTIONALLY PUBLIC.
