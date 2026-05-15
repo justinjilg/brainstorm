@@ -20,7 +20,9 @@
 //     contract — when BR ships the endpoint, flip the flag.
 //
 // Honesty:
-//   - BR-side endpoint doesn't exist yet (12xnwqbb gated on Justin).
+//   - BR-side endpoint not yet in BR's public OpenAPI as of 2026-05-15.
+//     A server implementation is in the BR drift-cleanup follow-up; until
+//     it lands, BR may return 404.
 //   - This code path must accept that BR may return 404 or never respond.
 //   - Failure mode is silent-log + drop. We do NOT retry — the relay's
 //     audit log is the source of truth; BR is a derived analytics view.
