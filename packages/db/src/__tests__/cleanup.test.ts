@@ -78,3 +78,46 @@ describe("cleanupOldRecords", () => {
     expect(rows).toEqual([]);
   });
 });
+
+test("v17 Auditor: routing_audit rows older than 90 days are cleaned up", () => {
+  db = getTestDb();
+  // Seed 4 rows spanning fresh / boundary / old
+  db.prepare(
+    `INSERT INTO routing_audit (request_id, audit_hash, captured_at)
+       VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?)`,
+  ).run(
+    "fresh-1",
+    "0".repeat(64),
+    NOW - 1 * 86400,
+    "boundary-just-inside",
+    "1".repeat(64),
+    NOW - 89 * 86400,
+    "boundary-just-outside",
+    "2".repeat(64),
+    NOW - 91 * 86400,
+    "ancient",
+    "3".repeat(64),
+    NOW - 365 * 86400,
+  );
+
+  const before = (
+    db.prepare("SELECT COUNT(*) as n FROM routing_audit").get() as { n: number }
+  ).n;
+  expect(before).toBe(4);
+
+  cleanupOldRecords(db);
+
+  const after = (
+    db.prepare("SELECT COUNT(*) as n FROM routing_audit").get() as { n: number }
+  ).n;
+  expect(
+    after,
+    "exactly the 2 fresh + boundary-inside rows should remain",
+  ).toBe(2);
+
+  const survivors = db
+    .prepare("SELECT request_id FROM routing_audit ORDER BY request_id")
+    .all() as Array<{ request_id: string }>;
+  const ids = survivors.map((r) => r.request_id).sort();
+  expect(ids).toEqual(["boundary-just-inside", "fresh-1"]);
+});
