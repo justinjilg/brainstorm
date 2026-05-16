@@ -220,6 +220,24 @@ export class RoutingAuditRepository {
       .get() as { n: number };
     return row.n;
   }
+
+  /**
+   * Delete audit rows older than the given unix-second cutoff. Returns
+   * the number of rows deleted. Called by cleanupOldRecords on every
+   * DB open to bound table growth.
+   *
+   * v16 Architect: without this, routing_audit grows unbounded at scale.
+   * A heavy CLI user makes ~10k chat turns/month; over a year that's
+   * ~120k rows. With this method capped at the same 90-day window as
+   * other tables (cost_records, model_performance), the table stays
+   * bounded at ~30k rows for typical usage.
+   */
+  deleteOlderThan(cutoffUnixSec: number): number {
+    const result = this.db
+      .prepare("DELETE FROM routing_audit WHERE captured_at < ?")
+      .run(cutoffUnixSec);
+    return result.changes;
+  }
 }
 
 // ── Helpers ────────────────────────────────────────────────────────

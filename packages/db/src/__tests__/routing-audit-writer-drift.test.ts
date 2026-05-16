@@ -23,53 +23,60 @@ import {
   type BrEnvelopeLike,
 } from "../routing-audit-writer.js";
 
-// Exhaustive list of every BrEnvelopeLike field. Maintained by hand
-// because TypeScript erases interface shape at runtime — but the test
-// fails loudly when this list drifts from PERSISTED ∪ IGNORED, and
-// CI runs it on every PR that touches the type.
-const ALL_BR_ENVELOPE_FIELDS: ReadonlyArray<keyof BrEnvelopeLike> = [
-  "requestId",
-  "build",
-  "envelope",
-  "tier",
-  "reputationTier",
-  "modelContract",
-  "actualCost",
-  "estimatedCost",
-  "estimatedCostCents",
-  "routingSavings",
-  "budgetRemaining",
-  "tokensRemaining",
-  "requestsRemaining",
-  "totalLatencyMs",
-  "providerLatencyMs",
-  "routingOverheadMs",
-  "guardianOverheadMs",
-  "routedModel",
-  "routeReason",
-  "routeConfidence",
-  "routingReasoning",
-  "selectionMethod",
-  "selectionConfidence",
-  "modelsConsidered",
-  "qualityTier",
-  "qualityScore",
-  "complexityLevel",
-  "complexityScore",
-  "auditHash",
-  "context",
-  "guardianStatus",
-  "guardrailStatus",
-  "guardrailSummary",
-  "guardrailActions",
-  "degradationLevel",
-  "deprecation",
-  "cache",
-  "cacheAge",
-  "cacheSimilarity",
-  "coldStartMs",
-  "unknownHeaders",
-];
+// v16 Sr Engineer (PR #324 follow-up) flagged that the hand-maintained
+// ALL_BR_ENVELOPE_FIELDS list could silently miss a new field added to
+// BrEnvelopeLike. Fix: declare the list as a Required mapped type over
+// keyof BrEnvelopeLike — TypeScript refuses to compile if any required
+// key is missing. The runtime test then derives the array from
+// Object.keys, so the *single source of truth* is the BrEnvelopeLike
+// type itself, not a separately-maintained list.
+const ALL_BR_ENVELOPE_FIELDS_MAP: Required<Record<keyof BrEnvelopeLike, true>> =
+  {
+    requestId: true,
+    build: true,
+    envelope: true,
+    tier: true,
+    reputationTier: true,
+    modelContract: true,
+    actualCost: true,
+    estimatedCost: true,
+    estimatedCostCents: true,
+    routingSavings: true,
+    budgetRemaining: true,
+    tokensRemaining: true,
+    requestsRemaining: true,
+    totalLatencyMs: true,
+    providerLatencyMs: true,
+    routingOverheadMs: true,
+    guardianOverheadMs: true,
+    routedModel: true,
+    routeReason: true,
+    routeConfidence: true,
+    routingReasoning: true,
+    selectionMethod: true,
+    selectionConfidence: true,
+    modelsConsidered: true,
+    qualityTier: true,
+    qualityScore: true,
+    complexityLevel: true,
+    complexityScore: true,
+    auditHash: true,
+    context: true,
+    guardianStatus: true,
+    guardrailStatus: true,
+    guardrailSummary: true,
+    guardrailActions: true,
+    degradationLevel: true,
+    deprecation: true,
+    cache: true,
+    cacheAge: true,
+    cacheSimilarity: true,
+    coldStartMs: true,
+    unknownHeaders: true,
+  };
+const ALL_BR_ENVELOPE_FIELDS: ReadonlyArray<keyof BrEnvelopeLike> = Object.keys(
+  ALL_BR_ENVELOPE_FIELDS_MAP,
+) as (keyof BrEnvelopeLike)[];
 
 describe("routing-audit-writer field-coverage drift", () => {
   it("every envelope field is either persisted or explicitly ignored", () => {
