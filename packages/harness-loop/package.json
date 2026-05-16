@@ -1,6 +1,6 @@
 {
   "name": "@brainst0rm/harness-loop",
-  "version": "0.14.1",
+  "version": "0.14.2",
   "type": "module",
   "exports": {
     ".": {
@@ -15,9 +15,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brainst0rm/harness-drift": "0.14.1",
-    "@brainst0rm/harness-fs": "0.14.1",
-    "@brainst0rm/harness-index": "0.14.1"
+    "@brainst0rm/harness-drift": "0.14.2",
+    "@brainst0rm/harness-fs": "0.14.2",
+    "@brainst0rm/harness-index": "0.14.2"
   },
   "devDependencies": {
     "tsup": "^8",
