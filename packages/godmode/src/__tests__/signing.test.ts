@@ -1,13 +1,17 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import {
   signEvent,
   verifyEvent,
   createSignedEvent,
   deriveTenantKey,
   canonicalize,
+  _resetSeenEventIdsForTesting,
 } from "../signing";
 
 describe("Platform Event Signing", () => {
+  beforeEach(() => {
+    _resetSeenEventIdsForTesting();
+  });
   const MASTER_SECRET = "test-secret-for-unit-tests";
   const TENANT_ID = "tenant-abc-123";
 
@@ -188,5 +192,68 @@ describe("Platform Event Signing", () => {
         true,
       );
     });
+  });
+});
+
+// v16 Attacker — platform-event replay dedupe (closes signing.ts gap
+// flagged in /docs/assessment-audit-v16.md).
+describe("verifyEvent — replay dedupe (v16 Attacker)", () => {
+  const SECRET = "test-master-secret";
+
+  beforeEach(() => {
+    // Each test starts with a clean dedupe cache.
+    _resetSeenEventIdsForTesting();
+  });
+
+  it("accepts a fresh signed event exactly once; rejects replay", () => {
+    const event = createSignedEvent(
+      "test.event",
+      "tenant-1",
+      "msp",
+      { foo: "bar" },
+      SECRET,
+    );
+    // First time: signature valid + within window + id unseen → accept
+    expect(verifyEvent(event, SECRET)).toBe(true);
+    // Second time: same bytes → REPLAY → reject
+    expect(verifyEvent(event, SECRET)).toBe(false);
+    // Third time, fourth time: still rejected
+    expect(verifyEvent(event, SECRET)).toBe(false);
+    expect(verifyEvent(event, SECRET)).toBe(false);
+  });
+
+  it("two distinct events with different ids both accepted", () => {
+    const a = createSignedEvent(
+      "test.event",
+      "tenant-1",
+      "msp",
+      { n: 1 },
+      SECRET,
+    );
+    const b = createSignedEvent(
+      "test.event",
+      "tenant-1",
+      "msp",
+      { n: 2 },
+      SECRET,
+    );
+    expect(a.id).not.toBe(b.id);
+    expect(verifyEvent(a, SECRET)).toBe(true);
+    expect(verifyEvent(b, SECRET)).toBe(true);
+    // Each rejected on second attempt
+    expect(verifyEvent(a, SECRET)).toBe(false);
+    expect(verifyEvent(b, SECRET)).toBe(false);
+  });
+
+  it("missing event.id is rejected outright", () => {
+    const event = createSignedEvent(
+      "test.event",
+      "tenant-1",
+      "msp",
+      { x: 1 },
+      SECRET,
+    );
+    const tampered = { ...event, id: "" };
+    expect(verifyEvent(tampered, SECRET)).toBe(false);
   });
 });

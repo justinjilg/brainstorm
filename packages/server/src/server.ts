@@ -39,7 +39,16 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import {
+  writeFileSync,
+  unlinkSync,
+  mkdirSync,
+  existsSync,
+  chmodSync,
+} from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { createLogger } from "@brainst0rm/shared";
 import type { GodModeConnectionResult } from "@brainst0rm/godmode";
 import type { ToolRegistry } from "@brainst0rm/tools";
@@ -82,6 +91,23 @@ export class BrainstormServer {
   private deps: ServerDependencies;
   private opts: Required<ServerOptions>;
   private conversationManager: ConversationManager | null = null;
+  /**
+   * Dev-mode auth token. Generated at server start when `jwtSecret` is
+   * empty AND the bind is loopback. Written to ~/.brainstorm/server-token
+   * with 0600 perms so only the SAME-UID process can read it; required
+   * on every /api/* request (Authorization: Bearer <token>).
+   *
+   * v16 Attacker (PR #325 round) finding: previously, dev mode let ANY
+   * local process — possibly a different user or a sandboxed plugin —
+   * hit /api/v1/changesets/:id/approve, /api/v1/memory, /api/v1/tools/
+   * execute, /api/v1/chat with no auth. The dev token binds the
+   * trust scope to "processes that can read this file" = same uid.
+   *
+   * Cleared on stop(). Production users with BRAINSTORM_JWT_SECRET set
+   * never see this — it's strictly dev mode.
+   */
+  private devToken: string | null = null;
+  private devTokenPath: string | null = null;
 
   constructor(deps: ServerDependencies, opts?: ServerOptions) {
     this.deps = deps;
@@ -102,13 +128,42 @@ export class BrainstormServer {
     }
   }
 
+  /**
+   * Per-session loopback auth token. Written to disk with 0600 perms so
+   * only same-uid processes can read it. Required on /api/* in dev mode.
+   */
+  private initDevToken(): void {
+    const dir = join(
+      process.env.BRAINSTORM_HOME ?? join(homedir(), ".brainstorm"),
+    );
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    const tokenPath = join(dir, "server-token");
+    const token = randomBytes(32).toString("hex");
+    writeFileSync(tokenPath, token, { mode: 0o600 });
+    chmodSync(tokenPath, 0o600);
+    this.devToken = token;
+    this.devTokenPath = tokenPath;
+  }
+
+  /** Constant-time check of supplied Bearer against the dev token. */
+  private verifyDevToken(authHeader: string | undefined): boolean {
+    if (!this.devToken || !authHeader) return false;
+    const m = /^Bearer\s+(.+)$/i.exec(authHeader.trim());
+    if (!m) return false;
+    const supplied = Buffer.from(m[1], "utf8");
+    const expected = Buffer.from(this.devToken, "utf8");
+    if (supplied.length !== expected.length) return false;
+    return timingSafeEqual(supplied, expected);
+  }
+
   /** Start the HTTP server. Returns a promise that resolves when listening. */
   async start(): Promise<{ url: string }> {
     const { port, host } = this.opts;
 
     // Security: refuse to start without auth on non-loopback interface.
-    // POST /api/v1/god-mode/execute runs arbitrary operations on managed infrastructure —
-    // exposing it without JWT auth is a critical security violation.
+    // POST /api/v1/god-mode/execute runs arbitrary operations on managed
+    // infrastructure — exposing it without JWT auth is a critical
+    // security violation.
     if (!this.opts.jwtSecret) {
       if (host !== "127.0.0.1" && host !== "localhost" && host !== "::1") {
         log.fatal(
@@ -117,7 +172,15 @@ export class BrainstormServer {
         );
         process.exit(1);
       } else {
-        log.info("Running in dev mode (no JWT auth) — localhost only");
+        // Loopback dev mode: still require a bearer token so a different
+        // local user (or a sandboxed plugin under a different uid) can't
+        // hit /api/*. Generate, write 0600, require on every /api/*
+        // request via the existing auth gate.
+        this.initDevToken();
+        log.info(
+          { tokenPath: this.devTokenPath },
+          "Running in dev mode (loopback only). Wrote per-session token to file — same-uid processes can read it for client auth.",
+        );
       }
     }
 
@@ -141,6 +204,17 @@ export class BrainstormServer {
 
   /** Stop the server gracefully. */
   async stop(): Promise<void> {
+    // Delete the dev-mode token file on shutdown so a captured token
+    // from a prior session can't be re-used against a new server.
+    if (this.devTokenPath && existsSync(this.devTokenPath)) {
+      try {
+        unlinkSync(this.devTokenPath);
+      } catch (err) {
+        log.warn({ err }, "Failed to delete dev token on shutdown");
+      }
+    }
+    this.devToken = null;
+    this.devTokenPath = null;
     return new Promise((resolve) => {
       if (!this.server) return resolve();
       this.server.close(() => {
@@ -206,6 +280,18 @@ export class BrainstormServer {
           401,
           "Authentication required — set SUPABASE_JWT_SECRET",
         );
+      } else {
+        // Dev mode (loopback, no jwtSecret): require the per-session
+        // bearer token. Closes the v16 Attacker confused-deputy: a
+        // sandboxed plugin or different-uid local process can no longer
+        // hit /api/* just because it has loopback access.
+        if (!this.verifyDevToken(req.headers.authorization as string)) {
+          return this.errorResponse(
+            res,
+            401,
+            `Dev-mode token required. Read it from ${this.devTokenPath ?? "~/.brainstorm/server-token"} and send as 'Authorization: Bearer <token>'.`,
+          );
+        }
       }
     }
 

@@ -72,6 +72,57 @@ export function signEvent(
 /** Maximum age (in seconds) for a platform event to be accepted. */
 const MAX_EVENT_AGE_SECONDS = 300; // 5 minutes
 
+/**
+ * Replay-dedupe cache for verified event ids.
+ *
+ * v16 Attacker finding: the freshness window alone is not sufficient. An
+ * attacker who captures one signed event can replay it ~300×/sec for
+ * 5 minutes — the signature is valid, the timestamp is within window, and
+ * the server has no record that THIS event was already seen. Webhook
+ * verification closed the same shape with an LRU nonce cache (PR #309);
+ * platform events did not.
+ *
+ * Map keyed on event.id, value = wall-clock ms when first seen. Entries
+ * expire passively at lookup (any entry older than the freshness window
+ * is treated as evicted). The cache is also LRU-bounded so a flood of
+ * fresh-but-bogus ids cannot blow memory.
+ *
+ * Exported for tests that need to reset state between cases.
+ */
+const seenEventIds = new Map<string, number>();
+const MAX_SEEN_IDS = 100_000;
+const FRESHNESS_MS = MAX_EVENT_AGE_SECONDS * 1000;
+
+/** Test helper — drop all dedupe state. Production code MUST NOT call this. */
+export function _resetSeenEventIdsForTesting(): void {
+  seenEventIds.clear();
+}
+
+function checkAndRecordEventId(eventId: string, now: number): boolean {
+  // Passive expiry: drop entries older than the freshness window. Done
+  // lazily on every check so we don't need a sweeper timer.
+  const cutoff = now - FRESHNESS_MS;
+  // First, opportunistically evict ALL entries older than cutoff. Cheap
+  // when the cache is small; with the LRU cap above this stays cheap.
+  for (const [id, ts] of seenEventIds) {
+    if (ts < cutoff) seenEventIds.delete(id);
+  }
+
+  if (seenEventIds.has(eventId)) {
+    // Already seen within the freshness window — REPLAY.
+    return false;
+  }
+
+  // LRU eviction if full — drop oldest entry by insertion order.
+  if (seenEventIds.size >= MAX_SEEN_IDS) {
+    const oldestKey = seenEventIds.keys().next().value;
+    if (oldestKey !== undefined) seenEventIds.delete(oldestKey);
+  }
+
+  seenEventIds.set(eventId, now);
+  return true;
+}
+
 export function verifyEvent(
   event: PlatformEvent,
   masterSecret: string,
@@ -79,24 +130,32 @@ export function verifyEvent(
   // Reject events without a signature
   if (!event.signature) return false;
 
-  // Replay protection: require a parseable timestamp inside the freshness
-  // window. A missing or malformed timestamp is treated as a failed check,
-  // not skipped — otherwise a captured event could be replayed forever by
-  // an attacker who strips or corrupts the timestamp field.
+  // Reject events without an id — required for replay dedupe
+  if (!event.id) return false;
+
+  // Replay protection step 1: require a parseable timestamp inside the
+  // freshness window. A missing or malformed timestamp is treated as a
+  // failed check, not skipped — otherwise a captured event could be
+  // replayed forever by an attacker who strips or corrupts the field.
   if (!event.timestamp) return false;
   const eventTime = new Date(event.timestamp).getTime();
   if (Number.isNaN(eventTime)) return false;
   const ageMs = Math.abs(Date.now() - eventTime);
   if (ageMs > MAX_EVENT_AGE_SECONDS * 1000) return false;
 
+  // Verify signature BEFORE recording id in the dedupe cache — otherwise
+  // an attacker can spam fake ids to fill the LRU and evict legitimate
+  // entries.
   const { signature, ...rest } = event;
   const expected = signEvent(rest, masterSecret);
-
-  // Timing-safe comparison
   const sigBuf = Buffer.from(signature, "hex");
   const expectedBuf = Buffer.from(expected, "hex");
   if (sigBuf.length !== expectedBuf.length) return false;
-  return timingSafeEqual(sigBuf, expectedBuf);
+  if (!timingSafeEqual(sigBuf, expectedBuf)) return false;
+
+  // Replay protection step 2: record event.id; reject if already seen
+  // within the freshness window.
+  return checkAndRecordEventId(event.id, Date.now());
 }
 
 /**
