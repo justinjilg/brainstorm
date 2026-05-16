@@ -91,6 +91,60 @@ export function cleanupOldRecords(db: Database.Database): void {
   }
 }
 
+/**
+ * Detects the "newer DB + older CLI" downgrade scenario.
+ *
+ * Migrations are forward-only by design. If a user runs 0.14 (which
+ * applies new migrations to ~/.brainstorm/brainstorm.db), then
+ * downgrades to 0.13, the older code sees a DB with rows in
+ * _migrations it doesn't recognise. Older code reading the new
+ * schema can silently mishandle NOT NULL columns it doesn't populate.
+ *
+ * Fail-fast at startup. Pointer to the rollback runbook.
+ * Escape hatch via BRAINSTORM_DB_ALLOW_UNKNOWN_MIGRATIONS=1 for
+ * operators restoring from a backup who know what they're doing.
+ */
+/** @internal — exported for testing. Production code should not call this
+ *  directly; runMigrations() invokes it at the right moment. */
+export function assertNoUnknownMigrations(
+  db: Database.Database,
+  knownNames: Set<string>,
+): void {
+  const rows = db.prepare("SELECT name FROM _migrations").all() as Array<{
+    name: string;
+  }>;
+  const unknown = rows.map((r) => r.name).filter((n) => !knownNames.has(n));
+  if (unknown.length === 0) return;
+
+  if (process.env.BRAINSTORM_DB_ALLOW_UNKNOWN_MIGRATIONS === "1") {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[db] BRAINSTORM_DB_ALLOW_UNKNOWN_MIGRATIONS=1 — proceeding with unknown migrations: ${unknown.join(", ")}`,
+    );
+    return;
+  }
+
+  throw new Error(
+    [
+      "Database has migrations this CLI doesn't recognise:",
+      `  ${unknown.join(", ")}`,
+      "",
+      "This usually means you downgraded the CLI from a newer version that",
+      "wrote schema changes to ~/.brainstorm/brainstorm.db. Older code",
+      "reading those tables can silently corrupt rows.",
+      "",
+      "Options:",
+      "  1. Upgrade back to the version that wrote the migration",
+      "     (or any newer version that has it).",
+      "  2. Restore the pre-upgrade DB backup; see",
+      "     docs/runbooks/rollback-published-version.md.",
+      "  3. Set BRAINSTORM_DB_ALLOW_UNKNOWN_MIGRATIONS=1 to proceed anyway",
+      "     (safe only when you've verified the migration was additive and",
+      "     your workflow doesn't touch the affected tables).",
+    ].join("\n"),
+  );
+}
+
 function runMigrations(db: Database.Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS _migrations (
@@ -99,6 +153,9 @@ function runMigrations(db: Database.Database): void {
       applied_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
   `);
+
+  const knownNames = new Set(MIGRATIONS.map((m) => m.name));
+  assertNoUnknownMigrations(db, knownNames);
 
   const applied = new Set(
     db
