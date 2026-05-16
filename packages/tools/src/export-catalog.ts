@@ -21,95 +21,14 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { createDefaultToolRegistry } from "./index.js";
+import { resolveToolMetadata } from "./builtin/_metadata.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DOCS_PATH = resolve(__dirname, "../../../docs/tool-catalog.json");
 
-// ── Category mapping ──────────────────────────────────────────────
-
-const TOOL_CATEGORIES: Record<string, string> = {
-  file_read: "filesystem",
-  file_write: "filesystem",
-  file_edit: "filesystem",
-  multi_edit: "filesystem",
-  batch_edit: "filesystem",
-  list_dir: "filesystem",
-  glob: "filesystem",
-  grep: "filesystem",
-  shell: "shell",
-  process_spawn: "shell",
-  process_kill: "shell",
-  build_verify: "shell",
-  git_status: "git",
-  git_diff: "git",
-  git_log: "git",
-  git_commit: "git",
-  git_branch: "git",
-  git_stash: "git",
-  gh_pr: "github",
-  gh_issue: "github",
-  web_fetch: "web",
-  web_search: "web",
-  task_create: "tasks",
-  task_update: "tasks",
-  task_list: "tasks",
-  undo_last_write: "agent",
-  scratchpad_write: "agent",
-  scratchpad_read: "agent",
-  ask_user: "agent",
-  set_routing_hint: "agent",
-  cost_estimate: "agent",
-  plan_preview: "planning",
-  begin_transaction: "transactions",
-  commit_transaction: "transactions",
-  rollback_transaction: "transactions",
-  br_status: "brainstorm_router",
-  br_budget: "brainstorm_router",
-  br_models: "brainstorm_router",
-  br_memory_search: "brainstorm_router",
-  br_memory_store: "brainstorm_router",
-  br_leaderboard: "brainstorm_router",
-  br_insights: "brainstorm_router",
-  br_health: "brainstorm_router",
-  tool_search: "discovery",
-  daemon_sleep: "daemon",
-};
-
-// ── Headless safety ───────────────────────────────────────────────
-
-const HEADLESS_UNSAFE = new Set([
-  "ask_user", // Blocks waiting for UI event — deadlocks in brainstorm run
-]);
-
-// confirm-permission tools are headless-safe WITH --lfg flag
-// They're marked headlessSafe: true because the automation flag resolves them
-
-// ── Protocol notes for multi-step tools ───────────────────────────
-
-const PROTOCOL_NOTES: Record<string, string> = {
-  git_commit:
-    "Requires --lfg or --unattended in non-interactive mode to bypass confirmation prompt.",
-  begin_transaction:
-    "Opens an atomic transaction. All file writes are staged. Must be followed by commit_transaction or rollback_transaction.",
-  commit_transaction:
-    "Applies all staged writes from begin_transaction atomically.",
-  rollback_transaction:
-    "Discards all staged writes from begin_transaction. No files are changed.",
-  tool_search:
-    "Discovers and loads deferred MCP/God Mode tools by keyword. Call this to find runtime-discovered tools not in the static catalog.",
-  daemon_sleep:
-    "Only available in daemon mode. Model calls this to control its own wake cycle.",
-  ask_user:
-    "Blocks waiting for UI event. Only works in interactive chat mode (brainstorm chat). Deadlocks in brainstorm run.",
-  shell:
-    "Supports foreground (default 120s timeout) and background mode (returns task ID). Use --lfg to auto-approve in non-interactive mode.",
-  batch_edit:
-    "Cross-file find-and-replace in one atomic operation. Validates all edits before applying any.",
-  br_memory_store:
-    "Stores a key-value pair in BrainstormRouter's memory. Requires active BR API key.",
-  br_memory_search:
-    "Searches BrainstormRouter's memory by semantic query. Requires active BR API key.",
-};
+// Category, headlessSafe, and protocol notes used to live in side-tables
+// here. They moved to `builtin/_metadata.ts` so every surface (this
+// generator, MCP wrappers, headless-runner gates) reads the same source.
 
 // ── Build catalog ─────────────────────────────────────────────────
 
@@ -120,7 +39,13 @@ function buildCatalog(): Record<string, unknown> {
   // Build category index
   const categories: Record<string, string[]> = {};
   for (const tool of allTools) {
-    const cat = TOOL_CATEGORIES[tool.name] ?? "other";
+    const resolved = resolveToolMetadata(tool.name, {
+      category: tool.category,
+      headlessSafe: tool.headlessSafe,
+      protocol: tool.protocol,
+      tags: tool.tags,
+    });
+    const cat = resolved?.metadata.category ?? "other";
     if (!categories[cat]) categories[cat] = [];
     categories[cat].push(tool.name);
   }
@@ -128,7 +53,7 @@ function buildCatalog(): Record<string, unknown> {
   // Build per-tool entries
   const tools: Record<string, unknown> = {};
   for (const tool of allTools) {
-    let inputSchema: unknown = {};
+    let inputSchema: unknown;
     try {
       inputSchema = zodToJsonSchema(tool.inputSchema, { target: "openApi3" });
       // Remove $schema wrapper that zod-to-json-schema adds
@@ -139,19 +64,33 @@ function buildCatalog(): Record<string, unknown> {
       ) {
         delete (inputSchema as Record<string, unknown>)["$schema"];
       }
-    } catch {
-      inputSchema = { type: "object", properties: {} };
+    } catch (err) {
+      // Fail-loud: a tool whose schema can't be lowered would otherwise
+      // ship to docs/tool-catalog.json as an empty object, lying to MCP
+      // clients about what params the tool accepts. Catalog export is a
+      // build-time artifact; failing here is correct.
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `zodToJsonSchema failed for tool "${tool.name}": ${msg}. ` +
+          `Either fix the Zod schema or change export-catalog to handle this tool's shape explicitly.`,
+      );
     }
+
+    const resolved = resolveToolMetadata(tool.name, {
+      category: tool.category,
+      headlessSafe: tool.headlessSafe,
+      protocol: tool.protocol,
+      tags: tool.tags,
+    });
+    const meta = resolved?.metadata;
 
     tools[tool.name] = {
       description: tool.description,
-      category: TOOL_CATEGORIES[tool.name] ?? "other",
+      category: meta?.category ?? "other",
       permission: tool.permission,
       readonly: tool.readonly ?? false,
-      headlessSafe: !HEADLESS_UNSAFE.has(tool.name),
-      ...(PROTOCOL_NOTES[tool.name]
-        ? { protocol: PROTOCOL_NOTES[tool.name] }
-        : {}),
+      headlessSafe: meta?.headlessSafe ?? false,
+      ...(meta?.protocol ? { protocol: meta.protocol } : {}),
       inputSchema,
     };
   }

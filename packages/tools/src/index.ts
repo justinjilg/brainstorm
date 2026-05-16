@@ -1,5 +1,20 @@
 export { createTimeoutController } from "./timeout.js";
-export { defineTool, type BrainstormToolDef } from "./base.js";
+export {
+  defineTool,
+  type BrainstormToolDef,
+  type ToolMetadata,
+} from "./base.js";
+export {
+  BUILTIN_TOOL_METADATA,
+  BUILTIN_TOOL_NAMES,
+  resolveToolMetadata,
+  type MetadataConflict,
+} from "./builtin/_metadata.js";
+export {
+  toMCPTool,
+  MCPSchemaUnsupportedError,
+  type MCPToolRegistration,
+} from "./mcp-generator.js";
 export {
   withWorkspace,
   getWorkspace,
