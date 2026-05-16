@@ -59,7 +59,30 @@ export const ALLOWED_GATE_PREFIXES = [
  * `cargo test` has a similar `--exec`-shape flag risk; pre-emptively block.
  */
 const DANGER_PATTERNS: ReadonlyArray<RegExp> = [
-  /(?:^|\s)-{1,2}exec[\s=]/, // -exec / -exec= / --exec / --exec=
+  // The "flag-loader" bypass class. Each pattern matches a flag that
+  // causes an allowed tool to LOAD and EXECUTE attacker-supplied content
+  // (a config file, a reporter, a wrapper binary, a linker flag) —
+  // bypassing the metachar deny entirely because the dangerous side
+  // effect happens inside the trusted binary's argument parsing.
+  //
+  // v13 Attacker named `-exec` for go/cargo. v15 Attacker named
+  // additional same-class bypasses: vitest --config / --reporter,
+  // go -toolexec, go -gcflags='all=-N -l <attacker>'. P9a-2 extends
+  // DANGER_PATTERNS to the union of known flag-loader shapes.
+  //
+  // Pattern shape: (?:^|\s) — flag must appear after start-or-whitespace
+  // (so `--config` inside a longer arg like `foo--configbar` doesn't trip).
+  // [\s=] suffix — flag must end with whitespace or `=` (otherwise the
+  // string is a prefix of a longer word, e.g. `--executor` shouldn't trip
+  // `-exec`).
+  /(?:^|\s)-{1,2}exec[\s=]/, // go test -exec, cargo test --exec — v13 #2
+  /(?:^|\s)-{1,2}toolexec[\s=]/, // go test -toolexec — v15
+  /(?:^|\s)-{1,2}gcflags[\s=]/, // go test -gcflags='all=-N ...' — v15
+  /(?:^|\s)-{1,2}ldflags[\s=]/, // go test -ldflags — v15 (linker arg injection)
+  /(?:^|\s)-{1,2}config[\s=]/, // vitest --config, npm test --config — v15
+  /(?:^|\s)-{1,2}reporter[\s=]/, // vitest --reporter, npm test --reporter — v15
+  /(?:^|\s)-{1,2}target-dir[\s=]/, // cargo --target-dir — write-where-attacker-wants
+  /(?:^|\s)-{1,2}plugin[\s=]/, // generic plugin-loader form (jest, eslint, etc.)
 ];
 
 /**
