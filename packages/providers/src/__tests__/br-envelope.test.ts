@@ -32,6 +32,7 @@ import {
 // fixture is the ground truth for "what BR currently emits."
 const LIVE_2026_05_15: Record<string, string> = {
   "content-type": "application/json",
+  "x-request-id": "req-live-2026-05-15-001",
   "x-br-actual-cost": "0.000037",
   "x-br-audit-hash":
     "590439b4451f67ea3ce43942edd66f831b1bd3ffd2c625f1e78898196314c285",
@@ -143,6 +144,17 @@ describe("parseBrEnvelope — typed parser", () => {
   it("captures the audit-hash (64-hex)", () => {
     const env = parseBrEnvelope(LIVE_2026_05_15);
     expect(env.auditHash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("captures x-request-id as the envelope's primary key", () => {
+    // The routing_audit table is keyed on requestId; the parser must
+    // surface x-request-id even though it's not in the x-br-* namespace.
+    // A missing requestId is the documented "drop, don't crash" path
+    // (see routing-audit-writer.ts) but the live response always has one.
+    const env = parseBrEnvelope(LIVE_2026_05_15);
+    expect(env.requestId).toBe("req-live-2026-05-15-001");
+    const absent = parseBrEnvelope({});
+    expect(absent.requestId).toBeUndefined();
   });
 
   it("captures deprecation notice when present", () => {

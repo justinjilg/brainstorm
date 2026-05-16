@@ -37,3 +37,9 @@ export {
   type RoutingAuditEntry,
   type RoutingAuditRow,
 } from "./routing-audit-repository.js";
+export {
+  wireRoutingAudit,
+  envelopeToAuditEntry,
+  type BrEnvelopeLike,
+  type WireRoutingAuditOptions,
+} from "./routing-audit-writer.js";

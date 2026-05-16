@@ -109,6 +109,11 @@ export const KNOWN_OPTIONAL_BR_HEADERS: readonly string[] = [];
 // ── Parsed envelope shape ───────────────────────────────────────────
 
 export interface BrEnvelope {
+  /** x-request-id — the per-response correlation id BR echoes. Not under
+   *  `x-br-*` but conceptually part of the envelope; used as the primary
+   *  key for routing_audit persistence. Absent only on misbehaving servers
+   *  (HTTP/1.1 RFC says intermediaries MAY strip it). */
+  requestId?: string;
   /** BR build SHA (short). Surfaces in error reports for cross-referencing. */
   build?: string;
   /** Envelope mode marker. "audit" today; "enforce" in future. */
@@ -277,6 +282,8 @@ export function parseBrEnvelope(
   }
 
   return {
+    // correlation
+    requestId: get("x-request-id") ?? undefined,
     // identity
     build: get("x-br-build") ?? undefined,
     envelope: get("x-br-envelope") ?? undefined,
