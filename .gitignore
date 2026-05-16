@@ -21,6 +21,13 @@ npm-debug.log*
 # Generated artifacts
 docs/internal/sbom.json
 
+# Contract compiler output — regenerable via
+# `pnpm --filter @brainst0rm/godmode run compile-contract -- --write`.
+# Kept out of git so the source-of-truth (packages/godmode/src/contract/
+# schemas.ts) is the obvious place to edit. Snapshot tests in
+# packages/godmode/src/contract/__tests__/ catch unintended drift.
+generated/platform-contract/
+
 # Marketing site (separate project, lives elsewhere)
 apps/web/
 
