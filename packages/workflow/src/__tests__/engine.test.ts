@@ -573,6 +573,85 @@ describe("artifact-store", () => {
       }
     });
 
+    // ── v16 Attacker flag-loader bypass class (extends v15) ──────────
+    // Found by the v16 stochastic round's Attacker persona. Same shape
+    // as the v15 -exec/-toolexec/-gcflags class: each flag below tells
+    // the surrounding tool to load attacker-controlled file as code OR
+    // treat an attacker-controlled path as authoritative.
+
+    it("v16-attacker-flag-loader: make -f loads alternate Makefile", () => {
+      const dangerous = [
+        "make -f /tmp/evil.Makefile",
+        "make --makefile=/tmp/evil.Makefile",
+        "make --makefile /tmp/evil.Makefile",
+      ];
+      for (const gate of dangerous) {
+        const v = validateGateCommand(gate);
+        expect(v.allowed, `must reject make -f: ${gate}`).toBe(false);
+        expect(v.reason).toMatch(/dangerous pattern|f|makefile/);
+      }
+      expect(validateGateCommand("make test").allowed).toBe(true);
+      expect(validateGateCommand("make build").allowed).toBe(true);
+    });
+
+    it("v16-attacker-flag-loader: pytest -p loads arbitrary plugin module", () => {
+      const dangerous = [
+        "pytest -p evil_plugin",
+        "pytest -p /tmp/evil",
+        "pytest --rootdir=/tmp/attacker",
+      ];
+      for (const gate of dangerous) {
+        const v = validateGateCommand(gate);
+        expect(v.allowed, `must reject pytest -p/--rootdir: ${gate}`).toBe(
+          false,
+        );
+      }
+      expect(validateGateCommand("pytest tests/").allowed).toBe(true);
+    });
+
+    it("v16-attacker-flag-loader: cargo --manifest-path overrides Cargo.toml", () => {
+      const dangerous = [
+        "cargo test --manifest-path=/tmp/Cargo.toml",
+        "cargo build --manifest-path /tmp/Cargo.toml",
+      ];
+      for (const gate of dangerous) {
+        const v = validateGateCommand(gate);
+        expect(v.allowed, `must reject --manifest-path: ${gate}`).toBe(false);
+      }
+    });
+
+    it("v16-attacker-flag-loader: node --inspect / --require / --import via npm run", () => {
+      // Note: bare `node script.js` is not in the gate allowlist anyway,
+      // so the attack surface here is "npm run X" where X invokes node
+      // with these flags via the script. The flag-loader patterns catch
+      // them in the npm-run command-line form, which IS allowlisted.
+      const dangerous = [
+        "npm test --inspect-brk=0.0.0.0:9229",
+        "npm test --inspect",
+        "npm test --require=/tmp/preload.js",
+        "npm test -r /tmp/preload.js",
+        "npm test --import=/tmp/loader.mjs",
+      ];
+      for (const gate of dangerous) {
+        const v = validateGateCommand(gate);
+        expect(v.allowed, `must reject node flag-loader: ${gate}`).toBe(false);
+      }
+      expect(validateGateCommand("npm test").allowed).toBe(true);
+    });
+
+    it("v16-attacker-flag-loader: npm --userconfig / --prefix point to attacker config", () => {
+      const dangerous = [
+        "npm test --userconfig=/tmp/.npmrc",
+        "npm install --userconfig /tmp/.npmrc",
+        "npm test --prefix=/tmp/attacker",
+        "npm test --env-file=/tmp/.env",
+      ];
+      for (const gate of dangerous) {
+        const v = validateGateCommand(gate);
+        expect(v.allowed, `must reject npm config-loader: ${gate}`).toBe(false);
+      }
+    });
+
     it("flag-loader rules are word-bounded — false positives stay false", () => {
       // The danger patterns must not catch substrings inside longer
       // tokens. E.g. `--configbar` is NOT `--config`, and the test

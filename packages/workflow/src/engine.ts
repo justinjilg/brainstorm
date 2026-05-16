@@ -83,6 +83,25 @@ const DANGER_PATTERNS: ReadonlyArray<RegExp> = [
   /(?:^|\s)-{1,2}reporter[\s=]/, // vitest --reporter, npm test --reporter — v15
   /(?:^|\s)-{1,2}target-dir[\s=]/, // cargo --target-dir — write-where-attacker-wants
   /(?:^|\s)-{1,2}plugin[\s=]/, // generic plugin-loader form (jest, eslint, etc.)
+  // v16 Attacker (post path-to-90 round) — flag-loader bypass class
+  // extension. Each loads an attacker-controlled file as code or treats
+  // an attacker-controlled path as authoritative configuration.
+  // The trailing class `(?:$|[\s=])` matches end-of-string OR ws/= so a
+  // dangerous flag is caught even when it's the final token (e.g.
+  // `npm test --inspect`).
+  /(?:^|\s)-f(?:$|[\s=])/, // make -f /tmp/evil.Makefile — load alt Makefile
+  /(?:^|\s)-{1,2}makefile(?:$|[\s=])/, // make --makefile=/tmp/evil.Makefile
+  /(?:^|\s)-p(?:$|[\s=])/, // pytest -p PLUGIN — load plugin module
+  /(?:^|\s)-{1,2}rootdir(?:$|[\s=])/, // pytest --rootdir — treat path as project root
+  /(?:^|\s)-{1,2}manifest-path(?:$|[\s=])/, // cargo --manifest-path — alt Cargo.toml
+  /(?:^|\s)-{1,2}inspect-brk(?:$|[\s=])/, // node --inspect-brk — debugger w/ arb code
+  /(?:^|\s)-{1,2}inspect(?:$|[\s=])/, // node --inspect — same class
+  /(?:^|\s)-{1,2}userconfig(?:$|[\s=])/, // npm --userconfig — alt npmrc with scripts
+  /(?:^|\s)-{1,2}env-file(?:$|[\s=])/, // node --env-file — set env from arbitrary path
+  /(?:^|\s)-{1,2}prefix(?:$|[\s=])/, // npm --prefix — alt project root for scripts
+  /(?:^|\s)-{1,2}require(?:$|[\s=])/, // node --require / -r — preload arbitrary module
+  /(?:^|\s)-r(?:$|[\s=])/, // node -r — short form of --require
+  /(?:^|\s)-{1,2}import(?:$|[\s=])/, // node --import — preload ESM module
 ];
 
 /**
