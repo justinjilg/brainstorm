@@ -13,5 +13,5 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["@brainst0rm/eval", "@brainst0rm/docgen", "@brainst0rm/ingest"]
+  "ignore": []
 }
