@@ -72,3 +72,21 @@ export type {
   ActionResult,
   HealthResult,
 } from "./types.js";
+
+// Stage-2 contract compiler — canonical Zod schemas and generators
+// drive the platform-contract verifier and (planned) cross-language
+// bindings.
+export {
+  compileContract,
+  CONTRACT_VERSION,
+  CONTRACT_BASE_ID,
+  type CompilerOutput,
+  type CompileOptions,
+} from "./contract/compile.js";
+export { PLATFORM_ENDPOINTS, type EndpointDef } from "./contract/schemas.js";
+export type { EndpointSection } from "./contract/generators/markdown.js";
+export type { JsonSchemaBundle } from "./contract/generators/json-schema.js";
+export type {
+  EndpointCheckPlan,
+  ValidationOutcome,
+} from "./contract/generators/validator.js";

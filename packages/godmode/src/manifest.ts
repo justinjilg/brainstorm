@@ -173,7 +173,18 @@ export interface VerifyResult {
 
 /**
  * Verify that a product implements the required platform endpoints.
- * Hits each endpoint and checks the response shape.
+ *
+ * Stage-2 of the contract compiler: the per-endpoint plan (which
+ * method, which path, which response shape, which accept-statuses) is
+ * generated from the canonical Zod schemas in `contract/schemas.ts`.
+ * The hand-rolled `validate(body)` callbacks that used to live here
+ * have been replaced with `safeParse` against the schema — so a
+ * malformed-but-shape-passing response (e.g. tools list missing
+ * `risk_level`) now fails the check instead of slipping through.
+ *
+ * If you're adding a new endpoint or changing a response shape, edit
+ * `contract/schemas.ts`; this function picks up the change on next
+ * run.
  */
 export async function verifyProductContract(
   apiBase: string,
@@ -189,66 +200,62 @@ export async function verifyProductContract(
     headers["Authorization"] = `Bearer ${opts.token}`;
   }
 
-  // 1. Health check (no auth)
-  results.push(
-    await checkEndpoint("GET", `${apiBase}/health`, {
-      timeout,
-      validate: (body) => {
-        if (!body.status) return "Missing 'status' field";
-        if (!body.version) return "Missing 'version' field";
-        return null;
-      },
+  // Sample requests for endpoints whose existence we test by posting
+  // an intentionally-invalid payload (the API key has no permission to
+  // create real tenants from this CLI, and we don't have a tenant
+  // signing key to forge platform events). Accept-status sets in
+  // `compileContract` allow 401/403/409 for exactly this case.
+  const sampleBodies: Record<string, string> = {
+    "platform-events": JSON.stringify({
+      id: "00000000-0000-0000-0000-000000000000",
+      type: "platform.verify",
+      tenant_id: "verify",
+      product: "verify",
+      timestamp: new Date().toISOString(),
+      data: {},
+      schema_version: 1,
+      signature: "test",
     }),
-  );
-
-  // 2. God Mode tools
-  results.push(
-    await checkEndpoint("GET", `${apiBase}/api/v1/god-mode/tools`, {
-      timeout,
-      headers,
-      validate: (body) => {
-        const data = body.data ?? body;
-        if (!Array.isArray(data)) return "Expected array of tools";
-        return null;
-      },
+    "platform-tenants": JSON.stringify({
+      tenant_id: "00000000-0000-0000-0000-000000000000",
+      action: "provision",
+      idempotency_key: "00000000-0000-0000-0000-000000000000",
     }),
-  );
+    "god-mode-execute": JSON.stringify({
+      tool: "verify.noop",
+      params: {},
+    }),
+  };
 
-  // 3. Platform events receiver
-  results.push(
-    await checkEndpoint("POST", `${apiBase}/api/v1/platform/events`, {
-      timeout,
-      headers,
-      body: JSON.stringify({
-        id: "test-verify",
-        type: "platform.verify",
-        tenant_id: "verify",
-        product: "verify",
-        timestamp: new Date().toISOString(),
-        data: {},
-        schema_version: 1,
-        signature: "test",
+  const { compileContract } = await import("./contract/compile.js");
+  const plan = compileContract().validator;
+
+  for (const ep of plan) {
+    const url = `${apiBase}${ep.path}`;
+    const body = sampleBodies[ep.id];
+    const reqHeaders =
+      ep.auth === "bearer"
+        ? headers
+        : { "Content-Type": headers["Content-Type"] };
+    results.push(
+      await checkEndpoint(ep.method, url, {
+        timeout,
+        headers: reqHeaders,
+        body,
+        acceptStatuses: ep.acceptStatuses,
+        // The generated validator returns a structured outcome; the
+        // checkEndpoint helper expects a single string-or-null. Flatten
+        // here: a successful parse against any registered response
+        // shape (primary, simulation, error) is enough — that's how
+        // the spec defines the /execute endpoint.
+        validate: (responseBody) => {
+          const outcome = ep.validateResponseBody(responseBody);
+          if (outcome.ok) return null;
+          return outcome.message;
+        },
       }),
-      // 401/403 is acceptable — means the endpoint exists but our test signature fails
-      acceptStatuses: [200, 401, 403],
-      validate: () => null,
-    }),
-  );
-
-  // 4. Tenant provisioning
-  results.push(
-    await checkEndpoint("POST", `${apiBase}/api/v1/platform/tenants`, {
-      timeout,
-      headers,
-      body: JSON.stringify({
-        id: "verify-test",
-        name: "Verify Test",
-        slug: "verify",
-      }),
-      acceptStatuses: [200, 201, 400, 401, 403, 409],
-      validate: () => null,
-    }),
-  );
+    );
+  }
 
   return results;
 }
