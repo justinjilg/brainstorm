@@ -24,8 +24,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brainst0rm/relay": "0.1.0",
-    "@brainst0rm/sandbox": "0.1.0"
+    "@brainst0rm/relay": "0.14.4",
+    "@brainst0rm/sandbox": "0.14.4"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
