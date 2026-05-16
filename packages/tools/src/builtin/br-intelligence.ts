@@ -143,7 +143,7 @@ export const brMemoryStoreTool = defineTool({
       .enum(["human", "system", "project", "general"])
       .optional()
       .describe(
-        "Memory block: human (about the user), system (agent instructions), project (current work context), general (everything else). Matches BR's discovery contract.",
+        "Memory block: human (about the user), system (agent instructions), project (current work context), general (everything else). Matches BR's discovery contract per /v1/memory/blocks.",
       ),
   }),
   async execute({ text, block }) {
