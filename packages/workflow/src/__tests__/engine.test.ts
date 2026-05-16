@@ -413,8 +413,86 @@ describe("artifact-store", () => {
       for (const gate of dangerous) {
         const verdict = validateGateCommand(gate);
         expect(verdict.allowed, `must reject: ${gate}`).toBe(false);
-        expect(verdict.reason).toMatch(/metacharacters|not in allowlist/);
+        expect(verdict.reason).toMatch(
+          /metacharacters|not in allowlist|expansion/,
+        );
       }
+    });
+
+    // ── v13 Attacker bypasses — closed in P9a (2026-05-15) ─────────
+    //
+    // The v13 stochastic-assessment Attacker (re-verified in v14 evidence)
+    // identified three specific bypasses that survived the v12 fix:
+    //   1. Word-boundary gap on prefix match — "npx vitest-pwn"
+    //   2. Per-command danger flag — "go test -exec=/tmp/wrapper"
+    //   3. Brace expansion + glob — now also caught by expanded metachar set
+    //
+    // Each test below names the bypass it closes and asserts the rejection
+    // includes a reason that points the operator at the failing rule.
+
+    it("v13-attacker-bypass-1: word-boundary on prefix match (npx vitest-pwn)", () => {
+      const verdicts = [
+        validateGateCommand("npx vitest-pwn"),
+        validateGateCommand("go test-x"),
+        validateGateCommand("cargo testxxx"),
+        validateGateCommand("npm testimony"),
+        validateGateCommand("pytestpwn"),
+        validateGateCommand("makeevil"),
+      ];
+      for (const v of verdicts) {
+        expect(v.allowed, "must reject mid-token prefix collision").toBe(false);
+        expect(v.reason).toMatch(/word-boundary|not in allowlist/);
+      }
+      // The legitimate exact-match must STILL pass.
+      expect(validateGateCommand("npx vitest").allowed).toBe(true);
+      expect(validateGateCommand("npx vitest run").allowed).toBe(true);
+      expect(validateGateCommand("go test").allowed).toBe(true);
+      expect(validateGateCommand("go test ./...").allowed).toBe(true);
+    });
+
+    it("v13-attacker-bypass-2: go/cargo -exec wrapper-binary execution", () => {
+      const dangerous = [
+        "go test -exec=/tmp/wrapper ./...",
+        "go test -exec /tmp/wrapper ./...",
+        "go test --exec=evil-binary ./pkg",
+        "cargo test -exec=/tmp/pwn",
+        "go test ./pkg/foo -exec=/abs/path/evil",
+        "go test -exec=evil -v",
+      ];
+      for (const gate of dangerous) {
+        const v = validateGateCommand(gate);
+        expect(v.allowed, `must reject -exec form: ${gate}`).toBe(false);
+        expect(v.reason).toMatch(/exec|dangerous pattern/);
+      }
+      // Innocuous -exec-adjacent strings must still pass (flag is not the
+      // word "exec"; rule matches `-exec` or `--exec` only).
+      expect(validateGateCommand("go test ./executor").allowed).toBe(true);
+      expect(validateGateCommand("cargo test executive").allowed).toBe(true);
+    });
+
+    it("v13-attacker-bypass-3: brace expansion and glob in arguments", () => {
+      // Brace expansion {a,b} and glob * are shell-evaluated before the
+      // command sees its args. Even if the resulting expansion is
+      // 'harmless', the shape attack is enough — operator intent is
+      // unclear when shell expansion is in play. Reject categorically.
+      const dangerous = [
+        "npm test {a,b}",
+        "npm run {build,deploy}",
+        "go test ./...*",
+        "make test ~user/script",
+        "pytest test_?.py",
+      ];
+      for (const gate of dangerous) {
+        const v = validateGateCommand(gate);
+        expect(v.allowed, `must reject expansion form: ${gate}`).toBe(false);
+        expect(v.reason).toMatch(/metacharacters|expansion/);
+      }
+    });
+
+    it("rejects empty/whitespace-only commands", () => {
+      expect(validateGateCommand("").allowed).toBe(false);
+      expect(validateGateCommand("   ").allowed).toBe(false);
+      expect(validateGateCommand("\t\n").allowed).toBe(false);
     });
   });
 });
