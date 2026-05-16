@@ -8,6 +8,8 @@ import {
   openSync,
   fsyncSync,
   closeSync,
+  statSync,
+  chmodSync,
 } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { resolve, relative } from "node:path";
@@ -33,8 +35,32 @@ import { assertNotSensitivePath } from "./sensitive-paths.js";
 function atomicReplaceFile(path: string, content: string): void {
   const tmp = `${path}.tmp.${randomBytes(6).toString("hex")}`;
   let fd: number | null = null;
+
+  // v17 Attacker — atomicReplaceFile must preserve the target's
+  // permission bits. Without this, editing a 0600 secret file
+  // silently widens it to 0644 (Node's default writeFileSync mode)
+  // because renameSync discards the target's pre-existing mode.
+  // Capture the target's mode BEFORE writing tmp so we restore it
+  // after the rename succeeds.
+  let originalMode: number | undefined;
   try {
-    writeFileSync(tmp, content, "utf-8");
+    if (existsSync(path)) {
+      originalMode = statSync(path).mode & 0o777;
+    }
+  } catch {
+    // If we can't stat the target, fall back to writing with default
+    // mode — better than failing the edit. The downstream chmod will
+    // be a no-op.
+  }
+
+  try {
+    writeFileSync(tmp, content, {
+      encoding: "utf-8",
+      // If we captured the target's mode, create tmp with the same
+      // mode so the file is never visible (between rename and chmod)
+      // at a more-permissive mode than the original.
+      ...(originalMode !== undefined ? { mode: originalMode } : {}),
+    });
     // fsync the file so the bytes are durably on disk before we rename;
     // otherwise a crash AFTER rename can still produce a zero-byte file
     // on some filesystems.
@@ -43,6 +69,12 @@ function atomicReplaceFile(path: string, content: string): void {
     closeSync(fd);
     fd = null;
     renameSync(tmp, path);
+    // Belt-and-braces: rename keeps the SOURCE inode's perms, which we
+    // already set via writeFileSync mode above. chmod is idempotent and
+    // covers the case where filesystem umask masked the create-mode.
+    if (originalMode !== undefined) {
+      chmodSync(path, originalMode);
+    }
   } catch (err) {
     // Cleanup: try to remove temp file and (if open) close the fd.
     if (fd !== null) {

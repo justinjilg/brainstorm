@@ -1,6 +1,6 @@
 {
   "name": "@brainst0rm/docgen",
-  "version": "0.14.3",
+  "version": "0.14.4",
   "type": "module",
   "scripts": {
     "build": "tsup",
@@ -8,8 +8,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@brainst0rm/shared": "0.14.3",
-    "@brainst0rm/ingest": "0.14.3"
+    "@brainst0rm/shared": "0.14.4",
+    "@brainst0rm/ingest": "0.14.4"
   },
   "devDependencies": {
     "tsup": "^8",
