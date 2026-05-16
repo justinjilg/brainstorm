@@ -75,6 +75,11 @@ jobs:
       - name: Pack the CLI tarball
         id: pack
         working-directory: packages/cli
+        # `set -euo pipefail` is bash syntax; without an explicit shell
+        # Windows runners default to PowerShell and reject `-euo` as a
+        # parameter name. Use Git-for-Windows bash on all OSes for
+        # consistency with the smoke step.
+        shell: bash
         run: |
           set -euo pipefail
           PACK_OUTPUT="$(npm pack --silent)"
@@ -84,6 +89,7 @@ jobs:
       - name: Install the tarball globally
         env:
           TARBALL: ${{ steps.pack.outputs.tarball }}
+        shell: bash
         run: |
           set -euo pipefail
           npm install -g "$TARBALL"
