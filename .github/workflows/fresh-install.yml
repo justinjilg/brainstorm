@@ -1,0 +1,120 @@
+name: Fresh-Environment Install Verification
+
+# Verifies that npm install -g @brainst0rm/cli works end-to-end on a
+# clean machine: packs the current branch into a tarball, installs it
+# globally in a fresh Ubuntu container, and runs the smoke-test script.
+#
+# Path-to-90 P8b — closes the gap the v14 Pragmatist + Sr Engineer +
+# Pessimist all named ("no fresh-environment install verified in CI").
+# Catches the failure class where a dev change works locally because
+# of pre-installed deps/cache state but breaks for a new user pulling
+# from npm.
+#
+# Workflow security: no untrusted input is interpolated into run:
+# commands. The only template expressions used are:
+#   - steps.pack.outputs.tarball (workflow-internal step output)
+#   - github.event_name (github-controlled constant string)
+#   - context.issue/repo (github-script typed accessors)
+# Untrusted inputs (PR title/body/labels, commit messages, head_ref)
+# are NOT referenced.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      - "packages/cli/**"
+      - "packages/providers/**"
+      - "packages/core/**"
+      - "packages/gateway/**"
+      - "package.json"
+      - "package-lock.json"
+      - "turbo.json"
+      - ".github/workflows/fresh-install.yml"
+      - "scripts/smoke-test-cli.sh"
+
+jobs:
+  fresh-install:
+    name: pack + global install + smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # pull-requests:write is required for the "comment on PR on failure"
+    # step to succeed. Without it, the comment step itself failed with
+    # "Resource not accessible by integration", which masked the real
+    # build failure underneath it. Verified against gh run 25947002735
+    # before this commit.
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies (in repo)
+        run: npm ci
+
+      - name: Build CLI + transitive deps
+        run: npx turbo run build --filter=@brainst0rm/cli
+
+      - name: Pack the CLI tarball
+        id: pack
+        working-directory: packages/cli
+        run: |
+          set -euo pipefail
+          PACK_OUTPUT="$(npm pack --silent)"
+          echo "tarball=packages/cli/${PACK_OUTPUT}" >> "$GITHUB_OUTPUT"
+          echo "Packed: ${PACK_OUTPUT}"
+
+      - name: Install the tarball globally
+        env:
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+        run: |
+          set -euo pipefail
+          npm install -g "$TARBALL"
+          echo "Global install path:"
+          which brainstorm || true
+          which storm || true
+          npm ls -g --depth=0 | grep brainst0rm || true
+
+      - name: Run smoke test
+        run: bash scripts/smoke-test-cli.sh
+
+      - name: Show installed CLI version on success
+        if: ${{ success() }}
+        run: |
+          brainstorm --version
+          echo "Fresh-env install verified."
+
+      - name: Comment on PR with debug log on failure
+        if: ${{ failure() && github.event_name == 'pull_request' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = [
+              '### Fresh-Environment Install Verification failed',
+              '',
+              'The fresh-env install smoke test failed. A user running',
+              '`npm install -g @brainst0rm/cli` from a clean machine would',
+              'hit the same issue.',
+              '',
+              '**Common causes:**',
+              '- A package was added that is not in `packages/cli`\'s `dependencies` (works locally because the workspace symlinks it, fails globally)',
+              '- A dynamic `require()` of a file that isn\'t in the published package',
+              '- A new env var required at startup with no fallback',
+              '- A native dep that needs a build step the postinstall doesn\'t cover',
+              '',
+              'See the failing job logs above for the exact failure line.',
+              'See `scripts/smoke-test-cli.sh` for what is being asserted.',
+            ].join('\n');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });
