@@ -310,7 +310,7 @@ describe("agent loop — chaos classifications (P9d-2)", () => {
     expect(err!.error.message.toLowerCase()).toMatch(/disk|permission/);
   });
 
-  it("classifies middleware-tagged error as middleware category", async () => {
+  it("classifies middleware-tagged error from streamText path as middleware category", async () => {
     const middlewareErr: any = new Error("blocked by content policy");
     middlewareErr.middleware = "content-policy";
     middlewareErr.reason = "prompt contains prohibited pattern";
@@ -320,6 +320,57 @@ describe("agent loop — chaos classifications (P9d-2)", () => {
     expect(err).toBeDefined();
     expect(err!.category).toBe("middleware");
     expect(err!.error.message).toContain("content-policy");
+  });
+
+  it("classifies pre-stream middleware throw (beforeAgent) as middleware category", async () => {
+    // Codex finding (PR #325 MAJOR #1): runBeforeAgent runs BEFORE the
+    // classified try/catch. A throw here would historically escape the
+    // generator unclassified. After the fix, the same category=middleware
+    // event must surface so consumers can route on it identically to
+    // mid-stream middleware blocks.
+    const throwingMiddleware: any = {
+      runBeforeAgent: () => {
+        const e: any = new Error("policy violation: secrets in prompt");
+        e.middleware = "secret-scanner";
+        e.reason = "API key pattern detected";
+        throw e;
+      },
+      runBeforeTool: () => ({ allow: true }),
+      runAfterTool: () => {},
+      runAfterAgent: () => {},
+    };
+    _streamTextBehaviour = { kind: "ok" };
+    const events = await collectEvents(ctx, { middleware: throwingMiddleware });
+    const err = events.find((e) => e.type === "error");
+    expect(
+      err,
+      "pre-stream middleware throw must emit a typed event",
+    ).toBeDefined();
+    expect(err!.category).toBe("middleware");
+    expect(err!.error.message).toContain("secret-scanner");
+    expect(err!.error.message).toContain("API key pattern detected");
+    // The loop must NOT have proceeded to a streamText call after the
+    // middleware blocked — no text-delta events should appear.
+    const deltas = events.filter((e) => e.type === "text-delta");
+    expect(deltas).toHaveLength(0);
+  });
+
+  it("untagged pre-stream middleware throw still emits a middleware event with generic label", async () => {
+    // The .middleware tag is conventional; we should still classify
+    // correctly when middleware throws an untagged Error.
+    const throwingMiddleware: any = {
+      runBeforeAgent: () => {
+        throw new Error("validator crashed");
+      },
+      runBeforeTool: () => ({ allow: true }),
+      runAfterTool: () => {},
+      runAfterAgent: () => {},
+    };
+    const events = await collectEvents(ctx, { middleware: throwingMiddleware });
+    const err = events.find((e) => e.type === "error");
+    expect(err).toBeDefined();
+    expect(err!.category).toBe("middleware");
+    expect(err!.error.message).toContain("beforeAgent");
   });
 
   it("classifies generic unknown error as unknown category", async () => {

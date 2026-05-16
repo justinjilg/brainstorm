@@ -430,7 +430,15 @@ export async function* runAgentLoop(
   // for trust propagation (syncTrustWindow/flushTrustWindow).
   const mwMetadata: Record<string, unknown> = {};
 
-  // Run middleware beforeAgent hook (if pipeline provided)
+  // Run middleware beforeAgent hook (if pipeline provided).
+  //
+  // This runs BEFORE the classified try/catch at line ~785, so a
+  // throwing middleware would historically escape the entire error
+  // classifier and surface as an unhandled exception in the generator.
+  // Codex flagged this as MAJOR on the v15 P9d-2 chaos suite. Wrap
+  // the call in its own typed-error scope so a "blocked by X"
+  // middleware still emits a category=middleware event consumers can
+  // route on.
   if (options.middleware) {
     const mwState = {
       turn: 0,
@@ -439,9 +447,24 @@ export async function* runAgentLoop(
       toolNames: [],
       metadata: mwMetadata,
     };
-    const mwResult = options.middleware.runBeforeAgent(mwState);
-    if (mwResult.systemPrompt !== systemPrompt) {
-      systemPrompt = mwResult.systemPrompt;
+    try {
+      const mwResult = options.middleware.runBeforeAgent(mwState);
+      if (mwResult.systemPrompt !== systemPrompt) {
+        systemPrompt = mwResult.systemPrompt;
+      }
+    } catch (mwErr: any) {
+      // Surface tagged-middleware throws as the same typed event as
+      // mid-stream middleware failures. Use the tagged `.middleware`
+      // field if present; otherwise label as the generic
+      // "beforeAgent" middleware so the operator knows where to look.
+      const tag = mwErr?.middleware ?? "beforeAgent";
+      const reason = mwErr?.reason ?? mwErr?.message ?? "unknown reason";
+      yield {
+        type: "error",
+        error: new Error(`Blocked by ${tag}: ${reason}`),
+        category: "middleware",
+      };
+      return;
     }
   }
 
