@@ -205,16 +205,11 @@ async function connectMCPServers(
 const program = new Command();
 const execFile = promisify(execFileCallback);
 
-interface DoctorCheckResult {
-  name: string;
-  status: "pass" | "fail" | "warn";
-  detail: string;
-}
-
-interface DoctorSection {
-  title: string;
-  results: DoctorCheckResult[];
-}
+import {
+  type DoctorCheckResult,
+  type DoctorSection,
+  annotateDoctorRunbooks,
+} from "../logic/doctor-runbook.js";
 
 function formatDoctorStatus(status: DoctorCheckResult["status"]): string {
   return status === "pass" ? "✓" : status === "fail" ? "✗" : "○";
@@ -354,11 +349,18 @@ async function runModelDoctorCheck(): Promise<DoctorSection> {
 }
 
 function printDoctorSection(section: DoctorSection): void {
-  console.log(`\n  ${section.title}:`);
-  for (const result of section.results) {
+  const annotated = annotateDoctorRunbooks(section);
+  console.log(`\n  ${annotated.title}:`);
+  for (const result of annotated.results) {
     console.log(
       `    ${formatDoctorStatus(result.status)} ${result.name.padEnd(20)} ${result.detail}`,
     );
+    // Path-to-90 P8a: surface the runbook so the operator follows the
+    // chain. Indented under the failed line so it's visually attached
+    // to the failure it documents.
+    if (result.runbook) {
+      console.log(`        → see ${result.runbook}`);
+    }
   }
 }
 
