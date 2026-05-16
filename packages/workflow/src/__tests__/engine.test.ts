@@ -494,5 +494,102 @@ describe("artifact-store", () => {
       expect(validateGateCommand("   ").allowed).toBe(false);
       expect(validateGateCommand("\t\n").allowed).toBe(false);
     });
+
+    // ── v15 Attacker flag-loader bypass class (P9a-2) ─────────────────
+    //
+    // v15 round Attacker found that v13 bypass #2 (`-exec`) is one
+    // instance of a broader pattern: allowed tools accept FLAGS that
+    // load and execute attacker content (config files, reporters,
+    // wrapper binaries, linker flags). Each test below names the
+    // specific exploit + tool the v15 Attacker cited.
+
+    it("v15-attacker-flag-loader: vitest --config and --reporter load attacker JS", () => {
+      const dangerous = [
+        "npx vitest --config=/tmp/attacker.js",
+        "npx vitest --config /tmp/attacker.js",
+        "npx vitest run --reporter=/tmp/attacker.js",
+        "npx vitest --reporter /tmp/attacker.js",
+        "npm test --reporter=/tmp/rogue",
+      ];
+      for (const gate of dangerous) {
+        const v = validateGateCommand(gate);
+        expect(v.allowed, `must reject vitest flag-loader: ${gate}`).toBe(
+          false,
+        );
+        expect(v.reason).toMatch(/dangerous pattern|config|reporter/);
+      }
+      // Innocuous flag-adjacent strings still pass.
+      expect(validateGateCommand("npx vitest run").allowed).toBe(true);
+      expect(validateGateCommand("npm test --watch").allowed).toBe(true);
+    });
+
+    it("v15-attacker-flag-loader: go -toolexec, -gcflags, -ldflags wrapper-binary execution", () => {
+      const dangerous = [
+        "go test -toolexec=/tmp/x ./...",
+        "go test --toolexec=/tmp/x ./...",
+        "go test -toolexec /tmp/wrapper ./...",
+        "go test -gcflags=all=-N",
+        "go test --gcflags='all=-N -l'",
+        "go test -ldflags=-X=main.x=evil",
+        "go test --ldflags '-X main.x=evil'",
+      ];
+      for (const gate of dangerous) {
+        const v = validateGateCommand(gate);
+        expect(v.allowed, `must reject go flag-loader: ${gate}`).toBe(false);
+        expect(v.reason).toMatch(
+          /dangerous pattern|toolexec|gcflags|ldflags|metacharacters/,
+        );
+      }
+      // Innocuous Go-test args still pass.
+      expect(validateGateCommand("go test ./...").allowed).toBe(true);
+      expect(validateGateCommand("go test -v ./pkg/foo").allowed).toBe(true);
+    });
+
+    it("v15-attacker-flag-loader: cargo --target-dir writes where attacker chooses", () => {
+      const dangerous = [
+        "cargo test --target-dir=/tmp/attacker",
+        "cargo test --target-dir /tmp/attacker",
+        "cargo build --target-dir=/etc",
+      ];
+      for (const gate of dangerous) {
+        const v = validateGateCommand(gate);
+        expect(v.allowed, `must reject target-dir: ${gate}`).toBe(false);
+        expect(v.reason).toMatch(/dangerous pattern|target-dir/);
+      }
+      expect(validateGateCommand("cargo test").allowed).toBe(true);
+      expect(validateGateCommand("cargo build --release").allowed).toBe(true);
+    });
+
+    it("v15-attacker-flag-loader: generic --plugin loaders", () => {
+      const dangerous = [
+        "npm test --plugin=/tmp/x.js",
+        "npm test --plugin /tmp/x.js",
+        "npx vitest --plugin=/tmp/x",
+      ];
+      for (const gate of dangerous) {
+        const v = validateGateCommand(gate);
+        expect(v.allowed, `must reject plugin form: ${gate}`).toBe(false);
+        expect(v.reason).toMatch(/dangerous pattern|plugin/);
+      }
+    });
+
+    it("flag-loader rules are word-bounded — false positives stay false", () => {
+      // The danger patterns must not catch substrings inside longer
+      // tokens. E.g. `--configbar` is NOT `--config`, and the test
+      // shouldn't fail innocuous arguments that happen to contain the
+      // substring.
+      const innocuous = [
+        "npm test --configuration", // not --config (no trailing space/=)
+        "go test ./executor", // not -exec
+        "go test ./gcflagstub", // not -gcflags
+      ];
+      for (const gate of innocuous) {
+        const v = validateGateCommand(gate);
+        expect(
+          v.allowed,
+          `must NOT reject innocuous: ${gate} (reason: ${v.reason})`,
+        ).toBe(true);
+      }
+    });
   });
 });
