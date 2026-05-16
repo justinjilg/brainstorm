@@ -8,6 +8,7 @@
  */
 
 import { z } from "zod";
+import { compileContract } from "./contract/compile.js";
 
 // ── Schema ──────────────────────────────────────────────────────
 
@@ -227,7 +228,6 @@ export async function verifyProductContract(
     }),
   };
 
-  const { compileContract } = await import("./contract/compile.js");
   const plan = compileContract().validator;
 
   for (const ep of plan) {
@@ -243,13 +243,12 @@ export async function verifyProductContract(
         headers: reqHeaders,
         body,
         acceptStatuses: ep.acceptStatuses,
-        // The generated validator returns a structured outcome; the
-        // checkEndpoint helper expects a single string-or-null. Flatten
-        // here: a successful parse against any registered response
-        // shape (primary, simulation, error) is enough — that's how
-        // the spec defines the /execute endpoint.
-        validate: (responseBody) => {
-          const outcome = ep.validateResponseBody(responseBody);
+        // The generated validator picks a response variant via
+        // structural discriminator (success-literal / simulation-key)
+        // and validates against the chosen shape. checkEndpoint just
+        // surfaces the failure message.
+        validate: (responseBody, status) => {
+          const outcome = ep.validateResponseBody(responseBody, status);
           if (outcome.ok) return null;
           return outcome.message;
         },
@@ -268,7 +267,7 @@ async function checkEndpoint(
     headers?: Record<string, string>;
     body?: string;
     acceptStatuses?: number[];
-    validate: (body: any) => string | null;
+    validate: (body: unknown, status: number) => string | null;
   },
 ): Promise<VerifyResult> {
   const start = Date.now();
@@ -286,7 +285,9 @@ async function checkEndpoint(
     const acceptable = opts.acceptStatuses ?? [200];
 
     if (!acceptable.includes(res.status)) {
-      // 404 means the endpoint doesn't exist
+      // 404 means the endpoint doesn't exist. The Stage-2 spec is
+      // explicit that "Unknown tool" returns 200 + error envelope, NOT
+      // 404 — so 404 is never an accepted status for /execute.
       if (res.status === 404) {
         return {
           endpoint: `${method} ${endpointPath}`,
@@ -303,14 +304,39 @@ async function checkEndpoint(
       };
     }
 
-    let body: any = {};
-    try {
-      body = await res.json();
-    } catch {
-      // Some endpoints may return empty or non-JSON
+    // Parse body. The Stage-2 review caught a real footgun: the prior
+    // empty-`catch` silently swallowed JSON parse failures, letting a
+    // non-JSON 4xx body (e.g. a static "Not Found" HTML page on a
+    // missing route) reach the validator as `{}`. Fail loudly instead.
+    let body: unknown;
+    const contentType = res.headers.get("content-type") ?? "";
+    const isJson = contentType.includes("application/json");
+    const raw = await res.text();
+    if (raw.length === 0) {
+      // Empty body is acceptable for some endpoints (204-style). The
+      // validator gets `null` and can decide.
+      body = null;
+    } else if (!isJson) {
+      return {
+        endpoint: `${method} ${endpointPath}`,
+        status: "fail",
+        message: `Non-JSON response (Content-Type: ${contentType || "missing"}, ${raw.length} bytes)`,
+        latencyMs,
+      };
+    } else {
+      try {
+        body = JSON.parse(raw);
+      } catch (parseErr) {
+        return {
+          endpoint: `${method} ${endpointPath}`,
+          status: "fail",
+          message: `Invalid JSON in response: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`,
+          latencyMs,
+        };
+      }
     }
 
-    const error = opts.validate(body);
+    const error = opts.validate(body, res.status);
     if (error) {
       return {
         endpoint: `${method} ${endpointPath}`,
@@ -328,8 +354,12 @@ async function checkEndpoint(
     };
   } catch (err) {
     const latencyMs = Date.now() - start;
+    // AbortSignal.timeout throws a `TimeoutError`; cancelled signals
+    // throw an `AbortError`. Reading `err.name` is more robust than
+    // substring-matching the message across Node/runtime versions.
+    const name = (err as { name?: string } | undefined)?.name ?? "";
     const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes("timeout") || msg.includes("abort")) {
+    if (name === "TimeoutError" || name === "AbortError") {
       return {
         endpoint: `${method} ${endpointPath}`,
         status: "fail",

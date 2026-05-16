@@ -293,11 +293,43 @@ export interface EndpointDef {
   request?: z.ZodTypeAny;
   /** Primary response schema (success path). */
   response: z.ZodTypeAny;
-  /** Alternate response schemas (simulation, error, ack). */
+  /** Alternate response schemas (simulation, error, ack). Order preserved. */
   alternateResponses?: Array<{ name: string; schema: z.ZodTypeAny }>;
 }
 
-export const PLATFORM_ENDPOINTS: EndpointDef[] = [
+/**
+ * Construct PLATFORM_ENDPOINTS with module-load-time uniqueness
+ * assertions on `id` and on each endpoint's `alternateResponses[].name`.
+ * The type-design review flagged these as silent-overwrite footguns —
+ * duplicate IDs map-overwrite each other in the compiler's downstream
+ * Record-keyed structures (JSON Schema bundle, accept-status table).
+ */
+function defineEndpoints(defs: EndpointDef[]): EndpointDef[] {
+  const seenIds = new Set<string>();
+  for (const ep of defs) {
+    if (seenIds.has(ep.id)) {
+      throw new Error(
+        `PLATFORM_ENDPOINTS: duplicate endpoint id "${ep.id}". Each endpoint must have a unique id.`,
+      );
+    }
+    seenIds.add(ep.id);
+
+    if (ep.alternateResponses) {
+      const seenAlts = new Set<string>();
+      for (const alt of ep.alternateResponses) {
+        if (seenAlts.has(alt.name)) {
+          throw new Error(
+            `PLATFORM_ENDPOINTS["${ep.id}"]: duplicate alternateResponse name "${alt.name}".`,
+          );
+        }
+        seenAlts.add(alt.name);
+      }
+    }
+  }
+  return defs;
+}
+
+export const PLATFORM_ENDPOINTS: EndpointDef[] = defineEndpoints([
   {
     id: "health",
     title: "Health",
@@ -355,4 +387,4 @@ export const PLATFORM_ENDPOINTS: EndpointDef[] = [
     request: tenantLifecycleRequestSchema,
     response: tenantLifecycleResponseSchema,
   },
-];
+]);

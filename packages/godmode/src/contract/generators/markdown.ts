@@ -105,21 +105,30 @@ function describeFields(schema: z.ZodTypeAny): FieldDescription[] {
   return fields;
 }
 
+const MAX_UNWRAP_DEPTH = 16;
+
 function unwrap(schema: z.ZodTypeAny): z.ZodTypeAny {
   let cur: z.ZodTypeAny = schema;
   // ZodOptional/ZodDefault/ZodEffects wrap an inner schema.
   // The defensive any-casts here are deliberate: the Zod type defs are
   // package-version-sensitive and this code runs at build time.
-  for (let i = 0; i < 16; i++) {
+  for (let i = 0; i < MAX_UNWRAP_DEPTH; i++) {
     if (cur instanceof z.ZodOptional)
       cur = (cur as z.ZodOptional<z.ZodTypeAny>).unwrap();
     else if (cur instanceof z.ZodDefault)
       cur = (cur as z.ZodDefault<z.ZodTypeAny>)._def.innerType;
     else if (cur instanceof z.ZodEffects)
       cur = (cur as z.ZodEffects<z.ZodTypeAny>).innerType();
-    else break;
+    else return cur;
   }
-  return cur;
+  // Depth-cap reached without resolving to a leaf. Fail loud — the
+  // alternative is a silently degraded markdown table, which is the
+  // exact "spec drift you'll notice six months later" the compiler
+  // exists to prevent.
+  throw new Error(
+    `markdown generator: schema unwrap exceeded ${MAX_UNWRAP_DEPTH} levels. ` +
+      `Add the new Zod wrapper class to the unwrap() switch in markdown.ts.`,
+  );
 }
 
 function isOptional(schema: z.ZodTypeAny): boolean {
@@ -148,7 +157,16 @@ function typeLabel(schema: z.ZodTypeAny): string {
   if (inner instanceof z.ZodObject) return "object";
   if (inner instanceof z.ZodRecord) return "object<string, any>";
   if (inner instanceof z.ZodUnknown || inner instanceof z.ZodAny) return "any";
-  return inner._def?.typeName?.replace(/^Zod/, "").toLowerCase() ?? "unknown";
+  if (inner instanceof z.ZodNull) return "null";
+  if (inner instanceof z.ZodDate) return "datetime";
+  // Loud failure on uncovered wrappers — the snapshot test would catch
+  // a string change but reviewers might rubber-stamp "unknown" as a
+  // benign tweak. Throwing here forces the compiler to refuse drift.
+  const typeName = inner._def?.typeName ?? "unknown";
+  throw new Error(
+    `markdown generator: no type label for ${typeName}. ` +
+      `Add a case to typeLabel() in markdown.ts.`,
+  );
 }
 
 function topLevelSummary(schema: z.ZodTypeAny): string {

@@ -35,9 +35,26 @@ describe("contract compiler — snapshots", () => {
     ).toMatchSnapshot();
   });
 
-  it("JSON Schema bundle", () => {
-    expect(out.jsonSchema).toMatchSnapshot();
+  it("JSON Schema bundle — header", () => {
+    // Snapshot the bundle metadata separately from per-endpoint
+    // entries. The per-endpoint loop below splits the diff scope so a
+    // single .describe() change in one schema doesn't explode an
+    // 800-line snapshot block.
+    const { endpoints: _endpoints, ...header } = out.jsonSchema;
+    expect(header).toMatchSnapshot();
   });
+
+  for (const epId of [
+    "health",
+    "god-mode-tools",
+    "god-mode-execute",
+    "platform-events",
+    "platform-tenants",
+  ]) {
+    it(`JSON Schema — endpoint ${epId}`, () => {
+      expect(out.jsonSchema.endpoints[epId]).toMatchSnapshot();
+    });
+  }
 
   it("validator plan summary", () => {
     expect(
@@ -68,65 +85,114 @@ describe("validator plans — shape checking", () => {
   it("rejects a health response missing required fields", () => {
     const health = byId.get("health");
     expect(health).toBeDefined();
-    const outcome = health!.validateResponseBody({ status: "healthy" });
+    const outcome = health!.validateResponseBody({ status: "healthy" }, 200);
     expect(outcome.ok).toBe(false);
-    expect(outcome.issues?.some((i) => i.path === "version")).toBe(true);
+    if (outcome.ok) return;
+    expect(outcome.issues.some((i) => i.path === "version")).toBe(true);
   });
 
   it("accepts a valid health response", () => {
     const health = byId.get("health");
-    const outcome = health!.validateResponseBody({
-      status: "healthy",
-      version: "1.0.0",
-      product: "msp",
-    });
+    const outcome = health!.validateResponseBody(
+      {
+        status: "healthy",
+        version: "1.0.0",
+        product: "msp",
+      },
+      200,
+    );
     expect(outcome.ok).toBe(true);
   });
 
   it("rejects a tools list whose items are missing risk_level", () => {
     const list = byId.get("god-mode-tools");
-    const outcome = list!.validateResponseBody({
-      product: "msp",
-      version: "1.0.0",
-      tool_count: 1,
-      tools: [
-        {
-          name: "msp.list_devices",
-          domain: "endpoint-management",
-          product: "msp",
-          description: "x",
-          parameters: { type: "object" },
-          requires_changeset: false,
-          // risk_level intentionally missing
-        },
-      ],
-    });
+    const outcome = list!.validateResponseBody(
+      {
+        product: "msp",
+        version: "1.0.0",
+        tool_count: 1,
+        tools: [
+          {
+            name: "msp.list_devices",
+            domain: "endpoint-management",
+            product: "msp",
+            description: "x",
+            parameters: { type: "object" },
+            requires_changeset: false,
+            // risk_level intentionally missing
+          },
+        ],
+      },
+      200,
+    );
     expect(outcome.ok).toBe(false);
-    expect(outcome.issues?.some((i) => i.path.includes("risk_level"))).toBe(
+    if (outcome.ok) return;
+    expect(outcome.issues.some((i) => i.path.includes("risk_level"))).toBe(
       true,
     );
   });
 
-  it("accepts any of the three /execute response shapes", () => {
+  it("accepts each of the /execute response shapes via discriminator", () => {
     const exec = byId.get("god-mode-execute");
     expect(
-      exec!.validateResponseBody({
-        success: true,
-        tool: "msp.list_devices",
-        data: { count: 1 },
-        risk_level: "read_only",
-        trace_id: "srv-1",
-      }).ok,
+      exec!.validateResponseBody(
+        {
+          success: true,
+          tool: "msp.list_devices",
+          data: { count: 1 },
+          risk_level: "read_only",
+          trace_id: "srv-1",
+        },
+        200,
+      ).ok,
     ).toBe(true);
 
     expect(
-      exec!.validateResponseBody({
-        success: false,
-        error: { code: "VALIDATION", message: "bad" },
-        tool: "msp.list_devices",
-        trace_id: "srv-2",
-      }).ok,
+      exec!.validateResponseBody(
+        {
+          success: false,
+          error: { code: "VALIDATION", message: "bad" },
+          tool: "msp.list_devices",
+          trace_id: "srv-2",
+        },
+        400,
+      ).ok,
     ).toBe(true);
+  });
+
+  it("rejects a /execute response that lacks any discriminator", () => {
+    // Regression: the old "try every variant" loop would surface 3
+    // concatenated failure messages, which obscured the real problem.
+    // The new discriminator-first selector returns a single clear
+    // "unrecognised response" outcome.
+    const exec = byId.get("god-mode-execute");
+    const outcome = exec!.validateResponseBody({}, 200);
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.message).toMatch(/did not match any registered shape/);
+  });
+
+  it("validates /execute success-shape strictly (success: true)", () => {
+    // The pre-fix loop would have let a `{success: true, ...}` body
+    // miss `risk_level` and still pass (the simulation variant only
+    // checks structural shape). With discriminator-first selection,
+    // missing required fields on the picked variant fail loudly.
+    const exec = byId.get("god-mode-execute");
+    const outcome = exec!.validateResponseBody(
+      {
+        success: true,
+        tool: "msp.list_devices",
+        data: { count: 1 },
+        // risk_level intentionally missing
+        trace_id: "srv-1",
+      },
+      200,
+    );
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.issues.some((i) => i.path.includes("risk_level"))).toBe(
+      true,
+    );
   });
 
   it("validates request bodies when the endpoint declares one", () => {
@@ -134,6 +200,7 @@ describe("validator plans — shape checking", () => {
     expect(events?.validateRequestBody).toBeDefined();
     const bad = events!.validateRequestBody!({ id: "x" });
     expect(bad.ok).toBe(false);
-    expect(bad.issues?.length).toBeGreaterThan(0);
+    if (bad.ok) return;
+    expect(bad.issues.length).toBeGreaterThan(0);
   });
 });

@@ -27,7 +27,6 @@ export interface JsonSchemaBundle {
   $id: string;
   title: string;
   version: string;
-  definitions: Record<string, unknown>;
   endpoints: Record<
     string,
     {
@@ -46,7 +45,6 @@ export function generateJsonSchema(
   endpoints: EndpointDef[],
   opts: { version: string; baseId: string },
 ): JsonSchemaBundle {
-  const definitions: Record<string, unknown> = {};
   const endpointEntries: JsonSchemaBundle["endpoints"] = {};
 
   for (const ep of endpoints) {
@@ -55,15 +53,26 @@ export function generateJsonSchema(
       path: ep.path,
       auth: ep.auth,
       summary: ep.summary,
-      response: lowerSchema(ep.response),
+      response: lowerWithContext(ep.id, "response", ep.response),
     };
     if (ep.request) {
-      entry.request = lowerSchema(ep.request);
+      entry.request = lowerWithContext(ep.id, "request", ep.request);
     }
     if (ep.alternateResponses) {
-      entry.alternateResponses = Object.fromEntries(
-        ep.alternateResponses.map((alt) => [alt.name, lowerSchema(alt.schema)]),
-      );
+      const altRecord: Record<string, unknown> = {};
+      for (const alt of ep.alternateResponses) {
+        if (altRecord[alt.name] !== undefined) {
+          throw new Error(
+            `json-schema generator: duplicate alternateResponse name "${alt.name}" on endpoint "${ep.id}".`,
+          );
+        }
+        altRecord[alt.name] = lowerWithContext(
+          ep.id,
+          `alternateResponses.${alt.name}`,
+          alt.schema,
+        );
+      }
+      entry.alternateResponses = altRecord;
     }
     endpointEntries[ep.id] = entry;
   }
@@ -73,9 +82,23 @@ export function generateJsonSchema(
     $id: opts.baseId,
     title: "Brainstorm Platform Contract",
     version: opts.version,
-    definitions,
     endpoints: endpointEntries,
   };
+}
+
+function lowerWithContext(
+  endpointId: string,
+  field: string,
+  schema: unknown,
+): unknown {
+  try {
+    return lowerSchema(schema);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `json-schema generation failed for ${endpointId}.${field}: ${msg}`,
+    );
+  }
 }
 
 function lowerSchema(schema: unknown): unknown {

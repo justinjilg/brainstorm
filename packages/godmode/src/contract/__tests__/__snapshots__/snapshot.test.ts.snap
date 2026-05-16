@@ -1,103 +1,331 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`contract compiler — snapshots > JSON Schema bundle 1`] = `
+exports[`contract compiler — snapshots > JSON Schema bundle — header 1`] = `
 {
   "$id": "https://brainstorm.co/contract/v1/platform-contract.schema.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "definitions": {},
-  "endpoints": {
-    "god-mode-execute": {
-      "alternateResponses": {
+  "title": "Brainstorm Platform Contract",
+  "version": "1.0.0",
+}
+`;
+
+exports[`contract compiler — snapshots > JSON Schema — endpoint god-mode-execute 1`] = `
+{
+  "alternateResponses": {
+    "error": {
+      "additionalProperties": false,
+      "description": "Error response shape for every failure path.",
+      "properties": {
         "error": {
           "additionalProperties": false,
-          "description": "Error response shape for every failure path.",
           "properties": {
-            "error": {
-              "additionalProperties": false,
-              "properties": {
-                "code": {
-                  "enum": [
-                    "VALIDATION",
-                    "UNAUTHORIZED",
-                    "FORBIDDEN",
-                    "NOT_FOUND",
-                    "RATE_LIMITED",
-                    "CONFLICT",
-                    "INTERNAL",
-                    "UNAVAILABLE",
-                  ],
-                  "type": "string",
-                },
-                "message": {
-                  "type": "string",
-                },
-              },
-              "required": [
-                "code",
-                "message",
+            "code": {
+              "enum": [
+                "VALIDATION",
+                "UNAUTHORIZED",
+                "FORBIDDEN",
+                "NOT_FOUND",
+                "RATE_LIMITED",
+                "CONFLICT",
+                "INTERNAL",
+                "UNAVAILABLE",
               ],
-              "type": "object",
-            },
-            "success": {
-              "const": false,
-              "type": "boolean",
-            },
-            "tool": {
               "type": "string",
             },
-            "trace_id": {
+            "message": {
               "type": "string",
             },
           },
           "required": [
-            "success",
-            "error",
-            "tool",
-            "trace_id",
+            "code",
+            "message",
           ],
           "type": "object",
         },
+        "success": {
+          "const": false,
+          "type": "boolean",
+        },
+        "tool": {
+          "type": "string",
+        },
+        "trace_id": {
+          "type": "string",
+        },
+      },
+      "required": [
+        "success",
+        "error",
+        "tool",
+        "trace_id",
+      ],
+      "type": "object",
+    },
+    "simulation": {
+      "additionalProperties": false,
+      "description": "Simulation response when request.simulate=true.",
+      "properties": {
+        "changes": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "after": {},
+              "before": {},
+              "entity": {
+                "description": "Entity reference like \`device:abc\` or \`user:todd@example.com\`.",
+                "type": "string",
+              },
+              "operation": {
+                "enum": [
+                  "create",
+                  "update",
+                  "delete",
+                  "execute",
+                ],
+                "type": "string",
+              },
+              "system": {
+                "description": "Product slug owning the entity.",
+                "type": "string",
+              },
+            },
+            "required": [
+              "system",
+              "entity",
+              "operation",
+            ],
+            "type": "object",
+          },
+          "type": "array",
+        },
+        "description": {
+          "type": "string",
+        },
+        "risk_level": {
+          "enum": [
+            "read_only",
+            "low",
+            "medium",
+            "high",
+            "critical",
+          ],
+          "type": "string",
+        },
         "simulation": {
           "additionalProperties": false,
-          "description": "Simulation response when request.simulate=true.",
           "properties": {
-            "changes": {
+            "cascades": {
               "items": {
-                "additionalProperties": false,
-                "properties": {
-                  "after": {},
-                  "before": {},
-                  "entity": {
-                    "description": "Entity reference like \`device:abc\` or \`user:todd@example.com\`.",
-                    "type": "string",
-                  },
-                  "operation": {
-                    "enum": [
-                      "create",
-                      "update",
-                      "delete",
-                      "execute",
-                    ],
-                    "type": "string",
-                  },
-                  "system": {
-                    "description": "Product slug owning the entity.",
-                    "type": "string",
-                  },
-                },
-                "required": [
-                  "system",
-                  "entity",
-                  "operation",
-                ],
-                "type": "object",
+                "type": "string",
               },
               "type": "array",
             },
-            "description": {
+            "constraints": {
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+            "estimatedDuration": {
               "type": "string",
             },
+            "statePreview": {},
+            "success": {
+              "type": "boolean",
+            },
+          },
+          "required": [
+            "success",
+            "cascades",
+            "constraints",
+            "estimatedDuration",
+          ],
+          "type": "object",
+        },
+        "success": {
+          "const": true,
+          "type": "boolean",
+        },
+        "tool": {
+          "type": "string",
+        },
+        "trace_id": {
+          "type": "string",
+        },
+      },
+      "required": [
+        "success",
+        "tool",
+        "simulation",
+        "changes",
+        "description",
+        "risk_level",
+        "trace_id",
+      ],
+      "type": "object",
+    },
+  },
+  "auth": "bearer",
+  "method": "POST",
+  "path": "/api/v1/god-mode/execute",
+  "request": {
+    "additionalProperties": false,
+    "description": "Request body for POST /api/v1/god-mode/execute.",
+    "properties": {
+      "correlation_id": {
+        "description": "Optional client-provided UUID for request correlation.",
+        "format": "uuid",
+        "type": "string",
+      },
+      "idempotency_key": {
+        "description": "If present, repeated requests with the same key return cached result or 409.",
+        "format": "uuid",
+        "type": "string",
+      },
+      "params": {
+        "additionalProperties": {},
+        "description": "Tool-specific parameter object.",
+        "type": "object",
+      },
+      "simulate": {
+        "description": "When true and the tool requires_changeset, returns a simulation rather than executing.",
+        "type": "boolean",
+      },
+      "tool": {
+        "description": "Fully-qualified tool name.",
+        "type": "string",
+      },
+    },
+    "required": [
+      "tool",
+      "params",
+    ],
+    "type": "object",
+  },
+  "response": {
+    "additionalProperties": false,
+    "description": "Successful execution response.",
+    "properties": {
+      "data": {
+        "description": "Tool-specific success payload.",
+      },
+      "evidence_id": {
+        "description": "Reference to a stored evidence record, when applicable.",
+        "type": "string",
+      },
+      "risk_level": {
+        "enum": [
+          "read_only",
+          "low",
+          "medium",
+          "high",
+          "critical",
+        ],
+        "type": "string",
+      },
+      "success": {
+        "const": true,
+        "type": "boolean",
+      },
+      "tool": {
+        "type": "string",
+      },
+      "trace_id": {
+        "description": "Server-side trace identifier for audit.",
+        "type": "string",
+      },
+    },
+    "required": [
+      "success",
+      "tool",
+      "risk_level",
+      "trace_id",
+    ],
+    "type": "object",
+  },
+  "summary": "Invokes a single God Mode tool. If the tool requires a ChangeSet and the request has simulate=true, returns the simulation; otherwise executes and returns the result.",
+}
+`;
+
+exports[`contract compiler — snapshots > JSON Schema — endpoint god-mode-tools 1`] = `
+{
+  "auth": "bearer",
+  "method": "GET",
+  "path": "/api/v1/god-mode/tools",
+  "response": {
+    "additionalProperties": false,
+    "description": "Response body for GET /api/v1/god-mode/tools. Bearer auth required.",
+    "properties": {
+      "product": {
+        "description": "Product slug. Matches /health.product.",
+        "type": "string",
+      },
+      "tool_count": {
+        "minimum": 0,
+        "type": "integer",
+      },
+      "tools": {
+        "items": {
+          "additionalProperties": false,
+          "description": "A single God Mode tool entry in the discovery response.",
+          "properties": {
+            "description": {
+              "description": "Human-readable, injected into LLM prompt.",
+              "minLength": 1,
+              "type": "string",
+            },
+            "domain": {
+              "description": "Capability domain (see Domain Registry in the spec).",
+              "type": "string",
+            },
+            "evidence_type": {
+              "description": "What kind of audit evidence this tool emits when executed.",
+              "enum": [
+                "observation",
+                "execution",
+                "decision",
+              ],
+              "type": "string",
+            },
+            "name": {
+              "description": "Globally unique tool name in \`{product}.{verb}_{noun}\` form.",
+              "pattern": "^[a-z0-9_-]+\\.[a-z0-9_-]+$",
+              "type": "string",
+            },
+            "parameters": {
+              "additionalProperties": true,
+              "description": "JSONSchema for the tool's input validation.",
+              "properties": {
+                "properties": {
+                  "additionalProperties": {},
+                  "type": "object",
+                },
+                "required": {
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+                "type": {
+                  "const": "object",
+                  "type": "string",
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+            "product": {
+              "description": "Must match the response \`product\` field at the parent level.",
+              "type": "string",
+            },
+            "requires_changeset": {
+              "description": "If true, mutating execution flows through ChangeSet.",
+              "type": "boolean",
+            },
             "risk_level": {
+              "description": "Drives CLI auto-approve vs ChangeSet flow.",
               "enum": [
                 "read_only",
                 "low",
@@ -107,443 +335,227 @@ exports[`contract compiler — snapshots > JSON Schema bundle 1`] = `
               ],
               "type": "string",
             },
-            "simulation": {
-              "additionalProperties": false,
-              "properties": {
-                "cascades": {
-                  "items": {
-                    "type": "string",
-                  },
-                  "type": "array",
-                },
-                "constraints": {
-                  "items": {
-                    "type": "string",
-                  },
-                  "type": "array",
-                },
-                "estimatedDuration": {
-                  "type": "string",
-                },
-                "statePreview": {},
-                "success": {
-                  "type": "boolean",
-                },
-              },
-              "required": [
-                "success",
-                "cascades",
-                "constraints",
-                "estimatedDuration",
-              ],
-              "type": "object",
-            },
-            "success": {
-              "const": true,
-              "type": "boolean",
-            },
-            "tool": {
-              "type": "string",
-            },
-            "trace_id": {
-              "type": "string",
-            },
           },
           "required": [
-            "success",
-            "tool",
-            "simulation",
-            "changes",
+            "name",
+            "domain",
+            "product",
             "description",
+            "parameters",
             "risk_level",
-            "trace_id",
+            "requires_changeset",
           ],
           "type": "object",
         },
+        "type": "array",
       },
-      "auth": "bearer",
-      "method": "POST",
-      "path": "/api/v1/god-mode/execute",
-      "request": {
-        "additionalProperties": false,
-        "description": "Request body for POST /api/v1/god-mode/execute.",
-        "properties": {
-          "correlation_id": {
-            "description": "Optional client-provided UUID for request correlation.",
-            "format": "uuid",
-            "type": "string",
-          },
-          "idempotency_key": {
-            "description": "If present, repeated requests with the same key return cached result or 409.",
-            "format": "uuid",
-            "type": "string",
-          },
-          "params": {
-            "additionalProperties": {},
-            "description": "Tool-specific parameter object.",
-            "type": "object",
-          },
-          "simulate": {
-            "description": "When true and the tool requires_changeset, returns a simulation rather than executing.",
-            "type": "boolean",
-          },
-          "tool": {
-            "description": "Fully-qualified tool name.",
-            "type": "string",
-          },
-        },
-        "required": [
-          "tool",
-          "params",
-        ],
-        "type": "object",
+      "version": {
+        "description": "Product semver.",
+        "type": "string",
       },
-      "response": {
-        "additionalProperties": false,
-        "description": "Successful execution response.",
-        "properties": {
-          "data": {
-            "description": "Tool-specific success payload.",
-          },
-          "evidence_id": {
-            "description": "Reference to a stored evidence record, when applicable.",
-            "type": "string",
-          },
-          "risk_level": {
-            "enum": [
-              "read_only",
-              "low",
-              "medium",
-              "high",
-              "critical",
-            ],
-            "type": "string",
-          },
-          "success": {
-            "const": true,
-            "type": "boolean",
-          },
-          "tool": {
-            "type": "string",
-          },
-          "trace_id": {
-            "description": "Server-side trace identifier for audit.",
-            "type": "string",
-          },
-        },
-        "required": [
-          "success",
-          "tool",
-          "risk_level",
-          "trace_id",
-        ],
-        "type": "object",
-      },
-      "summary": "Invokes a single God Mode tool. If the tool requires a ChangeSet and the request has simulate=true, returns the simulation; otherwise executes and returns the result.",
     },
-    "god-mode-tools": {
-      "auth": "bearer",
-      "method": "GET",
-      "path": "/api/v1/god-mode/tools",
-      "response": {
-        "additionalProperties": false,
-        "description": "Response body for GET /api/v1/god-mode/tools. Bearer auth required.",
-        "properties": {
-          "product": {
-            "description": "Product slug. Matches /health.product.",
-            "type": "string",
-          },
-          "tool_count": {
-            "minimum": 0,
-            "type": "integer",
-          },
-          "tools": {
-            "items": {
-              "additionalProperties": false,
-              "description": "A single God Mode tool entry in the discovery response.",
-              "properties": {
-                "description": {
-                  "description": "Human-readable, injected into LLM prompt.",
-                  "minLength": 1,
-                  "type": "string",
-                },
-                "domain": {
-                  "description": "Capability domain (see Domain Registry in the spec).",
-                  "type": "string",
-                },
-                "evidence_type": {
-                  "description": "What kind of audit evidence this tool emits when executed.",
-                  "enum": [
-                    "observation",
-                    "execution",
-                    "decision",
-                  ],
-                  "type": "string",
-                },
-                "name": {
-                  "description": "Globally unique tool name in \`{product}.{verb}_{noun}\` form.",
-                  "pattern": "^[a-z0-9_-]+\\.[a-z0-9_-]+$",
-                  "type": "string",
-                },
-                "parameters": {
-                  "additionalProperties": true,
-                  "description": "JSONSchema for the tool's input validation.",
-                  "properties": {
-                    "properties": {
-                      "additionalProperties": {},
-                      "type": "object",
-                    },
-                    "required": {
-                      "items": {
-                        "type": "string",
-                      },
-                      "type": "array",
-                    },
-                    "type": {
-                      "const": "object",
-                      "type": "string",
-                    },
-                  },
-                  "required": [
-                    "type",
-                  ],
-                  "type": "object",
-                },
-                "product": {
-                  "description": "Must match the response \`product\` field at the parent level.",
-                  "type": "string",
-                },
-                "requires_changeset": {
-                  "description": "If true, mutating execution flows through ChangeSet.",
-                  "type": "boolean",
-                },
-                "risk_level": {
-                  "description": "Drives CLI auto-approve vs ChangeSet flow.",
-                  "enum": [
-                    "read_only",
-                    "low",
-                    "medium",
-                    "high",
-                    "critical",
-                  ],
-                  "type": "string",
-                },
-              },
-              "required": [
-                "name",
-                "domain",
-                "product",
-                "description",
-                "parameters",
-                "risk_level",
-                "requires_changeset",
-              ],
-              "type": "object",
-            },
-            "type": "array",
-          },
-          "version": {
-            "description": "Product semver.",
-            "type": "string",
-          },
-        },
-        "required": [
-          "product",
-          "version",
-          "tool_count",
-          "tools",
-        ],
-        "type": "object",
-      },
-      "summary": "Lists every God Mode tool this product exposes. Brainstorm CLI calls this at boot to register tools with the agent loop and MCP server.",
-    },
-    "health": {
-      "auth": "none",
-      "method": "GET",
-      "path": "/health",
-      "response": {
-        "additionalProperties": false,
-        "description": "Response body for GET /health. No auth required.",
-        "properties": {
-          "checks": {
-            "additionalProperties": {
-              "type": "string",
-            },
-            "description": "Sub-system health states (database, cache, queues, ...).",
-            "type": "object",
-          },
-          "product": {
-            "description": "Lowercase product slug. MUST match product.id in manifest.",
-            "pattern": "^[a-z0-9-]+$",
-            "type": "string",
-          },
-          "status": {
-            "description": "Overall product health. Maps to HTTP 200 (healthy/degraded) or 503 (unhealthy).",
-            "enum": [
-              "healthy",
-              "degraded",
-              "unhealthy",
-            ],
-            "type": "string",
-          },
-          "uptime_seconds": {
-            "description": "Seconds since the process started.",
-            "minimum": 0,
-            "type": "integer",
-          },
-          "version": {
-            "description": "Product semver string (e.g. '2.1.0').",
-            "type": "string",
-          },
-        },
-        "required": [
-          "status",
-          "version",
-          "product",
-        ],
-        "type": "object",
-      },
-      "summary": "Liveness + identity probe. Always available, no auth. Returns 200 for healthy/degraded, 503 for unhealthy.",
-    },
-    "platform-events": {
-      "auth": "bearer",
-      "method": "POST",
-      "path": "/api/v1/platform/events",
-      "request": {
-        "additionalProperties": false,
-        "description": "Platform event envelope. Posted to /api/v1/platform/events; receiver MUST verify the signature.",
-        "properties": {
-          "correlation_id": {
-            "format": "uuid",
-            "type": "string",
-          },
-          "data": {
-            "additionalProperties": {},
-            "description": "Event-specific payload.",
-            "type": "object",
-          },
-          "id": {
-            "description": "UUIDv7 event identifier.",
-            "type": "string",
-          },
-          "product": {
-            "type": "string",
-          },
-          "schema_version": {
-            "exclusiveMinimum": 0,
-            "type": "integer",
-          },
-          "signature": {
-            "description": "HMAC-SHA256 of canonical JSON (event minus signature field) signed with the per-tenant derived key.",
-            "type": "string",
-          },
-          "tenant_id": {
-            "type": "string",
-          },
-          "timestamp": {
-            "format": "date-time",
-            "type": "string",
-          },
-          "type": {
-            "description": "\`{product}.{noun}.{past_verb}\` event type.",
-            "pattern": "^[a-z0-9_-]+\\.[a-z0-9_-]+\\.[a-z0-9_-]+$",
-            "type": "string",
-          },
-        },
-        "required": [
-          "id",
-          "type",
-          "tenant_id",
-          "product",
-          "timestamp",
-          "data",
-          "schema_version",
-          "signature",
-        ],
-        "type": "object",
-      },
-      "response": {
-        "additionalProperties": false,
-        "properties": {
-          "accepted": {
-            "type": "boolean",
-          },
-          "handled": {
-            "type": "boolean",
-          },
-        },
-        "required": [
-          "accepted",
-          "handled",
-        ],
-        "type": "object",
-      },
-      "summary": "Inbound platform event endpoint. Receiver MUST verify the HMAC signature against the per-tenant derived key before processing.",
-    },
-    "platform-tenants": {
-      "auth": "bearer",
-      "method": "POST",
-      "path": "/api/v1/platform/tenants",
-      "request": {
-        "additionalProperties": false,
-        "description": "POST /api/v1/platform/tenants request body.",
-        "properties": {
-          "action": {
-            "enum": [
-              "provision",
-              "deprovision",
-            ],
-            "type": "string",
-          },
-          "idempotency_key": {
-            "format": "uuid",
-            "type": "string",
-          },
-          "product_config": {
-            "additionalProperties": {},
-            "type": "object",
-          },
-          "tenant_id": {
-            "type": "string",
-          },
-        },
-        "required": [
-          "tenant_id",
-          "action",
-          "idempotency_key",
-        ],
-        "type": "object",
-      },
-      "response": {
-        "additionalProperties": false,
-        "properties": {
-          "state": {
-            "enum": [
-              "provisioned",
-              "deprovisioned",
-              "pending",
-            ],
-            "type": "string",
-          },
-          "success": {
-            "type": "boolean",
-          },
-          "tenant_id": {
-            "type": "string",
-          },
-        },
-        "required": [
-          "success",
-          "tenant_id",
-          "state",
-        ],
-        "type": "object",
-      },
-      "summary": "Tenant provisioning + deprovisioning. Deprovision is a soft-delete with 30-day retention.",
-    },
+    "required": [
+      "product",
+      "version",
+      "tool_count",
+      "tools",
+    ],
+    "type": "object",
   },
-  "title": "Brainstorm Platform Contract",
-  "version": "1.0.0",
+  "summary": "Lists every God Mode tool this product exposes. Brainstorm CLI calls this at boot to register tools with the agent loop and MCP server.",
+}
+`;
+
+exports[`contract compiler — snapshots > JSON Schema — endpoint health 1`] = `
+{
+  "auth": "none",
+  "method": "GET",
+  "path": "/health",
+  "response": {
+    "additionalProperties": false,
+    "description": "Response body for GET /health. No auth required.",
+    "properties": {
+      "checks": {
+        "additionalProperties": {
+          "type": "string",
+        },
+        "description": "Sub-system health states (database, cache, queues, ...).",
+        "type": "object",
+      },
+      "product": {
+        "description": "Lowercase product slug. MUST match product.id in manifest.",
+        "pattern": "^[a-z0-9-]+$",
+        "type": "string",
+      },
+      "status": {
+        "description": "Overall product health. Maps to HTTP 200 (healthy/degraded) or 503 (unhealthy).",
+        "enum": [
+          "healthy",
+          "degraded",
+          "unhealthy",
+        ],
+        "type": "string",
+      },
+      "uptime_seconds": {
+        "description": "Seconds since the process started.",
+        "minimum": 0,
+        "type": "integer",
+      },
+      "version": {
+        "description": "Product semver string (e.g. '2.1.0').",
+        "type": "string",
+      },
+    },
+    "required": [
+      "status",
+      "version",
+      "product",
+    ],
+    "type": "object",
+  },
+  "summary": "Liveness + identity probe. Always available, no auth. Returns 200 for healthy/degraded, 503 for unhealthy.",
+}
+`;
+
+exports[`contract compiler — snapshots > JSON Schema — endpoint platform-events 1`] = `
+{
+  "auth": "bearer",
+  "method": "POST",
+  "path": "/api/v1/platform/events",
+  "request": {
+    "additionalProperties": false,
+    "description": "Platform event envelope. Posted to /api/v1/platform/events; receiver MUST verify the signature.",
+    "properties": {
+      "correlation_id": {
+        "format": "uuid",
+        "type": "string",
+      },
+      "data": {
+        "additionalProperties": {},
+        "description": "Event-specific payload.",
+        "type": "object",
+      },
+      "id": {
+        "description": "UUIDv7 event identifier.",
+        "type": "string",
+      },
+      "product": {
+        "type": "string",
+      },
+      "schema_version": {
+        "exclusiveMinimum": 0,
+        "type": "integer",
+      },
+      "signature": {
+        "description": "HMAC-SHA256 of canonical JSON (event minus signature field) signed with the per-tenant derived key.",
+        "type": "string",
+      },
+      "tenant_id": {
+        "type": "string",
+      },
+      "timestamp": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "type": {
+        "description": "\`{product}.{noun}.{past_verb}\` event type.",
+        "pattern": "^[a-z0-9_-]+\\.[a-z0-9_-]+\\.[a-z0-9_-]+$",
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "type",
+      "tenant_id",
+      "product",
+      "timestamp",
+      "data",
+      "schema_version",
+      "signature",
+    ],
+    "type": "object",
+  },
+  "response": {
+    "additionalProperties": false,
+    "properties": {
+      "accepted": {
+        "type": "boolean",
+      },
+      "handled": {
+        "type": "boolean",
+      },
+    },
+    "required": [
+      "accepted",
+      "handled",
+    ],
+    "type": "object",
+  },
+  "summary": "Inbound platform event endpoint. Receiver MUST verify the HMAC signature against the per-tenant derived key before processing.",
+}
+`;
+
+exports[`contract compiler — snapshots > JSON Schema — endpoint platform-tenants 1`] = `
+{
+  "auth": "bearer",
+  "method": "POST",
+  "path": "/api/v1/platform/tenants",
+  "request": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/platform/tenants request body.",
+    "properties": {
+      "action": {
+        "enum": [
+          "provision",
+          "deprovision",
+        ],
+        "type": "string",
+      },
+      "idempotency_key": {
+        "format": "uuid",
+        "type": "string",
+      },
+      "product_config": {
+        "additionalProperties": {},
+        "type": "object",
+      },
+      "tenant_id": {
+        "type": "string",
+      },
+    },
+    "required": [
+      "tenant_id",
+      "action",
+      "idempotency_key",
+    ],
+    "type": "object",
+  },
+  "response": {
+    "additionalProperties": false,
+    "properties": {
+      "state": {
+        "enum": [
+          "provisioned",
+          "deprovisioned",
+          "pending",
+        ],
+        "type": "string",
+      },
+      "success": {
+        "type": "boolean",
+      },
+      "tenant_id": {
+        "type": "string",
+      },
+    },
+    "required": [
+      "success",
+      "tenant_id",
+      "state",
+    ],
+    "type": "object",
+  },
+  "summary": "Tenant provisioning + deprovisioning. Deprovision is a soft-delete with 30-day retention.",
 }
 `;
 
@@ -771,7 +783,6 @@ exports[`contract compiler — snapshots > validator plan summary 1`] = `
       400,
       401,
       403,
-      404,
       429,
     ],
     "auth": "bearer",

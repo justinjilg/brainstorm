@@ -52,13 +52,16 @@ export interface CompileOptions {
 }
 
 export function compileContract(opts: CompileOptions = {}): CompilerOutput {
-  // Default accept-statuses match the prior hand-rolled
-  // verifyProductContract behaviour so the rewire is a no-op for live
-  // products.
+  // Default accept-statuses. 404 is intentionally NOT in any set —
+  // the spec is clear that "Unknown tool" returns 200 with an
+  // `{success:false, error:{code:"NOT_FOUND"}}` envelope, NOT an HTTP
+  // 404. Allowing 404 here let a missing endpoint masquerade as a
+  // healthy one (silent-failure-hunter critical #1 caught this before
+  // it reached real products).
   const accept: Record<string, number[]> = {
     health: [200],
     "god-mode-tools": [200],
-    "god-mode-execute": [200, 400, 401, 403, 404, 429],
+    "god-mode-execute": [200, 400, 401, 403, 429],
     "platform-events": [200, 401, 403],
     "platform-tenants": [200, 201, 400, 401, 403, 409],
     ...opts.endpointAcceptStatuses,
