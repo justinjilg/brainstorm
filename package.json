@@ -57,6 +57,9 @@
     ],
     "*.{json,md,yml,yaml}": [
       "prettier --write"
+    ],
+    "packages/tools/src/builtin/**/*.ts": [
+      "scripts/precommit-regen-catalog.sh"
     ]
   },
   "workspaces": [
