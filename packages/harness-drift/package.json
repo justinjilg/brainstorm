@@ -1,6 +1,6 @@
 {
   "name": "@brainst0rm/harness-drift",
-  "version": "0.14.1",
+  "version": "0.14.2",
   "type": "module",
   "exports": {
     ".": {
@@ -15,9 +15,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brainst0rm/harness-fs": "0.14.1",
-    "@brainst0rm/harness-index": "0.14.1",
-    "@brainst0rm/shared": "0.14.1",
+    "@brainst0rm/harness-fs": "0.14.2",
+    "@brainst0rm/harness-index": "0.14.2",
+    "@brainst0rm/shared": "0.14.2",
     "@iarna/toml": "^2.2"
   },
   "devDependencies": {

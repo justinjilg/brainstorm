@@ -1,6 +1,6 @@
 {
   "name": "@brainst0rm/broker",
-  "version": "0.14.1",
+  "version": "0.14.2",
   "type": "module",
   "exports": {
     ".": {
@@ -22,7 +22,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brainst0rm/shared": "0.14.1",
+    "@brainst0rm/shared": "0.14.2",
     "better-sqlite3": "^11"
   },
   "devDependencies": {
