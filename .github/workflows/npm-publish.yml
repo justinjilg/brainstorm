@@ -28,21 +28,41 @@ jobs:
       - name: Run tests
         run: npx turbo run test --filter=@brainst0rm/core --filter=@brainst0rm/tools
 
-      # All inputs are hardcoded package names — no untrusted user input in run commands
-      - name: Publish packages (dependency order)
+      # Publish ALL non-private workspaces. Previous version hardcoded a
+      # for-loop list that drifted from the workspace as new packages were
+      # added (v15 audit caught 4 packages — godmode, server, onboard,
+      # code-graph — and ~15 others silently dropping). `--workspaces` makes
+      # the workflow self-discovering: any new non-private package in
+      # packages/*/package.json publishes automatically.
+      #
+      # Publish order doesn't matter for npm's --workspaces flag; resolution
+      # of internal deps happens at install time, not publish time, so we
+      # don't need topological sorting here.
+      #
+      # `--access public` is required for @brainst0rm/* scoped packages.
+      # `--provenance` attaches the GitHub Actions provenance attestation.
+      # No `|| true` — failures must surface, not silently drop a package.
+      - name: Publish all non-private workspaces
+        shell: bash
         run: |
-          npm publish --workspace=@brainst0rm/shared --provenance --access public || true
-          for pkg in config db providers; do
-            npm publish --workspace=@brainst0rm/$pkg --provenance --access public || true
-          done
-          for pkg in router tools vault agents hooks mcp eval ingest gateway; do
-            npm publish --workspace=@brainst0rm/$pkg --provenance --access public || true
-          done
-          for pkg in core workflow orchestrator projects scheduler plugin-sdk docgen; do
-            npm publish --workspace=@brainst0rm/$pkg --provenance --access public || true
-          done
-          for pkg in sdk vscode cli; do
-            npm publish --workspace=@brainst0rm/$pkg --provenance --access public || true
-          done
+          set -euo pipefail
+          # Pre-flight: list what we're about to publish so logs are self-documenting
+          echo "Publishable workspaces:"
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const root = path.join('packages');
+            for (const dir of fs.readdirSync(root)) {
+              const pkgPath = path.join(root, dir, 'package.json');
+              if (!fs.existsSync(pkgPath)) continue;
+              const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+              if (pkg.private) continue;
+              console.log('  ' + pkg.name + '@' + pkg.version);
+            }
+          "
+          echo ""
+          # Single command publishes all non-private workspaces with provenance.
+          # npm skips workspaces marked "private": true automatically.
+          npm publish --workspaces --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
