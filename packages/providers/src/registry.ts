@@ -11,6 +11,7 @@ import {
 import { discoverLocalModels } from "./local/discovery.js";
 import { CLOUD_MODELS } from "./cloud/models.js";
 import { createBrainstormSaaSProvider } from "./cloud/brainstorm-saas.js";
+import type { BrEnvelopeListener } from "./cloud/br-envelope.js";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
@@ -32,9 +33,23 @@ export interface ResolvedKeys {
   get(name: string): string | null;
 }
 
+/**
+ * Optional callbacks/wires applied during registry construction.
+ * Kept as an open-shape object so we can grow it without re-threading
+ * 9 call sites in the CLI every time a new hook is added.
+ */
+export interface ProviderRegistryOptions {
+  /** Fired per BR response with the parsed envelope. Wired to the
+   *  routing_audit writer by the CLI bootstrap (P2b). The fetch path
+   *  in brainstorm-saas.ts invokes this fire-and-forget; rejections are
+   *  caught at the call site. */
+  onEnvelope?: BrEnvelopeListener;
+}
+
 export async function createProviderRegistry(
   config: BrainstormConfig,
   resolvedKeys?: ResolvedKeys,
+  options: ProviderRegistryOptions = {},
 ): Promise<ProviderRegistry> {
   /** Resolve a key: check resolvedKeys first, then fall back to process.env. */
   const getKey = (name: string): string | null =>
@@ -72,7 +87,9 @@ export async function createProviderRegistry(
   const brApiKey = getKey("BRAINSTORM_API_KEY");
   const hasBrainstormSaaS = !!brApiKey;
   if (brApiKey) {
-    providers.brainstormrouter = createBrainstormSaaSProvider(brApiKey);
+    providers.brainstormrouter = createBrainstormSaaSProvider(brApiKey, {
+      onEnvelope: options.onEnvelope,
+    });
   }
 
   // Direct provider SDKs (fallback when no BR SaaS, or for direct API key usage)
