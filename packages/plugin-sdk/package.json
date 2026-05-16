@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@brainst0rm/shared": "0.14.4",
+    "@brainst0rm/tools": "0.14.4",
     "zod": "^3"
   },
   "devDependencies": {

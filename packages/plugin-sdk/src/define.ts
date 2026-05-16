@@ -1,8 +1,12 @@
 import { z } from "zod";
+import {
+  defineTool,
+  type BrainstormToolDef,
+  type ToolMetadata,
+} from "@brainst0rm/tools";
 import type { ToolPermission } from "@brainst0rm/shared";
 import type {
   BrainstormPlugin,
-  PluginToolDef,
   PluginHookDef,
   PluginSkillDef,
 } from "./types.js";
@@ -24,6 +28,8 @@ import type {
  *       name: 'docker_build',
  *       description: 'Build a Docker image',
  *       permission: 'confirm',
+ *       category: 'infrastructure',
+ *       headlessSafe: true,
  *       inputSchema: z.object({
  *         tag: z.string().describe('Image tag'),
  *         dockerfile: z.string().optional().describe('Path to Dockerfile'),
@@ -52,7 +58,16 @@ export function defineBrainstormPlugin(
 }
 
 /**
- * Define a plugin tool with type-safe input schema.
+ * Define a plugin tool.
+ *
+ * Thin wrapper over `defineTool` from `@brainst0rm/tools` — Stage-1 of
+ * the tool compiler collapsed the two parallel shapes into one. Keeping
+ * this name as a re-export so existing plugin source compiles without
+ * change. New plugins can use `defineTool` directly.
+ *
+ * Metadata fields (`category`, `headlessSafe`, `protocol`, `tags`) are
+ * encouraged — plugins that omit them get sane defaults but won't show
+ * up in tool-catalog category indices.
  */
 export function definePluginTool<T extends z.ZodObject<any>>(config: {
   name: string;
@@ -60,8 +75,26 @@ export function definePluginTool<T extends z.ZodObject<any>>(config: {
   permission: ToolPermission;
   inputSchema: T;
   execute: (input: z.infer<T>) => Promise<unknown>;
-}): PluginToolDef<T> {
-  return config;
+  concurrent?: boolean;
+  readonly?: boolean;
+  category?: string;
+  tags?: string[];
+  headlessSafe?: boolean;
+  protocol?: string;
+}): BrainstormToolDef {
+  return defineTool({
+    name: config.name,
+    description: config.description,
+    permission: config.permission,
+    inputSchema: config.inputSchema,
+    execute: (input) => config.execute(input),
+    concurrent: config.concurrent,
+    readonly: config.readonly,
+    category: config.category,
+    tags: config.tags,
+    headlessSafe: config.headlessSafe,
+    protocol: config.protocol,
+  });
 }
 
 /**
@@ -124,3 +157,7 @@ function validatePlugin(plugin: BrainstormPlugin): void {
     }
   }
 }
+
+// Re-export the canonical metadata type so plugins can annotate without
+// reaching into @brainst0rm/tools.
+export type { ToolMetadata, BrainstormToolDef };
