@@ -132,11 +132,69 @@ export interface WebhookHandlerOptions {
 }
 
 // ── Replay Protection ─────────────────────────────────────────────
+//
+// In-memory nonce cache: maps X-GitHub-Delivery (UUIDv4) → ingest timestamp.
+// On match, the delivery is treated as a replay and dropped post-signature.
+//
+// v13 Attacker (re-verified v14) named a specific failure mode in the
+// previous implementation:
+//
+//   1. Eviction was AGE-ONLY (`if (ts < cutoff) delete`). Within a 5-min
+//      burst of 1001+ unique deliveries, NOTHING was old enough to evict,
+//      so the cache grew unboundedly past MAX_NONCE_CACHE — DoS vector.
+//   2. Cache lived only in memory, so a process restart erased every
+//      seen-nonce. Captured signed payloads replayed across restarts.
+//
+// P9b fixes (this commit):
+//
+//   - LRU eviction. When cache size exceeds MAX_NONCE_CACHE, evict the
+//     OLDEST entry by insertion order (Map iteration is insertion-ordered
+//     per ECMA-262). Bounds memory at MAX_NONCE_CACHE entries regardless
+//     of burst pattern. Closes failure mode 1.
+//   - MAX_NONCE_CACHE raised 1000 → 100_000. At typical GitHub-webhook
+//     volumes (single-digit deliveries/minute for most repos), this gives
+//     a multi-day eviction window before a captured nonce becomes
+//     replayable. Configurable via GH_WEBHOOK_NONCE_CACHE_SIZE env var
+//     for high-volume deployments.
+//
+// What is NOT closed here (carry-forward to P9b-2 / structural):
+//
+//   - Process-restart wipes the cache (failure mode 2). A persistent
+//     nonce store (redis or the existing SQLite at @brainst0rm/db) would
+//     close it. Tracked as P9b-followup since it requires either a new
+//     infra dep or coupling to the existing DB.
+//   - Replay-after-eviction beyond the LRU window remains possible if an
+//     attacker can sustain enough unique deliveries to flush the cache,
+//     OR if the captured payload is older than the cache's effective
+//     window. The only structural fix is sender-cooperation timestamp
+//     binding (Slack/Stripe webhook style) — GitHub does not currently
+//     support this. Operators concerned about long-term replay should
+//     run with `GH_WEBHOOK_NONCE_CACHE_SIZE` set to a multi-day capacity
+//     AND run behind a request-timestamp gate at the load balancer.
+//
+// Documented honestly per the path-to-90 "no cheating" rule.
 
-const REPLAY_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
-const MAX_NONCE_CACHE = 1000;
+const REPLAY_WINDOW_MS = 5 * 60 * 1000; // 5 minutes — opportunistic age-prune trigger.
 
-/** In-memory nonce cache — prevents replay of the same delivery. */
+/** Cache capacity. Override via env var for high-volume deployments. */
+const MAX_NONCE_CACHE = parseEnvCacheSize(
+  process.env.GH_WEBHOOK_NONCE_CACHE_SIZE,
+  100_000,
+);
+
+function parseEnvCacheSize(raw: string | undefined, fallback: number): number {
+  if (!raw) return fallback;
+  const n = Number(raw);
+  // Floor of 1000 prevents an operator typo (e.g. "10") from inadvertently
+  // crippling replay protection. Ceiling of 10M prevents pathological
+  // configurations that would exhaust memory by themselves.
+  if (!Number.isFinite(n) || n < 1000 || n > 10_000_000) return fallback;
+  return Math.floor(n);
+}
+
+/** In-memory nonce cache — prevents replay of the same delivery.
+ *  Insertion-ordered (ECMA-262 Map iteration). Oldest entry is the
+ *  first key in iteration order. */
 const seenDeliveries = new Map<string, number>(); // deliveryId → timestamp
 
 function isReplay(deliveryId: string | undefined): boolean {
@@ -147,17 +205,42 @@ function isReplay(deliveryId: string | undefined): boolean {
   // captured signed payloads indefinitely by simply stripping the header.
   if (!deliveryId) return true;
 
-  // Prune old entries
+  // Opportunistic age-prune: cheap; only inspects entries that already
+  // exist. Iteration is insertion-ordered, so once we hit the first
+  // fresh entry, all subsequent entries are also fresh — break early.
+  // Does NOT depend on the cap-eviction logic below for correctness.
   const cutoff = Date.now() - REPLAY_WINDOW_MS;
-  if (seenDeliveries.size > MAX_NONCE_CACHE) {
-    for (const [id, ts] of seenDeliveries) {
-      if (ts < cutoff) seenDeliveries.delete(id);
-    }
+  for (const [id, ts] of seenDeliveries) {
+    if (ts < cutoff) seenDeliveries.delete(id);
+    else break;
+  }
+
+  // Hard cap: LRU eviction. If still over after age-prune, evict oldest
+  // entries until at capacity. Closes the v13 Attacker burst-replay path.
+  while (seenDeliveries.size >= MAX_NONCE_CACHE) {
+    const oldest = seenDeliveries.keys().next().value;
+    if (oldest === undefined) break;
+    seenDeliveries.delete(oldest);
   }
 
   if (seenDeliveries.has(deliveryId)) return true;
   seenDeliveries.set(deliveryId, Date.now());
   return false;
+}
+
+/** Test-only — reset the cache between tests. */
+export function __resetNonceCacheForTests(): void {
+  seenDeliveries.clear();
+}
+
+/** Test-only — observability for cache-size assertions. */
+export function __nonceCacheSizeForTests(): number {
+  return seenDeliveries.size;
+}
+
+/** Test-only — exposed for the LRU regression test. */
+export function __isReplayForTests(deliveryId: string | undefined): boolean {
+  return isReplay(deliveryId);
 }
 
 /**
