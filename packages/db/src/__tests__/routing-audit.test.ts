@@ -198,4 +198,30 @@ describe("RoutingAuditRepository", () => {
     expect(repo.get("never-inserted")).toBeNull();
     db.close();
   });
+
+  it("deleteOlderThan removes rows below the cutoff (v16 Architect retention)", () => {
+    const db = getTestDb();
+    const repo = new RoutingAuditRepository(db);
+    const now = Math.floor(Date.now() / 1000);
+    const day = 24 * 60 * 60;
+    repo.insert(makeEntry({ requestId: "fresh", capturedAt: now - 1 * day }));
+    repo.insert(makeEntry({ requestId: "old-30", capturedAt: now - 30 * day }));
+    repo.insert(makeEntry({ requestId: "old-60", capturedAt: now - 60 * day }));
+    repo.insert(
+      makeEntry({ requestId: "old-100", capturedAt: now - 100 * day }),
+    );
+    expect(repo.count()).toBe(4);
+
+    const cutoff90 = now - 90 * day;
+    expect(repo.deleteOlderThan(cutoff90)).toBe(1);
+    expect(repo.count()).toBe(3);
+    expect(repo.get("old-100")).toBeNull();
+    expect(repo.get("fresh")).not.toBeNull();
+
+    const cutoff45 = now - 45 * day;
+    expect(repo.deleteOlderThan(cutoff45)).toBe(1);
+    expect(repo.count()).toBe(2);
+
+    db.close();
+  });
 });

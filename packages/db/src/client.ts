@@ -79,6 +79,8 @@ export function cleanupOldRecords(db: Database.Database): void {
     ["sessions", "DELETE FROM sessions WHERE created_at < ?"],
     ["audit_log", "DELETE FROM audit_log WHERE created_at < ?"],
     ["compliance_events", "DELETE FROM compliance_events WHERE created_at < ?"],
+    // v16 Architect — bound routing_audit growth at scale.
+    ["routing_audit", "DELETE FROM routing_audit WHERE captured_at < ?"],
   ];
   for (const [table, sql] of statements) {
     try {
