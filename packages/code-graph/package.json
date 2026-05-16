@@ -1,6 +1,11 @@
 {
   "name": "@brainst0rm/code-graph",
-  "version": "0.14.2",
+  "version": "0.14.3",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/justinjilg/brainstorm.git",
+    "directory": "packages/code-graph"
+  },
   "type": "module",
   "exports": {
     ".": {
@@ -20,7 +25,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@brainst0rm/shared": "0.14.2",
+    "@brainst0rm/shared": "0.14.3",
     "better-sqlite3": "^12.2.0",
     "graphology": "^0.26.0",
     "graphology-communities-louvain": "^2.0.2",

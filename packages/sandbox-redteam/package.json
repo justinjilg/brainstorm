@@ -1,6 +1,11 @@
 {
   "name": "@brainst0rm/sandbox-redteam",
   "version": "0.1.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/justinjilg/brainstorm.git",
+    "directory": "packages/sandbox-redteam"
+  },
   "type": "module",
   "description": "P3.5a red-team test framework for the Brainstorm endpoint-agent sandbox abstraction. Runs a configurable battery of probes (A1-A10 attacker classes) against any concrete Sandbox implementation (CHV, VF, mock) and emits a structured RedTeamReport. Validation layer that — once a real sandbox first-boots — proves it actually contains tool execution. Today probes are validated against a mock Sandbox; real CHV/VF runs are gated until first-boot.",
   "exports": {

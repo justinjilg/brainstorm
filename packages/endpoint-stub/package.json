@@ -1,6 +1,11 @@
 {
   "name": "@brainst0rm/endpoint-stub",
   "version": "0.1.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/justinjilg/brainstorm.git",
+    "directory": "packages/endpoint-stub"
+  },
   "type": "module",
   "description": "Reference implementation of the endpoint side of the Brainstorm dispatch protocol. Connects to a relay over WS, receives CommandEnvelopes, executes tools via a pluggable executor, emits CommandAck/ProgressEvent/CommandResult back. Used as a test fixture for distributed dispatch flows AND as a reference for the production brainstorm-agent (Go).",
   "exports": {

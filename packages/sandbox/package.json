@@ -1,6 +1,11 @@
 {
   "name": "@brainst0rm/sandbox",
   "version": "0.1.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/justinjilg/brainstorm.git",
+    "directory": "packages/sandbox"
+  },
   "type": "module",
   "description": "MicroVM sandbox abstraction for the Brainstorm endpoint agent. Defines the Sandbox interface (boot/executeTool/reset/shutdown) consumed by the endpoint dispatcher (P3.3) and provides a Cloud Hypervisor backend (P3.1a, Linux track). Apple Virtualization.framework backend (P3.1b) lives elsewhere.",
   "exports": {
