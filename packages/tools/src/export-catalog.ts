@@ -39,13 +39,13 @@ function buildCatalog(): Record<string, unknown> {
   // Build category index
   const categories: Record<string, string[]> = {};
   for (const tool of allTools) {
-    const meta = resolveToolMetadata(tool.name, {
+    const resolved = resolveToolMetadata(tool.name, {
       category: tool.category,
       headlessSafe: tool.headlessSafe,
       protocol: tool.protocol,
       tags: tool.tags,
     });
-    const cat = meta?.category ?? "other";
+    const cat = resolved?.metadata.category ?? "other";
     if (!categories[cat]) categories[cat] = [];
     categories[cat].push(tool.name);
   }
@@ -53,7 +53,7 @@ function buildCatalog(): Record<string, unknown> {
   // Build per-tool entries
   const tools: Record<string, unknown> = {};
   for (const tool of allTools) {
-    let inputSchema: unknown = {};
+    let inputSchema: unknown;
     try {
       inputSchema = zodToJsonSchema(tool.inputSchema, { target: "openApi3" });
       // Remove $schema wrapper that zod-to-json-schema adds
@@ -64,23 +64,32 @@ function buildCatalog(): Record<string, unknown> {
       ) {
         delete (inputSchema as Record<string, unknown>)["$schema"];
       }
-    } catch {
-      inputSchema = { type: "object", properties: {} };
+    } catch (err) {
+      // Fail-loud: a tool whose schema can't be lowered would otherwise
+      // ship to docs/tool-catalog.json as an empty object, lying to MCP
+      // clients about what params the tool accepts. Catalog export is a
+      // build-time artifact; failing here is correct.
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `zodToJsonSchema failed for tool "${tool.name}": ${msg}. ` +
+          `Either fix the Zod schema or change export-catalog to handle this tool's shape explicitly.`,
+      );
     }
 
-    const meta = resolveToolMetadata(tool.name, {
+    const resolved = resolveToolMetadata(tool.name, {
       category: tool.category,
       headlessSafe: tool.headlessSafe,
       protocol: tool.protocol,
       tags: tool.tags,
     });
+    const meta = resolved?.metadata;
 
     tools[tool.name] = {
       description: tool.description,
       category: meta?.category ?? "other",
       permission: tool.permission,
       readonly: tool.readonly ?? false,
-      headlessSafe: meta?.headlessSafe ?? true,
+      headlessSafe: meta?.headlessSafe ?? false,
       ...(meta?.protocol ? { protocol: meta.protocol } : {}),
       inputSchema,
     };

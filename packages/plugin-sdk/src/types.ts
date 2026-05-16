@@ -15,12 +15,12 @@ import type { BrainstormToolDef } from "@brainst0rm/tools";
  * principle BR's `defineCapability()` enforces for routes — one source
  * of truth, every surface generated — applies here.
  */
-export type PluginToolDef<
-  // The original generic parameter is preserved for source compatibility
-  // even though BrainstormToolDef no longer parameterizes on the input
-  // schema type. `_T` is intentionally unused.
-  _T = unknown,
-> = BrainstormToolDef;
+// PluginToolDef preserves the original output-type generic so plugin
+// authors who keep typed tool values (e.g. `PluginToolDef<MyResult>`)
+// don't lose inference. The input-schema generic is no longer needed
+// because BrainstormToolDef parameterizes only on TOutput; input typing
+// flows through `z.infer<typeof schema>` at the call site.
+export type PluginToolDef<TOutput = unknown> = BrainstormToolDef<TOutput>;
 
 /**
  * Plugin hook definition — lifecycle event handlers.

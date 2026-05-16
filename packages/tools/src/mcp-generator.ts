@@ -21,7 +21,7 @@
  * brainstorm's own tools over MCP" wiring.
  */
 
-import type { z } from "zod";
+import { z } from "zod";
 import type { BrainstormToolDef } from "./base.js";
 import { resolveToolMetadata } from "./builtin/_metadata.js";
 
@@ -42,15 +42,49 @@ export interface MCPToolRegistration {
  * Convert a BrainstormToolDef into the shape an MCP server can register.
  * The handler wraps `def.execute` and emits the MCP-standard `content`
  * envelope. JSON.stringify is used for the text rendering so structured
- * results survive the round-trip.
+ * results survive the round-trip; tools returning Buffer/Date/circular
+ * objects must coerce themselves before returning — the generator
+ * intentionally doesn't try to be clever about them.
+ *
+ * Throws `MCPSchemaUnsupportedError` if the tool's inputSchema is not a
+ * ZodObject (e.g., a ZodEffects from `.refine()` chains, or a ZodUnion).
+ * The MCP protocol requires an object-shaped parameter schema; silently
+ * casting a non-object schema would register a tool with no validation
+ * and accept arbitrary JSON from the model.
  */
+export class MCPSchemaUnsupportedError extends Error {
+  constructor(toolName: string, actualConstructor: string) {
+    super(
+      `Cannot expose tool "${toolName}" over MCP: inputSchema is ${actualConstructor}, ` +
+        `but MCP requires a ZodObject. Restructure the schema as z.object({...}) or unwrap ` +
+        `effects manually before passing to toMCPTool.`,
+    );
+    this.name = "MCPSchemaUnsupportedError";
+  }
+}
+
 export function toMCPTool(def: BrainstormToolDef): MCPToolRegistration {
-  const meta = resolveToolMetadata(def.name, {
+  // The type system says `inputSchema` is `z.ZodObject<any>`, but at
+  // runtime nothing prevents a tool from constructing its def with a
+  // ZodEffects (`.refine(...)`), ZodUnion, or a plain `any` cast. Trust
+  // the runtime, not the type — the schema gets cast for the access
+  // below.
+  const schema: unknown = def.inputSchema;
+  if (!(schema instanceof z.ZodObject)) {
+    const ctorName =
+      schema && typeof schema === "object"
+        ? (schema as { constructor?: { name?: string } }).constructor?.name
+        : undefined;
+    throw new MCPSchemaUnsupportedError(def.name, ctorName ?? typeof schema);
+  }
+
+  const resolved = resolveToolMetadata(def.name, {
     category: def.category,
     headlessSafe: def.headlessSafe,
     protocol: def.protocol,
     tags: def.tags,
   });
+  const meta = resolved?.metadata;
 
   // MCP tool names cannot contain dots. Brainstorm's God Mode tools use
   // dot-namespaced names like `msp.endpoint.list`; local tools don't,
@@ -64,7 +98,7 @@ export function toMCPTool(def: BrainstormToolDef): MCPToolRegistration {
   return {
     name,
     description,
-    paramShape: def.inputSchema.shape as z.ZodRawShape,
+    paramShape: schema.shape as z.ZodRawShape,
     handler: async (params) => {
       const result = await def.execute(params);
       return {

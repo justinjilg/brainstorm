@@ -6,9 +6,15 @@ export {
 } from "./base.js";
 export {
   BUILTIN_TOOL_METADATA,
+  BUILTIN_TOOL_NAMES,
   resolveToolMetadata,
+  type MetadataConflict,
 } from "./builtin/_metadata.js";
-export { toMCPTool, type MCPToolRegistration } from "./mcp-generator.js";
+export {
+  toMCPTool,
+  MCPSchemaUnsupportedError,
+  type MCPToolRegistration,
+} from "./mcp-generator.js";
 export {
   withWorkspace,
   getWorkspace,

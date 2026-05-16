@@ -20,9 +20,9 @@ export interface ToolExecuteContext {
  * registered tool to declare them (inline or via the central
  * `BUILTIN_TOOL_METADATA` table in `builtin/_metadata.ts`).
  *
- * See `docs/concepts/tool-compiler.md` for the design rationale —
- * specifically the "Move lockstep from discipline to mechanism"
- * principle borrowed from BrainstormRouter's contract compiler.
+ * Design rationale: "move lockstep from discipline to mechanism" —
+ * borrowed verbatim from BrainstormRouter's contract compiler header
+ * (brainstormrouter/src/api/capability-def.ts).
  */
 export interface ToolMetadata {
   /** Coarse grouping for catalog/docs surfaces (e.g. "filesystem", "git"). */

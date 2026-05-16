@@ -172,26 +172,84 @@ export const BUILTIN_TOOL_METADATA: Record<string, ToolMetadata> = {
 };
 
 /**
+ * Names of every tool registered in the canonical table. Used by the
+ * gate test to assert built-in registry membership without re-keying
+ * the underlying object.
+ */
+export const BUILTIN_TOOL_NAMES: ReadonlySet<string> = new Set(
+  Object.keys(BUILTIN_TOOL_METADATA),
+);
+
+/**
+ * Result of a conflict detection between inline declarations and the
+ * canonical table. Returned alongside the resolved metadata so the
+ * gate test (and any debug surface) can flag built-in tools that
+ * silently override the central source of truth.
+ */
+export interface MetadataConflict {
+  field: keyof ToolMetadata;
+  inline: unknown;
+  canonical: unknown;
+}
+
+/**
  * Resolve a tool's effective metadata by merging the canonical table
- * with anything declared inline on the tool def. Inline fields win — so
- * a plugin or test can override central defaults without rewriting this
- * file.
+ * with anything declared inline on the tool def.
  *
- * Returns `undefined` if the tool has no inline declaration AND no
- * entry in the canonical table. The gate test fails CI in that case
- * for built-in tools.
+ * Merge semantics:
+ *   - For BUILT-IN tools (name appears in `BUILTIN_TOOL_NAMES`), the
+ *     canonical table wins on every field. Inline declarations on a
+ *     built-in are still surfaced via the returned `conflicts` array so
+ *     the gate test can flag silent overrides.
+ *   - For non-built-in tools (plugin tools, test fixtures), inline
+ *     fields win — plugins are responsible for their own metadata and
+ *     have no central table entry to deviate from.
+ *
+ * Defaults are fail-closed: a tool with no declared `headlessSafe`
+ * resolves to `false`, which means the headless runner will refuse to
+ * invoke it. Opting INTO headless safety must be explicit; this
+ * inverts the prior fail-open default that the v1 review flagged.
+ *
+ * Returns `undefined` only when neither the canonical table nor inline
+ * declarations supply a category — that's the unrecoverable case the
+ * gate test fails on.
  */
 export function resolveToolMetadata(
   toolName: string,
   inline?: Partial<ToolMetadata>,
-): ToolMetadata | undefined {
+): { metadata: ToolMetadata; conflicts: MetadataConflict[] } | undefined {
   const canonical = BUILTIN_TOOL_METADATA[toolName];
-  if (!canonical && (!inline || inline.category === undefined))
-    return undefined;
+  const isBuiltin = BUILTIN_TOOL_NAMES.has(toolName);
+
+  // No path to a category — declared neither centrally nor inline.
+  if (!canonical && !inline?.category) return undefined;
+
+  const conflicts: MetadataConflict[] = [];
+  if (isBuiltin && canonical && inline) {
+    for (const field of ["category", "headlessSafe", "protocol"] as const) {
+      if (inline[field] !== undefined && inline[field] !== canonical[field]) {
+        conflicts.push({
+          field,
+          inline: inline[field],
+          canonical: canonical[field],
+        });
+      }
+    }
+  }
+
+  // Built-in: canonical wins. Plugin: inline wins. headlessSafe defaults
+  // fail-closed (false) when neither side declares it.
+  const win = isBuiltin
+    ? <T>(c: T | undefined, i: T | undefined) => c ?? i
+    : <T>(c: T | undefined, i: T | undefined) => i ?? c;
+
   return {
-    category: inline?.category ?? canonical?.category ?? "other",
-    headlessSafe: inline?.headlessSafe ?? canonical?.headlessSafe ?? true,
-    tags: inline?.tags ?? canonical?.tags,
-    protocol: inline?.protocol ?? canonical?.protocol,
+    metadata: {
+      category: win(canonical?.category, inline?.category) ?? "other",
+      headlessSafe: win(canonical?.headlessSafe, inline?.headlessSafe) ?? false,
+      tags: win(canonical?.tags, inline?.tags),
+      protocol: win(canonical?.protocol, inline?.protocol),
+    },
+    conflicts,
   };
 }

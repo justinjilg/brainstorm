@@ -65,23 +65,29 @@ export function defineBrainstormPlugin(
  * this name as a re-export so existing plugin source compiles without
  * change. New plugins can use `defineTool` directly.
  *
+ * Both the input-schema generic (`T`) and the output type (`TOutput`)
+ * are preserved so downstream callers retain `z.infer<T>` inference
+ * for params and full typing for execute's return value. Dropping
+ * those generics silently widened `.execute()` to `unknown` — the
+ * Stage-1 review flagged this as a regression.
+ *
  * Metadata fields (`category`, `headlessSafe`, `protocol`, `tags`) are
- * encouraged — plugins that omit them get sane defaults but won't show
- * up in tool-catalog category indices.
+ * encouraged — plugins that omit them get fail-closed defaults
+ * (`headlessSafe: false`) and bucket as `"other"` in the catalog.
  */
-export function definePluginTool<T extends z.ZodObject<any>>(config: {
+export function definePluginTool<T extends z.ZodObject<any>, TOutput>(config: {
   name: string;
   description: string;
   permission: ToolPermission;
   inputSchema: T;
-  execute: (input: z.infer<T>) => Promise<unknown>;
+  execute: (input: z.infer<T>) => Promise<TOutput>;
   concurrent?: boolean;
   readonly?: boolean;
   category?: string;
   tags?: string[];
   headlessSafe?: boolean;
   protocol?: string;
-}): BrainstormToolDef {
+}): BrainstormToolDef<TOutput> {
   return defineTool({
     name: config.name,
     description: config.description,
