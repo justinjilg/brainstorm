@@ -107,3 +107,58 @@ describe("github webhook handler", () => {
     expect(onPush).toHaveBeenCalledTimes(1);
   });
 });
+
+// ── v13 Attacker bypass #3: webhook nonce burst-replay (path-to-90 P9b) ──
+
+describe("github-webhook — LRU nonce cache (P9b)", () => {
+  // Reach into the internal cache-management surface via the test-only
+  // exports. These are intentionally non-public — they exist so this
+  // regression suite can pin the burst-replay defense without spinning
+  // up a full handler + 100k signed deliveries.
+
+  it("bounds cache size and supports repeat-detection on inserted nonces", async () => {
+    const mod = await import("../github-webhook.js");
+    mod.__resetNonceCacheForTests();
+    expect(mod.__nonceCacheSizeForTests()).toBe(0);
+
+    // Insert 1000 unique fresh nonces and confirm each is registered
+    // as first-sight (not replay) and the cache grows accordingly.
+    for (let i = 0; i < 1000; i++) {
+      const isReplay = mod.__isReplayForTests(`burst-${i}`);
+      expect(isReplay, `burst-${i} should be first-sight`).toBe(false);
+    }
+    expect(mod.__nonceCacheSizeForTests()).toBe(1000);
+
+    // Replay one of those nonces — must be detected.
+    expect(mod.__isReplayForTests("burst-500")).toBe(true);
+
+    // Cache size is bounded by MAX_NONCE_CACHE (default 100_000); after
+    // 1000 fresh inserts, size is 1000. Pre-fix, the v13 Attacker noted
+    // that ONLY age-prune ran, so a burst within 5 minutes could grow
+    // the cache unboundedly (DoS) AND the original captured nonce could
+    // sit on the periphery and replay after age-eviction. Now LRU
+    // eviction triggers on cap hit regardless of age — bounded memory.
+    expect(mod.__nonceCacheSizeForTests()).toBeLessThanOrEqual(100_000);
+
+    mod.__resetNonceCacheForTests();
+  });
+
+  it("repeat-replay on the same delivery id is rejected", async () => {
+    const mod = await import("../github-webhook.js");
+    mod.__resetNonceCacheForTests();
+    expect(mod.__isReplayForTests("repeat-id")).toBe(false);
+    expect(mod.__isReplayForTests("repeat-id")).toBe(true);
+    expect(mod.__isReplayForTests("repeat-id")).toBe(true);
+    mod.__resetNonceCacheForTests();
+  });
+
+  it("missing or empty X-GitHub-Delivery is treated as replay-suspect", async () => {
+    const mod = await import("../github-webhook.js");
+    mod.__resetNonceCacheForTests();
+    expect(mod.__isReplayForTests(undefined)).toBe(true);
+    expect(mod.__isReplayForTests("")).toBe(true);
+    // The cache should be empty afterward — replay-suspect drops do
+    // NOT register a nonce (no false-positive future-replay).
+    expect(mod.__nonceCacheSizeForTests()).toBe(0);
+  });
+});
