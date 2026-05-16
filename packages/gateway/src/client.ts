@@ -19,7 +19,17 @@ import type {
   AuditEntry,
   MemoryEntry,
   GatewayAgentProfile,
+  BootstrapAgentResponse,
 } from "./types.js";
+
+/**
+ * Validate an agent_id against BR's pattern (from /openapi.json):
+ *   ^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$
+ * 3-64 chars, lowercase alphanumeric + hyphens, no leading/trailing hyphen.
+ */
+export function isValidAgentId(id: string): boolean {
+  return /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/.test(id);
+}
 
 /**
  * BrainstormRouter gateway client.
@@ -314,6 +324,41 @@ export class BrainstormGateway {
       cost_actual: outcome.cost,
       tool_calls: outcome.toolCalls,
     });
+  }
+
+  // ── Agent Bootstrap ─────────────────────────────────────────────────
+  //
+  // POST /v1/agent/bootstrap — zero-human agent onboarding. Creates an
+  // agent profile + issues a 1-hour JWT in one call. Idempotent on
+  // agent_id (re-bootstrapping returns a fresh JWT for the existing
+  // profile). Path-to-90 P3: closes v14 risk register cite "Agent never
+  // claims an agent_id" by giving the CLI a real BR identity.
+  //
+  // agent_id must be 3-64 chars, lowercase alphanumeric + hyphens
+  // (regex from openapi.json: ^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$).
+
+  async bootstrapAgent(opts: {
+    agentId: string;
+    displayName?: string;
+    costCenter?: string;
+    budgetDailyUsd?: number;
+    budgetMonthlyUsd?: number;
+    metadata?: Record<string, unknown>;
+  }): Promise<BootstrapAgentResponse> {
+    if (!isValidAgentId(opts.agentId)) {
+      throw new Error(
+        `bootstrapAgent: agentId "${opts.agentId}" violates BR's pattern (3-64 chars, lowercase alphanumeric + hyphens, no leading/trailing hyphen). See /openapi.json#/components/schemas/AgentBootstrapRequest.`,
+      );
+    }
+    const body: Record<string, unknown> = { agent_id: opts.agentId };
+    if (opts.displayName !== undefined) body.display_name = opts.displayName;
+    if (opts.costCenter !== undefined) body.cost_center = opts.costCenter;
+    if (opts.budgetDailyUsd !== undefined)
+      body.budget_daily_usd = opts.budgetDailyUsd;
+    if (opts.budgetMonthlyUsd !== undefined)
+      body.budget_monthly_usd = opts.budgetMonthlyUsd;
+    if (opts.metadata !== undefined) body.metadata = opts.metadata;
+    return this.post("/v1/agent/bootstrap", body);
   }
 
   // ── HTTP Helpers ────────────────────────────────────────────────────
