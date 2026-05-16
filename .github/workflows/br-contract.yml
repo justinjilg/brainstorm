@@ -1,0 +1,85 @@
+name: BR Contract Ratchet
+
+# Runs live drift-detection tests in
+# packages/providers/src/__tests__/br-live-contract.live.test.ts against
+# the running BrainstormRouter instance. Catches the failure class PR #302
+# had to hand-fix: BR adds/changes a header or endpoint, CLI silently
+# disagrees, drift accrues until a human notices.
+#
+# Job is intentionally separate from ci.yml because it requires network
+# egress to api.brainstormrouter.com and uses the embedded community key
+# (rate-limited, public). The contract test SHOULD fail when BR drifts;
+# that is a signal, not a flake.
+#
+# Workflow security: this file does NOT interpolate any untrusted input
+# (issue/PR titles/bodies/etc.) into run: commands. Only safe context
+# values (github.event_name, context.issue.number, context.repo.*) are
+# used, and only in if: conditions or github-script blocks where they
+# are typed values, not shell-interpolated strings.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      - "packages/providers/**"
+      - "packages/tools/src/builtin/br-intelligence.ts"
+      - "packages/gateway/**"
+      - "docs/brainstormrouter-integration.md"
+      - ".github/workflows/br-contract.yml"
+  schedule:
+    - cron: "0 9 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  br-contract-ratchet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build providers package
+        run: npx turbo run build --filter=@brainst0rm/providers
+
+      - name: Run live BR contract ratchet
+        env:
+          RUN_LIVE_BR: "1"
+        run: |
+          cd packages/providers
+          npx vitest run src/__tests__/br-live-contract.live.test.ts --reporter=verbose
+
+      - name: Comment on PR with triage pointer (on failure)
+        if: ${{ failure() && github.event_name == 'pull_request' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = [
+              '### BR Contract Ratchet failed',
+              '',
+              'The live drift-detection tests in',
+              '`packages/providers/src/__tests__/br-live-contract.live.test.ts`',
+              'detected a divergence between this repo and `api.brainstormrouter.com`.',
+              '',
+              '**Common triage paths:**',
+              '- New `x-br-*` header from BR → add to `CANONICAL_BR_HEADERS` + a typed field on `BrEnvelope`',
+              '- Renamed/changed `/v1/discovery.memory.blocks` → update Zod enum in `packages/tools/src/builtin/br-intelligence.ts`',
+              '- `/openapi.json` path count dropped → BR likely had an incident; verify BR-side first',
+              '',
+              'See `docs/path-to-90-plan-2026-05-15.md` Phase 5 for the design rationale.',
+            ].join('\n');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });

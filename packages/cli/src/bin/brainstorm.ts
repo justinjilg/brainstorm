@@ -7282,8 +7282,19 @@ program
       if (resolvedBRKey) process.env._BR_RESOLVED_KEY = resolvedBRKey;
 
       // Boot Phase C: provider registry + MCP connections in parallel
+      //
+      // P2b — wire the BR envelope listener into routing_audit. Every chat
+      // turn that flows through brainstormrouter SaaS now writes a row
+      // keyed on x-request-id. Closes the v15 audit-chain overclaim: prior
+      // to this we said "the audit-hash IS the chain" but never persisted
+      // the rows the hash chained.
+      const { RoutingAuditRepository, wireRoutingAudit } =
+        await import("@brainst0rm/db");
+      const auditRepo = new RoutingAuditRepository(db);
+      const onEnvelope = wireRoutingAudit(auditRepo);
+
       const [registry] = await Promise.all([
-        createProviderRegistry(config, resolvedKeys),
+        createProviderRegistry(config, resolvedKeys, { onEnvelope }),
         opts.fast
           ? Promise.resolve()
           : connectMCPServers(
