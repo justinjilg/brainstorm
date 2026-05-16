@@ -85,7 +85,7 @@ reportOutcome       → POST /v1/feedback/{requestId} ← routing learning signa
 ### Raw fetches bypassing the client
 
 ```
-POST /v1/agent/trajectories  ← trajectory-capture.ts:240 (fire-and-forget per orchestration run)
+POST /v1/agent/trajectory    ← trajectory-capture.ts:240 (fire-and-forget per orchestration run; path canonicalized to singular in PR #302 — was plural /trajectories which 404'd)
 GET  /health                 ← brainstorm.ts:5071 (duplicate)
 POST /v1/community/patterns  ← br-intelligence.ts (separate client, not used)
 ```
@@ -169,7 +169,7 @@ Looking across the 587 - 18 = **569 unused BR endpoints**, the ones with the hig
 | Intelligence advice (`/v1/intelligence/advise`, `compare`, `frontier`, `savings`, `benchmark`, 5 endpoints) | Small-Medium | Router improvements. Ask BR for a recommendation under constraints. Compare models. Get the cost-quality frontier.                                                     |
 | Usage detail (`/v1/usage/spend`, `models`, `by-cost-center`, `by-owner`, `feedback`, 5 endpoints)           | Small        | Team cost visibility: who spent what on which model. Feedback loop for cost records.                                                                                   |
 | Webhooks (`/v1/webhooks/*`, 6 endpoints)                                                                    | Medium       | Event notifications for failed runs, budget alerts, approval requests. Wires brainstorm into Slack/Discord/email via BR's webhook dispatcher.                          |
-| Trajectories proper (`/v1/agent/trajectories`, 4 endpoints)                                                 | Small        | Already pushing via raw fetch; upgrade to use the proper client, pull stats, export.                                                                                   |
+| Trajectories proper (`/v1/agent/trajectory` + stats/pull, ~4 endpoints)                                     | Small        | Already pushing via raw fetch (PR #302 fixed plural→singular drift); upgrade to use the proper client, pull stats, export.                                             |
 | Tasks & workflows (`/v1/tasks`, `/v1/workflow`, 12 endpoints)                                               | Medium       | BR has server-side task runner + workflow orchestration. Brainstorm could hand off long-running work to BR.                                                            |
 
 **Tier 2 subtotal: ~35 endpoints, ~1 week of wiring.**
@@ -251,7 +251,7 @@ This is the hidden cost of the wiring work. Factor it in.
 3. Wire `/v1/governance/memory/reconstruct` → `brainstorm audit reconstruct --at <timestamp>`
 4. Wire `/v1/governance/memory/compliance` → `brainstorm audit compliance`
 5. Wire `/v1/webhooks/*` → `brainstorm webhook add/list/remove/test`
-6. Wire `/v1/agent/trajectories/*` → replace raw fetch with proper client, add pull for stats
+6. Wire `/v1/agent/trajectory` (singular — canonical path) and any future trajectory stats/list endpoints → replace raw fetch with proper client, add pull for stats
 
 **Outcome:** Team management, audit trails, compliance reports, webhook notifications — all from the CLI. The "governed control plane" framing becomes literal.
 

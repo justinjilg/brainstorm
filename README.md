@@ -18,7 +18,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" /></a>&nbsp;
   <img src="https://img.shields.io/badge/products-5-d97706.svg" alt="Products" />&nbsp;
   <img src="https://img.shields.io/badge/tools-58+-d97706.svg" alt="Tools" />&nbsp;
-  <img src="https://img.shields.io/badge/packages-27-d97706.svg" alt="Packages" />
+  <img src="https://img.shields.io/badge/packages-44-d97706.svg" alt="Packages" />
 </p>
 
 <p align="center">
@@ -177,7 +177,7 @@ Restart Claude Code. The new product's tools appear automatically.
 
 ## Architecture
 
-27 TypeScript packages in a Turborepo monorepo:
+44 TypeScript packages in a Turborepo monorepo (run `ls packages/` for the live list):
 
 ```
 cli ─────── core ─── router ─── providers ─── config ─── shared
@@ -281,8 +281,8 @@ storm intelligence
 ```bash
 git clone https://github.com/justinjilg/brainstorm.git
 cd brainstorm && npm install
-npx turbo run build          # Build all 27 packages
-npx turbo run test           # Run tests (1,221 tests across 24 packages)
+npx turbo run build          # Build all 44 packages
+npx turbo run test           # Run tests (1,400+ tests across 30+ packages)
 node packages/cli/dist/brainstorm.js chat
 ```
 
