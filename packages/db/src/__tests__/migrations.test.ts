@@ -38,10 +38,12 @@ describe("db migrations", () => {
       ]),
     );
     // +3 for orgs, team_members, compliance_events (migrations 031-033)
-    expect(tables).toHaveLength(31);
+    // +1 for routing_audit (migration 034 — BR x-br-* envelope per-request log)
+    expect(tables).toHaveLength(32);
     expect(tables).toContain("sync_queue");
     expect(tables).toContain("orgs");
     expect(tables).toContain("team_members");
+    expect(tables).toContain("routing_audit");
     expect(tables).toContain("compliance_events");
   });
 
@@ -52,11 +54,11 @@ describe("db migrations", () => {
       .prepare("SELECT name FROM _migrations ORDER BY id")
       .all() as Array<{ name: string }>;
 
-    expect(migrations).toHaveLength(33);
+    expect(migrations).toHaveLength(34);
     expect(migrations[0]?.name).toBe("001_sessions");
-    expect(migrations.at(-1)?.name).toBe("033_compliance_events");
+    expect(migrations.at(-1)?.name).toBe("034_routing_audit");
     expect(new Set(migrations.map((migration) => migration.name)).size).toBe(
-      33,
+      34,
     );
   });
 
