@@ -174,5 +174,8 @@ function topLevelSummary(schema: z.ZodTypeAny): string {
 }
 
 function escape(s: string): string {
-  return s.replace(/\|/g, "\\|");
+  // Escape backslashes first, then pipes. Doing them in the other order
+  // would turn a pipe into `\|`, then the backslash pass would mangle
+  // it into `\\|` and double-escape every pipe.
+  return s.replace(/\\/g, "\\\\").replace(/\|/g, "\\|");
 }
