@@ -1,6 +1,6 @@
 {
   "name": "@brainst0rm/ingest",
-  "version": "0.13.0",
+  "version": "0.14.1",
   "type": "module",
   "scripts": {
     "build": "tsup",
@@ -8,8 +8,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@brainst0rm/shared": "0.13.0",
-    "@brainst0rm/code-graph": "0.13.0"
+    "@brainst0rm/shared": "0.14.1",
+    "@brainst0rm/code-graph": "0.14.1"
   },
   "devDependencies": {
     "tsup": "^8",
