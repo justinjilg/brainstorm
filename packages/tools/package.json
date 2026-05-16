@@ -1,6 +1,6 @@
 {
   "name": "@brainst0rm/tools",
-  "version": "0.13.0",
+  "version": "0.14.1",
   "type": "module",
   "exports": {
     ".": {
@@ -17,7 +17,7 @@
     "export-catalog:check": "tsx src/export-catalog.ts --check"
   },
   "dependencies": {
-    "@brainst0rm/shared": "0.13.0",
+    "@brainst0rm/shared": "0.14.1",
     "ai": "^6",
     "zod": "^3",
     "fast-glob": "^3",

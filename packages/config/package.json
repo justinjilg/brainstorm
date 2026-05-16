@@ -1,6 +1,6 @@
 {
   "name": "@brainst0rm/config",
-  "version": "0.13.0",
+  "version": "0.14.1",
   "type": "module",
   "exports": {
     ".": {
@@ -15,7 +15,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brainst0rm/shared": "0.13.0",
+    "@brainst0rm/shared": "0.14.1",
     "@iarna/toml": "^2.2",
     "zod": "^3"
   },

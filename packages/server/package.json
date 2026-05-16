@@ -1,6 +1,6 @@
 {
   "name": "@brainst0rm/server",
-  "version": "0.13.0",
+  "version": "0.14.1",
   "type": "module",
   "exports": {
     ".": {
@@ -15,13 +15,13 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@brainst0rm/shared": "0.13.0",
-    "@brainst0rm/core": "0.13.0",
-    "@brainst0rm/db": "0.13.0",
-    "@brainst0rm/router": "0.13.0",
-    "@brainst0rm/tools": "0.13.0",
-    "@brainst0rm/providers": "0.13.0",
-    "@brainst0rm/godmode": "0.13.0"
+    "@brainst0rm/shared": "0.14.1",
+    "@brainst0rm/core": "0.14.1",
+    "@brainst0rm/db": "0.14.1",
+    "@brainst0rm/router": "0.14.1",
+    "@brainst0rm/tools": "0.14.1",
+    "@brainst0rm/providers": "0.14.1",
+    "@brainst0rm/godmode": "0.14.1"
   },
   "devDependencies": {
     "tsup": "^8",

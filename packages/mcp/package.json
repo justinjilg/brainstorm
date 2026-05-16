@@ -1,6 +1,6 @@
 {
   "name": "@brainst0rm/mcp",
-  "version": "0.13.0",
+  "version": "0.14.1",
   "type": "module",
   "exports": {
     ".": {
@@ -15,8 +15,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brainst0rm/shared": "0.13.0",
-    "@brainst0rm/tools": "0.13.0",
+    "@brainst0rm/shared": "0.14.1",
+    "@brainst0rm/tools": "0.14.1",
     "@ai-sdk/mcp": "^1"
   },
   "devDependencies": {
