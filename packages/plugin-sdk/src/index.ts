@@ -1,8 +1,20 @@
 // Plugin definition helpers
-export { defineBrainstormPlugin, definePluginTool, definePluginHook, definePluginSkill } from './define.js';
+export {
+  defineBrainstormPlugin,
+  definePluginTool,
+  definePluginHook,
+  definePluginSkill,
+  type ToolMetadata,
+  type BrainstormToolDef,
+} from "./define.js";
 
 // Plugin loader
-export { discoverPlugins, getGlobalPluginsDir, getProjectPluginsDir, type LoadedPlugin } from './loader.js';
+export {
+  discoverPlugins,
+  getGlobalPluginsDir,
+  getProjectPluginsDir,
+  type LoadedPlugin,
+} from "./loader.js";
 
 // Types
 export type {
@@ -12,4 +24,4 @@ export type {
   PluginHookEvent,
   PluginSkillDef,
   PluginManifest,
-} from './types.js';
+} from "./types.js";

@@ -1,16 +1,26 @@
-import type { z } from "zod";
-import type { ToolPermission } from "@brainst0rm/shared";
+import type { BrainstormToolDef } from "@brainst0rm/tools";
 
 /**
- * Plugin tool definition — same shape as Brainstorm's built-in tools.
+ * Plugin tool definition.
+ *
+ * Stage-1 of the tool compiler collapsed the plugin/core tool types
+ * into a single shape — `PluginToolDef` is now a type alias for
+ * `BrainstormToolDef` exported from `@brainst0rm/tools`. The alias is
+ * preserved so existing plugin code continues to compile, but new
+ * plugins should prefer the canonical name.
+ *
+ * Why this matters: before the collapse, the two types drifted on
+ * `concurrent`/`readonly`/`deferred` flags, `toAISDKTool()`, and
+ * metadata fields (`category`, `headlessSafe`, etc.). The same lockstep
+ * principle BR's `defineCapability()` enforces for routes — one source
+ * of truth, every surface generated — applies here.
  */
-export interface PluginToolDef<T extends z.ZodObject<any> = z.ZodObject<any>> {
-  name: string;
-  description: string;
-  permission: ToolPermission;
-  inputSchema: T;
-  execute: (input: z.infer<T>) => Promise<unknown>;
-}
+// PluginToolDef preserves the original output-type generic so plugin
+// authors who keep typed tool values (e.g. `PluginToolDef<MyResult>`)
+// don't lose inference. The input-schema generic is no longer needed
+// because BrainstormToolDef parameterizes only on TOutput; input typing
+// flows through `z.infer<typeof schema>` at the call site.
+export type PluginToolDef<TOutput = unknown> = BrainstormToolDef<TOutput>;
 
 /**
  * Plugin hook definition — lifecycle event handlers.

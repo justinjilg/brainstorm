@@ -12,7 +12,40 @@ export interface ToolExecuteContext {
   abortSignal?: AbortSignal;
 }
 
-export interface BrainstormToolDef<TOutput = unknown> {
+/**
+ * Descriptive metadata fields the tool registry exposes to generators
+ * (docs/tool-catalog.json, MCP wrappers, headless-runner gates). These
+ * fields used to live in hand-maintained side-tables inside
+ * `export-catalog.ts`; the lockstep gate test now requires every
+ * registered tool to declare them (inline or via the central
+ * `BUILTIN_TOOL_METADATA` table in `builtin/_metadata.ts`).
+ *
+ * Design rationale: "move lockstep from discipline to mechanism" —
+ * borrowed verbatim from BrainstormRouter's contract compiler header
+ * (brainstormrouter/src/api/capability-def.ts).
+ */
+export interface ToolMetadata {
+  /** Coarse grouping for catalog/docs surfaces (e.g. "filesystem", "git"). */
+  category: string;
+  /** Free-form tags for search and routing heuristics. */
+  tags?: string[];
+  /**
+   * True if this tool is safe to call in a non-interactive run
+   * (`brainstorm run`, headless daemon). False means the tool blocks on
+   * a UI/user-input event and will deadlock.
+   */
+  headlessSafe: boolean;
+  /**
+   * Free-form note explaining multi-step / interactive / mode-specific
+   * protocol expectations. Rendered into docs and headless-runner
+   * diagnostics. Optional — most tools don't need one.
+   */
+  protocol?: string;
+}
+
+export interface BrainstormToolDef<
+  TOutput = unknown,
+> extends Partial<ToolMetadata> {
   name: string;
   description: string;
   permission: ToolPermission;
@@ -35,6 +68,10 @@ export function defineTool<T extends z.ZodObject<any>, TOutput>(config: {
   execute: (input: z.infer<T>, ctx?: ToolExecuteContext) => Promise<TOutput>;
   concurrent?: boolean;
   readonly?: boolean;
+  category?: string;
+  tags?: string[];
+  headlessSafe?: boolean;
+  protocol?: string;
 }): BrainstormToolDef<TOutput> {
   return {
     ...config,
