@@ -21,7 +21,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@brainst0rm/relay": "0.1.0",
+    "@brainst0rm/relay": "0.14.4",
     "ws": "^8.18.0"
   },
   "devDependencies": {
