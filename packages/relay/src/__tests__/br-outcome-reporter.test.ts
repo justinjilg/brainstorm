@@ -47,6 +47,7 @@ describe("BrOutcomeReporter — happy path", () => {
 
     const reporter = new BrOutcomeReporter({
       baseUrl: "https://api.brainstormrouter.com",
+      enabled: true,
       apiKey: "br-key-test",
       fetch: fakeFetch,
     });
@@ -85,6 +86,7 @@ describe("BrOutcomeReporter — happy path", () => {
     };
     const reporter = new BrOutcomeReporter({
       baseUrl: "https://api.brainstormrouter.com",
+      enabled: true,
       fetch: fakeFetch,
     });
     await reporter.report(
@@ -106,6 +108,7 @@ describe("BrOutcomeReporter — happy path", () => {
     };
     const reporter = new BrOutcomeReporter({
       baseUrl: "https://api.brainstormrouter.com",
+      enabled: true,
       fetch: fakeFetch,
     });
     await reporter.report(makeReport({ agentId: "ep with spaces" }));
@@ -118,6 +121,7 @@ describe("BrOutcomeReporter — header safety", () => {
     const fakeFetch = vi.fn<typeof fetch>();
     const reporter = new BrOutcomeReporter({
       baseUrl: "https://api.brainstormrouter.com",
+      enabled: true,
       fetch: fakeFetch,
     });
 
@@ -135,6 +139,7 @@ describe("BrOutcomeReporter — fire-and-forget survives failures", () => {
       Promise.reject(new Error("ECONNREFUSED 127.0.0.1:443"));
     const reporter = new BrOutcomeReporter({
       baseUrl: "https://api.brainstormrouter.com",
+      enabled: true,
       fetch: fakeFetch,
       logger: {
         info: () => {},
@@ -160,6 +165,7 @@ describe("BrOutcomeReporter — fire-and-forget survives failures", () => {
       );
     const reporter = new BrOutcomeReporter({
       baseUrl: "https://api.brainstormrouter.com",
+      enabled: true,
       fetch: fakeFetch,
       logger: { info: () => {}, error: (m) => errors.push(m) },
     });
@@ -175,6 +181,7 @@ describe("BrOutcomeReporter — fire-and-forget survives failures", () => {
       Promise.resolve(new Response("not found", { status: 404 }));
     const reporter = new BrOutcomeReporter({
       baseUrl: "https://api.brainstormrouter.com",
+      enabled: true,
       fetch: fakeFetch,
       logger: {
         info: (m) => infos.push(m),
@@ -200,6 +207,7 @@ describe("BrOutcomeReporter — fire-and-forget survives failures", () => {
       });
     const reporter = new BrOutcomeReporter({
       baseUrl: "https://api.brainstormrouter.com",
+      enabled: true,
       fetch: fakeFetch,
       timeoutMs: 30,
       logger: { info: () => {}, error: (m) => errors.push(m) },
@@ -219,6 +227,7 @@ describe("BrOutcomeReporter — observability", () => {
       Promise.resolve(new Response("{}", { status: 200 }));
     const reporter = new BrOutcomeReporter({
       baseUrl: "https://api.brainstormrouter.com",
+      enabled: true,
       fetch: fakeFetch,
     });
     const p = reporter.report(makeReport());
@@ -235,12 +244,36 @@ describe("BrOutcomeReporter — observability", () => {
     };
     const reporter = new BrOutcomeReporter({
       baseUrl: "https://api.brainstormrouter.com/",
+      enabled: true,
       fetch: fakeFetch,
     });
     await reporter.report(makeReport());
     expect(calls[0]).toBe(
       "https://api.brainstormrouter.com/v1/agents/ep-1/dispatch-outcomes",
     );
+  });
+
+  it("is a no-op when enabled is false (BR endpoint not yet public)", async () => {
+    const calls: string[] = [];
+    const infos: string[] = [];
+    const errors: string[] = [];
+    const fakeFetch: typeof fetch = (url) => {
+      calls.push(String(url));
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    };
+    const reporter = new BrOutcomeReporter({
+      baseUrl: "https://api.brainstormrouter.com",
+      enabled: false,
+      fetch: fakeFetch,
+      logger: {
+        info: (m) => infos.push(m),
+        error: (m) => errors.push(m),
+      },
+    });
+    await reporter.report(makeReport());
+    expect(calls.length).toBe(0);
+    expect(errors.length).toBe(0);
+    expect(infos.some((m) => m.includes("skipped"))).toBe(true);
   });
 
   it("omits Authorization header when no apiKey is configured", async () => {
@@ -251,6 +284,7 @@ describe("BrOutcomeReporter — observability", () => {
     };
     const reporter = new BrOutcomeReporter({
       baseUrl: "https://api.brainstormrouter.com",
+      enabled: true,
       fetch: fakeFetch,
     });
     await reporter.report(makeReport());

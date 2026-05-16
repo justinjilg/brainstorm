@@ -8,6 +8,17 @@
 //   - Fire-and-forget: relay's audit/operator-fanout MUST NOT block on
 //     BR's response.
 //
+// Feature flag (added 2026-05-15):
+//   - The BR-side endpoint is still not in the public OpenAPI contract
+//     (verified against api.brainstormrouter.com/openapi.json on 2026-05-15:
+//     zero matches for "dispatch" or "outcome"). Until BR ships the
+//     endpoint, the reporter defaults to disabled: report() becomes a
+//     no-op that logs at info-level. Operators (or BR's wiring code)
+//     enable it by passing `enabled: true` to the constructor or by
+//     setting BR_DISPATCH_OUTCOMES_ENABLED=true in the environment.
+//   - This stops the production 404 storm without removing the locked
+//     contract — when BR ships the endpoint, flip the flag.
+//
 // Honesty:
 //   - BR-side endpoint doesn't exist yet (12xnwqbb gated on Justin).
 //   - This code path must accept that BR may return 404 or never respond.
@@ -44,6 +55,13 @@ export interface BrOutcomeReporterOptions {
    * a slow BR doesn't hold sockets indefinitely.
    */
   timeoutMs?: number;
+  /**
+   * Feature flag for BR's not-yet-public dispatch-outcomes endpoint.
+   * When false, report() is a no-op (info-log + return). Default is read
+   * from BR_DISPATCH_OUTCOMES_ENABLED (must be exactly "true" to enable);
+   * absent/anything-else → disabled. Explicit constructor value wins.
+   */
+  enabled?: boolean;
 }
 
 export type DispatchOutcome = "completed" | "failed" | "timed_out";
@@ -74,6 +92,7 @@ export class BrOutcomeReporter {
     error: (m: string) => void;
   };
   private readonly timeoutMs: number;
+  private readonly enabled: boolean;
   /** Counter for observability + tests. */
   private inflightCount_ = 0;
 
@@ -102,6 +121,8 @@ export class BrOutcomeReporter {
       error: (_m: string) => {},
     };
     this.timeoutMs = opts.timeoutMs ?? 5_000;
+    this.enabled =
+      opts.enabled ?? process.env.BR_DISPATCH_OUTCOMES_ENABLED === "true";
   }
 
   /**
@@ -139,6 +160,12 @@ export class BrOutcomeReporter {
   }
 
   private async doReport(input: DispatchOutcomeReport): Promise<void> {
+    if (!this.enabled) {
+      this.log.info(
+        `br-outcome: ${input.correlation_id} skipped (BR_DISPATCH_OUTCOMES_ENABLED is not "true"); awaiting BR endpoint`,
+      );
+      return;
+    }
     const url = `${this.baseUrl}/v1/agents/${encodeURIComponent(input.agentId)}/dispatch-outcomes`;
     const body = JSON.stringify({
       correlation_id: input.correlation_id,
