@@ -1,6 +1,11 @@
 {
   "name": "@brainst0rm/dispatch-sdk",
   "version": "0.1.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/justinjilg/brainstorm.git",
+    "directory": "packages/dispatch-sdk"
+  },
   "type": "module",
   "description": "Programmatic Brainstorm dispatch primitive for autonomous-agent operators (P1.7). Wraps the operator-side WebSocket flow with an async-iterator API for progress events and a typed dispatch() function.",
   "exports": {

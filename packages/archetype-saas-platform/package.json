@@ -1,6 +1,11 @@
 {
   "name": "@brainst0rm/archetype-saas-platform",
-  "version": "0.14.2",
+  "version": "0.14.3",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/justinjilg/brainstorm.git",
+    "directory": "packages/archetype-saas-platform"
+  },
   "type": "module",
   "exports": {
     ".": {
@@ -15,7 +20,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@brainst0rm/config": "0.14.2"
+    "@brainst0rm/config": "0.14.3"
   },
   "devDependencies": {
     "tsup": "^8",
