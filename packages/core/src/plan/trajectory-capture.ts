@@ -236,8 +236,16 @@ export class TrajectoryRecorder {
       process.env.BRAINSTORM_API_KEY ?? process.env.BRAINSTORM_ADMIN_KEY;
     if (!apiKey) return; // No key = skip push silently
 
+    // BR's public contract uses the singular path /v1/agent/trajectory.
+    // The plural form (/v1/agent/trajectories) was never published in
+    // /openapi.json — we were firing into a 404. See
+    // packages/gateway/src/intelligence-api.ts which already uses the
+    // singular path for the simpler TrajectorySubmission shape. A future
+    // refactor can route this richer OrchestrationTrajectory through that
+    // client once BR accepts both payload shapes; for now we just fix
+    // the URL so the POST actually reaches BR.
     const res = await fetch(
-      "https://api.brainstormrouter.com/v1/agent/trajectories",
+      "https://api.brainstormrouter.com/v1/agent/trajectory",
       {
         method: "POST",
         headers: {
