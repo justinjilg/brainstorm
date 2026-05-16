@@ -25,11 +25,39 @@ import type {
  *
  *  Every field is optional because BR may omit any header on a degraded
  *  response; the parser produces undefined rather than failing. We only
- *  require `requestId` because it's the table's primary key. */
+ *  require `requestId` because it's the table's primary key.
+ *
+ *  Field coverage matches BrEnvelope 1:1 by name. Not every field is
+ *  persisted to routing_audit (see PERSISTED_BR_ENVELOPE_FIELDS and the
+ *  IGNORED set below) — but accepting the field here means future
+ *  schema-extension PRs don't need to re-thread the type. The drift
+ *  test in __tests__/routing-audit-writer-drift.test.ts asserts every
+ *  parsed envelope field appears either in the persisted set or the
+ *  documented-ignored set.
+ */
 export interface BrEnvelopeLike {
+  // identity
   requestId?: string;
   build?: string;
   envelope?: string;
+  tier?: string;
+  reputationTier?: string;
+  modelContract?: string;
+  // cost
+  actualCost?: number;
+  estimatedCost?: number;
+  estimatedCostCents?: number;
+  routingSavings?: number;
+  // budget
+  budgetRemaining?: number;
+  tokensRemaining?: number;
+  requestsRemaining?: number;
+  // latency
+  totalLatencyMs?: number;
+  providerLatencyMs?: number;
+  routingOverheadMs?: number;
+  guardianOverheadMs?: number;
+  // routing
   routedModel?: string;
   routeReason?: string;
   routeConfidence?: number;
@@ -39,26 +67,98 @@ export interface BrEnvelopeLike {
   modelsConsidered?: number;
   qualityTier?: string;
   qualityScore?: number;
-  actualCost?: number;
-  estimatedCost?: number;
-  routingSavings?: number;
-  budgetRemaining?: number;
-  totalLatencyMs?: number;
-  providerLatencyMs?: number;
-  routingOverheadMs?: number;
-  guardianOverheadMs?: number;
-  guardianStatus?: string;
-  guardrailStatus?: string;
-  reputationTier?: string;
-  tier?: string;
-  degradationLevel?: number;
-  deprecation?: string;
-  cache?: string;
-  cacheAge?: number;
-  coldStartMs?: number;
+  // task complexity
+  complexityLevel?: string;
+  complexityScore?: number;
+  // audit
   auditHash?: string;
   context?: unknown;
+  // guardian / guardrail
+  guardianStatus?: string;
+  guardrailStatus?: string;
+  guardrailSummary?: string;
+  guardrailActions?: unknown;
+  // lifecycle
+  degradationLevel?: number;
+  deprecation?: string;
+  // cache
+  cache?: string;
+  cacheAge?: number;
+  cacheSimilarity?: number;
+  coldStartMs?: number;
+  // drift sentinel from parser; we explicitly do not persist this —
+  // it's a parser-internal counter for fields outside the canonical set
+  unknownHeaders?: string[];
 }
+
+/**
+ * Envelope fields the routing_audit table currently persists. Updates
+ * to this set MUST accompany a schema migration in client.ts.
+ * The drift test asserts every persisted field has a column.
+ */
+export const PERSISTED_BR_ENVELOPE_FIELDS = [
+  "requestId",
+  "build",
+  "envelope",
+  "tier",
+  "reputationTier",
+  "actualCost",
+  "estimatedCost",
+  "routingSavings",
+  "budgetRemaining",
+  "totalLatencyMs",
+  "providerLatencyMs",
+  "routingOverheadMs",
+  "guardianOverheadMs",
+  "routedModel",
+  "routeReason",
+  "routeConfidence",
+  "routingReasoning",
+  "selectionMethod",
+  "selectionConfidence",
+  "modelsConsidered",
+  "qualityTier",
+  "qualityScore",
+  "auditHash",
+  "context",
+  "guardianStatus",
+  "guardrailStatus",
+  "degradationLevel",
+  "deprecation",
+  "cache",
+  "cacheAge",
+  "coldStartMs",
+] as const;
+
+/**
+ * Envelope fields the parser captures but we intentionally do NOT
+ * persist. Each entry must have a one-line rationale. Adding a field
+ * here is documented technical debt; removing one is a schema bump.
+ */
+export const IGNORED_BR_ENVELOPE_FIELDS: Readonly<Record<string, string>> = {
+  // routing_audit is per-request; subscription tier metadata doesn't
+  // vary per-row and adds no audit value vs. cost/route fields
+  modelContract: "static per subscription; carried in /v1/ops/status",
+  // cents column would duplicate `actualCost` (USD) with a rounding
+  // hazard; downstream consumers should derive from actualCost
+  estimatedCostCents: "duplicates estimatedCost (USD) with rounding hazard",
+  // budget snapshots — drift fast, low audit value, surface via /budget
+  tokensRemaining: "drifts every request; surface via storm budget",
+  requestsRemaining: "drifts every request; surface via storm budget",
+  // complexity is a routing input, captured in routing_reasoning JSON
+  complexityLevel: "captured inside routing_reasoning JSON blob",
+  complexityScore: "captured inside routing_reasoning JSON blob",
+  // guardrail summary + actions are display-only; full structure
+  // belongs in compliance_events table, not the routing per-row audit
+  guardrailSummary: "display-only; full structure goes in compliance_events",
+  guardrailActions: "display-only; full structure goes in compliance_events",
+  // similarity score is internal to BR's cache implementation, not
+  // a routing decision factor we audit on
+  cacheSimilarity: "BR-internal cache implementation detail",
+  // parser-internal drift sentinel — should always be [] in healthy state;
+  // non-empty entries are alerted at parse time, not stored per-row
+  unknownHeaders: "parser-internal drift sentinel; alerts at parse time",
+};
 
 export interface WireRoutingAuditOptions {
   onError?: (err: unknown, envelope: BrEnvelopeLike) => void;
