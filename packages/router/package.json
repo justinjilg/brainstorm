@@ -1,6 +1,6 @@
 {
   "name": "@brainst0rm/router",
-  "version": "0.14.3",
+  "version": "0.14.4",
   "type": "module",
   "exports": {
     ".": {
@@ -15,11 +15,11 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brainst0rm/config": "0.14.3",
-    "@brainst0rm/db": "0.14.3",
-    "@brainst0rm/gateway": "0.14.3",
-    "@brainst0rm/providers": "0.14.3",
-    "@brainst0rm/shared": "0.14.3",
+    "@brainst0rm/config": "0.14.4",
+    "@brainst0rm/db": "0.14.4",
+    "@brainst0rm/gateway": "0.14.4",
+    "@brainst0rm/providers": "0.14.4",
+    "@brainst0rm/shared": "0.14.4",
     "ai": "^6"
   },
   "devDependencies": {
