@@ -44,7 +44,7 @@ describe("file-edit atomicity (v16 Chaos Monkey)", () => {
   it("happy path: edit replaces content via atomic rename", async () => {
     const target = join(dir, "thing.txt");
     writeFileSync(target, "hello world\n", "utf-8");
-    const result = await fileEditTool.execute(
+    const result: any = await fileEditTool.execute(
       { path: target, old_string: "hello", new_string: "goodbye" },
       undefined,
     );
@@ -90,7 +90,7 @@ describe("file-edit atomicity (v16 Chaos Monkey)", () => {
     const target = join(dir, "unicode.md");
     const before = "α β γ — line 1\n中文 — line 2\n🚀 — line 3\n";
     writeFileSync(target, before, "utf-8");
-    const result = await fileEditTool.execute(
+    const result: any = await fileEditTool.execute(
       { path: target, old_string: "🚀", new_string: "🚂" },
       undefined,
     );
