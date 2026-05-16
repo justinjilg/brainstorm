@@ -1,6 +1,6 @@
 {
   "name": "@brainst0rm/orchestrator",
-  "version": "0.14.3",
+  "version": "0.14.4",
   "type": "module",
   "exports": {
     ".": {
@@ -15,9 +15,9 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@brainst0rm/shared": "0.14.3",
-    "@brainst0rm/db": "0.14.3",
-    "@brainst0rm/projects": "0.14.3"
+    "@brainst0rm/shared": "0.14.4",
+    "@brainst0rm/db": "0.14.4",
+    "@brainst0rm/projects": "0.14.4"
   },
   "devDependencies": {
     "tsup": "^8",
