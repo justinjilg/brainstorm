@@ -1,6 +1,11 @@
 {
   "name": "@brainst0rm/sandbox-vz",
   "version": "0.1.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/justinjilg/brainstorm.git",
+    "directory": "packages/sandbox-vz"
+  },
   "type": "module",
   "description": "macOS Apple Virtualization.framework backend for the Brainstorm endpoint-agent sandbox abstraction (P3.1b). Wraps a small Swift helper binary (bsm-vz-helper) that drives Virtualization.framework from a code-signed app bundle. Linux guest, vsock-equivalent (VZVirtioSocketDevice). Sibling to @brainst0rm/sandbox (Cloud Hypervisor backend on Linux).",
   "exports": {

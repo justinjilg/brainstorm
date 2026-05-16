@@ -1,6 +1,11 @@
 {
   "name": "@brainst0rm/harness-drift",
-  "version": "0.14.2",
+  "version": "0.14.3",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/justinjilg/brainstorm.git",
+    "directory": "packages/harness-drift"
+  },
   "type": "module",
   "exports": {
     ".": {
@@ -15,9 +20,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brainst0rm/harness-fs": "0.14.2",
-    "@brainst0rm/harness-index": "0.14.2",
-    "@brainst0rm/shared": "0.14.2",
+    "@brainst0rm/harness-fs": "0.14.3",
+    "@brainst0rm/harness-index": "0.14.3",
+    "@brainst0rm/shared": "0.14.3",
     "@iarna/toml": "^2.2"
   },
   "devDependencies": {

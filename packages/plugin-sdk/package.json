@@ -1,6 +1,6 @@
 {
   "name": "@brainst0rm/plugin-sdk",
-  "version": "0.14.2",
+  "version": "0.14.3",
   "type": "module",
   "exports": {
     ".": {
@@ -15,7 +15,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@brainst0rm/shared": "0.14.2",
+    "@brainst0rm/shared": "0.14.3",
     "zod": "^3"
   },
   "devDependencies": {
