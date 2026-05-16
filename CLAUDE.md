@@ -27,7 +27,8 @@ Brainstorm — a governed control plane for AI operators managing multi-product 
 
 ## Architecture
 
-Turborepo monorepo with 27 TypeScript packages:
+Turborepo monorepo with 44 TypeScript packages. The list below documents
+core packages by concern; run `ls packages/` for the authoritative live list.
 
 - `packages/shared` — Types (TaskProfile, ModelEntry, AgentProfile, WorkflowEvent, etc.), errors, pino logger
 - `packages/config` — Zod schemas, TOML config loader, layered config (defaults → global → project → env), BRAINSTORM.md parser
