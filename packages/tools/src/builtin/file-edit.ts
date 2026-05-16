@@ -1,10 +1,67 @@
 import { z } from "zod";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import {
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  renameSync,
+  unlinkSync,
+  openSync,
+  fsyncSync,
+  closeSync,
+} from "node:fs";
+import { randomBytes } from "node:crypto";
 import { resolve, relative } from "node:path";
 import { homedir } from "node:os";
 import { defineTool } from "../base.js";
 import { getWorkspace } from "../workspace-context.js";
 import { assertNotSensitivePath } from "./sensitive-paths.js";
+
+/**
+ * Atomic file replace: write content to `<path>.tmp.<rand>`, fsync, then
+ * rename over the target. Rename on POSIX is atomic within the same
+ * filesystem, so a crash mid-write leaves either the OLD content or the
+ * NEW content — never a partial write.
+ *
+ * v16 Chaos Monkey flagged that `writeFileSync(path, content)` is NOT
+ * crash-safe: an ENOSPC mid-write or SIGKILL between open() and close()
+ * truncates the file to a partial state. For an agent that edits its
+ * own configuration / lockfile / migration file, that's data loss.
+ *
+ * The temp file is unlinked on any error in the write path, so we don't
+ * leave debris on a full disk.
+ */
+function atomicReplaceFile(path: string, content: string): void {
+  const tmp = `${path}.tmp.${randomBytes(6).toString("hex")}`;
+  let fd: number | null = null;
+  try {
+    writeFileSync(tmp, content, "utf-8");
+    // fsync the file so the bytes are durably on disk before we rename;
+    // otherwise a crash AFTER rename can still produce a zero-byte file
+    // on some filesystems.
+    fd = openSync(tmp, "r");
+    fsyncSync(fd);
+    closeSync(fd);
+    fd = null;
+    renameSync(tmp, path);
+  } catch (err) {
+    // Cleanup: try to remove temp file and (if open) close the fd.
+    if (fd !== null) {
+      try {
+        closeSync(fd);
+      } catch {
+        /* ignore */
+      }
+    }
+    if (existsSync(tmp)) {
+      try {
+        unlinkSync(tmp);
+      } catch {
+        /* ignore */
+      }
+    }
+    throw err;
+  }
+}
 
 function ensureSafePath(filePath: string): string {
   const cwd = getWorkspace();
@@ -153,7 +210,10 @@ export const fileEditTool = defineTool({
     const { preValidate } = await import("../pre-validate.js");
     const validation = preValidate(safePath, updated);
 
-    writeFileSync(safePath, updated, "utf-8");
+    // Atomic replace — see atomicReplaceFile docstring. Closes v16
+    // Chaos Monkey gap: partial-write on ENOSPC/SIGKILL no longer
+    // possible.
+    atomicReplaceFile(safePath, updated);
 
     // Invalidate read cache for this file
     const { getFileReadCache } = await import("../file-cache.js");
