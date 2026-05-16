@@ -7,7 +7,7 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
  * Fix: simple line-level filter that drops any SSE data line containing guardian JSON
  * and any event: guardian lines. Operates on raw text, no buffering needed.
  */
-function createGuardianFilterFetch(): typeof globalThis.fetch {
+export function createGuardianFilterFetch(): typeof globalThis.fetch {
   return async (input: string | URL | Request, init?: RequestInit) => {
     const response = await globalThis.fetch(input, init);
 
