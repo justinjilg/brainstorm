@@ -408,6 +408,15 @@ import {
   renderEcosystemTable,
 } from "../commands/status.js";
 
+// `brainstorm a2a invoke` — operator-initiated A2A invocations.
+// See packages/cli/src/commands/a2a.ts (P2/Wk6 #67 of rev 2).
+import { registerA2ACommand } from "../commands/a2a.js";
+registerA2ACommand(program);
+
+// `brainstorm trace <traceparent>` — walk a trace tree across all 4 layers.
+import { registerTraceCommand } from "../commands/trace.js";
+registerTraceCommand(program);
+
 program
   .command("eval")
   .description("Run capability evaluation probes against a model")
