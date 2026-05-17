@@ -401,6 +401,11 @@ program
 import { registerHarnessCommands } from "../commands/harness.js";
 registerHarnessCommands(program);
 
+// `brainstorm status` — ecosystem-wide health across MSP, BR, GTM, VM, Shield.
+// See packages/cli/src/commands/status.ts; P0/Wk1 #59 of radiant-petting-kitten.
+import { registerStatusCommand } from "../commands/status.js";
+registerStatusCommand(program);
+
 program
   .command("eval")
   .description("Run capability evaluation probes against a model")
