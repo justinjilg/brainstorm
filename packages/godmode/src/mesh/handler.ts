@@ -225,6 +225,28 @@ export class MeshBroker {
     const downstreamTrace: TraceContext = nextSpan(trace);
     const downstreamTraceparent = formatTraceparent(downstreamTrace);
 
+    // Codex round-1 fix: record the task BEFORE dispatching. Fast async
+    // dispatchers (queue workers, sub-millisecond in-memory shortcuts) can
+    // call completeTask() before our accept() lands, losing the completion
+    // entirely. Pre-recording makes completeTask()/transition() race-safe.
+    //
+    // The record's state is "accepted" until either:
+    //   (a) sync dispatcher returns a result → we transition to "completed"
+    //       before returning the 200 response
+    //   (b) async dispatcher returns "async" → completion arrives via
+    //       a later completeTask() call (race-safe now)
+    //   (c) dispatcher returns "error" → we never advance the record;
+    //       sweepExpired() reclaims it at the 30-min ttl
+    const acceptedRecord = buildAcceptedRecord({
+      taskId: reqBody!.task_id,
+      callerDID,
+      targetDID: input.targetDID,
+      capability: reqBody!.capability,
+      traceparent: downstreamTraceparent,
+      tracestate: input.tracestateHeader ?? undefined,
+    });
+    await this.cfg.taskStore.accept(acceptedRecord);
+
     const outcome = await this.cfg.dispatcher.dispatch({
       targetDID: input.targetDID,
       capability: reqBody!.capability,
@@ -235,6 +257,10 @@ export class MeshBroker {
     });
 
     if (outcome.kind === "error") {
+      // Pre-recorded task stays accepted until ttl expiry. Could be
+      // optimized later by transitioning to "failed" here; leaving as-is
+      // because the error is the broker's, not the target's, and we don't
+      // have a clean way to distinguish in the dispatcher contract yet.
       return { status: outcome.status, body: outcome.envelope };
     }
 
@@ -246,25 +272,21 @@ export class MeshBroker {
         completed_at: outcome.completed_at,
         traceparent: downstreamTraceparent,
       };
+      // Transition the pre-recorded task to completed so subsequent
+      // status_url polling reflects reality. transition() is idempotent on
+      // terminal state so any concurrent completeTask() from a racy
+      // dispatcher is safe.
+      await this.cfg.taskStore.transition(reqBody!.task_id, "completed", {
+        result: response,
+        completedAt: outcome.completed_at,
+      });
       return { status: 200, body: response };
     }
 
-    // Async path: record task in store and return 202 + status_url.
-    const record = buildAcceptedRecord({
-      taskId: reqBody!.task_id,
-      callerDID,
-      targetDID: input.targetDID,
-      capability: reqBody!.capability,
-      traceparent: downstreamTraceparent,
-      tracestate: input.tracestateHeader ?? undefined,
-    });
-    await this.cfg.taskStore.accept(record);
-
+    // Async path: task is already recorded above. Just emit the 202.
     const response: A2AInvokeAsyncResponse = {
       task_id: reqBody!.task_id,
-      status_url: `${this.cfg.statusUrlPrefix.replace(/\/$/, "")}/${encodeURIComponent(
-        reqBody!.task_id,
-      )}`,
+      status_url: buildStatusUrl(this.cfg.statusUrlPrefix, reqBody!.task_id),
       traceparent: downstreamTraceparent,
     };
     return { status: 202, body: response };
@@ -285,13 +307,15 @@ export class MeshBroker {
     if (r.state === "failed" && r.failure) {
       return { status: 500, body: r.failure };
     }
-    // Still accepted/running — return 202 with the same status_url shape
-    // so pollers see a consistent payload.
+    // Still accepted/running — return 202 with the configured status_url
+    // prefix (codex round-1 fix: previously hard-coded /v1/mesh/task/...,
+    // which broke clients in non-default deployments) so pollers see a
+    // consistent payload across the initial 202 and subsequent polls.
     return {
       status: 202,
       body: {
         task_id: r.task_id,
-        status_url: `/v1/mesh/task/${encodeURIComponent(r.task_id)}`,
+        status_url: buildStatusUrl(this.cfg.statusUrlPrefix, r.task_id),
         traceparent: r.traceparent,
       },
     };
@@ -299,6 +323,16 @@ export class MeshBroker {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
+
+/**
+ * Build a status_url for an async task, honoring the broker's configured
+ * prefix. Codex round-1 fix on PR #348: previously the initial 202 used
+ * the prefix but subsequent polls hard-coded /v1/mesh/task/..., breaking
+ * non-default deployments.
+ */
+function buildStatusUrl(prefix: string, taskId: string): string {
+  return `${prefix.replace(/\/$/, "")}/${encodeURIComponent(taskId)}`;
+}
 
 function err(
   status: number,
