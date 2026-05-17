@@ -401,10 +401,12 @@ program
 import { registerHarnessCommands } from "../commands/harness.js";
 registerHarnessCommands(program);
 
-// `brainstorm status` — ecosystem-wide health across MSP, BR, GTM, VM, Shield.
-// See packages/cli/src/commands/status.ts; P0/Wk1 #59 of radiant-petting-kitten.
-import { registerStatusCommand } from "../commands/status.js";
-registerStatusCommand(program);
+// Per-product status fetcher used by the `ecosystem` / `status` command below.
+// Lives in commands/status.ts so the rendering + fetch logic stays unit-testable.
+import {
+  fetchEcosystemStatuses,
+  renderEcosystemTable,
+} from "../commands/status.js";
 
 program
   .command("eval")
@@ -6710,7 +6712,30 @@ program
   .description(
     "Show full ecosystem status — all products, tools, auth, connectivity",
   )
-  .action(async () => {
+  .option("--json", "Output as JSON (skips auth / MCP narrative)")
+  .option("--product <id>", "Limit to one product id (msp|br|gtm|vm|shield)")
+  .action(async (opts: { json?: boolean; product?: string }) => {
+    // --json or --product paths use the new structured fetcher
+    // (P0/Wk1 #59 of radiant-petting-kitten rev 2 — adds Edge Protocol probe
+    // and machine-readable output to the existing ecosystem command).
+    if (opts.json || opts.product) {
+      const statuses = await fetchEcosystemStatuses(opts.product);
+      if (!statuses) {
+        console.error(
+          `  Unknown --product ${opts.product}. Known: msp, br, gtm, vm, shield`,
+        );
+        process.exitCode = 2;
+        return;
+      }
+      if (opts.json) {
+        console.log(JSON.stringify(statuses, null, 2));
+      } else {
+        console.log(renderEcosystemTable(statuses));
+      }
+      return;
+    }
+
+    // Default path: legacy human-readable rendering with auth + MCP narrative
     console.log(`\n  Brainstorm Ecosystem Status`);
     console.log(`  ───────────────────────────\n`);
 

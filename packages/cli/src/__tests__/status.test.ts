@@ -1,9 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { __test } from "../commands/status.js";
+import {
+  PRODUCTS,
+  fetchEcosystemStatuses,
+  renderEcosystemTable,
+  __test,
+} from "../commands/status.js";
 
-const { fetchProductStatus, formatStatusBadge, PRODUCTS } = __test;
+const { fetchProductStatus, formatStatusBadge } = __test;
 
-describe("brainstorm status", () => {
+describe("brainstorm ecosystem/status helpers", () => {
   let originalFetch: typeof globalThis.fetch;
   let originalEnv: Record<string, string | undefined>;
 
@@ -83,7 +88,7 @@ describe("brainstorm status", () => {
     expect(status.product).toBe("msp");
     expect(status.version).toBe("1.0.0");
     expect(status.toolCount).toBe(1);
-    expect(status.edgeProtocolImplemented).toBe(true); // 400 != 404 → route exists
+    expect(status.edgeProtocolImplemented).toBe(true);
   });
 
   it("flags edge protocol as missing when probe returns 404", async () => {
@@ -111,6 +116,27 @@ describe("brainstorm status", () => {
     expect(status.edgeProtocolImplemented).toBe(false);
   });
 
+  it("respects tool_count when server provides it instead of tools array", async () => {
+    process.env.BRAINSTORM_GTM_API_KEY = "k";
+    globalThis.fetch = vi.fn((url: string | URL | Request) => {
+      const u = String(url);
+      if (u.endsWith("/health")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
+        );
+      }
+      if (u.endsWith("/api/v1/god-mode/tools")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ tool_count: 42 }), { status: 200 }),
+        );
+      }
+      return Promise.resolve(new Response("{}", { status: 404 }));
+    }) as typeof globalThis.fetch;
+    const target = PRODUCTS.find((p) => p.id === "gtm")!;
+    const status = await fetchProductStatus(target);
+    expect(status.toolCount).toBe(42);
+  });
+
   it("skips tools fetch when API key is unset", async () => {
     delete process.env.BRAINSTORM_GTM_API_KEY;
     const fetchSpy = vi.fn((url: string | URL | Request) => {
@@ -127,10 +153,50 @@ describe("brainstorm status", () => {
     const status = await fetchProductStatus(target);
     expect(status.apiKeyConfigured).toBe(false);
     expect(status.toolCount).toBe(null);
-    // /health was called; god-mode/tools was NOT
     const calls = fetchSpy.mock.calls.map((c) => String(c[0]));
     expect(calls.some((c) => c.endsWith("/health"))).toBe(true);
     expect(calls.some((c) => c.endsWith("/api/v1/god-mode/tools"))).toBe(false);
+  });
+
+  it("fetchEcosystemStatuses honors --product filter", async () => {
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
+      ),
+    ) as typeof globalThis.fetch;
+    const single = await fetchEcosystemStatuses("br");
+    expect(single).toBeDefined();
+    expect(single!.length).toBe(1);
+    expect(single![0]!.id).toBe("br");
+  });
+
+  it("fetchEcosystemStatuses returns undefined for unknown product id", async () => {
+    globalThis.fetch = vi.fn() as typeof globalThis.fetch;
+    const result = await fetchEcosystemStatuses("nonexistent");
+    expect(result).toBeUndefined();
+  });
+
+  it("renderEcosystemTable produces tabular output", () => {
+    const rendered = renderEcosystemTable([
+      {
+        id: "msp",
+        displayName: "BrainstormMSP",
+        baseUrl: "https://example.com",
+        apiKeyConfigured: true,
+        reachable: true,
+        healthStatus: "healthy",
+        product: null,
+        version: null,
+        toolCount: 5,
+        edgeProtocolImplemented: true,
+        latencyMs: 42,
+        error: null,
+      },
+    ]);
+    expect(rendered).toContain("BrainstormMSP");
+    expect(rendered).toContain("✓ ok");
+    expect(rendered).toContain("42ms");
+    expect(rendered).toContain("yes");
   });
 
   it("status badge formats correctly", () => {
