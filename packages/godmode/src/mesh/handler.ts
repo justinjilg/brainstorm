@@ -181,8 +181,11 @@ export class MeshBroker {
       return {
         status: 409,
         body: {
-          error: "duplicate Idempotency-Key",
-          code: "CONFLICT",
+          success: false,
+          error: {
+            code: "CONFLICT",
+            message: "duplicate Idempotency-Key",
+          },
           task_id: seen.existingTaskId,
         },
       };
@@ -301,11 +304,14 @@ function err(
   status: number,
   code: A2AErrorCode,
   message: string,
-  detail?: string,
+  _detail?: string,
 ): MeshInvokeOutcome {
   return {
     status,
-    body: { error: message, code, detail },
+    body: {
+      success: false,
+      error: { code, message },
+    },
   };
 }
 

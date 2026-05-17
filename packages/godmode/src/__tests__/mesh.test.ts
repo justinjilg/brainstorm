@@ -122,7 +122,7 @@ describe("MeshBroker.invoke validation", () => {
     const broker = buildBroker();
     const result = await broker.invoke(validInput({ traceparentHeader: null }));
     expect(result.status).toBe(400);
-    expect((result.body as any).code).toBe("VALIDATION");
+    expect((result.body as any).error.code).toBe("VALIDATION");
   });
 
   it("rejects malformed traceparent with 400 VALIDATION", async () => {
@@ -207,7 +207,7 @@ describe("MeshBroker.invoke replay protection", () => {
       }),
     );
     expect(dup.status).toBe(409);
-    expect((dup.body as any).code).toBe("CONFLICT");
+    expect((dup.body as any).error.code).toBe("CONFLICT");
     expect((dup.body as any).task_id).toBe(
       "22222222-2222-2222-2222-000000000002",
     );
@@ -237,7 +237,7 @@ describe("MeshBroker.invoke authorization", () => {
     });
     const result = await broker.invoke(validInput());
     expect(result.status).toBe(403);
-    expect((result.body as any).code).toBe("FORBIDDEN");
+    expect((result.body as any).error.code).toBe("FORBIDDEN");
   });
 
   it("rejects when caller tenant differs from target tenant (403)", async () => {

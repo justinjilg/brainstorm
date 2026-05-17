@@ -39,15 +39,25 @@ export interface A2AInvokeAsyncResponse {
   traceparent: string;
 }
 
-/** Canonical error envelope. */
+/**
+ * Canonical Platform Contract v1 error envelope.
+ *
+ * Spec at /docs/platform-contract-v1.md mandates {success:false, error:{code, message}}.
+ * A2A-specific top-level extensions (e.g. task_id on CONFLICT, retry_after_seconds
+ * on RATE_LIMITED) ride alongside; callers route on error.code only.
+ */
 export interface A2AErrorEnvelope {
-  error: string;
-  code: A2AErrorCode;
-  detail?: string;
-  retry_after_seconds?: number;
-  /** When code=CONFLICT and the request was a duplicate Idempotency-Key,
-   *  this carries the original task_id from the first acceptance. */
+  success: false;
+  error: {
+    code: A2AErrorCode;
+    message: string;
+  };
+  /** Original task_id from first acceptance, populated when code=CONFLICT
+   *  (duplicate Idempotency-Key). */
   task_id?: string;
+  /** Seconds until the caller may retry, set when code=RATE_LIMITED.
+   *  The HTTP `Retry-After` response header carries the same value. */
+  retry_after_seconds?: number;
 }
 
 /** Closed enum of A2A error codes — aligned with Platform Contract v1. */
