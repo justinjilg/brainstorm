@@ -134,6 +134,13 @@ async function runInvoke(
   const taskId = randomUUID();
   const idempotencyKey = randomUUID();
   const deadlineS = opts.deadline ?? DEFAULT_DEADLINE_S;
+  if (!Number.isFinite(deadlineS) || deadlineS <= 0) {
+    console.error(
+      `  Error: --deadline must be a positive number of seconds (got ${opts.deadline})`,
+    );
+    process.exitCode = 2;
+    return;
+  }
   const deadlineISO = new Date(Date.now() + deadlineS * 1000).toISOString();
 
   if (!opts.json) {
@@ -289,9 +296,25 @@ export function registerA2ACommand(program: Command): void {
       DEFAULT_DEADLINE_S,
     )
     .option("--json", "Output JSON (no human-readable banner)")
-    .action((targetDID: string, capability: string, opts: InvokeOptions) => {
-      void runInvoke(targetDID, capability, opts);
-    });
+    .action(
+      async (targetDID: string, capability: string, opts: InvokeOptions) => {
+        // Commander awaits the returned promise. Without the surrounding
+        // try/catch, fetch rejections (DNS / refused / invalid date math)
+        // would hit the process-level unhandled-rejection handler and exit 0,
+        // masking failures for any caller scripting around the CLI.
+        try {
+          await runInvoke(targetDID, capability, opts);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (opts.json) {
+            console.error(JSON.stringify({ status: 0, error: msg }, null, 2));
+          } else {
+            console.error(`  ✗ a2a invoke failed: ${msg}`);
+          }
+          process.exitCode = 1;
+        }
+      },
+    );
 }
 
 // Exported for tests.

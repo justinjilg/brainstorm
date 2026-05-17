@@ -130,6 +130,22 @@ describe("brainstorm a2a invoke — wire helpers", () => {
     expect(payload.body.error.code).toBe("FORBIDDEN");
   });
 
+  it("invokeOnce surfaces a fetch rejection as a thrown Error (not silent exit 0)", async () => {
+    globalThis.fetch = (async () => {
+      throw new TypeError("fetch failed");
+    }) as typeof globalThis.fetch;
+    await expect(
+      invokeOnce(
+        "http://127.0.0.1:9",
+        "tok",
+        "did:bvm:t:a",
+        { task_id: "t1", capability: "c", input: {} },
+        "tp",
+        "k",
+      ),
+    ).rejects.toThrow(/fetch failed/);
+  });
+
   it("emitResult --json prints the task envelope verbatim", () => {
     const outSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     emitResult(
