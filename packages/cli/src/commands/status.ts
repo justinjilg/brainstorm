@@ -43,7 +43,12 @@ export const PRODUCTS: ProductTarget[] = [
   {
     id: "vm",
     displayName: "BrainstormVM",
-    baseUrl: process.env.BRAINSTORM_VM_URL ?? "https://app.brainstormvm.com",
+    // Codex round-2 fix on PR #345: align default with the rest of the CLI
+    // (MCP server + setup + legacy ecosystem command all use
+    // https://vm.brainstorm.co). The unified-architecture canonical CP URL
+    // becomes https://app.brainstormvm.com when DNS migration completes;
+    // until then BRAINSTORM_VM_URL is the operator override.
+    baseUrl: process.env.BRAINSTORM_VM_URL ?? "https://vm.brainstorm.co",
     apiKeyEnv: "BRAINSTORM_VM_API_KEY",
     hasEdgeProtocol: true,
   },
