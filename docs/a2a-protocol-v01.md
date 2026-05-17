@@ -65,13 +65,13 @@ When the target completes within ~30 seconds, the broker streams the response sy
   },
   "evidence_envelope_hash": "<sha256-hex>",
   "completed_at": "2026-05-17T18:00:42Z",
-  "traceparent": "<same as request>"
+  "traceparent": "<downstream traceparent: same trace_id, new span_id>"
 }
 ```
 
 - `evidence_envelope_hash`: SHA-256 of the evidence envelope the target sealed for this task. Lets the caller link the response to a tamper-evident record via `brainstorm evidence verify --hash <hash>`.
 - `output`: validated against the capability's `output_schema`.
-- `traceparent`: propagated unchanged so trace queries find both sides.
+- `traceparent`: carries the **downstream traceparent** the broker assigned for this hop (per the trace-propagation rules below) — same trace_id as the request, NEW span_id. Callers correlate via trace_id.
 
 ### Response — async (202 Accepted)
 
@@ -81,7 +81,7 @@ For long-running invocations, the broker returns 202 immediately:
 {
   "task_id": "<uuid>",
   "status_url": "/v1/mesh/task/<task_id>",
-  "traceparent": "<same as request>"
+  "traceparent": "<downstream traceparent: same trace_id, new span_id>"
 }
 ```
 
@@ -102,7 +102,19 @@ Callers `GET status_url` until it returns the synchronous 200 shape above (targe
 | 500  | `INTERNAL`     | broker-side persistence/routing failure                                                                    |
 | 503  | `UNAVAILABLE`  | target reachable but not currently serving (cold start, deploying)                                         |
 
-All non-2xx responses carry the canonical error envelope from Platform Contract v1.
+All non-2xx responses carry the canonical Platform Contract v1 error envelope:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "<error code from table above>",
+    "message": "<human-readable detail>"
+  }
+}
+```
+
+Some codes carry additional fields (e.g. `409 CONFLICT` includes the original `task_id` at the top level; `429 RATE_LIMITED` MUST include a `Retry-After` HTTP header). Callers MUST route on `error.code`; unknown top-level fields are informational.
 
 ## Authentication: per-agent JWT
 
@@ -126,7 +138,21 @@ Semantics:
 
 - `SET seen:{idempotency_key} <task_id> EX 600 NX`
 - On `NX` succeeds: first time, accept request, dispatch to target
-- On `NX` fails: duplicate, return `409 CONFLICT` with `{"task_id": "<original>", "error": "duplicate idempotency_key", "code": "CONFLICT"}`
+- On `NX` fails: duplicate, return `409 CONFLICT` using the canonical Platform Contract v1 error envelope, with the original `task_id` included for replay-safe client recovery:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "CONFLICT",
+    "message": "duplicate Idempotency-Key"
+  },
+  "task_id": "<original task_id from first acceptance>"
+}
+```
+
+The `task_id` field at the top level (alongside the canonical `error`) is an A2A-specific extension — callers MUST treat any unknown top-level field as informational and route only on `error.code`.
+
 - Freshness window: 10 minutes (configurable via BR env)
 
 ## Trace propagation
