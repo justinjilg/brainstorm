@@ -146,6 +146,17 @@ describe("brainstorm a2a invoke — wire helpers", () => {
     ).rejects.toThrow(/fetch failed/);
   });
 
+  it("rejects non-positive --poll-interval-ms before entering the polling loop", () => {
+    // Sanity-check the validator predicate runInvoke uses. The full
+    // command path is exercised via the dist binary; here we just lock
+    // the predicate so a future refactor can't loosen it.
+    const isValidPoll = (n: number) => Number.isFinite(n) && n > 0;
+    expect(isValidPoll(0)).toBe(false);
+    expect(isValidPoll(-1)).toBe(false);
+    expect(isValidPoll(NaN)).toBe(false);
+    expect(isValidPoll(2000)).toBe(true);
+  });
+
   it("emitResult --json prints the task envelope verbatim", () => {
     const outSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     emitResult(

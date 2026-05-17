@@ -172,9 +172,17 @@ async function runInvoke(
     return;
   }
   if (first.status === 202) {
+    const pollMs = opts.pollIntervalMs ?? DEFAULT_POLL_MS;
+    if (!Number.isFinite(pollMs) || pollMs <= 0) {
+      console.error(
+        `  Error: --poll-interval-ms must be a positive number of ms (got ${opts.pollIntervalMs})`,
+      );
+      process.exitCode = 2;
+      return;
+    }
     if (!opts.json) {
       console.log(
-        `  Accepted (async). Polling ${first.body?.status_url ?? "<missing status_url>"} every ${opts.pollIntervalMs ?? DEFAULT_POLL_MS}ms`,
+        `  Accepted (async). Polling ${first.body?.status_url ?? "<missing status_url>"} every ${pollMs}ms`,
       );
     }
     await pollUntilDone(
@@ -182,7 +190,7 @@ async function runInvoke(
       token,
       first.body?.status_url,
       deadlineS * 1000,
-      opts.pollIntervalMs ?? DEFAULT_POLL_MS,
+      pollMs,
       Boolean(opts.json),
     );
     return;
