@@ -17,7 +17,28 @@
  * internal dep declaration points at that version. Allow
  * `workspace:*` and `workspace:^` prefixes (the npm-workspaces
  * idiom for pinning to the local copy).
+ *
+ * Private-package carve-out:
+ *   The Stage-3 review flagged that an unbounded `private: true`
+ *   exemption was a future-abuse loophole — a contributor could
+ *   silence a failing version-sync check by flipping the private
+ *   flag. Stage-3.5 narrows the carve-out to an explicit allowlist
+ *   (EXPECTED_PRIVATE_PACKAGES). A package becoming private without
+ *   being on the list now fails the gate with a clear "add to
+ *   allowlist" hint.
  */
+
+/**
+ * Packages explicitly allowed to run independent versioning cadence
+ * because they're not npm-published. Each entry should carry a
+ * one-line justification — the registry is the audit trail.
+ */
+const EXPECTED_PRIVATE_PACKAGES = new Map([
+  [
+    "@brainst0rm/image-builder",
+    "Produces VM kernel + rootfs images, not npm tarballs. Ships alpha-tagged artifacts on its own cadence.",
+  ],
+]);
 
 import { readFileSync } from "node:fs";
 import { globSync } from "node:fs";
@@ -39,42 +60,92 @@ export async function check({ repoRoot }) {
         internalVersions.set(pkg.name, pkg.version);
         pkgs.push({ pkg, abs, isPrivate: pkg.private === true });
       }
-    } catch {
-      // skip unparseable
+    } catch (err) {
+      // Surface parse failures explicitly instead of silently dropping
+      // the package — a malformed package.json that happens to belong
+      // to the out-of-sync package would otherwise mask the drift the
+      // gate exists to catch.
+      issues.push(
+        `cannot parse ${rel}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  // Audit private-package allowlist BEFORE computing canonical
+  // version, so a misplaced private flag fails the gate with a
+  // pointed message instead of being absorbed into the
+  // "no-canonical-version-known" generic error path.
+  for (const { pkg } of pkgs) {
+    if (!pkg.private) continue;
+    if (!EXPECTED_PRIVATE_PACKAGES.has(pkg.name)) {
+      issues.push(
+        `${pkg.name} is marked private: true but isn't in EXPECTED_PRIVATE_PACKAGES. ` +
+          `Either remove the private flag, or add an entry (with justification) to ` +
+          `EXPECTED_PRIVATE_PACKAGES in scripts/contract-checks/version-sync.mjs. ` +
+          `The allowlist is the audit trail for "this package intentionally runs off-version."`,
+      );
     }
   }
 
   // Determine the canonical workspace version — the dominant version
-  // across *published* packages. Private packages may run independent
-  // cadence (e.g. image-builder ships VM images on alpha versions);
-  // they don't contribute to or violate the canonical version.
+  // across *published* packages. Allowlisted private packages run
+  // independent cadence (e.g. image-builder ships VM images on alpha
+  // versions); they don't contribute to or violate the canonical
+  // version.
   const versionCounts = new Map();
   for (const { pkg } of pkgs) {
-    if (pkg.private) continue;
+    if (pkg.private && EXPECTED_PRIVATE_PACKAGES.has(pkg.name)) continue;
     const v = pkg.version;
     versionCounts.set(v, (versionCounts.get(v) ?? 0) + 1);
   }
-  const canonicalVersion = [...versionCounts.entries()].sort(
-    (a, b) => b[1] - a[1],
-  )[0]?.[0];
+  const sortedVersions = [...versionCounts.entries()].sort((a, b) => b[1] - a[1]);
+  const canonicalVersion = sortedVersions[0]?.[0];
   if (!canonicalVersion) {
+    issues.push(
+      "could not determine canonical workspace version (no published packages with a version field?)",
+    );
     return {
       name: "version-sync",
       ok: false,
-      issues: ["could not determine canonical workspace version (no published packages with a version field?)"],
+      issues,
+    };
+  }
+
+  // Tie-break detection: if two versions tie for the most packages,
+  // the sort order is filesystem-dependent. During a partial
+  // changesets release (some packages bumped, others not), this is
+  // the exact failure mode the gate exists to catch. Surface ties
+  // explicitly instead of silently picking one.
+  if (
+    sortedVersions.length >= 2 &&
+    sortedVersions[0][1] === sortedVersions[1][1]
+  ) {
+    const tied = sortedVersions
+      .filter((e) => e[1] === sortedVersions[0][1])
+      .map((e) => `${e[1]} packages @ ${e[0]}`)
+      .join(" vs ");
+    issues.push(
+      `no dominant canonical version — workspace appears mid-release: ${tied}. ` +
+        `Either complete the changesets release or align the packages by hand before merging.`,
+    );
+    return {
+      name: "version-sync",
+      ok: false,
+      issues,
     };
   }
 
   // Gate 1: every PUBLISHED internal package shares the canonical
-  // version. Private packages are exempt — they're intentionally
-  // off-axis (e.g. image-builder is a Docker-based image producer,
-  // not an npm package).
+  // version. Allowlisted private packages are exempt — they're
+  // intentionally off-axis (e.g. image-builder ships VM images, not
+  // npm tarballs).
   for (const { pkg } of pkgs) {
-    if (pkg.private) continue;
+    if (pkg.private && EXPECTED_PRIVATE_PACKAGES.has(pkg.name)) continue;
     if (pkg.version !== canonicalVersion) {
       issues.push(
         `${pkg.name} is at version ${pkg.version} but the canonical workspace version is ${canonicalVersion}. ` +
-          `If this is deliberate (independent release cadence), mark it private: true.`,
+          `Align the version, or — if this package legitimately runs off-cadence — mark it private: true ` +
+          `AND add it to EXPECTED_PRIVATE_PACKAGES with justification.`,
       );
     }
   }

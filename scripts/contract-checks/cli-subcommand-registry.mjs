@@ -1,28 +1,38 @@
 /**
  * CLI subcommand registry gate.
  *
- * The brainstorm CLI exposes ~77 subcommand verbs across 11 command
+ * The brainstorm CLI exposes 99 subcommand verbs across 12 command
  * groups (router, agent, peer, workflow, vault, projects, schedule,
- * plan, orchestrate, codebase, platform). Adding a new verb is too
- * easy — a contributor writes a Commander .command() call somewhere
- * in `packages/cli/src/bin/brainstorm.ts` and the verb ships without
+ * plan, orchestrate, codebase, platform, plus top-level program).
+ * Adding a new verb is too easy — a contributor writes a
+ * Commander .command() call somewhere in
+ * `packages/cli/src/bin/brainstorm.ts` and the verb ships without
  * anyone deciding it should.
  *
- * This gate enforces deliberate addition: every command verb extracted
- * from the CLI source must appear in `cli-subcommand-registry.json`,
- * categorised. The categories aren't load-bearing today — they're a
- * forcing function that the author had to think about WHERE the
- * command fits.
+ * The Stage-3 review caught that the original gate keyed verbs by
+ * leaf name only, which deduped 99 source declarations to 77
+ * registry entries — `vault delete`, `peer kick`, etc. could be
+ * added under existing groups with zero gate friction because
+ * `delete`/`list`/etc. were already registered (against different
+ * groups). Stage-3.5 keys every entry by `<group>:<verb>` so
+ * subcommand drift inside a group is now visible.
  *
- * Pattern lifted from BrainstormRouter's `_no-inline-routes.test.ts`
- * plus the Stage-1 `BUILTIN_TOOL_METADATA` table: "discover from
- * source, lock with allowlist, fail CI on additions."
+ * Extraction logic:
+ *   Each .command(...) call in source has a receiver — either the
+ *   top-level `program`, or a `<group>Cmd` variable defined earlier
+ *   (e.g. `routerCmd`, `vaultCmd`). The receiver appears on the line
+ *   before the chained `.command(...)` due to multi-line builder
+ *   style. We walk every match and pair each verb with its
+ *   immediate receiver identifier.
  */
 
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
 
-const COMMAND_RE = /\.command\(\s*["']([a-zA-Z0-9:_<>\-\[\]]+(?:\s+[a-zA-Z0-9:_<>\[\]]+)*?)["']/g;
+// Matches `<receiver>` (optionally on its own line) followed by
+// `.command("verb...")`. Captures the receiver and verb separately.
+const COMMAND_RE =
+  /(\w+)\s*\n?\s*\.command\(\s*["']([a-zA-Z0-9:_<>\-\[\]]+(?:\s+[a-zA-Z0-9:_<>\[\]]+)*?)["']/g;
 
 export async function check({ repoRoot }) {
   const issues = [];
@@ -59,37 +69,42 @@ export async function check({ repoRoot }) {
     };
   }
 
-  const sourceVerbs = new Set();
+  // Build (group, verb) tuples from source. Skip non-Commander
+  // callers — only `program` and `<x>Cmd` receivers count.
+  const sourceEntries = new Set();
   for (const m of cliSrc.matchAll(COMMAND_RE)) {
-    const verb = m[1].split(/\s+/)[0];
-    sourceVerbs.add(verb);
+    const receiver = m[1];
+    const verb = m[2].split(/\s+/)[0];
+    if (receiver === "program" || receiver.endsWith("Cmd")) {
+      sourceEntries.add(`${receiver}:${verb}`);
+    }
   }
 
-  const registeredVerbs = new Set(Object.keys(registry.subcommands ?? {}));
+  const registeredEntries = new Set(Object.keys(registry.subcommands ?? {}));
   const knownCategories = new Set(Object.keys(registry._categories ?? {}));
 
-  for (const verb of sourceVerbs) {
-    if (!registeredVerbs.has(verb)) {
+  for (const entry of sourceEntries) {
+    if (!registeredEntries.has(entry)) {
       issues.push(
-        `CLI source declares verb "${verb}" but it's not in the registry. ` +
+        `CLI source declares "${entry}" but it's not in the registry. ` +
           `Add it to scripts/contract-checks/cli-subcommand-registry.json with a category.`,
       );
     }
   }
 
-  for (const verb of registeredVerbs) {
-    if (!sourceVerbs.has(verb)) {
+  for (const entry of registeredEntries) {
+    if (!sourceEntries.has(entry)) {
       issues.push(
-        `registry lists verb "${verb}" but no source declaration matches. ` +
+        `registry lists "${entry}" but no source declaration matches. ` +
           `Remove the registry entry or restore the verb.`,
       );
     }
   }
 
-  for (const [verb, category] of Object.entries(registry.subcommands ?? {})) {
+  for (const [entry, category] of Object.entries(registry.subcommands ?? {})) {
     if (!knownCategories.has(category)) {
       issues.push(
-        `verb "${verb}" categorised as "${category}" but no such category is documented in _categories. ` +
+        `"${entry}" categorised as "${category}" but no such category is documented in _categories. ` +
           `Either pick a known category or document this new one.`,
       );
     }
@@ -99,6 +114,6 @@ export async function check({ repoRoot }) {
     name: "cli-subcommand-registry",
     ok: issues.length === 0,
     issues,
-    note: `${sourceVerbs.size} source verbs · ${registeredVerbs.size} registered · ${knownCategories.size} categories`,
+    note: `${sourceEntries.size} source entries · ${registeredEntries.size} registered · ${knownCategories.size} categories`,
   };
 }
