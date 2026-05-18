@@ -1,0 +1,49 @@
+{
+  "_comment": "Canonical registry of every HTTP route exposed by packages/server's IPC server (consumed by the brainstorm desktop app and external clients). The contract-check gate at scripts/contract-checks/api-route-registry.mjs walks packages/server/src/server.ts and asserts every (method, path) pair matches this registry. This is NOT the platform-contract surface — that's a separate Zod-driven schema in packages/godmode/src/contract/schemas.ts. The brainstorm IPC server is its own thing; we lock it down for the same reason the CLI verb list is locked: nobody should be able to add a route without a deliberate registry edit.",
+  "_categories": {
+    "health": "Liveness check.",
+    "discovery": "Lists products/tools/skills/models — read-only metadata surfaces.",
+    "execution": "Triggers a tool, ChangeSet, dispatch, etc.",
+    "chat": "Conversation surface — REST + SSE streaming.",
+    "memory": "Persistent memory CRUD.",
+    "audit": "Audit log + ChangeSet history.",
+    "security": "Red-team / hardening surfaces.",
+    "platform": "Inbound platform-event receiver (the brainstorm CLI side of the platform contract — it consumes events from products)."
+  },
+  "routes": [
+    { "method": "GET", "path": "/health", "category": "health" },
+    { "method": "GET", "path": "/api/v1/products", "category": "discovery" },
+    { "method": "GET", "path": "/api/v1/tools", "category": "discovery" },
+    {
+      "method": "POST",
+      "path": "/api/v1/tools/execute",
+      "category": "execution"
+    },
+    { "method": "GET", "path": "/api/v1/changesets", "category": "audit" },
+    { "method": "GET", "path": "/api/v1/audit", "category": "audit" },
+    {
+      "method": "GET",
+      "path": "/api/v1/audit/changesets",
+      "category": "audit"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/platform/events",
+      "category": "platform"
+    },
+    { "method": "POST", "path": "/api/v1/chat", "category": "chat" },
+    { "method": "POST", "path": "/api/v1/chat/stream", "category": "chat" },
+    { "method": "GET", "path": "/api/v1/conversations", "category": "chat" },
+    { "method": "POST", "path": "/api/v1/conversations", "category": "chat" },
+    { "method": "GET", "path": "/api/v1/memory", "category": "memory" },
+    { "method": "POST", "path": "/api/v1/memory", "category": "memory" },
+    { "method": "POST", "path": "/api/v1/memory/dream", "category": "memory" },
+    { "method": "GET", "path": "/api/v1/skills", "category": "discovery" },
+    { "method": "GET", "path": "/api/v1/models", "category": "discovery" },
+    {
+      "method": "POST",
+      "path": "/api/v1/security/red-team",
+      "category": "security"
+    }
+  ]
+}
