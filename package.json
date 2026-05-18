@@ -23,7 +23,10 @@
   "author": "Justin Jilg <jj@brainstorm.co>",
   "license": "Apache-2.0",
   "scripts": {
-    "build": "turbo run build",
+    "build": "turbo run build && npm run contract-check",
+    "build:no-preflight": "turbo run build",
+    "contract-check": "node scripts/contract-check.mjs",
+    "contract-check:json": "node scripts/contract-check.mjs --json",
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "lint:abort-signal": "node scripts/lint-abort-signal-timeout.mjs",
