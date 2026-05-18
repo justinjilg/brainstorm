@@ -59,14 +59,29 @@ const CHECKS = [
   "./contract-checks/tool-metadata.mjs",
   "./contract-checks/tool-catalog.mjs",
   "./contract-checks/mcp-parity.mjs",
+  "./contract-checks/tool-name-references.mjs",
   // Stage-2 surface: platform contract + generated docs/markdown.
   "./contract-checks/contract-snapshots.mjs",
   "./contract-checks/docs-drift.mjs",
+  "./contract-checks/docs-field-drift.mjs",
   // Stage-3 surfaces.
   "./contract-checks/binary-registry.mjs",
   "./contract-checks/version-sync.mjs",
   "./contract-checks/cli-subcommand-registry.mjs",
   "./contract-checks/api-route-registry.mjs",
+  // Stage-4 folded ratchets: legacy scripts/check-*.mjs gates that
+  // used to run as individual CI steps. Same "refuse to ship if
+  // invariant X is broken" shape; now part of the unified preflight
+  // so one command runs the whole family.
+  "./contract-checks/as-any-budget.mjs",
+  "./contract-checks/ci-soft-fail-budget.mjs",
+  "./contract-checks/dep-cruiser.mjs",
+  "./contract-checks/abort-signal-lint.mjs",
+  // Stage-4 meta-gate: the preflight must remain wired into every
+  // artifact-producing workflow (CI on PR, Release on main, root
+  // npm build). This gate locks the wiring so a future PR that
+  // removes the preflight step from release.yml fails the build.
+  "./contract-checks/release-flow-wiring.mjs",
 ];
 
 /** @typedef {import("./contract-checks/_define-gate.mjs").CheckResult} CheckResult */
