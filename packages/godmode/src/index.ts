@@ -90,3 +90,8 @@ export type {
   EndpointCheckPlan,
   ValidationOutcome,
 } from "./contract/generators/validator.js";
+
+// A2A Protocol v0.1 — BrainstormRouter mesh-auth + W3C trace context.
+// Re-exported so CLI and downstream consumers can import
+// `formatTraceparent`, `MeshBroker`, etc. directly from "@brainst0rm/godmode".
+export * from "./mesh/index.js";
