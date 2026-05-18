@@ -28,27 +28,51 @@ interface TraceOptions {
   json?: boolean;
   base?: string;
   token?: string;
+  vmToken?: string;
+  vmUrl?: string;
 }
 
 function parseTraceparent(s: string): { traceID: string } | null {
   const m = s.match(W3C_TRACEPARENT_RE);
   if (!m) return null;
-  return { traceID: m[2] as string };
+  const [, version, traceID, spanID] = m as unknown as [
+    string,
+    string,
+    string,
+    string,
+    string,
+  ];
+  // W3C Trace Context §3.2.2.2 / §3.2.2.3 / §3.2.2.4:
+  //   - version "ff" is reserved/invalid
+  //   - trace-id all-zero is invalid
+  //   - span-id (parent-id) all-zero is invalid
+  // The mesh broker parser already rejects these; mirror that here so the
+  // CLI fails fast instead of silently producing empty lookups.
+  if (version === "ff") return null;
+  if (/^0+$/.test(traceID)) return null;
+  if (/^0+$/.test(spanID)) return null;
+  return { traceID };
+}
+
+interface TraceCreds {
+  brToken: string;
+  vmToken: string;
+  vmURL: string;
 }
 
 async function fetchTrace(
   baseUrl: string,
-  token: string,
+  creds: TraceCreds,
   traceparent: string,
   traceID: string,
 ): Promise<TraceRecord[]> {
   const records: TraceRecord[] = [];
 
-  // BR mesh — A2A task records keyed by trace_id.
+  // BR mesh — A2A task records keyed by trace_id. Uses BRAINSTORM_API_KEY.
   try {
     const u = `${baseUrl.replace(/\/$/, "")}/v1/mesh/traces/${traceID}`;
     const res = await fetch(u, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${creds.brToken}` },
       signal: AbortSignal.timeout(10_000),
     });
     if (res.ok) {
@@ -68,11 +92,13 @@ async function fetchTrace(
   }
 
   // brainstormVM evidence — envelopes stamped with traceparent.
-  const vmURL = process.env.BRAINSTORM_VM_URL ?? "https://vm.brainstorm.co";
+  // Per the existing ecosystem-status convention, VM uses its OWN key
+  // (BRAINSTORM_VM_API_KEY). Reusing the BR key would silently 401/403
+  // and the user would see empty results with no signal.
   try {
-    const u = `${vmURL.replace(/\/$/, "")}/api/v1/evidence/by-trace/${encodeURIComponent(traceparent)}`;
+    const u = `${creds.vmURL.replace(/\/$/, "")}/api/v1/evidence/by-trace/${encodeURIComponent(traceparent)}`;
     const res = await fetch(u, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${creds.vmToken}` },
       signal: AbortSignal.timeout(10_000),
     });
     if (res.ok) {
@@ -145,13 +171,18 @@ export function registerTraceCommand(program: Command): void {
       "Walk a trace tree across A2A, Edge, Evidence, and ChangeSet records",
     )
     .option("--base <url>", "BR base URL (default $BRAINSTORM_BR_URL)")
-    .option("--token <token>", "Bearer token (default $BRAINSTORM_API_KEY)")
+    .option("--token <token>", "BR bearer token (default $BRAINSTORM_API_KEY)")
+    .option(
+      "--vm-token <token>",
+      "VM bearer token (default $BRAINSTORM_VM_API_KEY)",
+    )
+    .option("--vm-url <url>", "VM base URL (default $BRAINSTORM_VM_URL)")
     .option("--json", "Output JSON")
     .action(async (traceparent: string, opts: TraceOptions) => {
       const parsed = parseTraceparent(traceparent);
       if (!parsed) {
         console.error(
-          `  Error: traceparent does not match W3C v0 grammar (00-<32hex>-<16hex>-<2hex>); got ${traceparent}`,
+          `  Error: traceparent does not match W3C v0 grammar (00-<32hex>-<16hex>-<2hex>, version != ff, no all-zero IDs); got ${traceparent}`,
         );
         process.exitCode = 2;
         return;
@@ -160,15 +191,26 @@ export function registerTraceCommand(program: Command): void {
         opts.base ??
         process.env.BRAINSTORM_BR_URL ??
         "https://api.brainstormrouter.com";
-      const token = opts.token ?? process.env.BRAINSTORM_API_KEY ?? "";
-      if (!token) {
+      const brToken = opts.token ?? process.env.BRAINSTORM_API_KEY ?? "";
+      const vmToken =
+        opts.vmToken ?? process.env.BRAINSTORM_VM_API_KEY ?? brToken;
+      const vmURL =
+        opts.vmUrl ??
+        process.env.BRAINSTORM_VM_URL ??
+        "https://vm.brainstorm.co";
+      if (!brToken) {
         console.error(
-          "  Warning: BRAINSTORM_API_KEY not set; lookups will likely 401",
+          "  Warning: BRAINSTORM_API_KEY not set; BR mesh lookups will likely 401",
+        );
+      }
+      if (!vmToken) {
+        console.error(
+          "  Warning: BRAINSTORM_VM_API_KEY not set; VM evidence lookups will likely 401",
         );
       }
       const records = await fetchTrace(
         baseUrl,
-        token,
+        { brToken, vmToken, vmURL },
         traceparent,
         parsed.traceID,
       );

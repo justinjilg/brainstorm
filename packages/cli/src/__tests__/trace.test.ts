@@ -23,6 +23,27 @@ describe("brainstorm trace — W3C parsing + timeline render", () => {
     expect(parsed!.traceID).toBe("0af7651916cd43dd8448eb211c80319c");
   });
 
+  it("rejects forbidden W3C identifiers (version=ff, all-zero trace_id, all-zero span_id)", () => {
+    // Version ff is reserved per W3C §3.2.2.2.
+    expect(
+      parseTraceparent(
+        "ff-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+      ),
+    ).toBeNull();
+    // All-zero trace_id is invalid per W3C §3.2.2.3.
+    expect(
+      parseTraceparent(
+        "00-00000000000000000000000000000000-b7ad6b7169203331-01",
+      ),
+    ).toBeNull();
+    // All-zero span_id is invalid per W3C §3.2.2.4.
+    expect(
+      parseTraceparent(
+        "00-0af7651916cd43dd8448eb211c80319c-0000000000000000-01",
+      ),
+    ).toBeNull();
+  });
+
   it("W3C_TRACEPARENT_RE is anchored — won't match a substring", () => {
     const inner = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
     expect(W3C_TRACEPARENT_RE.test(`prefix-${inner}`)).toBe(false);
@@ -115,11 +136,43 @@ describe("brainstorm trace — fetchTrace merges BR + VM sources", () => {
       return new Response("not found", { status: 404 });
     }) as typeof globalThis.fetch;
 
-    const records = await fetchTrace("https://br.example", "tok", tp, traceID);
+    const records = await fetchTrace(
+      "https://br.example",
+      { brToken: "br-tok", vmToken: "vm-tok", vmURL: "https://vm.example" },
+      tp,
+      traceID,
+    );
     expect(records.map((r) => r.summary)).toEqual([
       "envelope sealed",
       "broker accept",
     ]);
+  });
+
+  it("sends the BR token to BR and the VM token to VM (per-product keys)", async () => {
+    const captured: { url: string; auth: string }[] = [];
+    globalThis.fetch = (async (url: any, init: any) => {
+      captured.push({
+        url: String(url),
+        auth: (init?.headers as Record<string, string>)?.Authorization ?? "",
+      });
+      return new Response(JSON.stringify({ records: [] }), { status: 200 });
+    }) as typeof globalThis.fetch;
+
+    await fetchTrace(
+      "https://br.example",
+      {
+        brToken: "br-secret",
+        vmToken: "vm-secret",
+        vmURL: "https://vm.example",
+      },
+      "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+      "0af7651916cd43dd8448eb211c80319c",
+    );
+
+    const brCall = captured.find((c) => c.url.includes("br.example"));
+    const vmCall = captured.find((c) => c.url.includes("vm.example"));
+    expect(brCall?.auth).toBe("Bearer br-secret");
+    expect(vmCall?.auth).toBe("Bearer vm-secret");
   });
 
   it("returns empty list silently when both endpoints fail", async () => {
@@ -129,7 +182,7 @@ describe("brainstorm trace — fetchTrace merges BR + VM sources", () => {
 
     const records = await fetchTrace(
       "https://br.example",
-      "tok",
+      { brToken: "br-tok", vmToken: "vm-tok", vmURL: "https://vm.example" },
       "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
       "0af7651916cd43dd8448eb211c80319c",
     );
