@@ -417,6 +417,11 @@ registerA2ACommand(program);
 import { registerTraceCommand } from "../commands/trace.js";
 registerTraceCommand(program);
 
+// `brainstorm evidence verify --lineage <did>` — Phase G ratification
+// surface. See packages/cli/src/commands/evidence.ts (P5/Wk12 #73 of rev 2).
+import { registerEvidenceCommand } from "../commands/evidence.js";
+registerEvidenceCommand(program);
+
 program
   .command("eval")
   .description("Run capability evaluation probes against a model")
