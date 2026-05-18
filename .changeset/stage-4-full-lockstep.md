@@ -1,5 +1,5 @@
 ---
-"brainstorm": minor
+"@brainst0rm/core": patch
 ---
 
 Stage-4 full lockstep: every artifact-producing path now runs the contract preflight. The protocol is no longer per-surface — every surface that could be locked IS locked, and the gates run on every shipping path (build, CI, release).
