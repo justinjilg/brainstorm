@@ -11,6 +11,9 @@ import type { ToolRegistry } from "@brainst0rm/tools";
  * - User approves → switch to execute mode with plan as guide
  */
 
+// Stage-4 contract gate (scripts/contract-checks/tool-name-references.mjs)
+// caught that `notebook_read` was a stale reference — no tool by that
+// name exists in BUILTIN_TOOL_METADATA. Removed 2026-05-18.
 const READ_ONLY_TOOLS = new Set([
   "file_read",
   "glob",
@@ -20,7 +23,6 @@ const READ_ONLY_TOOLS = new Set([
   "git_log",
   "web_fetch",
   "web_search",
-  "notebook_read",
 ]);
 
 /**

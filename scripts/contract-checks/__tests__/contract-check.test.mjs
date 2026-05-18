@@ -27,15 +27,27 @@ const REPO_ROOT = path.resolve(
 );
 
 const GATES = [
+  // Stage-1
   "tool-metadata",
   "tool-catalog",
   "mcp-parity",
+  "tool-name-references",
+  // Stage-2
   "contract-snapshots",
   "docs-drift",
+  "docs-field-drift",
+  // Stage-3
   "binary-registry",
   "version-sync",
   "cli-subcommand-registry",
   "api-route-registry",
+  // Stage-4 folded ratchets
+  "as-any-budget",
+  "ci-soft-fail-budget",
+  "dep-cruiser",
+  "abort-signal-lint",
+  // Stage-4 meta-gate
+  "release-flow-wiring",
 ];
 
 // ── Shape tests ─────────────────────────────────────────────────────
