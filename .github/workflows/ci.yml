@@ -48,6 +48,16 @@ jobs:
       - name: Build all packages
         run: npx turbo run build --filter='!@brainst0rm/desktop'
 
+      # Contract preflight (Stage-3 lockstep). Runs every gate against
+      # the built dist + committed source: tool metadata coverage,
+      # MCP exposure parity, contract snapshots, docs drift, binary
+      # registry, workspace version sync, CLI subcommand registry, API
+      # route registry. The contract is now load-bearing: drift in any
+      # surface fails the CI build, not just the test suite. Devs
+      # reproduce locally with `npm run contract-check`.
+      - name: Contract preflight — all surfaces in lockstep
+        run: node scripts/contract-check.mjs
+
       - name: Type check
         run: npx turbo run typecheck --filter='!@brainst0rm/desktop'
 

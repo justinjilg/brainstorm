@@ -21,6 +21,11 @@ npm-debug.log*
 # Generated artifacts
 docs/internal/sbom.json
 
+# Contract preflight result artifact — written on every run so CI
+# failures leave diagnostic JSON on disk. Regenerable via
+# `npm run contract-check`.
+.contract-check/
+
 # Contract compiler output — regenerable via
 # `pnpm --filter @brainst0rm/godmode run compile-contract -- --write`.
 # Kept out of git so the source-of-truth (packages/godmode/src/contract/
