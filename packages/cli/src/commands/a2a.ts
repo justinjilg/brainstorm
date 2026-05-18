@@ -28,8 +28,91 @@ interface InvokeOptions {
 }
 
 const DEFAULT_BR_URL = "https://api.brainstormrouter.com";
+const DEFAULT_VM_URL = "https://vm.brainstorm.co";
 const DEFAULT_POLL_MS = 2000;
 const DEFAULT_DEADLINE_S = 90;
+
+interface ListOptions {
+  product?: string;
+  status?: string;
+  tenant?: string;
+  vmUrl?: string;
+  token?: string;
+  json?: boolean;
+}
+
+async function runList(opts: ListOptions): Promise<void> {
+  const baseUrl = opts.vmUrl ?? process.env.BRAINSTORM_VM_URL ?? DEFAULT_VM_URL;
+  const token =
+    opts.token ??
+    process.env.BRAINSTORM_VM_API_KEY ??
+    process.env.BRAINSTORM_API_KEY ??
+    "";
+  if (!token) {
+    console.error(
+      "  Error: BRAINSTORM_VM_API_KEY (or BRAINSTORM_API_KEY) not set. Required for capability registry.",
+    );
+    process.exitCode = 2;
+    return;
+  }
+
+  const params = new URLSearchParams();
+  if (opts.product) params.set("product", opts.product);
+  if (opts.status) params.set("status", opts.status);
+  const qs = params.toString();
+  const url = `${baseUrl.replace(/\/$/, "")}/api/v1/capabilities/list${qs ? `?${qs}` : ""}`;
+
+  let res: Response;
+  try {
+    res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (opts.json) {
+      console.error(JSON.stringify({ status: 0, error: msg }, null, 2));
+    } else {
+      console.error(`  ✗ a2a list failed: ${msg}`);
+    }
+    process.exitCode = 1;
+    return;
+  }
+  const text = await res.text();
+  let body: any = text;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    /* keep raw */
+  }
+  if (res.status >= 400) {
+    emitError(res.status, body, opts.json);
+    process.exitCode = 1;
+    return;
+  }
+  if (opts.json) {
+    console.log(JSON.stringify(body, null, 2));
+    return;
+  }
+  const caps = (body?.capabilities ?? []) as Array<{
+    agent_did?: string;
+    name?: string;
+    description?: string;
+    risk_level?: string;
+    autonomy_required?: string;
+    status?: string;
+  }>;
+  console.log();
+  console.log(
+    `  ${caps.length} capability/ies${opts.product ? ` (product=${opts.product})` : ""}`,
+  );
+  console.log();
+  for (const c of caps) {
+    const product = (c.agent_did ?? "").split(":")[3] ?? "?";
+    console.log(
+      `    ${c.name ?? "?"}  ${product}  risk=${c.risk_level ?? "?"}  autonomy=${c.autonomy_required ?? "?"}`,
+    );
+    if (c.description) console.log(`      ${c.description}`);
+  }
+  console.log();
+}
 
 async function invokeOnce(
   baseUrl: string,
@@ -284,6 +367,38 @@ export function registerA2ACommand(program: Command): void {
   const cmd = program
     .command("a2a")
     .description("Agent-to-agent (A2A) operations via BrainstormRouter mesh");
+
+  cmd
+    .command("list")
+    .description(
+      "List capabilities published to the Agent Capability Registry (VM CP)",
+    )
+    .option("--product <name>", "Filter by owning product (msp|gtm|vm)")
+    .option(
+      "--status <s>",
+      "Filter by status (active|deprecated|removed)",
+      "active",
+    )
+    .option("--tenant <id>", "Reserved — tenant scoping (server-side filter)")
+    .option("--vm-url <url>", "VM CP base URL (default $BRAINSTORM_VM_URL)")
+    .option(
+      "--token <token>",
+      "Bearer (default $BRAINSTORM_VM_API_KEY or $BRAINSTORM_API_KEY)",
+    )
+    .option("--json", "Output JSON (no human-readable banner)")
+    .action(async (opts: ListOptions) => {
+      try {
+        await runList(opts);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (opts.json) {
+          console.error(JSON.stringify({ status: 0, error: msg }, null, 2));
+        } else {
+          console.error(`  ✗ a2a list failed: ${msg}`);
+        }
+        process.exitCode = 1;
+      }
+    });
 
   cmd
     .command("invoke <target_did> <capability>")
