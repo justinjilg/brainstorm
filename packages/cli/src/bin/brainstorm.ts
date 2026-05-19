@@ -422,6 +422,12 @@ registerTraceCommand(program);
 import { registerEvidenceCommand } from "../commands/evidence.js";
 registerEvidenceCommand(program);
 
+// `brainstorm login` — OAuth 2.0 Device Authorization Grant against
+// Keycloak at auth.brainstorm.co (v0.3 P1.5 / M4 / D12). Persists a
+// session to ~/.brainstorm/session.
+import { registerLoginCommand } from "../commands/login.js";
+registerLoginCommand(program);
+
 program
   .command("eval")
   .description("Run capability evaluation probes against a model")
