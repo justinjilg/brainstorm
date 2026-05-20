@@ -8,7 +8,10 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { Command } from "commander";
-import { registerBackupCommand } from "../commands/backup.js";
+import {
+  registerBackupCommand,
+  parseRetentionDays,
+} from "../commands/backup.js";
 
 describe("brainstorm backup", () => {
   let program: Command;
@@ -57,15 +60,36 @@ describe("brainstorm backup", () => {
     ).toThrow();
   });
 
-  it("list-schedules takes an optional --tenant", () => {
+  it("list-schedules takes an optional --tenant via shared options", () => {
     const backup = program.commands.find((c) => c.name() === "backup")!;
     const listSchedules = backup.commands.find(
       (c) => c.name() === "list-schedules",
     )!;
     const tenantOpt = listSchedules.options.find((o) => o.long === "--tenant");
     expect(tenantOpt).toBeDefined();
-    // Optional flag with `--tenant <id>` (angle brackets without `--required`)
-    // means the option itself is not required; verify by mandatory flag.
     expect(tenantOpt!.mandatory).toBe(false);
+  });
+});
+
+describe("parseRetentionDays", () => {
+  it("returns undefined for empty input", () => {
+    expect(parseRetentionDays(undefined)).toBeUndefined();
+    expect(parseRetentionDays("")).toBeUndefined();
+  });
+
+  it("parses '<N>d' into a day count", () => {
+    expect(parseRetentionDays("30d")).toBe(30);
+    expect(parseRetentionDays("90d")).toBe(90);
+    expect(parseRetentionDays("365d")).toBe(365);
+  });
+
+  it("tolerates surrounding whitespace", () => {
+    expect(parseRetentionDays(" 7d ")).toBe(7);
+  });
+
+  it("throws on malformed input", () => {
+    expect(() => parseRetentionDays("30")).toThrow();
+    expect(() => parseRetentionDays("1 month")).toThrow();
+    expect(() => parseRetentionDays("30days")).toThrow();
   });
 });

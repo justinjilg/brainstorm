@@ -30,19 +30,65 @@ const SESSION_PATH = join(homedir(), ".brainstorm", "session");
 
 interface SessionFile {
   access_token?: string;
+  /** `did:bvm:<tenant>:<user>` per v0.3 login.ts comment. */
+  did?: string;
 }
 
-function loadToken(explicitToken: string | undefined): string | undefined {
-  if (explicitToken) return explicitToken;
+interface SessionContext {
+  token: string | undefined;
+  tenantId: string | undefined;
+}
+
+function loadSession(explicitToken: string | undefined): SessionContext {
+  if (explicitToken) {
+    return { token: explicitToken, tenantId: undefined };
+  }
   const envToken = process.env.BRAINSTORM_API_KEY;
-  if (envToken) return envToken;
+  if (envToken) {
+    return { token: envToken, tenantId: undefined };
+  }
   try {
     const raw = readFileSync(SESSION_PATH, "utf8");
     const parsed = JSON.parse(raw) as SessionFile;
-    return parsed.access_token;
+    return {
+      token: parsed.access_token,
+      tenantId: parseTenantFromDid(parsed.did),
+    };
   } catch {
-    return undefined;
+    return { token: undefined, tenantId: undefined };
   }
+}
+
+function parseTenantFromDid(did: string | undefined): string | undefined {
+  if (!did) return undefined;
+  // `did:bvm:<tenant>:<user>` — tenant is the third segment.
+  const parts = did.split(":");
+  return parts.length >= 4 ? parts[2] : undefined;
+}
+
+/**
+ * Codex r1 P1: token leaks over http:// if --base or env hands us a
+ * plaintext URL. Reject anything that isn't https://, except an
+ * explicit localhost/loopback dev escape hatch.
+ */
+function assertSecureBase(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    console.error(`Invalid backup base URL: ${url}`);
+    process.exit(3);
+  }
+  if (parsed.protocol === "https:") return;
+  const host = parsed.hostname;
+  const isLocalhost =
+    host === "localhost" || host === "127.0.0.1" || host === "::1";
+  if (parsed.protocol === "http:" && isLocalhost) return;
+  console.error(
+    `Refusing to send bearer token over ${parsed.protocol}//${host}. ` +
+      `Use https:// or a localhost/loopback base URL for dev.`,
+  );
+  process.exit(3);
 }
 
 function resolveBackupUrl(explicitBase: string | undefined): string {
@@ -56,6 +102,8 @@ interface InvokeOptions {
   base?: string;
   token?: string;
   json?: boolean;
+  /** Override the X-Tenant-ID header (otherwise parsed from session DID). */
+  tenant?: string;
 }
 
 interface GodModeResponse {
@@ -65,28 +113,59 @@ interface GodModeResponse {
   trace_id?: string;
 }
 
+/**
+ * Parses a retention duration string like "30d" or "90d" into a day count.
+ * Returns undefined when the input is empty/undefined; throws on malformed.
+ */
+export function parseRetentionDays(
+  value: string | undefined,
+): number | undefined {
+  if (!value) return undefined;
+  const m = /^([0-9]+)d$/.exec(value.trim());
+  if (!m) {
+    throw new Error(
+      `Invalid retention '${value}'. Expected '<N>d' (e.g. '30d').`,
+    );
+  }
+  return Number.parseInt(m[1], 10);
+}
+
 async function invokeBackupTool(
   toolName: string,
-  params: Record<string, unknown>,
+  input: Record<string, unknown>,
   opts: InvokeOptions,
 ): Promise<void> {
-  const token = loadToken(opts.token);
-  if (!token) {
+  const session = loadSession(opts.token);
+  if (!session.token) {
     console.error(
       "No auth token. Run `brainstorm login` first or pass --token.",
     );
     process.exit(2);
   }
-  const url = `${resolveBackupUrl(opts.base)}/api/v1/god-mode/execute`;
+  const tenantId = opts.tenant ?? session.tenantId;
+  if (!tenantId) {
+    console.error(
+      "No tenant context. Pass --tenant <id>, or run `brainstorm login` to " +
+        "bind a session whose DID encodes the tenant.",
+    );
+    process.exit(2);
+  }
+  const baseUrl = resolveBackupUrl(opts.base);
+  assertSecureBase(baseUrl);
+  const url = `${baseUrl}/api/v1/god-mode/execute`;
   let response: Response;
   try {
     response = await fetch(url, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${session.token}`,
         "Content-Type": "application/json",
+        // Codex r1 P1: backup service reads tenant from this header, not
+        // from the bearer token payload. Missing it returns 400 missing_tenant.
+        "X-Tenant-ID": tenantId,
       },
-      body: JSON.stringify({ tool: toolName, params }),
+      // Codex r1 P1: backup service expects `input`, not `params`.
+      body: JSON.stringify({ tool: toolName, input }),
     });
   } catch (err) {
     console.error(
@@ -116,13 +195,8 @@ async function invokeBackupTool(
     process.exit(1);
   }
 
-  if (opts.json) {
-    process.stdout.write(JSON.stringify(body.data, null, 2));
-    process.stdout.write("\n");
-  } else {
-    process.stdout.write(JSON.stringify(body.data, null, 2));
-    process.stdout.write("\n");
-  }
+  process.stdout.write(JSON.stringify(body.data, null, 2));
+  process.stdout.write("\n");
 }
 
 export function registerBackupCommand(program: Command): void {
@@ -132,7 +206,10 @@ export function registerBackupCommand(program: Command): void {
       "Operate the brainstorm-backup product (schedules, drills, runs)",
     );
 
-  // Shared option set — every subcommand needs base + token + json.
+  // Shared option set — every subcommand needs base + token + json + tenant.
+  // The service reads tenant from the X-Tenant-ID header (not the JWT body),
+  // so --tenant is universal: pass explicitly, or auto-resolve from the
+  // session DID at request time.
   const sharedOptions = (cmd: Command): Command =>
     cmd
       .option(
@@ -143,6 +220,7 @@ export function registerBackupCommand(program: Command): void {
         "--token <jwt>",
         "Bearer JWT (default: BRAINSTORM_API_KEY env or ~/.brainstorm/session)",
       )
+      .option("--tenant <id>", "Tenant ID (default: parsed from session DID)")
       .option(
         "--json",
         "Emit raw JSON response (default: pretty-printed data)",
@@ -151,12 +229,9 @@ export function registerBackupCommand(program: Command): void {
   sharedOptions(
     backup
       .command("list-schedules")
-      .description("List backup schedules for the current tenant")
-      .option("--tenant <id>", "Tenant ID (default: derived from JWT)"),
-  ).action(async (opts: InvokeOptions & { tenant?: string }) => {
-    const params: Record<string, unknown> = {};
-    if (opts.tenant) params.tenant_id = opts.tenant;
-    await invokeBackupTool("backup.list_schedules", params, opts);
+      .description("List backup schedules for the current tenant"),
+  ).action(async (opts: InvokeOptions) => {
+    await invokeBackupTool("backup.list_schedules", {}, opts);
   });
 
   sharedOptions(
@@ -188,14 +263,23 @@ export function registerBackupCommand(program: Command): void {
         source?: string;
       },
     ) => {
-      const params: Record<string, unknown> = {
+      // Codex r1 P1: service field names are cron + retention_days + source,
+      // not the friendlier CLI flag names. Translate at the boundary.
+      let retentionDays: number;
+      try {
+        retentionDays = parseRetentionDays(opts.retention) ?? 30;
+      } catch (e) {
+        console.error((e as Error).message);
+        process.exit(2);
+      }
+      const input: Record<string, unknown> = {
         name: opts.name,
-        cadence: opts.cadence,
+        cron: opts.cadence,
         target: opts.target,
-        retention: opts.retention,
+        retention_days: retentionDays,
       };
-      if (opts.source) params.source_id = opts.source;
-      await invokeBackupTool("backup.create_schedule", params, opts);
+      if (opts.source) input.source = opts.source;
+      await invokeBackupTool("backup.create_schedule", input, opts);
     },
   );
 
@@ -218,9 +302,9 @@ export function registerBackupCommand(program: Command): void {
       .description("List restore drills for the current tenant")
       .option("--schedule-id <id>", "Filter to one schedule"),
   ).action(async (opts: InvokeOptions & { scheduleId?: string }) => {
-    const params: Record<string, unknown> = {};
-    if (opts.scheduleId) params.schedule_id = opts.scheduleId;
-    await invokeBackupTool("backup.list_drills", params, opts);
+    const input: Record<string, unknown> = {};
+    if (opts.scheduleId) input.schedule_id = opts.scheduleId;
+    await invokeBackupTool("backup.list_drills", input, opts);
   });
 
   sharedOptions(
