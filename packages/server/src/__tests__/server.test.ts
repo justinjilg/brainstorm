@@ -167,4 +167,14 @@ describe("BrainstormServer Utility Methods", () => {
       expect((server as any).safeInt("42", 99)).toBe(42);
     });
   });
+
+  describe("default chat permissions", () => {
+    it("allows auto tools but requires confirmation for mutating tools", () => {
+      const check = (BrainstormServer as any).DEFAULT_CHAT_PERMISSION_CHECK;
+
+      expect(check("file_read", "auto")).toBe("allow");
+      expect(check("file_write", "confirm")).toBe("confirm");
+      expect(check("dangerous", "deny")).toBe("deny");
+    });
+  });
 });

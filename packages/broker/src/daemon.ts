@@ -23,6 +23,14 @@
  */
 
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
+import { randomBytes, timingSafeEqual } from "node:crypto";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { createLogger } from "@brainst0rm/shared";
 import Database, { type Database as DatabaseType } from "better-sqlite3";
 import type {
@@ -127,6 +135,7 @@ function toWireMessage(row: MessageRow): Message {
 export interface BrokerOptions {
   port?: number;
   dbPath?: string;
+  authToken?: string;
   cleanupIntervalMs?: number;
   /**
    * Override the liveness probe. Useful for tests where PIDs are fabricated.
@@ -146,6 +155,8 @@ export function createBroker(opts: BrokerOptions = {}): Broker {
   const dbPath = opts.dbPath ?? defaultDbPath();
   const cleanupIntervalMs = opts.cleanupIntervalMs ?? 30_000;
   const isPidAlive = opts.isPidAlive ?? defaultIsPidAlive;
+  const authToken =
+    opts.authToken ?? process.env.BRAINSTORM_BROKER_TOKEN ?? initBrokerToken();
 
   const db = new Database(dbPath);
   initSchema(db);
@@ -291,6 +302,17 @@ export function createBroker(opts: BrokerOptions = {}): Broker {
     return { status: "ok", peers: row.n, version: BROKER_VERSION };
   }
 
+  function verifyBearer(req: IncomingMessage): boolean {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return false;
+    const m = /^Bearer\s+(.+)$/i.exec(authHeader.trim());
+    if (!m) return false;
+    const supplied = Buffer.from(m[1], "utf8");
+    const expected = Buffer.from(authToken, "utf8");
+    if (supplied.length !== expected.length) return false;
+    return timingSafeEqual(supplied, expected);
+  }
+
   async function readJson(req: IncomingMessage): Promise<unknown> {
     const chunks: Buffer[] = [];
     for await (const chunk of req) chunks.push(chunk as Buffer);
@@ -315,6 +337,9 @@ export function createBroker(opts: BrokerOptions = {}): Broker {
       }
       if (req.method !== "POST") {
         return json(res, 405, { error: "method not allowed" });
+      }
+      if (!verifyBearer(req)) {
+        return json(res, 401, { error: "broker bearer token required" });
       }
       const body = await readJson(req);
       switch (req.url) {
@@ -409,4 +434,31 @@ function defaultIsPidAlive(pid: number): boolean {
 function defaultDbPath(): string {
   const home = process.env.HOME ?? process.env.USERPROFILE ?? "/tmp";
   return `${home}/.brainstorm/broker.db`;
+}
+
+export function brokerTokenPath(): string {
+  const home =
+    process.env.BRAINSTORM_HOME ??
+    `${process.env.HOME ?? process.env.USERPROFILE ?? "/tmp"}/.brainstorm`;
+  return `${home}/broker-token`;
+}
+
+export function readBrokerToken(): string | null {
+  const path = brokerTokenPath();
+  if (!existsSync(path)) return null;
+  const token = readFileSync(path, "utf8").trim();
+  return token.length > 0 ? token : null;
+}
+
+function initBrokerToken(): string {
+  const existing = readBrokerToken();
+  if (existing) return existing;
+
+  const path = brokerTokenPath();
+  const dir = path.slice(0, path.lastIndexOf("/"));
+  mkdirSync(dir, { recursive: true });
+  const token = randomBytes(32).toString("hex");
+  writeFileSync(path, token, { mode: 0o600 });
+  chmodSync(path, 0o600);
+  return token;
 }

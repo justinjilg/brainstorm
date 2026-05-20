@@ -15,11 +15,14 @@ import {
   type Broker,
 } from "../index.js";
 
+const BROKER_TOKEN = "test-broker-token";
+
 async function bootBroker(livePids?: Set<number>): Promise<Broker> {
   const alive = livePids ?? new Set<number>();
   const broker = createBroker({
     port: 0, // ephemeral
     dbPath: ":memory:",
+    authToken: BROKER_TOKEN,
     cleanupIntervalMs: 0, // no scheduled reap in tests — reap only at startup
     isPidAlive: (pid) => alive.has(pid),
   });
@@ -44,8 +47,16 @@ function makeClient(
     heartbeatIntervalMs: 10_000, // won't fire in test
     pollIntervalMs: 10_000, // won't fire in test
     requestTimeoutMs: 2_000,
+    brokerToken: BROKER_TOKEN,
     ...overrides,
   });
+}
+
+function brokerAuthHeaders(): Record<string, string> {
+  return {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${BROKER_TOKEN}`,
+  };
 }
 
 let broker: Broker;
@@ -149,7 +160,7 @@ describe("broker", () => {
       const port = broker.port();
       const pollRes = await fetch(`http://127.0.0.1:${port}/poll-messages`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: brokerAuthHeaders(),
         body: JSON.stringify({ id: bId }),
       });
       return pollRes.json() as Promise<{
@@ -181,7 +192,7 @@ describe("broker", () => {
     const drain = async () => {
       const res = await fetch(`http://127.0.0.1:${port}/poll-messages`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: brokerAuthHeaders(),
         body: JSON.stringify({ id: bId }),
       });
       return (await res.json()) as { messages: unknown[] };
@@ -249,6 +260,26 @@ describe("broker", () => {
     expect(health.status).toBe("ok");
     expect(health.peers).toBe(1);
     await a.stop();
+  });
+
+  it("rejects POST requests without the local bearer token", async () => {
+    const res = await fetch(`http://127.0.0.1:${broker.port()}/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        pid: 9999,
+        cwd: "/tmp/test",
+        git_root: null,
+        tty: null,
+        summary: "",
+        auth_fingerprint: "attacker",
+      }),
+    });
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toMatchObject({
+      error: "broker bearer token required",
+    });
   });
 
   it("fingerprintApiKey is deterministic + 16 hex chars", () => {

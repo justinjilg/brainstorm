@@ -21,7 +21,7 @@ import type {
   RegisterResponse,
   SendMessageResponse,
 } from "./types.js";
-import { DEFAULT_BROKER_PORT } from "./daemon.js";
+import { DEFAULT_BROKER_PORT, readBrokerToken } from "./daemon.js";
 
 const log = createLogger("broker-client");
 
@@ -42,6 +42,8 @@ export interface BrokerClientOptions {
   pollIntervalMs?: number;
   /** HTTP timeout for a single request. Default 3s. */
   requestTimeoutMs?: number;
+  /** Local broker bearer token. Defaults to env or ~/.brainstorm/broker-token. */
+  brokerToken?: string;
 }
 
 export type MessageCallback = (msg: Message) => void | Promise<void>;
@@ -59,6 +61,7 @@ export class BrokerClient {
   private readonly baseUrl: string;
   private readonly apiKey: string;
   private readonly fingerprint: string;
+  private readonly brokerToken: string | null;
   private readonly meta: {
     pid: number;
     cwd: string;
@@ -80,6 +83,10 @@ export class BrokerClient {
     this.baseUrl = `http://127.0.0.1:${opts.port ?? DEFAULT_BROKER_PORT}`;
     this.apiKey = opts.apiKey;
     this.fingerprint = fingerprintApiKey(opts.apiKey);
+    this.brokerToken =
+      opts.brokerToken ??
+      process.env.BRAINSTORM_BROKER_TOKEN ??
+      readBrokerToken();
     this.meta = {
       pid: opts.pid,
       cwd: opts.cwd,
@@ -248,9 +255,16 @@ export class BrokerClient {
   }
 
   private async post(path: string, body: unknown): Promise<unknown> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (this.brokerToken) {
+      headers.Authorization = `Bearer ${this.brokerToken}`;
+    }
+
     const res = await fetch(`${this.baseUrl}${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(this.requestTimeoutMs),
     });

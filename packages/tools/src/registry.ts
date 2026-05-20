@@ -8,6 +8,11 @@ export type PermissionCheckFn = (
   toolPermission: ToolPermission,
 ) => "allow" | "confirm" | "deny";
 
+export interface ToolRegisterOptions {
+  /** Explicitly replace an existing tool with the same name. */
+  override?: boolean;
+}
+
 /**
  * Sliding-window rate limiter per tool.
  * Prevents runaway loops from exhausting resources by capping calls/minute.
@@ -90,10 +95,31 @@ function normalizeResult(raw: any): any {
   return { ok: true, ...raw };
 }
 
+function permissionBlockedResult(
+  toolName: string,
+  decision: "confirm" | "deny",
+): any {
+  const needsConfirmation = decision === "confirm";
+  return normalizeResult({
+    error: needsConfirmation
+      ? `Tool '${toolName}' requires explicit confirmation before execution.`
+      : `Tool '${toolName}' is blocked in the current permission mode.`,
+    blocked: true,
+    needsConfirmation,
+    permissionDecision: decision,
+    tool: toolName,
+  });
+}
+
 export class ToolRegistry {
   private tools = new Map<string, BrainstormToolDef>();
 
-  register(tool: BrainstormToolDef): void {
+  register(tool: BrainstormToolDef, options: ToolRegisterOptions = {}): void {
+    if (this.tools.has(tool.name) && !options.override) {
+      throw new Error(
+        `Tool '${tool.name}' is already registered; pass override: true to replace it explicitly.`,
+      );
+    }
     this.tools.set(tool.name, tool);
   }
 
@@ -167,7 +193,8 @@ export class ToolRegistry {
 
   /**
    * Return AI SDK tools with permission checks wrapping each execute.
-   * Tools denied by the check return an error message instead of executing.
+   * Tools denied by the check, or requiring confirmation that has not
+   * already been granted, return an error message instead of executing.
    */
   toAISDKToolsWithPermissions(
     check: PermissionCheckFn,
@@ -185,11 +212,8 @@ export class ToolRegistry {
           const originalExecute = rawTool.execute;
           (rawTool as any).execute = async (input: any, opts: any) => {
             const decision = check(name, toolDef.permission);
-            if (decision === "deny") {
-              return {
-                error: `Tool '${name}' is blocked in the current permission mode.`,
-                blocked: true,
-              };
+            if (decision !== "allow") {
+              return permissionBlockedResult(name, decision);
             }
             return originalExecute(input, opts);
           };
@@ -200,13 +224,10 @@ export class ToolRegistry {
       result[name] = tool({
         description: toolDef.description,
         inputSchema: toolDef.inputSchema,
-        execute: async (input: any) => {
+        execute: async (input: any, opts: any) => {
           const decision = check(name, toolDef.permission);
-          if (decision === "deny") {
-            const result = normalizeResult({
-              error: `Tool '${name}' is blocked in the current permission mode.`,
-              blocked: true,
-            });
+          if (decision !== "allow") {
+            const result = permissionBlockedResult(name, decision);
             getToolHealthTracker().recordFailure(name, result.error);
             return result;
           }
@@ -216,7 +237,9 @@ export class ToolRegistry {
             return normalizeResult({ error: msg, blocked: true });
           }
           try {
-            const raw = await toolDef.execute(input);
+            const raw = await toolDef.execute(input, {
+              abortSignal: opts?.abortSignal,
+            });
             const result = normalizeResult(raw);
             if (result.ok) {
               getToolHealthTracker().recordSuccess(name);

@@ -51,7 +51,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { createLogger } from "@brainst0rm/shared";
 import type { GodModeConnectionResult } from "@brainst0rm/godmode";
-import type { ToolRegistry } from "@brainst0rm/tools";
+import type { PermissionCheckFn, ToolRegistry } from "@brainst0rm/tools";
 import type { BrainstormRouter, CostTracker } from "@brainst0rm/router";
 import type { ProviderRegistry } from "@brainst0rm/providers";
 import type Database from "better-sqlite3";
@@ -84,6 +84,7 @@ export interface ServerDependencies {
   godmode: GodModeConnectionResult;
   memoryManager?: MemoryManager;
   version?: string;
+  permissionCheck?: PermissionCheckFn;
 }
 
 export class BrainstormServer {
@@ -108,6 +109,15 @@ export class BrainstormServer {
    */
   private devToken: string | null = null;
   private devTokenPath: string | null = null;
+
+  private static readonly DEFAULT_CHAT_PERMISSION_CHECK: PermissionCheckFn = (
+    _toolName,
+    toolPermission,
+  ) => {
+    if (toolPermission === "auto") return "allow";
+    if (toolPermission === "deny") return "deny";
+    return "confirm";
+  };
 
   constructor(deps: ServerDependencies, opts?: ServerOptions) {
     this.deps = deps;
@@ -613,7 +623,9 @@ export class BrainstormServer {
         projectPath: this.opts.projectPath,
         systemPrompt,
         systemSegments: segments,
-        permissionCheck: () => "allow" as const,
+        permissionCheck:
+          this.deps.permissionCheck ??
+          BrainstormServer.DEFAULT_CHAT_PERMISSION_CHECK,
         middleware: createDefaultMiddlewarePipeline(this.opts.projectPath),
         preferredModelId,
         signal: abortController.signal,
@@ -689,7 +701,9 @@ export class BrainstormServer {
         projectPath: this.opts.projectPath,
         systemPrompt,
         systemSegments: segments,
-        permissionCheck: () => "allow" as const,
+        permissionCheck:
+          this.deps.permissionCheck ??
+          BrainstormServer.DEFAULT_CHAT_PERMISSION_CHECK,
         middleware: createDefaultMiddlewarePipeline(this.opts.projectPath),
         preferredModelId,
         signal: abortController.signal,

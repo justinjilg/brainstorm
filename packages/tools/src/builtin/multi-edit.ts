@@ -12,7 +12,7 @@ import { randomUUID } from "node:crypto";
 import { defineTool } from "../base.js";
 import { applyEdits } from "./edit-common.js";
 import { getWorkspace } from "../workspace-context.js";
-import { assertNotSensitivePath } from "./sensitive-paths.js";
+import { assertNotSensitivePathIncludingRealpath } from "./sensitive-paths.js";
 
 function ensureSafePath(filePath: string): string {
   const cwd = getWorkspace();
@@ -21,30 +21,34 @@ function ensureSafePath(filePath: string): string {
 
   // Block credential files before the home-dir allowance — same
   // F5-class fix as file-read/edit/write. See sensitive-paths.ts.
-  assertNotSensitivePath(resolved);
+  const safetyPath = assertNotSensitivePathIncludingRealpath(resolved);
 
   // Match file-write.ts/file-edit.ts: /var is NOT blocked wholesale because
   // macOS tmpdir lives at /var/folders/... (symlinked from /private/var/folders).
   // multi_edit previously blocked all of /var, so it refused to operate in
   // the same tmp workspace where file_write and file_edit worked fine — an
   // orchestration agent would get inconsistent results and loop.
-  const isSafeTmpVar =
-    resolved.startsWith("/var/folders/") ||
-    resolved.startsWith("/private/var/folders/") ||
-    resolved.startsWith("/var/tmp/") ||
-    resolved.startsWith("/private/var/tmp/") ||
+  const isSafeTmpPath = (path: string) =>
+    path.startsWith("/var/folders/") ||
+    path.startsWith("/private/var/folders/") ||
+    path.startsWith("/var/tmp/") ||
+    path.startsWith("/private/var/tmp/") ||
     // Linux tmpdir — see file-read.ts for rationale.
-    resolved === "/tmp" ||
-    resolved.startsWith("/tmp/");
-  if (!isSafeTmpVar && resolved.startsWith("/var")) {
+    path === "/tmp" ||
+    path.startsWith("/tmp/");
+  const pathsToCheck = Array.from(new Set([resolved, safetyPath]));
+  if (
+    pathsToCheck.some((path) => !isSafeTmpPath(path) && path.startsWith("/var"))
+  ) {
     throw new Error(`Path blocked: "${filePath}" is a protected system path`);
   }
   const BLOCKED = ["/etc", "/usr", "/proc", "/sys", "/dev", "/sbin", "/boot"];
-  if (BLOCKED.some((p) => resolved.startsWith(p))) {
+  if (pathsToCheck.some((path) => BLOCKED.some((p) => path.startsWith(p)))) {
     throw new Error(`Path blocked: "${filePath}" is a protected system path`);
   }
-  const isInHome = resolved.startsWith(home);
+  const isInHome = safetyPath.startsWith(home);
   const isInCwd = !relative(cwd, resolved).startsWith("..");
+  const isSafeTmpVar = isSafeTmpPath(safetyPath);
   if (!isInHome && !isInCwd && !isSafeTmpVar) {
     throw new Error(
       `Path blocked: "${filePath}" is outside home directory and workspace`,

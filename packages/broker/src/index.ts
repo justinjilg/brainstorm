@@ -2,6 +2,8 @@ export {
   createBroker,
   BROKER_VERSION,
   DEFAULT_BROKER_PORT,
+  brokerTokenPath,
+  readBrokerToken,
   type Broker,
   type BrokerOptions,
 } from "./daemon.js";
