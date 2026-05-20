@@ -92,19 +92,22 @@ Save facts, decisions, or context that should persist across sessions. The agent
 
 ### `br_health`
 
-Quick connectivity test — checks if BrainstormRouter is reachable and authenticated.
+Quick connectivity test — checks if BrainstormRouter is reachable via the unauthenticated `/health` probe.
 
 ## API Endpoints Used
 
-| Endpoint                       | Method   | Purpose                            |
-| ------------------------------ | -------- | ---------------------------------- |
-| `/v1/chat/completions`         | POST     | Main inference (OpenAI-compatible) |
-| `/v1/models`                   | GET      | List available models              |
-| `/v1/agent/status`             | GET      | Agent identity and budget          |
-| `/v1/agent/memory`             | GET/POST | Persistent memory                  |
-| `/v1/intelligence/leaderboard` | GET      | Model rankings                     |
-| `/v1/intelligence/insights`    | GET      | Optimization suggestions           |
-| `/v1/health`                   | GET      | Health check                       |
+| Endpoint                    | Method | Purpose                                     |
+| --------------------------- | ------ | ------------------------------------------- |
+| `/health`                   | GET    | Unauthenticated connectivity probe          |
+| `/v1/chat/completions`      | POST   | Main inference (OpenAI-compatible)          |
+| `/v1/self`                  | GET    | Agent identity, budget, health, suggestions |
+| `/v1/budget/status`         | GET    | Current budget status                       |
+| `/v1/budget/forecast`       | GET    | Spend forecast                              |
+| `/v1/models`                | GET    | List available models                       |
+| `/v1/memory/query`          | POST   | Persistent memory search                    |
+| `/v1/memory/store`          | POST   | Persistent memory write                     |
+| `/v1/intelligence/rankings` | GET    | Model rankings                              |
+| `/v1/insights/optimize`     | GET    | Optimization suggestions                    |
 
 ## Authentication
 

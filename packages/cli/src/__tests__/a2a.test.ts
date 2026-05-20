@@ -1,7 +1,17 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { __test } from "../commands/a2a.js";
 
-const { invokeOnce, pollStatus, emitResult, emitError } = __test;
+const {
+  buildInvokeDidUrl,
+  classifyInvokeError,
+  responseKeepsTraceId,
+  traceIdFromTraceparent,
+  invokeOnce,
+  pollStatus,
+  emitResult,
+  emitError,
+} = __test;
 
 describe("brainstorm a2a invoke — wire helpers", () => {
   let originalFetch: typeof globalThis.fetch;
@@ -15,7 +25,53 @@ describe("brainstorm a2a invoke — wire helpers", () => {
     vi.restoreAllMocks();
   });
 
-  it("invokeOnce POSTs to /v1/mesh/invoke/<target_did> with bearer auth + traceparent + idempotency", async () => {
+  it("buildInvokeDidUrl uses BR's DID-keyed route, not the hostname route", () => {
+    const url = buildInvokeDidUrl(
+      "https://br.example/",
+      "did:bvm:t:msp:agent-1",
+    );
+    expect(url).toBe(
+      "https://br.example/v1/mesh/invoke-did/did%3Abvm%3At%3Amsp%3Aagent-1",
+    );
+    expect(url).not.toContain("/v1/mesh/invoke/did%3A");
+  });
+
+  it("the BR business contract map tracks the DID invoke route and negative hostname guard", () => {
+    const map = JSON.parse(
+      readFileSync(
+        new URL(
+          "../../../../artifacts/br-business-contract-map.json",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    ) as {
+      routes: Array<{
+        id: string;
+        target: string;
+        method: string;
+        path: string;
+      }>;
+    };
+    expect(map.routes).toContainEqual(
+      expect.objectContaining({
+        id: "a2a.invoke_did",
+        target: "br",
+        method: "POST",
+        path: "/v1/mesh/invoke-did/{target_did}",
+      }),
+    );
+    expect(map.routes).toContainEqual(
+      expect.objectContaining({
+        id: "a2a.hostname_invoke",
+        target: "br",
+        method: "POST",
+        path: "/v1/mesh/invoke/{hostname}",
+      }),
+    );
+  });
+
+  it("invokeOnce POSTs to /v1/mesh/invoke-did/<target_did> with bearer auth + traceparent + idempotency", async () => {
     const captured: { url?: string; init?: RequestInit } = {};
     globalThis.fetch = (async (url: any, init: any) => {
       captured.url = url;
@@ -42,7 +98,7 @@ describe("brainstorm a2a invoke — wire helpers", () => {
 
     expect(res.status).toBe(200);
     expect(captured.url).toBe(
-      "https://br.example/v1/mesh/invoke/did%3Abvm%3At%3Aagent",
+      "https://br.example/v1/mesh/invoke-did/did%3Abvm%3At%3Aagent",
     );
     const headers = captured.init!.headers as Record<string, string>;
     expect(headers["Authorization"]).toBe("Bearer tok");
@@ -51,6 +107,25 @@ describe("brainstorm a2a invoke — wire helpers", () => {
     );
     expect(headers["Idempotency-Key"]).toBe("idem-1");
     expect(headers["Content-Type"]).toBe("application/json");
+  });
+
+  it("trace helper verifies response traceparent keeps the original trace id", () => {
+    const requestTraceparent =
+      "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01";
+    expect(traceIdFromTraceparent(requestTraceparent)).toBe(
+      "0123456789abcdef0123456789abcdef",
+    );
+    expect(
+      responseKeepsTraceId(requestTraceparent, {
+        traceparent: "00-0123456789abcdef0123456789abcdef-fedcba9876543210-01",
+      }),
+    ).toBe(true);
+    expect(
+      responseKeepsTraceId(requestTraceparent, {
+        traceparent: "00-fedcba9876543210fedcba9876543210-fedcba9876543210-01",
+      }),
+    ).toBe(false);
+    expect(responseKeepsTraceId(requestTraceparent, {})).toBe(false);
   });
 
   it("invokeOnce returns non-JSON body as text for 5xx pages", async () => {
@@ -113,6 +188,7 @@ describe("brainstorm a2a invoke — wire helpers", () => {
     );
     const combined = errSpy.mock.calls.map((c) => c.join(" ")).join("\n");
     expect(combined).toMatch(/HTTP 429/);
+    expect(combined).toMatch(/class: rate_limited/);
     expect(combined).toMatch(/RATE_LIMITED/);
     expect(combined).toMatch(/retry_after_seconds: 7/);
   });
@@ -127,7 +203,51 @@ describe("brainstorm a2a invoke — wire helpers", () => {
     expect(errSpy).toHaveBeenCalledTimes(1);
     const payload = JSON.parse(errSpy.mock.calls[0][0] as string);
     expect(payload.status).toBe(403);
+    expect(payload.category).toBe("scope_or_tenant");
     expect(payload.body.error.code).toBe("FORBIDDEN");
+  });
+
+  it("classifyInvokeError maps A2A error statuses to operator-safe semantics", () => {
+    expect(classifyInvokeError(400).category).toBe("validation");
+    expect(classifyInvokeError(401).category).toBe("auth");
+    expect(classifyInvokeError(403).category).toBe("scope_or_tenant");
+    expect(classifyInvokeError(404).category).toBe("capability_mismatch");
+    expect(classifyInvokeError(409).category).toBe("idempotency_conflict");
+    expect(classifyInvokeError(410).category).toBe("expired");
+    expect(classifyInvokeError(429).category).toBe("rate_limited");
+    expect(classifyInvokeError(500).category).toBe(
+      "broker_or_target_unavailable",
+    );
+    expect(classifyInvokeError(503).category).toBe(
+      "broker_or_target_unavailable",
+    );
+  });
+
+  it("emitError gives specific hints for capability mismatch, scope failure, and idempotency conflicts", () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    emitError(
+      404,
+      { error: { code: "NOT_FOUND", message: "missing capability" } },
+      false,
+    );
+    emitError(
+      403,
+      { error: { code: "FORBIDDEN", message: "wrong tenant" } },
+      false,
+    );
+    emitError(
+      409,
+      {
+        task_id: "task-original",
+        error: { code: "IDEMPOTENCY_CONFLICT", message: "payload changed" },
+      },
+      false,
+    );
+    const combined = errSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(combined).toMatch(/capability_mismatch/);
+    expect(combined).toMatch(/scope_or_tenant/);
+    expect(combined).toMatch(/idempotency_conflict/);
+    expect(combined).toMatch(/original_task_id: task-original/);
   });
 
   it("invokeOnce surfaces a fetch rejection as a thrown Error (not silent exit 0)", async () => {

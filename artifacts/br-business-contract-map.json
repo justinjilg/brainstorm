@@ -1,0 +1,1144 @@
+{
+  "schema_version": 1,
+  "scope": "bounded to Brainstorm routes currently touching BR/product actuator contracts",
+  "repo_root": "/Users/justin/Projects/brainstorm-pr-br-seam",
+  "br_repo_root": "/Users/justin/Projects/brainstormrouter",
+  "br_repo_detected": true,
+  "ok": true,
+  "counts": {
+    "routes": 20,
+    "failures": 0,
+    "warnings": 0,
+    "br_openapi_paths_seen": 490,
+    "br_capability_routes_seen": 616,
+    "br_rbac_entries_seen": 278,
+    "br_sdk_paths_seen": 124
+  },
+  "routes": [
+    {
+      "id": "br.health",
+      "target": "br",
+      "method": "GET",
+      "path": "/health",
+      "purpose": "Unauthenticated BR liveness and connectivity check.",
+      "contract": "br-openapi",
+      "codeRefs": [
+        [
+          "packages/tools/src/builtin/br-intelligence.ts",
+          "`${BR_BASE}/health`"
+        ],
+        ["packages/gateway/src/client.ts", "\"/health\""]
+      ],
+      "docRefs": [
+        ["docs/brainstormrouter-integration.md", "`/health`"],
+        ["docs/runbooks/br-degraded.md", "/health"]
+      ],
+      "key": "GET /health",
+      "evidence": {
+        "code": [
+          {
+            "file": "packages/tools/src/builtin/br-intelligence.ts",
+            "needle": "`${BR_BASE}/health`",
+            "present": true
+          },
+          {
+            "file": "packages/gateway/src/client.ts",
+            "needle": "\"/health\"",
+            "present": true
+          }
+        ],
+        "docs": [
+          {
+            "file": "docs/brainstormrouter-integration.md",
+            "needle": "`/health`",
+            "present": true
+          },
+          {
+            "file": "docs/runbooks/br-degraded.md",
+            "needle": "/health",
+            "present": true
+          }
+        ],
+        "negativeCode": [],
+        "br_openapi": true,
+        "br_capability_files": ["src/api/capabilities/system/health.ts"],
+        "br_rbac": {
+          "found": true,
+          "via": "capability-fallback",
+          "permission": "capability"
+        },
+        "br_sdk_files": []
+      },
+      "status": "ok",
+      "issues": [],
+      "warnings": []
+    },
+    {
+      "id": "br.openapi",
+      "target": "br",
+      "method": "GET",
+      "path": "/openapi.json",
+      "purpose": "Machine-readable BR endpoint contract.",
+      "contract": "br-static-asset",
+      "codeRefs": [
+        [
+          "packages/providers/src/__tests__/br-live-contract.live.test.ts",
+          "/openapi.json"
+        ]
+      ],
+      "docRefs": [
+        ["docs/brainstormrouter-integration.md", "openapi.json"],
+        [
+          "docs/internal/br-business-harness-e2e-autopsy-plan.md",
+          "openapi.json"
+        ]
+      ],
+      "key": "GET /openapi.json",
+      "evidence": {
+        "code": [
+          {
+            "file": "packages/providers/src/__tests__/br-live-contract.live.test.ts",
+            "needle": "/openapi.json",
+            "present": true
+          }
+        ],
+        "docs": [
+          {
+            "file": "docs/brainstormrouter-integration.md",
+            "needle": "openapi.json",
+            "present": true
+          },
+          {
+            "file": "docs/internal/br-business-harness-e2e-autopsy-plan.md",
+            "needle": "openapi.json",
+            "present": true
+          }
+        ],
+        "negativeCode": [],
+        "br_openapi": null,
+        "br_capability_files": [],
+        "br_rbac": {
+          "found": false,
+          "via": "none",
+          "permission": null
+        },
+        "br_sdk_files": []
+      },
+      "status": "ok",
+      "issues": [],
+      "warnings": []
+    },
+    {
+      "id": "br.attestation",
+      "target": "br",
+      "method": "GET",
+      "path": "/attestation",
+      "purpose": "Signed image and transparency-log attestation.",
+      "contract": "br-openapi",
+      "codeRefs": [],
+      "docRefs": [
+        ["docs/brainstormrouter-integration.md", "/attestation"],
+        ["docs/assessment-evidence-v15.md", "/attestation"]
+      ],
+      "key": "GET /attestation",
+      "evidence": {
+        "code": [],
+        "docs": [
+          {
+            "file": "docs/brainstormrouter-integration.md",
+            "needle": "/attestation",
+            "present": true
+          },
+          {
+            "file": "docs/assessment-evidence-v15.md",
+            "needle": "/attestation",
+            "present": true
+          }
+        ],
+        "negativeCode": [],
+        "br_openapi": true,
+        "br_capability_files": ["src/api/capabilities/security/attestation.ts"],
+        "br_rbac": {
+          "found": true,
+          "via": "capability-fallback",
+          "permission": "capability"
+        },
+        "br_sdk_files": []
+      },
+      "status": "ok",
+      "issues": [],
+      "warnings": []
+    },
+    {
+      "id": "br.discovery",
+      "target": "br",
+      "method": "GET",
+      "path": "/v1/discovery",
+      "purpose": "BR self-describing capability and memory-block discovery.",
+      "contract": "br-openapi",
+      "codeRefs": [
+        [
+          "packages/providers/src/__tests__/br-live-contract.live.test.ts",
+          "/v1/discovery"
+        ],
+        ["packages/gateway/src/client.ts", "\"/v1/discovery\""]
+      ],
+      "docRefs": [
+        ["docs/brainstormrouter-integration.md", "/v1/discovery"],
+        ["docs/path-to-90-plan-2026-05-15.md", "/v1/discovery"]
+      ],
+      "key": "GET /v1/discovery",
+      "evidence": {
+        "code": [
+          {
+            "file": "packages/providers/src/__tests__/br-live-contract.live.test.ts",
+            "needle": "/v1/discovery",
+            "present": true
+          },
+          {
+            "file": "packages/gateway/src/client.ts",
+            "needle": "\"/v1/discovery\"",
+            "present": true
+          }
+        ],
+        "docs": [
+          {
+            "file": "docs/brainstormrouter-integration.md",
+            "needle": "/v1/discovery",
+            "present": true
+          },
+          {
+            "file": "docs/path-to-90-plan-2026-05-15.md",
+            "needle": "/v1/discovery",
+            "present": true
+          }
+        ],
+        "negativeCode": [],
+        "br_openapi": true,
+        "br_capability_files": ["src/api/capabilities/system/discovery.ts"],
+        "br_rbac": {
+          "found": true,
+          "via": "rbac-exact",
+          "permission": "router.read"
+        },
+        "br_sdk_files": []
+      },
+      "status": "ok",
+      "issues": [],
+      "warnings": []
+    },
+    {
+      "id": "br.self",
+      "target": "br",
+      "method": "GET",
+      "path": "/v1/self",
+      "purpose": "Agent self-awareness, identity, budget, provider health, suggestions.",
+      "contract": "br-openapi",
+      "codeRefs": [
+        [
+          "packages/tools/src/builtin/br-intelligence.ts",
+          "brFetch(\"/v1/self\")"
+        ],
+        ["packages/gateway/src/client.ts", "\"/v1/self\""]
+      ],
+      "docRefs": [
+        ["docs/runbooks/br-degraded.md", "/v1/self"],
+        ["docs/br-capability-audit.md", "/v1/self"]
+      ],
+      "key": "GET /v1/self",
+      "evidence": {
+        "code": [
+          {
+            "file": "packages/tools/src/builtin/br-intelligence.ts",
+            "needle": "brFetch(\"/v1/self\")",
+            "present": true
+          },
+          {
+            "file": "packages/gateway/src/client.ts",
+            "needle": "\"/v1/self\"",
+            "present": true
+          }
+        ],
+        "docs": [
+          {
+            "file": "docs/runbooks/br-degraded.md",
+            "needle": "/v1/self",
+            "present": true
+          },
+          {
+            "file": "docs/br-capability-audit.md",
+            "needle": "/v1/self",
+            "present": true
+          }
+        ],
+        "negativeCode": [],
+        "br_openapi": true,
+        "br_capability_files": ["src/api/capabilities/system/self.ts"],
+        "br_rbac": {
+          "found": true,
+          "via": "rbac-exact",
+          "permission": "router.read"
+        },
+        "br_sdk_files": []
+      },
+      "status": "ok",
+      "issues": [],
+      "warnings": []
+    },
+    {
+      "id": "br.chat_completions",
+      "target": "br",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "purpose": "OpenAI-compatible model routing through BR.",
+      "contract": "br-openapi",
+      "codeRefs": [
+        [
+          "packages/providers/src/cloud/brainstorm-saas.ts",
+          "baseURL: \"https://api.brainstormrouter.com/v1\""
+        ],
+        [
+          "packages/providers/src/__tests__/br-live-contract.live.test.ts",
+          "/v1/chat/completions"
+        ]
+      ],
+      "docRefs": [
+        ["docs/brainstormrouter-integration.md", "/v1/chat/completions"],
+        ["docs/runbooks/audit-chain-broken.md", "/v1/chat/completions"]
+      ],
+      "key": "POST /v1/chat/completions",
+      "evidence": {
+        "code": [
+          {
+            "file": "packages/providers/src/cloud/brainstorm-saas.ts",
+            "needle": "baseURL: \"https://api.brainstormrouter.com/v1\"",
+            "present": true
+          },
+          {
+            "file": "packages/providers/src/__tests__/br-live-contract.live.test.ts",
+            "needle": "/v1/chat/completions",
+            "present": true
+          }
+        ],
+        "docs": [
+          {
+            "file": "docs/brainstormrouter-integration.md",
+            "needle": "/v1/chat/completions",
+            "present": true
+          },
+          {
+            "file": "docs/runbooks/audit-chain-broken.md",
+            "needle": "/v1/chat/completions",
+            "present": true
+          }
+        ],
+        "negativeCode": [],
+        "br_openapi": true,
+        "br_capability_files": [
+          "src/api/capabilities/completions/completions.ts"
+        ],
+        "br_rbac": {
+          "found": true,
+          "via": "rbac-exact",
+          "permission": "router.write"
+        },
+        "br_sdk_files": []
+      },
+      "status": "ok",
+      "issues": [],
+      "warnings": []
+    },
+    {
+      "id": "br.budget_status",
+      "target": "br",
+      "method": "GET",
+      "path": "/v1/budget/status",
+      "purpose": "Current tenant/key budget state.",
+      "contract": "br-openapi",
+      "codeRefs": [
+        [
+          "packages/tools/src/builtin/br-intelligence.ts",
+          "brFetch(\"/v1/budget/status\")"
+        ]
+      ],
+      "docRefs": [
+        [
+          "docs/internal/br-business-harness-e2e-autopsy-plan.md",
+          "/v1/budget/status"
+        ],
+        ["docs/br-capability-audit.md", "/v1/budget/status"]
+      ],
+      "key": "GET /v1/budget/status",
+      "evidence": {
+        "code": [
+          {
+            "file": "packages/tools/src/builtin/br-intelligence.ts",
+            "needle": "brFetch(\"/v1/budget/status\")",
+            "present": true
+          }
+        ],
+        "docs": [
+          {
+            "file": "docs/internal/br-business-harness-e2e-autopsy-plan.md",
+            "needle": "/v1/budget/status",
+            "present": true
+          },
+          {
+            "file": "docs/br-capability-audit.md",
+            "needle": "/v1/budget/status",
+            "present": true
+          }
+        ],
+        "negativeCode": [],
+        "br_openapi": true,
+        "br_capability_files": ["src/api/capabilities/system/budget.ts"],
+        "br_rbac": {
+          "found": true,
+          "via": "rbac-exact",
+          "permission": "audit.read"
+        },
+        "br_sdk_files": []
+      },
+      "status": "ok",
+      "issues": [],
+      "warnings": []
+    },
+    {
+      "id": "br.budget_forecast",
+      "target": "br",
+      "method": "GET",
+      "path": "/v1/budget/forecast",
+      "purpose": "Spend forecast and anomaly summary.",
+      "contract": "br-openapi",
+      "codeRefs": [
+        [
+          "packages/tools/src/builtin/br-intelligence.ts",
+          "brFetch(\"/v1/budget/forecast\")"
+        ]
+      ],
+      "docRefs": [
+        [
+          "docs/internal/br-business-harness-e2e-autopsy-plan.md",
+          "/v1/budget/forecast"
+        ]
+      ],
+      "key": "GET /v1/budget/forecast",
+      "evidence": {
+        "code": [
+          {
+            "file": "packages/tools/src/builtin/br-intelligence.ts",
+            "needle": "brFetch(\"/v1/budget/forecast\")",
+            "present": true
+          }
+        ],
+        "docs": [
+          {
+            "file": "docs/internal/br-business-harness-e2e-autopsy-plan.md",
+            "needle": "/v1/budget/forecast",
+            "present": true
+          }
+        ],
+        "negativeCode": [],
+        "br_openapi": true,
+        "br_capability_files": ["src/api/capabilities/system/budget.ts"],
+        "br_rbac": {
+          "found": true,
+          "via": "rbac-exact",
+          "permission": "audit.read"
+        },
+        "br_sdk_files": []
+      },
+      "status": "ok",
+      "issues": [],
+      "warnings": []
+    },
+    {
+      "id": "br.intelligence_rankings",
+      "target": "br",
+      "method": "GET",
+      "path": "/v1/intelligence/rankings",
+      "purpose": "Production model ranking and leaderboard signal.",
+      "contract": "br-openapi",
+      "codeRefs": [
+        [
+          "packages/tools/src/builtin/br-intelligence.ts",
+          "/v1/intelligence/rankings"
+        ],
+        ["docs/internal/br-api-spec.md", "/v1/intelligence/rankings"]
+      ],
+      "docRefs": [
+        ["docs/internal/br-api-spec.md", "/v1/intelligence/rankings"],
+        [
+          "docs/internal/br-business-harness-e2e-autopsy-plan.md",
+          "/v1/intelligence/rankings"
+        ]
+      ],
+      "key": "GET /v1/intelligence/rankings",
+      "evidence": {
+        "code": [
+          {
+            "file": "packages/tools/src/builtin/br-intelligence.ts",
+            "needle": "/v1/intelligence/rankings",
+            "present": true
+          },
+          {
+            "file": "docs/internal/br-api-spec.md",
+            "needle": "/v1/intelligence/rankings",
+            "present": true
+          }
+        ],
+        "docs": [
+          {
+            "file": "docs/internal/br-api-spec.md",
+            "needle": "/v1/intelligence/rankings",
+            "present": true
+          },
+          {
+            "file": "docs/internal/br-business-harness-e2e-autopsy-plan.md",
+            "needle": "/v1/intelligence/rankings",
+            "present": true
+          }
+        ],
+        "negativeCode": [],
+        "br_openapi": true,
+        "br_capability_files": [
+          "src/api/capabilities/intelligence/intelligence.ts"
+        ],
+        "br_rbac": {
+          "found": true,
+          "via": "rbac-prefix",
+          "permission": "router.read"
+        },
+        "br_sdk_files": []
+      },
+      "status": "ok",
+      "issues": [],
+      "warnings": []
+    },
+    {
+      "id": "br.insights_optimize",
+      "target": "br",
+      "method": "GET",
+      "path": "/v1/insights/optimize",
+      "purpose": "Cost optimization recommendations.",
+      "contract": "br-openapi",
+      "codeRefs": [
+        [
+          "packages/tools/src/builtin/br-intelligence.ts",
+          "brFetch(\"/v1/insights/optimize\")"
+        ]
+      ],
+      "docRefs": [
+        [
+          "docs/internal/br-business-harness-e2e-autopsy-plan.md",
+          "/v1/insights/optimize"
+        ]
+      ],
+      "key": "GET /v1/insights/optimize",
+      "evidence": {
+        "code": [
+          {
+            "file": "packages/tools/src/builtin/br-intelligence.ts",
+            "needle": "brFetch(\"/v1/insights/optimize\")",
+            "present": true
+          }
+        ],
+        "docs": [
+          {
+            "file": "docs/internal/br-business-harness-e2e-autopsy-plan.md",
+            "needle": "/v1/insights/optimize",
+            "present": true
+          }
+        ],
+        "negativeCode": [],
+        "br_openapi": true,
+        "br_capability_files": ["src/api/capabilities/system/insights.ts"],
+        "br_rbac": {
+          "found": true,
+          "via": "rbac-prefix",
+          "permission": "audit.read"
+        },
+        "br_sdk_files": []
+      },
+      "status": "ok",
+      "issues": [],
+      "warnings": []
+    },
+    {
+      "id": "br.models",
+      "target": "br",
+      "method": "GET",
+      "path": "/v1/models",
+      "purpose": "List available routed models.",
+      "contract": "br-openapi",
+      "codeRefs": [
+        [
+          "packages/tools/src/builtin/br-intelligence.ts",
+          "brFetch(\"/v1/models\")"
+        ],
+        ["packages/gateway/src/client.ts", "\"/v1/models\""]
+      ],
+      "docRefs": [
+        ["docs/brainstormrouter-integration.md", "/v1/models"],
+        ["docs/br-capability-audit.md", "/v1/models"]
+      ],
+      "key": "GET /v1/models",
+      "evidence": {
+        "code": [
+          {
+            "file": "packages/tools/src/builtin/br-intelligence.ts",
+            "needle": "brFetch(\"/v1/models\")",
+            "present": true
+          },
+          {
+            "file": "packages/gateway/src/client.ts",
+            "needle": "\"/v1/models\"",
+            "present": true
+          }
+        ],
+        "docs": [
+          {
+            "file": "docs/brainstormrouter-integration.md",
+            "needle": "/v1/models",
+            "present": true
+          },
+          {
+            "file": "docs/br-capability-audit.md",
+            "needle": "/v1/models",
+            "present": true
+          }
+        ],
+        "negativeCode": [],
+        "br_openapi": true,
+        "br_capability_files": ["src/api/capabilities/system/models.ts"],
+        "br_rbac": {
+          "found": true,
+          "via": "rbac-exact",
+          "permission": "router.read"
+        },
+        "br_sdk_files": []
+      },
+      "status": "ok",
+      "issues": [],
+      "warnings": []
+    },
+    {
+      "id": "br.memory_query",
+      "target": "br",
+      "method": "POST",
+      "path": "/v1/memory/query",
+      "purpose": "Search BR persistent memory without writing.",
+      "contract": "br-openapi",
+      "codeRefs": [
+        ["packages/tools/src/builtin/br-intelligence.ts", "/v1/memory/query"],
+        ["packages/gateway/src/client.ts", "/v1/memory/query"]
+      ],
+      "docRefs": [
+        ["docs/internal/br-api-spec.md", "/v1/memory/query"],
+        ["docs/br-capability-audit.md", "/v1/memory/query"]
+      ],
+      "key": "POST /v1/memory/query",
+      "evidence": {
+        "code": [
+          {
+            "file": "packages/tools/src/builtin/br-intelligence.ts",
+            "needle": "/v1/memory/query",
+            "present": true
+          },
+          {
+            "file": "packages/gateway/src/client.ts",
+            "needle": "/v1/memory/query",
+            "present": true
+          }
+        ],
+        "docs": [
+          {
+            "file": "docs/internal/br-api-spec.md",
+            "needle": "/v1/memory/query",
+            "present": true
+          },
+          {
+            "file": "docs/br-capability-audit.md",
+            "needle": "/v1/memory/query",
+            "present": true
+          }
+        ],
+        "negativeCode": [],
+        "br_openapi": true,
+        "br_capability_files": ["src/api/capabilities/system/memory.ts"],
+        "br_rbac": {
+          "found": true,
+          "via": "rbac-prefix",
+          "permission": "memory.write"
+        },
+        "br_sdk_files": []
+      },
+      "status": "ok",
+      "issues": [],
+      "warnings": []
+    },
+    {
+      "id": "br.memory_store",
+      "target": "br",
+      "method": "POST",
+      "path": "/v1/memory/store",
+      "purpose": "Store BR persistent memory. Must remain confirmation-gated in the harness.",
+      "contract": "br-openapi",
+      "codeRefs": [
+        ["packages/tools/src/builtin/br-intelligence.ts", "/v1/memory/store"]
+      ],
+      "docRefs": [
+        [
+          "docs/internal/br-business-harness-e2e-autopsy-plan.md",
+          "/v1/memory/store"
+        ]
+      ],
+      "key": "POST /v1/memory/store",
+      "evidence": {
+        "code": [
+          {
+            "file": "packages/tools/src/builtin/br-intelligence.ts",
+            "needle": "/v1/memory/store",
+            "present": true
+          }
+        ],
+        "docs": [
+          {
+            "file": "docs/internal/br-business-harness-e2e-autopsy-plan.md",
+            "needle": "/v1/memory/store",
+            "present": true
+          }
+        ],
+        "negativeCode": [],
+        "br_openapi": true,
+        "br_capability_files": ["src/api/capabilities/system/memory.ts"],
+        "br_rbac": {
+          "found": true,
+          "via": "rbac-prefix",
+          "permission": "memory.write"
+        },
+        "br_sdk_files": []
+      },
+      "status": "ok",
+      "issues": [],
+      "warnings": []
+    },
+    {
+      "id": "a2a.invoke_did",
+      "target": "br",
+      "method": "POST",
+      "path": "/v1/mesh/invoke-did/{target_did}",
+      "purpose": "Invoke a DID-addressed product/agent capability through BR.",
+      "contract": "br-openapi",
+      "codeRefs": [
+        ["packages/cli/src/commands/a2a.ts", "/v1/mesh/invoke-did/"],
+        ["packages/cli/src/__tests__/a2a.test.ts", "/v1/mesh/invoke-did/"]
+      ],
+      "docRefs": [
+        ["docs/a2a-protocol-v01.md", "/v1/mesh/invoke-did/{target_did}"],
+        [
+          "docs/internal/br-business-harness-e2e-autopsy-plan.md",
+          "/v1/mesh/invoke-did/{target_did}"
+        ]
+      ],
+      "key": "POST /v1/mesh/invoke-did/{target_did}",
+      "evidence": {
+        "code": [
+          {
+            "file": "packages/cli/src/commands/a2a.ts",
+            "needle": "/v1/mesh/invoke-did/",
+            "present": true
+          },
+          {
+            "file": "packages/cli/src/__tests__/a2a.test.ts",
+            "needle": "/v1/mesh/invoke-did/",
+            "present": true
+          }
+        ],
+        "docs": [
+          {
+            "file": "docs/a2a-protocol-v01.md",
+            "needle": "/v1/mesh/invoke-did/{target_did}",
+            "present": true
+          },
+          {
+            "file": "docs/internal/br-business-harness-e2e-autopsy-plan.md",
+            "needle": "/v1/mesh/invoke-did/{target_did}",
+            "present": true
+          }
+        ],
+        "negativeCode": [],
+        "br_openapi": true,
+        "br_capability_files": [
+          "src/api/capabilities/system/mesh-capability-routing.ts"
+        ],
+        "br_rbac": {
+          "found": true,
+          "via": "capability-fallback",
+          "permission": "capability"
+        },
+        "br_sdk_files": []
+      },
+      "status": "ok",
+      "issues": [],
+      "warnings": []
+    },
+    {
+      "id": "a2a.hostname_invoke",
+      "target": "br",
+      "method": "POST",
+      "path": "/v1/mesh/invoke/{hostname}",
+      "purpose": "BR mTLS hostname route. The DID CLI must not use this path.",
+      "contract": "br-openapi",
+      "negativeCodeRefs": [
+        [
+          "packages/cli/src/commands/a2a.ts",
+          "/v1/mesh/invoke/${encodeURIComponent"
+        ],
+        ["packages/cli/src/commands/a2a.ts", "/v1/mesh/invoke/"]
+      ],
+      "docRefs": [
+        [
+          "docs/internal/br-business-harness-e2e-autopsy-plan.md",
+          "/v1/mesh/invoke/{hostname}"
+        ]
+      ],
+      "key": "POST /v1/mesh/invoke/{hostname}",
+      "evidence": {
+        "code": [],
+        "docs": [
+          {
+            "file": "docs/internal/br-business-harness-e2e-autopsy-plan.md",
+            "needle": "/v1/mesh/invoke/{hostname}",
+            "present": true
+          }
+        ],
+        "negativeCode": [
+          {
+            "file": "packages/cli/src/commands/a2a.ts",
+            "needle": "/v1/mesh/invoke/${encodeURIComponent",
+            "present": false
+          },
+          {
+            "file": "packages/cli/src/commands/a2a.ts",
+            "needle": "/v1/mesh/invoke/",
+            "present": false
+          }
+        ],
+        "br_openapi": true,
+        "br_capability_files": ["src/api/capabilities/system/mesh.ts"],
+        "br_rbac": {
+          "found": true,
+          "via": "rbac-prefix",
+          "permission": "mesh.invoke"
+        },
+        "br_sdk_files": []
+      },
+      "status": "ok",
+      "issues": [],
+      "warnings": []
+    },
+    {
+      "id": "a2a.status_url",
+      "target": "br",
+      "method": "GET",
+      "path": "/v1/mesh/task/{task_id}",
+      "purpose": "Async A2A status URL returned by BR on 202 responses.",
+      "contract": "response-driven",
+      "codeRefs": [["packages/cli/src/commands/a2a.ts", "status_url"]],
+      "docRefs": [["docs/a2a-protocol-v01.md", "/v1/mesh/task/<task_id>"]],
+      "key": "GET /v1/mesh/task/{task_id}",
+      "evidence": {
+        "code": [
+          {
+            "file": "packages/cli/src/commands/a2a.ts",
+            "needle": "status_url",
+            "present": true
+          }
+        ],
+        "docs": [
+          {
+            "file": "docs/a2a-protocol-v01.md",
+            "needle": "/v1/mesh/task/<task_id>",
+            "present": true
+          }
+        ],
+        "negativeCode": [],
+        "br_openapi": null,
+        "br_capability_files": [],
+        "br_rbac": {
+          "found": false,
+          "via": "none",
+          "permission": null
+        },
+        "br_sdk_files": []
+      },
+      "status": "ok",
+      "issues": [],
+      "warnings": []
+    },
+    {
+      "id": "vm.capability_list",
+      "target": "vm",
+      "method": "GET",
+      "path": "/api/v1/capabilities/list",
+      "purpose": "Current capability registry source for `brainstorm a2a list`.",
+      "contract": "vm-capability-registry",
+      "codeRefs": [
+        ["packages/cli/src/commands/a2a.ts", "/api/v1/capabilities/list"],
+        [
+          "packages/cli/src/discovery/capability-registry.ts",
+          "/api/v1/capabilities/list"
+        ]
+      ],
+      "docRefs": [
+        [
+          "docs/internal/br-business-harness-e2e-autopsy-plan.md",
+          "/api/v1/capabilities/list"
+        ]
+      ],
+      "key": "GET /api/v1/capabilities/list",
+      "evidence": {
+        "code": [
+          {
+            "file": "packages/cli/src/commands/a2a.ts",
+            "needle": "/api/v1/capabilities/list",
+            "present": true
+          },
+          {
+            "file": "packages/cli/src/discovery/capability-registry.ts",
+            "needle": "/api/v1/capabilities/list",
+            "present": true
+          }
+        ],
+        "docs": [
+          {
+            "file": "docs/internal/br-business-harness-e2e-autopsy-plan.md",
+            "needle": "/api/v1/capabilities/list",
+            "present": true
+          }
+        ],
+        "negativeCode": [],
+        "br_openapi": null,
+        "br_capability_files": [],
+        "br_rbac": {
+          "found": false,
+          "via": "none",
+          "permission": null
+        },
+        "br_sdk_files": []
+      },
+      "status": "ok",
+      "issues": [],
+      "warnings": []
+    },
+    {
+      "id": "platform.health",
+      "target": "product",
+      "method": "GET",
+      "path": "/health",
+      "purpose": "Platform Contract v1 product health.",
+      "contract": "platform-contract-v1",
+      "codeRefs": [
+        ["packages/godmode/src/product-connector.ts", "apiFetch(\"/health\")"],
+        ["packages/cli/src/commands/status.ts", "/health"]
+      ],
+      "docRefs": [
+        ["docs/platform-contract-v1.md", "GET /health"],
+        ["docs/getting-started.md", "GET  /health"]
+      ],
+      "key": "GET /health",
+      "evidence": {
+        "code": [
+          {
+            "file": "packages/godmode/src/product-connector.ts",
+            "needle": "apiFetch(\"/health\")",
+            "present": true
+          },
+          {
+            "file": "packages/cli/src/commands/status.ts",
+            "needle": "/health",
+            "present": true
+          }
+        ],
+        "docs": [
+          {
+            "file": "docs/platform-contract-v1.md",
+            "needle": "GET /health",
+            "present": true
+          },
+          {
+            "file": "docs/getting-started.md",
+            "needle": "GET  /health",
+            "present": true
+          }
+        ],
+        "negativeCode": [],
+        "br_openapi": null,
+        "br_capability_files": ["src/api/capabilities/system/health.ts"],
+        "br_rbac": {
+          "found": true,
+          "via": "capability-fallback",
+          "permission": "capability"
+        },
+        "br_sdk_files": []
+      },
+      "status": "ok",
+      "issues": [],
+      "warnings": []
+    },
+    {
+      "id": "platform.godmode_tools",
+      "target": "product",
+      "method": "GET",
+      "path": "/api/v1/god-mode/tools",
+      "purpose": "Discover product actuator tools.",
+      "contract": "platform-contract-v1",
+      "codeRefs": [
+        [
+          "packages/godmode/src/product-connector.ts",
+          "apiFetch(\"/api/v1/god-mode/tools\")"
+        ],
+        ["packages/cli/src/commands/status.ts", "/api/v1/god-mode/tools"]
+      ],
+      "docRefs": [
+        ["docs/platform-contract-v1.md", "GET /api/v1/god-mode/tools"],
+        ["docs/getting-started.md", "GET  /api/v1/god-mode/tools"]
+      ],
+      "key": "GET /api/v1/god-mode/tools",
+      "evidence": {
+        "code": [
+          {
+            "file": "packages/godmode/src/product-connector.ts",
+            "needle": "apiFetch(\"/api/v1/god-mode/tools\")",
+            "present": true
+          },
+          {
+            "file": "packages/cli/src/commands/status.ts",
+            "needle": "/api/v1/god-mode/tools",
+            "present": true
+          }
+        ],
+        "docs": [
+          {
+            "file": "docs/platform-contract-v1.md",
+            "needle": "GET /api/v1/god-mode/tools",
+            "present": true
+          },
+          {
+            "file": "docs/getting-started.md",
+            "needle": "GET  /api/v1/god-mode/tools",
+            "present": true
+          }
+        ],
+        "negativeCode": [],
+        "br_openapi": null,
+        "br_capability_files": [],
+        "br_rbac": {
+          "found": false,
+          "via": "none",
+          "permission": null
+        },
+        "br_sdk_files": []
+      },
+      "status": "ok",
+      "issues": [],
+      "warnings": []
+    },
+    {
+      "id": "platform.godmode_execute",
+      "target": "product",
+      "method": "POST",
+      "path": "/api/v1/god-mode/execute",
+      "purpose": "Execute or simulate product actuator tools.",
+      "contract": "platform-contract-v1",
+      "codeRefs": [
+        [
+          "packages/godmode/src/product-connector.ts",
+          "apiFetch(\"/api/v1/god-mode/execute\""
+        ],
+        [
+          "packages/msp-executor/src/msp-executor.ts",
+          "/api/v1/god-mode/execute"
+        ]
+      ],
+      "docRefs": [
+        ["docs/platform-contract-v1.md", "POST /api/v1/god-mode/execute"],
+        ["docs/getting-started.md", "POST /api/v1/god-mode/execute"]
+      ],
+      "key": "POST /api/v1/god-mode/execute",
+      "evidence": {
+        "code": [
+          {
+            "file": "packages/godmode/src/product-connector.ts",
+            "needle": "apiFetch(\"/api/v1/god-mode/execute\"",
+            "present": true
+          },
+          {
+            "file": "packages/msp-executor/src/msp-executor.ts",
+            "needle": "/api/v1/god-mode/execute",
+            "present": true
+          }
+        ],
+        "docs": [
+          {
+            "file": "docs/platform-contract-v1.md",
+            "needle": "POST /api/v1/god-mode/execute",
+            "present": true
+          },
+          {
+            "file": "docs/getting-started.md",
+            "needle": "POST /api/v1/god-mode/execute",
+            "present": true
+          }
+        ],
+        "negativeCode": [],
+        "br_openapi": null,
+        "br_capability_files": [],
+        "br_rbac": {
+          "found": false,
+          "via": "none",
+          "permission": null
+        },
+        "br_sdk_files": []
+      },
+      "status": "ok",
+      "issues": [],
+      "warnings": []
+    }
+  ],
+  "legacy_doc_mentions": [
+    {
+      "doc": "docs/brainstormrouter-integration.md",
+      "stale": "/v1/agent/status",
+      "replacement": "/v1/self",
+      "present": false
+    },
+    {
+      "doc": "docs/brainstormrouter-integration.md",
+      "stale": "/v1/agent/memory",
+      "replacement": "/v1/memory/query and /v1/memory/store",
+      "present": false
+    },
+    {
+      "doc": "docs/brainstormrouter-integration.md",
+      "stale": "/v1/intelligence/leaderboard",
+      "replacement": "/v1/intelligence/rankings",
+      "present": false
+    },
+    {
+      "doc": "docs/brainstormrouter-integration.md",
+      "stale": "/v1/intelligence/insights",
+      "replacement": "/v1/insights/optimize",
+      "present": false
+    },
+    {
+      "doc": "docs/brainstormrouter-integration.md",
+      "stale": "/v1/health",
+      "replacement": "/health",
+      "present": false
+    }
+  ],
+  "issues": [],
+  "warnings": []
+}

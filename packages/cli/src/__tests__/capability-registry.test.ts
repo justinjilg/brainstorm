@@ -13,6 +13,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   _resetCacheForTests,
   discoverProducts,
+  isCapabilityStatusInvokable,
+  parseProductFromDID,
   resolveProductBaseUrl,
 } from "../discovery/capability-registry.js";
 
@@ -99,6 +101,34 @@ describe("discoverProducts", () => {
 
     const products = await discoverProducts();
     expect(products.find((p) => p.id === "weird")).toBeUndefined();
+  });
+});
+
+describe("registry seam helpers", () => {
+  test("parseProductFromDID classifies the product slot only for BVM DIDs", () => {
+    expect(parseProductFromDID("did:bvm:tenant-1:msp:abc")).toBe("msp");
+    expect(parseProductFromDID("did:bvm:tenant-1:br:router")).toBe("br");
+    expect(parseProductFromDID("did:bvm:tenant-1:backup:schedule")).toBe(
+      "backup",
+    );
+    expect(parseProductFromDID("did:web:example.com")).toBeUndefined();
+    expect(parseProductFromDID("garbage")).toBeUndefined();
+  });
+
+  test("only active registry records are invokable by default", () => {
+    expect(isCapabilityStatusInvokable("active")).toBe(true);
+    for (const status of [
+      undefined,
+      "",
+      "offline",
+      "stale",
+      "deprecated",
+      "removed",
+      "evicted",
+      "inactive",
+    ]) {
+      expect(isCapabilityStatusInvokable(status)).toBe(false);
+    }
   });
 });
 
