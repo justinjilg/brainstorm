@@ -9,13 +9,14 @@
     "compile-contract": "tsx scripts/compile-contract.ts"
   },
   "dependencies": {
+    "@brainst0rm/config": "0.14.4",
     "@brainst0rm/shared": "0.14.4",
     "@brainst0rm/tools": "0.14.4",
-    "@brainst0rm/config": "0.14.4",
     "zod": "^3.24",
     "zod-to-json-schema": "^3.25"
   },
   "devDependencies": {
+    "@types/node": "^22.19.19",
     "tsup": "^8",
     "tsx": "^4",
     "typescript": "^5.7"

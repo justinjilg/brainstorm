@@ -47,6 +47,13 @@ enabled = false                    # Direct Anthropic (bypass BrainstormRouter)
 [providers.openai]
 enabled = false                    # Direct OpenAI (bypass BrainstormRouter)
 
+[godmode.connectors.myproduct]
+enabled = true
+displayName = "My Product"
+baseUrl = "https://myproduct.example.com"
+apiKeyName = "MYPRODUCT_API_KEY"
+tenantId = "tenant-123"            # Required for product execute binding; env fallback: _GM_MYPRODUCT_TENANT_ID
+
 [routing]
 preferLocal = false                # Prefer local models when available
 fallbackToCloud = true             # Fall back to cloud if local fails
@@ -77,13 +84,15 @@ share_fixes = false                # Share anonymized error-fix pairs via BR
 
 ### Environment Variable Overrides
 
-| Env Var | Config Path | Description |
-|---------|------------|-------------|
-| `BRAINSTORM_API_KEY` | — | BrainstormRouter API key |
-| `BRAINSTORM_STRATEGY` | `general.defaultStrategy` | Override default strategy |
-| `BRAINSTORM_MAX_STEPS` | `general.maxSteps` | Override max tool calls |
-| `BRAINSTORM_BUDGET` | `budget.dailyLimit` | Override daily budget |
-| `BRAINSTORM_PERMISSION_MODE` | `general.permissionMode` | Override permission mode |
+| Env Var                                       | Config Path                               | Description                                |
+| --------------------------------------------- | ----------------------------------------- | ------------------------------------------ |
+| `BRAINSTORM_API_KEY`                          | —                                         | BrainstormRouter API key                   |
+| `BRAINSTORM_STRATEGY`                         | `general.defaultStrategy`                 | Override default strategy                  |
+| `BRAINSTORM_MAX_STEPS`                        | `general.maxSteps`                        | Override max tool calls                    |
+| `BRAINSTORM_BUDGET`                           | `budget.dailyLimit`                       | Override daily budget                      |
+| `BRAINSTORM_PERMISSION_MODE`                  | `general.permissionMode`                  | Override permission mode                   |
+| `_GM_<CONNECTOR>_TENANT_ID`                   | `godmode.connectors.<connector>.tenantId` | Product execute tenant binding             |
+| `BRAINSTORM_TENANT_ID` / `PLATFORM_TENANT_ID` | fallback tenant binding                   | Last-resort product execute tenant binding |
 
 ## BRAINSTORM.md
 
@@ -113,13 +122,13 @@ Project description and conventions for the AI assistant.
 
 ### Frontmatter Fields
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `build_command` | string | Command to build the project |
-| `test_command` | string | Command to run tests |
-| `language` | string | Primary language (typescript, python, etc.) |
-| `framework` | string | Framework in use (next, react, fastapi, etc.) |
-| `lint_command` | string | Linter command for auto-lint hook |
+| Field           | Type   | Description                                   |
+| --------------- | ------ | --------------------------------------------- |
+| `build_command` | string | Command to build the project                  |
+| `test_command`  | string | Command to run tests                          |
+| `language`      | string | Primary language (typescript, python, etc.)   |
+| `framework`     | string | Framework in use (next, react, fastapi, etc.) |
+| `lint_command`  | string | Linter command for auto-lint hook             |
 
 ### Hierarchical Loading
 
@@ -128,6 +137,7 @@ BRAINSTORM.md files are loaded hierarchically — a monorepo can have a root BRA
 ## Database
 
 SQLite database at `~/.brainstorm/brainstorm.db` (WAL mode). Stores:
+
 - Sessions and conversation messages
 - Cost records per request
 - Agent profiles

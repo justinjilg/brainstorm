@@ -35,6 +35,16 @@ export interface WsBindingOptions {
   sessions: SessionStore;
   /** Optional: emitted on incoming connections for observability. */
   onConnection?: (path: string, remoteAddr: string) => void;
+  /** Maximum accepted WS frame payload. Defaults to 64 KiB. */
+  maxPayloadBytes?: number;
+  /** Close unauthenticated sockets that do not send a valid hello in time. */
+  unauthenticatedIdleMs?: number;
+  /** Optional exact browser Origin allowlist. Non-browser clients usually omit Origin. */
+  allowedOrigins?: string[];
+  /** Maximum concurrently open sockets per remote address. Defaults to 25. */
+  maxConnectionsPerIp?: number;
+  /** Ping/pong heartbeat interval for established sockets. Defaults to 30s. */
+  heartbeatIntervalMs?: number;
 }
 
 export interface WsBindingHandle {
@@ -52,13 +62,32 @@ export function startWsBinding(
   opts: WsBindingOptions,
 ): Promise<WsBindingHandle> {
   return new Promise((resolve, reject) => {
+    const maxConnectionsPerIp = opts.maxConnectionsPerIp ?? 25;
+    const unauthenticatedIdleMs = opts.unauthenticatedIdleMs ?? 5_000;
     const wss = new WebSocketServer({
       port: opts.port,
       host: opts.host ?? "127.0.0.1",
       perMessageDeflate: false, // text frames are small JSON; no compression
+      maxPayload: opts.maxPayloadBytes ?? 64 * 1024,
     });
 
     const activeSockets = new Set<WS>();
+    const activeByRemote = new Map<string, number>();
+    const heartbeat = setInterval(() => {
+      for (const ws of activeSockets) {
+        const socket = ws as WS & { isAliveForHeartbeat?: boolean };
+        if (socket.isAliveForHeartbeat === false) {
+          ws.terminate();
+          continue;
+        }
+        socket.isAliveForHeartbeat = false;
+        try {
+          ws.ping();
+        } catch {
+          ws.terminate();
+        }
+      }
+    }, opts.heartbeatIntervalMs ?? 30_000);
 
     wss.on("error", (err) => {
       reject(err);
@@ -72,30 +101,71 @@ export function startWsBinding(
           : opts.port;
 
       wss.on("connection", (ws: WS, req: IncomingMessage) => {
+        const remoteAddr = req.socket.remoteAddress ?? "?";
+        const origin = req.headers.origin;
+        if (
+          origin !== undefined &&
+          opts.allowedOrigins !== undefined &&
+          !opts.allowedOrigins.includes(origin)
+        ) {
+          ws.close(1008, "origin not allowed");
+          return;
+        }
+
+        const activeForRemote = activeByRemote.get(remoteAddr) ?? 0;
+        if (activeForRemote >= maxConnectionsPerIp) {
+          ws.close(1013, "too many connections");
+          return;
+        }
+
+        activeByRemote.set(remoteAddr, activeForRemote + 1);
         activeSockets.add(ws);
-        ws.on("close", () => activeSockets.delete(ws));
+        (ws as WS & { isAliveForHeartbeat?: boolean }).isAliveForHeartbeat =
+          true;
+        ws.on("pong", () => {
+          (ws as WS & { isAliveForHeartbeat?: boolean }).isAliveForHeartbeat =
+            true;
+        });
+        ws.on("close", () => {
+          activeSockets.delete(ws);
+          const current = activeByRemote.get(remoteAddr) ?? 1;
+          if (current <= 1) activeByRemote.delete(remoteAddr);
+          else activeByRemote.set(remoteAddr, current - 1);
+        });
+
+        const clearPreAuthTimeout = installPreAuthIdleTimeout(
+          ws,
+          unauthenticatedIdleMs,
+        );
 
         const url = req.url ?? "";
-        opts.onConnection?.(url, req.socket.remoteAddress ?? "?");
+        opts.onConnection?.(url, remoteAddr);
 
         // Strip query string for routing
         const path = url.split("?")[0];
 
         if (path === "/v1/operator") {
-          handleOperatorConnection({ ws, server: opts.server });
+          handleOperatorConnection({
+            ws,
+            server: opts.server,
+            onAuthenticated: clearPreAuthTimeout,
+          });
         } else if (path === "/v1/endpoint/connect") {
           handleEndpointConnection({
             ws,
             server: opts.server,
             sessions: opts.sessions,
+            onAuthenticated: clearPreAuthTimeout,
           });
         } else {
+          clearPreAuthTimeout();
           ws.close(1008, `unknown path: ${path}`);
         }
       });
 
       resolve({
         async close() {
+          clearInterval(heartbeat);
           for (const ws of activeSockets) {
             try {
               ws.close(1001, "server shutdown");
@@ -111,6 +181,20 @@ export function startWsBinding(
       });
     });
   });
+}
+
+// ---------------------------------------------------------------------------
+
+function installPreAuthIdleTimeout(ws: WS, timeoutMs: number): () => void {
+  const timeout = setTimeout(() => {
+    if (ws.readyState === ws.OPEN) {
+      ws.close(1008, "authentication timeout");
+    }
+  }, timeoutMs);
+
+  const clear = () => clearTimeout(timeout);
+  ws.on("close", clear);
+  return clear;
 }
 
 // ---------------------------------------------------------------------------
@@ -147,6 +231,7 @@ function makeTransport(ws: WS): TransportHandle {
 interface OperatorConnectionContext {
   ws: WS;
   server: RelayServer;
+  onAuthenticated: () => void;
 }
 
 function handleOperatorConnection(ctx: OperatorConnectionContext): void {
@@ -192,6 +277,7 @@ function handleOperatorConnection(ctx: OperatorConnectionContext): void {
         return;
       }
       operator_session_id = accept.operator_session_id;
+      ctx.onAuthenticated();
       try {
         await transport.send(accept.ack);
       } catch {}
@@ -253,6 +339,7 @@ interface EndpointConnectionContext {
   ws: WS;
   server: RelayServer;
   sessions: SessionStore;
+  onAuthenticated: () => void;
 }
 
 function handleEndpointConnection(ctx: EndpointConnectionContext): void {
@@ -295,6 +382,7 @@ function handleEndpointConnection(ctx: EndpointConnectionContext): void {
         return;
       }
       endpoint_session_id = accept.session_id;
+      ctx.onAuthenticated();
       try {
         await transport.send(accept.ack);
       } catch {}
