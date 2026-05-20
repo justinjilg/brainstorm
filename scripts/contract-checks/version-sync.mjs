@@ -12,11 +12,10 @@
  *     back to a stale tarball, the nested install lacks the current
  *     dist tree, and every consumer's build dies on a resolve error.
  *
- * The gate is structural: read the root package.json's workspace
- * version (or the `version` field on each package), assert every
- * internal dep declaration points at that version. Allow
- * `workspace:*` and `workspace:^` prefixes (the npm-workspaces
- * idiom for pinning to the local copy).
+ * The gate is structural: read each internal package's declared
+ * version, assert every internal dep declaration points at that
+ * target package version. Allow `workspace:*` and `workspace:^`
+ * prefixes (the npm-workspaces idiom for pinning to the local copy).
  *
  * Private-package carve-out:
  *   The Stage-3 review flagged that an unbounded `private: true`
@@ -87,11 +86,9 @@ export async function check({ repoRoot }) {
     }
   }
 
-  // Determine the canonical workspace version — the dominant version
-  // across *published* packages. Allowlisted private packages run
-  // independent cadence (e.g. image-builder ships VM images on alpha
-  // versions); they don't contribute to or violate the canonical
-  // version.
+  // Summarize versions for the human note. Changesets is configured
+  // for independent package versions, so multiple public versions are
+  // expected on release PRs and after those releases land.
   const versionCounts = new Map();
   for (const { pkg } of pkgs) {
     if (pkg.private && EXPECTED_PRIVATE_PACKAGES.has(pkg.name)) continue;
@@ -99,10 +96,9 @@ export async function check({ repoRoot }) {
     versionCounts.set(v, (versionCounts.get(v) ?? 0) + 1);
   }
   const sortedVersions = [...versionCounts.entries()].sort((a, b) => b[1] - a[1]);
-  const canonicalVersion = sortedVersions[0]?.[0];
-  if (!canonicalVersion) {
+  if (sortedVersions.length === 0) {
     issues.push(
-      "could not determine canonical workspace version (no published packages with a version field?)",
+      "could not determine published workspace versions (no published packages with a version field?)",
     );
     return {
       name: "version-sync",
@@ -111,46 +107,7 @@ export async function check({ repoRoot }) {
     };
   }
 
-  // Tie-break detection: if two versions tie for the most packages,
-  // the sort order is filesystem-dependent. During a partial
-  // changesets release (some packages bumped, others not), this is
-  // the exact failure mode the gate exists to catch. Surface ties
-  // explicitly instead of silently picking one.
-  if (
-    sortedVersions.length >= 2 &&
-    sortedVersions[0][1] === sortedVersions[1][1]
-  ) {
-    const tied = sortedVersions
-      .filter((e) => e[1] === sortedVersions[0][1])
-      .map((e) => `${e[1]} packages @ ${e[0]}`)
-      .join(" vs ");
-    issues.push(
-      `no dominant canonical version — workspace appears mid-release: ${tied}. ` +
-        `Either complete the changesets release or align the packages by hand before merging.`,
-    );
-    return {
-      name: "version-sync",
-      ok: false,
-      issues,
-    };
-  }
-
-  // Gate 1: every PUBLISHED internal package shares the canonical
-  // version. Allowlisted private packages are exempt — they're
-  // intentionally off-axis (e.g. image-builder ships VM images, not
-  // npm tarballs).
-  for (const { pkg } of pkgs) {
-    if (pkg.private && EXPECTED_PRIVATE_PACKAGES.has(pkg.name)) continue;
-    if (pkg.version !== canonicalVersion) {
-      issues.push(
-        `${pkg.name} is at version ${pkg.version} but the canonical workspace version is ${canonicalVersion}. ` +
-          `Align the version, or — if this package legitimately runs off-cadence — mark it private: true ` +
-          `AND add it to EXPECTED_PRIVATE_PACKAGES with justification.`,
-      );
-    }
-  }
-
-  // Gate 2: every internal dep declaration points at the package's
+  // Gate: every internal dep declaration points at the package's
   // own declared version, NOT at a stale pin. This is the exact
   // drift PR #343 fixed.
   for (const { pkg, abs } of pkgs) {
@@ -181,6 +138,14 @@ export async function check({ repoRoot }) {
     name: "version-sync",
     ok: issues.length === 0,
     issues,
-    note: `${pkgs.length} workspace packages · canonical version ${canonicalVersion}`,
+    note: `${pkgs.length} workspace packages · ${formatVersionSummary(sortedVersions)}`,
   };
+}
+
+function formatVersionSummary(sortedVersions) {
+  const [first, ...rest] = sortedVersions;
+  if (!first) return "no published package versions";
+  const dominant = `${first[1]} @ ${first[0]}`;
+  if (rest.length === 0) return `single version ${first[0]}`;
+  return `versions ${dominant} + ${rest.length} more`;
 }

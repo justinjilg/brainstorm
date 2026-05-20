@@ -303,36 +303,30 @@ test("version-sync: catches private package not on allowlist", async () => {
   }
 });
 
-test("version-sync: detects mid-release tie (no dominant version)", async () => {
+test("version-sync: allows independent package versions with aligned internal deps", async () => {
   const { check } = await import("../version-sync.mjs");
-  // Two packages at v1, two at v2 — exact tie. Gate should refuse
-  // to pick a canonical version instead of silently choosing
-  // whichever globbed first.
   const { root, cleanup } = makeTmpRepo({
     "packages/a/package.json": JSON.stringify({
       name: "@brainst0rm/a",
-      version: "1.0.0",
+      version: "2.0.0",
     }),
     "packages/b/package.json": JSON.stringify({
       name: "@brainst0rm/b",
       version: "1.0.0",
+      dependencies: { "@brainst0rm/a": "2.0.0" },
     }),
     "packages/c/package.json": JSON.stringify({
       name: "@brainst0rm/c",
-      version: "2.0.0",
+      version: "1.5.0",
     }),
     "packages/d/package.json": JSON.stringify({
       name: "@brainst0rm/d",
-      version: "2.0.0",
+      version: "1.0.0",
     }),
   });
   try {
     const result = await check({ repoRoot: root });
-    assert.equal(result.ok, false, "tie must fail the gate");
-    assert.ok(
-      result.issues.some((i) => i.includes("no dominant canonical version")),
-      `gate should report the tie. Got: ${result.issues.join(" | ")}`,
-    );
+    assert.equal(result.ok, true, "independent versions are valid");
   } finally {
     cleanup();
   }

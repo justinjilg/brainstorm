@@ -1,6 +1,6 @@
 {
   "name": "@brainst0rm/onboard",
-  "version": "0.14.4",
+  "version": "0.14.5",
   "type": "module",
   "scripts": {
     "build": "tsup",
@@ -11,7 +11,7 @@
     "@brainst0rm/shared": "0.14.4",
     "@brainst0rm/ingest": "0.14.4",
     "@brainst0rm/config": "0.14.4",
-    "@brainst0rm/core": "0.14.4",
+    "@brainst0rm/core": "0.14.5",
     "@brainst0rm/code-graph": "0.14.4"
   },
   "devDependencies": {
