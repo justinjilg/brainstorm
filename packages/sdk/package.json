@@ -1,6 +1,6 @@
 {
   "name": "@brainst0rm/sdk",
-  "version": "0.14.4",
+  "version": "0.14.5",
   "type": "module",
   "scripts": {
     "build": "tsup",
@@ -10,10 +10,10 @@
   "dependencies": {
     "@brainst0rm/shared": "0.14.4",
     "@brainst0rm/config": "0.14.4",
-    "@brainst0rm/core": "0.14.4",
+    "@brainst0rm/core": "0.14.5",
     "@brainst0rm/router": "0.14.4",
     "@brainst0rm/providers": "0.14.4",
-    "@brainst0rm/tools": "0.14.4",
+    "@brainst0rm/tools": "0.15.0",
     "@brainst0rm/db": "0.14.4",
     "@brainst0rm/ingest": "0.14.4",
     "@brainst0rm/docgen": "0.14.4"
