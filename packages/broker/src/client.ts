@@ -21,7 +21,7 @@ import type {
   RegisterResponse,
   SendMessageResponse,
 } from "./types.js";
-import { DEFAULT_BROKER_PORT, readBrokerToken } from "./daemon.js";
+import { DEFAULT_BROKER_PORT } from "./daemon.js";
 
 const log = createLogger("broker-client");
 
@@ -84,9 +84,7 @@ export class BrokerClient {
     this.apiKey = opts.apiKey;
     this.fingerprint = fingerprintApiKey(opts.apiKey);
     this.brokerToken =
-      opts.brokerToken ??
-      process.env.BRAINSTORM_BROKER_TOKEN ??
-      readBrokerToken();
+      opts.brokerToken ?? process.env.BRAINSTORM_BROKER_TOKEN ?? null;
     this.meta = {
       pid: opts.pid,
       cwd: opts.cwd,

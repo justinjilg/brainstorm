@@ -303,11 +303,9 @@ export function createBroker(opts: BrokerOptions = {}): Broker {
   }
 
   function verifyBearer(req: IncomingMessage): boolean {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return false;
-    const m = /^Bearer\s+(.+)$/i.exec(authHeader.trim());
-    if (!m) return false;
-    const supplied = Buffer.from(m[1], "utf8");
+    const suppliedToken = parseBearerToken(req.headers.authorization);
+    if (!suppliedToken) return false;
+    const supplied = Buffer.from(suppliedToken, "utf8");
     const expected = Buffer.from(authToken, "utf8");
     if (supplied.length !== expected.length) return false;
     return timingSafeEqual(supplied, expected);
@@ -450,7 +448,27 @@ export function readBrokerToken(): string | null {
   return token.length > 0 ? token : null;
 }
 
-function initBrokerToken(): string {
+function parseBearerToken(authHeader: string | undefined): string | null {
+  if (!authHeader) return null;
+  const trimmed = authHeader.trim();
+  if (trimmed.length <= "Bearer ".length) return null;
+  if (trimmed.slice(0, 6).toLowerCase() !== "bearer") return null;
+  const separator = trimmed.charAt(6);
+  if (separator !== " " && separator !== "\t") return null;
+
+  let tokenStart = 7;
+  while (
+    tokenStart < trimmed.length &&
+    (trimmed.charAt(tokenStart) === " " || trimmed.charAt(tokenStart) === "\t")
+  ) {
+    tokenStart += 1;
+  }
+
+  const token = trimmed.slice(tokenStart);
+  return token.length > 0 ? token : null;
+}
+
+export function initBrokerToken(): string {
   const existing = readBrokerToken();
   if (existing) return existing;
 
