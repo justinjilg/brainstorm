@@ -59,7 +59,17 @@ let cache:
  * Default URLs are the production deploy targets — they're the fallback
  * when both the registry is unreachable AND no env override is set.
  */
-const KNOWN_PRODUCTS: Record<
+// v0.6 M24: when BRAINSTORM_UNIFIED_API=1, the per-product defaults
+// point at brainstorm.co/api/v1/<product> (the collapsed surface that
+// M22 ALB rules route to the same backend services). Default stays
+// "0" until the 30-day overlap-watch (M25) confirms the collapsed
+// surface is stable in prod — flipping the CLI default before that
+// would break every existing CLI install at once.
+const USE_UNIFIED_API =
+  (process.env.BRAINSTORM_UNIFIED_API || "0").toLowerCase() === "1" ||
+  (process.env.BRAINSTORM_UNIFIED_API || "").toLowerCase() === "true";
+
+const LEGACY_DEFAULTS: Record<
   string,
   { defaultBaseUrl: string; envVar: string }
 > = {
@@ -81,6 +91,37 @@ const KNOWN_PRODUCTS: Record<
     envVar: "BRAINSTORM_BACKUP_URL",
   },
 };
+
+const UNIFIED_DEFAULTS: Record<
+  string,
+  { defaultBaseUrl: string; envVar: string }
+> = {
+  msp: {
+    defaultBaseUrl: "https://brainstorm.co/api/v1/msp",
+    envVar: "BRAINSTORM_MSP_URL",
+  },
+  br: {
+    defaultBaseUrl: "https://brainstorm.co/api/v1/router",
+    envVar: "BRAINSTORM_BR_URL",
+  },
+  gtm: {
+    defaultBaseUrl: "https://brainstorm.co/api/v1/gtm",
+    envVar: "BRAINSTORM_GTM_URL",
+  },
+  vm: {
+    defaultBaseUrl: "https://vm.brainstorm.co",
+    envVar: "BRAINSTORM_VM_URL",
+  },
+  backup: {
+    defaultBaseUrl: "https://brainstorm.co/api/v1/backup",
+    envVar: "BRAINSTORM_BACKUP_URL",
+  },
+};
+
+const KNOWN_PRODUCTS: Record<
+  string,
+  { defaultBaseUrl: string; envVar: string }
+> = USE_UNIFIED_API ? UNIFIED_DEFAULTS : LEGACY_DEFAULTS;
 
 /**
  * Discover the live product set via the capability registry. Returns
@@ -166,7 +207,7 @@ async function fetchFromRegistry(token?: string): Promise<DiscoveredProduct[]> {
       anyOnline: false,
     };
     entry.count++;
-    if (cap.status === "active") {
+    if (isCapabilityStatusInvokable(cap.status)) {
       entry.anyOnline = true;
       entry.allOffline = false;
     }
@@ -192,13 +233,19 @@ async function fetchFromRegistry(token?: string): Promise<DiscoveredProduct[]> {
   });
 }
 
-function parseProductFromDID(did: string): string | undefined {
+export function parseProductFromDID(did: string): string | undefined {
   // did:bvm:<tenant>:<product>:<short>
   const parts = did.split(":");
   if (parts.length < 5 || parts[0] !== "did" || parts[1] !== "bvm") {
     return undefined;
   }
   return parts[3];
+}
+
+export function isCapabilityStatusInvokable(
+  status: string | undefined,
+): boolean {
+  return status === "active";
 }
 
 const warnedEnvVars = new Set<string>();
