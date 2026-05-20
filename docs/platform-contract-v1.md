@@ -318,7 +318,7 @@ security:
   api_base: "https://brainstormmsp.ai"
   health: "/health"
   auth:
-    human: "supabase-jwt"
+    human: "keycloak-oidc"
     machine: "api-key"
     tenant_claim: "platform_tenant_id"
 capabilities:
