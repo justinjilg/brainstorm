@@ -26,6 +26,14 @@ artifacts/br-a2a-registry-summary.json
 artifacts/product-platform-smoke-summary.json
 artifacts/business-posture-trace.json
 
+# Local Codex/project memory and generated review notes
+.codex/
+AGENTS.md
+docs/assessment-audit-v14.md
+docs/assessment-evidence-v14.md
+docs/assessment-synthesis-v14.md
+docs/internal/business-harness-product-readiness.md
+
 # Contract preflight result artifact — written on every run so CI
 # failures leave diagnostic JSON on disk. Regenerable via
 # `npm run contract-check`.
