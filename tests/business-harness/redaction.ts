@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHmac } from "node:crypto";
 
 const BR_KEY_RE = /\bbr_(?:live|test|sk)_[A-Za-z0-9_-]{16,}\b/g;
 const JWT_RE = /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g;
@@ -7,7 +7,14 @@ const TRACEPARENT_RE = /\b00-[a-f0-9]{32}-[a-f0-9]{16}-[a-f0-9]{2}\b/gi;
 
 export function sha256Short(value: string | undefined | null): string {
   if (!value) return "sha256:none";
-  return `sha256:${createHash("sha256").update(value).digest("hex").slice(0, 16)}`;
+  const digest = createHmac(
+    "sha256",
+    "brainstorm-business-harness-redaction-v1",
+  )
+    .update(value)
+    .digest("hex")
+    .slice(0, 16);
+  return `sha256:${digest}`;
 }
 
 export function redactString(value: string): string {

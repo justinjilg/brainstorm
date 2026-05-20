@@ -20,7 +20,7 @@ interface ProviderEnvelopeSummary {
   success: boolean;
   status: number;
   body_kind: "empty" | "json" | "text";
-  content_preview: string;
+  completion_matched_expected: boolean;
   warnings: string[];
   failures: string[];
   envelope: {
@@ -53,14 +53,10 @@ function generateTraceparent(): string {
   return `00-${randomBytes(16).toString("hex")}-${randomBytes(8).toString("hex")}-01`;
 }
 
-function bodyKind(text: string): "empty" | "json" | "text" {
-  if (!text.trim()) return "empty";
-  try {
-    JSON.parse(text);
-    return "json";
-  } catch {
-    return "text";
-  }
+function expectedBodyKind(response: Response): "empty" | "json" | "text" {
+  if (response.status === 204 || response.status === 304) return "empty";
+  const contentType = response.headers.get("content-type") ?? "";
+  return contentType.toLowerCase().includes("json") ? "json" : "text";
 }
 
 function completionText(bodyText: string): string {
@@ -225,7 +221,7 @@ async function main() {
     }
     if (!/pong/i.test(content)) {
       warnings.push(
-        `Completion did not visibly contain "pong"; preview=${safeSnippet(content)}`,
+        'Completion did not visibly contain expected "pong" marker.',
       );
     }
   } else if (response.status === 429 && env.authMode === "community_key") {
@@ -258,13 +254,15 @@ async function main() {
   trace.actions[0].error_code =
     failures.length === 0 ? undefined : `http_${response.status}`;
 
+  const matchedExpectedCompletion = /pong/i.test(content);
+  const persistedBodyKind = expectedBodyKind(response);
   const summary: ProviderEnvelopeSummary = {
     schema_version: 1,
     generated_at: trace.completed_at,
     success: failures.length === 0,
     status: response.status,
-    body_kind: bodyKind(text),
-    content_preview: safeSnippet(content),
+    body_kind: persistedBodyKind,
+    completion_matched_expected: matchedExpectedCompletion,
     warnings,
     failures,
     envelope: {
@@ -290,7 +288,7 @@ async function main() {
       auth: "bearer",
       status: response.status,
       ok: response.ok,
-      body_kind: bodyKind(text) === "json" ? "object" : bodyKind(text),
+      body_kind: persistedBodyKind === "json" ? "object" : persistedBodyKind,
       observations: [
         envelope?.routedModel ? `routed_model=${envelope.routedModel}` : "",
         envelopeCost(envelope) !== undefined

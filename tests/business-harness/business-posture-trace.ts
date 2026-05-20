@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { redactForArtifact, sha256Short } from "./redaction.ts";
+import { redactForArtifact } from "./redaction.ts";
 import type { BusinessHarnessTrace } from "./trace-schema.ts";
 
 interface ScenarioPostureSummary {
