@@ -17,6 +17,12 @@ export function sha256Short(value: string | undefined | null): string {
   return `sha256:${digest}`;
 }
 
+export function credentialSubjectMarker(
+  authMode: string | undefined | null,
+): string {
+  return `credential:${authMode ?? "unknown"}`;
+}
+
 export function redactString(value: string): string {
   return value
     .replace(BR_KEY_RE, "[redacted-br-key]")

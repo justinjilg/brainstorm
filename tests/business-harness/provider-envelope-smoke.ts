@@ -8,7 +8,12 @@ import {
   type BrEnvelope,
 } from "../../packages/providers/src/cloud/brainstorm-saas.ts";
 import { describeBusinessHarnessEnv, loadBusinessHarnessEnv } from "./env.ts";
-import { redactForArtifact, safeSnippet, sha256Short } from "./redaction.ts";
+import {
+  credentialSubjectMarker,
+  redactForArtifact,
+  safeSnippet,
+  sha256Short,
+} from "./redaction.ts";
 import type {
   BusinessHarnessTrace,
   LiveDiscoveryProbeSummary,
@@ -92,7 +97,7 @@ function buildTrace(
     },
     actor: {
       kind: env.actorKind,
-      subject_hash: sha256Short(env.apiKey ?? "no-key"),
+      subject_hash: credentialSubjectMarker(env.authMode),
       auth_mode: env.authMode,
     },
     intent: {
@@ -143,6 +148,8 @@ async function formatJson(text: string): Promise<string> {
 async function writeSummary(summary: ProviderEnvelopeSummary) {
   mkdirSync(path.dirname(ARTIFACT_PATH), { recursive: true });
   const json = `${JSON.stringify(redactForArtifact(summary), null, 2)}\n`;
+  // codeql[js/http-to-file-access]: Business harness writes a bounded, redacted
+  // CI evidence artifact by design; redactForArtifact strips credentials/PII first.
   writeFileSync(ARTIFACT_PATH, await formatJson(json));
 }
 
