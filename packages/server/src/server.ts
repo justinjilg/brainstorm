@@ -90,7 +90,14 @@ export interface ServerDependencies {
 export class BrainstormServer {
   private server: Server | null = null;
   private deps: ServerDependencies;
-  private opts: Required<ServerOptions>;
+  private opts: ServerOptions & {
+    port: number;
+    host: string;
+    cors: boolean;
+    allowedOrigins: string[];
+    jwtSecret: string;
+    projectPath: string;
+  };
   private conversationManager: ConversationManager | null = null;
   /**
    * Dev-mode auth token. Generated at server start when `jwtSecret` is
@@ -127,6 +134,9 @@ export class BrainstormServer {
       cors: opts?.cors ?? false,
       allowedOrigins: opts?.allowedOrigins ?? [],
       jwtSecret: opts?.jwtSecret ?? "",
+      jwtIssuer: opts?.jwtIssuer,
+      jwtAudience: opts?.jwtAudience,
+      jwksUrl: opts?.jwksUrl,
       projectPath: opts?.projectPath ?? process.cwd(),
     };
 
@@ -274,7 +284,9 @@ export class BrainstormServer {
         this.opts.host === "localhost" ||
         this.opts.host === "::1";
 
-      if (this.opts.jwtSecret) {
+      const hasJwtAuth = !!(this.opts.jwtSecret || this.opts.jwtIssuer);
+
+      if (hasJwtAuth) {
         const authResult = await this.checkAuth(req);
         if (!authResult.ok) {
           return this.errorResponse(res, 401, authResult.error);
@@ -288,7 +300,7 @@ export class BrainstormServer {
         return this.errorResponse(
           res,
           401,
-          "Authentication required — set SUPABASE_JWT_SECRET",
+          "Authentication required — set BRAINSTORM_JWT_ISSUER or SUPABASE_JWT_SECRET",
         );
       } else {
         // Dev mode (loopback, no jwtSecret): require the per-session
@@ -1063,14 +1075,20 @@ export class BrainstormServer {
       }
     | { ok: false; error: string }
   > {
-    const { verifyJWT, extractBearerToken } =
+    const { verifyJWT, verifyKeycloakJWT, extractBearerToken } =
       await import("@brainst0rm/godmode");
     const token = extractBearerToken(
       req.headers.authorization as string | undefined,
     );
     if (!token) return { ok: false, error: "Missing Authorization header" };
 
-    const auth = verifyJWT(token, this.opts.jwtSecret);
+    const auth = this.opts.jwtIssuer
+      ? await verifyKeycloakJWT(token, {
+          issuer: this.opts.jwtIssuer,
+          audience: this.opts.jwtAudience ?? "brainstorm-cli",
+          jwksUrl: this.opts.jwksUrl,
+        })
+      : verifyJWT(token, this.opts.jwtSecret);
     if (!auth.authenticated)
       return { ok: false, error: auth.error ?? "Authentication failed" };
 

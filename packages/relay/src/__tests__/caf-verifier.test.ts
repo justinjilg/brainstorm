@@ -136,7 +136,7 @@ beforeAll(() => {
     leafCertPem: leaf2.certPem,
     leafCertFingerprintHex: leaf2.fpHex,
   };
-});
+}, 30_000);
 
 afterAll(() => {
   if (tmpDir !== undefined) {

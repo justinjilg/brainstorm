@@ -217,6 +217,7 @@ enabled = true
 displayName = "My Product"
 baseUrl = "https://myproduct.example.com"
 apiKeyName = "MYPRODUCT_API_KEY"
+tenantId = "tenant-123"                 # Or set _GM_MYPRODUCT_TENANT_ID
 ```
 
 ### 3. Verify

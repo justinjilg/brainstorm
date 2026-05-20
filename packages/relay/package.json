@@ -42,14 +42,14 @@
     "@noble/hashes": "^1.5.0",
     "better-sqlite3": "^11.3.0",
     "canonicalize": "^2.0.0",
-    "ws": "^8.18.0"
+    "ws": "^8.20.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",
-    "@types/ws": "^8.5.12",
     "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.12",
     "tsup": "^8.3.0",
     "typescript": "^5.6.0",
-    "vitest": "^2.1.0"
+    "vitest": "^3.2.4"
   }
 }
