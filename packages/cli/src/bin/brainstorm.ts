@@ -428,6 +428,12 @@ registerEvidenceCommand(program);
 import { registerLoginCommand } from "../commands/login.js";
 registerLoginCommand(program);
 
+// `brainstorm backup` — operate the brainstorm-backup product (schedules,
+// drills, runs). v0.6 P0 M02 — closes v0.5 M23 (the CLI subcommand
+// shipped at v0.5 M22a but never wired through the operator CLI).
+import { registerBackupCommand } from "../commands/backup.js";
+registerBackupCommand(program);
+
 program
   .command("eval")
   .description("Run capability evaluation probes against a model")
