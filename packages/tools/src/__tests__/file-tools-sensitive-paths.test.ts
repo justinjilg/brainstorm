@@ -19,7 +19,7 @@
 import { describe, it, expect } from "vitest";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileReadTool } from "../builtin/file-read.js";
 import { fileWriteTool } from "../builtin/file-write.js";
@@ -32,6 +32,12 @@ function isBlocked(result: any): boolean {
   if (!result || typeof result !== "object") return false;
   const msg = typeof result.error === "string" ? result.error : "";
   return msg.startsWith("Path blocked");
+}
+
+function existingSensitiveSystemTarget(): string | null {
+  return (
+    ["/etc/sudoers", "/etc/shadow"].find((path) => existsSync(path)) ?? null
+  );
 }
 
 describe("file tools — sensitive-path blocks", () => {
@@ -69,6 +75,18 @@ describe("file tools — sensitive-path blocks", () => {
       });
       expect(isBlocked(result)).toBe(false);
     });
+    it("blocks reading a sensitive target through a workspace symlink", async () => {
+      const target = existingSensitiveSystemTarget();
+      expect(target).not.toBeNull();
+      if (!target) return;
+
+      const dir = mkdtempSync(join(tmpdir(), "brainstorm-file-read-link-"));
+      const link = join(dir, "linked-sensitive");
+      symlinkSync(target, link);
+
+      const result = await fileReadTool.execute({ path: link });
+      expect(isBlocked(result)).toBe(true);
+    });
   });
 
   describe("file_write", () => {
@@ -97,6 +115,21 @@ describe("file tools — sensitive-path blocks", () => {
       });
       expect(isBlocked(result)).toBe(false);
     });
+    it("blocks writing through a symlinked sensitive directory", async () => {
+      const target = existingSensitiveSystemTarget();
+      expect(target).not.toBeNull();
+      if (!target) return;
+
+      const dir = mkdtempSync(join(tmpdir(), "brainstorm-file-write-link-"));
+      const link = join(dir, "linked-etc");
+      symlinkSync("/etc", link);
+
+      const result = await fileWriteTool.execute({
+        path: join(link, target.split("/").at(-1) ?? "sudoers"),
+        content: "attacker\n",
+      });
+      expect(isBlocked(result)).toBe(true);
+    });
   });
 
   describe("file_edit", () => {
@@ -118,6 +151,22 @@ describe("file tools — sensitive-path blocks", () => {
         new_string: "goodbye",
       });
       expect(isBlocked(result)).toBe(false);
+    });
+    it("blocks editing through a symlinked sensitive directory", async () => {
+      const target = existingSensitiveSystemTarget();
+      expect(target).not.toBeNull();
+      if (!target) return;
+
+      const dir = mkdtempSync(join(tmpdir(), "brainstorm-file-edit-link-"));
+      const link = join(dir, "linked-etc");
+      symlinkSync("/etc", link);
+
+      const result = await fileEditTool.execute({
+        path: join(link, target.split("/").at(-1) ?? "sudoers"),
+        old_string: "root",
+        new_string: "attacker",
+      });
+      expect(isBlocked(result)).toBe(true);
     });
   });
 
@@ -147,6 +196,21 @@ describe("file tools — sensitive-path blocks", () => {
         edits: [{ old_string: "a", new_string: "A" }],
       });
       expect(isBlocked(result)).toBe(false);
+    });
+    it("blocks multi-edit through a symlinked sensitive directory", async () => {
+      const target = existingSensitiveSystemTarget();
+      expect(target).not.toBeNull();
+      if (!target) return;
+
+      const dir = mkdtempSync(join(tmpdir(), "brainstorm-multi-edit-link-"));
+      const link = join(dir, "linked-etc");
+      symlinkSync("/etc", link);
+
+      const result = await multiEditTool.execute({
+        path: join(link, target.split("/").at(-1) ?? "sudoers"),
+        edits: [{ old_string: "root", new_string: "attacker" }],
+      });
+      expect(isBlocked(result)).toBe(true);
     });
   });
 });

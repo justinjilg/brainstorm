@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { resolve, relative } from "node:path";
 import { defineTool } from "../base.js";
 import { getWorkspace } from "../workspace-context.js";
-import { assertNotSensitivePath } from "./sensitive-paths.js";
+import { assertNotSensitivePathIncludingRealpath } from "./sensitive-paths.js";
 
 import { homedir } from "node:os";
 
@@ -16,23 +16,26 @@ function ensureSafePath(filePath: string): string {
   // prior version allowed anything under $HOME including ~/.ssh/,
   // ~/.aws/, etc. — making file_read a prompt-injection exfiltration
   // vector that the shell sandbox already closed at the command level.
-  assertNotSensitivePath(resolved);
+  const safetyPath = assertNotSensitivePathIncludingRealpath(resolved);
 
   // Allow: paths within cwd OR within home directory OR safe tmp workspaces.
   // macOS tmpdir lives at /var/folders/... so /var is not blanket-blocked.
-  const isSafeTmpVar =
-    resolved.startsWith("/var/folders/") ||
-    resolved.startsWith("/private/var/folders/") ||
-    resolved.startsWith("/var/tmp/") ||
-    resolved.startsWith("/private/var/tmp/") ||
+  const isSafeTmpPath = (path: string) =>
+    path.startsWith("/var/folders/") ||
+    path.startsWith("/private/var/folders/") ||
+    path.startsWith("/var/tmp/") ||
+    path.startsWith("/private/var/tmp/") ||
     // Linux tmpdir. os.tmpdir() returns `/tmp` on Linux, not `/var/tmp`;
     // without this, file_read/edit/write on any Linux host (including
     // GitHub Actions Ubuntu runners) could never read tmp files — a
     // silent break that CI caught via the sensitive-paths false-
     // positive guard.
-    resolved === "/tmp" ||
-    resolved.startsWith("/tmp/");
-  if (!isSafeTmpVar && resolved.startsWith("/var")) {
+    path === "/tmp" ||
+    path.startsWith("/tmp/");
+  const pathsToCheck = Array.from(new Set([resolved, safetyPath]));
+  if (
+    pathsToCheck.some((path) => !isSafeTmpPath(path) && path.startsWith("/var"))
+  ) {
     throw new Error(`Path blocked: "${filePath}" is a protected system path`);
   }
   const BLOCKED_PREFIXES = [
@@ -44,12 +47,17 @@ function ensureSafePath(filePath: string): string {
     "/sbin",
     "/boot",
   ];
-  if (BLOCKED_PREFIXES.some((p) => resolved.startsWith(p))) {
+  if (
+    pathsToCheck.some((path) =>
+      BLOCKED_PREFIXES.some((p) => path.startsWith(p)),
+    )
+  ) {
     throw new Error(`Path blocked: "${filePath}" is a protected system path`);
   }
 
-  const isInHome = resolved.startsWith(home);
+  const isInHome = safetyPath.startsWith(home);
   const isInCwd = !relative(cwd, resolved).startsWith("..");
+  const isSafeTmpVar = isSafeTmpPath(safetyPath);
   if (!isInHome && !isInCwd && !isSafeTmpVar) {
     throw new Error(
       `Path blocked: "${filePath}" is outside home directory and workspace`,

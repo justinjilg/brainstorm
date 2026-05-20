@@ -11,7 +11,7 @@
 
 import { spawn } from "node:child_process";
 import { createLogger } from "@brainst0rm/shared";
-import { DEFAULT_BROKER_PORT } from "./daemon.js";
+import { DEFAULT_BROKER_PORT, initBrokerToken } from "./daemon.js";
 
 const log = createLogger("broker-ensure");
 
@@ -44,6 +44,8 @@ export async function ensureBroker(
 ): Promise<number> {
   const port = opts.port ?? DEFAULT_BROKER_PORT;
   const timeoutMs = opts.startupTimeoutMs ?? 6_000;
+  const brokerToken = process.env.BRAINSTORM_BROKER_TOKEN ?? initBrokerToken();
+  process.env.BRAINSTORM_BROKER_TOKEN = brokerToken;
 
   if (await isBrokerAlive(port)) return port;
 
@@ -58,7 +60,11 @@ export async function ensureBroker(
   const child = spawn(process.execPath, [binPath], {
     detached: true,
     stdio: "ignore",
-    env: { ...process.env, BRAINSTORM_BROKER_PORT: String(port) },
+    env: {
+      ...process.env,
+      BRAINSTORM_BROKER_PORT: String(port),
+      BRAINSTORM_BROKER_TOKEN: brokerToken,
+    },
   });
   child.unref();
 

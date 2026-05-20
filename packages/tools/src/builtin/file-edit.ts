@@ -16,7 +16,7 @@ import { resolve, relative } from "node:path";
 import { homedir } from "node:os";
 import { defineTool } from "../base.js";
 import { getWorkspace } from "../workspace-context.js";
-import { assertNotSensitivePath } from "./sensitive-paths.js";
+import { assertNotSensitivePathIncludingRealpath } from "./sensitive-paths.js";
 
 /**
  * Atomic file replace: write content to `<path>.tmp.<rand>`, fsync, then
@@ -102,18 +102,21 @@ function ensureSafePath(filePath: string): string {
 
   // Block credential files before the home-dir allowance — see
   // file-read.ts / sensitive-paths.ts for the rationale.
-  assertNotSensitivePath(resolved);
+  const safetyPath = assertNotSensitivePathIncludingRealpath(resolved);
 
   // /var is NOT blocked because macOS tmpdir is /var/folders/... — see file-write.ts
-  const isSafeTmpVar =
-    resolved.startsWith("/var/folders/") ||
-    resolved.startsWith("/private/var/folders/") ||
-    resolved.startsWith("/var/tmp/") ||
-    resolved.startsWith("/private/var/tmp/") ||
+  const isSafeTmpPath = (path: string) =>
+    path.startsWith("/var/folders/") ||
+    path.startsWith("/private/var/folders/") ||
+    path.startsWith("/var/tmp/") ||
+    path.startsWith("/private/var/tmp/") ||
     // Linux tmpdir — see file-read.ts.
-    resolved === "/tmp" ||
-    resolved.startsWith("/tmp/");
-  if (!isSafeTmpVar && resolved.startsWith("/var")) {
+    path === "/tmp" ||
+    path.startsWith("/tmp/");
+  const pathsToCheck = Array.from(new Set([resolved, safetyPath]));
+  if (
+    pathsToCheck.some((path) => !isSafeTmpPath(path) && path.startsWith("/var"))
+  ) {
     throw new Error(`Path blocked: "${filePath}" is a protected system path`);
   }
   const BLOCKED_PREFIXES = [
@@ -125,12 +128,17 @@ function ensureSafePath(filePath: string): string {
     "/sbin",
     "/boot",
   ];
-  if (BLOCKED_PREFIXES.some((p) => resolved.startsWith(p))) {
+  if (
+    pathsToCheck.some((path) =>
+      BLOCKED_PREFIXES.some((p) => path.startsWith(p)),
+    )
+  ) {
     throw new Error(`Path blocked: "${filePath}" is a protected system path`);
   }
 
-  const isInHome = resolved.startsWith(home);
+  const isInHome = safetyPath.startsWith(home);
   const isInCwd = !relative(cwd, resolved).startsWith("..");
+  const isSafeTmpVar = isSafeTmpPath(safetyPath);
   if (!isInHome && !isInCwd && !isSafeTmpVar) {
     throw new Error(
       `Path blocked: "${filePath}" is outside home directory and workspace`,

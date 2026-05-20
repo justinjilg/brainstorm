@@ -4,7 +4,7 @@ import { dirname, resolve, relative } from "node:path";
 import { randomUUID } from "node:crypto";
 import { defineTool } from "../base.js";
 import { getWorkspace } from "../workspace-context.js";
-import { assertNotSensitivePath } from "./sensitive-paths.js";
+import { assertNotSensitivePathIncludingRealpath } from "./sensitive-paths.js";
 
 import { homedir } from "node:os";
 
@@ -18,7 +18,7 @@ function ensureSafePath(filePath: string): string {
 
   // Block credential files (e.g. overwriting ~/.ssh/id_rsa via file_write
   // would be just as bad as reading it). See sensitive-paths.ts.
-  assertNotSensitivePath(resolved);
+  const safetyPath = assertNotSensitivePathIncludingRealpath(resolved);
 
   // Block system paths.
   // Note: /var is NOT blocked because macOS tmpdir lives at /var/folders/...
@@ -35,27 +35,34 @@ function ensureSafePath(filePath: string): string {
   ];
   // Extra /var handling: block unless inside /var/folders (macOS tmp)
   // or /var/tmp (Linux-ish tmp).
-  const isSafeTmpVar =
-    resolved.startsWith("/var/folders/") ||
-    resolved.startsWith("/private/var/folders/") ||
-    resolved.startsWith("/var/tmp/") ||
-    resolved.startsWith("/private/var/tmp/") ||
+  const isSafeTmpPath = (path: string) =>
+    path.startsWith("/var/folders/") ||
+    path.startsWith("/private/var/folders/") ||
+    path.startsWith("/var/tmp/") ||
+    path.startsWith("/private/var/tmp/") ||
     // Linux tmpdir — see file-read.ts.
-    resolved === "/tmp" ||
-    resolved.startsWith("/tmp/");
-  if (!isSafeTmpVar && resolved.startsWith("/var")) {
+    path === "/tmp" ||
+    path.startsWith("/tmp/");
+  const pathsToCheck = Array.from(new Set([resolved, safetyPath]));
+  if (
+    pathsToCheck.some((path) => !isSafeTmpPath(path) && path.startsWith("/var"))
+  ) {
     throw new Error(`Path blocked: "${filePath}" is a protected system path`);
   }
-  if (BLOCKED_PREFIXES.some((p) => resolved.startsWith(p))) {
+  if (
+    pathsToCheck.some((path) =>
+      BLOCKED_PREFIXES.some((p) => path.startsWith(p)),
+    )
+  ) {
     throw new Error(`Path blocked: "${filePath}" is a protected system path`);
   }
 
   // Allow within home dir, within cwd, or within a tmp workspace.
   // macOS symlinks /var/folders → /private/var/folders, so resolve() may
   // return either form depending on the OS resolver. Check both.
-  const isInHome = resolved.startsWith(home);
+  const isInHome = safetyPath.startsWith(home);
   const isInCwd = !relative(cwd, resolved).startsWith("..");
-  const isInTmp = isSafeTmpVar; // tmp workspaces are allowed too
+  const isInTmp = isSafeTmpPath(safetyPath); // tmp workspaces are allowed too
   if (!isInHome && !isInCwd && !isInTmp) {
     throw new Error(
       `Path blocked: "${filePath}" is outside home directory and workspace`,

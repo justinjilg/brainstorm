@@ -3,6 +3,7 @@ import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { defineTool } from "../base.js";
 import { checkSandbox } from "./sandbox.js";
+import { buildChildEnv } from "./shell.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -69,6 +70,7 @@ export const processSpawnTool = defineTool({
     const child = spawn("/bin/sh", ["-c", command], {
       cwd: cwd ?? process.cwd(),
       detached: true,
+      env: buildChildEnv("restricted"),
       stdio: "ignore",
     });
     child.unref();
