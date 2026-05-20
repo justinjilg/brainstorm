@@ -17,6 +17,7 @@
 import { Command } from "commander";
 import { randomUUID } from "node:crypto";
 import { formatTraceparent, newRootTraceparent } from "@brainst0rm/godmode";
+import { parseProductFromDID } from "../discovery/capability-registry.js";
 
 interface InvokeOptions {
   input?: string;
@@ -32,6 +33,20 @@ const DEFAULT_VM_URL = "https://vm.brainstorm.co";
 const DEFAULT_POLL_MS = 2000;
 const DEFAULT_DEADLINE_S = 90;
 
+interface InvokeErrorSemantics {
+  category:
+    | "validation"
+    | "auth"
+    | "scope_or_tenant"
+    | "capability_mismatch"
+    | "idempotency_conflict"
+    | "expired"
+    | "rate_limited"
+    | "broker_or_target_unavailable"
+    | "unknown";
+  operatorHint: string;
+}
+
 interface ListOptions {
   product?: string;
   status?: string;
@@ -39,6 +54,98 @@ interface ListOptions {
   vmUrl?: string;
   token?: string;
   json?: boolean;
+}
+
+function buildInvokeDidUrl(baseUrl: string, targetDID: string): string {
+  return `${baseUrl.replace(/\/$/, "")}/v1/mesh/invoke-did/${encodeURIComponent(
+    targetDID,
+  )}`;
+}
+
+function traceIdFromTraceparent(
+  traceparent: string | undefined,
+): string | undefined {
+  if (!traceparent) return undefined;
+  const match = /^00-([a-f0-9]{32})-[a-f0-9]{16}-[a-f0-9]{2}$/i.exec(
+    traceparent,
+  );
+  return match?.[1]?.toLowerCase();
+}
+
+function responseKeepsTraceId(
+  requestTraceparent: string,
+  responseBody: unknown,
+): boolean {
+  const responseTraceparent =
+    responseBody && typeof responseBody === "object"
+      ? (responseBody as { traceparent?: unknown }).traceparent
+      : undefined;
+  if (typeof responseTraceparent !== "string") return false;
+  return (
+    traceIdFromTraceparent(requestTraceparent) ===
+    traceIdFromTraceparent(responseTraceparent)
+  );
+}
+
+function classifyInvokeError(status: number): InvokeErrorSemantics {
+  if (status === 400) {
+    return {
+      category: "validation",
+      operatorHint:
+        "Validate the target DID, capability name, input schema, and deadline.",
+    };
+  }
+  if (status === 401) {
+    return {
+      category: "auth",
+      operatorHint: "Refresh the BR bearer token or run `brainstorm login`.",
+    };
+  }
+  if (status === 403) {
+    return {
+      category: "scope_or_tenant",
+      operatorHint:
+        "Scope, tenant, or role check failed before BR could dispatch the action.",
+    };
+  }
+  if (status === 404) {
+    return {
+      category: "capability_mismatch",
+      operatorHint:
+        "The DID/capability pair is not in the live registry; re-run `brainstorm a2a list`.",
+    };
+  }
+  if (status === 409) {
+    return {
+      category: "idempotency_conflict",
+      operatorHint:
+        "The idempotency key collided or changed payload; inspect the original task instead of starting a new action.",
+    };
+  }
+  if (status === 410) {
+    return {
+      category: "expired",
+      operatorHint:
+        "The async task expired; re-read state before deciding whether to retry.",
+    };
+  }
+  if (status === 429) {
+    return {
+      category: "rate_limited",
+      operatorHint: "Wait for retry_after_seconds when BR provides one.",
+    };
+  }
+  if (status === 500 || status === 503) {
+    return {
+      category: "broker_or_target_unavailable",
+      operatorHint:
+        "BR or the target product is unavailable; do not assume the business action succeeded.",
+    };
+  }
+  return {
+    category: "unknown",
+    operatorHint: "Inspect the BR trace and target product evidence.",
+  };
 }
 
 async function runList(opts: ListOptions): Promise<void> {
@@ -105,7 +212,7 @@ async function runList(opts: ListOptions): Promise<void> {
   );
   console.log();
   for (const c of caps) {
-    const product = (c.agent_did ?? "").split(":")[3] ?? "?";
+    const product = parseProductFromDID(c.agent_did ?? "") ?? "?";
     console.log(
       `    ${c.name ?? "?"}  ${product}  risk=${c.risk_level ?? "?"}  autonomy=${c.autonomy_required ?? "?"}`,
     );
@@ -127,9 +234,7 @@ async function invokeOnce(
   traceparent: string,
   idempotencyKey: string,
 ): Promise<{ status: number; body: any }> {
-  const url = `${baseUrl.replace(/\/$/, "")}/v1/mesh/invoke/${encodeURIComponent(
-    targetDID,
-  )}`;
+  const url = buildInvokeDidUrl(baseUrl, targetDID);
   const res = await fetch(url, {
     method: "POST",
     headers: {
@@ -227,7 +332,7 @@ async function runInvoke(
   const deadlineISO = new Date(Date.now() + deadlineS * 1000).toISOString();
 
   if (!opts.json) {
-    console.log(`  → POST /v1/mesh/invoke/${targetDID}`);
+    console.log(`  → POST /v1/mesh/invoke-did/${targetDID}`);
     console.log(`    capability:      ${capability}`);
     console.log(`    task_id:         ${taskId}`);
     console.log(`    traceparent:     ${traceparent}`);
@@ -347,14 +452,19 @@ function emitResult(body: unknown, asJSON?: boolean): void {
 }
 
 function emitError(status: number, body: unknown, asJSON?: boolean): void {
+  const semantics = classifyInvokeError(status);
   if (asJSON) {
-    console.error(JSON.stringify({ status, body }, null, 2));
+    console.error(
+      JSON.stringify({ status, category: semantics.category, body }, null, 2),
+    );
     return;
   }
   const b = body as any;
   const code = b?.error?.code ?? b?.code ?? "?";
   const message = b?.error?.message ?? b?.error ?? "(no message)";
   console.error(`  ✗ HTTP ${status} ${code}: ${message}`);
+  console.error(`    class: ${semantics.category}`);
+  console.error(`    operator_hint: ${semantics.operatorHint}`);
   if (b?.task_id) {
     console.error(`    original_task_id: ${b.task_id}`);
   }
@@ -442,6 +552,10 @@ export function registerA2ACommand(program: Command): void {
 
 // Exported for tests.
 export const __test = {
+  buildInvokeDidUrl,
+  classifyInvokeError,
+  responseKeepsTraceId,
+  traceIdFromTraceparent,
   invokeOnce,
   pollStatus,
   emitResult,

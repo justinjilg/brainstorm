@@ -20,6 +20,11 @@ npm-debug.log*
 
 # Generated artifacts
 docs/internal/sbom.json
+artifacts/br-live-discovery-summary.json
+artifacts/br-provider-envelope-summary.json
+artifacts/br-a2a-registry-summary.json
+artifacts/product-platform-smoke-summary.json
+artifacts/business-posture-trace.json
 
 # Contract preflight result artifact — written on every run so CI
 # failures leave diagnostic JSON on disk. Regenerable via

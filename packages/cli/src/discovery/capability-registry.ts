@@ -166,7 +166,7 @@ async function fetchFromRegistry(token?: string): Promise<DiscoveredProduct[]> {
       anyOnline: false,
     };
     entry.count++;
-    if (cap.status === "active") {
+    if (isCapabilityStatusInvokable(cap.status)) {
       entry.anyOnline = true;
       entry.allOffline = false;
     }
@@ -192,13 +192,19 @@ async function fetchFromRegistry(token?: string): Promise<DiscoveredProduct[]> {
   });
 }
 
-function parseProductFromDID(did: string): string | undefined {
+export function parseProductFromDID(did: string): string | undefined {
   // did:bvm:<tenant>:<product>:<short>
   const parts = did.split(":");
   if (parts.length < 5 || parts[0] !== "did" || parts[1] !== "bvm") {
     return undefined;
   }
   return parts[3];
+}
+
+export function isCapabilityStatusInvokable(
+  status: string | undefined,
+): boolean {
+  return status === "active";
 }
 
 const warnedEnvVars = new Set<string>();

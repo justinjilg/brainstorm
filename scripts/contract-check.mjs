@@ -82,6 +82,10 @@ const CHECKS = [
   // npm build). This gate locks the wiring so a future PR that
   // removes the preflight step from release.yml fails the build.
   "./contract-checks/release-flow-wiring.mjs",
+  // Stage-5 business-harness seam: the bounded BR route matrix must
+  // stay in lockstep with the harness code/docs and, when available,
+  // the sibling BrainstormRouter source. This is gate #17.
+  "./contract-checks/br-contract-map.mjs",
 ];
 
 /** @typedef {import("./contract-checks/_define-gate.mjs").CheckResult} CheckResult */
@@ -129,7 +133,7 @@ async function runCheck(modulePath) {
   } catch (err) {
     const stack =
       err instanceof Error
-        ? err.stack?.split("\n").slice(0, 4).join("\n") ?? err.message
+        ? (err.stack?.split("\n").slice(0, 4).join("\n") ?? err.message)
         : String(err);
     return {
       name: path.basename(modulePath, ".mjs"),
@@ -210,7 +214,9 @@ async function main() {
   process.stdout.write(
     `\n  ${results.length} checks · ${results.length - failed.length} passed · ${driftFails.length} drift · ${infraFails.length} infra · ${elapsed}ms\n`,
   );
-  process.stdout.write(`  artifact: ${path.relative(REPO_ROOT, ARTIFACT_FILE)}\n\n`);
+  process.stdout.write(
+    `  artifact: ${path.relative(REPO_ROOT, ARTIFACT_FILE)}\n\n`,
+  );
 
   if (failed.length > 0) {
     if (infraFails.length > 0 && driftFails.length === 0) {

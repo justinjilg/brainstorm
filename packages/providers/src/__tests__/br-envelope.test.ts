@@ -300,6 +300,9 @@ describe("parseBrEnvelope — drift ratchet", () => {
     expect(env.guardianStatus).toBe("SENTINEL-guardian-status");
     expect(env.guardrailStatus).toBe("SENTINEL-guardrail-status");
     expect(env.guardrailSummary).toBe("SENTINEL-guardrail-summary");
+    expect(env.guardrailPiiOutbound).toBe(
+      "SENTINEL-guardrail-pii-outbound",
+    );
     expect(env.deprecation).toBe("SENTINEL-deprecation");
     // Numerics + JSON parsed correctly.
     expect(env.actualCost).toBe(1.1);
