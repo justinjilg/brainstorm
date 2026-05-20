@@ -48,6 +48,8 @@ const GATES = [
   "abort-signal-lint",
   // Stage-4 meta-gate
   "release-flow-wiring",
+  // Stage-5 BR business-harness seam
+  "br-contract-map",
 ];
 
 // ── Shape tests ─────────────────────────────────────────────────────
@@ -65,7 +67,10 @@ for (const name of GATES) {
       `${name} must return .ok as boolean`,
     );
     if (!result.ok) {
-      assert.ok(Array.isArray(result.issues), `${name}: ok=false needs issues array`);
+      assert.ok(
+        Array.isArray(result.issues),
+        `${name}: ok=false needs issues array`,
+      );
       assert.ok(
         result.issues.length > 0,
         `${name}: ok=false must carry at least one issue`,
@@ -99,7 +104,9 @@ test("preflight passes against committed main state", async () => {
  * a gate needs to exercise. Returns the tmp root + cleanup fn.
  */
 function makeTmpRepo(files) {
-  const root = fs.mkdtempSync(path.join(fs.realpathSync("/tmp"), "contract-check-test-"));
+  const root = fs.mkdtempSync(
+    path.join(fs.realpathSync("/tmp"), "contract-check-test-"),
+  );
   for (const [rel, content] of Object.entries(files)) {
     const abs = path.join(root, rel);
     fs.mkdirSync(path.dirname(abs), { recursive: true });
@@ -121,7 +128,10 @@ test("cli-subcommand-registry: catches unregistered group:verb addition", async 
   );
   const realRegistry = JSON.parse(
     fs.readFileSync(
-      path.join(REPO_ROOT, "scripts/contract-checks/cli-subcommand-registry.json"),
+      path.join(
+        REPO_ROOT,
+        "scripts/contract-checks/cli-subcommand-registry.json",
+      ),
       "utf8",
     ),
   );
@@ -132,11 +142,16 @@ test("cli-subcommand-registry: catches unregistered group:verb addition", async 
 
   const { root, cleanup } = makeTmpRepo({
     "packages/cli/src/bin/brainstorm.ts": realCliSrc,
-    "scripts/contract-checks/cli-subcommand-registry.json": JSON.stringify(mutated),
+    "scripts/contract-checks/cli-subcommand-registry.json":
+      JSON.stringify(mutated),
   });
   try {
     const result = await check({ repoRoot: root });
-    assert.equal(result.ok, false, "gate must reject when source has unregistered verbs");
+    assert.equal(
+      result.ok,
+      false,
+      "gate must reject when source has unregistered verbs",
+    );
     assert.ok(
       result.issues.some((i) => i.includes("program:chat")),
       `gate should name the missing entry. Got: ${result.issues.join(" | ")}`,
@@ -164,7 +179,8 @@ test("api-route-registry: catches unregistered parameterised route", async () =>
   // extractor must catch the gap.
   const mutated = JSON.parse(JSON.stringify(realRegistry));
   mutated.routes = mutated.routes.filter(
-    (r) => !(r.method === "POST" && r.path === "/api/v1/changesets/:id/approve"),
+    (r) =>
+      !(r.method === "POST" && r.path === "/api/v1/changesets/:id/approve"),
   );
 
   const { root, cleanup } = makeTmpRepo({
@@ -173,7 +189,11 @@ test("api-route-registry: catches unregistered parameterised route", async () =>
   });
   try {
     const result = await check({ repoRoot: root });
-    assert.equal(result.ok, false, "gate must reject when source has unregistered routes");
+    assert.equal(
+      result.ok,
+      false,
+      "gate must reject when source has unregistered routes",
+    );
     assert.ok(
       result.issues.some((i) => i.includes(":id/approve")),
       `gate should name the missing parameterised route. Got: ${result.issues.join(" | ")}`,
@@ -236,7 +256,9 @@ test("version-sync: catches stale internal dep pin", async () => {
     const result = await check({ repoRoot: root });
     assert.equal(result.ok, false, "gate must reject stale internal pin");
     assert.ok(
-      result.issues.some((i) => i.includes("@brainst0rm/a") && i.includes("0.1.0")),
+      result.issues.some(
+        (i) => i.includes("@brainst0rm/a") && i.includes("0.1.0"),
+      ),
       `gate should flag the 0.1.0 pin. Got: ${result.issues.join(" | ")}`,
     );
   } finally {
@@ -270,7 +292,9 @@ test("version-sync: catches private package not on allowlist", async () => {
     );
     assert.ok(
       result.issues.some(
-        (i) => i.includes("@brainst0rm/sneaky") && i.includes("EXPECTED_PRIVATE_PACKAGES"),
+        (i) =>
+          i.includes("@brainst0rm/sneaky") &&
+          i.includes("EXPECTED_PRIVATE_PACKAGES"),
       ),
       `gate should flag the unlisted private package. Got: ${result.issues.join(" | ")}`,
     );
@@ -285,10 +309,22 @@ test("version-sync: detects mid-release tie (no dominant version)", async () => 
   // to pick a canonical version instead of silently choosing
   // whichever globbed first.
   const { root, cleanup } = makeTmpRepo({
-    "packages/a/package.json": JSON.stringify({ name: "@brainst0rm/a", version: "1.0.0" }),
-    "packages/b/package.json": JSON.stringify({ name: "@brainst0rm/b", version: "1.0.0" }),
-    "packages/c/package.json": JSON.stringify({ name: "@brainst0rm/c", version: "2.0.0" }),
-    "packages/d/package.json": JSON.stringify({ name: "@brainst0rm/d", version: "2.0.0" }),
+    "packages/a/package.json": JSON.stringify({
+      name: "@brainst0rm/a",
+      version: "1.0.0",
+    }),
+    "packages/b/package.json": JSON.stringify({
+      name: "@brainst0rm/b",
+      version: "1.0.0",
+    }),
+    "packages/c/package.json": JSON.stringify({
+      name: "@brainst0rm/c",
+      version: "2.0.0",
+    }),
+    "packages/d/package.json": JSON.stringify({
+      name: "@brainst0rm/d",
+      version: "2.0.0",
+    }),
   });
   try {
     const result = await check({ repoRoot: root });
@@ -303,7 +339,8 @@ test("version-sync: detects mid-release tie (no dominant version)", async () => 
 });
 
 test("_define-gate: validates result shape and tags infra failures", async () => {
-  const { defineGate, gatePass, gateFail } = await import("../_define-gate.mjs");
+  const { defineGate, gatePass, gateFail } =
+    await import("../_define-gate.mjs");
 
   const passing = defineGate({
     name: "passing",

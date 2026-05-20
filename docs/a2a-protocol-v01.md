@@ -23,7 +23,7 @@ A2A is brokered: agents do NOT establish direct peer connections in v0.1. Every 
 
 ## Wire shape
 
-### POST /v1/mesh/invoke/{target_did}
+### POST /v1/mesh/invoke-did/{target_did}
 
 `target_did` is URL-encoded; format is the lineage DID per [project_lineage_identity_model](./..).
 
@@ -209,7 +209,7 @@ v0.2: when the completions endpoint gains per-agent budget enforcement, this wor
 
 ## Versioning
 
-This is `a2a-protocol-v0.1`. Bumping a minor (additive optional fields) keeps the path stable. Breaking changes get a new path (`/v1/mesh/invoke/v2/{target_did}`) and a new fixture pack.
+This is `a2a-protocol-v0.1`. Bumping a minor (additive optional fields) keeps the path stable. Breaking changes get a new path (`/v1/mesh/invoke-did/v2/{target_did}`) and a new fixture pack.
 
 ## Conformance enforcement
 
@@ -219,6 +219,6 @@ BR mesh-auth runs the harness in CI on every change to `packages/godmode/src/mes
 
 ## Reference: brainstorm-gtm MeshClient
 
-`brainstorm-gtm/agents/_shared/mesh_client.py` is the existing client-side implementation that has been blocked on Phase 2 mesh-auth shipping. Once BR serves `/v1/mesh/invoke/{target_did}` per this spec, gtm's 70 agents are unblocked — this is the single biggest ecosystem win in the rev-2 plan.
+`brainstorm-gtm/agents/_shared/mesh_client.py` is the existing client-side implementation that has been blocked on Phase 2 mesh-auth shipping. Once BR serves `/v1/mesh/invoke-did/{target_did}` per this spec, gtm's 70 agents are unblocked — this is the single biggest ecosystem win in the rev-2 plan.
 
 The Go client side lands as `brainstormvm/pkg/a2a/` in P2/Wk6 (#67); it mirrors gtm's MeshClient interface so cross-language wire compatibility is built in.

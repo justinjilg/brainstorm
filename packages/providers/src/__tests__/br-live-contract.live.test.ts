@@ -32,6 +32,7 @@ const COMMUNITY_KEY =
   "br_live_b028d73791f9a2d614acafe80b89d36f66e69d3091d9b70b24658ccc03a5a48a";
 
 const BR_BASE = "https://api.brainstormrouter.com";
+const LIVE_REQUEST_TEST_TIMEOUT_MS = 35_000;
 
 // Memory blocks the CLI hardcodes in br_memory_store
 // (packages/tools/src/builtin/br-intelligence.ts:143).
@@ -39,46 +40,50 @@ const BR_BASE = "https://api.brainstormrouter.com";
 const CLI_MEMORY_BLOCKS = ["human", "system", "project", "general"] as const;
 
 describe.skipIf(!LIVE_GATE)("BR live contract ratchet (RUN_LIVE_BR=1)", () => {
-  it("/v1/chat/completions response x-br-* headers are a subset of CANONICAL_BR_HEADERS", async () => {
-    const res = await fetch(`${BR_BASE}/v1/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${COMMUNITY_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "auto",
-        messages: [{ role: "user", content: "ping" }],
-        max_tokens: 4,
-      }),
-      signal: AbortSignal.timeout(30_000),
-    });
-    // Drain body so the connection closes cleanly under CI runners.
-    await res.text();
-    expect(res.status, `BR returned ${res.status}`).toBeLessThan(500);
+  it(
+    "/v1/chat/completions response x-br-* headers are a subset of CANONICAL_BR_HEADERS",
+    async () => {
+      const res = await fetch(`${BR_BASE}/v1/chat/completions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${COMMUNITY_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "auto",
+          messages: [{ role: "user", content: "ping" }],
+          max_tokens: 4,
+        }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      // Drain body so the connection closes cleanly under CI runners.
+      await res.text();
+      expect(res.status, `BR returned ${res.status}`).toBeLessThan(500);
 
-    const envelope = parseBrEnvelope(res.headers);
-    // The drift detection signal: any x-br-* header BR emitted that our
-    // canonical list doesn't recognise. Failing this test means BR
-    // shipped a new header and our parser needs CANONICAL_BR_HEADERS
-    // updated PLUS a typed field on BrEnvelope. Auto-fix by inspecting
-    // the actual response headers, adding the new field, and bumping
-    // the canonical list in the SAME PR.
-    expect(
-      envelope.unknownHeaders,
-      "unexpected x-br-* headers from BR",
-    ).toEqual([]);
+      const envelope = parseBrEnvelope(res.headers);
+      // The drift detection signal: any x-br-* header BR emitted that our
+      // canonical list doesn't recognise. Failing this test means BR
+      // shipped a new header and our parser needs CANONICAL_BR_HEADERS
+      // updated PLUS a typed field on BrEnvelope. Auto-fix by inspecting
+      // the actual response headers, adding the new field, and bumping
+      // the canonical list in the SAME PR.
+      expect(
+        envelope.unknownHeaders,
+        "unexpected x-br-* headers from BR",
+      ).toEqual([]);
 
-    // Smoke check: at least the high-value identity/routing headers are
-    // present. If they're missing, the BR envelope contract is broken
-    // upstream and we shouldn't ratchet against an empty response.
-    expect(envelope.build, "x-br-build should be present").toBeDefined();
-    expect(
-      envelope.routedModel,
-      "x-br-routed-model should be present",
-    ).toBeDefined();
-    expect(envelope.envelope, "x-br-envelope should be present").toBeDefined();
-  });
+      // Smoke check: at least the high-value identity/routing headers are
+      // present. If they're missing, the BR envelope contract is broken
+      // upstream and we shouldn't ratchet against an empty response.
+      expect(envelope.build, "x-br-build should be present").toBeDefined();
+      expect(
+        envelope.routedModel,
+        "x-br-routed-model should be present",
+      ).toBeDefined();
+      expect(envelope.envelope, "x-br-envelope should be present").toBeDefined();
+    },
+    LIVE_REQUEST_TEST_TIMEOUT_MS,
+  );
 
   it("/openapi.json is reachable with ≥100 documented paths", async () => {
     const res = await fetch(`${BR_BASE}/openapi.json`, {
