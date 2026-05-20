@@ -54,6 +54,7 @@ Every response from BrainstormRouter includes a rich `x-br-*` header envelope. T
 | `x-br-deprecation`                                                            | Sunset notice + migration target (when applicable)     |
 | `x-br-guardian-status` / `x-br-guardian-overhead-ms`                          | Guardian safety layer                                  |
 | `x-br-guardrail-status` / `x-br-guardrail-summary` / `x-br-guardrail-actions` | Response WAF state                                     |
+| `x-br-guardrail-pii-outbound`                                                | PII outbound guardrail decision/status                 |
 | `x-request-id`                                                                | Request id (use for `/v1/usage/{id}/feedback`)         |
 
 The trust envelope itself is a JWS/Ed25519-signed token minted server-side; see [Trust Envelope](https://docs.brainstormrouter.com/concepts/trust-envelope) for the payload schema (`br_principal`, `br_budget`, `br_scope`, `br_trust`, `br_observability`, `br_test`). The signature never leaves BR — clients consume the audit hash + envelope-mode header instead.

@@ -1,8 +1,8 @@
 /**
  * BrEnvelope — typed parser for BrainstormRouter's `x-br-*` response headers.
  *
- * BR emits ~33 unique headers on every authenticated request (verified live
- * 2026-05-15 against api.brainstormrouter.com 1.0.0-beta.1 build 1b3c127).
+ * BR emits ~40 unique headers on authenticated requests (verified live
+ * 2026-05-20 against api.brainstormrouter.com).
  * Before this module landed, the SaaS provider in `brainstorm-saas.ts` was
  * receiving the full envelope and discarding it — every routing/cost/quality/
  * deprecation/audit signal BR emitted was lost to the consumer.
@@ -24,7 +24,8 @@
  *             quality-tier, quality-score
  *   TASK:     complexity-level, complexity-score
  *   AUDIT:    audit-hash, context
- *   GUARDIAN: guardian-status, guardrail-status, guardrail-summary, guardrail-actions
+ *   GUARDIAN: guardian-status, guardrail-status, guardrail-summary,
+ *             guardrail-actions, guardrail-pii-outbound
  *   LIFECYCLE:degradation-level, deprecation (conditional)
  *
  * See docs/brainstormrouter-integration.md for the canonical table and the
@@ -87,6 +88,7 @@ export const CANONICAL_BR_HEADERS = [
   "x-br-guardrail-status",
   "x-br-guardrail-summary",
   "x-br-guardrail-actions",
+  "x-br-guardrail-pii-outbound",
   // LIFECYCLE (conditional but documented)
   "x-br-degradation-level",
   "x-br-deprecation",
@@ -193,6 +195,8 @@ export interface BrEnvelope {
   guardrailSummary?: string;
   /** Guardrail action detail (URL-encoded JSON). Decoded + parsed if valid. */
   guardrailActions?: unknown;
+  /** PII outbound guardrail decision/status emitted by BR. */
+  guardrailPiiOutbound?: string;
 
   /** BR degradation level (0 nominal, >0 degraded). */
   degradationLevel?: number;
@@ -325,6 +329,7 @@ export function parseBrEnvelope(
     guardrailStatus: get("x-br-guardrail-status") ?? undefined,
     guardrailSummary: get("x-br-guardrail-summary") ?? undefined,
     guardrailActions: tryDecodeJson(get("x-br-guardrail-actions")),
+    guardrailPiiOutbound: get("x-br-guardrail-pii-outbound") ?? undefined,
     // lifecycle
     degradationLevel: num(get("x-br-degradation-level")),
     deprecation: get("x-br-deprecation") ?? undefined,
