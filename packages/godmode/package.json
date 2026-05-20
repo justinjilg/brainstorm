@@ -1,6 +1,6 @@
 {
   "name": "@brainst0rm/godmode",
-  "version": "0.14.4",
+  "version": "0.15.0",
   "type": "module",
   "scripts": {
     "build": "tsup",
@@ -11,7 +11,7 @@
   "dependencies": {
     "@brainst0rm/config": "0.14.4",
     "@brainst0rm/shared": "0.14.4",
-    "@brainst0rm/tools": "0.14.4",
+    "@brainst0rm/tools": "0.15.0",
     "zod": "^3.24",
     "zod-to-json-schema": "^3.25"
   },

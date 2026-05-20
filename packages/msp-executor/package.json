@@ -1,6 +1,6 @@
 {
   "name": "@brainst0rm/msp-executor",
-  "version": "0.14.4",
+  "version": "0.14.5",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/justinjilg/brainstorm.git",
@@ -21,7 +21,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brainst0rm/endpoint-stub": "0.14.4"
+    "@brainst0rm/endpoint-stub": "0.14.5"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
