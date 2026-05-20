@@ -14,12 +14,14 @@
  * credential directories. F5 closed the shell path; this closes the
  * file-tool path.
  *
- * The patterns run against the RESOLVED absolute path (after symlink
- * resolution would be ideal but `resolve()` doesn't follow symlinks
- * synchronously; realpath is a post-exec check the caller can layer).
+ * The patterns run against the RESOLVED absolute path and, for callers
+ * using assertNotSensitivePathIncludingRealpath(), the REAL target path.
+ * That closes symlink aliases such as `repo/creds -> ~/.aws/credentials`.
  */
 
+import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
+import { basename, dirname, join } from "node:path";
 
 /**
  * Compile a list of absolute path prefixes that should never be
@@ -107,4 +109,41 @@ export function assertNotSensitivePath(resolvedPath: string): void {
       throw new Error(`Path blocked: ${reason}`);
     }
   }
+}
+
+/**
+ * Resolve the real filesystem target for an existing path, or for the
+ * nearest existing parent when a write target does not exist yet.
+ *
+ * Example: if `repo/link` is a symlink to `~/.ssh`, then a proposed write
+ * to `repo/link/authorized_keys` resolves to `~/.ssh/authorized_keys`
+ * even before that final file exists.
+ */
+export function realPathForSafety(resolvedPath: string): string {
+  if (existsSync(resolvedPath)) {
+    return realpathSync.native(resolvedPath);
+  }
+
+  const parent = dirname(resolvedPath);
+  if (parent === resolvedPath) {
+    return resolvedPath;
+  }
+
+  return join(realPathForSafety(parent), basename(resolvedPath));
+}
+
+/**
+ * Block both the syntactic absolute path and the real filesystem target.
+ * Returns the real target path so callers can run their broader path policy
+ * against it too.
+ */
+export function assertNotSensitivePathIncludingRealpath(
+  resolvedPath: string,
+): string {
+  assertNotSensitivePath(resolvedPath);
+  const realPath = realPathForSafety(resolvedPath);
+  if (realPath !== resolvedPath) {
+    assertNotSensitivePath(realPath);
+  }
+  return realPath;
 }

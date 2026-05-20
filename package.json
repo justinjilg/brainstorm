@@ -24,7 +24,7 @@
   "license": "Apache-2.0",
   "scripts": {
     "build": "turbo run build && npm run contract-check",
-    "build:no-preflight": "turbo run build",
+    "build:dangerous-skip-gates": "node -e \"console.error('[dangerous] Skipping Brainstorm preflight/contract gates; use npm run build for release/CI.')\" && turbo run build",
     "contract-check": "node scripts/contract-check.mjs",
     "contract-check:json": "node scripts/contract-check.mjs --json",
     "dev": "turbo run dev",
