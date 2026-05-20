@@ -63,6 +63,8 @@ export interface ConnectorConfig {
   baseUrl: string;
   /** Vault key name for API credential. */
   apiKeyName: string;
+  /** Tenant context sent to product execute calls. */
+  tenantId?: string;
 }
 
 export interface GodModeConfig {

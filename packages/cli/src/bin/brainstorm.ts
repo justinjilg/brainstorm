@@ -7064,6 +7064,9 @@ program
         host,
         cors: opts.cors,
         jwtSecret: process.env.SUPABASE_JWT_SECRET,
+        jwtIssuer: process.env.BRAINSTORM_JWT_ISSUER,
+        jwtAudience: process.env.BRAINSTORM_JWT_AUDIENCE,
+        jwksUrl: process.env.BRAINSTORM_JWKS_URL,
         projectPath: process.cwd(),
       },
     );

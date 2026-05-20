@@ -41,6 +41,7 @@ import { Command } from "commander";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import { createPublicKey, verify as verifySignature } from "node:crypto";
 
 const DEFAULT_AUTH_BASE = "https://auth.brainstorm.co";
 const DEFAULT_REALM = "brainstorm";
@@ -82,22 +83,211 @@ interface LoginOptions {
   json?: boolean;
 }
 
+interface JwtHeader {
+  alg?: string;
+  kid?: string;
+  typ?: string;
+}
+
+interface KeycloakJwtClaims {
+  iss?: string;
+  aud?: string | string[];
+  azp?: string;
+  exp?: number;
+  nbf?: number;
+  iat?: number;
+  did?: string;
+  sub?: string;
+  email?: string;
+  [claim: string]: unknown;
+}
+
+interface Jwk {
+  kid?: string;
+  kty?: string;
+  alg?: string;
+  use?: string;
+  [field: string]: unknown;
+}
+
+interface Jwks {
+  keys?: Jwk[];
+}
+
+interface OidcConfiguration {
+  issuer?: string;
+  jwks_uri?: string;
+}
+
+interface SessionFile {
+  access_token: string;
+  refresh_token: string;
+  expires_at: number;
+  did?: string;
+  sub?: string;
+  email?: string;
+  issuer: string;
+}
+
 function sessionPath(): string {
   return path.join(os.homedir(), ".brainstorm", "session");
 }
 
-function decodeJwtClaims(token: string): Record<string, unknown> | null {
+function decodeBase64UrlJson<T>(part: string): T | null {
+  try {
+    return JSON.parse(Buffer.from(part, "base64url").toString("utf8")) as T;
+  } catch {
+    return null;
+  }
+}
+
+function decodeJwtClaims(token: string): KeycloakJwtClaims | null {
   const parts = token.split(".");
   if (parts.length !== 3) {
     return null;
   }
-  try {
-    const padded = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const payload = Buffer.from(padded, "base64").toString("utf8");
-    return JSON.parse(payload);
-  } catch {
+  return decodeBase64UrlJson<KeycloakJwtClaims>(parts[1]);
+}
+
+function decodeJwtHeader(token: string): JwtHeader | null {
+  const parts = token.split(".");
+  if (parts.length !== 3) {
     return null;
   }
+  return decodeBase64UrlJson<JwtHeader>(parts[0]);
+}
+
+function audienceContains(
+  aud: string | string[] | undefined,
+  clientId: string,
+) {
+  return Array.isArray(aud) ? aud.includes(clientId) : aud === clientId;
+}
+
+function assertClientBound(claims: KeycloakJwtClaims, clientId: string) {
+  if (claims.azp === clientId || audienceContains(claims.aud, clientId)) {
+    return;
+  }
+  throw new Error(
+    `access token is not bound to client ${clientId}; missing matching azp/aud`,
+  );
+}
+
+function assertTemporalClaims(claims: KeycloakJwtClaims) {
+  const now = Math.floor(Date.now() / 1000);
+  if (typeof claims.exp !== "number") {
+    throw new Error("access token missing exp claim");
+  }
+  if (claims.exp <= now) {
+    throw new Error("access token expired");
+  }
+  if (typeof claims.nbf === "number" && claims.nbf > now + 60) {
+    throw new Error("access token not valid yet");
+  }
+}
+
+function findSigningKey(header: JwtHeader, jwks: Jwks): Jwk {
+  const key = jwks.keys?.find((candidate) => {
+    if (header.kid && candidate.kid !== header.kid) return false;
+    if (candidate.kty && candidate.kty !== "RSA") return false;
+    if (candidate.use && candidate.use !== "sig") return false;
+    if (candidate.alg && candidate.alg !== "RS256") return false;
+    return true;
+  });
+  if (!key) {
+    throw new Error(
+      `no matching JWKS signing key for kid ${header.kid ?? "<none>"}`,
+    );
+  }
+  return key;
+}
+
+function verifyKeycloakAccessToken(
+  token: string,
+  opts: { issuer: string; clientId: string; jwks: Jwks },
+): KeycloakJwtClaims {
+  const parts = token.split(".");
+  if (parts.length !== 3) {
+    throw new Error("access token is not a JWT");
+  }
+
+  const header = decodeJwtHeader(token);
+  if (!header) {
+    throw new Error("access token has invalid JWT header");
+  }
+  if (header.alg !== "RS256") {
+    throw new Error(
+      `unsupported access token algorithm: ${header.alg ?? "<none>"}`,
+    );
+  }
+
+  const claims = decodeJwtClaims(token);
+  if (!claims) {
+    throw new Error("access token has invalid JWT payload");
+  }
+  if (claims.iss !== opts.issuer) {
+    throw new Error("access token issuer mismatch");
+  }
+  assertTemporalClaims(claims);
+  assertClientBound(claims, opts.clientId);
+
+  const key = findSigningKey(header, opts.jwks);
+  const publicKey = createPublicKey({ key, format: "jwk" });
+  const valid = verifySignature(
+    "RSA-SHA256",
+    Buffer.from(`${parts[0]}.${parts[1]}`),
+    publicKey,
+    Buffer.from(parts[2], "base64url"),
+  );
+  if (!valid) {
+    throw new Error("access token signature verification failed");
+  }
+
+  return claims;
+}
+
+async function fetchOidcConfiguration(
+  issuer: string,
+): Promise<OidcConfiguration> {
+  const res = await fetch(`${issuer}/.well-known/openid-configuration`, {
+    headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) {
+    throw new Error(`OIDC discovery failed: HTTP ${res.status}`);
+  }
+  return (await res.json()) as OidcConfiguration;
+}
+
+async function fetchJwks(jwksUri: string): Promise<Jwks> {
+  const res = await fetch(jwksUri, {
+    headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) {
+    throw new Error(`JWKS fetch failed: HTTP ${res.status}`);
+  }
+  return (await res.json()) as Jwks;
+}
+
+async function verifyLoginTokenResponse(
+  token: TokenResponse,
+  issuer: string,
+  clientId: string,
+): Promise<KeycloakJwtClaims> {
+  const discovery = await fetchOidcConfiguration(issuer);
+  if (discovery.issuer !== issuer) {
+    throw new Error("OIDC discovery issuer mismatch");
+  }
+  if (!discovery.jwks_uri) {
+    throw new Error("OIDC discovery response missing jwks_uri");
+  }
+  const jwks = await fetchJwks(discovery.jwks_uri);
+  return verifyKeycloakAccessToken(token.access_token, {
+    issuer,
+    clientId,
+    jwks,
+  });
 }
 
 async function startDeviceFlow(
@@ -172,18 +362,11 @@ async function pollForToken(
   throw new Error(`login timed out after ${deadlineSec}s without approval`);
 }
 
-function persistSession(
+function buildSession(
   token: TokenResponse,
   issuer: string,
-): {
-  did?: string;
-  sub?: string;
-  email?: string;
-} {
-  const dir = path.dirname(sessionPath());
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-
-  const claims = decodeJwtClaims(token.access_token) ?? {};
+  claims: KeycloakJwtClaims,
+): SessionFile {
   const did =
     typeof claims["did"] === "string" ? (claims["did"] as string) : undefined;
   const sub =
@@ -193,7 +376,7 @@ function persistSession(
       ? (claims["email"] as string)
       : undefined;
 
-  const session = {
+  return {
     access_token: token.access_token,
     refresh_token: token.refresh_token,
     expires_at: Math.floor(Date.now() / 1000) + token.expires_in,
@@ -202,11 +385,30 @@ function persistSession(
     email,
     issuer,
   };
+}
+
+function persistSession(
+  token: TokenResponse,
+  issuer: string,
+  claims: KeycloakJwtClaims,
+): {
+  did?: string;
+  sub?: string;
+  email?: string;
+} {
+  const dir = path.dirname(sessionPath());
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+
+  const session = buildSession(token, issuer, claims);
 
   fs.writeFileSync(sessionPath(), JSON.stringify(session, null, 2), {
     mode: 0o600,
   });
-  return { did, sub, email };
+  return {
+    did: session.did,
+    sub: session.sub,
+    email: session.email,
+  };
 }
 
 async function runLogin(opts: LoginOptions): Promise<void> {
@@ -290,7 +492,30 @@ async function runLogin(opts: LoginOptions): Promise<void> {
   }
 
   const issuer = `${authBase.replace(/\/$/, "")}/realms/${realm}`;
-  const { did, sub, email } = persistSession(tokenResp, issuer);
+  let verifiedClaims: KeycloakJwtClaims;
+  try {
+    verifiedClaims = await verifyLoginTokenResponse(
+      tokenResp,
+      issuer,
+      clientId,
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (opts.json) {
+      console.error(
+        JSON.stringify(
+          { error: "token_verification_failed", message: msg },
+          null,
+          2,
+        ),
+      );
+    } else {
+      console.error(`  ✗ login token verification failed: ${msg}`);
+    }
+    process.exitCode = 1;
+    return;
+  }
+  const { did, sub, email } = persistSession(tokenResp, issuer, verifiedClaims);
 
   if (opts.json) {
     console.log(
@@ -360,7 +585,11 @@ export function registerLoginCommand(program: Command): void {
 
 // Exported for tests
 export const __test = {
+  buildSession,
   decodeJwtClaims,
+  decodeJwtHeader,
+  verifyKeycloakAccessToken,
+  verifyLoginTokenResponse,
   sessionPath,
   startDeviceFlow,
   pollForToken,

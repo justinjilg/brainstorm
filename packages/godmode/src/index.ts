@@ -41,8 +41,10 @@ export {
 } from "./signing.js";
 export {
   verifyJWT,
+  verifyKeycloakJWT,
   extractBearerToken,
   type JWTPayload,
+  type KeycloakVerifyOptions,
   type AuthResult,
 } from "./jwt.js";
 export {

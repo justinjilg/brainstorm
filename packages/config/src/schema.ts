@@ -250,6 +250,7 @@ const godmodeConnectorSchema = z.object({
   enabled: z.boolean().default(true),
   baseUrl: z.string(),
   apiKeyName: z.string(),
+  tenantId: z.string().optional(),
   /** Human-readable product name (e.g., "BrainstormMSP"). Derived from ID if omitted. */
   displayName: z.string().optional(),
 });

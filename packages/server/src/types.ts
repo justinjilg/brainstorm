@@ -34,6 +34,12 @@ export interface ServerOptions {
   allowedOrigins?: string[];
   /** JWT secret for auth. If not set, runs in dev mode (no auth). */
   jwtSecret?: string;
+  /** Keycloak/OIDC issuer for RS256 JWKS auth. */
+  jwtIssuer?: string;
+  /** Expected Keycloak/OIDC audience or authorized party. */
+  jwtAudience?: string;
+  /** Optional explicit JWKS URL. Defaults to <issuer>/protocol/openid-connect/certs. */
+  jwksUrl?: string;
   /** Project path for the server context. */
   projectPath?: string;
 }

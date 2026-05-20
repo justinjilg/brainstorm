@@ -9,6 +9,7 @@
  */
 
 import { z } from "zod";
+import { randomUUID } from "node:crypto";
 import { defineTool, type BrainstormToolDef } from "@brainst0rm/tools";
 import type { ToolPermission } from "@brainst0rm/shared";
 import type {
@@ -32,10 +33,22 @@ function jsonSchemaPropertyToZod(prop: Record<string, unknown>): z.ZodTypeAny {
   let schema: z.ZodTypeAny;
 
   if (prop.enum && Array.isArray(prop.enum)) {
+    if (
+      prop.enum.length === 0 ||
+      !prop.enum.every((value) => typeof value === "string")
+    ) {
+      throw new Error("enum properties must contain at least one string value");
+    }
     const values = prop.enum as [string, ...string[]];
     schema = z.enum(values);
   } else {
     switch (type) {
+      case undefined:
+        if (prop.properties) {
+          schema = jsonSchemaToZod(prop);
+          break;
+        }
+        throw new Error("JSON Schema property missing explicit type");
       case "string":
         schema = z.string();
         break;
@@ -48,7 +61,10 @@ function jsonSchemaPropertyToZod(prop: Record<string, unknown>): z.ZodTypeAny {
         break;
       case "array": {
         const items = prop.items as Record<string, unknown> | undefined;
-        schema = z.array(items ? jsonSchemaPropertyToZod(items) : z.any());
+        if (!items || typeof items !== "object") {
+          throw new Error("array properties must define an items schema");
+        }
+        schema = z.array(jsonSchemaPropertyToZod(items));
         break;
       }
       case "object": {
@@ -57,13 +73,29 @@ function jsonSchemaPropertyToZod(prop: Record<string, unknown>): z.ZodTypeAny {
           | undefined;
         if (nested) {
           schema = jsonSchemaToZod(prop);
+        } else if (prop.additionalProperties === false) {
+          schema = z.object({}).strict();
+        } else if (prop.additionalProperties === true) {
+          schema = z.record(z.string(), z.unknown());
+        } else if (
+          typeof prop.additionalProperties === "object" &&
+          prop.additionalProperties !== null
+        ) {
+          schema = z.record(
+            z.string(),
+            jsonSchemaPropertyToZod(
+              prop.additionalProperties as Record<string, unknown>,
+            ),
+          );
         } else {
-          schema = z.record(z.any());
+          throw new Error(
+            "object properties without nested properties must define additionalProperties",
+          );
         }
         break;
       }
       default:
-        schema = z.any();
+        throw new Error(`unsupported JSON Schema type: ${type}`);
     }
   }
 
@@ -82,6 +114,11 @@ function jsonSchemaPropertyToZod(prop: Record<string, unknown>): z.ZodTypeAny {
  * Convert a JSONSchema object definition to a Zod object schema.
  */
 function jsonSchemaToZod(schema: Record<string, unknown>): z.ZodObject<any> {
+  const type = schema.type as string | undefined;
+  if (type !== undefined && type !== "object") {
+    throw new Error(`tool parameters must be an object schema, got ${type}`);
+  }
+
   const properties = (schema.properties ?? {}) as Record<
     string,
     Record<string, unknown>
@@ -97,7 +134,21 @@ function jsonSchemaToZod(schema: Record<string, unknown>): z.ZodObject<any> {
     shape[key] = fieldSchema;
   }
 
-  return z.object(shape);
+  const objectSchema = z.object(shape);
+  if (schema.additionalProperties === true) {
+    return objectSchema.catchall(z.unknown());
+  }
+  if (
+    typeof schema.additionalProperties === "object" &&
+    schema.additionalProperties !== null
+  ) {
+    return objectSchema.catchall(
+      jsonSchemaPropertyToZod(
+        schema.additionalProperties as Record<string, unknown>,
+      ),
+    );
+  }
+  return objectSchema.strict();
 }
 
 // ── Permission Mapping ──────────────────────────────────────────
@@ -125,6 +176,31 @@ interface ServerTool {
   risk_level: string;
   requires_changeset: boolean;
   evidence_type?: string;
+}
+
+interface ExecutionBinding {
+  payload: Record<string, unknown>;
+  headers: Record<string, string>;
+  traceId: string;
+  idempotencyKey: string;
+  tenantId: string;
+}
+
+interface SimulationExecutionBinding {
+  tenant_id?: unknown;
+  trace_id?: unknown;
+  simulation_idempotency_key?: unknown;
+  simulation_token?: unknown;
+}
+
+type BoundStatePreview = Record<string, unknown> & {
+  originalParams?: unknown;
+  executionBinding?: SimulationExecutionBinding;
+};
+
+function boundStatePreview(value: unknown): BoundStatePreview | null {
+  if (!value || typeof value !== "object") return null;
+  return value as BoundStatePreview;
 }
 
 export class ProductConnector implements GodModeConnector {
@@ -172,8 +248,20 @@ export class ProductConnector implements GodModeConnector {
         this.displayName = `Brainstorm${res.product.charAt(0).toUpperCase() + res.product.slice(1)}`;
       }
 
-      // Convert each server tool to a BrainstormToolDef
-      this.tools = serverTools.map((st) => this.convertTool(st));
+      // Convert each server tool to a BrainstormToolDef. Quarantine unsafe or
+      // unsupported schemas instead of widening them to z.any().
+      const convertedTools: BrainstormToolDef[] = [];
+      for (const st of serverTools) {
+        try {
+          convertedTools.push(this.convertTool(st));
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.warn(
+            `[godmode] ${this.displayName}: skipped unsafe tool schema for ${st.name} — ${msg}`,
+          );
+        }
+      }
+      this.tools = convertedTools;
       this.initialized = true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -241,12 +329,15 @@ export class ProductConnector implements GodModeConnector {
       readonly,
       inputSchema,
       async execute(params) {
+        const binding = connector.buildExecutionBinding(serverTool, params, {
+          simulate: false,
+        });
+        if ("error" in binding) return { error: binding.error };
+
         const result = await connector.apiFetch("/api/v1/god-mode/execute", {
           method: "POST",
-          body: JSON.stringify({
-            tool: serverTool.name,
-            params,
-          }),
+          headers: binding.headers,
+          body: JSON.stringify(binding.payload),
         });
 
         if (result.error) return { error: result.error };
@@ -268,15 +359,36 @@ export class ProductConnector implements GodModeConnector {
     // Register a generic executor for when changesets are approved
     registerExecutor(executorKey, async (cs) => {
       // Extract original params from the changeset's simulation statePreview
-      const originalParams = (cs.simulation.statePreview as any)
-        ?.originalParams;
+      const statePreview = boundStatePreview(cs.simulation.statePreview);
+      const originalParams = statePreview?.originalParams;
+      const simulationBinding = statePreview?.executionBinding;
+      if (typeof simulationBinding?.simulation_token !== "string") {
+        return {
+          success: false,
+          message:
+            "Product simulation did not return a simulation_token; refusing unbound execution.",
+        };
+      }
+
+      const binding = connector.buildExecutionBinding(
+        serverTool,
+        originalParams ?? {},
+        {
+          simulate: false,
+          traceId:
+            typeof simulationBinding.trace_id === "string"
+              ? simulationBinding.trace_id
+              : undefined,
+          changesetId: cs.id,
+          simulationToken: simulationBinding.simulation_token,
+        },
+      );
+      if ("error" in binding) return { success: false, message: binding.error };
+
       const result = await connector.apiFetch("/api/v1/god-mode/execute", {
         method: "POST",
-        body: JSON.stringify({
-          tool: serverTool.name,
-          params: originalParams ?? {},
-          simulate: false,
-        }),
+        headers: binding.headers,
+        body: JSON.stringify(binding.payload),
       });
 
       if (result.error) return { success: false, message: result.error };
@@ -293,17 +405,33 @@ export class ProductConnector implements GodModeConnector {
       permission,
       inputSchema,
       async execute(params) {
+        const binding = connector.buildExecutionBinding(serverTool, params, {
+          simulate: true,
+        });
+        if ("error" in binding) return { error: binding.error };
+
         // Step 1: Simulate
         const simResult = await connector.apiFetch("/api/v1/god-mode/execute", {
           method: "POST",
-          body: JSON.stringify({
-            tool: serverTool.name,
-            params,
-            simulate: true,
-          }),
+          headers: binding.headers,
+          body: JSON.stringify(binding.payload),
         });
 
         if (simResult.error) return { error: simResult.error };
+
+        const simulationToken =
+          simResult.simulation_token ??
+          simResult.simulationToken ??
+          simResult.binding?.simulation_token;
+        if (
+          typeof simulationToken !== "string" ||
+          simulationToken.length === 0
+        ) {
+          return {
+            error:
+              "Product simulation did not return a simulation_token; refusing to create an unbound ChangeSet.",
+          };
+        }
 
         // Step 2: Create ChangeSet from simulation
         const simulation = simResult.simulation ?? {
@@ -315,11 +443,15 @@ export class ProductConnector implements GodModeConnector {
         };
 
         // Preserve original params in simulation for the executor
-        if (
-          simulation.statePreview &&
-          typeof simulation.statePreview === "object"
-        ) {
-          (simulation.statePreview as any).originalParams = params;
+        const statePreview = boundStatePreview(simulation.statePreview);
+        if (statePreview) {
+          statePreview.originalParams = params;
+          statePreview.executionBinding = {
+            tenant_id: binding.tenantId,
+            trace_id: binding.traceId,
+            simulation_idempotency_key: binding.idempotencyKey,
+            simulation_token: simulationToken,
+          };
         }
 
         const changeset = createChangeSet({
@@ -350,6 +482,50 @@ export class ProductConnector implements GodModeConnector {
   }
 
   // ── HTTP Client ─────────────────────────────────────────────
+
+  private buildExecutionBinding(
+    serverTool: ServerTool,
+    params: unknown,
+    opts: {
+      simulate: boolean;
+      traceId?: string;
+      changesetId?: string;
+      simulationToken?: string;
+    },
+  ): ExecutionBinding | { error: string } {
+    const tenantId = this.resolveTenantId();
+    if (!tenantId) {
+      return {
+        error: `No tenant_id for ${this.displayName}; set tenantId in connector config or _GM_${this.name.toUpperCase()}_TENANT_ID.`,
+      };
+    }
+
+    const traceId = opts.traceId ?? `trace_${randomUUID()}`;
+    const idempotencyKey = `${this.name}:${serverTool.name}:${opts.simulate ? "simulate" : "execute"}:${randomUUID()}`;
+    const payload: Record<string, unknown> = {
+      tool: serverTool.name,
+      params,
+      simulate: opts.simulate,
+      tenant_id: tenantId,
+      trace_id: traceId,
+      idempotency_key: idempotencyKey,
+    };
+
+    if (opts.changesetId) payload.changeset_id = opts.changesetId;
+    if (opts.simulationToken) payload.simulation_token = opts.simulationToken;
+
+    return {
+      payload,
+      traceId,
+      idempotencyKey,
+      tenantId,
+      headers: {
+        "Idempotency-Key": idempotencyKey,
+        "X-Brainstorm-Trace-Id": traceId,
+        "X-Brainstorm-Tenant-Id": tenantId,
+      },
+    };
+  }
 
   private async apiFetch(
     path: string,
@@ -406,6 +582,16 @@ export class ProductConnector implements GodModeConnector {
     return (
       process.env[`_GM_${this.name.toUpperCase()}_KEY`] ??
       process.env[this.config.apiKeyName] ??
+      null
+    );
+  }
+
+  private resolveTenantId(): string | null {
+    return (
+      this.config.tenantId ??
+      process.env[`_GM_${this.name.toUpperCase()}_TENANT_ID`] ??
+      process.env.BRAINSTORM_TENANT_ID ??
+      process.env.PLATFORM_TENANT_ID ??
       null
     );
   }
