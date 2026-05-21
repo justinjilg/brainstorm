@@ -3,7 +3,11 @@ import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { defineTool } from "../base.js";
 import { checkSandbox } from "./sandbox.js";
-import { buildChildEnv } from "./shell.js";
+import {
+  buildChildEnv,
+  getCurrentSandboxLevel,
+  getCurrentSandboxProjectPath,
+} from "./shell.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -49,8 +53,14 @@ export const processSpawnTool = defineTool({
     cwd: z.string().optional().describe("Working directory"),
   }),
   async execute({ name, command, cwd }) {
-    // Enforce sandbox restrictions (same as shell tool)
-    const sandboxResult = checkSandbox(command, "restricted");
+    // Enforce the active sandbox level (matches shell tool). Previously
+    // hardcoded "restricted" which silently ignored the configured level
+    // — flagged by forge V-attacker (agent-06). If the CLI booted with
+    // configureSandbox("container"), every shell call ran in Docker but
+    // process_spawn quietly downgraded to host-level restricted.
+    const activeLevel = getCurrentSandboxLevel();
+    const projectPath = getCurrentSandboxProjectPath();
+    const sandboxResult = checkSandbox(command, activeLevel, projectPath);
     if (!sandboxResult.allowed) {
       return { error: `Blocked by sandbox: ${sandboxResult.reason}` };
     }
@@ -70,7 +80,9 @@ export const processSpawnTool = defineTool({
     const child = spawn("/bin/sh", ["-c", command], {
       cwd: cwd ?? process.cwd(),
       detached: true,
-      env: buildChildEnv("restricted"),
+      // Use the active sandbox level for env scrubbing too (same reason
+      // as the checkSandbox call above).
+      env: buildChildEnv(activeLevel),
       stdio: "ignore",
     });
     child.unref();
