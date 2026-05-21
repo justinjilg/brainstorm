@@ -455,6 +455,7 @@ export class ProductConnector implements GodModeConnector {
         }
 
         const changeset = createChangeSet({
+          tenantId: binding.tenantId,
           connector: connector.name,
           action: executorKey, // Namespaced to prevent cross-product collision
           description: simResult.description ?? `Execute ${serverTool.name}`,
@@ -466,6 +467,7 @@ export class ProductConnector implements GodModeConnector {
             },
           ],
           simulation,
+          ...(binding.traceId ? { traceId: binding.traceId } : {}),
         });
 
         return {

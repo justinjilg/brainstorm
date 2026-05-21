@@ -60,6 +60,7 @@ export function createUserTools(client: MSPClient): BrainstormToolDef[] {
         ];
 
         const changeset = createChangeSet({
+          tenantId: client.tenantId,
           connector: "msp",
           action: "msp_disable_user",
           description: `Disable user ${user.name ?? user_id}: ${reason}`,

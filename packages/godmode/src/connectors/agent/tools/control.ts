@@ -38,6 +38,7 @@ export function createControlTools(client: AgentClient): BrainstormToolDef[] {
       }),
       async execute({ agent_id, reason }) {
         const changeset = createChangeSet({
+          tenantId: client.tenantId,
           connector: "agent",
           action: "agent_kill_switch",
           description: `KILL SWITCH on agent ${agent_id}: ${reason}`,

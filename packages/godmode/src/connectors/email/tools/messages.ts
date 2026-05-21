@@ -124,6 +124,7 @@ export function createMessageTools(client: EmailClient): BrainstormToolDef[] {
         }));
 
         const changeset = createChangeSet({
+          tenantId: client.tenantId,
           connector: "email",
           action: "email_bulk_quarantine",
           description: `Quarantine ${message_ids.length} messages: ${reason}`,
@@ -166,6 +167,7 @@ export function createMessageTools(client: EmailClient): BrainstormToolDef[] {
         }));
 
         const changeset = createChangeSet({
+          tenantId: client.tenantId,
           connector: "email",
           action: "email_block_sender",
           description: `Block ${senders.length} sender(s): ${reason}`,

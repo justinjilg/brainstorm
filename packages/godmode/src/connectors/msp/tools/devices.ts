@@ -101,6 +101,7 @@ export function createDeviceTools(client: MSPClient): BrainstormToolDef[] {
         }
 
         const changeset = createChangeSet({
+          tenantId: client.tenantId,
           connector: "msp",
           action: "msp_protect_device",
           description: `Enable ${level} protection on device ${device_id}`,
@@ -146,6 +147,7 @@ export function createDeviceTools(client: MSPClient): BrainstormToolDef[] {
         ];
 
         const changeset = createChangeSet({
+          tenantId: client.tenantId,
           connector: "msp",
           action: "msp_isolate_device",
           description: `Network-isolate ${device.hostname ?? device_id}: ${reason}`,

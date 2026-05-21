@@ -12,10 +12,13 @@ import { encodePathSegment } from "../path-segment.js";
 export class VMClient {
   private baseUrl: string;
   private apiKeyName: string;
+  /** Tenant scope this client operates under (v2 ChangeSet contract). */
+  readonly tenantId: string;
 
   constructor(private config: ConnectorConfig) {
     this.baseUrl = config.baseUrl;
     this.apiKeyName = config.apiKeyName;
+    this.tenantId = config.tenantId ?? "";
   }
 
   async healthCheck(): Promise<HealthResult> {

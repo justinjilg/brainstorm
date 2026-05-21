@@ -16,6 +16,7 @@
 
 import { randomUUID } from "node:crypto";
 import { defineTool, type BrainstormToolDef } from "@brainst0rm/tools";
+import { createLogger } from "@brainst0rm/shared";
 import { z } from "zod";
 import { logChangeSet } from "./audit.js";
 import type {
@@ -24,6 +25,8 @@ import type {
   Change,
   SimulationResult,
 } from "./types.js";
+
+const log = createLogger("godmode-changeset");
 
 /** Draft TTL: 5 minutes. */
 const DRAFT_TTL_MS = 5 * 60 * 1000;
@@ -52,12 +55,29 @@ const executors = new Map<
 
 // ── ChangeSet CRUD ───────────────────────────────────────────────
 
+/**
+ * Input shape for createChangeSet. v2 contract — tenantId is REQUIRED.
+ *
+ * All 11 connector call sites + the 7 test call sites were updated in
+ * opus PR 5.1 to pass tenantId explicitly (sourced from
+ * `client.tenantId` on the per-product clients). The previous soft-
+ * deprecation has been removed; missing tenantId now fails fast at
+ * the type level.
+ *
+ * `correlationId` and `traceId` are optional for federation correlation.
+ */
 export interface CreateChangeSetInput {
+  /** Tenant scope for this ChangeSet. REQUIRED per v2 contract. */
+  tenantId: string;
   connector: string;
   action: string;
   description: string;
   changes: Change[];
   simulation: SimulationResult;
+  /** OPTIONAL — for tracking cross-product workflows. */
+  correlationId?: string;
+  /** OPTIONAL — OTEL trace id. */
+  traceId?: string;
 }
 
 /**
@@ -67,6 +87,15 @@ export interface CreateChangeSetInput {
 export function createChangeSet(input: CreateChangeSetInput): ChangeSet {
   // Expire stale drafts first
   expireStale();
+
+  // v2 contract: tenantId is required. The type system enforces presence;
+  // runtime check guards against `as any` callers and runtime injection.
+  if (!input.tenantId) {
+    throw new Error(
+      `createChangeSet requires non-empty tenantId (connector=${input.connector}, action=${input.action})`,
+    );
+  }
+  const tenantId = input.tenantId;
 
   const riskScore = calculateRiskScore(
     input.changes,
@@ -81,6 +110,7 @@ export function createChangeSet(input: CreateChangeSetInput): ChangeSet {
 
   const changeset: ChangeSet = {
     id: randomUUID().slice(0, 8),
+    tenantId,
     connector: input.connector,
     action: input.action,
     description: input.description,
@@ -91,6 +121,8 @@ export function createChangeSet(input: CreateChangeSetInput): ChangeSet {
     simulation: input.simulation,
     createdAt: Date.now(),
     expiresAt: Date.now() + DRAFT_TTL_MS,
+    ...(input.correlationId ? { correlationId: input.correlationId } : {}),
+    ...(input.traceId ? { traceId: input.traceId } : {}),
   };
 
   changesets.set(changeset.id, changeset);

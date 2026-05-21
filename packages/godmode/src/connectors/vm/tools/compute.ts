@@ -106,6 +106,7 @@ export function createComputeTools(client: VMClient): BrainstormToolDef[] {
         };
 
         const changeset = createChangeSet({
+          tenantId: client.tenantId,
           connector: "vm",
           action: "vm_create",
           description: `Create VM "${name}" (${vcpus} vCPUs, ${memory_mb}MB RAM, ${disk_gb}GB disk)`,
@@ -152,6 +153,7 @@ export function createComputeTools(client: VMClient): BrainstormToolDef[] {
         if (vm.error) return { error: vm.error };
 
         const changeset = createChangeSet({
+          tenantId: client.tenantId,
           connector: "vm",
           action: "vm_destroy",
           description: `Destroy VM ${vm.name ?? vm_id}: ${reason}`,
@@ -196,6 +198,7 @@ export function createComputeTools(client: VMClient): BrainstormToolDef[] {
       }),
       async execute({ vm_id, target_node }) {
         const changeset = createChangeSet({
+          tenantId: client.tenantId,
           connector: "vm",
           action: "vm_migrate",
           description: `Live-migrate VM ${vm_id} to node ${target_node}`,

@@ -44,6 +44,7 @@ export function createCampaignTools(client: EmailClient): BrainstormToolDef[] {
       }),
       async execute({ campaign_id, action }) {
         const changeset = createChangeSet({
+          tenantId: client.tenantId,
           connector: "email",
           action: "email_campaign_respond",
           description: `Respond to campaign ${campaign_id}: ${action}`,

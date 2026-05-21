@@ -335,6 +335,7 @@ describe("ChangeSet State Machine - Additional Paths", () => {
 
   it("rejects a draft changeset and removes it from active list", () => {
     const changeset = createChangeSet({
+      tenantId: "test-tenant",
       connector: "test",
       action: "test-action",
       description: "Test changeset",
@@ -371,6 +372,7 @@ describe("ChangeSet State Machine - Additional Paths", () => {
 
   it("transitions draft to expired when TTL is exceeded", async () => {
     const changeset = createChangeSet({
+      tenantId: "test-tenant",
       connector: "test",
       action: "test-action",
       description: "Test changeset",
@@ -402,6 +404,7 @@ describe("ChangeSet State Machine - Additional Paths", () => {
     }));
 
     const changeset = createChangeSet({
+      tenantId: "test-tenant",
       connector: "test",
       action,
       description: "Test changeset",
@@ -435,6 +438,7 @@ describe("ChangeSet State Machine - Additional Paths", () => {
     });
 
     const changeset = createChangeSet({
+      tenantId: "test-tenant",
       connector: "test",
       action,
       description: "Test changeset",
@@ -463,6 +467,7 @@ describe("ChangeSet State Machine - Additional Paths", () => {
     }));
 
     const changeset = createChangeSet({
+      tenantId: "test-tenant",
       connector: "test",
       action,
       description: "Test changeset",
@@ -486,6 +491,7 @@ describe("ChangeSet State Machine - Additional Paths", () => {
   it("expands stale drafts when creating new changeset", async () => {
     // Create first changeset
     const changeset1 = createChangeSet({
+      tenantId: "test-tenant",
       connector: "test",
       action: "test-action",
       description: "First changeset",
@@ -504,6 +510,7 @@ describe("ChangeSet State Machine - Additional Paths", () => {
 
     // Create second changeset - should trigger expiration of first
     const changeset2 = createChangeSet({
+      tenantId: "test-tenant",
       connector: "test",
       action: "test-action-2",
       description: "Second changeset",
