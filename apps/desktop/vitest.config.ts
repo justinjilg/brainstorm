@@ -14,7 +14,15 @@ import { defineConfig } from "vitest/config";
  */
 export default defineConfig({
   test: {
-    include: ["tests-protocol/**/*.test.ts"],
+    // Picks up:
+    //  - tests-protocol/**/*.test.ts (the original wire-format unit suite)
+    //  - src/**/*.test.ts and src/**/*.test.tsx (in-tree unit tests beside
+    //    the code they exercise, added in opus PR 6 onward)
+    include: [
+      "tests-protocol/**/*.test.ts",
+      "src/**/*.test.ts",
+      "src/**/*.test.tsx",
+    ],
     environment: "node",
     globals: false,
   },

@@ -16,6 +16,7 @@
 
 import { randomUUID } from "node:crypto";
 import { defineTool, type BrainstormToolDef } from "@brainst0rm/tools";
+import { createLogger } from "@brainst0rm/shared";
 import { z } from "zod";
 import { logChangeSet } from "./audit.js";
 import type {
@@ -24,6 +25,8 @@ import type {
   Change,
   SimulationResult,
 } from "./types.js";
+
+const log = createLogger("godmode-changeset");
 
 /** Draft TTL: 5 minutes. */
 const DRAFT_TTL_MS = 5 * 60 * 1000;
@@ -52,12 +55,33 @@ const executors = new Map<
 
 // ── ChangeSet CRUD ───────────────────────────────────────────────
 
+/**
+ * Input shape for createChangeSet. As of v2 (PR 5), tenantId SHOULD be
+ * provided on every call — it's required at the contract level (see
+ * @brainst0rm/changeset-contract `CreateChangeSetInput`). The engine
+ * accepts an absent tenantId during the migration window and logs a
+ * deprecation warning so existing connectors keep working; callers
+ * should add `tenantId` to their createChangeSet calls promptly.
+ *
+ * `correlationId` and `traceId` are also accepted for federation
+ * correlation but are entirely optional.
+ */
 export interface CreateChangeSetInput {
   connector: string;
   action: string;
   description: string;
   changes: Change[];
   simulation: SimulationResult;
+  /**
+   * Required by the v2 contract. Falsy values trigger a deprecation
+   * warning; the engine substitutes the empty string. Renderers MAY
+   * refuse to display ChangeSets with an empty tenantId.
+   */
+  tenantId?: string;
+  /** OPTIONAL — for tracking cross-product workflows. */
+  correlationId?: string;
+  /** OPTIONAL — OTEL trace id. */
+  traceId?: string;
 }
 
 /**
@@ -67,6 +91,20 @@ export interface CreateChangeSetInput {
 export function createChangeSet(input: CreateChangeSetInput): ChangeSet {
   // Expire stale drafts first
   expireStale();
+
+  // v2 contract: tenantId is required. Soft-warn during the migration
+  // window so existing connectors keep working; remove this fallback
+  // once all 13 call sites pass tenantId explicitly.
+  let tenantId = input.tenantId;
+  if (!tenantId) {
+    log.warn(
+      { connector: input.connector, action: input.action },
+      "createChangeSet called without tenantId — defaulting to empty. " +
+        "This is deprecated; per the v2 contract (@brainst0rm/changeset-contract), " +
+        "tenantId is REQUIRED. Update the call site.",
+    );
+    tenantId = "";
+  }
 
   const riskScore = calculateRiskScore(
     input.changes,
@@ -81,6 +119,7 @@ export function createChangeSet(input: CreateChangeSetInput): ChangeSet {
 
   const changeset: ChangeSet = {
     id: randomUUID().slice(0, 8),
+    tenantId,
     connector: input.connector,
     action: input.action,
     description: input.description,
@@ -91,6 +130,8 @@ export function createChangeSet(input: CreateChangeSetInput): ChangeSet {
     simulation: input.simulation,
     createdAt: Date.now(),
     expiresAt: Date.now() + DRAFT_TTL_MS,
+    ...(input.correlationId ? { correlationId: input.correlationId } : {}),
+    ...(input.traceId ? { traceId: input.traceId } : {}),
   };
 
   changesets.set(changeset.id, changeset);
