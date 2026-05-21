@@ -21,10 +21,15 @@ import { encodePathSegment } from "../path-segment.js";
 export class MSPClient {
   private baseUrl: string;
   private apiKeyName: string;
+  /** Tenant scope this client operates under. Required for ChangeSet
+   *  tenant binding (v2 contract). Empty string falls back to "" with
+   *  a soft-deprecation warning when used. */
+  readonly tenantId: string;
 
   constructor(private config: ConnectorConfig) {
     this.baseUrl = config.baseUrl;
     this.apiKeyName = config.apiKeyName;
+    this.tenantId = config.tenantId ?? "";
   }
 
   async healthCheck(): Promise<HealthResult> {

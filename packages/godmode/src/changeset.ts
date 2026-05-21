@@ -56,28 +56,24 @@ const executors = new Map<
 // ── ChangeSet CRUD ───────────────────────────────────────────────
 
 /**
- * Input shape for createChangeSet. As of v2 (PR 5), tenantId SHOULD be
- * provided on every call — it's required at the contract level (see
- * @brainst0rm/changeset-contract `CreateChangeSetInput`). The engine
- * accepts an absent tenantId during the migration window and logs a
- * deprecation warning so existing connectors keep working; callers
- * should add `tenantId` to their createChangeSet calls promptly.
+ * Input shape for createChangeSet. v2 contract — tenantId is REQUIRED.
  *
- * `correlationId` and `traceId` are also accepted for federation
- * correlation but are entirely optional.
+ * All 11 connector call sites + the 7 test call sites were updated in
+ * opus PR 5.1 to pass tenantId explicitly (sourced from
+ * `client.tenantId` on the per-product clients). The previous soft-
+ * deprecation has been removed; missing tenantId now fails fast at
+ * the type level.
+ *
+ * `correlationId` and `traceId` are optional for federation correlation.
  */
 export interface CreateChangeSetInput {
+  /** Tenant scope for this ChangeSet. REQUIRED per v2 contract. */
+  tenantId: string;
   connector: string;
   action: string;
   description: string;
   changes: Change[];
   simulation: SimulationResult;
-  /**
-   * Required by the v2 contract. Falsy values trigger a deprecation
-   * warning; the engine substitutes the empty string. Renderers MAY
-   * refuse to display ChangeSets with an empty tenantId.
-   */
-  tenantId?: string;
   /** OPTIONAL — for tracking cross-product workflows. */
   correlationId?: string;
   /** OPTIONAL — OTEL trace id. */
@@ -92,19 +88,14 @@ export function createChangeSet(input: CreateChangeSetInput): ChangeSet {
   // Expire stale drafts first
   expireStale();
 
-  // v2 contract: tenantId is required. Soft-warn during the migration
-  // window so existing connectors keep working; remove this fallback
-  // once all 13 call sites pass tenantId explicitly.
-  let tenantId = input.tenantId;
-  if (!tenantId) {
-    log.warn(
-      { connector: input.connector, action: input.action },
-      "createChangeSet called without tenantId — defaulting to empty. " +
-        "This is deprecated; per the v2 contract (@brainst0rm/changeset-contract), " +
-        "tenantId is REQUIRED. Update the call site.",
+  // v2 contract: tenantId is required. The type system enforces presence;
+  // runtime check guards against `as any` callers and runtime injection.
+  if (!input.tenantId) {
+    throw new Error(
+      `createChangeSet requires non-empty tenantId (connector=${input.connector}, action=${input.action})`,
     );
-    tenantId = "";
   }
+  const tenantId = input.tenantId;
 
   const riskScore = calculateRiskScore(
     input.changes,

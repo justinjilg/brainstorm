@@ -37,12 +37,14 @@ describe("ChangeSet state machine", () => {
   }
 
   function createDraft(options?: {
+    tenantId?: string;
     connector?: string;
     action?: string;
     changes?: Change[];
     simulation?: SimulationResult;
   }) {
     return createChangeSet({
+      tenantId: options?.tenantId ?? "test-tenant",
       connector: options?.connector ?? "msp",
       action: options?.action ?? `test-action-${Math.random()}`,
       description: "Apply a controlled state change",
