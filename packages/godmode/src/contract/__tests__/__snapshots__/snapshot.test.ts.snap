@@ -568,6 +568,18 @@ exports[`contract compiler — snapshots > endpoint registry is stable 1`] = `
     "path": "/health",
   },
   {
+    "auth": "none",
+    "id": "platform-self",
+    "method": "GET",
+    "path": "/api/v1/self",
+  },
+  {
+    "auth": "none",
+    "id": "platform-discovery",
+    "method": "GET",
+    "path": "/api/v1/discovery",
+  },
+  {
     "auth": "bearer",
     "id": "god-mode-tools",
     "method": "GET",
@@ -619,6 +631,45 @@ Liveness + identity probe. Always available, no auth. Returns 200 for healthy/de
 | \`product\` | string | Yes | Lowercase product slug. MUST match product.id in manifest. |
 | \`uptime_seconds\` | number | No | Seconds since the process started. |
 | \`checks\` | object<string, any> | No | Sub-system health states (database, cache, queues, ...). |
+",
+  },
+  {
+    "id": "platform-self",
+    "markdown": "### GET /api/v1/self
+
+**Auth:** None
+
+Product self-descriptor — product slug, version, variant (tool|orchestrator), capability domains, schema version. Public, no auth.
+
+**Response:**
+
+| Field | Type | Required | Description |
+| ----- | ---- | -------- | ----------- |
+| \`product\` | string | Yes | Lowercase product slug. MUST match product.id in manifest. |
+| \`version\` | string | Yes | Product semver string. |
+| \`variant\` | \`tool\` \\| \`orchestrator\` | Yes | Tool-producing or orchestrator-variant per platform-contract-v1-orchestrator.md. |
+| \`capabilities\` | array<string> | Yes | Capability domains the product covers. |
+| \`schema_version\` | number | Yes | Contract version this response conforms to. |
+",
+  },
+  {
+    "id": "platform-discovery",
+    "markdown": "### GET /api/v1/discovery
+
+**Auth:** None
+
+API URL map — tools_url OR workflows_url (depending on variant), self_url, events_url, openapi_url. Public, no auth.
+
+**Response:**
+
+| Field | Type | Required | Description |
+| ----- | ---- | -------- | ----------- |
+| \`tools_url\` | string | No |  |
+| \`workflows_url\` | string | No |  |
+| \`runs_url\` | string | No |  |
+| \`self_url\` | string | Yes | Path to GET /api/v1/self. |
+| \`events_url\` | string | No |  |
+| \`openapi_url\` | string | No |  |
 ",
   },
   {
@@ -766,6 +817,26 @@ exports[`contract compiler — snapshots > validator plan summary 1`] = `
     "id": "health",
     "method": "GET",
     "path": "/health",
+  },
+  {
+    "acceptStatuses": [
+      200,
+    ],
+    "auth": "none",
+    "hasRequestValidator": false,
+    "id": "platform-self",
+    "method": "GET",
+    "path": "/api/v1/self",
+  },
+  {
+    "acceptStatuses": [
+      200,
+    ],
+    "auth": "none",
+    "hasRequestValidator": false,
+    "id": "platform-discovery",
+    "method": "GET",
+    "path": "/api/v1/discovery",
   },
   {
     "acceptStatuses": [
