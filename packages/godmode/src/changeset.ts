@@ -16,14 +16,61 @@
 
 import { randomUUID } from "node:crypto";
 import { defineTool, type BrainstormToolDef } from "@brainst0rm/tools";
+import { createLogger } from "@brainst0rm/shared";
 import { z } from "zod";
 import { logChangeSet } from "./audit.js";
+import { emitChangeSetEvent } from "./event-emitter.js";
 import type {
   ChangeSet,
   ChangeSetStatus,
   Change,
   SimulationResult,
 } from "./types.js";
+
+const log = createLogger("godmode-changeset");
+
+/**
+ * Build a ChangeSetLifecycleEvent envelope for emission to the federation
+ * bus. Pure mapper — does NOT touch the wire. Caller passes the event to
+ * `emitChangeSetEvent` (best-effort).
+ *
+ * The `state` argument uses the engine's `ChangeSetStatus` directly
+ * (draft / approved / executed / failed / rolled_back / rejected /
+ * expired). The EventBridge schemas in BrainstormOps PR #76 use slightly
+ * different state names (proposed / simulated / approved / executed /
+ * failed / reverted). A wire-level translation lives in the binding
+ * (CLI/server) that constructs the actual EventBridge PutEvents call.
+ */
+function lifecycleEventFor(
+  cs: ChangeSet,
+  state: ChangeSetStatus,
+  extra?: {
+    approver?: string;
+    executionResult?: unknown;
+    error?: string;
+  },
+) {
+  return {
+    tenantId: cs.tenantId,
+    ts: Date.now(),
+    changesetId: cs.id,
+    payload: {
+      product: cs.connector,
+      tool: cs.action,
+      state,
+      ...(state === "draft" && cs.simulation.blastRadius
+        ? { blastRadius: cs.simulation.blastRadius }
+        : {}),
+      ...(extra?.approver ? { approver: extra.approver } : {}),
+      ...(extra?.executionResult !== undefined
+        ? { executionResult: extra.executionResult }
+        : {}),
+      ...(extra?.error ? { error: extra.error } : {}),
+    },
+    ...(cs.correlationId ? { correlationId: cs.correlationId } : {}),
+    ...(cs.traceId ? { traceId: cs.traceId } : {}),
+  };
+}
 
 /** Draft TTL: 5 minutes. */
 const DRAFT_TTL_MS = 5 * 60 * 1000;
@@ -52,12 +99,33 @@ const executors = new Map<
 
 // ── ChangeSet CRUD ───────────────────────────────────────────────
 
+/**
+ * Input shape for createChangeSet. As of v2 (PR 5), tenantId SHOULD be
+ * provided on every call — it's required at the contract level (see
+ * @brainst0rm/changeset-contract `CreateChangeSetInput`). The engine
+ * accepts an absent tenantId during the migration window and logs a
+ * deprecation warning so existing connectors keep working; callers
+ * should add `tenantId` to their createChangeSet calls promptly.
+ *
+ * `correlationId` and `traceId` are also accepted for federation
+ * correlation but are entirely optional.
+ */
 export interface CreateChangeSetInput {
   connector: string;
   action: string;
   description: string;
   changes: Change[];
   simulation: SimulationResult;
+  /**
+   * Required by the v2 contract. Falsy values trigger a deprecation
+   * warning; the engine substitutes the empty string. Renderers MAY
+   * refuse to display ChangeSets with an empty tenantId.
+   */
+  tenantId?: string;
+  /** OPTIONAL — for tracking cross-product workflows. */
+  correlationId?: string;
+  /** OPTIONAL — OTEL trace id. */
+  traceId?: string;
 }
 
 /**
@@ -67,6 +135,20 @@ export interface CreateChangeSetInput {
 export function createChangeSet(input: CreateChangeSetInput): ChangeSet {
   // Expire stale drafts first
   expireStale();
+
+  // v2 contract: tenantId is required. Soft-warn during the migration
+  // window so existing connectors keep working; remove this fallback
+  // once all 13 call sites pass tenantId explicitly.
+  let tenantId = input.tenantId;
+  if (!tenantId) {
+    log.warn(
+      { connector: input.connector, action: input.action },
+      "createChangeSet called without tenantId — defaulting to empty. " +
+        "This is deprecated; per the v2 contract (@brainst0rm/changeset-contract), " +
+        "tenantId is REQUIRED. Update the call site.",
+    );
+    tenantId = "";
+  }
 
   const riskScore = calculateRiskScore(
     input.changes,
@@ -81,6 +163,7 @@ export function createChangeSet(input: CreateChangeSetInput): ChangeSet {
 
   const changeset: ChangeSet = {
     id: randomUUID().slice(0, 8),
+    tenantId,
     connector: input.connector,
     action: input.action,
     description: input.description,
@@ -91,9 +174,18 @@ export function createChangeSet(input: CreateChangeSetInput): ChangeSet {
     simulation: input.simulation,
     createdAt: Date.now(),
     expiresAt: Date.now() + DRAFT_TTL_MS,
+    ...(input.correlationId ? { correlationId: input.correlationId } : {}),
+    ...(input.traceId ? { traceId: input.traceId } : {}),
   };
 
   changesets.set(changeset.id, changeset);
+
+  // Emit the proposed lifecycle event to the federation bus. The engine's
+  // createChangeSet always includes a completed simulation in its input,
+  // so "proposed" carries the blast radius (the "simulated" state is
+  // implicitly subsumed — no separate intermediate event).
+  emitChangeSetEvent(lifecycleEventFor(changeset, "draft"));
+
   return changeset;
 }
 
@@ -143,6 +235,11 @@ export async function approveChangeSet(
   try {
     cs.status = "approved";
     cs.approvedBy = approvedBy;
+
+    // Emit `approved` lifecycle event (post status flip, pre-execute)
+    emitChangeSetEvent(
+      lifecycleEventFor(cs, "approved", { approver: approvedBy }),
+    );
 
     // Execute via the registered executor
     const executor = executors.get(cs.action);
@@ -195,6 +292,11 @@ export async function approveChangeSet(
         cs.executedAt = Date.now();
         cs.terminalAt = cs.executedAt;
         cs.rollbackData = result.rollbackData;
+        emitChangeSetEvent(
+          lifecycleEventFor(cs, "executed", {
+            executionResult: result.rollbackData,
+          }),
+        );
       } else {
         // Execution returned failure. Previously we reverted to "draft" to
         // keep the changeset retryable, but that let a partial-mutation
@@ -203,6 +305,9 @@ export async function approveChangeSet(
         // retryChangeSet() call to rehydrate — operator intervention.
         cs.status = "failed";
         cs.terminalAt = Date.now();
+        emitChangeSetEvent(
+          lifecycleEventFor(cs, "failed", { error: result.message }),
+        );
       }
       // Always audit both success and failure
       logChangeSet(cs);
@@ -214,8 +319,9 @@ export async function approveChangeSet(
     } catch (error) {
       cs.status = "failed";
       cs.terminalAt = Date.now();
-      logChangeSet(cs); // Audit the failure
       const msg = error instanceof Error ? error.message : String(error);
+      emitChangeSetEvent(lifecycleEventFor(cs, "failed", { error: msg }));
+      logChangeSet(cs); // Audit the failure
       return {
         success: false,
         message: `Execution failed: ${msg}`,

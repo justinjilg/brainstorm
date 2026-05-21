@@ -9,6 +9,7 @@
     "compile-contract": "tsx scripts/compile-contract.ts"
   },
   "dependencies": {
+    "@brainst0rm/changeset-contract": "0.15.0",
     "@brainst0rm/config": "0.14.4",
     "@brainst0rm/shared": "0.14.4",
     "@brainst0rm/tools": "0.15.0",
