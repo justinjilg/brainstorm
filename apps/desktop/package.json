@@ -47,6 +47,7 @@
   "dependencies": {
     "@brainst0rm/archetype-msp": "0.14.4",
     "@brainst0rm/archetype-saas-platform": "0.14.4",
+    "@brainst0rm/changeset-contract": "0.15.0",
     "@brainst0rm/config": "0.14.4",
     "@brainst0rm/harness-crypto": "0.14.4",
     "@brainst0rm/harness-drift": "0.14.4",
