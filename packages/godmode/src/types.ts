@@ -84,82 +84,29 @@ export interface GodModeConfig {
 }
 
 // ── ChangeSet ────────────────────────────────────────────────────
+//
+// As of v2 (opus PR 5), ChangeSet types live in @brainst0rm/changeset-contract.
+// Re-exported here so existing consumers of @brainst0rm/godmode see no
+// breaking change at the import site. Direct imports from the contract
+// package are preferred for new code.
+//
+// Migration note: ChangeSet now has a REQUIRED `tenantId` field. The
+// engine's createChangeSet accepts a missing tenantId during the
+// migration window (defaults to "") but emits a deprecation warning;
+// callers should pass tenantId explicitly going forward.
 
-export type ChangeSetStatus =
-  | "draft"
-  | "approved"
-  | "executed"
-  | "failed"
-  | "rolled_back"
-  | "rejected"
-  | "expired";
-
-export interface ChangeSet {
-  id: string;
-  /** Which connector created this. */
-  connector: string;
-  /** Tool name that created it. */
-  action: string;
-  /** Human-readable summary. */
-  description: string;
-  status: ChangeSetStatus;
-  /** 0-100, auto-calculated from changes. */
-  riskScore: number;
-  riskFactors: string[];
-  /** What will be mutated. */
-  changes: Change[];
-  /** Simulation of what would happen. */
-  simulation: SimulationResult;
-  /** Opaque undo payload from the connector. */
-  rollbackData?: unknown;
-  createdAt: number;
-  /** 5-minute TTL on drafts. */
-  expiresAt: number;
-  executedAt?: number;
-  /**
-   * Timestamp of the transition to a terminal status (executed,
-   * failed, expired, or rejected). Used as the retention anchor
-   * for in-memory GC. Absent for drafts.
-   */
-  terminalAt?: number;
-  approvedBy?: "user" | "auto";
-}
-
-export interface Change {
-  /** Which system: "msp", "email", "vm". */
-  system: string;
-  /** Entity identifier: "device:john-laptop", "user:todd@example.com". */
-  entity: string;
-  operation: "create" | "update" | "delete" | "execute";
-  /** Current state (from simulation). */
-  before?: unknown;
-  /** Projected state. */
-  after?: unknown;
-}
-
-export interface SimulationResult {
-  success: boolean;
-  /** What the system would look like after execution. */
-  statePreview: unknown;
-  /** Downstream effects. */
-  cascades: string[];
-  /** Things that would block execution. */
-  constraints: string[];
-  estimatedDuration: string;
-  /** Code-level blast radius from knowledge graph analysis. */
-  blastRadius?: BlastRadius;
-}
-
-export interface BlastRadius {
-  /** Functions/methods directly or transitively affected. */
-  affectedSymbols: Array<{ name: string; file: string; depth: number }>;
-  /** Community sectors affected by this change. */
-  affectedCommunities: Array<{ id: string; name: string; tier: string }>;
-  /** Risk multiplier — higher if critical sectors are affected. */
-  riskMultiplier: number;
-  /** Total number of affected symbols. */
-  totalAffected: number;
-}
+export type {
+  ChangeSet,
+  ChangeSetStatus,
+  Change,
+  SimulationResult,
+  BlastRadius,
+  ChangeSetLifecycleEvent,
+  CostEstimate,
+  CreateChangeSetInput,
+  DataClass,
+  Reversibility,
+} from "@brainst0rm/changeset-contract";
 
 // ── Action Results ───────────────────────────────────────────────
 
