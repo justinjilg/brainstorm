@@ -19,6 +19,12 @@ export {
   listChangeSets,
   registerExecutor,
 } from "./changeset.js";
+export {
+  setChangeSetEventEmitter,
+  createTestEmitter,
+  type ChangeSetEventEmitter,
+  type TestEmitter,
+} from "./event-emitter.js";
 export { computeBlastRadius } from "./blast-radius.js";
 export type { BlastRadius } from "./types.js";
 export { ProductConnector } from "./product-connector.js";

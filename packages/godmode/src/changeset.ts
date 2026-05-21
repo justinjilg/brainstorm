@@ -19,6 +19,7 @@ import { defineTool, type BrainstormToolDef } from "@brainst0rm/tools";
 import { createLogger } from "@brainst0rm/shared";
 import { z } from "zod";
 import { logChangeSet } from "./audit.js";
+import { emitChangeSetEvent } from "./event-emitter.js";
 import type {
   ChangeSet,
   ChangeSetStatus,
@@ -27,6 +28,49 @@ import type {
 } from "./types.js";
 
 const log = createLogger("godmode-changeset");
+
+/**
+ * Build a ChangeSetLifecycleEvent envelope for emission to the federation
+ * bus. Pure mapper — does NOT touch the wire. Caller passes the event to
+ * `emitChangeSetEvent` (best-effort).
+ *
+ * The `state` argument uses the engine's `ChangeSetStatus` directly
+ * (draft / approved / executed / failed / rolled_back / rejected /
+ * expired). The EventBridge schemas in BrainstormOps PR #76 use slightly
+ * different state names (proposed / simulated / approved / executed /
+ * failed / reverted). A wire-level translation lives in the binding
+ * (CLI/server) that constructs the actual EventBridge PutEvents call.
+ */
+function lifecycleEventFor(
+  cs: ChangeSet,
+  state: ChangeSetStatus,
+  extra?: {
+    approver?: string;
+    executionResult?: unknown;
+    error?: string;
+  },
+) {
+  return {
+    tenantId: cs.tenantId,
+    ts: Date.now(),
+    changesetId: cs.id,
+    payload: {
+      product: cs.connector,
+      tool: cs.action,
+      state,
+      ...(state === "draft" && cs.simulation.blastRadius
+        ? { blastRadius: cs.simulation.blastRadius }
+        : {}),
+      ...(extra?.approver ? { approver: extra.approver } : {}),
+      ...(extra?.executionResult !== undefined
+        ? { executionResult: extra.executionResult }
+        : {}),
+      ...(extra?.error ? { error: extra.error } : {}),
+    },
+    ...(cs.correlationId ? { correlationId: cs.correlationId } : {}),
+    ...(cs.traceId ? { traceId: cs.traceId } : {}),
+  };
+}
 
 /** Draft TTL: 5 minutes. */
 const DRAFT_TTL_MS = 5 * 60 * 1000;
@@ -135,6 +179,13 @@ export function createChangeSet(input: CreateChangeSetInput): ChangeSet {
   };
 
   changesets.set(changeset.id, changeset);
+
+  // Emit the proposed lifecycle event to the federation bus. The engine's
+  // createChangeSet always includes a completed simulation in its input,
+  // so "proposed" carries the blast radius (the "simulated" state is
+  // implicitly subsumed — no separate intermediate event).
+  emitChangeSetEvent(lifecycleEventFor(changeset, "draft"));
+
   return changeset;
 }
 
@@ -184,6 +235,11 @@ export async function approveChangeSet(
   try {
     cs.status = "approved";
     cs.approvedBy = approvedBy;
+
+    // Emit `approved` lifecycle event (post status flip, pre-execute)
+    emitChangeSetEvent(
+      lifecycleEventFor(cs, "approved", { approver: approvedBy }),
+    );
 
     // Execute via the registered executor
     const executor = executors.get(cs.action);
@@ -236,6 +292,11 @@ export async function approveChangeSet(
         cs.executedAt = Date.now();
         cs.terminalAt = cs.executedAt;
         cs.rollbackData = result.rollbackData;
+        emitChangeSetEvent(
+          lifecycleEventFor(cs, "executed", {
+            executionResult: result.rollbackData,
+          }),
+        );
       } else {
         // Execution returned failure. Previously we reverted to "draft" to
         // keep the changeset retryable, but that let a partial-mutation
@@ -244,6 +305,9 @@ export async function approveChangeSet(
         // retryChangeSet() call to rehydrate — operator intervention.
         cs.status = "failed";
         cs.terminalAt = Date.now();
+        emitChangeSetEvent(
+          lifecycleEventFor(cs, "failed", { error: result.message }),
+        );
       }
       // Always audit both success and failure
       logChangeSet(cs);
@@ -255,8 +319,9 @@ export async function approveChangeSet(
     } catch (error) {
       cs.status = "failed";
       cs.terminalAt = Date.now();
-      logChangeSet(cs); // Audit the failure
       const msg = error instanceof Error ? error.message : String(error);
+      emitChangeSetEvent(lifecycleEventFor(cs, "failed", { error: msg }));
+      logChangeSet(cs); // Audit the failure
       return {
         success: false,
         message: `Execution failed: ${msg}`,
