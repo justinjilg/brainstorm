@@ -1,0 +1,50 @@
+{
+  "name": "@brainst0rm/changeset-contract",
+  "version": "0.15.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@brainst0rm/shared": "0.14.4",
+    "zod": "^3.24"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.19",
+    "tsup": "^8",
+    "typescript": "^5.7",
+    "vitest": "^3"
+  },
+  "description": "ChangeSet contract v2 — cross-package + cross-product type definitions for Brainstorm's mutation-gating safety layer. Imported by godmode (engine), brainstorm-desktop (renderer), and product services (publishers). Federation-aware: includes tenant_id, EventBridge envelope alignment, schema versioning.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/justinjilg/brainstorm.git",
+    "directory": "packages/changeset-contract"
+  },
+  "homepage": "https://brainstorm.co",
+  "keywords": [
+    "changeset",
+    "brainstorm",
+    "contract",
+    "godmode",
+    "federation",
+    "tenant-isolation"
+  ],
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "publishConfig": {
+    "access": "public"
+  }
+}

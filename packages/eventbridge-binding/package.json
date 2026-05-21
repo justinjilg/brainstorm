@@ -1,0 +1,43 @@
+{
+  "name": "@brainst0rm/eventbridge-binding",
+  "version": "0.15.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@brainst0rm/changeset-contract": "0.15.0",
+    "@brainst0rm/godmode": "0.15.0",
+    "@brainst0rm/shared": "0.14.4",
+    "@aws-sdk/client-eventbridge": "^3.700.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.19",
+    "tsup": "^8",
+    "typescript": "^5.7",
+    "vitest": "^3"
+  },
+  "description": "EventBridge binding for @brainst0rm/godmode's ChangeSetEventEmitter. Optional dependency — consumers (CLI, server) wire this at bootstrap to publish ChangeSet lifecycle events to the brainstorm.events bus. Separated from godmode so non-AWS consumers don't pull the SDK.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/justinjilg/brainstorm.git",
+    "directory": "packages/eventbridge-binding"
+  },
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "publishConfig": {
+    "access": "public"
+  }
+}

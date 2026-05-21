@@ -58,6 +58,7 @@
     "@brainst0rm/config": "0.14.4",
     "@brainst0rm/core": "0.14.5",
     "@brainst0rm/db": "0.14.4",
+    "@brainst0rm/eventbridge-binding": "0.15.0",
     "@brainst0rm/docgen": "0.14.4",
     "@brainst0rm/eval": "0.14.5",
     "@brainst0rm/gateway": "0.14.4",

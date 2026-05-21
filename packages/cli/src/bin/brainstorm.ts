@@ -8504,6 +8504,37 @@ export function run() {
   // Initialize Sentry — no-ops if SENTRY_DSN is not set
   initSentry({ release: process.env.npm_package_version });
 
+  // EventBridge ChangeSet emitter (opus PR 7.2). Opt-in via env var so
+  // dev sessions and non-AWS contexts don't try to publish.
+  //
+  // When enabled, every ChangeSet lifecycle transition in this CLI's
+  // godmode engine publishes a structured event to the brainstorm.events
+  // federation bus (BrainstormOps PR #76). Brainstorm desktop and other
+  // subscribers see the unified timeline.
+  //
+  // Failure mode: best-effort. PutEvents errors log at warn level (per
+  // @brainst0rm/godmode's outer catch); the ChangeSet flow itself is
+  // never blocked by federation issues.
+  if (process.env.BRAINSTORM_EVENTBRIDGE_ENABLED === "1") {
+    // Lazy-load so non-AWS sessions don't pay the SDK init cost.
+    import("@brainst0rm/eventbridge-binding")
+      .then(({ installEventBridgeEmitter }) => {
+        installEventBridgeEmitter({
+          region: process.env.AWS_REGION,
+          busName: process.env.BRAINSTORM_EVENT_BUS_NAME,
+        });
+      })
+      .catch((err) => {
+        // Don't crash CLI startup over federation wiring — log to stderr.
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[brainstorm] EventBridge emitter install failed; continuing without federation: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      });
+  }
+
   // Graceful shutdown: stop Docker sandbox, close DB, flush Sentry
   const cleanup = () => {
     try {
