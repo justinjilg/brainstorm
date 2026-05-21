@@ -70,6 +70,68 @@ function buildBlockedPaths(): Array<{ prefix: string; reason: string }> {
       prefix: `${home}/.npmrc`,
       reason: "Reading ~/.npmrc is blocked (may contain auth tokens).",
     },
+    // Added 2026-05-21 from forge V-attacker finding (agent-06): these
+    // are high-value tokens reachable via file_read on a default install
+    // that the prior denylist missed.
+    {
+      prefix: `${home}/.config/gh/`,
+      reason:
+        "Reading ~/.config/gh/* is blocked (GitHub CLI auth tokens — hosts.yml).",
+    },
+    {
+      prefix: `${home}/.kube/`,
+      reason: "Reading ~/.kube/* is blocked (Kubernetes cluster credentials).",
+    },
+    {
+      prefix: `${home}/.zsh_history`,
+      reason:
+        "Reading ~/.zsh_history is blocked (shell history often contains credentials inline).",
+    },
+    {
+      prefix: `${home}/.bash_history`,
+      reason:
+        "Reading ~/.bash_history is blocked (shell history often contains credentials inline).",
+    },
+    {
+      prefix: `${home}/.local/share/zsh/`,
+      reason:
+        "Reading ~/.local/share/zsh/* is blocked (zsh data dir; history backups).",
+    },
+    {
+      prefix: `${home}/Library/Application Support/1Password/`,
+      reason:
+        "Reading 1Password app support dir is blocked (encrypted vault metadata still leaks identifying info).",
+    },
+    {
+      prefix: `${home}/Library/Application Support/Slack/`,
+      reason:
+        "Reading Slack app support dir is blocked (workspace tokens in storage).",
+    },
+    {
+      prefix: `${home}/Library/Application Support/Google/Chrome/`,
+      reason:
+        "Reading Chrome app support dir is blocked (cookies, login data, autofill).",
+    },
+    {
+      prefix: `${home}/Library/Application Support/BraveSoftware/`,
+      reason:
+        "Reading Brave app support dir is blocked (cookies, login data, autofill).",
+    },
+    {
+      prefix: `${home}/Library/Application Support/Firefox/`,
+      reason:
+        "Reading Firefox app support dir is blocked (cookies, login data).",
+    },
+    {
+      prefix: `${home}/Library/Keychains/`,
+      reason:
+        "Reading ~/Library/Keychains/* is blocked (macOS keychain SQLite blobs).",
+    },
+    {
+      prefix: `${home}/Library/Cookies/`,
+      reason:
+        "Reading ~/Library/Cookies/* is blocked (Safari/system cookies binary).",
+    },
     // macOS root-user home
     {
       prefix: "/var/root/.ssh/",
