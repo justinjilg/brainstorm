@@ -5,8 +5,8 @@
 This is the canonical specification for how every system in the Brainstorm ecosystem communicates. Any system implementing this contract is automatically discoverable and operable from the Brainstorm CLI, dashboard, and API.
 
 **Audience**: Any engineer implementing God Mode endpoints on a new or existing system.  
-**Languages**: The contract is HTTP + JSON. Implementations exist in TypeScript (BR, CLI), Python (MSP, GTM), and Go (VM).  
-**Validator**: `brainstorm platform verify <url>` tests compliance.
+**Languages**: The contract is HTTP + JSON for most products. **MCP JSON-RPC over stdio is an accepted equivalent transport** for products that natively speak MCP (e.g. BrainstormVM) — see §9. Implementations exist in TypeScript (BR, CLI), Python (MSP, GTM), and Go (VM-via-MCP).  
+**Validator**: `brainstorm platform verify <url>` tests compliance for HTTP products. `brainstorm platform verify <mcp-endpoint> --transport=mcp` tests compliance for MCP products.
 
 ---
 
@@ -349,3 +349,57 @@ events:
 ```
 
 300-500 lines per system. 1-2 hours.
+
+---
+
+## 9. Alternative Transports
+
+The platform contract is HTTP + JSON by default. Some products in the ecosystem natively speak Model Context Protocol (MCP) JSON-RPC over stdio — most notably BrainstormVM, which exposes its capabilities through an MCP server rather than a REST API. To keep the contract honest about transport diversity (and to avoid forcing those products to bolt on a REST proxy purely for contract compliance), **MCP JSON-RPC is an accepted equivalent transport** for §2 (Health), §3 (Tool Discovery), §4 (Tool Execution), §5.5 (Self), and §5.6 (Discovery).
+
+The §5 platform events endpoint and §6 tenant lifecycle endpoint remain **HTTP-only** — those are server-to-server flows where MCP's stdio transport doesn't fit.
+
+### 9.1 Equivalence map (HTTP REST ↔ MCP JSON-RPC)
+
+| Contract endpoint               | MCP method                                           | Notes                                                                                                                                                                                                                                               |
+| ------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /health`                   | `health/check` OR derived from `initialize` response | Implementations may publish a `health/check` RPC, or return a `status` field on the `initialize` response's `serverInfo`. Either is compliant.                                                                                                      |
+| `GET /api/v1/god-mode/tools`    | `tools/list`                                         | Return shape is MCP's `Tool[]`; the contract's `risk_level` + `requires_changeset` + `evidence_type` fields go into the MCP tool's `annotations` field (MCP SDK ≥ v0.7).                                                                            |
+| `POST /api/v1/god-mode/execute` | `tools/call`                                         | Request `params.arguments` carries the contract's `params`. Response `content` arrays must conform to the success / simulation / error shapes in §4. ChangeSet `simulate=true` semantics are signaled by an `extra.simulate=true` flag on the call. |
+| `GET /api/v1/self`              | `initialize` response                                | The MCP `initialize` RPC's response includes `serverInfo { name, version }` and `capabilities` — sufficient to populate the contract's `{ product, version, capabilities, schema_version }`.                                                        |
+| `GET /api/v1/discovery`         | `initialize` response + `resources/list`             | The capabilities object lists supported resource types, equivalent to the contract's `{ tools_url, self_url, events_url?, openapi_url? }` (MCP variant publishes resource URIs instead of REST URLs).                                               |
+
+### 9.2 Auth over MCP
+
+MCP servers accept auth via environment variables on the stdio transport (e.g. `MCP_API_TOKEN`) OR via the first `initialize` message's `clientInfo.auth` field (MCP SDK ≥ v0.7). The token format and required JWT claims from §1 are unchanged — only the transport differs.
+
+The `platform_tenant_id` claim still applies. MCP servers must enforce tenant scoping inside `tools/call` handlers identically to HTTP product handlers.
+
+### 9.3 Events over MCP — explicit gap
+
+MCP products that produce events MUST publish to the `brainstorm.events` EventBridge bus directly via the AWS SDK (or via a small HTTP-based proxy if the runtime can't reach AWS). MCP's `notifications/*` channel is NOT a substitute for federation events — the bus is the system of record for cross-product observability.
+
+### 9.4 Implementation checklist for MCP products
+
+In addition to the contract's normal §8 checklist:
+
+```
+□ MCP server registered with the brainstorm CLI's MCP client manager
+□ initialize response includes serverInfo.name = "<product>" and version semver
+□ initialize response capabilities object includes "tools" and "health"
+□ tools/list returns Tool[] with annotations carrying risk_level + requires_changeset
+□ tools/call respects simulate=true via extra.simulate flag
+□ Auth enforced via MCP_API_TOKEN env or initialize.clientInfo.auth
+□ Tenant scoping enforced in every handler
+□ EventBridge publisher wired for state-change events (NOT MCP notifications)
+□ Verify: brainstorm platform verify <stdio-endpoint> --transport=mcp
+```
+
+### 9.5 Why this amendment exists
+
+The original contract assumed HTTP universally, which forced VM into an awkward position: it's an MCP-native product whose Go implementation would have needed a REST proxy layer purely to claim contract compliance. The audit at `docs/business-harness/contract-gap-inventory-2026-05.md` surfaced this as a "spec gap, not a code gap." Permitting MCP recognizes that:
+
+1. brainstorm-the-hub already speaks MCP for tool dispatch (via the MCP client in `packages/mcp`)
+2. The information conveyed is identical; only the wire shape differs
+3. Forcing REST adds a translation layer that does nothing for the operator UX
+
+Future transports (gRPC, OpenAPI-on-Hono, etc.) can be added here when justified — but should be additive, never replacing HTTP or MCP for products that already use them.
