@@ -8,8 +8,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@brainst0rm/shared": "0.14.4",
-    "@brainst0rm/code-graph": "0.14.4"
+    "@brainst0rm/shared": "workspace:*",
+    "@brainst0rm/code-graph": "workspace:*"
   },
   "devDependencies": {
     "tsup": "^8",

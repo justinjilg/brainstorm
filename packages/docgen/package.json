@@ -8,10 +8,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@brainst0rm/shared": "0.14.4",
-    "@brainst0rm/ingest": "0.14.4"
+    "@brainst0rm/shared": "workspace:*",
+    "@brainst0rm/ingest": "workspace:*"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
     "tsup": "^8",
     "typescript": "^5.7"
   },
