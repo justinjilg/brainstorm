@@ -15,11 +15,11 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brainst0rm/config": "0.14.4",
-    "@brainst0rm/db": "0.14.4",
-    "@brainst0rm/gateway": "0.14.4",
-    "@brainst0rm/providers": "0.14.4",
-    "@brainst0rm/shared": "0.14.4",
+    "@brainst0rm/config": "workspace:*",
+    "@brainst0rm/db": "workspace:*",
+    "@brainst0rm/gateway": "workspace:*",
+    "@brainst0rm/providers": "workspace:*",
+    "@brainst0rm/shared": "workspace:*",
     "ai": "^6"
   },
   "devDependencies": {

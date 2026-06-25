@@ -8,15 +8,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@brainst0rm/shared": "0.14.4",
-    "@brainst0rm/config": "0.14.4",
-    "@brainst0rm/core": "0.14.5",
-    "@brainst0rm/router": "0.14.4",
-    "@brainst0rm/providers": "0.14.4",
-    "@brainst0rm/tools": "0.15.0",
-    "@brainst0rm/db": "0.14.4",
-    "@brainst0rm/ingest": "0.14.4",
-    "@brainst0rm/docgen": "0.14.4"
+    "@brainst0rm/shared": "workspace:*",
+    "@brainst0rm/config": "workspace:*",
+    "@brainst0rm/core": "workspace:*",
+    "@brainst0rm/router": "workspace:*",
+    "@brainst0rm/providers": "workspace:*",
+    "@brainst0rm/tools": "workspace:*",
+    "@brainst0rm/db": "workspace:*",
+    "@brainst0rm/ingest": "workspace:*",
+    "@brainst0rm/docgen": "workspace:*"
   },
   "devDependencies": {
     "tsup": "^8",

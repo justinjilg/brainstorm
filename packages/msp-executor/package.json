@@ -21,7 +21,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brainst0rm/endpoint-stub": "0.14.5"
+    "@brainst0rm/endpoint-stub": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

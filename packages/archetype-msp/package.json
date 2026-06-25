@@ -20,7 +20,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@brainst0rm/config": "0.14.4"
+    "@brainst0rm/config": "workspace:*"
   },
   "devDependencies": {
     "tsup": "^8",

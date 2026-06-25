@@ -20,13 +20,14 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brainst0rm/shared": "0.14.4",
+    "@brainst0rm/shared": "workspace:*",
     "@iarna/toml": "^2.2",
     "minimatch": "^10",
     "zod": "^3"
   },
   "devDependencies": {
     "@types/iarna__toml": "^2.0",
+    "@types/node": "^22.0.0",
     "tsup": "^8",
     "typescript": "^5.7",
     "vitest": "^3"

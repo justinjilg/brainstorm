@@ -53,7 +53,7 @@
     "package": "vsce package"
   },
   "dependencies": {
-    "@brainst0rm/shared": "0.14.4"
+    "@brainst0rm/shared": "workspace:*"
   },
   "devDependencies": {
     "@types/vscode": "^1.90.0",

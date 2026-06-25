@@ -25,7 +25,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@brainst0rm/shared": "0.14.4",
+    "@brainst0rm/shared": "workspace:*",
     "better-sqlite3": "^12.2.0",
     "graphology": "^0.26.0",
     "graphology-communities-louvain": "^2.0.2",

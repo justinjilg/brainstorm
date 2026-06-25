@@ -20,9 +20,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brainst0rm/harness-fs": "0.14.4",
-    "@brainst0rm/harness-index": "0.14.4",
-    "@brainst0rm/shared": "0.14.4",
+    "@brainst0rm/harness-fs": "workspace:*",
+    "@brainst0rm/harness-index": "workspace:*",
+    "@brainst0rm/shared": "workspace:*",
     "@iarna/toml": "^2.2"
   },
   "devDependencies": {

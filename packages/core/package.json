@@ -16,19 +16,23 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brainst0rm/agents": "0.14.4",
-    "@brainst0rm/config": "0.14.4",
-    "@brainst0rm/db": "0.14.4",
-    "@brainst0rm/gateway": "0.14.4",
-    "@brainst0rm/orchestrator": "0.14.4",
-    "@brainst0rm/providers": "0.14.4",
-    "@brainst0rm/router": "0.14.4",
-    "@brainst0rm/shared": "0.14.4",
-    "@brainst0rm/tools": "0.15.0",
+    "@brainst0rm/agents": "workspace:*",
+    "@brainst0rm/config": "workspace:*",
+    "@brainst0rm/db": "workspace:*",
+    "@brainst0rm/gateway": "workspace:*",
+    "@brainst0rm/orchestrator": "workspace:*",
+    "@brainst0rm/providers": "workspace:*",
+    "@brainst0rm/router": "workspace:*",
+    "@brainst0rm/shared": "workspace:*",
+    "@brainst0rm/tools": "workspace:*",
     "ai": "^6",
-    "pdf-parse": "^2.4.5"
+    "better-sqlite3": "^11",
+    "pdf-parse": "^2.4.5",
+    "zod": "^3"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7",
+    "@types/node": "^22.0.0",
     "@types/pdf-parse": "^1.1.5",
     "fast-check": "^4.6.0",
     "tsup": "^8",
