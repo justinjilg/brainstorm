@@ -15,12 +15,14 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brainst0rm/shared": "0.14.4",
-    "@brainst0rm/config": "0.14.4",
-    "@brainst0rm/db": "0.14.4",
+    "@brainst0rm/shared": "workspace:*",
+    "@brainst0rm/config": "workspace:*",
+    "@brainst0rm/db": "workspace:*",
     "zod": "^3"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7",
+    "better-sqlite3": "^11",
     "tsup": "^8",
     "typescript": "^5.7"
   },

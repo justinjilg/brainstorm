@@ -14,17 +14,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: "npm"
+          cache: "pnpm"
 
-      - run: npm ci
+      - run: pnpm install --frozen-lockfile
 
-      - run: npx turbo run build
+      - run: pnpm exec turbo run build
 
       - name: Run E2E tests
-        run: npx turbo run test -- --reporter=verbose
+        run: pnpm exec turbo run test -- --reporter=verbose
         env:
           E2E: "1"
           BRAINSTORM_API_KEY: ${{ secrets.BRAINSTORM_API_KEY }}

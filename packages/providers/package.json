@@ -15,8 +15,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brainst0rm/shared": "0.14.4",
-    "@brainst0rm/config": "0.14.4",
+    "@brainst0rm/shared": "workspace:*",
+    "@brainst0rm/config": "workspace:*",
     "ai": "^6",
     "@ai-sdk/openai-compatible": "^1",
     "@ai-sdk/anthropic": "^3",

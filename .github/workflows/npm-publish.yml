@@ -14,19 +14,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: "pnpm"
           registry-url: "https://registry.npmjs.org"
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build all packages
-        run: npx turbo run build --filter='!@brainst0rm/desktop'
+        run: pnpm exec turbo run build --filter='!@brainst0rm/desktop'
 
       - name: Run tests
-        run: npx turbo run test --filter=@brainst0rm/core --filter=@brainst0rm/tools
+        run: pnpm exec turbo run test --filter=@brainst0rm/core --filter=@brainst0rm/tools
 
       # Publish ALL non-private workspaces. Previous version hardcoded a
       # for-loop list that drifted from the workspace as new packages were
@@ -61,8 +65,13 @@ jobs:
             }
           "
           echo ""
-          # Single command publishes all non-private workspaces with provenance.
-          # npm skips workspaces marked "private": true automatically.
-          npm publish --workspaces --provenance --access public
+          # `pnpm -r publish` publishes every workspace package, skipping
+          # those marked "private": true automatically, and rewrites the
+          # `workspace:*` internal deps to the concrete published version in
+          # each tarball (the npm-workspaces idiom `npm publish --workspaces`
+          # did not have to do because it used fixed-version pins).
+          # --no-git-checks: the tag-triggered runner checks out a detached
+          # HEAD, which pnpm would otherwise refuse to publish from.
+          pnpm -r publish --provenance --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

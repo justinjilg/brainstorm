@@ -12,11 +12,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Use Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
 
       # Ratchet for `as any` escape hatches runs BEFORE `npm ci`.
       # v12 Pessimist/Auditor/Operator/Sr-Engineer consensus (4/10):
@@ -43,10 +46,10 @@ jobs:
         run: node scripts/check-ci-continue-on-error.mjs
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build all packages
-        run: npx turbo run build --filter='!@brainst0rm/desktop'
+        run: pnpm exec turbo run build --filter='!@brainst0rm/desktop'
 
       # Contract preflight (Stage-3 lockstep). Runs every gate against
       # the built dist + committed source: tool metadata coverage,
@@ -59,14 +62,14 @@ jobs:
         run: node scripts/contract-check.mjs
 
       - name: Type check
-        run: npx turbo run typecheck --filter='!@brainst0rm/desktop'
+        run: pnpm exec turbo run typecheck --filter='!@brainst0rm/desktop'
 
       # Guard against a specific memory-leak shape Pass 2 + Pass 3 of the
       # quality scan both kept finding: AbortSignal.timeout(ms) wired to
       # addEventListener("abort", …) without { once: true } or a matching
       # removeEventListener pair. See scripts/lint-abort-signal-timeout.mjs.
       - name: Lint — AbortSignal.timeout cleanup
-        run: npm run lint:abort-signal
+        run: pnpm run lint:abort-signal
 
       # Architectural boundary ratchet for the 27-package graph.
       # v9-v12 assessment's Architect persona flagged the absence of
@@ -88,7 +91,7 @@ jobs:
       # docs/tool-catalog.json is now in .prettierignore so the generator
       # output stays stable across commits.
       - name: Verify tool catalog freshness
-        run: npm run --workspace=@brainst0rm/tools export-catalog:check
+        run: pnpm --filter @brainst0rm/tools run export-catalog:check
 
       # Create ~/.brainstorm directory structure for tests that reference it
       - name: Prepare test environment
@@ -97,7 +100,7 @@ jobs:
       # Tests MUST pass. No --passWithNoTests at the turbo level.
       # Individual packages that legitimately have no tests use it in their package.json.
       - name: Run tests (tools + everything except desktop/core/vault)
-        run: npx turbo run test --filter='!@brainst0rm/desktop' --filter='!@brainst0rm/vault' --filter='!@brainst0rm/core'
+        run: pnpm exec turbo run test --filter='!@brainst0rm/desktop' --filter='!@brainst0rm/vault' --filter='!@brainst0rm/core'
 
       # The "HOME/filesystem / memory-paths" rationale that kept this step
       # soft-failing for 5+ rounds turned out to be a myth: core tests
@@ -109,14 +112,14 @@ jobs:
       # runs 31/31 test files green on Ubuntu. Lifted continue-on-error
       # to make this step a real signal.
       - name: Run core tests
-        run: npx turbo run test --filter=@brainst0rm/core
+        run: pnpm exec turbo run test --filter=@brainst0rm/core
 
       # Vault (Argon2id — slow by design). Previously marked as
       # "flaky in CI on slow runners" — no evidence of that after core
       # actually ran; 5/5 test files green. Keep the 5-minute timeout
       # because Argon2id genuinely takes a while, but no longer soft.
       - name: Run vault tests
-        run: npx turbo run test --filter=@brainst0rm/vault
+        run: pnpm exec turbo run test --filter=@brainst0rm/vault
         timeout-minutes: 5
 
       # Wiring smoke test: verifies that critical functions are exported,

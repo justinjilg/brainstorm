@@ -20,11 +20,12 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brainst0rm/harness-drift": "0.14.4",
-    "@brainst0rm/harness-fs": "0.14.4",
-    "@brainst0rm/harness-index": "0.14.4"
+    "@brainst0rm/harness-drift": "workspace:*",
+    "@brainst0rm/harness-fs": "workspace:*",
+    "@brainst0rm/harness-index": "workspace:*"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
     "tsup": "^8",
     "typescript": "^5.7",
     "vitest": "^3"

@@ -15,11 +15,13 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@brainst0rm/shared": "0.14.4",
-    "@brainst0rm/db": "0.14.4",
-    "@brainst0rm/projects": "0.14.4"
+    "@brainst0rm/db": "workspace:*",
+    "@brainst0rm/projects": "workspace:*",
+    "@brainst0rm/shared": "workspace:*",
+    "better-sqlite3": "^11"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7",
     "tsup": "^8",
     "typescript": "^5.7"
   },

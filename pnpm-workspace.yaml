@@ -1,0 +1,41 @@
+packages:
+  - "packages/*"
+  - "apps/*"
+
+# Native/build-script deps that pnpm v10 gates by default. These all
+# previously ran their install/build scripts under npm, so allowing them
+# preserves the prior behavior (esbuild bundling, tree-sitter native
+# bindings, better-sqlite3 native module, node-pty, electron tooling).
+onlyBuiltDependencies:
+  - better-sqlite3
+  - esbuild
+  - node-pty
+  - tree-sitter
+  - tree-sitter-go
+  - tree-sitter-java
+  - tree-sitter-javascript
+  - tree-sitter-python
+  - tree-sitter-rust
+  - tree-sitter-typescript
+  - electron
+  - electron-winstaller
+
+# Dependency overrides. pnpm v10 reads overrides from here, NOT from the
+# package.json "pnpm.overrides" field (that field is ignored as of pnpm 10.9).
+# Mirrors the existing npm "overrides" block (security/version pins) and adds
+# a single @types/node pin so the workspace resolves one copy — multiple
+# @types/node majors produced nominally-incompatible AbortSignal types under
+# pnpm's strict node_modules.
+overrides:
+  "@xmldom/xmldom": "0.8.13"
+  dompurify: ">=3.4.0"
+  express-rate-limit: "8.5.2"
+  fast-uri: "3.1.2"
+  hono: "4.12.21"
+  ip-address: "10.2.0"
+  mermaid: "11.15.0"
+  "minimatch@10>brace-expansion": "5.0.6"
+  postcss: "8.5.15"
+  uuid: "11.1.1"
+  ws: "8.20.1"
+  "@types/node": "^22.0.0"

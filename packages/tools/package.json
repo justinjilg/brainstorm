@@ -17,7 +17,7 @@
     "export-catalog:check": "tsx src/export-catalog.ts --check"
   },
   "dependencies": {
-    "@brainst0rm/shared": "0.14.4",
+    "@brainst0rm/shared": "workspace:*",
     "ai": "^6",
     "zod": "^3",
     "fast-glob": "^3",

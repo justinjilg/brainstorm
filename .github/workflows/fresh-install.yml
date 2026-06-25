@@ -29,7 +29,8 @@ on:
       - "packages/core/**"
       - "packages/gateway/**"
       - "package.json"
-      - "package-lock.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
       - "turbo.json"
       - ".github/workflows/fresh-install.yml"
       - "scripts/smoke-test-cli.sh"
@@ -60,17 +61,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Use Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
 
       - name: Install dependencies (in repo)
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build CLI + transitive deps
-        run: npx turbo run build --filter=@brainst0rm/cli
+        run: pnpm exec turbo run build --filter=@brainst0rm/cli
 
       - name: Pack the CLI tarball
         id: pack
@@ -82,9 +86,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          PACK_OUTPUT="$(npm pack --silent)"
-          echo "tarball=packages/cli/${PACK_OUTPUT}" >> "$GITHUB_OUTPUT"
-          echo "Packed: ${PACK_OUTPUT}"
+          # `pnpm pack` (not `npm pack`) so the `workspace:*` internal deps
+          # are rewritten to concrete published versions in the tarball's
+          # package.json — npm pack would leave `workspace:*` and produce a
+          # tarball that a fresh `npm install -g` cannot resolve.
+          PACK_OUTPUT="$(pnpm pack | tail -n1)"
+          PACK_BASENAME="$(basename "${PACK_OUTPUT}")"
+          echo "tarball=packages/cli/${PACK_BASENAME}" >> "$GITHUB_OUTPUT"
+          echo "Packed: ${PACK_BASENAME}"
 
       - name: Install the tarball globally
         env:
