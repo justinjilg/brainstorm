@@ -150,9 +150,29 @@ export class MCPClientManager {
   private async createStdioTransport(server: MCPServerConfig): Promise<any> {
     const { Experimental_StdioMCPTransport } =
       await import("@ai-sdk/mcp/mcp-stdio");
+    const command = server.command ?? "npx";
+    const args = server.args ?? (server.url ? [server.url] : []);
+
+    // Defense against MCP-config RCE (opus forge V-attacker finding,
+    // 2026-05-21):
+    //
+    // The threat: an attacker with `file_write` privilege (e.g. via prompt
+    // injection) writes to ~/.brainstorm/mcp.json setting
+    //   command: "/bin/sh", args: ["-c", "<payload>"]
+    // On next brainstorm restart, spawn() runs the payload outside the
+    // shell sandbox — full host shell access from agent context.
+    //
+    // Mitigation: validate command + args before spawn:
+    //  1. Reject known shell binaries by basename
+    //  2. Reject command paths containing shell-like indirection ($, `, |, >)
+    //  3. Reject -c (shell-eval) flag in args
+    //  4. Reject command names containing path separators outside an
+    //     explicit allowlist of trusted prefixes
+    validateMcpStdioCommand(server.name, command, args);
+
     return new Experimental_StdioMCPTransport({
-      command: server.command ?? "npx",
-      args: server.args ?? (server.url ? [server.url] : []),
+      command,
+      args,
       env: { ...process.env, ...server.env } as Record<string, string>,
     });
   }
@@ -170,6 +190,70 @@ export class MCPClientManager {
 
   listConnected(): string[] {
     return Array.from(this.connections.keys());
+  }
+}
+
+/**
+ * Validate an MCP stdio server's command + args against shell-bypass
+ * patterns. Throws on suspicious config so a malicious mcp.json
+ * (written via file_write under attack) can't escalate to host shell.
+ *
+ * See opus forge V-attacker finding 2026-05-21.
+ */
+const BLOCKED_SHELL_BASENAMES = new Set([
+  "sh",
+  "bash",
+  "zsh",
+  "dash",
+  "fish",
+  "ksh",
+  "csh",
+  "tcsh",
+  "ash",
+  "rbash",
+  "rzsh",
+  // PowerShell on Windows; rare on MCP-stdio but cheap to include
+  "pwsh",
+  "powershell",
+]);
+
+const SHELL_METACHARS = /[;&|`$(){}<>]/;
+
+function validateMcpStdioCommand(
+  serverName: string,
+  command: string,
+  args: string[],
+): void {
+  if (typeof command !== "string" || command.length === 0) {
+    throw new Error(
+      `MCP server "${serverName}": stdio command must be a non-empty string`,
+    );
+  }
+  if (SHELL_METACHARS.test(command)) {
+    throw new Error(
+      `MCP server "${serverName}": stdio command contains shell metacharacters — rejected`,
+    );
+  }
+  // Compare basename only — covers /bin/sh, /usr/bin/bash, etc.
+  const basename = command.split(/[\\/]/).pop() ?? command;
+  if (BLOCKED_SHELL_BASENAMES.has(basename.toLowerCase())) {
+    throw new Error(
+      `MCP server "${serverName}": stdio command "${command}" is a shell interpreter and is blocked. ` +
+        `Configure a specific binary (e.g. "npx", "node", "python3") not a shell.`,
+    );
+  }
+  // -c is shell-eval. Reject in args even when command is e.g. "env sh -c".
+  for (const arg of args) {
+    if (typeof arg !== "string") {
+      throw new Error(
+        `MCP server "${serverName}": stdio arg must be a string, got ${typeof arg}`,
+      );
+    }
+    if (arg === "-c" || arg === "--command") {
+      throw new Error(
+        `MCP server "${serverName}": stdio args contain shell-eval flag (${arg}) — rejected`,
+      );
+    }
   }
 }
 

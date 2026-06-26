@@ -213,4 +213,79 @@ describe("file tools — sensitive-path blocks", () => {
       expect(isBlocked(result)).toBe(true);
     });
   });
+
+  // 2026-05-21 — forge V-attacker findings (agent-06): high-value tokens
+  // reachable via file_read on a default install that the prior denylist
+  // missed.
+  describe("file_read — extended denylist (forge V-attacker 2026-05-21)", () => {
+    it("blocks ~/.config/gh/hosts.yml (GitHub CLI tokens)", async () => {
+      const result = await fileReadTool.execute({
+        path: join(HOME, ".config", "gh", "hosts.yml"),
+      });
+      expect(isBlocked(result)).toBe(true);
+    });
+    it("blocks ~/.kube/config (Kubernetes credentials)", async () => {
+      const result = await fileReadTool.execute({
+        path: join(HOME, ".kube", "config"),
+      });
+      expect(isBlocked(result)).toBe(true);
+    });
+    it("blocks ~/.zsh_history (credentials inline)", async () => {
+      const result = await fileReadTool.execute({
+        path: join(HOME, ".zsh_history"),
+      });
+      expect(isBlocked(result)).toBe(true);
+    });
+    it("blocks ~/.bash_history", async () => {
+      const result = await fileReadTool.execute({
+        path: join(HOME, ".bash_history"),
+      });
+      expect(isBlocked(result)).toBe(true);
+    });
+    it("blocks ~/Library/Application Support/1Password/*", async () => {
+      const result = await fileReadTool.execute({
+        path: join(
+          HOME,
+          "Library",
+          "Application Support",
+          "1Password",
+          "settings",
+        ),
+      });
+      expect(isBlocked(result)).toBe(true);
+    });
+    it("blocks ~/Library/Application Support/Slack/*", async () => {
+      const result = await fileReadTool.execute({
+        path: join(
+          HOME,
+          "Library",
+          "Application Support",
+          "Slack",
+          "storage",
+          "leveldb",
+        ),
+      });
+      expect(isBlocked(result)).toBe(true);
+    });
+    it("blocks ~/Library/Application Support/Google/Chrome/*", async () => {
+      const result = await fileReadTool.execute({
+        path: join(
+          HOME,
+          "Library",
+          "Application Support",
+          "Google",
+          "Chrome",
+          "Default",
+          "Cookies",
+        ),
+      });
+      expect(isBlocked(result)).toBe(true);
+    });
+    it("blocks ~/Library/Keychains/*", async () => {
+      const result = await fileReadTool.execute({
+        path: join(HOME, "Library", "Keychains", "login.keychain-db"),
+      });
+      expect(isBlocked(result)).toBe(true);
+    });
+  });
 });

@@ -161,6 +161,25 @@ let dockerConfig: { image: string; timeout: number } = {
   timeout: 120_000,
 };
 
+/**
+ * Read the active sandbox level. Used by `process_spawn` to inherit
+ * the same restriction the shell tool uses, instead of hard-coding
+ * "restricted" which silently differed when the CLI ran with
+ * `configureSandbox("container")` or `configureSandbox("none")`.
+ *
+ * Returns the current module-state value, populated by configureSandbox()
+ * at CLI startup. Defaults to "restricted" if configureSandbox() was
+ * never called (test harnesses, early-boot).
+ */
+export function getCurrentSandboxLevel(): SandboxLevel {
+  return currentSandboxLevel;
+}
+
+/** Read the active project-path, used for ./project-local sandbox carveouts. */
+export function getCurrentSandboxProjectPath(): string | undefined {
+  return currentProjectPath;
+}
+
 /** Configure the shell sandbox level and output limits. Call once during CLI startup. */
 export function configureSandbox(
   level: SandboxLevel,

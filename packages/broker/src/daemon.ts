@@ -311,9 +311,46 @@ export function createBroker(opts: BrokerOptions = {}): Broker {
     return timingSafeEqual(supplied, expected);
   }
 
+  /**
+   * Max body size for any single broker POST (1 MiB). Prevents an
+   * attacker who has the bearer token from OOM-DoS'ing the broker
+   * with a single very-large request. Was unbounded — flagged by
+   * forge V-attacker 2026-05-21 (agent-06).
+   *
+   * 1 MiB is generous for the broker's typed messages (event payloads,
+   * ping/pong, registrations). Legitimate clients don't approach this.
+   * If a future feature needs more, lift this constant explicitly
+   * rather than removing the cap.
+   */
+  const MAX_BROKER_BODY_BYTES = 1 * 1024 * 1024;
+
   async function readJson(req: IncomingMessage): Promise<unknown> {
+    // Reject early if Content-Length header is set above the cap —
+    // saves us from buffering at all on hostile payloads.
+    const cl = req.headers["content-length"];
+    if (typeof cl === "string") {
+      const n = Number.parseInt(cl, 10);
+      if (Number.isFinite(n) && n > MAX_BROKER_BODY_BYTES) {
+        throw new Error(
+          `broker request body too large (Content-Length=${n} > ${MAX_BROKER_BODY_BYTES})`,
+        );
+      }
+    }
+
     const chunks: Buffer[] = [];
-    for await (const chunk of req) chunks.push(chunk as Buffer);
+    let total = 0;
+    for await (const chunk of req) {
+      const buf = chunk as Buffer;
+      total += buf.length;
+      if (total > MAX_BROKER_BODY_BYTES) {
+        // Mid-read enforcement for clients that lie about Content-Length
+        // or use chunked encoding without it.
+        throw new Error(
+          `broker request body exceeded ${MAX_BROKER_BODY_BYTES} bytes mid-read`,
+        );
+      }
+      chunks.push(buf);
+    }
     const raw = Buffer.concat(chunks).toString("utf8");
     if (!raw) return {};
     return JSON.parse(raw);
