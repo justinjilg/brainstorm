@@ -33,6 +33,12 @@ export {
   type BrEnvelopeListener,
 } from "./cloud/br-envelope.js";
 export {
+  fetchBrCatalog,
+  mergeBrCatalog,
+  brEntryToModel,
+  type BrCatalogEntry,
+} from "./cloud/br-catalog.js";
+export {
   readDiscoveryCache,
   writeDiscoveryCache,
   invalidateDiscoveryCache,

@@ -12,6 +12,7 @@ import { discoverLocalModels } from "./local/discovery.js";
 import { CLOUD_MODELS } from "./cloud/models.js";
 import { createBrainstormSaaSProvider } from "./cloud/brainstorm-saas.js";
 import type { BrEnvelopeListener } from "./cloud/br-envelope.js";
+import { fetchBrCatalog, mergeBrCatalog } from "./cloud/br-catalog.js";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
@@ -140,9 +141,28 @@ export async function createProviderRegistry(
   // Models with direct provider keys are marked preferred for routing.
   const hasDirectKeys =
     availableCloudProviders.size > (hasBrainstormSaaS ? 1 : 0);
-  const reachableCloudModels = hasBrainstormSaaS
-    ? CLOUD_MODELS
-    : CLOUD_MODELS.filter((m) => availableCloudProviders.has(m.provider));
+
+  // Source-of-truth precedence for the cloud model list:
+  //   1. BR live `/v1/models` (when we have a BR key) — fresh, includes
+  //      models the local CLOUD_MODELS constant doesn't know about yet.
+  //   2. Disk cache from the last successful BR fetch — offline fallback.
+  //   3. Static CLOUD_MODELS — direct-key-only or first-run-offline.
+  // Local capability scores / qualityTier / bestFor are overlaid onto
+  // BR entries by id; BR doesn't track those heuristics.
+  let reachableCloudModels: ModelEntry[];
+  if (hasBrainstormSaaS && brApiKey) {
+    const brEntries = await fetchBrCatalog(brApiKey);
+    if (brEntries) {
+      reachableCloudModels = mergeBrCatalog(brEntries, CLOUD_MODELS);
+    } else {
+      const cached = loadProviderCache();
+      reachableCloudModels = cached?.models ?? CLOUD_MODELS;
+    }
+  } else {
+    reachableCloudModels = CLOUD_MODELS.filter((m) =>
+      availableCloudProviders.has(m.provider),
+    );
+  }
 
   let allModels = [...reachableCloudModels];
 
@@ -281,25 +301,34 @@ export async function createProviderRegistry(
  * Reading directly avoids a circular dependency (eval → providers → eval).
  */
 const CACHE_PATH = join(homedir(), ".brainstorm", ".providers.cache.json");
-const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+// Cache TTL is intentionally long — its purpose is offline fallback when
+// BR /v1/models can't be reached, not freshness gating. A live BR fetch
+// at registry init takes precedence whenever it succeeds.
+const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const CACHE_VERSION = 2; // v1 stored only `modelIds`; v2 stores full ModelEntry[]
 
-interface ProviderCache {
+interface ProviderCacheV2 {
+  version: number;
   timestamp: number;
-  modelIds: string[];
+  models: ModelEntry[];
 }
 
-function loadProviderCache(): ProviderCache | null {
+function loadProviderCache(): ProviderCacheV2 | null {
   try {
     if (!existsSync(CACHE_PATH)) return null;
     const raw = readFileSync(CACHE_PATH, "utf-8");
     // Guard against corrupt/oversized cache files (max 1MB)
     if (raw.length > 1_000_000) return null;
     const data = JSON.parse(raw);
-    // Validate required fields exist
-    if (typeof data?.timestamp !== "number" || !Array.isArray(data?.modelIds))
+    if (
+      data?.version !== CACHE_VERSION ||
+      typeof data?.timestamp !== "number" ||
+      !Array.isArray(data?.models)
+    ) {
       return null;
+    }
     if (Date.now() - data.timestamp > CACHE_TTL_MS) return null;
-    return data as ProviderCache;
+    return data as ProviderCacheV2;
   } catch {
     return null;
   }
@@ -309,9 +338,10 @@ function saveProviderCache(models: ModelEntry[]): void {
   try {
     const dir = join(homedir(), ".brainstorm");
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    const cache: ProviderCache = {
+    const cache: ProviderCacheV2 = {
+      version: CACHE_VERSION,
       timestamp: Date.now(),
-      modelIds: models.map((m) => m.id),
+      models,
     };
     writeFileSync(CACHE_PATH, JSON.stringify(cache), "utf-8");
   } catch {
