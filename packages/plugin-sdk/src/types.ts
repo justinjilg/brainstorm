@@ -46,7 +46,45 @@ export type PluginHookEvent =
   | "PreCompact"
   | "PreCommit"
   | "SubagentStart"
-  | "SubagentStop";
+  | "SubagentStop"
+  /** Fired when a channel adapter (Slack, email, etc.) accepts an inbound message for processing. */
+  | "ChannelIntake";
+
+/**
+ * Context passed to a "ChannelIntake" hook — fired when an inbound
+ * channel message is accepted for processing by the coordinator.
+ */
+export interface ChannelIntakeContext {
+  /** Channel adapter type (e.g. "slack", "email"). */
+  channel: string;
+  /** Resolved authority level for this message's sender. */
+  authority: string;
+  /** Sender's user id, as reported by the channel adapter. */
+  userId: string;
+}
+
+/**
+ * Context passed to "SubagentStart"/"SubagentStop" hooks — describes the
+ * effective scoping applied to the spawned subagent. All fields are
+ * optional for backward compatibility with existing hook consumers.
+ */
+export interface SubagentHookContext {
+  subagentType: string;
+  prompt?: string;
+  budget?: number;
+  result?: string;
+  cost?: number;
+  toolCalls?: number;
+  model?: string;
+  /** Effective per-spawn tool allowlist (narrowing only), if one was resolved. */
+  toolAllowlist?: string[];
+  /** Extra system-prompt instructions appended for this spawn, if any. */
+  promptAppend?: string;
+  /** Effective max agentic steps for this spawn. */
+  maxSteps?: number;
+  /** Effective budget limit (dollars) for this spawn. */
+  budgetLimit?: number;
+}
 
 /**
  * Plugin skill definition — reusable instruction bundles.

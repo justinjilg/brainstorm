@@ -20,6 +20,10 @@
  *   POST /api/v1/changesets/:id/reject        Reject
  *   GET  /api/v1/audit                        Tool execution audit trail
  *   GET  /api/v1/audit/changesets             God Mode changeset audit
+ *   GET  /api/v1/audit/report                 Rendered HTML evidence report
+ *   POST /api/v1/audit/report/verify          Verify a signed evidence bundle
+ *   GET  /api/v1/channels                     Configured channel adapters
+ *   POST /api/v1/memory/extract               Force a memory extraction cycle
  *   POST /api/v1/platform/events              Receive signed platform events
  *   POST /api/v1/chat                         Non-streaming chat
  *   POST /api/v1/chat/stream                  SSE streaming chat
@@ -425,6 +429,10 @@ export class BrainstormServer {
       return this.handleAudit(url, res);
     if (path === "/api/v1/audit/changesets" && method === "GET")
       return this.handleAuditChangesets(url, res);
+    if (path === "/api/v1/audit/report" && method === "GET")
+      return this.handleAuditReport(url, res);
+    if (path === "/api/v1/audit/report/verify" && method === "POST")
+      return this.handleAuditReportVerify(req, res);
     if (path === "/api/v1/platform/events" && method === "POST")
       return this.handlePlatformEvents(req, res);
 
@@ -476,6 +484,13 @@ export class BrainstormServer {
       return this.handleDeleteMemory(memoryMatch[1], res);
     if (path === "/api/v1/memory/dream" && method === "POST")
       return this.handleDreamCycle(res);
+
+    if (path === "/api/v1/memory/extract" && method === "POST")
+      return this.handleMemoryExtract(req, res);
+
+    // ── Channels route ────────────────────────────────────────────
+    if (path === "/api/v1/channels" && method === "GET")
+      return this.handleListChannels(res);
 
     // ── Skills routes ────────────────────────────────────────────
     if (path === "/api/v1/skills" && method === "GET")
@@ -651,6 +666,112 @@ export class BrainstormServer {
       200,
       this.envelope({ entries, total: csLog.count(), limit, offset }),
     );
+  }
+
+  /**
+   * GET /api/v1/audit/report[?changeset=<id>]
+   *
+   * Renders the God Mode ChangeSet audit trail as a standalone HTML report
+   * (the same evidence document the CLI's `audit-report` produces). Responds
+   * with the RAW HTML body (Content-Type text/html), NOT the JSON envelope —
+   * the caller saves it directly as report.html for signing/verification.
+   *
+   * A `?changeset=<id>` filter scans the FULL table (recent(count) then
+   * filter) rather than a paged window, so an old changeset can never be a
+   * false negative just because it fell outside the default page.
+   */
+  private async handleAuditReport(
+    url: URL,
+    res: ServerResponse,
+  ): Promise<void> {
+    const { ChangeSetLogRepository } = await import("@brainst0rm/db");
+    const { renderChangeSetReport } = await import("@brainst0rm/godmode");
+
+    const repo = new ChangeSetLogRepository(this.deps.db);
+    const changeset = url.searchParams.get("changeset");
+    // Filtered lookups scan the whole table (a missed old changeset would be a
+    // false negative in an evidence tool). Unfiltered reports cap at the newest
+    // REPORT_CAP so one request can't build an unbounded HTML report in memory.
+    const REPORT_CAP = 1000;
+    const rows = changeset
+      ? repo
+          .recent(repo.count() || 1)
+          .filter((r) => r.changesetId === changeset)
+      : repo.recent(REPORT_CAP);
+
+    if (rows.length === 0) {
+      const empty =
+        '<!doctype html><html><head><meta charset="utf-8">' +
+        "<title>ChangeSet Audit Report</title></head><body>" +
+        "<h1>ChangeSet Audit Report</h1>" +
+        "<p>No ChangeSet audit entries found.</p></body></html>";
+      res.writeHead(200, {
+        "Content-Type": "text/html; charset=utf-8",
+        ...this.corsHeaders((res as any)._brainstormReq),
+      });
+      res.end(empty);
+      return;
+    }
+
+    const entries = rows.map((r) => ({
+      changesetId: r.changesetId,
+      connector: r.connector,
+      action: r.action,
+      description: r.description,
+      riskScore: r.riskScore,
+      status: r.status,
+      changesJson: r.changesJson ?? "",
+      simulationJson: r.simulationJson ?? "",
+      rollbackJson: r.rollbackJson,
+      createdAt: r.createdAt,
+      executedAt: r.executedAt,
+    }));
+
+    const reportHtml = renderChangeSetReport(entries);
+    res.writeHead(200, {
+      "Content-Type": "text/html; charset=utf-8",
+      ...this.corsHeaders((res as any)._brainstormReq),
+    });
+    res.end(reportHtml);
+  }
+
+  /**
+   * POST /api/v1/audit/report/verify — body { bundle, reportHtml }
+   *
+   * Verifies a signed evidence bundle against the report HTML it covers using
+   * the shared platform secret. If BRAINSTORM_PLATFORM_SECRET is unset there
+   * is nothing to verify against, so we 400 rather than pretend. The secret
+   * is never logged or echoed.
+   */
+  private async handleAuditReportVerify(
+    req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> {
+    const body = await this.readBody<{ bundle?: unknown; reportHtml?: string }>(
+      req,
+    );
+    const secret = process.env.BRAINSTORM_PLATFORM_SECRET;
+    if (!secret) {
+      return this.errorResponse(res, 400, "signing secret not configured");
+    }
+    if (typeof body.reportHtml !== "string") {
+      return this.errorResponse(res, 400, "reportHtml (string) is required");
+    }
+
+    const { verifyEvidenceBundle } = await import("@brainst0rm/godmode");
+    const result = verifyEvidenceBundle(
+      body.bundle as any,
+      body.reportHtml,
+      secret,
+    );
+    this.json(res, 200, this.envelope(result));
+  }
+
+  // ── Channels ──────────────────────────────────────────────────────
+
+  private handleListChannels(res: ServerResponse): void {
+    const channels = (this.deps.channels ?? []).map((c) => ({ name: c.name }));
+    this.json(res, 200, this.envelope(channels));
   }
 
   // ── Platform Events ───────────────────────────────────────────────
@@ -1017,6 +1138,47 @@ export class BrainstormServer {
           "Dream cycle must be triggered from the CLI or desktop app directly",
       }),
     );
+  }
+
+  /**
+   * POST /api/v1/memory/extract — body { transcript?, sessionTurns? }
+   *
+   * Force-runs a memory extraction cycle over the supplied transcript,
+   * spawning the extraction subagent with the server's own registry/router/
+   * cost tracker/tools. Gating is bypassed (force:true); the cycle's own lock
+   * file still prevents concurrent runs. Responds 202 with the cycle summary.
+   */
+  private async handleMemoryExtract(
+    req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> {
+    if (!this.deps.memoryManager) {
+      return this.errorResponse(res, 503, "Memory manager not configured");
+    }
+    const body = await this.readBody<{
+      transcript?: string;
+      sessionTurns?: number;
+    }>(req);
+
+    const { runExtractionCycle } = await import("@brainst0rm/core");
+    const memoryManager = this.deps.memoryManager;
+    const result = await runExtractionCycle({
+      memoryDir: memoryManager.getMemoryDir(),
+      memoryManager,
+      transcript: body.transcript ?? "",
+      sessionTurns: body.sessionTurns ?? 0,
+      force: true,
+      subagentOptions: {
+        config: this.deps.config,
+        registry: this.deps.registry,
+        router: this.deps.router,
+        costTracker: this.deps.costTracker,
+        tools: this.deps.tools,
+        projectPath: this.opts.projectPath,
+        permissionCheck: () => "allow",
+      } as any,
+    });
+    this.json(res, 202, this.envelope(result));
   }
 
   // ── Skills ───────────────────────────────────────────────────────

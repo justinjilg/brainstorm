@@ -51,6 +51,7 @@ export {
   GODMODE_MIGRATION_SQL,
   setAuditPersister,
   getAuditLog,
+  type AuditEntry,
 } from "./audit.js";
 export {
   renderChangeSetReport,

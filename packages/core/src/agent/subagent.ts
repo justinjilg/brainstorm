@@ -235,6 +235,14 @@ export type SubagentHookFn = (
     cost?: number;
     toolCalls?: number;
     model?: string;
+    /** Effective per-spawn tool allowlist (narrowing only), if one was resolved. */
+    toolAllowlist?: string[];
+    /** Extra system-prompt instructions appended for this spawn, if any. */
+    promptAppend?: string;
+    /** Effective max agentic steps for this spawn. */
+    maxSteps?: number;
+    /** Effective budget limit (dollars) for this spawn. */
+    budgetLimit?: number;
   },
 ) => Promise<void>;
 
@@ -618,6 +626,10 @@ export async function spawnSubagent(
         subagentType: type,
         prompt: task,
         budget: budgetLimit,
+        toolAllowlist: typeAllowed,
+        promptAppend: options.promptAppend,
+        maxSteps,
+        budgetLimit,
       });
     }
 
