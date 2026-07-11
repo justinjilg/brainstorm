@@ -111,6 +111,15 @@ export interface CoordinatorDependencies {
    * memory state); tests inject a no-op to stay hermetic.
    */
   createMiddlewarePipeline?: typeof createDefaultMiddlewarePipeline;
+  /**
+   * Optional plugin-hook emitter for the "ChannelIntake" event, fired when an
+   * inbound message is accepted for processing. Best-effort: failures are
+   * caught and logged, never allowed to interrupt message handling.
+   */
+  onHook?: (
+    event: "ChannelIntake",
+    ctx: { channel: string; authority: string; userId: string },
+  ) => void | Promise<void>;
 }
 
 export interface CoordinatorOptions {
@@ -163,6 +172,20 @@ export class IntakeCoordinator {
   ): Promise<void> {
     let placeholderId: string | null = null;
     try {
+      if (this.deps.onHook) {
+        try {
+          await Promise.resolve(
+            this.deps.onHook("ChannelIntake", {
+              channel: msg.channelType,
+              authority: this.opts.authority,
+              userId: msg.userId,
+            }),
+          );
+        } catch (hookErr) {
+          log.error({ err: hookErr }, "ChannelIntake hook failed");
+        }
+      }
+
       const sessionId = this.resolveSession(msg);
 
       // Post the "working" indicator BEFORE consuming the loop, so the channel

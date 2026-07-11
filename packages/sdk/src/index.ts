@@ -225,3 +225,27 @@ export type { ProjectAnalysis } from "@brainst0rm/ingest";
 export type { DocgenResult } from "@brainst0rm/docgen";
 export type { AgentEvent } from "@brainst0rm/shared";
 export type { BrainstormConfig } from "@brainst0rm/config";
+
+// Governance evidence — ChangeSet audit reports and HMAC-signed evidence
+// bundles for compliance/export workflows.
+export {
+  renderChangeSetReport,
+  createEvidenceBundle,
+  verifyEvidenceBundle,
+  type EvidenceBundle,
+  type AuditEntry,
+} from "@brainst0rm/godmode";
+
+// Message channels — governed chat-platform gateway (Slack, etc.) bridging
+// inbound messages to the agent loop.
+export {
+  IntakeCoordinator,
+  ChannelSessionStore,
+  buildAuthorityCheck,
+  type ChannelAdapter,
+  type ChannelAuthority,
+  type InboundMessage,
+  type OutboundSink,
+} from "@brainst0rm/channels";
+
+export { runExtractionCycle, type MemorySource } from "@brainst0rm/core";

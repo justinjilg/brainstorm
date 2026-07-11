@@ -1297,6 +1297,9 @@ importers:
 
   packages/sdk:
     dependencies:
+      "@brainst0rm/channels":
+        specifier: workspace:*
+        version: link:../channels
       "@brainst0rm/config":
         specifier: workspace:*
         version: link:../config
@@ -1309,6 +1312,9 @@ importers:
       "@brainst0rm/docgen":
         specifier: workspace:*
         version: link:../docgen
+      "@brainst0rm/godmode":
+        specifier: workspace:*
+        version: link:../godmode
       "@brainst0rm/ingest":
         specifier: workspace:*
         version: link:../ingest

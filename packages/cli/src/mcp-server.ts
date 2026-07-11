@@ -231,6 +231,107 @@ export async function startMCPServer(): Promise<void> {
     );
   }
 
+  // ── Register Audit Report tool ───────────────────────────────
+  // Renders God Mode ChangeSet audit entries to an HTML evidence report,
+  // signed with an evidence bundle when BRAINSTORM_PLATFORM_SECRET is set.
+
+  try {
+    server.tool(
+      "audit_report",
+      "Render God Mode ChangeSet audit entries to an HTML evidence report; optionally filter to one changeset id; returns HTML plus a signed evidence bundle when BRAINSTORM_PLATFORM_SECRET is set.",
+      { changeset: z.string().optional() },
+      async (params) => {
+        const { changeset } = params as { changeset?: string };
+        try {
+          const { default: Database } = await import("better-sqlite3");
+          const { join } = await import("node:path");
+          const { homedir } = await import("node:os");
+          const { ChangeSetLogRepository } = await import("@brainst0rm/db");
+          const { renderChangeSetReport, createEvidenceBundle } =
+            await import("@brainst0rm/godmode");
+
+          const dbPath = join(homedir(), ".brainstorm", "brainstorm.db");
+          // Long-lived MCP server: close the per-call handle so repeated
+          // audit_report calls don't leak file descriptors.
+          const db = new Database(dbPath);
+          try {
+            const repo = new ChangeSetLogRepository(db);
+
+            const total = repo.count();
+            const REPORT_CAP = 1000;
+            const rows = changeset
+              ? repo
+                  .recent(Math.max(total, 1))
+                  .filter((r: any) => r.changesetId === changeset)
+              : repo.recent(REPORT_CAP);
+
+            if (rows.length === 0) {
+              return {
+                content: [
+                  {
+                    type: "text" as const,
+                    text: "No ChangeSet audit entries found.",
+                  },
+                ],
+              };
+            }
+
+            const entries = rows.map((r: any) => ({
+              changesetId: r.changesetId,
+              connector: r.connector,
+              action: r.action,
+              description: r.description,
+              riskScore: r.riskScore,
+              status: r.status,
+              changesJson: r.changesJson ?? "",
+              simulationJson: r.simulationJson ?? "",
+              rollbackJson: r.rollbackJson,
+              createdAt: r.createdAt,
+              executedAt: r.executedAt,
+            }));
+
+            const html = renderChangeSetReport(entries);
+
+            const content: Array<{ type: "text"; text: string }> = [
+              { type: "text" as const, text: html },
+            ];
+
+            const secret = process.env.BRAINSTORM_PLATFORM_SECRET;
+            if (secret) {
+              const bundle = createEvidenceBundle(entries, html, secret);
+              content.push({
+                type: "text" as const,
+                text: JSON.stringify(bundle, null, 2),
+              });
+            }
+
+            return { content };
+          } finally {
+            db.close();
+          }
+        } catch (err: any) {
+          process.stderr.write(
+            `[audit-report] Failed to render audit report: ${err.message}\n`,
+          );
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Error rendering audit report: ${err.message}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+      },
+    );
+    process.stderr.write(`[audit-report] Registered audit_report tool\n`);
+  } catch (err: any) {
+    process.stderr.write(
+      `[audit-report] audit_report tool unavailable: ${err.message}\n`,
+    );
+  }
+
   // ── Start stdio transport ────────────────────────────────────
 
   const transport = new StdioServerTransport();

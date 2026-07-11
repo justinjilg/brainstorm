@@ -8,6 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@brainst0rm/channels": "workspace:*",
     "@brainst0rm/shared": "workspace:*",
     "@brainst0rm/config": "workspace:*",
     "@brainst0rm/core": "workspace:*",
@@ -15,6 +16,7 @@
     "@brainst0rm/providers": "workspace:*",
     "@brainst0rm/tools": "workspace:*",
     "@brainst0rm/db": "workspace:*",
+    "@brainst0rm/godmode": "workspace:*",
     "@brainst0rm/ingest": "workspace:*",
     "@brainst0rm/docgen": "workspace:*"
   },
