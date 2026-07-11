@@ -291,6 +291,14 @@ export interface SubagentOptions {
    */
   toolAllowlist?: string[];
   /**
+   * Force zero tools for this spawn, regardless of the type's tool set. Use
+   * for pure text-in/text-out subagents (e.g. the planner's decomposition
+   * pass) where tool access only tempts a model to explore instead of
+   * answering. Stronger than a prompt directive: the tools physically aren't
+   * present, so a disobedient model cannot call them. Overrides toolAllowlist.
+   */
+  noTools?: boolean;
+  /**
    * Extra instructions appended to the system prompt with a blank-line
    * separator. This NEVER replaces the template prompt — it composes with
    * (options.systemPrompt ?? typeConfig.systemPrompt), so a caller can add
@@ -520,6 +528,13 @@ export async function spawnSubagent(
     // would widen past an already-narrower per-spawn toolAllowlist / parent
     // ceiling, re-granting tools the caller deliberately excluded.
     typeAllowed = applyReadOnlyDowngrade(typeAllowed, READ_ONLY_TOOLS);
+  }
+
+  // Step 3b: noTools forces an empty set — the most restrictive scope,
+  // overriding everything above. An empty allowlist flows through the build
+  // below as zero tools on both the permissioned and filtered paths.
+  if (options.noTools) {
+    typeAllowed = [];
   }
 
   // Step 4: Build the filtered tool set

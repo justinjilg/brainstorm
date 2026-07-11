@@ -3461,6 +3461,10 @@ orchestrateCmd
     "--skip-build-verify",
     "Skip per-worktree build verification (faster but less safe)",
   )
+  .option(
+    "--model <id>",
+    "Pin planner + workers to a specific model id (e.g. brainstormrouter/auto), bypassing capability routing",
+  )
   .description(
     "Plan → parallel workers → judge: decompose a request, run N workers in isolated worktrees, merge approved branches",
   )
@@ -3472,6 +3476,7 @@ orchestrateCmd
         budget: string;
         merge?: boolean;
         skipBuildVerify?: boolean;
+        model?: string;
       },
     ) => {
       const { planMultiAgentRun, runWorkerPool, runJudge } =
@@ -3504,7 +3509,12 @@ orchestrateCmd
         costTracker,
         frontmatter,
       );
-      router.setStrategy("capability");
+      // A pinned model bypasses per-subagent routing entirely (see
+      // spawnSubagent's preferredModelId handling), so the capability
+      // strategy only matters when no model is pinned.
+      if (!opts.model) {
+        router.setStrategy("capability");
+      }
 
       // Resolve the project ID — orchestration_runs needs an FK target
       const { ProjectManager } = await import("@brainst0rm/projects");
@@ -3526,6 +3536,9 @@ orchestrateCmd
         projectPath,
         permissionCheck: () => "allow",
         budgetLimit: budgetLimit / Math.max(1, concurrency * 2),
+        // When set, planner + every worker pin to this model instead of
+        // letting the router pick one the gateway may not be able to serve.
+        ...(opts.model ? { preferredModelId: opts.model } : {}),
       };
 
       // ── Phase 1: Planner ────────────────────────────────────────────
