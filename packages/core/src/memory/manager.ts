@@ -27,6 +27,7 @@ export type MemorySource =
   | "dream_consolidation"
   | "import"
   | "local_file"
+  | "llm_extraction"
   | "unknown";
 
 /** Default trust scores by source. Higher = more trusted. */
@@ -37,6 +38,7 @@ const DEFAULT_TRUST: Record<MemorySource, number> = {
   dream_consolidation: 0.7,
   web_fetch: 0.2,
   import: 0.3,
+  llm_extraction: 0.55,
   unknown: 0.4,
 };
 

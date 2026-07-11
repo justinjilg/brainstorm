@@ -84,6 +84,11 @@ export {
   type CuratorCycleOptions,
   type CuratorCycleResult,
 } from "./memory/curator-runner.js";
+export {
+  runExtractionCycle,
+  type ExtractCycleOptions,
+  type ExtractCycleResult,
+} from "./memory/extract-runner.js";
 // Team Auth
 export {
   resolveTeamContext,

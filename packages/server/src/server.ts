@@ -71,6 +71,7 @@ import type {
   UpdateConversationRequest,
   HandoffRequest,
 } from "./types.js";
+import type { ChannelAdapter } from "@brainst0rm/channels";
 
 const log = createLogger("server");
 
@@ -85,6 +86,13 @@ export interface ServerDependencies {
   memoryManager?: MemoryManager;
   version?: string;
   permissionCheck?: PermissionCheckFn;
+  /**
+   * Channel adapters (e.g. Slack) started after the HTTP server is
+   * listening and stopped before/with server shutdown. Structural type —
+   * matches @brainst0rm/channels' ChannelAdapter but kept as a type-only
+   * import so this package degrades gracefully if channels isn't wired up.
+   */
+  channels?: Array<Pick<ChannelAdapter, "name" | "start" | "stop">>;
 }
 
 export class BrainstormServer {
@@ -213,13 +221,88 @@ export class BrainstormServer {
       });
     });
 
-    return new Promise((resolve) => {
+    return new Promise<{ url: string }>((resolve) => {
       this.server!.listen(port, host, () => {
         const url = `http://${host}:${port}`;
         log.info({ url }, "Brainstorm server started");
         resolve({ url });
       });
+    }).then(async (result) => {
+      await this.startChannels();
+      return result;
     });
+  }
+
+  /** Max time to wait for a single channel adapter's start() to settle. */
+  private static readonly CHANNEL_START_TIMEOUT_MS = 20_000;
+
+  /**
+   * Start each configured channel adapter (e.g. Slack) after the HTTP
+   * server is listening. One bad channel must not kill the server, so
+   * each adapter is started independently — a failure (or a hang, via a
+   * timeout race) is logged and the rest continue. Adapters are started
+   * concurrently (allSettled) so one slow adapter cannot delay the others.
+   */
+  private async startChannels(): Promise<void> {
+    const channels = this.deps.channels ?? [];
+    await Promise.allSettled(
+      channels.map(async (channel) => {
+        try {
+          await this.withTimeout(
+            channel.start(),
+            BrainstormServer.CHANNEL_START_TIMEOUT_MS,
+            `Channel '${channel.name}' start() timed out after ${BrainstormServer.CHANNEL_START_TIMEOUT_MS}ms`,
+          );
+          log.info({ channel: channel.name }, "Channel adapter started");
+        } catch (err) {
+          log.error(
+            { err, channel: channel.name },
+            "Failed to start channel adapter — continuing without it",
+          );
+        }
+      }),
+    );
+  }
+
+  /** Race a promise against a timeout, rejecting with `message` if it fires first. */
+  private withTimeout<T>(
+    promise: Promise<T>,
+    ms: number,
+    message: string,
+  ): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(message)), ms);
+      promise.then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (err) => {
+          clearTimeout(timer);
+          reject(err);
+        },
+      );
+    });
+  }
+
+  /**
+   * Stop each configured channel adapter. Each is stopped independently
+   * so one failing adapter doesn't prevent the others (or the HTTP
+   * server) from shutting down cleanly.
+   */
+  private async stopChannels(): Promise<void> {
+    const channels = this.deps.channels ?? [];
+    for (const channel of channels) {
+      try {
+        await channel.stop();
+        log.info({ channel: channel.name }, "Channel adapter stopped");
+      } catch (err) {
+        log.warn(
+          { err, channel: channel.name },
+          "Failed to stop channel adapter cleanly",
+        );
+      }
+    }
   }
 
   /** Stop the server gracefully. */
@@ -235,6 +318,7 @@ export class BrainstormServer {
     }
     this.devToken = null;
     this.devTokenPath = null;
+    await this.stopChannels();
     return new Promise((resolve) => {
       if (!this.server) return resolve();
       this.server.close(() => {

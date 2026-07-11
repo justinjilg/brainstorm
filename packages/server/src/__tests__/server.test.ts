@@ -177,4 +177,81 @@ describe("BrainstormServer Utility Methods", () => {
       expect(check("dangerous", "deny")).toBe("deny");
     });
   });
+
+  describe("channel adapters", () => {
+    it("starts all adapters concurrently and isolates a failing one", async () => {
+      const started: string[] = [];
+      const good = {
+        name: "good",
+        start: vi.fn(async () => {
+          started.push("good");
+        }),
+        stop: vi.fn(async () => {}),
+      };
+      const bad = {
+        name: "bad",
+        start: vi.fn(async () => {
+          throw new Error("boom");
+        }),
+        stop: vi.fn(async () => {}),
+      };
+      const withChannels = new BrainstormServer({
+        ...mockDependencies,
+        channels: [bad, good],
+      } as any);
+
+      await (withChannels as any).startChannels();
+
+      expect(good.start).toHaveBeenCalledTimes(1);
+      expect(bad.start).toHaveBeenCalledTimes(1);
+      expect(started).toEqual(["good"]);
+    });
+
+    it("does not let a hung adapter block the others (timeout races start())", async () => {
+      const good = {
+        name: "good",
+        start: vi.fn(async () => {}),
+        stop: vi.fn(async () => {}),
+      };
+      const hung = {
+        name: "hung",
+        start: vi.fn(() => new Promise<void>(() => {})), // never resolves
+        stop: vi.fn(async () => {}),
+      };
+      const withChannels = new BrainstormServer({
+        ...mockDependencies,
+        channels: [hung, good],
+      } as any);
+      // Shrink the timeout for the test instead of waiting the real 20s.
+      (BrainstormServer as any).CHANNEL_START_TIMEOUT_MS = 10;
+
+      await (withChannels as any).startChannels();
+
+      expect(good.start).toHaveBeenCalledTimes(1);
+    });
+
+    it("stops all adapters, isolating a failing one", async () => {
+      const good = {
+        name: "good",
+        start: vi.fn(),
+        stop: vi.fn(async () => {}),
+      };
+      const bad = {
+        name: "bad",
+        start: vi.fn(),
+        stop: vi.fn(async () => {
+          throw new Error("stop failed");
+        }),
+      };
+      const withChannels = new BrainstormServer({
+        ...mockDependencies,
+        channels: [bad, good],
+      } as any);
+
+      await (withChannels as any).stopChannels();
+
+      expect(bad.stop).toHaveBeenCalledTimes(1);
+      expect(good.stop).toHaveBeenCalledTimes(1);
+    });
+  });
 });

@@ -68,8 +68,17 @@ export interface ArtifactManifest {
     confidence: number;
     cost: number;
     iteration: number;
+    /**
+     * DeerFlow-style output/scratch separation (see Artifact.kind).
+     * Optional for backward compat: manifests written before this field
+     * existed are treated as "output" when read (see readManifest).
+     */
+    kind?: "output" | "scratch";
   }>;
 }
+
+/** Subdirectory an artifact file lands in, keyed by its `kind`. */
+const KIND_DIRS = { output: "outputs", scratch: "scratch" } as const;
 
 /**
  * Get the workspace directory for a workflow run.
@@ -88,10 +97,25 @@ export function ensureWorkspace(runId: string): string {
 }
 
 /**
+ * Ensure the outputs/ or scratch/ subdirectory (per artifact kind) exists
+ * under a run's workspace and return its path.
+ */
+function ensureKindDir(runId: string, kind: "output" | "scratch"): string {
+  const dir = join(ensureWorkspace(runId), KIND_DIRS[kind]);
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+/**
  * Write an artifact to disk and return the file path.
+ *
+ * Files are routed into a DeerFlow-style `outputs/` or `scratch/` subdir of
+ * the run's workspace, keyed by `artifact.kind` (default: "output").
+ * `manifest.json` itself stays at the run root regardless of kind.
  */
 export function writeArtifact(runId: string, artifact: Artifact): string {
-  const dir = ensureWorkspace(runId);
+  const kind = artifact.kind ?? "output";
+  const dir = ensureKindDir(runId, kind);
   const safeStepId = sanitizeStepId(artifact.stepId);
   const iteration = Number(artifact.iteration);
   if (!Number.isFinite(iteration) || iteration < 0) {
@@ -111,7 +135,7 @@ export function writeArtifact(runId: string, artifact: Artifact): string {
   const filePath = join(dir, filename);
 
   // Belt-and-braces: even with sanitation, assert the resolved path stays
-  // under the workspace root before committing the write.
+  // under the kind subdir root before committing the write.
   const root = resolve(dir);
   const target = resolve(filePath);
   if (target !== root && !target.startsWith(root + sep)) {
@@ -135,6 +159,11 @@ export function writeManifest(runId: string, manifest: ArtifactManifest): void {
 
 /**
  * Read a manifest for a workflow run.
+ *
+ * Manifests written before the output/scratch split have step entries
+ * without a `kind` — `kind` is optional on the type for exactly this
+ * reason, so those still parse cleanly. Callers that care should treat a
+ * missing `kind` as "output" (e.g. `step.kind ?? "output"`).
  */
 export function readManifest(runId: string): ArtifactManifest | null {
   const filePath = join(getWorkspaceDir(runId), "manifest.json");
@@ -173,22 +202,18 @@ export function listRuns(limit = 10): ArtifactManifest[] {
 }
 
 /**
- * Read an artifact's content from disk.
+ * Find and read a step's artifact file within a single directory (does not
+ * recurse). Returns null if the directory doesn't exist or has no match.
  */
-export function readArtifact(
-  runId: string,
-  stepId: string,
-  iteration = 0,
+function readArtifactFrom(
+  dir: string,
+  safeStepId: string,
+  iteration: number,
 ): string | null {
-  const dir = getWorkspaceDir(runId);
   if (!existsSync(dir)) return null;
-
-  const safeStepId = sanitizeStepId(stepId);
   const files = readdirSync(dir).filter((f) =>
     f.startsWith(`step-${safeStepId}-`),
   );
-  if (files.length === 0) return null;
-
   const target = files.find((f) => f.includes(`-${iteration}.`));
   if (!target) return null;
   try {
@@ -196,4 +221,30 @@ export function readArtifact(
   } catch {
     return null;
   }
+}
+
+/**
+ * Read an artifact's content from disk.
+ *
+ * Checks outputs/ then scratch/ (the artifact's kind isn't known to the
+ * caller), then falls back to the run's root dir directly for runs written
+ * before the output/scratch split.
+ */
+export function readArtifact(
+  runId: string,
+  stepId: string,
+  iteration = 0,
+): string | null {
+  const runDir = getWorkspaceDir(runId);
+  if (!existsSync(runDir)) return null;
+
+  const safeStepId = sanitizeStepId(stepId);
+
+  for (const sub of [KIND_DIRS.output, KIND_DIRS.scratch]) {
+    const found = readArtifactFrom(join(runDir, sub), safeStepId, iteration);
+    if (found !== null) return found;
+  }
+  // Legacy flat layout (pre output/scratch split): files sat directly in
+  // the run root.
+  return readArtifactFrom(runDir, safeStepId, iteration);
 }
