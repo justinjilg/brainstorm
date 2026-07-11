@@ -7,6 +7,7 @@ import {
   setDockerSandbox,
   DockerSandbox,
   withWorkspace,
+  getSandboxPool,
 } from "@brainst0rm/tools";
 import {
   serializeRoutingMetadata,
@@ -17,6 +18,30 @@ import type { SystemPromptSegment } from "./context.js";
 import { segmentsToSystemArray } from "./context.js";
 
 const log = createLogger("subagent");
+
+// ── Container sandbox serialization ─────────────────────────────────
+//
+// The module-level Docker sandbox singleton (setDockerSandbox/shell.ts)
+// can only safely hold one subagent's container at a time — every shell
+// tool call reads that single reference. Two containerIsolation code
+// subagents running in parallel (spawn_agents parallel mode) would
+// otherwise interleave their swap/restore: subagent B could capture
+// subagent A's container as "previous", A's finally could release A's
+// container back to the pool as idle while B still holds it live, and
+// B's finally could then re-install a pool-idle container as the
+// singleton out from under the parent. Serialize just this
+// acquire→run→release window for container-isolated subagents so only
+// one holds the singleton at a time.
+let containerLockTail: Promise<void> = Promise.resolve();
+function acquireContainerLock(): Promise<() => void> {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const acquired = containerLockTail.then(() => release);
+  containerLockTail = containerLockTail.then(() => held);
+  return acquired;
+}
 
 // ── Subagent Types ──────────────────────────────────────────────────
 
@@ -250,6 +275,21 @@ export interface SubagentOptions {
    */
   parentToolNames?: string[];
   /**
+   * Per-spawn tool allowlist — a narrowing subset applied on top of the type's
+   * allowedTools ceiling. This can only NARROW, never widen: it is intersected
+   * with the type's allowed set (or, when the type grants "all", becomes the
+   * effective set), and is then further intersected with parentToolNames. A
+   * caller cannot use this to grant a tool the type does not already permit.
+   */
+  toolAllowlist?: string[];
+  /**
+   * Extra instructions appended to the system prompt with a blank-line
+   * separator. This NEVER replaces the template prompt — it composes with
+   * (options.systemPrompt ?? typeConfig.systemPrompt), so a caller can add
+   * task-specific guidance without stripping the type's behavioral guardrails.
+   */
+  promptAppend?: string;
+  /**
    * Explicit model pin — when provided, bypasses the subagent's internal
    * routing and uses this model directly. Parent loops can propagate their
    * own preferredModelId through to subagents so --model flags honor
@@ -274,6 +314,86 @@ export interface SubagentResult {
   type: SubagentType;
   budgetExceeded: boolean;
   partialOutput?: string;
+}
+
+/**
+ * Resolve a subagent's effective tool set via the narrowing intersection
+ * chain: type ceiling → per-spawn allowlist → parent ceiling.
+ *
+ * Every stage can only remove tools, never add them. Returns the concrete
+ * allowed list, or `undefined` meaning "all tools" (only possible when the
+ * type grants "all" and neither an allowlist nor a parent ceiling narrows it).
+ *
+ * Extracted as a pure function so the security-critical intersection
+ * semantics can be unit-tested without spawning real models.
+ */
+export function resolveToolScope(
+  typeAllowed: string[] | "all",
+  toolAllowlist?: string[],
+  parentToolNames?: string[],
+): string[] | undefined {
+  // Step 1: Determine the subagent type's allowed tool set
+  let allowed: string[] | undefined =
+    typeAllowed === "all" ? undefined : [...typeAllowed];
+
+  // Step 1b: Apply the per-spawn allowlist (narrowing subset).
+  if (toolAllowlist && toolAllowlist.length > 0) {
+    const allowSet = new Set(toolAllowlist);
+    if (allowed) {
+      // Type has explicit list — keep only names also in the allowlist.
+      allowed = allowed.filter((t) => allowSet.has(t));
+    } else {
+      // Type grants "all" — the allowlist becomes the effective ceiling.
+      allowed = [...toolAllowlist];
+    }
+  }
+
+  // Step 2: Intersect with parent's available tools (privilege ceiling)
+  if (parentToolNames && parentToolNames.length > 0) {
+    const parentSet = new Set(parentToolNames);
+    if (allowed) {
+      // Explicit list — intersect with parent
+      allowed = allowed.filter((t) => parentSet.has(t));
+    } else {
+      // Still "all" — restrict to parent's set
+      allowed = [...parentToolNames];
+    }
+  }
+
+  return allowed;
+}
+
+/**
+ * Narrow an already-resolved tool scope down to read-only tools.
+ *
+ * Applied to mutating subagent types (code, general) spawned WITHOUT a
+ * permissionCheck. This is a downgrade — it can only remove tools, never
+ * add them, so it INTERSECTS with the incoming scope rather than replacing
+ * it. Replacing would re-widen past an already-narrower per-spawn
+ * toolAllowlist or parent ceiling, re-granting tools the caller excluded.
+ *
+ * Extracted as a pure function so the security-critical composition with
+ * resolveToolScope can be unit-tested without spawning real models.
+ */
+export function applyReadOnlyDowngrade(
+  resolved: string[] | undefined,
+  readOnlyTools: string[],
+): string[] {
+  return resolved
+    ? resolved.filter((t) => readOnlyTools.includes(t))
+    : [...readOnlyTools];
+}
+
+/**
+ * Compose a subagent's system prompt. `promptAppend`, when present, is
+ * appended to the base prompt with a blank-line separator — it never
+ * replaces the base template prompt.
+ */
+export function composeSystemPrompt(
+  base: string,
+  promptAppend?: string,
+): string {
+  return promptAppend ? `${base}\n\n${promptAppend}` : base;
 }
 
 /**
@@ -351,30 +471,24 @@ export async function spawnSubagent(
   }
 
   const modelId = registry.getProvider(decision.model.id);
-  const systemPrompt = options.systemPrompt ?? typeConfig.systemPrompt;
+  const systemPrompt = composeSystemPrompt(
+    options.systemPrompt ?? typeConfig.systemPrompt,
+    options.promptAppend,
+  );
   const maxSteps = options.maxSteps ?? typeConfig.defaultMaxSteps;
 
-  // ── Privilege Reduction: subagent tools are the INTERSECTION of ──
-  // ── its type's allowed tools and the parent's available tools.  ──
-  // ── A subagent can NEVER have more tools than its parent.       ──
+  // ── Privilege Reduction: subagent tools are the INTERSECTION of the ──
+  // ── type ceiling, the per-spawn allowlist, and the parent's tools.  ──
+  // ── Each stage can only NARROW — a subagent can NEVER have more     ──
+  // ── tools than its parent, nor more than its type permits.          ──
 
-  // Step 1: Determine the subagent type's allowed tool set
-  let typeAllowed: string[] | undefined =
-    typeConfig.allowedTools === "all"
-      ? undefined
-      : [...typeConfig.allowedTools];
-
-  // Step 2: Intersect with parent's available tools (privilege ceiling)
-  if (options.parentToolNames && options.parentToolNames.length > 0) {
-    const parentSet = new Set(options.parentToolNames);
-    if (typeAllowed) {
-      // Type has explicit list — intersect with parent
-      typeAllowed = typeAllowed.filter((t) => parentSet.has(t));
-    } else {
-      // Type gets "all" — restrict to parent's set
-      typeAllowed = options.parentToolNames;
-    }
-  }
+  // Steps 1–2: type ceiling → per-spawn allowlist → parent ceiling.
+  // (See resolveToolScope for the narrowing intersection chain.)
+  let typeAllowed = resolveToolScope(
+    typeConfig.allowedTools,
+    options.toolAllowlist,
+    options.parentToolNames,
+  );
 
   // Step 3: Mutating subagent types (code, general) REQUIRE permissionCheck.
   // Without it, they're downgraded to read-only to prevent privilege escalation.
@@ -394,7 +508,10 @@ export async function spawnSubagent(
       { type },
       "Mutating subagent spawned without permissionCheck — restricting to read-only",
     );
-    typeAllowed = READ_ONLY_TOOLS;
+    // Intersect (never replace): the downgrade can only NARROW. Overwriting
+    // would widen past an already-narrower per-spawn toolAllowlist / parent
+    // ceiling, re-granting tools the caller deliberately excluded.
+    typeAllowed = applyReadOnlyDowngrade(typeAllowed, READ_ONLY_TOOLS);
   }
 
   // Step 4: Build the filtered tool set
@@ -411,6 +528,9 @@ export async function spawnSubagent(
       type,
       effectiveTools: typeAllowed ?? "all",
       parentToolCount: options.parentToolNames?.length ?? "unrestricted",
+      hasAllowlist: !!(
+        options.toolAllowlist && options.toolAllowlist.length > 0
+      ),
       hasPermissionCheck: !!options.permissionCheck,
     },
     "Subagent capability manifest frozen",
@@ -420,29 +540,19 @@ export async function spawnSubagent(
   const budgetLimit = options.budgetLimit ?? costTracker.getSubagentBudget();
   const costBefore = costTracker.getSessionCost();
 
-  // Docker isolation: code subagents get their own container
+  // Docker isolation: code subagents get their own container. Set up
+  // inside the try below (not here) so a throwing onHook or any error
+  // between acquire and the streamText call is still caught by the
+  // finally that releases/restores — see acquireContainerLock() doc for
+  // why this whole window is also serialized across parallel subagents.
   let ownSandbox: DockerSandbox | null = null;
   let prevSandbox: DockerSandbox | null = null;
-  if (
-    options.containerIsolation &&
+  let releaseContainerLock: (() => void) | null = null;
+  const needsContainer =
+    !!options.containerIsolation &&
     type === "code" &&
-    DockerSandbox.isAvailable()
-  ) {
-    ownSandbox = new DockerSandbox({
-      hostWorkspace: projectPath,
-    });
-    ownSandbox.start();
-    prevSandbox = setDockerSandbox(ownSandbox);
-  }
+    DockerSandbox.isAvailable();
 
-  // Fire SubagentStart hook
-  if (options.onHook) {
-    await options.onHook("SubagentStart", {
-      subagentType: type,
-      prompt: task,
-      budget: budgetLimit,
-    });
-  }
   const toolCallNames: string[] = [];
   let fullText = "";
   let budgetExceeded = false;
@@ -494,6 +604,23 @@ export async function spawnSubagent(
   // ended up written into the brainstorm repo root instead of the cloned
   // target repos during parallel SWE-bench runs.
   try {
+    if (needsContainer) {
+      releaseContainerLock = await acquireContainerLock();
+      ownSandbox = getSandboxPool().acquire({
+        hostWorkspace: projectPath,
+      }) as DockerSandbox;
+      prevSandbox = setDockerSandbox(ownSandbox);
+    }
+
+    // Fire SubagentStart hook
+    if (options.onHook) {
+      await options.onHook("SubagentStart", {
+        subagentType: type,
+        prompt: task,
+        budget: budgetLimit,
+      });
+    }
+
     await withWorkspace(projectPath, async () => {
       const result = streamText({
         model: modelId,
@@ -550,11 +677,16 @@ export async function spawnSubagent(
     // AbortError from budget enforcement is expected — not an error
     if (err.name !== "AbortError") throw err;
   } finally {
-    // Clean up subagent's Docker sandbox and restore parent's
+    // Clean up subagent's Docker sandbox and restore parent's. Safe to
+    // do unconditionally here: acquireContainerLock() guarantees no
+    // other container-isolated subagent touches the module-level
+    // singleton between our acquire and this release, so prevSandbox is
+    // still exactly what we displaced.
     if (ownSandbox) {
-      ownSandbox.stop();
+      getSandboxPool().release(ownSandbox);
       setDockerSandbox(prevSandbox);
     }
+    releaseContainerLock?.();
   }
 
   if (budgetExceeded) {
@@ -588,12 +720,27 @@ export async function spawnSubagent(
  * Uses Promise.allSettled so one failure doesn't kill all results.
  */
 export async function spawnParallel(
-  specs: Array<{ task: string; type?: SubagentType }>,
+  specs: Array<{
+    task: string;
+    type?: SubagentType;
+    toolAllowlist?: string[];
+    promptAppend?: string;
+    maxSteps?: number;
+    budgetLimit?: number;
+  }>,
   options: SubagentOptions,
 ): Promise<SubagentResult[]> {
   const settled = await Promise.allSettled(
     specs.map((spec) =>
-      spawnSubagent(spec.task, { ...options, type: spec.type }),
+      spawnSubagent(spec.task, {
+        ...options,
+        type: spec.type,
+        // Per-spec overrides take precedence over the shared options.
+        toolAllowlist: spec.toolAllowlist ?? options.toolAllowlist,
+        promptAppend: spec.promptAppend ?? options.promptAppend,
+        maxSteps: spec.maxSteps ?? options.maxSteps,
+        budgetLimit: spec.budgetLimit ?? options.budgetLimit,
+      }),
     ),
   );
   return settled.map((result, i) => {

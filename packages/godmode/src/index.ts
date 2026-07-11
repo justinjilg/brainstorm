@@ -53,6 +53,18 @@ export {
   getAuditLog,
 } from "./audit.js";
 export {
+  renderChangeSetReport,
+  escapeHtml,
+  type RenderReportOptions,
+} from "./report/html-report.js";
+export {
+  createEvidenceBundle,
+  verifyEvidenceBundle,
+  type EvidenceBundle,
+  type CreateEvidenceBundleOptions,
+  type VerifyResult as EvidenceVerifyResult,
+} from "./report/evidence-bundle.js";
+export {
   productManifestSchema,
   parseManifest,
   validateManifestData,

@@ -29,7 +29,8 @@ import {
   createWiredPipelineTool,
   createWiredCodeGraphTools,
   configureSandbox,
-  stopDockerSandbox,
+  teardownDockerSandbox,
+  getSandboxPool,
 } from "@brainst0rm/tools";
 import {
   runAgentLoop,
@@ -199,6 +200,94 @@ async function connectMCPServers(
   }
   for (const err of errors) {
     process.stderr.write(`[mcp] ${err.name}: ${err.error}\n`);
+  }
+}
+
+// ── LLM memory extraction (fire-and-forget teardown hook) ──────────
+//
+// Runs an async cheap-model pass over the session transcript to extract
+// durable memories, augmenting the regex-based extraction middleware.
+// Gated internally by runExtractionCycle (min turns + lock file), so
+// it's cheap to call unconditionally at every teardown point.
+interface ExtractionTeardownParams {
+  projectPath: string;
+  sessionManager: { getHistory(): Array<{ role: string; content: string }> };
+  config: unknown;
+  registry: unknown;
+  router: unknown;
+  costTracker: unknown;
+  tools: unknown;
+  /** Hard-cap in ms when the caller must await before process exit. */
+  hardTimeoutMs?: number;
+}
+
+async function runMemoryExtractionTeardown(
+  params: ExtractionTeardownParams,
+): Promise<void> {
+  const {
+    projectPath,
+    sessionManager,
+    config,
+    registry,
+    router,
+    costTracker,
+    tools,
+    hardTimeoutMs,
+  } = params;
+
+  const task = (async () => {
+    const { MemoryManager, runExtractionCycle } =
+      await import("@brainst0rm/core");
+    const memory = new MemoryManager(projectPath);
+    const history = sessionManager.getHistory();
+
+    // Most-recent-first truncation from the head, capped at ~20k chars.
+    const lines = history
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .map((m) => `${m.role}: ${m.content}`);
+    let transcript = lines.join("\n\n");
+    if (transcript.length > 20_000) {
+      transcript = transcript.slice(transcript.length - 20_000);
+    }
+    const sessionTurns = history.filter((m) => m.role === "assistant").length;
+
+    await runExtractionCycle({
+      memoryDir: memory.getMemoryDir(),
+      memoryManager: memory,
+      transcript,
+      sessionTurns,
+      subagentOptions: {
+        config,
+        registry,
+        router,
+        costTracker,
+        tools,
+        projectPath,
+        permissionCheck: () => "allow",
+      } as any,
+    });
+  })().catch((err) => {
+    if (process.env.DEBUG) {
+      process.stderr.write(
+        `[memory-extract] ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+    }
+  });
+
+  if (hardTimeoutMs) {
+    // Teardown path exits the process immediately (e.g. the one-shot
+    // `run` command, or interactive chat quitting) — await with a hard
+    // cap so extraction gets a chance to finish without ever delaying
+    // process exit. The timer is unref'd and cleared so it never holds
+    // the event loop open by itself once the task settles.
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, hardTimeoutMs);
+      timer.unref();
+      task.finally(() => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
   }
 }
 
@@ -1896,6 +1985,7 @@ program
         config.shell.maxOutputBytes,
         config.shell.containerImage,
         config.shell.containerTimeout,
+        config.shell.sandboxPool,
       );
       const {
         prompt: rawPrompt,
@@ -2184,6 +2274,19 @@ program
         sessionManager.addAssistantMessage(fullResponse);
         sessionManager.flush();
       }
+
+      // Fire-and-forget LLM memory extraction; this command's process exits
+      // right after the action resolves, so await with a hard cap.
+      await runMemoryExtractionTeardown({
+        projectPath,
+        sessionManager,
+        config,
+        registry,
+        router,
+        costTracker,
+        tools,
+        hardTimeoutMs: 15_000,
+      });
     },
   );
 
@@ -6068,7 +6171,7 @@ program
 
 // ── Audit Command ────────────────────────────────────────────────
 
-program
+const auditCmd = program
   .command("audit")
   .description(
     "Full code audit: security, quality, tech debt, dependency review",
@@ -6162,6 +6265,92 @@ program
       console.log();
     },
   );
+
+auditCmd
+  .command("report")
+  .description(
+    "Render God Mode ChangeSet audit entries to a self-contained HTML evidence report",
+  )
+  .option("--changeset <id>", "Filter to a single changeset id")
+  .option("-o, --output <dir>", "Output directory")
+  .action(async (opts: { changeset?: string; output?: string }) => {
+    const { ChangeSetLogRepository } = await import("@brainst0rm/db");
+    const { renderChangeSetReport, createEvidenceBundle } =
+      await import("@brainst0rm/godmode");
+    const { ensureWorkspace, getWorkspaceDir } =
+      await import("@brainst0rm/workflow");
+    const { mkdirSync, writeFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+
+    const db = getDb();
+    const repo = new ChangeSetLogRepository(db);
+    // Evidence tool: never silently truncate. Filtered lookups scan the
+    // full table (a missed old changeset would be a false negative);
+    // unfiltered reports cap at 1000 newest but say so.
+    const total = repo.count();
+    const REPORT_CAP = 1000;
+    const rows = opts.changeset
+      ? repo
+          .recent(Math.max(total, 1))
+          .filter((r) => r.changesetId === opts.changeset)
+      : repo.recent(REPORT_CAP);
+
+    if (rows.length === 0) {
+      console.log("  No ChangeSet audit entries found.");
+      return;
+    }
+    if (!opts.changeset && total > REPORT_CAP) {
+      console.log(
+        `  Note: report covers the ${REPORT_CAP} most recent of ${total} entries. Use --changeset <id> for older ones.`,
+      );
+    }
+
+    const entries = rows.map((r) => ({
+      changesetId: r.changesetId,
+      connector: r.connector,
+      action: r.action,
+      description: r.description,
+      riskScore: r.riskScore,
+      status: r.status,
+      changesJson: r.changesJson ?? "",
+      simulationJson: r.simulationJson ?? "",
+      rollbackJson: r.rollbackJson,
+      createdAt: r.createdAt,
+      executedAt: r.executedAt,
+    }));
+
+    const reportHtml = renderChangeSetReport(entries);
+
+    const runId = `audit-report-${Date.now()}`;
+    let outDir: string;
+    if (opts.output) {
+      outDir = opts.output;
+      mkdirSync(outDir, { recursive: true });
+    } else {
+      ensureWorkspace(runId);
+      outDir = join(getWorkspaceDir(runId), "outputs");
+      mkdirSync(outDir, { recursive: true });
+    }
+
+    const reportPath = join(outDir, "report.html");
+    writeFileSync(reportPath, reportHtml, "utf8");
+    console.log(`  Wrote ${reportPath}`);
+
+    const secret = process.env.BRAINSTORM_PLATFORM_SECRET;
+    if (secret) {
+      const bundle = createEvidenceBundle(entries, reportHtml, secret);
+      const evidencePath = join(outDir, "evidence.json");
+      writeFileSync(evidencePath, JSON.stringify(bundle, null, 2), "utf8");
+      console.log(`  Wrote ${evidencePath}`);
+    } else {
+      console.log(
+        "  WARNING: report is UNSIGNED (BRAINSTORM_PLATFORM_SECRET not set).",
+      );
+      console.log(
+        "  Set BRAINSTORM_PLATFORM_SECRET to produce a signed evidence.json bundle.",
+      );
+    }
+  });
 
 // ── Share Command ────────────────────────────────────────────────
 
@@ -7046,6 +7235,76 @@ program
     const { MemoryManager } = await import("@brainst0rm/core");
     const memoryManager = new MemoryManager(process.cwd());
 
+    // ── Boot: Slack channel intake (optional) ───────────────────
+    // Transport/reasoning split: the adapter only moves messages; the
+    // IntakeCoordinator drives the same agent loop as every other client,
+    // under the channel's configured authority.
+    let channelAdapters: Array<{
+      name: string;
+      start(): Promise<void>;
+      stop(): Promise<void>;
+    }> = [];
+    if (config.channels?.slack?.enabled) {
+      try {
+        const { SlackAdapter, IntakeCoordinator, ChannelSessionStore } =
+          await import("@brainst0rm/channels");
+        const slackCfg = config.channels.slack;
+        // Token values are either literals (xoxb-/xapp- prefixed) or env
+        // var names. serve is non-interactive by design (env-only key
+        // resolution, no vault prompt — see the boot comment above), so
+        // vault-stored tokens should be exported to the environment or
+        // resolved via 1Password shell plugins.
+        const resolveToken = (value: string): string => {
+          if (!value) return "";
+          if (value.startsWith("xoxb-") || value.startsWith("xapp-")) {
+            return value;
+          }
+          return process.env[value] ?? "";
+        };
+        const botToken = resolveToken(slackCfg.botToken);
+        const appToken = resolveToken(slackCfg.appToken);
+        if (!botToken || !appToken) {
+          console.log(
+            "  Slack channel: enabled but botToken/appToken could not be resolved — skipping.",
+          );
+        } else {
+          const coordinator = new IntakeCoordinator(
+            {
+              db,
+              config,
+              registry,
+              router,
+              costTracker,
+              tools,
+              projectPath: process.cwd(),
+              sessionStore: new ChannelSessionStore(db),
+            },
+            {
+              authority: slackCfg.authority,
+              preferredModelId: slackCfg.model,
+            },
+          );
+          channelAdapters = [
+            new SlackAdapter({
+              botToken,
+              appToken,
+              authority: slackCfg.authority,
+              allowedChannels: slackCfg.allowedChannels,
+              allowedUsers: slackCfg.allowedUsers,
+              coordinator,
+            }),
+          ];
+          console.log(
+            `  Slack channel: enabled (authority: ${slackCfg.authority}, mode: ${slackCfg.mode})`,
+          );
+        }
+      } catch (err: any) {
+        console.log(
+          `  Slack channel: failed to initialize — ${err?.message ?? err}`,
+        );
+      }
+    }
+
     // ── Start server via @brainst0rm/server ────────────────────
     const server = new BrainstormServer(
       {
@@ -7057,6 +7316,7 @@ program
         tools,
         godmode,
         memoryManager,
+        channels: channelAdapters,
         version: CLI_VERSION,
       },
       {
@@ -7305,6 +7565,7 @@ program
         config.shell.maxOutputBytes,
         config.shell.containerImage,
         config.shell.containerTimeout,
+        config.shell.sandboxPool,
       );
       const permissionManager = new PermissionManager(
         config.general.defaultPermissionMode,
@@ -8314,7 +8575,7 @@ program
         process.once("SIGTERM", peerShutdown);
       }
 
-      render(
+      const inkInstance = render(
         React.createElement(App, {
           strategy: config.general.defaultStrategy,
           modelCount: { local: localCount, cloud: cloudCount },
@@ -8497,6 +8758,29 @@ program
           },
         }),
       );
+
+      // LLM memory extraction at session teardown. Without an explicit
+      // process.exit() this path exits by event-loop drain, and the
+      // extraction subagent's pending network I/O would otherwise keep
+      // the process alive until it settles — so await with a hard cap
+      // and then force exit to preserve prior quit behavior (immediate
+      // terminal return).
+      inkInstance.waitUntilExit().then(async () => {
+        await runMemoryExtractionTeardown({
+          projectPath,
+          sessionManager,
+          config,
+          registry,
+          router,
+          costTracker,
+          tools,
+          // Shorter cap than the one-shot `run` path: this holds the
+          // user's terminal at quit, so give extraction a brief window
+          // rather than a full LLM-call budget.
+          hardTimeoutMs: 5_000,
+        });
+        process.exit(0);
+      });
     },
   );
 
@@ -8507,7 +8791,15 @@ export function run() {
   // Graceful shutdown: stop Docker sandbox, close DB, flush Sentry
   const cleanup = () => {
     try {
-      stopDockerSandbox();
+      // Discard (not release) the live sandbox directly — drain() below
+      // stops it anyway, so running the pool's hygiene-reset exec first
+      // is a wasted round-trip that can also stall shutdown if the
+      // container/daemon is wedged (see teardownDockerSandbox() doc).
+      teardownDockerSandbox();
+      // Full teardown on process exit — release() alone would just park
+      // the container as idle-warm, which we don't want to leak past
+      // the CLI process lifetime.
+      getSandboxPool().drain();
     } catch {
       // Best effort — container may already be stopped
     }

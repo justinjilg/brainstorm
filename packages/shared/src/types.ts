@@ -438,6 +438,14 @@ export interface Artifact {
   timestamp: number;
   diskPath?: string;
   iteration: number;
+  /**
+   * DeerFlow-style output/scratch separation. "output" (the default when
+   * omitted) means the artifact is a finished, user-facing deliverable;
+   * "scratch" means it's working/intermediate material (e.g. a
+   * review-loop iteration that got superseded) kept for traceability but
+   * not meant to be surfaced as a final result.
+   */
+  kind?: "output" | "scratch";
 }
 
 export interface WorkflowRun {

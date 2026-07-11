@@ -85,6 +85,14 @@ export {
   type SandboxConfig,
   type SandboxExecResult,
 } from "./sandbox/docker-sandbox.js";
+export {
+  DockerSandboxPool,
+  getSandboxPool,
+  configureSandboxPool,
+  type SandboxPoolConfig,
+  type SandboxLike,
+  type AcquireOpts,
+} from "./sandbox/sandbox-pool.js";
 export { planPreviewTool } from "./builtin/plan-preview.js";
 export {
   beginTransactionTool,
@@ -119,6 +127,7 @@ export { checkSandbox, type SandboxLevel } from "./builtin/sandbox.js";
 export {
   configureSandbox,
   stopDockerSandbox,
+  teardownDockerSandbox,
   setDockerSandbox,
   setBackgroundEventHandler,
   getBackgroundTasks,

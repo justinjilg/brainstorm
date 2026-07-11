@@ -35,6 +35,16 @@ const compactionSchema = z.object({
 
 // ── Shell Config ─────────────────────────────────────────────────────
 
+// Warm pool for Docker sandbox containers — keyed by image + hostWorkspace,
+// since bind mounts are fixed at `docker run` and a container can never be
+// re-pointed at another workspace. See packages/tools/src/sandbox/sandbox-pool.ts.
+const sandboxPoolSchema = z.object({
+  enabled: z.boolean().default(true),
+  maxIdlePerKey: z.number().default(2),
+  maxIdleTotal: z.number().default(4),
+  idleTimeoutMs: z.number().default(300_000),
+});
+
 const shellSchema = z.object({
   defaultTimeout: z.number().default(120_000),
   maxOutputBytes: z.number().default(50_000),
@@ -42,6 +52,7 @@ const shellSchema = z.object({
   sandbox: z.enum(["none", "restricted", "container"]).default("restricted"),
   containerImage: z.string().default("node:22-slim"),
   containerTimeout: z.number().default(120_000),
+  sandboxPool: sandboxPoolSchema.default({}),
 });
 
 // ── Budget Config ────────────────────────────────────────────────────
@@ -282,6 +293,34 @@ const serveSchema = z.object({
   supabaseAnonKey: z.string().optional(),
 });
 
+// Slack channel intake — DeerFlow-style transport/reasoning split. The
+// adapter lives in packages/channels; tokens are vault refs or env-style
+// values resolved through the key resolver chain at startup, never stored
+// plaintext-required. Socket Mode (default) needs no public URL.
+const slackChannelSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** "socket" needs only tokens; "events-api" additionally needs signing_secret + a public URL. */
+  mode: z.enum(["socket", "events-api"]).default("socket"),
+  /** xapp-… app-level token (Socket Mode). Vault ref or literal. */
+  appToken: z.string().default(""),
+  /** xoxb-… bot token. Vault ref or literal. */
+  botToken: z.string().default(""),
+  /** Events-API request signing secret (unused in socket mode). */
+  signingSecret: z.string().default(""),
+  /** What channel-initiated agents may do. */
+  authority: z.enum(["read-only", "approvals", "full"]).default("read-only"),
+  /** Channel ID allowlist; empty = all channels the bot is in. */
+  allowedChannels: z.array(z.string()).default([]),
+  /** Slack user ID allowlist; empty = any workspace member. */
+  allowedUsers: z.array(z.string()).default([]),
+  /** Optional model pin for channel-initiated runs. */
+  model: z.string().optional(),
+});
+
+const channelsSchema = z.object({
+  slack: slackChannelSchema.default({}),
+});
+
 // ── Full Config ─────────────────────────────────────────────────────
 
 export const brainstormConfigSchema = z.object({
@@ -350,6 +389,7 @@ export const brainstormConfigSchema = z.object({
   daemon: daemonSchema.default({}),
   godmode: godmodeSchema.default({}),
   serve: serveSchema.default({}),
+  channels: channelsSchema.default({}),
 });
 
 export type BrainstormConfig = z.infer<typeof brainstormConfigSchema>;
@@ -366,5 +406,8 @@ export type GodModeConfig = z.infer<typeof godmodeSchema>;
 export type GodModeConnectorConfig = z.infer<typeof godmodeConnectorSchema>;
 export type ServeConfig = z.infer<typeof serveSchema>;
 export type ShellConfig = z.infer<typeof shellSchema>;
+export type SandboxPoolConfig = z.infer<typeof sandboxPoolSchema>;
 export type PermissionsConfig = z.infer<typeof permissionsSchema>;
 export type DaemonConfig = z.infer<typeof daemonSchema>;
+export type ChannelsConfig = z.infer<typeof channelsSchema>;
+export type SlackChannelConfig = z.infer<typeof slackChannelSchema>;

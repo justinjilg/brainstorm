@@ -1,7 +1,8 @@
 {
-  "name": "@brainst0rm/server",
-  "version": "0.14.5",
+  "name": "@brainst0rm/channels",
+  "version": "0.14.4",
   "type": "module",
+  "description": "Governed chat-platform gateway (Slack, etc.): transport adapters + IntakeCoordinator bridging inbound messages to the agent loop.",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -12,46 +13,35 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run"
   },
   "dependencies": {
-    "@brainst0rm/channels": "workspace:*",
     "@brainst0rm/core": "workspace:*",
-    "@brainst0rm/db": "workspace:*",
-    "@brainst0rm/godmode": "workspace:*",
-    "@brainst0rm/providers": "workspace:*",
-    "@brainst0rm/router": "workspace:*",
-    "@brainst0rm/shared": "workspace:*",
     "@brainst0rm/tools": "workspace:*",
+    "@brainst0rm/db": "workspace:*",
+    "@brainst0rm/shared": "workspace:*",
     "better-sqlite3": "^11"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7",
     "@types/node": "^22.0.0",
     "tsup": "^8",
-    "typescript": "^5.7"
+    "typescript": "^5.7",
+    "vitest": "^3.2.4"
   },
-  "description": "Brainstorm control plane HTTP server — agent runtime as a service",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/justinjilg/brainstorm.git",
-    "directory": "packages/server"
+    "directory": "packages/channels"
   },
   "homepage": "https://brainstorm.co",
   "keywords": [
     "ai",
-    "agent",
-    "server",
-    "brainstorm",
-    "control-plane"
-  ],
-  "files": [
-    "dist"
-  ],
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "publishConfig": {
-    "access": "public"
-  }
+    "coding-assistant",
+    "llm",
+    "slack",
+    "channels",
+    "chat"
+  ]
 }

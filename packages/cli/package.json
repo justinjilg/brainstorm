@@ -34,6 +34,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@brainst0rm/channels": "workspace:*",
     "@brainst0rm/orchestrator": "workspace:*",
     "@brainst0rm/projects": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
