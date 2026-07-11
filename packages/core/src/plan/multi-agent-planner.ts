@@ -81,29 +81,28 @@ export async function planMultiAgentRun(
 
   log.info({ request: request.slice(0, 120) }, "Starting plan decomposition");
 
-  // Spawn the planning subagent. We use the DECOMPOSITION_PROMPT as the
-  // system prompt, but also append a strong "no tools" directive because
-  // the "plan" subagent type ships with read-only tools (file_read, glob,
-  // grep) which the agent will happily use to explore the codebase
-  // instead of immediately returning JSON. Without this directive the
-  // agent burns its step budget on tool calls and returns an empty
-  // response. Discovered in Dogfood #2.
+  // Spawn the planning subagent. The "plan" type ships with read-only tools
+  // (file_read, glob, grep) which a model will happily use to explore the
+  // codebase instead of returning JSON — Dogfood #2 added a prompt directive
+  // against it, but Dogfood #3 (DeepSeek via BR) ignored the directive, made
+  // 6 tool calls, and returned prose. A prompt is a request; noTools is
+  // enforcement. Decomposition is pure text-in/text-out — the planner is
+  // handed the request and must return a plan, so it needs no tools at all.
   const plannerSystemPrompt =
     DECOMPOSITION_PROMPT +
     "\n\n## CRITICAL\n\n" +
-    "DO NOT call any tools. Respond immediately with ONLY the JSON object " +
-    "described above, with no preamble, no prose, no markdown fences, and " +
-    "no tool calls. The first character of your response must be `{` and " +
-    "the last must be `}`.";
+    "Respond with ONLY the JSON object described above — no preamble, no " +
+    "prose, no markdown fences. The first character of your response must be " +
+    "`{` and the last must be `}`.";
 
   const result = await spawnSubagent(request, {
     ...subagentOptions,
     type: "plan",
     systemPrompt: plannerSystemPrompt,
+    // Zero tools: the model physically cannot explore, so it must answer.
+    noTools: true,
     // Decomposition is short — bound it tightly to keep cost predictable.
-    // Allow a couple steps in case the model produces tool calls despite
-    // the directive; it'll still have budget to correct and emit the JSON.
-    maxSteps: 3,
+    maxSteps: 2,
   });
 
   if (result.budgetExceeded) {
