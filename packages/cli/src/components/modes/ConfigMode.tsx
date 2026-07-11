@@ -17,6 +17,21 @@ interface MemoryInfo {
   types: Record<string, number>;
 }
 
+interface SandboxPoolInfo {
+  enabled: boolean;
+  maxIdlePerKey: number;
+  maxIdleTotal: number;
+  idleTimeoutMs: number;
+}
+
+interface ChannelsInfo {
+  slack?: {
+    enabled: boolean;
+    authority: string;
+    mode: string;
+  };
+}
+
 interface ConfigModeProps {
   strategy: string;
   permissionMode: string;
@@ -28,6 +43,8 @@ interface ConfigModeProps {
   sessionCost?: number;
   vaultInfo?: VaultInfo;
   memoryInfo?: MemoryInfo;
+  sandboxPool?: SandboxPoolInfo;
+  channels?: ChannelsInfo;
 }
 
 function ConfigItem({
@@ -104,6 +121,8 @@ export function ConfigMode({
   sessionCost,
   vaultInfo,
   memoryInfo,
+  sandboxPool,
+  channels,
 }: ConfigModeProps) {
   const modeColor =
     permissionMode === "auto"
@@ -171,6 +190,24 @@ export function ConfigMode({
                     : "gray"
               }
             />
+            {sandbox === "container" && sandboxPool?.enabled && (
+              <Text color="gray" dimColor>
+                {"   "}Warm pool: {sandboxPool.maxIdlePerKey}/key,{" "}
+                {sandboxPool.maxIdleTotal} total, idle{" "}
+                {Math.round(sandboxPool.idleTimeoutMs / 1000)}s
+              </Text>
+            )}
+            {channels !== undefined && (
+              <ConfigItem
+                label="Channels"
+                value={
+                  channels.slack?.enabled
+                    ? `Slack: enabled (${channels.slack.authority}, ${channels.slack.mode})`
+                    : "Slack: disabled"
+                }
+                color={channels.slack?.enabled ? "green" : "gray"}
+              />
+            )}
           </Box>
 
           <Box marginTop={1} flexDirection="column">

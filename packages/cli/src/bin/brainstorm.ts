@@ -1273,6 +1273,24 @@ program
     if (config.routing.rules.length > 0) {
       console.log(`  Routing rules: ${config.routing.rules.length}`);
     }
+    // Sandbox + warm pool
+    const pool = config.shell.sandboxPool;
+    console.log(
+      `  Sandbox:      ${config.shell.sandbox}${
+        config.shell.sandbox === "container" && pool.enabled
+          ? ` (warm pool: ${pool.maxIdlePerKey}/key, ${pool.maxIdleTotal} total, idle ${Math.round(pool.idleTimeoutMs / 1000)}s)`
+          : ""
+      }`,
+    );
+    // Channel intake
+    const slack = config.channels?.slack;
+    console.log(
+      `  Slack channel: ${
+        slack?.enabled
+          ? `enabled (authority: ${slack.authority}, mode: ${slack.mode})`
+          : "disabled"
+      }`,
+    );
     console.log();
   });
 
@@ -7143,7 +7161,9 @@ program
 program
   .command("serve")
   .description(
-    "Start the Brainstorm control plane HTTP API server (God Mode over HTTP)",
+    "Start the Brainstorm control plane HTTP API server (God Mode over HTTP). " +
+      "Also starts configured message channels (e.g. Slack) when [channels.slack] " +
+      "is enabled in config.",
   )
   .option("--port <port>", "Port to listen on", "8000")
   .option("--host <host>", "Host to bind to", "127.0.0.1")
@@ -8630,6 +8650,16 @@ program
             permissionMode: config.general.defaultPermissionMode ?? "confirm",
             outputStyle: config.general.outputStyle ?? "concise",
             sandbox: config.shell?.sandbox ?? "none",
+            sandboxPool: config.shell?.sandboxPool,
+            channels: config.channels?.slack
+              ? {
+                  slack: {
+                    enabled: config.channels.slack.enabled,
+                    authority: config.channels.slack.authority,
+                    mode: config.channels.slack.mode,
+                  },
+                }
+              : undefined,
           },
           vaultInfo: {
             exists: new BrainstormVault(VAULT_PATH).exists(),
