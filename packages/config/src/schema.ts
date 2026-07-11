@@ -40,9 +40,13 @@ const compactionSchema = z.object({
 // re-pointed at another workspace. See packages/tools/src/sandbox/sandbox-pool.ts.
 const sandboxPoolSchema = z.object({
   enabled: z.boolean().default(true),
-  maxIdlePerKey: z.number().default(2),
-  maxIdleTotal: z.number().default(4),
-  idleTimeoutMs: z.number().default(300_000),
+  // Non-negative integers: a negative cap makes release()'s eviction loop
+  // (`while idleCount() > cap`) spin forever or throw on an empty bucket.
+  maxIdlePerKey: z.number().int().nonnegative().default(2),
+  maxIdleTotal: z.number().int().nonnegative().default(4),
+  // Positive: a zero/negative idle timeout would evict a container the same
+  // tick it's parked, defeating the pool.
+  idleTimeoutMs: z.number().int().positive().default(300_000),
 });
 
 const shellSchema = z.object({

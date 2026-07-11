@@ -65,7 +65,12 @@ const HYGIENE_RESET_COMMAND =
 function keyFor(opts: AcquireOpts): string {
   const image = opts.image ?? "node:22-slim";
   const hostWorkspace = resolve(opts.hostWorkspace);
-  return `${image}::${hostWorkspace}`;
+  // The per-command timeout is baked into each DockerSandbox at construction,
+  // so it must be part of the pool key — otherwise a parked default-timeout
+  // container would be handed to a caller that asked for a custom timeout,
+  // silently ignoring the configured value.
+  const timeout = opts.timeout ?? "default";
+  return `${image}::${hostWorkspace}::${timeout}`;
 }
 
 // A single process-level `exit` listener drains every currently-tracked
@@ -273,6 +278,19 @@ export class DockerSandboxPool {
       }
     }
     this.idle.clear();
+    // Also stop any checked-out containers. These are started without --rm
+    // and keepalive on `tail -f /dev/null`, so a container still in use at
+    // process exit (the global exit hook calls drain) would otherwise orphan
+    // indefinitely along with its workspace bind mount.
+    for (const sandbox of this.inUse) {
+      try {
+        sandbox.stop();
+      } catch {
+        /* best-effort: exiting anyway */
+      }
+    }
+    this.inUse.clear();
+    this.keyOf.clear();
   }
 
   idleCount(): number {

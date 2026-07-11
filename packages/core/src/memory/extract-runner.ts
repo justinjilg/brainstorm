@@ -39,7 +39,17 @@ export const EXTRACT_BUDGET = 0.02; // $0.02 max per cycle
 interface ExtractState {
   lastExtractAt: number; // epoch ms
   turnsSince: number;
+  /**
+   * Transcripts from sub-threshold sessions, concatenated and awaiting the next
+   * extraction. Without this, five one-turn `brainstorm run` calls would reach
+   * the turn threshold on the fifth but only extract from that fifth
+   * transcript, permanently dropping the durable facts from sessions 1–4.
+   */
+  pendingTranscript?: string;
 }
+
+/** Cap on the accumulated pending transcript, oldest content trimmed first. */
+const MAX_PENDING_TRANSCRIPT = 40_000;
 
 interface ExtractedItem {
   type: "user" | "project" | "feedback" | "reference";
@@ -75,7 +85,7 @@ export interface ExtractCycleResult {
 function readState(memoryDir: string): ExtractState {
   const statePath = join(memoryDir, EXTRACT_STATE_FILE);
   if (!existsSync(statePath)) {
-    return { lastExtractAt: 0, turnsSince: 0 };
+    return { lastExtractAt: 0, turnsSince: 0, pendingTranscript: "" };
   }
   try {
     const raw = readFileSync(statePath, "utf-8");
@@ -83,9 +93,10 @@ function readState(memoryDir: string): ExtractState {
     return {
       lastExtractAt: parsed.lastExtractAt ?? 0,
       turnsSince: parsed.turnsSince ?? 0,
+      pendingTranscript: parsed.pendingTranscript ?? "",
     };
   } catch {
-    return { lastExtractAt: 0, turnsSince: 0 };
+    return { lastExtractAt: 0, turnsSince: 0, pendingTranscript: "" };
   }
 }
 
@@ -218,9 +229,24 @@ export async function runExtractionCycle(
   const state = readState(memoryDir);
   const turnsSince = state.turnsSince + sessionTurns;
 
+  // Accumulate this session's transcript with prior sub-threshold ones, newest
+  // last, trimmed from the head to the cap.
+  let pendingTranscript = [state.pendingTranscript ?? "", transcript]
+    .filter((s) => s.length > 0)
+    .join("\n\n");
+  if (pendingTranscript.length > MAX_PENDING_TRANSCRIPT) {
+    pendingTranscript = pendingTranscript.slice(
+      pendingTranscript.length - MAX_PENDING_TRANSCRIPT,
+    );
+  }
+
   // Gate check
   if (!force && turnsSince < MIN_TURNS) {
-    writeState(memoryDir, { lastExtractAt: state.lastExtractAt, turnsSince });
+    writeState(memoryDir, {
+      lastExtractAt: state.lastExtractAt,
+      turnsSince,
+      pendingTranscript,
+    });
     return {
       ran: false,
       summary: `Only ${turnsSince} turns since last extraction (need ${MIN_TURNS})`,
@@ -229,10 +255,14 @@ export async function runExtractionCycle(
     };
   }
 
-  // Persist the accumulated turn count before attempting the lock so that
-  // contention or a later failure doesn't silently drop this call's turns.
-  // The success path below resets this to 0 once extraction completes.
-  writeState(memoryDir, { lastExtractAt: state.lastExtractAt, turnsSince });
+  // Persist the accumulated turn count + transcript before attempting the lock
+  // so contention or a later failure doesn't silently drop this call's turns or
+  // sessions. The success path below resets both once extraction completes.
+  writeState(memoryDir, {
+    lastExtractAt: state.lastExtractAt,
+    turnsSince,
+    pendingTranscript,
+  });
 
   if (!acquireLock(memoryDir)) {
     return {
@@ -251,7 +281,8 @@ export async function runExtractionCycle(
       ? readFileSync(memoryIndexPath, "utf-8")
       : "";
 
-    const extractPrompt = buildExtractPrompt(transcript, memoryIndex);
+    // Extract over the full accumulated transcript, not just this session's.
+    const extractPrompt = buildExtractPrompt(pendingTranscript, memoryIndex);
 
     const result = await spawnSubagent(extractPrompt, {
       ...options.subagentOptions,
@@ -267,7 +298,11 @@ export async function runExtractionCycle(
       log.warn(
         "Extraction model output failed to parse as JSON — writing nothing",
       );
-      writeState(memoryDir, { lastExtractAt: Date.now(), turnsSince: 0 });
+      writeState(memoryDir, {
+        lastExtractAt: Date.now(),
+        turnsSince: 0,
+        pendingTranscript: "",
+      });
       return {
         ran: true,
         summary: "Extraction output could not be parsed — nothing saved",
@@ -299,7 +334,11 @@ export async function runExtractionCycle(
       }
     }
 
-    writeState(memoryDir, { lastExtractAt: Date.now(), turnsSince: 0 });
+    writeState(memoryDir, {
+      lastExtractAt: Date.now(),
+      turnsSince: 0,
+      pendingTranscript: "",
+    });
 
     const summary = `Extraction completed. Model: ${result.modelUsed}, Cost: $${result.cost.toFixed(4)}, Extracted: ${extracted}/${items.length}`;
     log.info(

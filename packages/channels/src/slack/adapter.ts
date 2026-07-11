@@ -27,7 +27,11 @@ const log = createLogger("slack-adapter");
 
 /** Structural view of the coordinator — the adapter only needs `handle`. */
 interface CoordinatorLike {
-  handle(msg: InboundMessage, sink: OutboundSink): Promise<void>;
+  handle(
+    msg: InboundMessage,
+    sink: OutboundSink,
+    signal?: AbortSignal,
+  ): Promise<void>;
 }
 
 /** Minimal client surface the adapter's sink depends on. */
@@ -92,6 +96,8 @@ export class SlackAdapter implements ChannelAdapter {
   private selfUserId: string | null = null;
   private teamId: string | null = null;
   private started = false;
+  /** Aborted on stop() to cancel in-flight coordinator runs. */
+  private shutdown = new AbortController();
 
   /** Dedupe cache — keys are prefixed envelope ids and event ids. */
   private readonly seen = new Map<string, number>();
@@ -106,33 +112,46 @@ export class SlackAdapter implements ChannelAdapter {
     // (which would double-deliver every event to the coordinator).
     if (this.started) return;
     this.started = true;
+    // Fresh abort controller for this run (a prior stop() aborted the old one).
+    this.shutdown = new AbortController();
 
-    const client = this.opts.clientFactory
-      ? this.opts.clientFactory(this.opts.botToken)
-      : new SlackClient(this.opts.botToken);
-    this.client = client;
+    // If any step of initialization throws, clear the flag so a supervisor
+    // retry isn't turned into a permanent no-op that leaves the channel dead
+    // for the process lifetime.
+    try {
+      const client = this.opts.clientFactory
+        ? this.opts.clientFactory(this.opts.botToken)
+        : new SlackClient(this.opts.botToken);
+      this.client = client;
 
-    // Learn our own identity so we can drop self-authored messages.
-    const identity = await client.authTest();
-    this.selfUserId = identity.userId;
-    this.teamId = identity.teamId;
+      // Learn our own identity so we can drop self-authored messages.
+      const identity = await client.authTest();
+      this.selfUserId = identity.userId;
+      this.teamId = identity.teamId;
 
-    this.sink = this.buildSink(client);
+      this.sink = this.buildSink(client);
 
-    const socketOpts: SlackSocketOptions = {
-      appToken: this.opts.appToken,
-      client: client as unknown as SlackClient,
-      onEvent: this.handleEvent,
-    };
-    this.socket = this.opts.socketFactory
-      ? this.opts.socketFactory(socketOpts)
-      : new SlackSocket(socketOpts);
+      const socketOpts: SlackSocketOptions = {
+        appToken: this.opts.appToken,
+        client: client as unknown as SlackClient,
+        onEvent: this.handleEvent,
+      };
+      this.socket = this.opts.socketFactory
+        ? this.opts.socketFactory(socketOpts)
+        : new SlackSocket(socketOpts);
 
-    await this.socket.start();
+      await this.socket.start();
+    } catch (err) {
+      this.started = false;
+      throw err;
+    }
   }
 
   async stop(): Promise<void> {
     this.started = false;
+    // Cancel any in-flight coordinator runs so a shutdown/restart doesn't leave
+    // a run consuming tokens and calling chat.update after we've stopped.
+    this.shutdown.abort();
     if (this.socket) await this.socket.stop();
   }
 
@@ -206,10 +225,13 @@ export class SlackAdapter implements ChannelAdapter {
 
       const sink = this.sink;
       if (!sink) return;
-      // Fire-and-forget — must not block the socket handler.
-      void this.opts.coordinator.handle(msg, sink).catch((err) => {
-        this.logErr("coordinator.handle failed", err);
-      });
+      // Fire-and-forget — must not block the socket handler. Pass the shutdown
+      // signal so stop() cancels this run.
+      void this.opts.coordinator
+        .handle(msg, sink, this.shutdown.signal)
+        .catch((err) => {
+          this.logErr("coordinator.handle failed", err);
+        });
     } catch (err) {
       this.logErr("handleEvent failed", err);
     }

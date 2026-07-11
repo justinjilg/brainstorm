@@ -6,12 +6,15 @@ import type { ChannelAuthority } from "../types.js";
 describe("buildAuthorityCheck", () => {
   const perms: ToolPermission[] = ["auto", "confirm", "deny"];
 
-  // [authority, permission] -> expected decision
+  // [authority, permission, expected] — for a tool NOT in the read-only
+  // allowlist (`some_tool`). read-only/approvals deny by default: permission
+  // "auto" is NOT sufficient (a bundled auto tool like `memory` can still
+  // write/delete), so only the explicit read-only allowlist is honored.
   const table: Array<[ChannelAuthority, ToolPermission, string]> = [
-    ["read-only", "auto", "allow"],
+    ["read-only", "auto", "deny"],
     ["read-only", "confirm", "deny"],
     ["read-only", "deny", "deny"],
-    ["approvals", "auto", "allow"],
+    ["approvals", "auto", "deny"],
     ["approvals", "confirm", "deny"],
     ["approvals", "deny", "deny"],
     ["full", "auto", "allow"],
@@ -20,17 +23,35 @@ describe("buildAuthorityCheck", () => {
   ];
 
   for (const [authority, permission, expected] of table) {
-    it(`${authority} + ${permission} => ${expected}`, () => {
+    it(`${authority} + ${permission} (non-allowlisted tool) => ${expected}`, () => {
       const check = buildAuthorityCheck(authority);
       expect(check("some_tool", permission)).toBe(expected);
     });
   }
 
+  it("read-only/approvals allow an allowlisted read-only tool", () => {
+    for (const authority of ["read-only", "approvals"] as ChannelAuthority[]) {
+      const check = buildAuthorityCheck(authority);
+      // file_read is in READ_ONLY_TOOL_NAMES.
+      expect(check("file_read", "auto")).toBe("allow");
+      expect(check("grep", "auto")).toBe("allow");
+      // A bundled/mutating tool marked "auto" is still denied.
+      expect(check("memory", "auto")).toBe("deny");
+      expect(check("shell", "auto")).toBe("deny");
+    }
+  });
+
+  it("read-only denies an allowlisted tool that is explicitly 'deny'", () => {
+    const check = buildAuthorityCheck("read-only");
+    expect(check("file_read", "deny")).toBe("deny");
+  });
+
   it("read-only/approvals never return 'confirm' (no sync approval UI)", () => {
     for (const authority of ["read-only", "approvals"] as ChannelAuthority[]) {
       const check = buildAuthorityCheck(authority);
       for (const p of perms) {
-        expect(check("t", p)).not.toBe("confirm");
+        expect(check("file_read", p)).not.toBe("confirm");
+        expect(check("some_tool", p)).not.toBe("confirm");
       }
     }
   });

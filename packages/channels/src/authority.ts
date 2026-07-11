@@ -20,23 +20,51 @@ export type PermissionCheck = (
 ) => "allow" | "confirm" | "deny";
 
 /**
+ * Wholly-read-only tools safe to expose to an untrusted channel under
+ * read-only / approvals authority.
+ *
+ * Deny-by-default: gating on `permission === "auto"` is NOT sufficient, because
+ * `"auto"` marks a tool low-friction, not side-effect-free. Bundled tools like
+ * `memory` (read + write + delete under one auto name), `shell` (can run `rm`),
+ * and God Mode / MCP tools with arbitrary names would all slip through. So the
+ * channel gate is an explicit allowlist of tools with no mutating operation on
+ * any path — anything not listed is denied.
+ */
+export const READ_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "file_read",
+  "glob",
+  "grep",
+  "list_dir",
+  "git_status",
+  "git_diff",
+  "git_log",
+  "web_search",
+  "web_fetch",
+  "cost_estimate",
+  "code_graph_query",
+  "code_intel_status",
+]);
+
+/**
  * Build the permission-check function for a channel authority level.
  *
- * - `read-only` / `approvals`: only permission `"auto"` tools run (repo
- *   convention: `"auto"` == read-only, mirroring PermissionManager plan mode).
- *   Everything else is denied — never "confirm", because a chat channel has no
- *   synchronous approval UI in the MVP.
+ * - `read-only` / `approvals`: only tools in `readOnlyTools` run, and only if
+ *   the tool isn't explicitly denied. Deny-by-default for everything else —
+ *   never "confirm", because a chat channel has no synchronous approval UI in
+ *   the MVP.
  * - `full`: everything runs except tools explicitly marked `"deny"`.
  */
 export function buildAuthorityCheck(
   authority: ChannelAuthority,
+  readOnlyTools: ReadonlySet<string> = READ_ONLY_TOOL_NAMES,
 ): PermissionCheck {
-  return (_toolName, toolPermission) => {
+  return (toolName, toolPermission) => {
     if (authority === "full") {
       return toolPermission === "deny" ? "deny" : "allow";
     }
-    // read-only AND approvals: read-only tools only.
-    return toolPermission === "auto" ? "allow" : "deny";
+    // read-only AND approvals: explicit read-only allowlist only.
+    if (toolPermission === "deny") return "deny";
+    return readOnlyTools.has(toolName) ? "allow" : "deny";
   };
 }
 
