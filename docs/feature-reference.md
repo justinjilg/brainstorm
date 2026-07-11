@@ -209,6 +209,14 @@ Commands executed with the `/` prefix in chat mode. Dispatched by `packages/cli/
 | `/schedule`    | `/sched`, `/cron` | Manage scheduled tasks for the active project                           | `/schedule [list\|add\|history]`                               |
 | `/orchestrate` | `/orch`           | Coordinate work across multiple projects                                | `/orchestrate "<description>" [project1,project2,...]`         |
 
+### CLI Subcommands
+
+These are terminal `brainstorm …` subcommands (not `/`-prefixed chat slash commands).
+
+| Command                   | Description                                                                                                                                                                                                                                                                                                           | Flags                                                                                |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `brainstorm audit report` | Renders God Mode ChangeSet audit entries to a self-contained, XSS-safe HTML evidence report (`report.html`). When `BRAINSTORM_PLATFORM_SECRET` is set, also writes an HMAC-signed, verifiable, tamper-evident `evidence.json` bundle; without the secret it still writes `report.html` and warns that it is UNSIGNED. | `--changeset <id>` (limit to one ChangeSet), `-o, --output <dir>` (output directory) |
+
 ---
 
 ## 3. Roles
@@ -390,6 +398,17 @@ Located in `.brainstorm/agents/` as `.agent.md` files with YAML frontmatter:
 | **DevOps**            | coder     | shell, file_read, file_write, git_status, git_diff                                    | 10        | Handles deployment, CI/CD pipeline, infrastructure operations                              |
 | **Technical Writer**  | analyst   | file_read, file_write, grep, glob, git_log, git_diff                                  | 8         | Generates documentation: changelogs, API docs, README updates                              |
 | **Reporter**          | analyst   | file_read, grep, glob                                                                 | 5         | Produces execution summary reports: changes, costs, findings, next steps                   |
+
+### 5.4 Per-Spawn Scope Narrowing
+
+The model-facing `subagent` tool accepts optional per-spawn narrowing fields on top of the spawned type's defaults. This is narrowing-only -- it can only shrink the type's configured scope, never widen it -- bounded by the type's tool ceiling intersected with the parent's own tools. It is a capability of the `subagent` tool, not a user-facing CLI flag.
+
+| Field           | Effect                                                                     |
+| --------------- | -------------------------------------------------------------------------- |
+| `toolAllowlist` | Restrict the spawned subagent to a subset of the type's normal tool list   |
+| `promptAppend`  | Extra instructions appended to the type's system prompt; never replaces it |
+| `maxSteps`      | Step budget for the spawn; clamped to 2x the type's default max steps      |
+| `budgetLimit`   | Cost ceiling for the spawn; clamped to the configured subagent budget      |
 
 ### Agent Priority Resolution
 
@@ -604,6 +623,17 @@ TOML configuration with layered resolution: defaults < global (`~/.brainstorm/co
 | `containerImage`   | string | `"node:22-slim"` | Docker image for container sandbox          |
 | `containerTimeout` | number | `120000`         | Docker command timeout in ms                |
 
+### [shell.sandboxPool]
+
+Warm container pool for the Docker sandbox. Only active when `[shell].sandbox = "container"`. Reuses warm containers across code-subagents (keyed by image + workspace) instead of cold-starting each; idle containers are evicted after `idleTimeoutMs` and the pool is drained on process exit.
+
+| Key             | Type    | Default  | Description                                                         |
+| --------------- | ------- | -------- | ------------------------------------------------------------------- |
+| `enabled`       | boolean | `true`   | Enable the warm container pool                                      |
+| `maxIdlePerKey` | number  | `2`      | Max idle containers held per image+workspace key (non-negative int) |
+| `maxIdleTotal`  | number  | `4`      | Max idle containers held across all keys (non-negative int)         |
+| `idleTimeoutMs` | number  | `300000` | Idle container eviction delay in ms (positive int)                  |
+
 ### [budget]
 
 | Key          | Type    | Default    | Description                                      |
@@ -722,6 +752,22 @@ clientSecret = "..."
 tokenUrl = "..."
 scopes = ["read", "write"]
 ```
+
+### [channels.slack]
+
+Slack message gateway config (`packages/channels`). `brainstorm serve` starts a Slack adapter in Socket Mode (no public URL required) when `enabled = true`. Strict transport/reasoning split: the adapter only moves messages in and out; the coordinator drives the same governed agent loop as any other entry point. DM and @mention intake, with thread-to-conversation mapping.
+
+| Key               | Type     | Default       | Description                                                                                                              |
+| ----------------- | -------- | ------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `enabled`         | boolean  | `false`       | Enable the Slack channel adapter                                                                                         |
+| `mode`            | enum     | `"socket"`    | Connection mode: `socket`, `events-api` (`events-api` not yet wired — rejected at startup)                               |
+| `appToken`        | string   | `""`          | `xapp-…` literal, or the name of an env var to resolve it from                                                           |
+| `botToken`        | string   | `""`          | `xoxb-…` literal, or an env var name                                                                                     |
+| `signingSecret`   | string   | `""`          | Events API only; unused in socket mode                                                                                   |
+| `authority`       | enum     | `"read-only"` | Per-channel authority: `read-only` (explicit read-only tool allowlist only), `approvals`, `full` (everything not denied) |
+| `allowedChannels` | string[] | `[]`          | Channel allowlist; empty means all channels the bot is in                                                                |
+| `allowedUsers`    | string[] | `[]`          | User allowlist; empty means any workspace member                                                                         |
+| `model`           | string   | `""`          | Optional model pin for channel-initiated runs                                                                            |
 
 ---
 
@@ -991,6 +1037,18 @@ The `memory-extraction` middleware scans every assistant response for:
 - **Error-fix pairs:** "fixed by/the solution is X" patterns
 
 Extracts via regex (no LLM call). Deduplicates per session. Saves to MemoryManager.
+
+### 16.2.1 LLM Extraction Pass (async)
+
+A second, async extraction pass (`runExtractionCycle`) augments the regex middleware -- it does not replace it. It runs a cheap model over recent turns at chat exit and after `brainstorm run`, gated by a turn threshold (default 5 turns since the last run). It is fire-and-forget with a hard timeout cap so it never delays process exit.
+
+Memories it writes are tagged with source `llm_extraction` and carry a trust score of `0.55`, placing it in the memory trust hierarchy between direct user statements and regex-only extraction:
+
+| Source             | Trust | Origin                                     |
+| ------------------ | ----- | ------------------------------------------ |
+| `user_input`       | 1.0   | Explicit statement from the user           |
+| `llm_extraction`   | 0.55  | Async cheap-model extraction pass          |
+| `agent_extraction` | 0.5   | Regex-based `memory-extraction` middleware |
 
 ### 16.3 Memory Consolidation (Dream)
 

@@ -140,10 +140,18 @@ MCP server (stdio). Claude Code spawns this automatically via `~/.claude/mcp.jso
 
 ### `brainstorm serve`
 
-HTTP API server for dashboards and direct API access.
+HTTP API server for dashboards and direct API access. Also starts configured message channels (e.g. Slack) when `[channels.slack].enabled` is set.
 
 ```bash
 brainstorm serve --port 8000 --cors
+```
+
+### `brainstorm audit report`
+
+Render God Mode ChangeSet audit entries to a self-contained HTML evidence report (HMAC-signed `evidence.json` when `BRAINSTORM_PLATFORM_SECRET` is set).
+
+```bash
+brainstorm audit report [--changeset <id>] [-o <dir>]
 ```
 
 ### `brainstorm run`

@@ -10,3 +10,33 @@ defaultPermissionMode = "auto"
 tickIntervalMs = 30000
 maxTicksPerSession = 200
 sleepDefaultMs = 30000
+
+# Shell sandbox: none | restricted | container. `container` runs shell/code in
+# a hardened Docker sandbox (bind-mounted workspace, no network).
+[shell]
+sandbox = "restricted"
+
+# Warm pool for Docker sandbox containers (only used when sandbox = "container").
+# Keyed by image + workspace, since bind mounts are fixed at `docker run`.
+# Reuses warm containers across code-subagents instead of paying cold start
+# every time; idle containers are evicted after idleTimeoutMs.
+[shell.sandboxPool]
+enabled = true
+maxIdlePerKey = 2
+maxIdleTotal = 4
+idleTimeoutMs = 300000
+
+# Slack message gateway (DeerFlow-style transport/reasoning split). When enabled,
+# `brainstorm serve` starts a Slack adapter that drives the same governed agent
+# loop as every other client. Socket Mode needs no public URL. Tokens may be
+# literals (xoxb-/xapp-) or the NAMES of env vars resolved at startup.
+# authority: read-only (allowlisted read tools only) | approvals | full.
+# [channels.slack]
+# enabled = true
+# mode = "socket"                 # socket | events-api (events-api not yet wired)
+# botToken = "SLACK_BOT_TOKEN"    # xoxb-… or env var name
+# appToken = "SLACK_APP_TOKEN"    # xapp-… or env var name
+# authority = "read-only"
+# allowedChannels = []            # empty = all channels the bot is in
+# allowedUsers = []               # empty = any workspace member
+# model = ""                      # optional model pin for channel runs

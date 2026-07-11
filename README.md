@@ -164,17 +164,20 @@ Restart Claude Code. The new product's tools appear automatically.
 
 ## What It Does
 
-|                           |                                                                                                                                                                                        |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Multi-model routing**   | 10+ models across 8 providers. 6 routing strategies including Thompson sampling from real outcomes. The system learns which models work best for which tasks.                          |
-| **Terminal dashboard**    | 4-mode TUI — Dashboard, Models, Config, Planning. Live cost tracking, routing decisions, tool health, model performance. Switch with `Esc` + number keys.                              |
-| **58+ built-in tools**    | Filesystem, shell, git, GitHub (8), code graph, web search, memory, planning, agents, transactions. Checkpoint/undo on every write. Docker sandbox option.                             |
-| **Role workflows**        | `/architect` `/sr-developer` `/qa` — each sets the model, system prompt, tools, output style, and routing strategy in one command.                                                     |
-| **9-phase orchestration** | `storm orchestrate pipeline "add OAuth"` runs: spec → architecture → implementation → review → verify → refactor → deploy → document → report. Each phase routed to the optimal model. |
-| **Build wizard**          | `/build add login page` auto-detects workflow type, assigns models per step, shows cost estimate before execution.                                                                     |
-| **Encrypted vault**       | AES-256-GCM + Argon2id. 1Password bridge. Three-backend key resolver chain.                                                                                                            |
-| **Plugin SDK**            | Extend with custom tools, hooks, and skills. MCP client with OAuth.                                                                                                                    |
-| **Intelligence**          | Semantic code search, git history indexing, style learning, cross-session memory, proactive context compaction.                                                                        |
+|                            |                                                                                                                                                                                                |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Multi-model routing**    | 10+ models across 8 providers. 6 routing strategies including Thompson sampling from real outcomes. The system learns which models work best for which tasks.                                  |
+| **Terminal dashboard**     | 4-mode TUI — Dashboard, Models, Config, Planning. Live cost tracking, routing decisions, tool health, model performance. Switch with `Esc` + number keys.                                      |
+| **58+ built-in tools**     | Filesystem, shell, git, GitHub (8), code graph, web search, memory, planning, agents, transactions. Checkpoint/undo on every write. Docker sandbox option.                                     |
+| **Role workflows**         | `/architect` `/sr-developer` `/qa` — each sets the model, system prompt, tools, output style, and routing strategy in one command.                                                             |
+| **9-phase orchestration**  | `storm orchestrate pipeline "add OAuth"` runs: spec → architecture → implementation → review → verify → refactor → deploy → document → report. Each phase routed to the optimal model.         |
+| **Build wizard**           | `/build add login page` auto-detects workflow type, assigns models per step, shows cost estimate before execution.                                                                             |
+| **Encrypted vault**        | AES-256-GCM + Argon2id. 1Password bridge. Three-backend key resolver chain.                                                                                                                    |
+| **Plugin SDK**             | Extend with custom tools, hooks, and skills. MCP client with OAuth.                                                                                                                            |
+| **Intelligence**           | Semantic code search, git history indexing, style learning, cross-session memory, proactive context compaction.                                                                                |
+| **Slack message gateway**  | `brainstorm serve` starts a Slack adapter (Socket Mode, no public URL) driving the same governed agent loop. Per-channel authority (`read-only` / `approvals` / `full`), DM + @mention intake. |
+| **Audit evidence reports** | `brainstorm audit report` renders ChangeSet audit entries to a self-contained HTML report, plus an HMAC-signed `evidence.json` when `BRAINSTORM_PLATFORM_SECRET` is set.                       |
+| **Sandbox warm pool**      | Docker sandbox reuses warm containers across code-subagents (keyed by image+workspace) instead of cold-starting each, with idle eviction.                                                      |
 
 ## Architecture
 
