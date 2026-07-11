@@ -235,37 +235,54 @@ async function runMemoryExtractionTeardown(
     hardTimeoutMs,
   } = params;
 
+  // Abort controller so the hard-timeout cap actually cancels the extraction
+  // subagent's in-flight provider request, rather than merely resolving the
+  // wrapper promise while billable network work continues in the background.
+  const abort = new AbortController();
+
   const task = (async () => {
     const { MemoryManager, runExtractionCycle } =
       await import("@brainst0rm/core");
     const memory = new MemoryManager(projectPath);
-    const history = sessionManager.getHistory();
+    try {
+      const history = sessionManager.getHistory();
 
-    // Most-recent-first truncation from the head, capped at ~20k chars.
-    const lines = history
-      .filter((m) => m.role === "user" || m.role === "assistant")
-      .map((m) => `${m.role}: ${m.content}`);
-    let transcript = lines.join("\n\n");
-    if (transcript.length > 20_000) {
-      transcript = transcript.slice(transcript.length - 20_000);
+      // Most-recent-first truncation from the head, capped at ~20k chars.
+      const lines = history
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .map((m) => `${m.role}: ${m.content}`);
+      let transcript = lines.join("\n\n");
+      if (transcript.length > 20_000) {
+        transcript = transcript.slice(transcript.length - 20_000);
+      }
+      const sessionTurns = history.filter((m) => m.role === "assistant").length;
+
+      await runExtractionCycle({
+        memoryDir: memory.getMemoryDir(),
+        memoryManager: memory,
+        transcript,
+        sessionTurns,
+        subagentOptions: {
+          config,
+          registry,
+          router,
+          costTracker,
+          tools,
+          projectPath,
+          permissionCheck: () => "allow",
+          parentSignal: abort.signal,
+        } as any,
+      });
+    } finally {
+      // Flush the debounced MEMORY.md rebuild before exit — otherwise a
+      // freshly-written extraction file leaves the index stale and the next
+      // pass misses it during dedup.
+      try {
+        (memory as any).dispose?.();
+      } catch {
+        /* best-effort */
+      }
     }
-    const sessionTurns = history.filter((m) => m.role === "assistant").length;
-
-    await runExtractionCycle({
-      memoryDir: memory.getMemoryDir(),
-      memoryManager: memory,
-      transcript,
-      sessionTurns,
-      subagentOptions: {
-        config,
-        registry,
-        router,
-        costTracker,
-        tools,
-        projectPath,
-        permissionCheck: () => "allow",
-      } as any,
-    });
   })().catch((err) => {
     if (process.env.DEBUG) {
       process.stderr.write(
@@ -279,9 +296,13 @@ async function runMemoryExtractionTeardown(
     // `run` command, or interactive chat quitting) — await with a hard
     // cap so extraction gets a chance to finish without ever delaying
     // process exit. The timer is unref'd and cleared so it never holds
-    // the event loop open by itself once the task settles.
+    // the event loop open by itself once the task settles. On timeout we
+    // abort the extraction so it stops consuming tokens past the cap.
     await new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, hardTimeoutMs);
+      const timer = setTimeout(() => {
+        abort.abort();
+        resolve();
+      }, hardTimeoutMs);
       timer.unref();
       task.finally(() => {
         clearTimeout(timer);
@@ -7174,6 +7195,19 @@ program
     const costTracker = new CostTracker(db, config.budget);
     const tools = createDefaultToolRegistry();
 
+    // Initialize the shell sandbox BEFORE exposing tools. The run/chat paths
+    // do this; serve previously did not, so with sandbox="container" the
+    // shell tool stayed in default restricted-host mode and channel-initiated
+    // commands ran on the host instead of in Docker.
+    configureSandbox(
+      config.shell.sandbox,
+      process.cwd(),
+      config.shell.maxOutputBytes,
+      config.shell.containerImage,
+      config.shell.containerTimeout,
+      config.shell.sandboxPool,
+    );
+
     // Wire memory tool in IPC server mode
     const { MemoryManager: ServerMemoryManager } =
       await import("@brainst0rm/core");
@@ -7249,6 +7283,14 @@ program
         const { SlackAdapter, IntakeCoordinator, ChannelSessionStore } =
           await import("@brainst0rm/channels");
         const slackCfg = config.channels.slack;
+        if (slackCfg.mode === "events-api") {
+          // The Events-API HTTP transport isn't wired yet (no route, the
+          // signing secret is unused). Refuse rather than silently starting
+          // Socket Mode, which would run a different transport than configured.
+          throw new Error(
+            "channels.slack.mode='events-api' is not yet supported — use 'socket'.",
+          );
+        }
         // Token values are either literals (xoxb-/xapp- prefixed) or env
         // var names. serve is non-interactive by design (env-only key
         // resolution, no vault prompt — see the boot comment above), so

@@ -44,6 +44,20 @@ import { renderFinal } from "./render.js";
 const log = createLogger("channels");
 
 /**
+ * Process-global serialization tail for channel-driven agent runs.
+ *
+ * `runAgentLoop` installs process-global handlers (`clearTasks`,
+ * `setTaskEventHandler`, `setToolOutputHandler`, `setBackgroundEventHandler`)
+ * and nulls them in its `finally`. Two loops running concurrently would clobber
+ * and cross-contaminate each other's task state and events, and one run's
+ * cleanup would tear down the other's handlers. Per-thread serialization is not
+ * enough — messages from *different* threads (and different coordinator
+ * instances) must not overlap either. So all channel runs chain onto this
+ * single module-level tail until that loop state is request-scoped.
+ */
+let globalRunTail: Promise<void> = Promise.resolve();
+
+/**
  * System-prompt suffix appended for non-`full` authority. Tells the model the
  * mutating tools it may reach for are unavailable in this channel and it should
  * describe what it *would* do instead of attempting the change.
@@ -110,8 +124,6 @@ export class IntakeCoordinator {
   private readonly runLoop: typeof runAgentLoop;
   private readonly buildSystemPrompt: typeof buildSystemPrompt;
   private readonly createMiddlewarePipeline: typeof createDefaultMiddlewarePipeline;
-  /** Tail promise per thread, so same-thread messages run sequentially. */
-  private readonly inFlight = new Map<string, Promise<void>>();
 
   constructor(deps: CoordinatorDependencies, opts: CoordinatorOptions) {
     this.deps = deps;
@@ -123,26 +135,32 @@ export class IntakeCoordinator {
   }
 
   /**
-   * Handle one inbound message. Serialized per thread. Never rejects — errors
-   * are surfaced via {@link OutboundSink.postError} and logged.
+   * Handle one inbound message. Globally serialized (see {@link globalRunTail})
+   * because the agent loop uses process-global handler state. Never rejects —
+   * errors are surfaced via {@link OutboundSink.postError} and logged. Callers
+   * invoke this in per-thread arrival order, which the global FIFO chain
+   * preserves, so same-thread ordering is maintained too.
    */
-  async handle(msg: InboundMessage, sink: OutboundSink): Promise<void> {
-    const key = this.threadKeyString(msg);
-    const prev = this.inFlight.get(key) ?? Promise.resolve();
-    // Chain onto any in-flight run for this thread. `.catch` isolates us from a
-    // prior run's rejection (there shouldn't be one — run() swallows — but be
-    // defensive so one thread's failure can't poison the next message).
-    const next = prev.catch(() => {}).then(() => this.run(msg, sink));
-    this.inFlight.set(key, next);
-    // Drop the entry once this is the settled tail, so the map doesn't grow
-    // unbounded across threads.
-    void next.finally(() => {
-      if (this.inFlight.get(key) === next) this.inFlight.delete(key);
-    });
+  async handle(
+    msg: InboundMessage,
+    sink: OutboundSink,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    // Chain onto the global tail. `.catch` isolates us from a prior run's
+    // rejection (run() swallows its own, but be defensive so one failure can't
+    // poison the next message).
+    const next = globalRunTail
+      .catch(() => {})
+      .then(() => this.run(msg, sink, signal));
+    globalRunTail = next;
     return next;
   }
 
-  private async run(msg: InboundMessage, sink: OutboundSink): Promise<void> {
+  private async run(
+    msg: InboundMessage,
+    sink: OutboundSink,
+    signal?: AbortSignal,
+  ): Promise<void> {
     let placeholderId: string | null = null;
     try {
       const sessionId = this.resolveSession(msg);
@@ -151,7 +169,7 @@ export class IntakeCoordinator {
       // shows activity immediately.
       placeholderId = await sink.postPlaceholder(msg);
 
-      const events = await this.drive(msg, sessionId);
+      const events = await this.drive(msg, sessionId, signal);
 
       // runAgentLoop signals failures by *yielding* an {type:"error"} event and
       // returning without a "done" — it does not throw (see
@@ -202,6 +220,7 @@ export class IntakeCoordinator {
   private async drive(
     msg: InboundMessage,
     sessionId: string,
+    signal?: AbortSignal,
   ): Promise<AgentEvent[]> {
     const { prompt } = this.buildSystemPrompt(this.deps.projectPath);
     const systemPrompt =
@@ -233,20 +252,12 @@ export class IntakeCoordinator {
         permissionCheck: buildAuthorityCheck(this.opts.authority),
         middleware: this.createMiddlewarePipeline(this.deps.projectPath),
         preferredModelId: this.opts.preferredModelId,
+        signal,
       },
     )) {
       events.push(event);
       collector?.consume(event);
     }
     return events;
-  }
-
-  private threadKeyString(msg: InboundMessage): string {
-    return [
-      msg.channelType,
-      msg.teamId ?? "",
-      msg.channelId,
-      msg.threadKey,
-    ].join(" ");
   }
 }

@@ -390,7 +390,10 @@ describe("IntakeCoordinator.handle", () => {
     expect(order).toEqual(["start1", "end1", "start2", "end2"]);
   });
 
-  it("runs messages in different threads concurrently", async () => {
+  it("serializes messages across different threads (global loop state)", async () => {
+    // runAgentLoop installs process-global handlers, so even different threads
+    // must not overlap. The coordinator chains every run onto a single global
+    // tail — so thread-2 waits for thread-1 to finish.
     const store = new FakeSessionStore();
     for (const threadKey of ["thread-1", "thread-2"]) {
       store.bind(
@@ -405,6 +408,7 @@ describe("IntakeCoordinator.handle", () => {
       const id = ++n;
       order.push(`start${id}`);
       await new Promise<void>((res) => gates.push(res));
+      order.push(`end${id}`);
       yield { type: "done", totalCost: 0 } as AgentEvent;
     } as unknown as CoordinatorDependencies["runLoop"];
     const coord = new IntakeCoordinator(
@@ -416,11 +420,16 @@ describe("IntakeCoordinator.handle", () => {
     const p2 = coord.handle(makeMsg({ threadKey: "thread-2" }), makeSink());
 
     await flush();
-    // Both loops started before either was released — they ran concurrently.
-    expect(order).toEqual(["start1", "start2"]);
+    // Only thread-1 has started; thread-2 is queued behind it globally.
+    expect(order).toEqual(["start1"]);
 
     gates[0]();
+    await p1;
+    await flush();
+    expect(order).toEqual(["start1", "end1", "start2"]);
+
     gates[1]();
-    await Promise.all([p1, p2]);
+    await p2;
+    expect(order).toEqual(["start1", "end1", "start2", "end2"]);
   });
 });
