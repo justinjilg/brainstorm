@@ -296,6 +296,22 @@ function verifyWorktree(worktreePath: string): {
     };
   }
 
+  // A git worktree shares .git but NOT node_modules, so `npm run build`
+  // would fail for lack of dependencies — a false negative that rejects a
+  // perfectly correct diff (observed: GLM produced a correct, compiling edit
+  // that was still REVISEd because the worktree had no deps). Treat missing
+  // deps as "unverified" (null), not "failed" (false), so the Judge doesn't
+  // reject on an environmental gap. Enabling real verification would require
+  // installing/linking deps into the worktree first.
+  if (!existsSync(join(worktreePath, "node_modules"))) {
+    return {
+      buildPassed: null,
+      testPassed: null,
+      notes:
+        "deps not installed in worktree — build verification skipped (install/link node_modules in worktrees to enable)",
+    };
+  }
+
   let scripts: Record<string, string> = {};
   try {
     const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
