@@ -206,6 +206,28 @@ export async function* runWorkerPool(
           // Capture what the agent actually changed.
           const filesTouched = listFilesTouched(worktreePath);
 
+          // A "code" task exists to implement a change. Completing it with
+          // zero file edits is a silent no-op — the model narrated what it
+          // *would* do instead of calling an edit tool (observed dogfooding
+          // a weaker routed model). Fail it explicitly so the run surfaces
+          // the failure rather than the Judge approving an empty worktree.
+          // Read-only/analysis types (explore, review, plan) legitimately
+          // touch no files, so this only applies to "code".
+          if (claimed.subagentType === "code" && filesTouched.length === 0) {
+            taskRepo.failTask(
+              claimed.id,
+              "code task produced no file changes — the worker did not apply an edit",
+            );
+            totalFailed++;
+            pushEvent({
+              type: "worker-failed",
+              workerId,
+              task: claimed,
+              error: "no file changes produced",
+            });
+            continue;
+          }
+
           // Detect unauthorized dep changes. If the task didn't ask for
           // a dep change but the worker modified package.json / lockfiles,
           // log a warning on the completion event. We don't fail the task
