@@ -66,6 +66,68 @@ export interface JudgeOptions {
   autoMerge?: boolean;
 }
 
+/** Inputs to the overall Judge decision — pure, so it's unit-testable. */
+export interface JudgeOutcomeInputs {
+  /** Number of files touched by more than one worker. */
+  conflictFileCount: number;
+  /** True if any verdict failed build or test verification. */
+  hasVerificationFailure: boolean;
+  /** How many verdicts are unverified (for the reason message). */
+  unverifiedCount: number;
+  /** Number of tasks that failed during execution. */
+  failedCount: number;
+  /** Number of completed-task verdicts evaluated. */
+  verdictCount: number;
+  /** Total files changed across all completed tasks. */
+  totalFilesChanged: number;
+}
+
+/**
+ * Decide the overall Judge outcome from run signals. Precedence: conflicts
+ * (reject) → verification failure (revise) → execution failure (revise) →
+ * nothing to evaluate (reject) → no-op run with zero file changes (reject) →
+ * approve. Extracted as a pure function so the precedence — including the
+ * no-op guard that stops the Judge approving empty worktrees — is testable
+ * without a DB or real worktrees.
+ */
+export function decideJudgeOutcome(i: JudgeOutcomeInputs): {
+  decision: "approve" | "revise" | "reject";
+  reason: string;
+} {
+  if (i.conflictFileCount > 0) {
+    return {
+      decision: "reject",
+      reason: `${i.conflictFileCount} files were modified by multiple workers — manual reconciliation required`,
+    };
+  }
+  if (i.hasVerificationFailure) {
+    return {
+      decision: "revise",
+      reason: `${i.unverifiedCount} task(s) failed build/test verification`,
+    };
+  }
+  if (i.failedCount > 0) {
+    return {
+      decision: "revise",
+      reason: `${i.failedCount} task(s) failed during execution`,
+    };
+  }
+  if (i.verdictCount === 0) {
+    return { decision: "reject", reason: "no completed tasks to evaluate" };
+  }
+  if (i.totalFilesChanged === 0) {
+    return {
+      decision: "reject",
+      reason:
+        "no file changes were produced by any task — the run is a no-op (workers did not apply edits)",
+    };
+  }
+  return {
+    decision: "approve",
+    reason: `all ${i.verdictCount} tasks passed verification with no conflicts`,
+  };
+}
+
 /**
  * Run the Judge phase. Inspects every completed task, builds the conflict
  * matrix, runs verification, and returns a decision.
@@ -156,30 +218,24 @@ export async function runJudge(options: JudgeOptions): Promise<JudgeDecision> {
   }
 
   // ── Overall decision ───────────────────────────────────────────────
-  const hasConflicts = Object.keys(conflictMatrix).length > 0;
-  const hasVerificationFailure = verdicts.some(
-    (v) => v.buildPassed === false || v.testPassed === false,
+  // A run that completed but changed nothing anywhere is a no-op — every
+  // worker narrated instead of editing. Approving it would merge an empty
+  // result and report false success; refuse it explicitly.
+  const totalFilesChanged = completed.reduce(
+    (n, t) => n + (t.filesTouched?.length ?? 0),
+    0,
   );
-  const hasFailedTasks = failed.length > 0;
 
-  let decision: "approve" | "revise" | "reject";
-  let reason: string;
-  if (hasConflicts) {
-    decision = "reject";
-    reason = `${Object.keys(conflictMatrix).length} files were modified by multiple workers — manual reconciliation required`;
-  } else if (hasVerificationFailure) {
-    decision = "revise";
-    reason = `${verdicts.filter((v) => !v.verified).length} task(s) failed build/test verification`;
-  } else if (hasFailedTasks) {
-    decision = "revise";
-    reason = `${failed.length} task(s) failed during execution`;
-  } else if (verdicts.length === 0) {
-    decision = "reject";
-    reason = "no completed tasks to evaluate";
-  } else {
-    decision = "approve";
-    reason = `all ${verdicts.length} tasks passed verification with no conflicts`;
-  }
+  let { decision, reason } = decideJudgeOutcome({
+    conflictFileCount: Object.keys(conflictMatrix).length,
+    hasVerificationFailure: verdicts.some(
+      (v) => v.buildPassed === false || v.testPassed === false,
+    ),
+    unverifiedCount: verdicts.filter((v) => !v.verified).length,
+    failedCount: failed.length,
+    verdictCount: verdicts.length,
+    totalFilesChanged,
+  });
 
   // ── Auto-merge on approve ──────────────────────────────────────────
   const mergedTaskIds: string[] = [];
