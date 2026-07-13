@@ -63,3 +63,35 @@ export function resolveCanonicalName(
 ): string {
   return reverseMap.get(providerName) ?? providerName;
 }
+
+/**
+ * Translate a provider-specific tool-call name back to its canonical
+ * (Anthropic) name for the given model's family, without needing to have
+ * a reverseMap in hand.
+ *
+ * This is the INBOUND counterpart to adaptToolsForModel: the loop renames
+ * tools OUTBOUND so the model sees provider-native names (file_edit →
+ * apply_patch for OpenAI, file_edit → replace for Google, etc.); when the
+ * model then emits a tool call under that renamed name, dispatch/tracking
+ * must map it BACK to the canonical name or the loop's tool-name comparisons
+ * (file_read/file_write/shell/subagent) and executor lookup miss.
+ *
+ * Anthropic (and any unmapped provider) round-trips unchanged. Names with no
+ * provider mapping (already canonical, or genuinely unknown) pass through.
+ *
+ * @param providerName - The tool name as emitted by the model
+ * @param model - The model that produced the tool call
+ * @returns The canonical Brainstorm tool name
+ */
+export function reverseToolName(
+  providerName: string,
+  model: ModelEntry,
+): string {
+  const family = getProviderFamily(model.provider);
+  const mapping = PROVIDER_TOOL_NAMES[family];
+  if (!mapping) return providerName;
+  for (const [canonicalName, adaptedName] of Object.entries(mapping)) {
+    if (adaptedName === providerName) return canonicalName;
+  }
+  return providerName;
+}

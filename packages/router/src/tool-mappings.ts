@@ -11,18 +11,18 @@
 
 export const PROVIDER_TOOL_NAMES: Record<string, Record<string, string>> = {
   openai: {
-    bash: "shell_command",
+    shell: "shell_command",
     file_read: "read_file",
     file_write: "write_file",
     file_edit: "apply_patch",
   },
   google: {
-    bash: "run_shell_command",
+    shell: "run_shell_command",
     file_write: "write_file",
     file_edit: "replace",
   },
   deepseek: {
-    bash: "shell_command",
+    shell: "shell_command",
     file_read: "read_file",
     file_write: "write_file",
   },

@@ -368,4 +368,48 @@ export const CLOUD_MODELS: ModelEntry[] = [
     isLocal: false,
     lastHealthCheck: 0,
   },
+  // ── Z.AI (GLM) ─────────────────────────────────────────────────────
+  // Reached through BrainstormRouter (no direct SDK). getProvider() has no
+  // `zai` provider, so this id falls through to the BR SaaS provider, which
+  // receives the full "zai/glm-5.2" string. The id must match BR's catalog:
+  // BR registers GLM under the `zai/` prefix (the Z.AI provider), not `zhipu/`.
+  // Requires BRAINSTORM_API_KEY.
+  {
+    id: "zai/glm-5.2",
+    provider: "zai",
+    name: "GLM 5.2",
+    capabilities: {
+      toolCalling: true,
+      streaming: true,
+      vision: false,
+      reasoning: true,
+      contextWindow: 200000,
+      qualityTier: 1,
+      speedTier: 2,
+      bestFor: [
+        "code-generation",
+        "debugging",
+        "refactoring",
+        "multi-file-edit",
+        "analysis",
+      ],
+      capabilityScores: {
+        toolSelection: 0.87,
+        toolSequencing: 0.83,
+        codeGeneration: 0.9,
+        multiStepReasoning: 0.86,
+        instructionFollowing: 0.85,
+        contextUtilization: 0.84,
+        selfCorrection: 0.78,
+      },
+    },
+    pricing: {
+      inputPer1MTokens: 0.6,
+      outputPer1MTokens: 2.2,
+    },
+    limits: { contextWindow: 200000, maxOutputTokens: 16384 },
+    status: "available",
+    isLocal: false,
+    lastHealthCheck: 0,
+  },
 ];

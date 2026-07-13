@@ -24,6 +24,7 @@ export type { RoutingStrategy } from "./strategies/types.js";
 export {
   adaptToolsForModel,
   resolveCanonicalName,
+  reverseToolName,
   type ToolAdaptation,
 } from "./tool-adapter.js";
 export { PROVIDER_TOOL_NAMES, getProviderFamily } from "./tool-mappings.js";

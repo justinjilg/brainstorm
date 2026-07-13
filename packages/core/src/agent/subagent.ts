@@ -1,7 +1,12 @@
 import { streamText, stepCountIs } from "ai";
 import type { BrainstormConfig } from "@brainst0rm/config";
 import type { ProviderRegistry } from "@brainst0rm/providers";
-import { BrainstormRouter, CostTracker } from "@brainst0rm/router";
+import {
+  BrainstormRouter,
+  CostTracker,
+  adaptToolsForModel,
+  reverseToolName,
+} from "@brainst0rm/router";
 import {
   type ToolRegistry,
   setDockerSandbox,
@@ -543,7 +548,17 @@ export async function spawnSubagent(
     : typeAllowed
       ? tools.toAISDKToolsFiltered(typeAllowed)
       : tools.toAISDKTools();
-  const filteredTools = baseTools;
+  // Per-model tool name adaptation (mirrors the parent loop): rename tools to
+  // the provider-native names each model was trained on so non-Anthropic
+  // subagent models see e.g. apply_patch/read_file/replace rather than the
+  // canonical Anthropic names only. Without this, a non-Anthropic subagent
+  // model calling its native tool name would miss the executor entirely. The
+  // INBOUND reverseToolName (below, in the stream loop) maps observed calls
+  // back to canonical for toolCallNames tracking.
+  const { adaptedTools: filteredTools } = adaptToolsForModel(
+    baseTools,
+    decision.model,
+  );
 
   // Log the effective capability manifest (frozen at spawn time)
   log.info(
@@ -696,7 +711,10 @@ export async function spawnSubagent(
         if (part.type === "text-delta") {
           fullText += (part as any).delta ?? (part as any).text ?? "";
         } else if (part.type === "tool-call") {
-          toolCallNames.push(part.toolName);
+          // INBOUND rename: record the canonical tool name so the subagent's
+          // reported toolCalls match the parent's canonical vocabulary
+          // regardless of which provider renamed them outbound.
+          toolCallNames.push(reverseToolName(part.toolName, decision.model));
         }
       }
     });

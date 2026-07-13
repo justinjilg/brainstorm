@@ -9,6 +9,7 @@ import {
   CostTracker,
   recordOutcome,
   adaptToolsForModel,
+  reverseToolName,
 } from "@brainst0rm/router";
 import type { RoutingOutcomeRepository } from "@brainst0rm/db";
 import type { ToolRegistry, PermissionCheckFn } from "@brainst0rm/tools";
@@ -783,14 +784,17 @@ export async function* runAgentLoop(
   }
 
   // Per-model tool name adaptation: rename tools to match what each provider's
-  // models were trained on (e.g., bash → shell_command for OpenAI). Today we
-  // adapt the OUTBOUND tool list so the model sees the right names; the
-  // INBOUND tool-call rename (using adapted.reverseMap to translate calls
-  // back to canonical names for execution) is not yet wired into tool
-  // dispatch — adapted tools work because most renames are aliases the
-  // tool registry already accepts. Wiring the reverse map is tracked as
-  // a follow-up; until then, models that emit non-aliased renamed names
-  // hit "tool not found" in the registry.
+  // models were trained on (e.g., bash → shell_command for OpenAI). We adapt
+  // the OUTBOUND tool list so the model sees provider-native names. The
+  // AI SDK then dispatches a tool call to the executor keyed under that same
+  // adapted name — but every downstream consumer in the stream loop compares
+  // against CANONICAL names (file_read/file_write/file_edit/shell/subagent)
+  // for turn-context tracking, build-state capture, loop detection, and TUI
+  // events. The INBOUND rename (reverseToolName below) maps each observed
+  // tool-call name back to canonical at the point the loop resolves it, so a
+  // model that emits a renamed name (apply_patch, replace, read_file, …) is
+  // tracked and surfaced under its canonical identity rather than silently
+  // missing every comparison.
   let finalTools = aiTools;
   if (aiTools && decision) {
     const adapted = adaptToolsForModel(aiTools, decision.model);
@@ -908,6 +912,19 @@ export async function* runAgentLoop(
     let textDeltaCount = 0;
     let toolCallCount = 0;
     let accumulatedText = ""; // For afterModel middleware (stop-detection, etc.)
+    // ── Streamed tool-call assembly integrity tracking ──
+    // pendingToolInputs: incremented when the provider signals the start of a
+    // tool-call (tool-input-start) and decremented when that call materializes
+    // as a dispatchable tool-call part. A residual > 0 after the stream ends
+    // means a tool call began assembling but never completed — the classic
+    // symptom of a truncated/duplicate terminal finish (seen from BR) cutting
+    // the AI-SDK parser off mid-tool-call.
+    let pendingToolInputs = 0;
+    // finishReason from the terminal finish / finish-step parts. "tool-calls"
+    // means the model intended to act; if we then saw zero dispatchable
+    // tool-calls the assembly was truncated (not a genuine empty turn).
+    let finishReason: string | undefined;
+    let finishPartCount = 0;
     let lastEventTime = Date.now();
     const toolCallResults: Array<{ name: string; ok: boolean }> = [];
     const filesRead: string[] = [];
@@ -977,18 +994,39 @@ export async function* runAgentLoop(
               type: "text-delta" as const,
               delta: normalizeInsightMarkers(filtered),
             };
+        } else if (part.type === "tool-input-start") {
+          // A tool call began streaming. Track it so we can detect a stream
+          // that finishes before the call materializes into a tool-call part.
+          pendingToolInputs++;
         } else if (part.type === "tool-call") {
           toolCallCount++;
+          // Balance the tool-input-start we counted above (if the provider
+          // emitted one). Floor at 0 so providers that emit tool-call without
+          // a preceding tool-input-start don't drive the counter negative.
+          pendingToolInputs = Math.max(0, pendingToolInputs - 1);
+          // INBOUND rename: map the provider-native tool name back to canonical
+          // so downstream comparisons and TUI events see the canonical identity.
+          const canonicalName = reverseToolName(part.toolName, decision.model);
           enterToolExecution(); // gate compaction while tools are in-flight
           localToolGateDepth++;
           yield {
             type: "tool-call-start" as const,
-            toolName: part.toolName,
+            toolName: canonicalName,
             args: getPartInput(part as Record<string, unknown>),
           };
+        } else if (part.type === "finish" || part.type === "finish-step") {
+          // Capture the terminal finish reason. A duplicate/malformed finish
+          // (BR sometimes sends more than one) is itself a truncation signal —
+          // count them so the diagnostic can report it.
+          finishPartCount++;
+          finishReason =
+            ((part as Record<string, unknown>).finishReason as string) ??
+            finishReason;
         } else if (part.type === "tool-result") {
           exitToolExecution(); // ungate compaction
           localToolGateDepth--;
+          // INBOUND rename: canonical name for all comparisons/tracking below.
+          const canonicalName = reverseToolName(part.toolName, decision.model);
           const toolResult = getPartOutput(
             part as Record<string, unknown>,
           ) as any;
@@ -998,15 +1036,15 @@ export async function* runAgentLoop(
             typeof toolResult === "object" &&
             (toolResult.error || toolResult.ok === false)
           );
-          toolCallResults.push({ name: part.toolName, ok: toolOk });
+          toolCallResults.push({ name: canonicalName, ok: toolOk });
           // Track file access for turn context
-          if (part.toolName === "file_read" && toolOk) {
+          if (canonicalName === "file_read" && toolOk) {
             const path = getPartInput(part as Record<string, unknown>)?.path as
               | string
               | undefined;
             if (path) filesRead.push(path);
           } else if (
-            (part.toolName === "file_write" || part.toolName === "file_edit") &&
+            (canonicalName === "file_write" || canonicalName === "file_edit") &&
             toolOk
           ) {
             const path = getPartInput(part as Record<string, unknown>)?.path as
@@ -1016,7 +1054,7 @@ export async function* runAgentLoop(
           }
           // Track build/test results for persistent build state warnings
           if (
-            part.toolName === "shell" &&
+            canonicalName === "shell" &&
             options.buildState &&
             toolResult &&
             typeof toolResult === "object"
@@ -1032,14 +1070,14 @@ export async function* runAgentLoop(
           }
           yield {
             type: "tool-call-result",
-            toolName: part.toolName,
+            toolName: canonicalName,
             result: toolResult,
           };
           // Loop detection — warn about repetitive behavior
           const toolPath = getPartInput(part as Record<string, unknown>)
             ?.path as string | undefined;
           const loopWarnings = loopDetector.recordToolCall(
-            part.toolName,
+            canonicalName,
             toolPath,
           );
           for (const w of loopWarnings) {
@@ -1047,7 +1085,7 @@ export async function* runAgentLoop(
           }
           // Emit subagent-result events for TUI display
           if (
-            part.toolName === "subagent" &&
+            canonicalName === "subagent" &&
             toolResult &&
             typeof toolResult === "object"
           ) {
@@ -1158,18 +1196,63 @@ export async function* runAgentLoop(
     // ── Empty/blocked response detection + retry with fallback model ──
     const isEmpty = textDeltaCount === 0 && toolCallCount === 0;
 
+    // ── Truncated tool-call detection ──
+    // Distinct from an empty turn: here the model INTENDED to call a tool but
+    // the stream ended before a dispatchable tool-call materialized. Two
+    // signals, either of which is sufficient:
+    //   1. pendingToolInputs > 0 — a tool-input-start never resolved into a
+    //      tool-call (parser cut off mid-assembly).
+    //   2. finishReason === "tool-calls" but toolCallCount === 0 — the provider
+    //      reported it stopped to make tool calls, yet emitted none.
+    // A duplicate terminal finish (finishPartCount > 1), which BR has been seen
+    // to send, is the usual trigger for (1)/(2) — surfaced in the diagnostic.
+    // We must NOT let this record as a silent empty-success: it retries.
+    const toolCallTruncated =
+      pendingToolInputs > 0 ||
+      (finishReason === "tool-calls" && toolCallCount === 0);
+
+    if (toolCallTruncated) {
+      log.warn(
+        {
+          model: decision.model.id,
+          pendingToolInputs,
+          finishReason,
+          finishPartCount,
+          textDeltas: textDeltaCount,
+          toolCalls: toolCallCount,
+        },
+        "Stream truncated mid-tool-call — tool-call assembly incomplete",
+      );
+      trajectory?.recordError({
+        message: `Truncated tool-call assembly (pending=${pendingToolInputs}, finishReason=${finishReason ?? "none"}, finishParts=${finishPartCount})`,
+        model: decision.model.id,
+      });
+      yield {
+        type: "loop-warning" as const,
+        message: `Stream from ${decision.model.id} truncated mid-tool-call (finishReason=${finishReason ?? "none"}, ${pendingToolInputs} pending). Retrying.`,
+      };
+    }
+
+    // A turn needs a retry when the model gave us nothing (empty) OR when it
+    // tried to act but the tool-call was truncated. Both are model-side
+    // failures that a fallback may recover.
+    const shouldRetry = isEmpty || toolCallTruncated;
+
     // Record circuit breaker outcome for this model.
-    // Empty response = failure (the model gave us nothing).
-    // Non-empty = success (closes half-open circuits, resets consecutive failures).
+    // Empty response / truncated tool-call = failure (nothing usable).
+    // Non-empty & complete = success (closes half-open circuits, resets
+    // consecutive failures).
     const breaker = getLLMCircuit(decision.model.id);
-    if (isEmpty) {
-      breaker.recordFailure("empty_response");
+    if (shouldRetry) {
+      breaker.recordFailure(
+        toolCallTruncated ? "truncated_tool_call" : "empty_response",
+      );
     } else {
       breaker.recordSuccess();
     }
     // Build fallback list: use decision.fallbacks, or generate from registry if empty
     let fallbacks = decision.fallbacks;
-    if (fallbacks.length === 0 && isEmpty) {
+    if (fallbacks.length === 0 && shouldRetry) {
       // Fallback models for empty responses — configurable via config.routing.fallbackModels
       const RETRY_MODELS: string[] = (config as any).routing
         ?.fallbackModels ?? [
@@ -1186,8 +1269,14 @@ export async function* runAgentLoop(
     const retryDepth = options._retryDepth ?? 0;
     const modelsTried = [...(options._modelsTried ?? []), decision.model.id];
 
-    if (isEmpty && fallbacks.length > 0 && retryDepth < MAX_FALLBACK_DEPTH) {
-      const reason = isEmpty ? "empty_response" : "tool_blocked";
+    if (
+      shouldRetry &&
+      fallbacks.length > 0 &&
+      retryDepth < MAX_FALLBACK_DEPTH
+    ) {
+      const reason = toolCallTruncated
+        ? "truncated_tool_call"
+        : "empty_response";
       router.recordFailure(decision.model.id, reason);
       // Record failure for Thompson sampling on fallback path
       const fallbackLatencyMs = Date.now() - turnStartMs;
@@ -1228,12 +1317,16 @@ export async function* runAgentLoop(
       }
     }
 
-    // All retries exhausted — yield structured error so caller can surface it
-    if (isEmpty) {
+    // All retries exhausted — yield structured error so caller can surface it.
+    // Distinguish a genuinely empty turn from a truncated tool-call so the
+    // operator knows whether the model said nothing or was cut off mid-action.
+    if (shouldRetry) {
       yield {
         type: "fallback-exhausted" as const,
         modelsTried,
-        reason: "All fallback models returned empty responses",
+        reason: toolCallTruncated
+          ? "All fallback models truncated their tool-call streams"
+          : "All fallback models returned empty responses",
       };
     }
 
@@ -1303,7 +1396,7 @@ export async function* runAgentLoop(
 
     // Record routing outcome for Thompson sampling (in-memory + DB persistence)
     const turnLatencyMs = Date.now() - turnStartMs;
-    const turnSuccess = !isEmpty;
+    const turnSuccess = !shouldRetry;
     const turnCost = costTracker.getSessionCost() - sessionCostBefore;
     recordOutcome(
       task.type,

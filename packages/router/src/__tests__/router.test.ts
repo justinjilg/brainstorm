@@ -176,6 +176,48 @@ describe("BrainstormRouter", () => {
     expect(decision.model.id).toBe("fallback");
   });
 
+  it("selects a BR-catalog model with toolCalling=true and rejects one with false for a tool-requiring task", () => {
+    const toolYes = makeModel("openai/tool-yes", { provider: "openai" });
+    toolYes.capabilities.toolCalling = true;
+    const toolNo = makeModel("deepseek/tool-no", { provider: "deepseek" });
+    toolNo.capabilities.toolCalling = false;
+    const router = new BrainstormRouter(
+      makeConfig(),
+      makeRegistry([toolYes, toolNo]),
+      makeCostTracker(),
+    );
+    const task = {
+      type: "code-generation",
+      complexity: "moderate",
+      estimatedTokens: { input: 100, output: 100 },
+      requiresToolUse: true,
+      requiresReasoning: false,
+    } as const;
+    const decision = router.route(task as any);
+    // The no-tools model is filtered out by getEligibleModels; only tool-yes
+    // remains selectable.
+    expect(decision.model.id).toBe("openai/tool-yes");
+    expect(decision.model.capabilities.toolCalling).toBe(true);
+  });
+
+  it("throws when a tool-requiring task has only non-tool-calling models", () => {
+    const toolNo = makeModel("deepseek/tool-no");
+    toolNo.capabilities.toolCalling = false;
+    const router = new BrainstormRouter(
+      makeConfig(),
+      makeRegistry([toolNo]),
+      makeCostTracker(),
+    );
+    const task = {
+      type: "code-generation",
+      complexity: "moderate",
+      estimatedTokens: { input: 100, output: 100 },
+      requiresToolUse: true,
+      requiresReasoning: false,
+    } as const;
+    expect(() => router.route(task as any)).toThrow("No models available");
+  });
+
   it("route throws when no models available", () => {
     const router = new BrainstormRouter(
       makeConfig(),

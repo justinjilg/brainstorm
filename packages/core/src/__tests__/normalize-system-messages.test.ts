@@ -96,6 +96,42 @@ describe("normalizeSystemMessagesForProvider", () => {
     ]);
   });
 
+  it("preserves BOTH the anthropic and openai-compatible cache hints on the stable segment", () => {
+    // Mirrors what context.ts's segmentsToSystemArray() actually emits: the
+    // stable-prefix segment carries cache hints for two provider namespaces so
+    // caching survives whichever provider (direct Anthropic or BR's
+    // openai-compatible path) ends up handling the request.
+    const systemArray = [
+      {
+        role: "system" as const,
+        content: "stable prefix",
+        providerOptions: {
+          anthropic: { cacheControl: { type: "ephemeral" } },
+          openaiCompatible: { cache_control: { type: "ephemeral" } },
+        },
+      },
+    ];
+    const messages = [
+      { role: "user", content: "hi" },
+      { role: "system", content: "compaction summary" },
+    ];
+    const { systemForApiNormalized, messagesForApi } =
+      normalizeSystemMessagesForProvider(systemArray, messages);
+
+    expect(messagesForApi).toEqual([{ role: "user", content: "hi" }]);
+    expect(systemForApiNormalized).toEqual([
+      {
+        role: "system",
+        content: "stable prefix",
+        providerOptions: {
+          anthropic: { cacheControl: { type: "ephemeral" } },
+          openaiCompatible: { cache_control: { type: "ephemeral" } },
+        },
+      },
+      { role: "system", content: "compaction summary" },
+    ]);
+  });
+
   it("handles non-string content by stringifying it", () => {
     const messages = [
       { role: "user", content: "hi" },

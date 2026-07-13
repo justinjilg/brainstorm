@@ -10,7 +10,10 @@ import {
 } from "./local/openai-compat.js";
 import { discoverLocalModels } from "./local/discovery.js";
 import { CLOUD_MODELS } from "./cloud/models.js";
-import { createBrainstormSaaSProvider } from "./cloud/brainstorm-saas.js";
+import {
+  createBrainstormSaaSProvider,
+  fetchBrModelCatalog,
+} from "./cloud/brainstorm-saas.js";
 import type { BrEnvelopeListener } from "./cloud/br-envelope.js";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
@@ -44,6 +47,10 @@ export interface ProviderRegistryOptions {
    *  in brainstorm-saas.ts invokes this fire-and-forget; rejections are
    *  caught at the call site. */
   onEnvelope?: BrEnvelopeListener;
+
+  /** Injectable fetch for the BR model-catalog import (tests stub this).
+   *  Passed through to fetchBrModelCatalog; production uses globalThis.fetch. */
+  brCatalogFetch?: typeof globalThis.fetch;
 }
 
 export async function createProviderRegistry(
@@ -178,6 +185,24 @@ export async function createProviderRegistry(
     });
   }
 
+  // Import BR's live model catalog (opt-in: only when a BR key is configured).
+  // This lets the router see & select ANY tool-capable model BR serves, not
+  // just the statically curated CLOUD_MODELS. Static entries WIN on id
+  // collision (curated capability/pricing data beats synthesized placeholders).
+  // fetchBrModelCatalog is resilient by contract — it never throws — so a
+  // network failure/timeout/absent key silently keeps the static catalog.
+  if (brApiKey) {
+    const brCatalog = await fetchBrModelCatalog(brApiKey, {
+      fetchImpl: options.brCatalogFetch,
+    });
+    const existingIds = new Set(allModels.map((m) => m.id));
+    for (const model of brCatalog) {
+      if (existingIds.has(model.id)) continue; // static wins
+      existingIds.add(model.id);
+      allModels.push(model);
+    }
+  }
+
   // Discover local models
   const { models: localModels } = await discoverLocalModels(config.providers);
   allModels.push(...localModels);
@@ -250,8 +275,16 @@ export async function createProviderRegistry(
         return providers.brainstormrouter(modelId);
       }
 
-      // Last resort: return the raw model ID string
-      return modelId;
+      // No provider could resolve this id. Returning the bare string here used
+      // to hand an unresolvable model to streamText, which fails deep in the
+      // AI SDK with an opaque error. Fail loudly and diagnosably instead.
+      throw new Error(
+        `Cannot resolve a provider for model "${modelId}". No matching direct ` +
+          `provider SDK is configured (checked: ${Object.keys(providers).join(", ") || "none"}) ` +
+          `and BrainstormRouter is not enabled. Configure the model's provider key ` +
+          `(e.g. ANTHROPIC_API_KEY/OPENAI_API_KEY/GOOGLE_GENERATIVE_AI_API_KEY) or set ` +
+          `BRAINSTORM_API_KEY to route "${modelId}" through BrainstormRouter.`,
+      );
     },
 
     async refresh() {
