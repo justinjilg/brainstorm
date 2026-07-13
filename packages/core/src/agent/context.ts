@@ -95,19 +95,52 @@ export interface SystemPromptResult {
   frontmatter: StormFrontmatter | null;
 }
 
-/** Convert segments to AI SDK v6 system prompt array with Anthropic cache hints. */
+/**
+ * Cache-control hint applied to the single cache breakpoint. Reused verbatim for
+ * both provider namespaces so the two hints can never drift out of sync.
+ */
+const EPHEMERAL_CACHE_CONTROL = { type: "ephemeral" as const };
+
+/**
+ * Convert segments to AI SDK v6 system prompt array with cache hints.
+ *
+ * Two provider namespaces are emitted on the same segment:
+ *  - `providerOptions.anthropic.cacheControl` — read directly by the Anthropic
+ *    provider (`@ai-sdk/anthropic`).
+ *  - `providerOptions.openaiCompatible.cache_control` — `@ai-sdk/openai-compatible`
+ *    spreads every key of this namespace onto the outgoing `{ role: "system", ... }`
+ *    message object verbatim (see `convertToOpenAICompatibleChatMessages` /
+ *    `getOpenAIMetadata` in that package), so the request body BR receives is
+ *    `{ role: "system", content, cache_control: { type: "ephemeral" } }`.
+ *    BR must forward that `cache_control` field unchanged on the system message
+ *    it proxies upstream (e.g. to Anthropic) for caching to actually take effect —
+ *    this hint is inert (a harmless extra JSON field) against any backend that
+ *    doesn't look for it, so it's safe to always send.
+ *
+ * Only ONE segment ever receives a cache breakpoint — the *last* cacheable
+ * segment — even if more cacheable segments are added in the future. Anthropic
+ * allows at most 4 breakpoints per request, but we deliberately stay at 1: the
+ * stable prefix is the only thing worth a breakpoint today, and capping at one
+ * avoids ever having to reason about breakpoint budgets as segments evolve.
+ */
 export function segmentsToSystemArray(segments: SystemPromptSegment[]): Array<{
   role: "system";
   content: string;
   providerOptions?: Record<string, any>;
 }> {
-  return segments.map((seg) => ({
+  const lastCacheableIndex = segments.reduce(
+    (acc, seg, i) => (seg.cacheable ? i : acc),
+    -1,
+  );
+
+  return segments.map((seg, i) => ({
     role: "system" as const,
     content: seg.text,
-    ...(seg.cacheable
+    ...(seg.cacheable && i === lastCacheableIndex
       ? {
           providerOptions: {
-            anthropic: { cacheControl: { type: "ephemeral" } },
+            anthropic: { cacheControl: EPHEMERAL_CACHE_CONTROL },
+            openaiCompatible: { cache_control: EPHEMERAL_CACHE_CONTROL },
           },
         }
       : {}),

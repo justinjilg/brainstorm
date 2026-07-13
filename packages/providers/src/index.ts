@@ -24,6 +24,9 @@ export {
   createBrainstormSaaSProvider,
   getBrainstormApiKey,
   isCommunityKey,
+  fetchBrModelCatalog,
+  BR_BASE_URL,
+  type BrCatalogOptions,
 } from "./cloud/brainstorm-saas.js";
 export {
   parseBrEnvelope,
