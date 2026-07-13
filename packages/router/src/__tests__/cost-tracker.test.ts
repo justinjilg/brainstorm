@@ -70,6 +70,102 @@ describe("CostTracker", () => {
     expect(tokens.output).toBe(300);
   });
 
+  it("bills cached input tokens at 0.1x the input rate by default", () => {
+    const db = makeMockDb();
+    const tracker = new CostTracker(db as any, { hardLimit: false });
+
+    tracker.record({
+      sessionId: "test",
+      modelId: "m",
+      provider: "p",
+      inputTokens: 1000,
+      outputTokens: 0,
+      cachedTokens: 400,
+      taskType: "code-generation" as any,
+      pricing: { inputPer1MTokens: 3.0, outputPer1MTokens: 15.0 },
+    });
+
+    // 600 full-rate input @ $3 + 400 cached @ $0.30 (0.1x) + 0 output
+    // = 600/1M*3 + 400/1M*0.3 = 0.0018 + 0.00012 = 0.00192
+    expect(tracker.getSessionCost()).toBeCloseTo(0.00192, 6);
+  });
+
+  it("honors an explicit cachedInputPer1MTokens rate", () => {
+    const db = makeMockDb();
+    const tracker = new CostTracker(db as any, { hardLimit: false });
+
+    tracker.record({
+      sessionId: "test",
+      modelId: "m",
+      provider: "p",
+      inputTokens: 1000,
+      outputTokens: 0,
+      cachedTokens: 500,
+      taskType: "code-generation" as any,
+      pricing: {
+        inputPer1MTokens: 3.0,
+        outputPer1MTokens: 15.0,
+        cachedInputPer1MTokens: 0.6,
+      },
+    });
+
+    // 500 full-rate input @ $3 + 500 cached @ $0.60
+    // = 500/1M*3 + 500/1M*0.6 = 0.0015 + 0.0003 = 0.0018
+    expect(tracker.getSessionCost()).toBeCloseTo(0.0018, 6);
+  });
+
+  it("clamps cachedTokens when it exceeds inputTokens", () => {
+    const db = makeMockDb();
+    const tracker = new CostTracker(db as any, { hardLimit: false });
+
+    tracker.record({
+      sessionId: "test",
+      modelId: "m",
+      provider: "p",
+      inputTokens: 1000,
+      outputTokens: 0,
+      cachedTokens: 5000, // absurd — clamp to 1000
+      taskType: "code-generation" as any,
+      pricing: { inputPer1MTokens: 3.0, outputPer1MTokens: 15.0 },
+    });
+
+    // All 1000 tokens billed at cached rate 0.3, none negative at full rate
+    // = 1000/1M * 0.3 = 0.0003
+    expect(tracker.getSessionCost()).toBeCloseTo(0.0003, 6);
+    expect(tracker.getSessionTokens().cached).toBe(1000);
+  });
+
+  it("accumulates sessionCachedTokens across records", () => {
+    const db = makeMockDb();
+    const tracker = new CostTracker(db as any, { hardLimit: false });
+
+    tracker.record({
+      sessionId: "test",
+      modelId: "m",
+      provider: "p",
+      inputTokens: 500,
+      outputTokens: 100,
+      cachedTokens: 200,
+      taskType: "code-generation" as any,
+      pricing: { inputPer1MTokens: 1, outputPer1MTokens: 1 },
+    });
+    tracker.record({
+      sessionId: "test",
+      modelId: "m",
+      provider: "p",
+      inputTokens: 300,
+      outputTokens: 50,
+      cachedTokens: 100,
+      taskType: "code-generation" as any,
+      pricing: { inputPer1MTokens: 1, outputPer1MTokens: 1 },
+    });
+
+    const tokens = tracker.getSessionTokens();
+    expect(tokens.input).toBe(800); // total input incl. cached
+    expect(tokens.output).toBe(150);
+    expect(tokens.cached).toBe(300);
+  });
+
   it("getSubagentBudget returns remaining/4 when session limit exists", () => {
     const db = makeMockDb();
     const tracker = new CostTracker(db as any, {

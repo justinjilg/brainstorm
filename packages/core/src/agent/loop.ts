@@ -854,6 +854,9 @@ export async function* runAgentLoop(
         if (usage) {
           const inputTokens = usage.inputTokens ?? 0;
           const outputTokens = usage.outputTokens ?? 0;
+          // AI SDK v6 exposes cache-read tokens on the usage object. These
+          // are a subset of inputTokens and are billed at a reduced rate.
+          const cachedTokens = usage.cachedInputTokens ?? 0;
           try {
             costTracker.record({
               sessionId,
@@ -861,6 +864,7 @@ export async function* runAgentLoop(
               provider: decision.model.provider,
               inputTokens,
               outputTokens,
+              cachedTokens,
               taskType: task.type,
               projectPath: options.projectPath,
               pricing: decision.model.pricing,
@@ -872,10 +876,18 @@ export async function* runAgentLoop(
               "Cost tracking write failed — continuing without recording",
             );
           }
-          // Record LLM call to trajectory for learning loop
+          // Record LLM call to trajectory for learning loop. Apply the same
+          // cache-read discount as CostTracker so trajectory cost matches the
+          // billed cost: cached tokens bill at the cached rate (default 0.1×
+          // input), the remainder at the full input rate.
+          const cachedRate =
+            decision.model.pricing.cachedInputPer1MTokens ??
+            decision.model.pricing.inputPer1MTokens * 0.1;
+          const billableCached = Math.min(cachedTokens, inputTokens);
           const stepCost =
-            (inputTokens / 1_000_000) *
+            ((inputTokens - billableCached) / 1_000_000) *
               decision.model.pricing.inputPer1MTokens +
+            (billableCached / 1_000_000) * cachedRate +
             (outputTokens / 1_000_000) *
               decision.model.pricing.outputPer1MTokens;
           trajectory?.recordLLMCall({

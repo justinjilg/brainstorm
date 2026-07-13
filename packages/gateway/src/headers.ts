@@ -42,6 +42,11 @@ export function parseGatewayHeaders(
   feedback.efficiency = safeFloat(get("x-br-efficiency"));
   feedback.overheadMs = safeFloat(get("x-br-guardian-overhead-ms"));
   feedback.cacheHit = get("x-br-cache") ?? undefined;
+  // Cache-read token count, if the gateway reports it. Try the Brainstorm
+  // header first, then the provider-passthrough field name.
+  feedback.cacheHitTokens = safeFloat(
+    get("x-br-cache-hit-tokens") ?? get("prompt_cache_hit_tokens"),
+  );
   feedback.budgetRemaining = safeFloat(
     get("x-budget-remaining") ?? get("x-br-budget-remaining"),
   );

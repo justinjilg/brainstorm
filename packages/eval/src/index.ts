@@ -36,3 +36,25 @@ export {
   formatScorecard as formatSWEBenchScorecard,
   saveReport,
 } from "./swe-bench/reporter.js";
+export {
+  loadVerifiedDataset,
+  loadVerifiedSubset,
+  selectDeterministicSubset,
+  validateRecord,
+  DatasetValidationError,
+  type RawSWEBenchRecord,
+  type SWEBenchVerifiedInstance,
+  type SelectSubsetOptions,
+  type LoadVerifiedSubsetOptions,
+} from "./swe-bench/dataset.js";
+export {
+  generateRunId,
+  getRunDir,
+  buildRunScorecard,
+  formatRunScorecard,
+  writeRunScorecard,
+  SWEBENCH_DIR,
+  type SWEBenchInstanceResult,
+  type SWEBenchRunScorecard,
+  type WrittenScorecardPaths,
+} from "./swe-bench/scorecard.js";
