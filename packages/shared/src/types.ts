@@ -248,6 +248,17 @@ export type AgentEvent =
   | { type: "context-budget"; used: number; limit: number; percent: number }
   | { type: "loop-warning"; message: string }
   | {
+      type: "verify-passed";
+      iteration: number;
+      mode: "typecheck" | "full";
+    }
+  | {
+      type: "verify-failed";
+      iteration: number;
+      maxIterations: number;
+      diagnostics: string;
+    }
+  | {
       type: "daemon-tick";
       tickNumber: number;
       idleSeconds: number;

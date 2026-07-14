@@ -72,6 +72,12 @@ import { segmentsToSystemArray } from "./context.js";
 import { predictTaskCost } from "./cost-predictor.js";
 import { detectTone, toneGuidance } from "./sentiment.js";
 import { shouldUseEnsemble } from "./ensemble.js";
+import {
+  runVerifyPass,
+  formatVerifyDiagnostic,
+  type VerifyMode,
+  type VerifyRunner,
+} from "./verify-loop.js";
 
 const log = createLogger("agent-loop");
 
@@ -344,6 +350,15 @@ export interface AgentLoopOptions {
   _retryDepth?: number;
   /** Internal: tracks models already tried for error reporting. */
   _modelsTried?: string[];
+  /**
+   * Per-invocation override for in-loop verify / self-correction (Phase 3).
+   * When omitted, falls back to config.general.verify.
+   */
+  verify?: { mode: VerifyMode; maxIterations: number };
+  /** Internal: tracks verify self-correction depth to cap re-entry. */
+  _verifyDepth?: number;
+  /** Internal: injectable verifier (tests supply a mock). */
+  _verifyRunner?: VerifyRunner;
   /** Optional middleware pipeline for composable agent interceptors. */
   middleware?: MiddlewarePipeline;
   /** Repository for persisting routing outcomes (Thompson sampling). */
@@ -1416,6 +1431,113 @@ export async function* runAgentLoop(
         );
       } catch (e) {
         log.warn({ err: e }, "Failed to persist routing outcome to DB");
+      }
+    }
+
+    // ── Phase 3: in-loop verify / self-correction ──────────────────────
+    // After an edit-producing turn, verify the files the model just changed
+    // (typecheck always; affected tests in "full" mode). On failure, feed the
+    // diagnostics back as another turn so the model self-corrects WITHIN this
+    // agentic run (Cline/OpenHands pattern; the single-agent analogue of the
+    // Judge's verifyWorktree gate). Guards:
+    //   - only when the turn actually changed files (a no-op turn skips it),
+    //   - only when the model turn itself succeeded (never verify a failed turn),
+    //   - bounded by verify.maxIterations to prevent infinite oscillation,
+    //   - gated on remaining budget so self-correction can't blow perSession,
+    //   - a verify pass that errors degrades to a skip (never crashes the turn).
+    const verifyMode: VerifyMode =
+      options.verify?.mode ?? config.general?.verify?.mode ?? "off";
+    const verifyMaxIterations =
+      options.verify?.maxIterations ??
+      config.general?.verify?.maxIterations ??
+      2;
+    const verifyDepth = options._verifyDepth ?? 0;
+    const changedThisTurn = Array.from(new Set(filesWritten));
+
+    if (
+      verifyMode !== "off" &&
+      turnSuccess &&
+      changedThisTurn.length > 0 &&
+      verifyDepth < verifyMaxIterations &&
+      !options.signal?.aborted
+    ) {
+      // Budget guard — each verify-fix is a full extra model turn. Reuse the
+      // same 20%-remaining threshold the budget-warning uses above; if we're
+      // under it, skip verify rather than risk blowing config.budget.perSession.
+      const verifyBudgetRemaining = costTracker.getRemainingBudget();
+      const verifySessionLimit = (config.budget as any)?.perSession;
+      const budgetTooLow =
+        verifyBudgetRemaining !== null &&
+        verifySessionLimit &&
+        verifyBudgetRemaining <= verifySessionLimit * 0.2;
+
+      if (budgetTooLow) {
+        log.warn(
+          {
+            remaining: verifyBudgetRemaining,
+            sessionLimit: verifySessionLimit,
+          },
+          "verify skipped — remaining budget below 20% threshold",
+        );
+      } else {
+        const outcome = runVerifyPass(
+          changedThisTurn,
+          verifyMode,
+          { projectPath: options.projectPath, signal: options.signal },
+          options._verifyRunner,
+        );
+
+        if (outcome.ran && !outcome.ok) {
+          const nextIteration = verifyDepth + 1;
+          const isFinalAttempt = nextIteration >= verifyMaxIterations;
+          yield {
+            type: "verify-failed" as const,
+            iteration: nextIteration,
+            maxIterations: verifyMaxIterations,
+            diagnostics: outcome.diagnostics,
+          };
+          // Feed diagnostics back as a user-role correction turn and recurse,
+          // mirroring the fallback self-recursion at the top of this function.
+          messages.push({
+            role: "user",
+            content: formatVerifyDiagnostic(
+              outcome,
+              verifyMode,
+              isFinalAttempt,
+            ),
+          });
+          // Checkpoint THIS turn's edits before recursing. The outer invocation
+          // returns right after the recursive yield*, so without this the
+          // original turn's filesWritten are never persisted and crash-recovery/
+          // undo would under-report the edits (only the final correction's files
+          // would survive). Mirrors the checkpointer.saveIfNeeded below.
+          if (options.checkpointer) {
+            options.checkpointer.saveIfNeeded({
+              sessionId,
+              turnNumber: Math.floor(Date.now() / 1000),
+              conversationHistory: messages,
+              scratchpad: {},
+              filesRead,
+              filesWritten,
+              buildStatus: options.buildState?.getStatus() ?? "unknown",
+              totalCost: costTracker.getSessionCost(),
+              projectPath: options.projectPath,
+            });
+          }
+          yield* runAgentLoop(messages, {
+            ...options,
+            _verifyDepth: nextIteration,
+          });
+          return;
+        }
+
+        if (outcome.ran && outcome.ok) {
+          yield {
+            type: "verify-passed" as const,
+            iteration: verifyDepth,
+            mode: verifyMode === "full" ? "full" : "typecheck",
+          };
+        }
       }
     }
 
