@@ -40,6 +40,7 @@ import {
   PermissionManager,
   createSubagentTool,
   spawnSubagent,
+  describeFinishReason,
   spawnParallel,
   createDefaultMiddlewarePipeline,
   segmentsToString,
@@ -821,18 +822,27 @@ program
                 // git diff failed — no changes made
               }
 
+              // Distinguish a genuine empty answer from a provider-terminated
+              // one (e.g. content-filter moderation) so an empty patch isn't
+              // silently reported as "no changes" when the provider refused.
+              const finishNote = describeFinishReason(result.finishReason);
               const success = patch.length > 0 && !result.budgetExceeded;
               const status = success
                 ? "✓"
-                : patch.length === 0
-                  ? "no changes"
-                  : "budget exceeded";
+                : result.budgetExceeded
+                  ? "budget exceeded"
+                  : finishNote
+                    ? `no changes (${result.finishReason})`
+                    : "no changes";
               process.stderr.write(
                 ` ${status} ($${result.cost.toFixed(3)}, ${result.modelUsed})\n`,
               );
-              // Diagnostic: on no-changes, dump the first 500 chars of what
-              // the subagent said it did. This helps debug empty-patch runs.
+              // Diagnostic: on no-changes, surface WHY — the provider finish
+              // reason if it wasn't a normal stop, then what the subagent said.
               if (!success && patch.length === 0) {
+                if (finishNote) {
+                  process.stderr.write(`    reason: ${finishNote}\n`);
+                }
                 const preview = result.text.slice(0, 500).replace(/\n/g, " ");
                 process.stderr.write(`    agent said: ${preview}\n`);
               }

@@ -37,6 +37,7 @@ export {
   spawnSubagent,
   spawnParallel,
   getSubagentTypeConfig,
+  describeFinishReason,
   SUBAGENT_TYPE_NAMES,
   type SubagentOptions,
   type SubagentResult,
