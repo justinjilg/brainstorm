@@ -2041,7 +2041,9 @@ program
         prompt: rawPrompt,
         segments: rawSegments,
         frontmatter,
-      } = buildSystemPrompt(projectPath, undefined, undefined, runComplexity);
+      } = buildSystemPrompt(projectPath, undefined, undefined, runComplexity, {
+        taskText: finalPrompt,
+      });
       const toolSection = buildToolAwarenessSection(tools.listTools());
       const systemPrompt = rawPrompt + toolSection;
       const systemSegments: SystemPromptSegment[] =

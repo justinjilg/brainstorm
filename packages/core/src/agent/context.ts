@@ -171,11 +171,134 @@ export function getPromptTierForComplexity(
   return "full";
 }
 
+/** A symbol surfaced by code-graph retrieval, ready to render into the prompt. */
+export interface RetrievedSymbol {
+  file: string;
+  name: string;
+  kind: string;
+  line?: number;
+  signature?: string;
+}
+
+export interface CodeGraphRetrievalOptions {
+  /** The user's task/query text — retrieval is a no-op without it. */
+  taskText?: string;
+  /** Max symbols to include (default 8). */
+  topK?: number;
+  /** Hard character cap on the rendered symbol list (default 1500). */
+  charCap?: number;
+  /**
+   * DI hook: resolve ranked symbols for a task. Defaults to the code-graph
+   * (hybrid BM25 + definition enrichment). Return null/[] to emit no block.
+   */
+  retrieve?: (
+    projectPath: string,
+    taskText: string,
+    topK: number,
+  ) => RetrievedSymbol[] | null;
+}
+
+function truncate(s: string, n: number): string {
+  return s.length > n ? s.slice(0, n - 1) + "…" : s;
+}
+
+/**
+ * Default retriever: lazily loads @brainst0rm/code-graph (heavy, tree-sitter,
+ * optional at runtime) and runs hybrid BM25 search over the project's code
+ * graph, enriching hits with definition line/signature. Returns null on any
+ * failure or when no graph index exists — the caller then skips the block.
+ */
+function defaultGraphRetrieve(
+  projectPath: string,
+  taskText: string,
+  topK: number,
+): RetrievedSymbol[] | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const cg = require("@brainst0rm/code-graph");
+    const graph = new cg.CodeGraph({ projectPath });
+    const db = graph.getDb();
+    const hits = cg.hybridSearch(db, taskText, { topK }) as Array<{
+      file: string;
+      name: string;
+      kind: string;
+    }>;
+    if (!hits || hits.length === 0) return null;
+
+    const out: RetrievedSymbol[] = [];
+    for (const h of hits.slice(0, topK)) {
+      let line: number | undefined;
+      let signature: string | undefined;
+      try {
+        const defs = graph.findDefinition(h.name) as Array<{
+          startLine?: number;
+          signature?: string;
+        }>;
+        if (defs && defs.length > 0) {
+          line = defs[0].startLine;
+          signature = defs[0].signature;
+        }
+      } catch {
+        /* enrichment is optional */
+      }
+      out.push({ file: h.file, name: h.name, kind: h.kind, line, signature });
+    }
+    return out;
+  } catch {
+    // code-graph not installed / no index / query error → skip retrieval.
+    return null;
+  }
+}
+
+/**
+ * Build a bounded, well-labeled "Relevant Code" block from code-graph
+ * retrieval. Returns null when there's no task text, no graph, or no hits.
+ *
+ * The output is budget-bounded: at most `topK` symbols and a hard `charCap` on
+ * the rendered list. Callers MUST place the result in the DYNAMIC (non-cacheable)
+ * segment — it varies per turn and would bust the cached prefix otherwise.
+ */
+export function buildCodeGraphBlock(
+  projectPath: string,
+  opts: CodeGraphRetrievalOptions,
+): string | null {
+  const taskText = opts.taskText?.trim();
+  if (!taskText) return null;
+
+  const topK = opts.topK ?? 8;
+  const charCap = opts.charCap ?? 1500;
+
+  let symbols: RetrievedSymbol[] | null;
+  try {
+    const retrieve = opts.retrieve ?? defaultGraphRetrieve;
+    symbols = retrieve(projectPath, taskText, topK);
+  } catch {
+    return null; // never let retrieval crash prompt assembly
+  }
+  if (!symbols || symbols.length === 0) return null;
+
+  const lines: string[] = [];
+  let used = 0;
+  for (const s of symbols.slice(0, topK)) {
+    const loc = s.line ? `${s.file}:${s.line}` : s.file;
+    const sig = s.signature ? ` — ${truncate(s.signature, 120)}` : "";
+    const line = `- \`${s.kind} ${s.name}\` (${loc})${sig}`;
+    // Hard char cap on the symbol list body.
+    if (used + line.length + 1 > charCap) break;
+    lines.push(line);
+    used += line.length + 1;
+  }
+  if (lines.length === 0) return null;
+
+  return `\n## Relevant Code (retrieved via code-graph)\n\nSymbols most relevant to the current task. Read these before editing.\n${lines.join("\n")}`;
+}
+
 export function buildSystemPrompt(
   projectPath: string,
   outputStyle?: OutputStyle,
   basePromptOverride?: string,
   complexity?: Complexity,
+  retrieval?: CodeGraphRetrievalOptions,
 ): SystemPromptResult {
   // Prompt tier: trivial/simple tasks ship a lean prefix (no repo map,
   // conventions, architecture, stack, deps, style guide, or memory dump);
@@ -304,6 +427,17 @@ export function buildSystemPrompt(
   const commitContext = formatCommitContext(projectPath);
   if (commitContext) {
     dynamicParts.push(`\n## Recent Commits\n\n${commitContext}`);
+  }
+
+  // Code-graph retrieval — moderate/complex/expert only (gated on !minimal,
+  // mirroring memory/repo-map so trivial/simple tasks pay nothing). Lands in the
+  // DYNAMIC (non-cacheable) segment: retrieved symbols vary per task and must
+  // never reach the cached prefix. Bounded (top-K + char cap) inside the helper.
+  if (!minimal && retrieval?.taskText) {
+    const graphBlock = buildCodeGraphBlock(projectPath, retrieval);
+    if (graphBlock) {
+      dynamicParts.push(graphBlock);
+    }
   }
 
   const now = new Date();

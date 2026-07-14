@@ -7,9 +7,17 @@
  */
 
 import { readFileSync } from "node:fs";
-import { join, extname } from "node:path";
-import { getDb } from "@brainst0rm/db";
+import { join } from "node:path";
 import { buildRepoMap, type RepoMapEntry } from "../agent/repo-map.js";
+import {
+  resolveEmbeddingProvider,
+  openEmbeddingStore,
+  denseCosine,
+  hashContent,
+  type EmbeddingProvider,
+  type EmbeddingResolveOptions,
+  type EmbeddingStore,
+} from "./embeddings.js";
 
 export interface SearchResult {
   filePath: string;
@@ -203,4 +211,117 @@ export function semanticSearch(
     .filter((r) => r.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, topK);
+}
+
+// ── Embedding-backed search (with TF-IDF fallback) ───────────────────
+
+export interface EmbeddedSearchOptions extends EmbeddingResolveOptions {
+  /**
+   * Persistence store for cached embeddings. Omit to use the shared
+   * code_embeddings store; pass `null` to disable persistence entirely.
+   */
+  store?: EmbeddingStore | null;
+}
+
+/**
+ * Embed the indexed docs, using the store as a content-hash-keyed cache and
+ * only calling the provider for cache misses. Returns vectors aligned to `docs`
+ * (null for any doc the provider failed to embed).
+ */
+async function embedDocs(
+  provider: EmbeddingProvider,
+  docs: TFIDFDocument[],
+  projectPath: string,
+  store: EmbeddingStore | null,
+): Promise<Array<number[] | null>> {
+  const texts = docs.map((d) =>
+    d.symbolName ? `${d.symbolName}\n${d.snippet}` : d.snippet,
+  );
+  const hashes = texts.map(hashContent);
+  const vectors: Array<number[] | null> = new Array(docs.length).fill(null);
+
+  const misses: number[] = [];
+  for (let i = 0; i < docs.length; i++) {
+    const cached = store?.get(hashes[i], provider.id) ?? null;
+    if (cached) vectors[i] = cached;
+    else misses.push(i);
+  }
+
+  if (misses.length > 0) {
+    const embedded = await provider.embed(misses.map((i) => texts[i]));
+    for (let j = 0; j < misses.length; j++) {
+      const i = misses[j];
+      const vec = embedded[j];
+      if (!vec) continue;
+      vectors[i] = vec;
+      store?.put({
+        projectPath,
+        filePath: docs[i].filePath,
+        symbolName: docs[i].symbolName,
+        snippet: docs[i].snippet,
+        hash: hashes[i],
+        model: provider.id,
+        vector: vec,
+      });
+    }
+  }
+
+  return vectors;
+}
+
+/**
+ * Semantic search that uses a real embedding backend when one is configured,
+ * and transparently falls back to the synchronous TF-IDF `semanticSearch`
+ * otherwise (no backend, empty results, or any failure). Never throws.
+ *
+ * This is the async counterpart to `semanticSearch`: the single seam where a
+ * real embedding model plugs in. Embedding use is opt-in (off by default) —
+ * see `resolveEmbeddingProvider`.
+ */
+export async function semanticSearchEmbedded(
+  query: string,
+  projectPath: string,
+  topK = 10,
+  opts: EmbeddedSearchOptions = {},
+): Promise<SearchResult[]> {
+  const provider = resolveEmbeddingProvider(opts);
+  // No embedding backend configured/available → graceful TF-IDF fallback.
+  if (!provider) return semanticSearch(query, projectPath, topK);
+
+  try {
+    const { docs } = indexProject(projectPath);
+    if (docs.length === 0) return [];
+
+    const store =
+      opts.store === undefined ? openEmbeddingStore() : (opts.store ?? null);
+    const vectors = await embedDocs(provider, docs, projectPath, store);
+
+    const [queryVec] = await provider.embed([query]);
+    if (!queryVec) return semanticSearch(query, projectPath, topK);
+
+    const scored: SearchResult[] = [];
+    for (let i = 0; i < docs.length; i++) {
+      const vec = vectors[i];
+      if (!vec) continue;
+      scored.push({
+        filePath: docs[i].filePath,
+        symbolName: docs[i].symbolName,
+        snippet: docs[i].snippet,
+        score: denseCosine(queryVec, vec),
+      });
+    }
+
+    const results = scored
+      .filter((r) => r.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topK);
+
+    // If the backend produced nothing usable, fall back rather than returning
+    // an empty list — feature-detect at the result level too.
+    if (results.length === 0) return semanticSearch(query, projectPath, topK);
+    return results;
+  } catch {
+    // Any backend/store failure → never crash a turn; degrade to TF-IDF.
+    return semanticSearch(query, projectPath, topK);
+  }
 }
