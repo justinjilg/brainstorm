@@ -12,12 +12,15 @@ export {
 } from "./personas/index.js";
 export {
   buildSystemPrompt,
+  buildCodeGraphBlock,
   parseAtMentions,
   buildToolAwarenessSection,
   segmentsToSystemArray,
   segmentsToString,
   type SystemPromptSegment,
   type SystemPromptResult,
+  type CodeGraphRetrievalOptions,
+  type RetrievedSymbol,
 } from "./agent/context.js";
 export { SessionManager } from "./session/manager.js";
 export { PermissionManager } from "./permissions/manager.js";
@@ -352,9 +355,22 @@ export {
 } from "./agent/repo-map.js";
 export {
   semanticSearch,
+  semanticSearchEmbedded,
   indexProject,
   type SearchResult,
+  type EmbeddedSearchOptions,
 } from "./search/semantic.js";
+export {
+  resolveEmbeddingProvider,
+  createOllamaEmbeddingProvider,
+  openEmbeddingStore,
+  denseCosine,
+  hashContent,
+  type EmbeddingProvider,
+  type EmbeddingResolveOptions,
+  type EmbeddingStore,
+  type EmbeddingStoreRecord,
+} from "./search/embeddings.js";
 export {
   indexRecentCommits,
   searchCommitHistory,

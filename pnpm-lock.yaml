@@ -544,6 +544,9 @@ importers:
       "@brainst0rm/agents":
         specifier: workspace:*
         version: link:../agents
+      "@brainst0rm/code-graph":
+        specifier: workspace:*
+        version: link:../code-graph
       "@brainst0rm/config":
         specifier: workspace:*
         version: link:../config
