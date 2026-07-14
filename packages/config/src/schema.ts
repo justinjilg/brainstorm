@@ -121,6 +121,23 @@ const generalSchema = z.object({
     .default({}),
   /** Subagent filesystem isolation: none, git-stash, docker */
   subagentIsolation: z.enum(["none", "git-stash", "docker"]).default("none"),
+  /**
+   * In-loop verify / self-correction (Phase 3). After an edit-producing turn,
+   * verify the files the model just changed and, on failure, feed diagnostics
+   * back so the model self-corrects within the same agentic run.
+   *   - mode "off": disabled — no behavior change. This is the DEFAULT so the
+   *     out-of-the-box path has zero extra typechecks/perf cost; opt in per
+   *     project (or via the per-invocation loop override) to enable it.
+   *   - mode "typecheck": run the project's typecheck (tsc) over changed files.
+   *   - mode "full": typecheck + affected tests.
+   *   - maxIterations: cap on self-correction turns (infinite-loop guard).
+   */
+  verify: z
+    .object({
+      mode: z.enum(["off", "typecheck", "full"]).default("off"),
+      maxIterations: z.number().int().min(0).default(2),
+    })
+    .default({}),
 });
 
 // ── Full Config ──────────────────────────────────────────────────────
