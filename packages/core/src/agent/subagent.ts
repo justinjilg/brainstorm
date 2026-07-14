@@ -21,6 +21,10 @@ import {
 } from "@brainst0rm/shared";
 import type { SystemPromptSegment } from "./context.js";
 import { segmentsToSystemArray } from "./context.js";
+import {
+  detectNarratedToolIntent,
+  buildToolUseCorrection,
+} from "./tool-use-enforcement.js";
 
 const log = createLogger("subagent");
 
@@ -596,6 +600,28 @@ export async function spawnSubagent(
   let budgetExceeded = false;
   let subagentCostAccum = 0; // Track cost internally to avoid parallel race
 
+  // ── Phase 7: tool-use enforcement (narration → forced tool call) ────
+  // Mirror runAgentLoop's Phase 7 gate for subagents (and thus the
+  // SWE-bench eval, which runs through spawnSubagent). A weak subagent
+  // model may NARRATE a tool action ("Let me read config.ts") and then
+  // stop WITHOUT emitting the call. When enabled, and only when the run
+  // (a) stopped on its own (finishReason !== "tool-calls"), (b) made zero
+  // tool calls, (c) has tools available, and (d) its text reads as an
+  // un-acted tool intent, we push a corrective user-role nudge and RE-RUN
+  // with toolChoice="required" so a real call is forced. Because
+  // spawnSubagent is a SINGLE streamText (not a re-invokable generator),
+  // the loop's recursion is expressed as a bounded re-invocation loop
+  // INSIDE the withWorkspace callback below. Subagents carry no
+  // options._nudgeDepth field, so enablement is resolved straight from
+  // config (the loop's options.toolEnforcement layer does not exist here).
+  const teEnabled = config.general?.toolEnforcement?.enabled ?? true;
+  const teMaxNudges = config.general?.toolEnforcement?.maxNudges ?? 2;
+  // "tools available to call" gate: filteredTools must be non-empty. An
+  // empty set (noTools / read-only downgrade / empty scope) means a nudge
+  // could never be satisfied by a real call, so treat it as the gate
+  // failing — mirroring the loop's `!!finalTools`.
+  const hasTools = Object.keys(filteredTools ?? {}).length > 0;
+
   // AbortController for budget enforcement — terminates the subagent stream.
   // The stream's effective abort signal is linked to both the internal
   // budget controller and the optional parent signal, so parent Ctrl+C or
@@ -663,59 +689,155 @@ export async function spawnSubagent(
       });
     }
 
-    await withWorkspace(projectPath, async () => {
-      const result = streamText({
-        model: modelId,
-        system: systemForAPI as any,
-        messages: [
-          {
-            role: "user" as const,
-            content: `[Project: ${projectPath}]\n\n${task}`,
-          },
-        ],
-        tools: filteredTools,
-        ...(metadataHeader
-          ? { headers: { "x-br-metadata": metadataHeader } }
-          : {}),
-        abortSignal: effectiveAbort,
-        stopWhen: stepCountIs(maxSteps),
-        onStepFinish: async ({ usage }: any) => {
-          if (usage) {
-            const inputTokens = usage.inputTokens ?? 0;
-            const outputTokens = usage.outputTokens ?? 0;
-            const stepCost =
-              (inputTokens / 1_000_000) *
-                decision.model.pricing.inputPer1MTokens +
-              (outputTokens / 1_000_000) *
-                decision.model.pricing.outputPer1MTokens;
-            subagentCostAccum += stepCost;
-            costTracker.record({
-              sessionId: subagentSessionId,
-              modelId: decision.model.id,
-              provider: decision.model.provider,
-              inputTokens,
-              outputTokens,
-              taskType: taskProfile.type,
-              projectPath,
-              pricing: decision.model.pricing,
-            });
-          }
-          if (subagentCostAccum >= budgetLimit) {
-            budgetExceeded = true;
-            budgetAbort.abort();
-          }
-        },
-      });
+    // Conversation for the run. Mutable so the enforcement loop can append
+    // the model's narration + a corrective user turn between re-invocations.
+    const messages: any[] = [
+      {
+        role: "user" as const,
+        content: `[Project: ${projectPath}]\n\n${task}`,
+      },
+    ];
 
-      for await (const part of result.fullStream) {
-        if (part.type === "text-delta") {
-          fullText += (part as any).delta ?? (part as any).text ?? "";
-        } else if (part.type === "tool-call") {
-          // INBOUND rename: record the canonical tool name so the subagent's
-          // reported toolCalls match the parent's canonical vocabulary
-          // regardless of which provider renamed them outbound.
-          toolCallNames.push(reverseToolName(part.toolName, decision.model));
+    await withWorkspace(projectPath, async () => {
+      // Bounded re-invocation loop = the single-streamText analogue of the
+      // loop's Phase 7 self-recursion. `nudge` is the nudgeDepth: iteration 0
+      // is the original run; each subsequent iteration is one corrective
+      // re-run. It ALL lives inside this one withWorkspace callback so every
+      // streamText + its internal async tool chain inherits the AsyncLocalStorage
+      // workspace context (see the block comment above — hoisting streamText
+      // out breaks path resolution for tool calls).
+      let forceToolChoice = false;
+      for (let nudge = 0; ; nudge++) {
+        // Per-iteration accumulators (mirror the loop's per-turn state). The
+        // module-scope fullText/toolCallNames accumulate ACROSS retries for the
+        // returned result; these locals hold only THIS run's output so the gate
+        // judges the just-finished turn (like the loop's fresh recursion).
+        let iterText = "";
+        let iterToolCalls = 0;
+        let finishReason: string | undefined;
+
+        const result = streamText({
+          model: modelId,
+          system: systemForAPI as any,
+          messages,
+          tools: filteredTools,
+          // Phase 7: force a real tool call ONLY on a corrective retry, and
+          // never on the terminal retry (see forceToolChoice below), so the
+          // model can still finish with a clean text answer. Only meaningful
+          // when tools are present.
+          ...(hasTools && forceToolChoice
+            ? { toolChoice: "required" as const }
+            : {}),
+          ...(metadataHeader
+            ? { headers: { "x-br-metadata": metadataHeader } }
+            : {}),
+          abortSignal: effectiveAbort,
+          stopWhen: stepCountIs(maxSteps),
+          onStepFinish: async ({ usage }: any) => {
+            if (usage) {
+              const inputTokens = usage.inputTokens ?? 0;
+              const outputTokens = usage.outputTokens ?? 0;
+              const stepCost =
+                (inputTokens / 1_000_000) *
+                  decision.model.pricing.inputPer1MTokens +
+                (outputTokens / 1_000_000) *
+                  decision.model.pricing.outputPer1MTokens;
+              subagentCostAccum += stepCost;
+              costTracker.record({
+                sessionId: subagentSessionId,
+                modelId: decision.model.id,
+                provider: decision.model.provider,
+                inputTokens,
+                outputTokens,
+                taskType: taskProfile.type,
+                projectPath,
+                pricing: decision.model.pricing,
+              });
+            }
+            if (subagentCostAccum >= budgetLimit) {
+              budgetExceeded = true;
+              budgetAbort.abort();
+            }
+          },
+        });
+
+        for await (const part of result.fullStream) {
+          if (part.type === "text-delta") {
+            const delta = (part as any).delta ?? (part as any).text ?? "";
+            iterText += delta;
+            fullText += delta;
+          } else if (part.type === "tool-call") {
+            // INBOUND rename: record the canonical tool name so the subagent's
+            // reported toolCalls match the parent's canonical vocabulary
+            // regardless of which provider renamed them outbound.
+            iterToolCalls++;
+            toolCallNames.push(reverseToolName(part.toolName, decision.model));
+          } else if (part.type === "finish" || part.type === "finish-step") {
+            // Capture finishReason so the gate can require a self-stop
+            // (finishReason !== "tool-calls") — absent from the original
+            // subagent drain, this is the loop's missing precondition.
+            finishReason = (part as any).finishReason ?? finishReason;
+          }
         }
+
+        // ── Enforcement gate (mirrors loop.ts Phase 7 preconditions) ──
+        // Break (accept the run as-is) unless ALL hold: enforcement enabled,
+        // the run wasn't budget-killed / aborted, it made zero tool calls,
+        // stopped on its own, tools are available, we have nudges left, and
+        // the text reads as an un-acted tool intent.
+        const shouldNudge =
+          teEnabled &&
+          !budgetExceeded &&
+          !effectiveAbort.aborted &&
+          iterToolCalls === 0 &&
+          finishReason !== "tool-calls" &&
+          hasTools &&
+          nudge < teMaxNudges &&
+          detectNarratedToolIntent(iterText);
+
+        if (!shouldNudge) break;
+
+        // Budget guard — a nudge is a full extra model run (with its own fresh
+        // stepCountIs budget). Reuse the loop's 20%-remaining threshold and
+        // also honor the subagent's own budgetLimit; skip rather than risk
+        // blowing the session budget.
+        const nudgeBudgetRemaining = costTracker.getRemainingBudget();
+        const nudgeSessionLimit = (config.budget as any)?.perSession;
+        const nudgeBudgetTooLow =
+          nudgeBudgetRemaining !== null &&
+          nudgeSessionLimit &&
+          nudgeBudgetRemaining <= nudgeSessionLimit * 0.2;
+        if (nudgeBudgetTooLow || subagentCostAccum >= budgetLimit) {
+          log.warn(
+            {
+              remaining: nudgeBudgetRemaining,
+              sessionLimit: nudgeSessionLimit,
+              subagentCost: subagentCostAccum,
+              budgetLimit,
+            },
+            "Subagent tool-use nudge skipped — budget too low",
+          );
+          break;
+        }
+
+        const nextNudge = nudge + 1;
+        log.info(
+          {
+            type,
+            model: decision.model.id,
+            iteration: nextNudge,
+            maxNudges: teMaxNudges,
+          },
+          "Subagent narrated a tool action without calling it — nudging with forced tool call",
+        );
+        // Feed the model's narration back as an assistant turn plus the
+        // corrective user turn, so the retry has context for what it claimed
+        // to do. Do NOT force tools on the TERMINAL retry (nextNudge ===
+        // teMaxNudges): that re-entry can no longer nudge again, so its output
+        // is ACCEPTED — forcing would rob the model of a clean text answer.
+        messages.push({ role: "assistant", content: iterText });
+        messages.push({ role: "user", content: buildToolUseCorrection() });
+        forceToolChoice = nextNudge < teMaxNudges;
       }
     });
   } catch (err: any) {
