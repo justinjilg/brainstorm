@@ -655,6 +655,33 @@ program
       } = await import("node:fs");
       const { tmpdir } = await import("node:os");
 
+      // Retry transient network failures (DNS/connection blips to GitHub or BR)
+      // with bounded exponential backoff, so a hiccup during a multi-hour eval
+      // doesn't miscount an instance as a capability failure. Only retries
+      // errors that look transient — a real git/agent error still fails fast.
+      const isTransientNet = (e: any): boolean => {
+        const s = `${e?.code ?? ""} ${e?.reason ?? ""} ${e?.message ?? ""}`;
+        return /ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|ECONNREFUSED|socket hang up|maxRetriesExceeded|Cannot connect to API/i.test(
+          s,
+        );
+      };
+      const withNetRetry = async <T>(
+        fn: () => T | Promise<T>,
+        attempts = 4,
+      ): Promise<T> => {
+        let lastErr: any;
+        for (let i = 0; i < attempts; i++) {
+          try {
+            return await fn();
+          } catch (e: any) {
+            lastErr = e;
+            if (!isTransientNet(e) || i === attempts - 1) throw e;
+            await new Promise((r) => setTimeout(r, 2000 * 2 ** i)); // 2s,4s,8s
+          }
+        }
+        throw lastErr;
+      };
+
       let completed = 0;
 
       // Run agent on each instance — REAL implementation
@@ -696,26 +723,30 @@ program
               // Use --filter=blob:none to avoid pulling full history while
               // still allowing checkout of any commit. --depth 100 was too
               // shallow for SWE-bench's historical commits.
-              execGit(
-                "git",
-                [
-                  "clone",
-                  "--filter=blob:none",
-                  "--no-checkout",
-                  `https://github.com/${instance.repo}.git`,
-                  "repo",
-                ],
-                {
-                  cwd: workDir,
-                  timeout: 180000,
-                  stdio: ["ignore", "pipe", "pipe"],
-                },
+              await withNetRetry(() =>
+                execGit(
+                  "git",
+                  [
+                    "clone",
+                    "--filter=blob:none",
+                    "--no-checkout",
+                    `https://github.com/${instance.repo}.git`,
+                    "repo",
+                  ],
+                  {
+                    cwd: workDir,
+                    timeout: 180000,
+                    stdio: ["ignore", "pipe", "pipe"],
+                  },
+                ),
               );
-              execGit("git", ["fetch", "origin", instance.baseCommit], {
-                cwd: repoDir,
-                timeout: 60000,
-                stdio: ["ignore", "pipe", "pipe"],
-              });
+              await withNetRetry(() =>
+                execGit("git", ["fetch", "origin", instance.baseCommit], {
+                  cwd: repoDir,
+                  timeout: 60000,
+                  stdio: ["ignore", "pipe", "pipe"],
+                }),
+              );
               execGit("git", ["checkout", instance.baseCommit], {
                 cwd: repoDir,
                 timeout: 30000,
@@ -746,21 +777,27 @@ program
                 `If you finish without calling file_edit or file_write at least once, you have failed the task.`,
               ].join("\n");
 
-              const result = await spawnSubagent(issuePrompt, {
-                config,
-                registry,
-                router,
-                costTracker,
-                tools,
-                projectPath: repoDir,
-                type: "code",
-                maxSteps: 40, // SWE-bench issues need room for exploration + edits + verification
-                budgetLimit: 3.0,
-                permissionCheck: () => "allow", // unattended — auto-approve everything
-                // Honor --model flag if provided — otherwise subagent
-                // re-routes internally and ignores parent's preference.
-                preferredModelId: opts.model,
-              });
+              // Retry once on a transient network failure to BR — network
+              // blips almost always hit the first model call, before any edit.
+              const result = await withNetRetry(
+                () =>
+                  spawnSubagent(issuePrompt, {
+                    config,
+                    registry,
+                    router,
+                    costTracker,
+                    tools,
+                    projectPath: repoDir,
+                    type: "code",
+                    maxSteps: 40, // SWE-bench issues need room for exploration + edits + verification
+                    budgetLimit: 3.0,
+                    permissionCheck: () => "allow", // unattended — auto-approve everything
+                    // Honor --model flag if provided — otherwise subagent
+                    // re-routes internally and ignores parent's preference.
+                    preferredModelId: opts.model,
+                  }),
+                2,
+              );
 
               // 4. Capture the diff (what the agent actually changed)
               let patch = "";
