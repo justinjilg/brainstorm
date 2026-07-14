@@ -339,6 +339,38 @@ export interface SubagentResult {
   type: SubagentType;
   budgetExceeded: boolean;
   partialOutput?: string;
+  /**
+   * The provider `finishReason` of the subagent's final model turn (AI SDK v6):
+   * `"stop"` (normal), `"tool-calls"`, `"length"`, `"content-filter"` (provider
+   * moderation refused the prompt), `"error"`, etc. Surfaced so callers can tell
+   * a genuine empty result from a provider-terminated one instead of reporting a
+   * silent "no changes". Undefined if the run never produced a finish event.
+   */
+  finishReason?: string;
+}
+
+/**
+ * Human-readable explanation for a non-`stop` provider finishReason, or null
+ * when the reason is a normal completion (`stop`/`tool-calls`/undefined) that
+ * needs no callout. Lets callers surface WHY a run produced no useful output —
+ * e.g. a moderation block — instead of a silent empty result.
+ */
+export function describeFinishReason(
+  reason: string | undefined,
+): string | null {
+  switch (reason) {
+    case "content-filter":
+      return "provider content filter blocked the response (the model/provider refused the prompt)";
+    case "length":
+      return "hit the output token limit before finishing";
+    case "error":
+      return "the provider returned an error mid-generation";
+    case "other":
+      return "the provider stopped generation for an unspecified reason";
+    default:
+      // "stop", "tool-calls", undefined, or any unknown reason → no callout.
+      return null;
+  }
 }
 
 /**
@@ -599,6 +631,11 @@ export async function spawnSubagent(
   let fullText = "";
   let budgetExceeded = false;
   let subagentCostAccum = 0; // Track cost internally to avoid parallel race
+  // Last streamText finishReason across nudge retries — surfaced on the result
+  // so callers (e.g. the SWE-bench eval) can distinguish a genuine empty answer
+  // from a provider-terminated one (content-filter / length / error) instead of
+  // reporting a silent "no changes".
+  let lastFinishReason: string | undefined;
 
   // ── Phase 7: tool-use enforcement (narration → forced tool call) ────
   // Mirror runAgentLoop's Phase 7 gate for subagents (and thus the
@@ -779,6 +816,8 @@ export async function spawnSubagent(
             finishReason = (part as any).finishReason ?? finishReason;
           }
         }
+        // Remember the terminal reason of the final run for the result.
+        lastFinishReason = finishReason;
 
         // ── Enforcement gate (mirrors loop.ts Phase 7 preconditions) ──
         // Break (accept the run as-is) unless ALL hold: enforcement enabled,
@@ -879,6 +918,7 @@ export async function spawnSubagent(
     type,
     budgetExceeded,
     partialOutput: budgetExceeded ? fullText : undefined,
+    finishReason: lastFinishReason,
   };
 }
 
