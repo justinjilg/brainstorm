@@ -11,6 +11,8 @@ export {
   ChangeSetLogRepository,
   ConversationRepository,
   SyncQueueRepository,
+  ContractRepository,
+  VerdictRepository,
   type SessionPattern,
   type AggregatedRoutingStats,
   type CompactionCommit,

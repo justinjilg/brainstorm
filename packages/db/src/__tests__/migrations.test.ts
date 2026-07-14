@@ -39,12 +39,16 @@ describe("db migrations", () => {
     );
     // +3 for orgs, team_members, compliance_events (migrations 031-033)
     // +1 for routing_audit (migration 034 — BR x-br-* envelope per-request log)
-    expect(tables).toHaveLength(32);
+    // +3 for agent_contracts, panel_verdicts, panel_decisions (migrations 035-036)
+    expect(tables).toHaveLength(35);
     expect(tables).toContain("sync_queue");
     expect(tables).toContain("orgs");
     expect(tables).toContain("team_members");
     expect(tables).toContain("routing_audit");
     expect(tables).toContain("compliance_events");
+    expect(tables).toContain("agent_contracts");
+    expect(tables).toContain("panel_verdicts");
+    expect(tables).toContain("panel_decisions");
   });
 
   test("migration ledger records each migration exactly once", () => {
@@ -54,11 +58,11 @@ describe("db migrations", () => {
       .prepare("SELECT name FROM _migrations ORDER BY id")
       .all() as Array<{ name: string }>;
 
-    expect(migrations).toHaveLength(34);
+    expect(migrations).toHaveLength(36);
     expect(migrations[0]?.name).toBe("001_sessions");
-    expect(migrations.at(-1)?.name).toBe("034_routing_audit");
+    expect(migrations.at(-1)?.name).toBe("036_panel_verdicts");
     expect(new Set(migrations.map((migration) => migration.name)).size).toBe(
-      34,
+      36,
     );
   });
 
