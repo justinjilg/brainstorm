@@ -78,6 +78,10 @@ import {
   type VerifyMode,
   type VerifyRunner,
 } from "./verify-loop.js";
+import {
+  detectNarratedToolIntent,
+  buildToolUseCorrection,
+} from "./tool-use-enforcement.js";
 
 const log = createLogger("agent-loop");
 
@@ -359,6 +363,22 @@ export interface AgentLoopOptions {
   _verifyDepth?: number;
   /** Internal: injectable verifier (tests supply a mock). */
   _verifyRunner?: VerifyRunner;
+  /**
+   * Per-invocation override for tool-use enforcement (Phase 7). Weak models
+   * that narrate a tool action but never emit the call get a corrective nudge
+   * + a forced tool-call retry. When omitted, falls back to
+   * config.general.toolEnforcement.
+   */
+  toolEnforcement?: { enabled: boolean; maxNudges: number };
+  /** Internal: tracks tool-enforcement nudge depth to cap re-entry. */
+  _nudgeDepth?: number;
+  /**
+   * Internal: force `toolChoice: "required"` for THIS single turn only. Set on
+   * the corrective retry after a narration nudge so the model is compelled to
+   * emit a real tool call instead of narrating again. Never persisted — every
+   * other recursion site resets it so the model can still finish normally.
+   */
+  _forceToolChoice?: boolean;
   /** Optional middleware pipeline for composable agent interceptors. */
   middleware?: MiddlewarePipeline;
   /** Repository for persisting routing outcomes (Thompson sampling). */
@@ -859,6 +879,13 @@ export async function* runAgentLoop(
       system: systemForApiNormalized as any,
       messages: messagesForApi as any,
       ...(finalTools ? { tools: finalTools } : {}),
+      // Phase 7: on a narration-nudge corrective retry ONLY, force a real tool
+      // call so the model cannot narrate-and-stop again. Scoped to this single
+      // re-entry via options._forceToolChoice; never permanent (that would stop
+      // the model ever finishing). Only meaningful when tools are present.
+      ...(finalTools && options._forceToolChoice
+        ? { toolChoice: "required" as const }
+        : {}),
       ...(metadataHeader
         ? { headers: { "x-br-metadata": metadataHeader } }
         : {}),
@@ -1327,6 +1354,9 @@ export async function* runAgentLoop(
           preferredModelId: fallbackModel.id,
           _retryDepth: retryDepth + 1,
           _modelsTried: modelsTried,
+          // A forced tool-call is scoped to a single nudge retry; never carry
+          // it into an unrelated fallback turn.
+          _forceToolChoice: false,
         } as any);
         return;
       }
@@ -1434,6 +1464,99 @@ export async function* runAgentLoop(
       }
     }
 
+    // ── Phase 7: tool-use enforcement (narration → forced tool call) ────
+    // A weak model may NARRATE a tool action ("Let me read config.ts") and
+    // then stop WITHOUT emitting the call. Such a turn is not empty and not a
+    // truncated tool-call, so it records as turnSuccess and would silently
+    // complete. When enabled, and only when the turn (a) stopped on its own
+    // (finishReason !== "tool-calls"), (b) made zero tool calls, (c) has tools
+    // available to call, and (d) its text reads as an un-acted tool intent, we
+    // push a corrective user-role nudge and RE-RUN with toolChoice="required"
+    // so a real call is forced. Guards (mirroring the verify block below):
+    //   - opt-in-safe: fires only on this failure state, DEFAULT enabled=true,
+    //     so well-behaved models never trigger it (set enabled:false for exact
+    //     legacy behavior),
+    //   - bounded by maxNudges to prevent infinite re-prompting,
+    //   - gated on remaining budget (same 20% threshold as verify/budget-warn),
+    //   - placed BEFORE verify: a narrated turn wrote no files, so verify would
+    //     skip it anyway — and only ONE recursion+return runs per turn, so the
+    //     two corrective mechanisms cannot compound into an unbounded loop.
+    const teEnabled =
+      options.toolEnforcement?.enabled ??
+      config.general?.toolEnforcement?.enabled ??
+      true;
+    const teMaxNudges =
+      options.toolEnforcement?.maxNudges ??
+      config.general?.toolEnforcement?.maxNudges ??
+      2;
+    const nudgeDepth = options._nudgeDepth ?? 0;
+
+    if (
+      teEnabled &&
+      turnSuccess &&
+      toolCallCount === 0 &&
+      finishReason !== "tool-calls" &&
+      !!finalTools &&
+      nudgeDepth < teMaxNudges &&
+      !options.signal?.aborted &&
+      detectNarratedToolIntent(accumulatedText)
+    ) {
+      // Budget guard — a nudge is a full extra model turn. Reuse the same
+      // 20%-remaining threshold verify/budget-warning use; skip rather than
+      // risk blowing config.budget.perSession.
+      const nudgeBudgetRemaining = costTracker.getRemainingBudget();
+      const nudgeSessionLimit = (config.budget as any)?.perSession;
+      const nudgeBudgetTooLow =
+        nudgeBudgetRemaining !== null &&
+        nudgeSessionLimit &&
+        nudgeBudgetRemaining <= nudgeSessionLimit * 0.2;
+
+      if (nudgeBudgetTooLow) {
+        log.warn(
+          {
+            remaining: nudgeBudgetRemaining,
+            sessionLimit: nudgeSessionLimit,
+          },
+          "tool-use nudge skipped — remaining budget below 20% threshold",
+        );
+      } else {
+        const nextNudge = nudgeDepth + 1;
+        log.info(
+          {
+            model: decision.model.id,
+            iteration: nextNudge,
+            maxNudges: teMaxNudges,
+          },
+          "Model narrated a tool action without calling it — nudging with forced tool call",
+        );
+        yield {
+          type: "tool-nudge" as const,
+          iteration: nextNudge,
+          maxNudges: teMaxNudges,
+        };
+        // Feed the correction back as a user-role turn and re-run, mirroring
+        // the verify self-recursion below. _forceToolChoice compels a real
+        // call on the retry; it is scoped to that single re-entry (the verify
+        // and fallback recursions explicitly clear it, so the model can still
+        // finish normally afterwards).
+        //
+        // Do NOT force on the TERMINAL retry: when `nextNudge === teMaxNudges`
+        // the re-entry can no longer nudge again (`nudgeDepth < teMaxNudges`
+        // fails there), so whatever it emits is ACCEPTED as the turn's finish.
+        // Forcing tools on that accepted turn would compel it into a tool call
+        // and rob the model of a clean text answer. Only force while a further
+        // corrective opportunity still remains.
+        const forceOnRetry = nextNudge < teMaxNudges;
+        messages.push({ role: "user", content: buildToolUseCorrection() });
+        yield* runAgentLoop(messages, {
+          ...options,
+          _nudgeDepth: nextNudge,
+          _forceToolChoice: forceOnRetry,
+        });
+        return;
+      }
+    }
+
     // ── Phase 3: in-loop verify / self-correction ──────────────────────
     // After an edit-producing turn, verify the files the model just changed
     // (typecheck always; affected tests in "full" mode). On failure, feed the
@@ -1527,6 +1650,9 @@ export async function* runAgentLoop(
           yield* runAgentLoop(messages, {
             ...options,
             _verifyDepth: nextIteration,
+            // Forced tool-call is scoped to the nudge retry only — don't leak
+            // it into a verify self-correction turn.
+            _forceToolChoice: false,
           });
           return;
         }

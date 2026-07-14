@@ -138,6 +138,25 @@ const generalSchema = z.object({
       maxIterations: z.number().int().min(0).default(2),
     })
     .default({}),
+  /**
+   * Tool-use enforcement (Phase 7). Weak models sometimes NARRATE a tool
+   * action in prose ("Let me read config.ts") and then stop WITHOUT emitting
+   * a real function call. When enabled, a completed turn that has zero tool
+   * calls, stopped on its own (not mid-tool), AND whose text reads as an
+   * un-acted tool intent is corrected: a user-role nudge is fed back and the
+   * turn re-run with toolChoice forced to "required" so a real call is made.
+   *   - enabled: DEFAULT true — it only fires on this specific failure state,
+   *     so well-behaved models that call tools (or give a plain final answer)
+   *     never trigger it and pay nothing. Set false for exact legacy behavior.
+   *   - maxNudges: hard cap on corrective re-prompts (infinite-loop guard).
+   *     After the cap the turn is accepted as-is rather than spinning.
+   */
+  toolEnforcement: z
+    .object({
+      enabled: z.boolean().default(true),
+      maxNudges: z.number().int().min(0).default(2),
+    })
+    .default({}),
 });
 
 // ── Full Config ──────────────────────────────────────────────────────
