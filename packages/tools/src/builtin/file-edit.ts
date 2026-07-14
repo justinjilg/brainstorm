@@ -17,6 +17,7 @@ import { homedir } from "node:os";
 import { defineTool } from "../base.js";
 import { getWorkspace } from "../workspace-context.js";
 import { assertNotSensitivePathIncludingRealpath } from "./sensitive-paths.js";
+import { applyEdit } from "./edit-common.js";
 
 /**
  * Atomic file replace: write content to `<path>.tmp.<rand>`, fsync, then
@@ -216,10 +217,20 @@ export const fileEditTool = defineTool({
       return { error: `File not found: ${path}` };
     }
     const content = readFileSync(safePath, "utf-8");
-    const occurrences = content.split(old_string).length - 1;
 
-    if (occurrences === 0) {
-      // Try to find the closest match for recovery
+    // Route through the Aider-style fuzzy cascade in edit-common. This
+    // handles the exact-unique path (fastest) plus whitespace-flexible,
+    // ellipsis-elided and similarity-fallback matches — always $-safe and
+    // never applying a low-confidence match. multi_edit/batch_edit share
+    // the same applyEdit, so the whole edit surface benefits.
+    const editResult = applyEdit(content, old_string, new_string);
+    if (!editResult.applied || editResult.content === undefined) {
+      if (editResult.occurrences && editResult.occurrences > 1) {
+        return {
+          error: `old_string found ${editResult.occurrences} times — must be unique. Provide more surrounding context.`,
+        };
+      }
+      // Not found (below-confidence / ambiguous fuzzy) — offer a hint.
       const suggestion = findClosestMatch(content, old_string);
       if (suggestion) {
         return {
@@ -229,22 +240,13 @@ export const fileEditTool = defineTool({
       }
       return { error: "old_string not found in file" };
     }
-    if (occurrences > 1) {
-      return {
-        error: `old_string found ${occurrences} times — must be unique. Provide more surrounding context.`,
-      };
-    }
 
     // Snapshot before editing
     const { getCheckpointManager } = await import("../checkpoint.js");
     const cp = getCheckpointManager();
     if (cp) cp.snapshot(safePath);
 
-    // Function-form replacement so $1/$&/etc. in new_string don't get
-    // interpreted as regex backreferences. Agent-generated content
-    // often contains literal `$` (shell vars, regex patterns, jQuery,
-    // template literals) and losing them silently corrupts the write.
-    const updated = content.replace(old_string, () => new_string);
+    const updated = editResult.content;
 
     // Pre-validate content before writing (non-blocking)
     const { preValidate } = await import("../pre-validate.js");
@@ -266,6 +268,7 @@ export const fileEditTool = defineTool({
     return {
       success: true,
       path,
+      matchTier: editResult.matchTier,
       ...(validation.warnings.length > 0
         ? { preValidation: validation.warnings }
         : {}),
