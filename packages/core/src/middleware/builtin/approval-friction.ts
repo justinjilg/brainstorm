@@ -29,7 +29,6 @@ import { createLogger } from "@brainst0rm/shared";
 const log = createLogger("approval-friction");
 
 const APPROVAL_TRACKER_KEY = "_approvalVelocity";
-const LAST_WARNING_KEY = "_approvalWarning";
 
 /** High-risk tools that require extra friction during cooling periods. */
 const HIGH_RISK_TOOLS = new Set([
@@ -72,10 +71,12 @@ export function createApprovalFrictionMiddleware(): AgentMiddleware {
     },
 
     afterToolResult(result: MiddlewareToolResult): MiddlewareToolResult | void {
-      // If we have a pending velocity warning, attach it to the next result
-      const lastWarning = _pendingWarning;
+      // If this instance's tracker has a pending velocity warning, attach
+      // it to the next result. afterToolResult receives no state/metadata,
+      // so we key off the closure-captured per-instance tracker.
+      const lastWarning = _pendingWarnings.get(tracker);
       if (lastWarning) {
-        _pendingWarning = null;
+        _pendingWarnings.delete(tracker);
         return {
           ...result,
           output: {
@@ -92,11 +93,16 @@ export function createApprovalFrictionMiddleware(): AgentMiddleware {
   };
 }
 
-// Module-level pending warning state.
-// KNOWN LIMITATION: shared across all middleware instances in the same process.
-// In multi-session deployments, one session's warning could be consumed by another.
-// Fix requires threading state through the middleware pipeline's metadata dict.
-let _pendingWarning: VelocityWarning | null = null;
+// Per-instance pending warning state, keyed by the middleware instance's
+// own velocity tracker. Each createApprovalFrictionMiddleware() call owns
+// exactly one tracker (published into state.metadata and passed back into
+// recordApprovalDecision by the TUI), so keying on it guarantees a warning
+// is consumed only by the session whose tracker produced it. WeakMap keying
+// means the entry is collected when the session's middleware is GC'd.
+const _pendingWarnings = new WeakMap<
+  ApprovalVelocityTracker,
+  VelocityWarning
+>();
 
 /**
  * Record an approval decision from the TUI.
@@ -111,7 +117,7 @@ export function recordApprovalDecision(
 ): VelocityWarning | null {
   const warning = tracker.recordApproval(toolName, decision, decisionTimeMs);
   if (warning) {
-    _pendingWarning = warning;
+    _pendingWarnings.set(tracker, warning);
   }
   return warning;
 }

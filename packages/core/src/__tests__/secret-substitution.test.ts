@@ -189,6 +189,92 @@ describe("secret-substitution", () => {
     });
   });
 
+  describe("scrubSecrets — deep / cyclic / shared structures", () => {
+    it("scrubs a secret nested ~200k levels deep without throwing (objects)", () => {
+      const secret = "sk-ant-deep-secret-value-000";
+      const scrubMap = new Map([[secret, "$VAULT_DEEP"]]);
+
+      // Build a deeply nested object with the secret at the bottom.
+      const depth = 200_000;
+      let node: any = { value: secret };
+      for (let i = 0; i < depth; i++) node = { child: node };
+
+      let scrubbed: any;
+      expect(() => {
+        scrubbed = scrubSecrets(node, scrubMap);
+      }).not.toThrow();
+
+      // Walk back down to the leaf and confirm it was scrubbed.
+      let cur = scrubbed;
+      for (let i = 0; i < depth; i++) cur = cur.child;
+      expect(cur.value).toBe("$VAULT_DEEP");
+    });
+
+    it("scrubs a secret at the bottom of a ~200k-deep array chain", () => {
+      const secret = "sk-ant-deep-array-secret-111";
+      const scrubMap = new Map([[secret, "$VAULT_ARR"]]);
+
+      const depth = 200_000;
+      let node: any = [secret];
+      for (let i = 0; i < depth; i++) node = [node];
+
+      let scrubbed: any;
+      expect(() => {
+        scrubbed = scrubSecrets(node, scrubMap);
+      }).not.toThrow();
+
+      let cur = scrubbed;
+      for (let i = 0; i < depth; i++) cur = cur[0];
+      expect(cur[0]).toBe("$VAULT_ARR");
+    });
+
+    it("scrubs a wide/large tree", () => {
+      const secret = "wide-tree-secret-value";
+      const scrubMap = new Map([[secret, "$VAULT_WIDE"]]);
+      const obj: Record<string, unknown> = {};
+      for (let i = 0; i < 50_000; i++) {
+        obj[`k${i}`] = i % 2 === 0 ? secret : "plain";
+      }
+      const scrubbed = scrubSecrets(obj, scrubMap) as any;
+      expect(scrubbed.k0).toBe("$VAULT_WIDE");
+      expect(scrubbed.k1).toBe("plain");
+      expect(scrubbed.k2).toBe("$VAULT_WIDE");
+    });
+
+    it("terminates on cyclic input and scrubs the secret", () => {
+      const secret = "cyclic-secret-value";
+      const scrubMap = new Map([[secret, "$VAULT_CYCLE"]]);
+      const a: any = { token: secret };
+      a.self = a; // direct cycle
+      const b: any = { data: secret, back: a };
+      a.other = b; // longer cycle a → b → a
+
+      let scrubbed: any;
+      expect(() => {
+        scrubbed = scrubSecrets(a, scrubMap);
+      }).not.toThrow();
+
+      expect(scrubbed.token).toBe("$VAULT_CYCLE");
+      expect(scrubbed.other.data).toBe("$VAULT_CYCLE");
+      // Cycle is preserved structurally as an alias to the clone.
+      expect(scrubbed.self).toBe(scrubbed);
+      expect(scrubbed.other.back).toBe(scrubbed);
+    });
+
+    it("scrubs both occurrences of a shared subtree (and dedupes the clone)", () => {
+      const secret = "shared-subtree-secret";
+      const scrubMap = new Map([[secret, "$VAULT_SHARED"]]);
+      const shared = { token: secret };
+      const root = { first: shared, second: shared };
+
+      const scrubbed = scrubSecrets(root, scrubMap) as any;
+      expect(scrubbed.first.token).toBe("$VAULT_SHARED");
+      expect(scrubbed.second.token).toBe("$VAULT_SHARED");
+      // Shared reference collapses to a single clone (more faithful to input).
+      expect(scrubbed.first).toBe(scrubbed.second);
+    });
+  });
+
   describe("injectSecrets — prefix collision", () => {
     it("replaces the longer of two prefix-sharing placeholders first", () => {
       // Same bug class in the inject direction: $VAULT_AB is a

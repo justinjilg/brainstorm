@@ -205,25 +205,89 @@ export function createSecretSubstitutionMiddleware(): AgentMiddleware {
 
 // ── Helpers ───────────────────────────────────────────────────────
 
+/**
+ * Iterative object walk (explicit stack, no recursion) invoking `visitor`
+ * on every string reachable via own-enumerable properties / array elements.
+ *
+ * Rewritten from recursion to an explicit stack so arbitrarily deep or
+ * cyclic input cannot blow the call stack. A `seen` set guarantees each
+ * object is visited exactly once, so cyclic graphs terminate. Reachability
+ * is identical to the previous recursive version (Object.values / array
+ * items only).
+ */
 function walk(obj: unknown, visitor: (s: string) => void): void {
   if (typeof obj === "string") {
     visitor(obj);
-  } else if (Array.isArray(obj)) {
-    for (const item of obj) walk(item, visitor);
-  } else if (obj !== null && typeof obj === "object") {
-    for (const value of Object.values(obj)) walk(value, visitor);
+    return;
+  }
+  if (obj === null || typeof obj !== "object") return;
+
+  const seen = new Set<object>([obj]);
+  const stack: object[] = [obj];
+  while (stack.length) {
+    const src = stack.pop()!;
+    const values = Array.isArray(src) ? src : Object.values(src);
+    for (const value of values) {
+      if (typeof value === "string") {
+        visitor(value);
+      } else if (value !== null && typeof value === "object") {
+        if (seen.has(value)) continue;
+        seen.add(value);
+        stack.push(value);
+      }
+    }
   }
 }
 
+/**
+ * Iterative structural clone (explicit stack, no recursion) that passes
+ * every reachable string through `fn`.
+ *
+ * SECRET-SAFETY INVARIANT: there is NO depth limit and NO recursion, so a
+ * million-deep tree cannot stack-overflow and no subtree is ever returned
+ * unvisited — "every reachable string passes through fn" holds
+ * unconditionally. Cyclic input terminates: the `seen` map records each
+ * object's clone, so an aliased/cyclic reference points at the
+ * already-being-scrubbed clone (never emitted unscrubbed) instead of
+ * recursing forever. The stack is heap-allocated and bounded by tree size,
+ * not depth.
+ *
+ * Non-plain objects (Date, Map, Set, class instances, Buffer) behave
+ * exactly as the prior recursive code: only their own enumerable
+ * string-keyed props are walked; Map/Set internal entries are not
+ * enumerable and are not scrubbed (unchanged, intentional).
+ */
 function transform(obj: unknown, fn: (s: string) => string): unknown {
   if (typeof obj === "string") return fn(obj);
-  if (Array.isArray(obj)) return obj.map((item) => transform(item, fn));
-  if (obj !== null && typeof obj === "object") {
-    const result: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(obj)) {
-      result[key] = transform(value, fn);
+  if (obj === null || typeof obj !== "object") return obj;
+
+  const rootClone: any = Array.isArray(obj) ? [] : {};
+  const seen = new Map<object, unknown>([[obj, rootClone]]);
+  const stack: Array<{ src: object; dst: any }> = [
+    { src: obj, dst: rootClone },
+  ];
+
+  while (stack.length) {
+    const { src, dst } = stack.pop()!;
+    const entries: Iterable<[PropertyKey, unknown]> = Array.isArray(src)
+      ? (src.entries() as Iterable<[PropertyKey, unknown]>)
+      : Object.entries(src);
+    for (const [key, value] of entries) {
+      if (typeof value === "string") {
+        dst[key] = fn(value);
+      } else if (value !== null && typeof value === "object") {
+        if (seen.has(value)) {
+          dst[key] = seen.get(value);
+        } else {
+          const clone: any = Array.isArray(value) ? [] : {};
+          seen.set(value, clone);
+          dst[key] = clone;
+          stack.push({ src: value, dst: clone });
+        }
+      } else {
+        dst[key] = value;
+      }
     }
-    return result;
   }
-  return obj;
+  return rootClone;
 }
