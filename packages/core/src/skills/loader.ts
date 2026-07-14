@@ -87,7 +87,10 @@ function loadSkillsFromDir(
   if (!existsSync(dir)) return [];
 
   const skills: SkillDefinition[] = [];
-  const entries = readdirSync(dir);
+  // Sort for deterministic iteration: readdirSync returns filesystem/OS order,
+  // not guaranteed alphabetical. Stable order keeps the cached system-prompt
+  // prefix (which lists skills) byte-identical run-to-run.
+  const entries = readdirSync(dir).sort();
 
   for (const entry of entries) {
     try {

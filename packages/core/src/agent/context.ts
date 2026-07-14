@@ -14,6 +14,7 @@ import { loadSkills } from "../skills/loader.js";
 import { formatCommitContext } from "../search/lineage.js";
 import { formatStyleContext } from "../learning/style-learner.js";
 import { generateRepoMap } from "./repo-map.js";
+import type { Complexity } from "@brainst0rm/shared";
 
 const DEFAULT_SYSTEM_PROMPT = `You are Brainstorm, an AI coding assistant powered by BrainstormRouter — an intelligent model routing gateway. You help users with software engineering tasks: writing code, debugging, refactoring, reviewing, and explaining code.
 
@@ -152,11 +153,36 @@ export function segmentsToString(segments: SystemPromptSegment[]): string {
   return segments.map((s) => s.text).join("\n");
 }
 
+/** System-prompt weight tier — mirrors the tool-tiering split in progressive.ts. */
+export type PromptTier = "minimal" | "full";
+
+/**
+ * Map task complexity to a system-prompt tier, mirroring the tool-tiering
+ * philosophy in packages/tools/src/progressive.ts (COMPLEXITY_TO_TIER):
+ * trivial/simple → a lean prefix; moderate/complex/expert → the full context.
+ *
+ * `undefined` (the default at the ~20 existing call sites that pass only
+ * projectPath) resolves to "full", preserving today's behavior byte-for-byte.
+ */
+export function getPromptTierForComplexity(
+  complexity?: Complexity,
+): PromptTier {
+  if (complexity === "trivial" || complexity === "simple") return "minimal";
+  return "full";
+}
+
 export function buildSystemPrompt(
   projectPath: string,
   outputStyle?: OutputStyle,
   basePromptOverride?: string,
+  complexity?: Complexity,
 ): SystemPromptResult {
+  // Prompt tier: trivial/simple tasks ship a lean prefix (no repo map,
+  // conventions, architecture, stack, deps, style guide, or memory dump);
+  // moderate and up ship the full context. Undefined → full (unchanged).
+  const tier = getPromptTierForComplexity(complexity);
+  const minimal = tier === "minimal";
+
   // ── Cacheable zone: stable within a session ──────────────────────
   // These sections don't change between turns. Anthropic caches this prefix.
   const stableParts = [basePromptOverride ?? DEFAULT_SYSTEM_PROMPT];
@@ -168,62 +194,80 @@ export function buildSystemPrompt(
 
   let frontmatter: StormFrontmatter | null = null;
 
-  // Project context from STORM.md / BRAINSTORM.md (hierarchical: global → root → ... → cwd)
-  const storm = loadHierarchicalStormFiles(projectPath);
+  // Project context from STORM.md / BRAINSTORM.md.
+  // Pin the hierarchy load to projectPath (cwd === projectPath) rather than
+  // letting it default to process.cwd(). This keeps the CACHEABLE prefix
+  // independent of the launching directory — a subdir/worktree launch no longer
+  // busts the cache — while preserving root+global context (the standard chat
+  // flow already sets projectPath = process.cwd(), so this is byte-identical
+  // there). For the minimal tier this also elides the subdirectory dump.
+  const storm = loadHierarchicalStormFiles(projectPath, projectPath);
   if (storm.sources.length > 0) {
     frontmatter = storm.frontmatter;
-    stableParts.push(
-      `\n## Project Context (from ${storm.sources.join(", ")})\n\n${storm.body}`,
-    );
 
+    // Safety-relevant sections are ALWAYS included, at every tier: dropping
+    // Verification/Protected Areas would let an under-classified task edit
+    // off-limits files or skip verification. They are cheap (few hundred tokens).
     const verifyCommands = extractVerificationCommands(
       storm.frontmatter,
       storm.body,
     );
+    const protectedAreas = extractSection(storm.body, "Don't touch");
+
+    // Heavy context — full tier only.
+    if (!minimal) {
+      stableParts.push(
+        `\n## Project Context (from ${storm.sources.join(", ")})\n\n${storm.body}`,
+      );
+    }
+
     if (verifyCommands) {
       stableParts.push(
         `\n## Verification Commands\n\nAfter every file_write or file_edit on code files, run the appropriate command:\n${verifyCommands}\n\nRun the build command after edits. Run the test command after completing a logical unit of work.`,
       );
     }
 
-    const protectedAreas = extractSection(storm.body, "Don't touch");
     if (protectedAreas) {
       stableParts.push(
         `\n## Protected Areas\n\nThese files are off-limits. Do NOT modify them without explicit user approval:\n${protectedAreas}\nIf a task requires changes to a protected file, explain WHY and ask before proceeding.`,
       );
     }
 
-    const conventions = extractSection(storm.body, "Conventions");
-    if (conventions) {
-      stableParts.push(
-        `\n## Code Patterns (MANDATORY)\n\nAlways follow these patterns when writing code in this project. Any code blocks below are reference examples — match this style exactly:\n${conventions}`,
-      );
-    }
+    if (!minimal) {
+      const conventions = extractSection(storm.body, "Conventions");
+      if (conventions) {
+        stableParts.push(
+          `\n## Code Patterns (MANDATORY)\n\nAlways follow these patterns when writing code in this project. Any code blocks below are reference examples — match this style exactly:\n${conventions}`,
+        );
+      }
 
-    const architecture = extractSection(storm.body, "Architecture");
-    if (architecture) {
-      stableParts.push(
-        `\n## Architecture Constraints\n\nRespect these architectural decisions when making changes:\n${architecture}`,
-      );
-    }
+      const architecture = extractSection(storm.body, "Architecture");
+      if (architecture) {
+        stableParts.push(
+          `\n## Architecture Constraints\n\nRespect these architectural decisions when making changes:\n${architecture}`,
+        );
+      }
 
-    const stack = extractSection(storm.body, "Stack");
-    if (stack) {
-      stableParts.push(`\n## Stack\n\n${stack}`);
-    }
+      const stack = extractSection(storm.body, "Stack");
+      if (stack) {
+        stableParts.push(`\n## Stack\n\n${stack}`);
+      }
 
-    const dependencies = extractSection(storm.body, "Dependencies");
-    if (dependencies) {
-      stableParts.push(
-        `\n## Dependency Rules\n\nFollow these dependency guidelines:\n${dependencies}`,
-      );
+      const dependencies = extractSection(storm.body, "Dependencies");
+      if (dependencies) {
+        stableParts.push(
+          `\n## Dependency Rules\n\nFollow these dependency guidelines:\n${dependencies}`,
+        );
+      }
     }
   }
 
-  // Structural context (high-signal, stable across session)
-  const repoMapSection = buildRepoMapSection(projectPath);
-  if (repoMapSection) {
-    stableParts.push(repoMapSection);
+  // Structural context (high-signal, stable across session) — full tier only.
+  if (!minimal) {
+    const repoMapSection = buildRepoMapSection(projectPath);
+    if (repoMapSection) {
+      stableParts.push(repoMapSection);
+    }
   }
 
   const skillsSection = buildSkillsSection(projectPath);
@@ -231,18 +275,21 @@ export function buildSystemPrompt(
     stableParts.push(skillsSection);
   }
 
-  const styleContext = formatStyleContext(projectPath);
-  if (styleContext) {
-    stableParts.push(
-      `\n## Project Style Guide (auto-detected)\n\n${styleContext}`,
-    );
+  if (!minimal) {
+    const styleContext = formatStyleContext(projectPath);
+    if (styleContext) {
+      stableParts.push(
+        `\n## Project Style Guide (auto-detected)\n\n${styleContext}`,
+      );
+    }
   }
 
   // ── Dynamic zone: changes per turn or session ────────────────────
   // These sections may change between turns. Not cached.
   const dynamicParts: string[] = [];
 
-  const memoryContext = loadMemoryContext(projectPath);
+  // Memory can be up to ~2000 tokens; skip it entirely for the minimal tier.
+  const memoryContext = minimal ? null : loadMemoryContext(projectPath);
   if (memoryContext) {
     dynamicParts.push(
       `\n## Memory (from previous sessions)\n\n${memoryContext}`,
@@ -311,10 +358,17 @@ function buildSkillsSection(projectPath: string): string | null {
       return null;
     }
 
-    const lines = skills.map((s) => {
-      const source = s.source === "claude-compat" ? "claude" : s.source;
-      return `- **/${s.name}** (${source}) — ${s.description}`;
-    });
+    // Deterministic ordering: loadSkills iterates readdirSync (filesystem/OS
+    // order), which is not guaranteed alphabetical. Sort by name so the cached
+    // prefix is byte-identical run-to-run for the same skill set. Use a
+    // locale-INDEPENDENT code-unit comparison (not localeCompare, which is
+    // ICU-locale-sensitive) so the order is identical across machines too.
+    const lines = [...skills]
+      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+      .map((s) => {
+        const source = s.source === "claude-compat" ? "claude" : s.source;
+        return `- **/${s.name}** (${source}) — ${s.description}`;
+      });
 
     const result = `\n## Available Skills\n\nYou can invoke these skills when the user requests them with /<name>:\n${lines.join("\n")}`;
     _skillsCache = { path: projectPath, result, ts: Date.now() };
@@ -586,10 +640,14 @@ export function buildToolAwarenessSection(
   }
 
   const home = homedir();
+  // NOTE: process.cwd() is deliberately NOT emitted here. This section is folded
+  // into the CACHEABLE prefix segment by callers, and an absolute cwd string
+  // varies across otherwise-identical logical sessions (subdir launch, worktree),
+  // silently busting the prompt cache. The working directory is already conveyed
+  // by the project structure / STORM context, so omitting it costs nothing.
   const selfAwareness = [
     "\n### Environment",
     `- Home directory: \`${home}\``,
-    `- Current working directory: \`${process.cwd()}\``,
     "- You CAN read files outside the project (e.g., ~/Desktop, ~/Documents). Use absolute paths.",
     "- You should only WRITE files within the project directory unless the user explicitly asks otherwise.",
     "",

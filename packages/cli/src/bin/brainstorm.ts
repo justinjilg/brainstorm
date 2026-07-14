@@ -2026,11 +2026,22 @@ program
         config.shell.containerTimeout,
         config.shell.sandboxPool,
       );
+      // Complexity-aware prompt tiering: the `run` command is single-shot, so
+      // varying the cached prefix by complexity here is cache-safe (no cross-turn
+      // cache to defeat). A trivial prompt ("hi") ships the lean prefix instead
+      // of the full ~12K context.
+      let runComplexity: import("@brainst0rm/shared").Complexity | undefined;
+      try {
+        const { classifyTask } = await import("@brainst0rm/router");
+        runComplexity = classifyTask(finalPrompt).complexity;
+      } catch {
+        runComplexity = undefined; // fall back to full prefix on any failure
+      }
       const {
         prompt: rawPrompt,
         segments: rawSegments,
         frontmatter,
-      } = buildSystemPrompt(projectPath);
+      } = buildSystemPrompt(projectPath, undefined, undefined, runComplexity);
       const toolSection = buildToolAwarenessSection(tools.listTools());
       const systemPrompt = rawPrompt + toolSection;
       const systemSegments: SystemPromptSegment[] =
