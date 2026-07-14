@@ -91,6 +91,29 @@ node packages/cli/dist/brainstorm.js run "prompt"  # Non-interactive single prom
 - Vault key resolver chain: local vault → 1Password → environment variables
 - Always use latest model names: Opus 4.6, Sonnet 4.6, GPT-5.4, Gemini 3.1 Pro/Flash, Kimi K2.5
 
+## Harness Capabilities (Leader-Parity Work)
+
+Three guides document how the agent loop drives models, applies edits, and
+sizes its own context:
+
+- **[docs/provider-agnostic-tool-calling.md](docs/provider-agnostic-tool-calling.md)**
+  — BR model-catalog import so the router can see any tool-capable model BR
+  serves; per-provider tool-name mapping (canonical `shell`/`file_read`/
+  `file_write`/`file_edit` ↔ OpenAI/Google/DeepSeek names) with the inbound
+  reverse-map wired into dispatch/subagents; streamed tool-call truncation
+  detection; a dual-namespace cache hint (`anthropic.cacheControl` +
+  `openaiCompatible.cache_control`) that survives the BR hop.
+- **[docs/edit-and-verify-loop.md](docs/edit-and-verify-loop.md)** — the
+  Aider-style fuzzy edit cascade (`packages/tools/src/builtin/edit-common.ts`:
+  exact → whitespace-flexible → line-anchored ellipsis → similarity ≥0.85
+  unambiguous, else fail) and the optional in-loop verify/self-correction pass
+  (`config.general.verify.mode`, **default `off`**; scoped diagnostics;
+  environmental errors skip rather than fail).
+- **[docs/context-efficiency.md](docs/context-efficiency.md)** — complexity-aware
+  system-prompt tiering (trivial/simple get a lean prefix; moderate+ or
+  undefined complexity get the full prefix, unchanged) plus cache-prefix
+  stability fixes and gated code-graph retrieval for moderate+ tasks.
+
 ## TUI Architecture
 
 4-mode Ink TUI switchable with Esc and number keys:
