@@ -246,30 +246,37 @@ API"`); a real git or agent error still fails fast. The agent call itself
 
 ### Measured results (20-instance Verified subset, via BrainstormRouter)
 
-| Run         | Model (via BR) | Resolved | Notes                                                                                                                                                                                                                                                  |
-| ----------- | -------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Baseline    | DeepSeek V3    | 0/20     | 16 "no patch generated" + 4 infra (network/git) — network-limited, pre-stability-fix                                                                                                                                                                   |
-| Post-phases | GLM 5.2        | 1/20     | django-11163 resolved end-to-end (fuzzy-edit cascade + real Docker scoring, 5 FAIL_TO_PASS tests green); 1 further diff produced but failed scoring; **16/20 the model narrated tool use as text instead of emitting a function call**; 2 git-timeouts |
+| Run         | Model (via BR) | Resolved | Notes                                                                                                                                                                                                                                                |
+| ----------- | -------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Baseline    | DeepSeek V3    | 0/20     | 16 "no patch generated" + 4 infra (network/git) — network-limited, pre-stability-fix                                                                                                                                                                 |
+| Post-phases | GLM 5.2        | 1/20     | django-11163 resolved end-to-end (fuzzy-edit cascade + real Docker scoring, 5 FAIL_TO_PASS tests green); 1 further diff produced but failed scoring; **16/20 blocked by Z.AI content moderation** (`finishReason: "content-filter"`); 2 git-timeouts |
 
-**What the number does and does not measure.** These runs are gated by
-**model tool-calling reliability through BR**, not by the harness. Both
-DeepSeek and GLM 5.2 frequently _narrate_ tool use ("Reading package.json
-now.") instead of emitting an actual tool call, so most instances end with an
-empty diff. On the instances where the model _does_ call tools, the harness
-resolves them end-to-end — the edit cascade applies the fix and the in-repo
-Docker scoring confirms the FAIL_TO_PASS/PASS_TO_PASS tests pass (django-11163;
-astropy-14508 in isolation). The harness capability is therefore validated by
-the resolutions and by 500+ unit tests; raising the resolved-rate for
-weaker BR models is a separate, model-facing workstream (tool-use enforcement /
-`tool_choice`, see the known-issues note below), not a gap in the edit/verify
-loop documented here.
+**What the number does and does not measure.** These runs are gated by the
+**BR-routed model**, not by the harness. Instrumenting the subagent's model
+turn (logging `finishReason` + tool-call count) showed the GLM 5.2 failures
+return `finishReason: "content-filter"` with real tool calls already emitted and
+assistant text `"[TOOL BLOCKED] denied_tool"` — that string is **Z.AI's own
+content-moderation artifact** (it appears nowhere in this codebase), i.e. the
+provider is refusing the (benign Django ORM) coding prompts, not the harness
+failing. On the instances that are not filtered, the harness resolves them
+end-to-end — the edit cascade applies the fix and the in-repo Docker scoring
+confirms the FAIL_TO_PASS/PASS_TO_PASS tests pass (django-11163; astropy-14508
+in isolation). The harness capability is therefore validated by the resolutions
+and by 500+ unit tests; the GLM ceiling is a **provider/model choice** (use a
+model without aggressive moderation, or a Z.AI moderation setting if BR exposes
+one), not a gap in the edit/verify loop.
 
-> **Known issue — weak-model tool-call narration.** Some BR-routed models
-> (observed: DeepSeek V3, GLM 5.2) intermittently emit a _textual description_
-> of a tool call rather than a structured function call. The harness currently
-> treats a turn with no tool call as "done"; a future enforcement layer could
-> detect a narrated-but-uncalled tool and re-prompt, or set `tool_choice`
-> required for models with low function-calling adherence.
+> **Known issue — provider content-filtering surfaces as a silent empty diff.**
+> When a BR-routed model's turn ends on a non-`stop` `finishReason`
+> (`content-filter`, `length`, `error`), the harness currently records the turn
+> as "done" with no visible reason, so a moderation block looks like the model
+> "did nothing." A small robustness improvement: detect these finishReasons and
+> surface a clear diagnostic (and optionally retry) instead of a silent empty
+> result. Separately, some genuinely weak models narrate a tool call as prose
+> without emitting a structured call; the tool-use enforcement layer
+> (`packages/core/src/agent/tool-use-enforcement.ts`) handles that distinct case
+> — it correctly does **not** fire on the content-filter case above, where real
+> tool calls were emitted.
 
 ## Files
 
