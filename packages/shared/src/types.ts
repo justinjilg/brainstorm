@@ -259,6 +259,11 @@ export type AgentEvent =
       diagnostics: string;
     }
   | {
+      type: "tool-nudge";
+      iteration: number;
+      maxNudges: number;
+    }
+  | {
       type: "daemon-tick";
       tickNumber: number;
       idleSeconds: number;
