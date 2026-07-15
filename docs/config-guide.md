@@ -69,6 +69,15 @@ model = "claude-sonnet-4.5"
 [hooks]
 auto_lint = false                  # Run linter after file writes
 
+[shell]
+sandbox = "restricted"             # none | restricted | container
+
+[shell.sandboxPool]                # Warm pool, only active when sandbox = "container"
+enabled = true
+maxIdlePerKey = 2                  # Max idle containers kept warm per image+workspace key
+maxIdleTotal = 4                   # Max idle containers kept warm overall
+idleTimeoutMs = 300000             # Idle container eviction delay (ms)
+
 [cost]
 negotiation_threshold = 0.10       # Ask user for model choice above this cost
 
@@ -80,7 +89,22 @@ plan_preview = true                # Show plan for tasks with >3 tool calls
 
 [community]
 share_fixes = false                # Share anonymized error-fix pairs via BR
+
+[channels.slack]
+enabled = false                    # Start the Slack adapter with `brainstorm serve`
+mode = "socket"                    # socket | events-api (events-api not yet wired; rejected at startup)
+appToken = ""                      # xapp-… literal, or the name of an env var to resolve
+botToken = ""                      # xoxb-… literal, or the name of an env var to resolve
+signingSecret = ""                 # events-api only; unused in socket mode
+authority = "read-only"            # read-only | approvals | full
+allowedChannels = []               # Empty = all channels the bot is in
+allowedUsers = []                  # Empty = any workspace member
+model = ""                         # Optional model pin for channel-initiated runs
 ```
+
+`[shell.sandboxPool]` only takes effect when `shell.sandbox = "container"` — it lets Docker-backed code-subagents reuse warm containers (keyed by image + workspace) instead of cold-starting each one, with idle eviction and a drain on process exit.
+
+`[channels.slack]` configures the Slack message adapter started by `brainstorm serve` (package `packages/channels`). It runs in Socket Mode by default (no public URL required); `authority` bounds what channel-initiated runs may do — `read-only` restricts them to an explicit read-only tool allowlist, `full` allows everything not otherwise denied.
 
 ### Environment Variable Overrides
 

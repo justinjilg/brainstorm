@@ -1,7 +1,14 @@
 import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  existsSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 
 // CRITICAL: artifact-store captures ARTIFACTS_BASE = join(homedir(), ".brainstorm", "artifacts")
 // at module import time. We must override HOME BEFORE importing it.
@@ -16,6 +23,7 @@ import {
   readManifest,
   readArtifact,
   listRuns,
+  getWorkspaceDir,
   type ArtifactManifest,
 } from "../artifact-store.js";
 import { validateGateCommand } from "../engine.js";
@@ -241,7 +249,7 @@ describe("artifact-store", () => {
     expect(readFileSync(path, "utf-8")).toBe('{"ok":true}');
   });
 
-  it("writeManifest + readManifest round-trip preserves structure", () => {
+  it("writeManifest + readManifest round-trip preserves structure, including kind", () => {
     const runId = "run-manifest-xyz";
     const manifest: ArtifactManifest = {
       runId,
@@ -259,6 +267,18 @@ describe("artifact-store", () => {
           confidence: 0.85,
           cost: 0.2,
           iteration: 0,
+          kind: "output",
+        },
+        {
+          stepId: "plan-draft",
+          agentRole: "planner",
+          modelUsed: "claude-opus",
+          artifactPath: "/tmp/y",
+          contentType: "markdown",
+          confidence: 0.6,
+          cost: 0.1,
+          iteration: 0,
+          kind: "scratch",
         },
       ],
     };
@@ -267,6 +287,43 @@ describe("artifact-store", () => {
     const loaded = readManifest(runId);
 
     expect(loaded).toEqual(manifest);
+  });
+
+  it("readManifest parses an old manifest that has no per-step kind", () => {
+    const runId = "run-manifest-legacy";
+    const legacyManifest = {
+      runId,
+      description: "Feature Y",
+      preset: "code-review",
+      startedAt: new Date(0).toISOString(),
+      totalCost: 0.1,
+      steps: [
+        {
+          stepId: "plan",
+          agentRole: "planner",
+          modelUsed: "claude-opus",
+          artifactPath: "/tmp/z",
+          contentType: "markdown",
+          confidence: 0.85,
+          cost: 0.1,
+          iteration: 0,
+          // no `kind` — simulates a manifest written before this field existed
+        },
+      ],
+    };
+    const dir = getWorkspaceDir(runId);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "manifest.json"),
+      JSON.stringify(legacyManifest, null, 2),
+      "utf-8",
+    );
+
+    const loaded = readManifest(runId);
+    expect(loaded).not.toBeNull();
+    expect(loaded!.steps[0].kind).toBeUndefined();
+    // Callers treat a missing kind as "output".
+    expect(loaded!.steps[0].kind ?? "output").toBe("output");
   });
 
   it("readManifest returns null for unknown runs", () => {
@@ -307,8 +364,117 @@ describe("artifact-store", () => {
     expect(readArtifact(runId, "code", 99)).toBeNull();
   });
 
+  it("routes artifacts to outputs/ or scratch/ subdirs by kind, defaulting to output", () => {
+    const runId = "run-kind-routing";
+
+    const outputPath = writeArtifact(runId, {
+      id: "impl",
+      stepId: "code",
+      agentId: "a",
+      content: "final",
+      contentType: "text",
+      metadata: {},
+      confidence: 0,
+      cost: 0,
+      timestamp: 0,
+      iteration: 0,
+      kind: "output",
+    });
+    const scratchPath = writeArtifact(runId, {
+      id: "impl-draft",
+      stepId: "code",
+      agentId: "a",
+      content: "draft",
+      contentType: "text",
+      metadata: {},
+      confidence: 0,
+      cost: 0,
+      timestamp: 0,
+      iteration: 1,
+      kind: "scratch",
+    });
+    // No `kind` at all — must default to "output", not throw or land elsewhere.
+    const defaultedPath = writeArtifact(runId, {
+      id: "impl-2",
+      stepId: "code",
+      agentId: "a",
+      content: "no kind specified",
+      contentType: "text",
+      metadata: {},
+      confidence: 0,
+      cost: 0,
+      timestamp: 0,
+      iteration: 2,
+    });
+
+    expect(outputPath.includes(join("run-kind-routing", "outputs"))).toBe(true);
+    expect(scratchPath.includes(join("run-kind-routing", "scratch"))).toBe(
+      true,
+    );
+    expect(defaultedPath.includes(join("run-kind-routing", "outputs"))).toBe(
+      true,
+    );
+
+    expect(readFileSync(outputPath, "utf-8")).toBe("final");
+    expect(readFileSync(scratchPath, "utf-8")).toBe("draft");
+    expect(readFileSync(defaultedPath, "utf-8")).toBe("no kind specified");
+  });
+
+  it("readArtifact finds output/scratch artifacts and falls back to a legacy flat run dir", () => {
+    const runId = "run-legacy-flat";
+    const dir = getWorkspaceDir(runId);
+    mkdirSync(dir, { recursive: true });
+    // Simulate a pre-split run: the file sits directly in the run root,
+    // not under outputs/ or scratch/.
+    writeFileSync(join(dir, "step-code-0.txt"), "legacy content", "utf-8");
+
+    expect(readArtifact(runId, "code", 0)).toBe("legacy content");
+  });
+
+  it("readArtifact prefers outputs/ then scratch/ over stale legacy-root files", () => {
+    const runId = "run-kind-readback";
+
+    // Plant conflicting stale files in the legacy run root FIRST — the
+    // precedence claim is only exercised if the fallback location actually
+    // holds competing content for the same stepId/iteration.
+    const legacyDir = getWorkspaceDir(runId);
+    mkdirSync(legacyDir, { recursive: true });
+    writeFileSync(join(legacyDir, "step-code-0.txt"), "stale legacy", "utf-8");
+    writeFileSync(join(legacyDir, "step-code-1.txt"), "stale legacy", "utf-8");
+
+    writeArtifact(runId, {
+      id: "impl",
+      stepId: "code",
+      agentId: "a",
+      content: "from outputs",
+      contentType: "text",
+      metadata: {},
+      confidence: 0,
+      cost: 0,
+      timestamp: 0,
+      iteration: 0,
+      kind: "output",
+    });
+    writeArtifact(runId, {
+      id: "impl",
+      stepId: "code",
+      agentId: "a",
+      content: "from scratch",
+      contentType: "text",
+      metadata: {},
+      confidence: 0,
+      cost: 0,
+      timestamp: 0,
+      iteration: 1,
+      kind: "scratch",
+    });
+
+    expect(readArtifact(runId, "code", 0)).toBe("from outputs");
+    expect(readArtifact(runId, "code", 1)).toBe("from scratch");
+  });
+
   it("rejects stepIds containing path traversal", () => {
-    const make = (stepId: string): Artifact => ({
+    const make = (stepId: string, kind?: "output" | "scratch"): Artifact => ({
       id: "impl",
       stepId,
       agentId: "a",
@@ -319,6 +485,7 @@ describe("artifact-store", () => {
       cost: 0,
       timestamp: 0,
       iteration: 0,
+      ...(kind ? { kind } : {}),
     });
 
     expect(() =>
@@ -328,6 +495,39 @@ describe("artifact-store", () => {
     expect(() => writeArtifact("run-sec-1", make("a/b"))).toThrow();
     expect(() => writeArtifact("run-sec-1", make(""))).toThrow();
     expect(() => readArtifact("run-sec-1", "../../etc/passwd", 0)).toThrow();
+
+    // Traversal guard holds for the scratch subdir too, not just the
+    // (default) output subdir.
+    expect(() =>
+      writeArtifact("run-sec-2", make("../../../etc/passwd", "scratch")),
+    ).toThrow();
+    expect(() =>
+      writeArtifact("run-sec-2", make("../sibling", "scratch")),
+    ).toThrow();
+  });
+
+  it("resolved artifact paths stay under the run's kind subdir root", () => {
+    // sanitizeStepId already blocks every known traversal vector, but the
+    // belt-and-braces resolved-path assertion in writeArtifact is meant to
+    // catch anything that gets past it. Confirm a legitimate write resolves
+    // *inside* the expected kind subdir (the assertion the escape check
+    // relies on doesn't false-positive on the happy path).
+    const runId = "run-sec-assert";
+    const path = writeArtifact(runId, {
+      id: "impl",
+      stepId: "safe-step",
+      agentId: "a",
+      content: "ok",
+      contentType: "text",
+      metadata: {},
+      confidence: 0,
+      cost: 0,
+      timestamp: 0,
+      iteration: 0,
+      kind: "scratch",
+    });
+    const root = join(getWorkspaceDir(runId), "scratch");
+    expect(path.startsWith(root + sep)).toBe(true);
   });
 
   it("listRuns returns the most recent manifests (by startedAt), limited", () => {

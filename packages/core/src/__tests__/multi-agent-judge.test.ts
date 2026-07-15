@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { detectConflicts } from "../plan/multi-agent-judge.js";
+import {
+  detectConflicts,
+  decideJudgeOutcome,
+  type JudgeOutcomeInputs,
+} from "../plan/multi-agent-judge.js";
 import type { OrchestrationTask } from "@brainst0rm/shared";
 
 function makeTask(
@@ -85,5 +89,63 @@ describe("detectConflicts", () => {
   it("handles a single task with many files", () => {
     const tasks = [makeTask("solo", ["a.ts", "b.ts", "c.ts", "d.ts"])];
     expect(detectConflicts(tasks)).toEqual({});
+  });
+});
+
+describe("decideJudgeOutcome", () => {
+  const base: JudgeOutcomeInputs = {
+    conflictFileCount: 0,
+    hasVerificationFailure: false,
+    unverifiedCount: 0,
+    failedCount: 0,
+    verdictCount: 2,
+    totalFilesChanged: 3,
+  };
+
+  it("approves a clean run with real changes", () => {
+    expect(decideJudgeOutcome(base).decision).toBe("approve");
+  });
+
+  it("rejects a no-op run where nothing was changed", () => {
+    const out = decideJudgeOutcome({ ...base, totalFilesChanged: 0 });
+    expect(out.decision).toBe("reject");
+    expect(out.reason).toMatch(/no-op/);
+  });
+
+  it("rejects on conflicts before checking anything else", () => {
+    // conflicts win even if the run is also a no-op
+    const out = decideJudgeOutcome({
+      ...base,
+      conflictFileCount: 2,
+      totalFilesChanged: 0,
+    });
+    expect(out.decision).toBe("reject");
+    expect(out.reason).toMatch(/multiple workers/);
+  });
+
+  it("revises on verification failure ahead of the no-op guard", () => {
+    const out = decideJudgeOutcome({
+      ...base,
+      hasVerificationFailure: true,
+      unverifiedCount: 1,
+      totalFilesChanged: 0,
+    });
+    expect(out.decision).toBe("revise");
+  });
+
+  it("revises on execution failure", () => {
+    expect(decideJudgeOutcome({ ...base, failedCount: 1 }).decision).toBe(
+      "revise",
+    );
+  });
+
+  it("rejects when there are no verdicts to evaluate", () => {
+    const out = decideJudgeOutcome({
+      ...base,
+      verdictCount: 0,
+      totalFilesChanged: 0,
+    });
+    expect(out.decision).toBe("reject");
+    expect(out.reason).toMatch(/no completed tasks/);
   });
 });

@@ -17,7 +17,9 @@
   },
   "dependencies": {
     "@brainst0rm/agents": "workspace:*",
+    "@brainst0rm/code-graph": "workspace:*",
     "@brainst0rm/config": "workspace:*",
+    "@brainst0rm/contracts": "workspace:*",
     "@brainst0rm/db": "workspace:*",
     "@brainst0rm/gateway": "workspace:*",
     "@brainst0rm/orchestrator": "workspace:*",

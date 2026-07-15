@@ -909,4 +909,97 @@ const MIGRATIONS = [
         ON routing_audit(routed_model);
     `,
   },
+  {
+    name: "035_contracts",
+    // The contract layer: a durable, typed interface object that crosses a
+    // model-to-model boundary. Additive — a new table plus one nullable ALTER
+    // on orchestration_tasks (029-style precedent). Rows written by old code
+    // without a contract keep contract_id NULL and behave exactly as before.
+    sql: `
+      CREATE TABLE IF NOT EXISTS agent_contracts (
+        id TEXT PRIMARY KEY,
+        version INTEGER NOT NULL DEFAULT 1,
+        intent TEXT NOT NULL,
+        context TEXT NOT NULL DEFAULT '',
+        non_goals TEXT NOT NULL DEFAULT '[]',
+        inputs_json TEXT NOT NULL,
+        output_json TEXT NOT NULL,
+        acceptance_json TEXT NOT NULL DEFAULT '[]',
+        authority_json TEXT NOT NULL DEFAULT '{}',
+        producer_agent_id TEXT,
+        producer_model_id TEXT,
+        run_id TEXT,
+        task_id TEXT,
+        parent_contract_id TEXT,
+        status TEXT NOT NULL DEFAULT 'draft'
+          CHECK (status IN ('draft','issued','executing','fulfilled','failed','rejected')),
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_agent_contracts_run ON agent_contracts(run_id);
+      CREATE INDEX IF NOT EXISTS idx_agent_contracts_task ON agent_contracts(task_id);
+      CREATE INDEX IF NOT EXISTS idx_agent_contracts_status ON agent_contracts(status);
+      ALTER TABLE orchestration_tasks ADD COLUMN contract_id TEXT;
+    `,
+  },
+  {
+    name: "036_panel_verdicts",
+    // Diverse-judge panels: durable, append-only audit of which judges (which
+    // models, which providers) said what about which artifact under which
+    // contract. Mirrors the audit_log / routing_audit append-only convention
+    // and fits the governed-control-plane evidence story.
+    sql: `
+      CREATE TABLE IF NOT EXISTS panel_verdicts (
+        id TEXT PRIMARY KEY,
+        panel_id TEXT NOT NULL,
+        contract_id TEXT,
+        run_id TEXT,
+        task_id TEXT,
+        artifact_ref TEXT,
+        judge_lens TEXT NOT NULL,
+        judge_model_id TEXT NOT NULL,
+        judge_provider TEXT NOT NULL,
+        pass INTEGER NOT NULL,
+        score REAL,
+        confidence REAL,
+        rationale TEXT NOT NULL DEFAULT '',
+        findings_json TEXT NOT NULL DEFAULT '[]',
+        criteria_json TEXT NOT NULL DEFAULT '[]',
+        cost REAL NOT NULL DEFAULT 0,
+        duration_ms INTEGER,
+        error TEXT,
+        created_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS panel_decisions (
+        id TEXT PRIMARY KEY,
+        contract_id TEXT,
+        run_id TEXT,
+        task_id TEXT,
+        decision TEXT NOT NULL CHECK (decision IN ('approve','revise','reject')),
+        quorum_json TEXT NOT NULL,
+        combined_rationale TEXT NOT NULL DEFAULT '',
+        dissent_json TEXT NOT NULL DEFAULT '[]',
+        total_cost REAL NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_panel_verdicts_panel ON panel_verdicts(panel_id);
+      CREATE INDEX IF NOT EXISTS idx_panel_verdicts_contract ON panel_verdicts(contract_id);
+      CREATE INDEX IF NOT EXISTS idx_panel_decisions_run ON panel_decisions(run_id);
+    `,
+  },
+  {
+    name: "037_revise_loop",
+    // Revise-loop lineage on orchestration_tasks. Three nullable/defaulted
+    // columns so existing rows and every existing query are unaffected:
+    //   attempt   — revise attempt number (0 = original, N = Nth re-enqueue)
+    //   retry_of  — id of the superseded task row this attempt retries
+    //   rotation  — model-rotation outcome ('rotated:<id>' | 'degraded-same-model'
+    //               | 'pinned-global-model')
+    // Additive, mirroring the 029/035 ALTER precedent.
+    sql: `
+      ALTER TABLE orchestration_tasks ADD COLUMN attempt INTEGER DEFAULT 0;
+      ALTER TABLE orchestration_tasks ADD COLUMN retry_of TEXT;
+      ALTER TABLE orchestration_tasks ADD COLUMN rotation TEXT;
+    `,
+  },
 ];

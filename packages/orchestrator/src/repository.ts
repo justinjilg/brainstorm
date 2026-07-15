@@ -46,6 +46,13 @@ function rowToTask(row: any): OrchestrationTask {
     worktreePath: row.worktree_path ?? undefined,
     filesTouched: row.files_touched ? JSON.parse(row.files_touched) : undefined,
     error: row.error ?? undefined,
+    // Contract layer (migration 035) + revise-loop lineage (migration 037).
+    // Backward compatible — older databases without these columns return
+    // undefined.
+    contractId: row.contract_id ?? undefined,
+    attempt: row.attempt ?? undefined,
+    retryOf: row.retry_of ?? undefined,
+    rotation: row.rotation ?? undefined,
   };
 }
 
@@ -267,8 +274,11 @@ export class OrchestrationTaskRepository {
       );
   }
 
-  /** Mark a task as failed with an error message. */
+  /** Mark a task as failed with an error message, then skip its dependents. */
   failTask(id: string, error: string): void {
+    const row = this.db
+      .prepare("SELECT run_id FROM orchestration_tasks WHERE id = ?")
+      .get(id) as { run_id?: string } | undefined;
     this.db
       .prepare(
         `UPDATE orchestration_tasks
@@ -276,6 +286,54 @@ export class OrchestrationTaskRepository {
          WHERE id = ?`,
       )
       .run(error, id);
+    if (row?.run_id) this.skipOrphanedDependents(row.run_id);
+  }
+
+  /**
+   * Mark every pending task whose dependency chain includes a failed (or
+   * already-skipped) task as 'skipped'.
+   *
+   * claimNext only claims a task when EVERY dependency is 'completed', so a
+   * failed dependency would leave its dependents 'pending' forever — and the
+   * worker pool idles until its timeout because allTasksFinished never sees
+   * them reach a terminal state (observed: one failed task hung the pool for
+   * its full 30-minute timeout). 'skipped' is terminal but distinct from
+   * 'failed', so the pool unblocks without inflating the Judge's failure
+   * count for tasks that were never attempted. Runs to a fixpoint so a
+   * skipped task's own dependents are skipped transitively.
+   */
+  private skipOrphanedDependents(runId: string): void {
+    for (;;) {
+      const blockedIds = new Set(
+        (
+          this.db
+            .prepare(
+              "SELECT id FROM orchestration_tasks WHERE run_id = ? AND status IN ('failed', 'skipped')",
+            )
+            .all(runId) as any[]
+        ).map((r) => r.id),
+      );
+      const pending = this.db
+        .prepare(
+          "SELECT id, depends_on FROM orchestration_tasks WHERE run_id = ? AND status = 'pending'",
+        )
+        .all(runId) as any[];
+      let changed = false;
+      for (const t of pending) {
+        const deps = JSON.parse(t.depends_on || "[]") as string[];
+        if (deps.some((d) => blockedIds.has(d))) {
+          const res = this.db
+            .prepare(
+              `UPDATE orchestration_tasks
+               SET status = 'skipped', error = ?, completed_at = unixepoch()
+               WHERE id = ? AND status = 'pending'`,
+            )
+            .run("skipped — a dependency did not complete", t.id);
+          if (res.changes === 1) changed = true;
+        }
+      }
+      if (!changed) break;
+    }
   }
 
   /**

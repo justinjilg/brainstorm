@@ -20,26 +20,27 @@ brainstorm run --json "prompt"     # Non-interactive single prompt
 
 ### Commands
 
-| Command                       | Purpose                          | `--json`    |
-| ----------------------------- | -------------------------------- | ----------- |
-| `brainstorm run [prompt]`     | Non-interactive single prompt    | Yes         |
-| `brainstorm chat`             | Interactive TUI session          | No          |
-| `brainstorm introspect`       | Dump capabilities as JSON        | Always JSON |
-| `brainstorm status`           | Ecosystem health check           | Yes         |
-| `brainstorm models`           | List available models            | Yes         |
-| `brainstorm config`           | Show configuration               | Yes         |
-| `brainstorm budget`           | Cost tracking                    | Yes         |
-| `brainstorm mcp`              | MCP server (stdio transport)     | N/A         |
-| `brainstorm serve`            | HTTP API server                  | N/A         |
-| `brainstorm setup`            | Configure auth + MCP             | No          |
-| `brainstorm vault`            | Manage encrypted key storage     | No          |
-| `brainstorm eval`             | Run capability probes            | Yes         |
-| `brainstorm agent`            | Manage named agents              | No          |
-| `brainstorm workflow`         | Multi-agent workflows            | No          |
-| `brainstorm spawn <task>`     | Background agent in git worktree | No          |
-| `brainstorm storm <tasks...>` | Parallel task execution          | No          |
-| `brainstorm analyze [path]`   | Codebase analysis                | No          |
-| `brainstorm docgen [path]`    | Generate documentation           | No          |
+| Command                       | Purpose                                                                                                | `--json`    |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------ | ----------- |
+| `brainstorm run [prompt]`     | Non-interactive single prompt                                                                          | Yes         |
+| `brainstorm chat`             | Interactive TUI session                                                                                | No          |
+| `brainstorm introspect`       | Dump capabilities as JSON                                                                              | Always JSON |
+| `brainstorm status`           | Ecosystem health check                                                                                 | Yes         |
+| `brainstorm models`           | List available models                                                                                  | Yes         |
+| `brainstorm config`           | Show configuration                                                                                     | Yes         |
+| `brainstorm budget`           | Cost tracking                                                                                          | Yes         |
+| `brainstorm mcp`              | MCP server (stdio transport)                                                                           | N/A         |
+| `brainstorm serve`            | HTTP API server (also starts configured message channels, e.g. Slack, when `[channels.slack].enabled`) | N/A         |
+| `brainstorm setup`            | Configure auth + MCP                                                                                   | No          |
+| `brainstorm audit report`     | Render ChangeSet audit entries to an HTML evidence report                                              | No          |
+| `brainstorm vault`            | Manage encrypted key storage                                                                           | No          |
+| `brainstorm eval`             | Run capability probes                                                                                  | Yes         |
+| `brainstorm agent`            | Manage named agents                                                                                    | No          |
+| `brainstorm workflow`         | Multi-agent workflows                                                                                  | No          |
+| `brainstorm spawn <task>`     | Background agent in git worktree                                                                       | No          |
+| `brainstorm storm <tasks...>` | Parallel task execution                                                                                | No          |
+| `brainstorm analyze [path]`   | Codebase analysis                                                                                      | No          |
+| `brainstorm docgen [path]`    | Generate documentation                                                                                 | No          |
 
 ### Non-Interactive Mode (`brainstorm run`)
 

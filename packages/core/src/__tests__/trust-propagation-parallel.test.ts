@@ -16,11 +16,12 @@
  * calls don't collide.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   createTrustPropagationMiddleware,
   syncTrustWindow,
   flushTrustWindow,
+  getActiveTrustWindow,
 } from "../middleware/builtin/trust-propagation.js";
 
 describe("trust-propagation — parallel tool calls", () => {
@@ -109,5 +110,64 @@ describe("trust-propagation — parallel tool calls", () => {
     // no memory growth (vitest doesn't measure memory but the
     // invariant holds by code inspection of the fix).
     expect(metadata["_trustWindow"]).toBeDefined();
+  });
+});
+
+describe("trust-propagation — soft-cap eviction is age-based, never fail-open", () => {
+  // MAX_ACTIVE_WINDOWS is 1000 (soft cap, not exported).
+  const CAP = 1000;
+
+  it("does NOT evict a fresh in-flight window when the cap is exceeded", () => {
+    const metadata: Record<string, unknown> = {};
+    const ids: string[] = [];
+    try {
+      // Fill past the cap entirely with fresh windows. Since none are
+      // stale, the soft cap is exceeded but nothing is evicted — evicting
+      // a live window would skip its trust check (fail-open bypass).
+      for (let i = 0; i < CAP + 5; i++) {
+        const id = `fresh-${i}`;
+        ids.push(id);
+        syncTrustWindow(metadata, id);
+      }
+      // The earliest-synced window (still "in flight") must survive.
+      expect(getActiveTrustWindow("fresh-0")).toBeDefined();
+
+      // And its trust check still fires (window present → not skipped).
+      const mw = createTrustPropagationMiddleware();
+      expect(() =>
+        mw.wrapToolCall!({ id: "fresh-0", name: "shell", input: {} }),
+      ).not.toThrow();
+    } finally {
+      for (const id of ids) flushTrustWindow(metadata, id);
+    }
+  });
+
+  it("evicts stale windows past the cap, keeping fresh ones", () => {
+    vi.useFakeTimers();
+    const metadata: Record<string, unknown> = {};
+    const freshIds: string[] = [];
+    try {
+      // One stale entry, created well before the TTL window.
+      syncTrustWindow(metadata, "stale-0");
+      expect(getActiveTrustWindow("stale-0")).toBeDefined();
+
+      // Advance past WINDOW_TTL_MS (10 min) so stale-0 is now evictable.
+      vi.advanceTimersByTime(11 * 60 * 1000);
+
+      // Fill to/over the cap with fresh entries. The sync that hits the
+      // cap sweeps the front and evicts only the stale entry.
+      for (let i = 0; i < CAP; i++) {
+        const id = `fresh-${i}`;
+        freshIds.push(id);
+        syncTrustWindow(metadata, id);
+      }
+
+      expect(getActiveTrustWindow("stale-0")).toBeUndefined();
+      expect(getActiveTrustWindow("fresh-0")).toBeDefined();
+    } finally {
+      for (const id of freshIds) flushTrustWindow(metadata, id);
+      flushTrustWindow(metadata, "stale-0");
+      vi.useRealTimers();
+    }
   });
 });

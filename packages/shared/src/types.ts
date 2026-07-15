@@ -248,6 +248,22 @@ export type AgentEvent =
   | { type: "context-budget"; used: number; limit: number; percent: number }
   | { type: "loop-warning"; message: string }
   | {
+      type: "verify-passed";
+      iteration: number;
+      mode: "typecheck" | "full";
+    }
+  | {
+      type: "verify-failed";
+      iteration: number;
+      maxIterations: number;
+      diagnostics: string;
+    }
+  | {
+      type: "tool-nudge";
+      iteration: number;
+      maxNudges: number;
+    }
+  | {
       type: "daemon-tick";
       tickNumber: number;
       idleSeconds: number;
@@ -438,6 +454,14 @@ export interface Artifact {
   timestamp: number;
   diskPath?: string;
   iteration: number;
+  /**
+   * DeerFlow-style output/scratch separation. "output" (the default when
+   * omitted) means the artifact is a finished, user-facing deliverable;
+   * "scratch" means it's working/intermediate material (e.g. a
+   * review-loop iteration that got superseded) kept for traceability but
+   * not meant to be surfaced as a final result.
+   */
+  kind?: "output" | "scratch";
 }
 
 export interface WorkflowRun {
@@ -737,4 +761,187 @@ export interface OrchestrationTask {
   filesTouched?: string[];
   /** Error message if status === 'failed'. */
   error?: string;
+  /** Optional AgentContract this task executes against (contract layer). When
+   * set, the worker renders the contract instead of the freeform prompt.
+   * Added in migration 035; undefined for pre-contract rows. */
+  contractId?: string;
+  /** Revise-loop attempt number. 0 (or undefined) = the original attempt;
+   * N>0 = the Nth revise re-enqueue. Added in migration 037. */
+  attempt?: number;
+  /** For a revise re-enqueue: the id of the superseded task row this one
+   * retries. Forms the lineage chain original → retry → retry. */
+  retryOf?: string;
+  /** Model-rotation outcome stamped on a revise attempt:
+   * 'rotated:<modelId>' | 'degraded-same-model' | 'pinned-global-model'. */
+  rotation?: string;
+}
+
+/**
+ * Transient corrective feedback threaded into a revise re-attempt. Built from
+ * the prior gate's PanelDecision and rendered as a deterministic "Prior
+ * attempt" section by renderContractPrompt(priorAttempt). NEVER mutates the
+ * contract — it is render-time context only, like producerConfidence.
+ */
+export interface PriorAttemptFeedback {
+  /** 1-based revise attempt number. */
+  attempt: number;
+  /** Acceptance criteria the prior panel judged unmet, with evidence. */
+  failedCriteria: { criterion: string; evidence?: string }[];
+  /** Top findings from the prior panel, highest severity first. */
+  findings: { severity: string; description: string; file?: string }[];
+  /** Losing-side judge rationales from the prior panel (judgeId: rationale). */
+  dissent: string[];
+  /** One-paragraph combined rationale from the prior panel. */
+  summary: string;
+}
+
+// ── Contract layer ───────────────────────────────────────────────────
+//
+// The AgentContract is the persisted, typed interface that crosses a model
+// boundary. Where the freeform path passes a prose prompt (whose intent lives
+// only in the producing model's context window and is lost on compaction /
+// model switch), the contract serializes the load-bearing intent, deliverable
+// shape, acceptance gates, and authority at authoring time. Plain interfaces
+// only — the behaviour (Zod validation, rendering, gates) lives in
+// @brainst0rm/contracts.
+
+/**
+ * A machine-checkable acceptance criterion for a contract. Deterministic kinds
+ * (schema/command/files_touched_within) are evaluated for free by
+ * runAcceptanceGates; panel/criterion kinds are dispatched to a JudgePanel.
+ */
+export type AcceptanceGate =
+  | { kind: "schema" }
+  | { kind: "command"; cmd: string; timeoutMs?: number }
+  | { kind: "files_touched_within"; paths: string[] }
+  | { kind: "panel"; panelConfigRef?: string; quorum?: QuorumSpec }
+  | { kind: "criterion"; text: string };
+
+/**
+ * The durable interface object that crosses an agent-to-agent boundary.
+ */
+export interface AgentContract {
+  id: string; // ct_<ulid-ish>
+  version: 1;
+  // WHY — the piece lost first in freeform handoffs.
+  intent: string; // one-paragraph rationale: what problem, why now
+  context: string; // durable background the consumer needs (survives compaction)
+  nonGoals?: string[]; // explicit "do not do"
+  // WHAT IN
+  inputs: {
+    task: string; // the imperative instruction (replaces the freeform prompt)
+    artifacts?: string[]; // named input artifact ids / file paths
+    inputSchemaRef?: string; // optional OUTPUT_SCHEMAS key describing structured input
+    inputData?: unknown; // validated against inputSchemaRef if both present
+  };
+  // WHAT OUT
+  output: {
+    schemaRef?: string; // key into OUTPUT_SCHEMAS
+    inlineSchemaJson?: string; // escape hatch: serialized JSON-Schema for ad-hoc shapes
+    contentType: "json" | "text" | "code" | "markdown";
+  };
+  // HOW WE KNOW IT'S DONE
+  acceptance: AcceptanceGate[];
+  // AUTHORITY — what the consumer may do (maps onto the narrowing chain).
+  authority: {
+    toolAllowlist?: string[];
+    maxSteps?: number;
+    budgetLimitUsd?: number;
+    readOnly?: boolean;
+    scopePaths?: string[]; // advisory path fence (worktree path for orchestrator tasks)
+  };
+  // PROVENANCE — who wrote it, who executed against it.
+  provenance: {
+    producerAgentId?: string;
+    producerModelId?: string;
+    runId?: string;
+    taskId?: string;
+    parentContractId?: string;
+    createdAt: number;
+  };
+  status:
+    | "draft"
+    | "issued"
+    | "executing"
+    | "fulfilled"
+    | "failed"
+    | "rejected";
+}
+
+// ── Judge panels ─────────────────────────────────────────────────────
+//
+// Decorrelated verification as a first-class primitive: N judges across
+// distinct provider families and lenses review the same artifact in isolation
+// (no anchoring), and a pure aggregation function decides the outcome. Plain
+// types only; dispatch/aggregation behaviour lives in @brainst0rm/contracts.
+
+export interface PanelJudgeSpec {
+  lens:
+    | "correctness"
+    | "security"
+    | "performance"
+    | "reproducibility"
+    | "contract-fit"
+    | string;
+  modelId?: string; // pinned; else selected by the diversity selector
+  weight?: number; // default 1; deterministic lenses may get weight 2
+  systemPromptRef?: string; // lens prompt template; defaults per lens
+}
+
+export type QuorumSpec =
+  | { kind: "majority" }
+  | { kind: "threshold"; passFraction: number }
+  | { kind: "weighted"; passWeightFraction: number }
+  | { kind: "unanimous-veto"; vetoLenses: string[] };
+
+export interface PanelConfig {
+  judges: PanelJudgeSpec[]; // N >= 0
+  diversity: "provider" | "model" | "none"; // provider = distinct provider families REQUIRED
+  quorum: QuorumSpec;
+  budgetLimitUsd?: number; // hard cap across all judges
+  includeDeterministic?: boolean; // fold the build/test verdict in as a weighted panelist
+}
+
+/**
+ * A single reviewer finding. Mirrors the orchestration pipeline's ReviewFinding
+ * shape so structured verdicts can replace the pipeline's regex scanning.
+ */
+export interface ReviewFinding {
+  severity: "critical" | "high" | "medium" | "low";
+  description: string;
+  file?: string;
+  line?: number;
+  reviewer: string;
+}
+
+/** One judge's structured verdict on an artifact. */
+export interface Verdict {
+  judgeId: string; // `${lens}:${modelId}`
+  lens: string;
+  modelId: string;
+  provider: string; // recorded for decorrelation audit
+  pass: boolean;
+  score?: number; // 0-1
+  confidence: number; // judge's own, 0-1
+  rationale: string;
+  findings: ReviewFinding[];
+  criteriaResults?: {
+    criterion: string;
+    pass: boolean;
+    evidence?: string;
+  }[]; // per acceptance 'criterion' gate
+  cost: number;
+  durationMs: number;
+  error?: string; // judge failed to run — excluded from quorum denominator, recorded
+}
+
+/** The aggregated outcome of a panel of judges. */
+export interface PanelDecision {
+  panelId: string;
+  decision: "approve" | "revise" | "reject";
+  verdicts: Verdict[];
+  quorum: { required: number; achieved: number; rule: string };
+  dissent: string[]; // rationales of losing-side judges — surfaced, never discarded
+  combinedRationale: string; // deterministic template: tally + top findings + dissent
+  totalCost: number;
 }

@@ -52,8 +52,9 @@ export function createTrustPropagationMiddleware(): AgentMiddleware {
       // would be overwritten by the second tool's syncTrustWindow()
       // while the first is awaiting its execute(), corrupting both
       // windows.
-      const window = _activeWindows.get(call.id);
-      if (!window) return;
+      const entry = _activeWindows.get(call.id);
+      if (!entry) return;
+      const window = entry.window;
 
       const check = checkToolTrust(window, call.name);
       if (!check.allowed) {
@@ -77,12 +78,12 @@ export function createTrustPropagationMiddleware(): AgentMiddleware {
     afterToolResult(result: MiddlewareToolResult): MiddlewareToolResult | void {
       // Record the trust level of this tool's output into the
       // call-scoped window.
-      const window = _activeWindows.get(result.toolCallId);
-      if (window) {
-        _activeWindows.set(
-          result.toolCallId,
-          recordToolTrust(window, result.name),
-        );
+      const entry = _activeWindows.get(result.toolCallId);
+      if (entry) {
+        _activeWindows.set(result.toolCallId, {
+          window: recordToolTrust(entry.window, result.name),
+          createdAt: entry.createdAt,
+        });
       }
     },
   };
@@ -92,11 +93,24 @@ export function createTrustPropagationMiddleware(): AgentMiddleware {
 // Previous implementation used a single module-level variable, which
 // broke under parallel tool calls (AI SDK v6 default). sync/flush
 // bracket each tool execution in loop.ts and manage entries by id.
-const _activeWindows = new Map<string, TrustWindow>();
+// Each entry carries a createdAt so the soft-cap sweep can evict by AGE
+// rather than by insertion order — evicting a still-in-flight call's
+// window would SKIP its trust check (a security bypass), so we only ever
+// evict entries older than the TTL.
+const _activeWindows = new Map<
+  string,
+  { window: TrustWindow; createdAt: number }
+>();
 
-// Soft cap — if a caller ever forgets to flush, bound memory rather
-// than grow unbounded. Each entry is tiny but the invariant matters.
+// Soft cap — if a caller ever forgets to flush, prefer bounding memory.
+// But we only evict STALE entries (see WINDOW_TTL_MS); if every entry is
+// fresh we exceed the cap and warn rather than evict a live window.
 const MAX_ACTIVE_WINDOWS = 1000;
+
+// A tool call genuinely in flight for >10 min is already dead by upstream
+// timeout, so its window is safe to evict. Mirrors SCRUB_MAP_TTL_MS in
+// secret-substitution.ts.
+const WINDOW_TTL_MS = 10 * 60 * 1000;
 
 /**
  * Set the active trust window for a specific tool call. Called by
@@ -107,15 +121,30 @@ export function syncTrustWindow(
   callId: string,
 ): void {
   if (_activeWindows.size >= MAX_ACTIVE_WINDOWS) {
-    // Evict the oldest — this indicates a flush-leak bug upstream,
-    // but we'd rather leak one old window than pile up forever.
-    const firstKey = _activeWindows.keys().next().value;
-    if (firstKey !== undefined) _activeWindows.delete(firstKey);
+    // Evict STALE entries only. Map iteration is insertion order == age
+    // order, so sweep from the front deleting entries past the TTL and
+    // stop at the first fresh one. Evicting a still-in-flight window
+    // would skip its trust check (a fail-open security bypass), so if
+    // nothing is stale we do NOT evict — insert anyway, exceed the soft
+    // cap, and warn (a visible slow leak beats a silent trust bypass).
+    const cutoff = Date.now() - WINDOW_TTL_MS;
+    let evicted = 0;
+    for (const [id, entry] of _activeWindows) {
+      if (entry.createdAt >= cutoff) break;
+      _activeWindows.delete(id);
+      evicted++;
+    }
+    if (evicted === 0) {
+      log.warn(
+        { size: _activeWindows.size, cap: MAX_ACTIVE_WINDOWS },
+        "Active trust windows exceeded soft cap with no stale entries — possible flush leak; exceeding cap to preserve in-flight trust checks",
+      );
+    }
   }
-  _activeWindows.set(
-    callId,
-    (metadata[TRUST_WINDOW_KEY] as TrustWindow) ?? createTrustWindow(),
-  );
+  _activeWindows.set(callId, {
+    window: (metadata[TRUST_WINDOW_KEY] as TrustWindow) ?? createTrustWindow(),
+    createdAt: Date.now(),
+  });
 }
 
 /**
@@ -126,10 +155,17 @@ export function flushTrustWindow(
   metadata: Record<string, unknown>,
   callId: string,
 ): void {
-  const window = _activeWindows.get(callId);
-  if (window) {
-    metadata[TRUST_WINDOW_KEY] = window;
+  const entry = _activeWindows.get(callId);
+  if (entry) {
+    metadata[TRUST_WINDOW_KEY] = entry.window;
     _activeWindows.delete(callId);
+  } else {
+    // Missing window is evidence of eviction or a sync/flush imbalance —
+    // the session's taint state won't be updated. Surface it.
+    log.warn(
+      { callId },
+      "flushTrustWindow: no active window for callId (evicted or never synced)",
+    );
   }
 }
 
@@ -138,8 +174,12 @@ export function flushTrustWindow(
  * approval). Must be called between sync and flush for the same callId.
  */
 export function clearCurrentTaint(callId: string): void {
-  if (_activeWindows.has(callId)) {
-    _activeWindows.set(callId, clearTaint());
+  const entry = _activeWindows.get(callId);
+  if (entry) {
+    _activeWindows.set(callId, {
+      window: clearTaint(),
+      createdAt: entry.createdAt,
+    });
   }
 }
 
@@ -155,5 +195,5 @@ export function clearCurrentTaint(callId: string): void {
  * pre-integration behavior.
  */
 export function getActiveTrustWindow(callId: string): TrustWindow | undefined {
-  return _activeWindows.get(callId);
+  return _activeWindows.get(callId)?.window;
 }

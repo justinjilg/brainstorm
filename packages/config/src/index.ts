@@ -9,6 +9,10 @@ export {
   type WorkflowConfig,
   type WorkflowStepConfig,
   type DaemonConfig,
+  type ShellConfig,
+  type SandboxPoolConfig,
+  type ChannelsConfig,
+  type SlackChannelConfig,
 } from "./schema.js";
 export {
   loadConfig,

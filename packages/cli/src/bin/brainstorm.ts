@@ -29,7 +29,8 @@ import {
   createWiredPipelineTool,
   createWiredCodeGraphTools,
   configureSandbox,
-  stopDockerSandbox,
+  teardownDockerSandbox,
+  getSandboxPool,
 } from "@brainst0rm/tools";
 import {
   runAgentLoop,
@@ -39,6 +40,7 @@ import {
   PermissionManager,
   createSubagentTool,
   spawnSubagent,
+  describeFinishReason,
   spawnParallel,
   createDefaultMiddlewarePipeline,
   segmentsToString,
@@ -199,6 +201,115 @@ async function connectMCPServers(
   }
   for (const err of errors) {
     process.stderr.write(`[mcp] ${err.name}: ${err.error}\n`);
+  }
+}
+
+// ── LLM memory extraction (fire-and-forget teardown hook) ──────────
+//
+// Runs an async cheap-model pass over the session transcript to extract
+// durable memories, augmenting the regex-based extraction middleware.
+// Gated internally by runExtractionCycle (min turns + lock file), so
+// it's cheap to call unconditionally at every teardown point.
+interface ExtractionTeardownParams {
+  projectPath: string;
+  sessionManager: { getHistory(): Array<{ role: string; content: string }> };
+  config: unknown;
+  registry: unknown;
+  router: unknown;
+  costTracker: unknown;
+  tools: unknown;
+  /** Hard-cap in ms when the caller must await before process exit. */
+  hardTimeoutMs?: number;
+}
+
+async function runMemoryExtractionTeardown(
+  params: ExtractionTeardownParams,
+): Promise<void> {
+  const {
+    projectPath,
+    sessionManager,
+    config,
+    registry,
+    router,
+    costTracker,
+    tools,
+    hardTimeoutMs,
+  } = params;
+
+  // Abort controller so the hard-timeout cap actually cancels the extraction
+  // subagent's in-flight provider request, rather than merely resolving the
+  // wrapper promise while billable network work continues in the background.
+  const abort = new AbortController();
+
+  const task = (async () => {
+    const { MemoryManager, runExtractionCycle } =
+      await import("@brainst0rm/core");
+    const memory = new MemoryManager(projectPath);
+    try {
+      const history = sessionManager.getHistory();
+
+      // Most-recent-first truncation from the head, capped at ~20k chars.
+      const lines = history
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .map((m) => `${m.role}: ${m.content}`);
+      let transcript = lines.join("\n\n");
+      if (transcript.length > 20_000) {
+        transcript = transcript.slice(transcript.length - 20_000);
+      }
+      const sessionTurns = history.filter((m) => m.role === "assistant").length;
+
+      await runExtractionCycle({
+        memoryDir: memory.getMemoryDir(),
+        memoryManager: memory,
+        transcript,
+        sessionTurns,
+        subagentOptions: {
+          config,
+          registry,
+          router,
+          costTracker,
+          tools,
+          projectPath,
+          permissionCheck: () => "allow",
+          parentSignal: abort.signal,
+        } as any,
+      });
+    } finally {
+      // Flush the debounced MEMORY.md rebuild before exit — otherwise a
+      // freshly-written extraction file leaves the index stale and the next
+      // pass misses it during dedup.
+      try {
+        (memory as any).dispose?.();
+      } catch {
+        /* best-effort */
+      }
+    }
+  })().catch((err) => {
+    if (process.env.DEBUG) {
+      process.stderr.write(
+        `[memory-extract] ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+    }
+  });
+
+  if (hardTimeoutMs) {
+    // Teardown path exits the process immediately (e.g. the one-shot
+    // `run` command, or interactive chat quitting) — await with a hard
+    // cap so extraction gets a chance to finish without ever delaying
+    // process exit. The timer is unref'd and cleared so it never holds
+    // the event loop open by itself once the task settles. On timeout we
+    // abort the extraction so it stops consuming tokens past the cap.
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        abort.abort();
+        resolve();
+      }, hardTimeoutMs);
+      timer.unref();
+      task.finally(() => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
   }
 }
 
@@ -545,6 +656,33 @@ program
       } = await import("node:fs");
       const { tmpdir } = await import("node:os");
 
+      // Retry transient network failures (DNS/connection blips to GitHub or BR)
+      // with bounded exponential backoff, so a hiccup during a multi-hour eval
+      // doesn't miscount an instance as a capability failure. Only retries
+      // errors that look transient — a real git/agent error still fails fast.
+      const isTransientNet = (e: any): boolean => {
+        const s = `${e?.code ?? ""} ${e?.reason ?? ""} ${e?.message ?? ""}`;
+        return /ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|ECONNREFUSED|socket hang up|maxRetriesExceeded|Cannot connect to API/i.test(
+          s,
+        );
+      };
+      const withNetRetry = async <T>(
+        fn: () => T | Promise<T>,
+        attempts = 4,
+      ): Promise<T> => {
+        let lastErr: any;
+        for (let i = 0; i < attempts; i++) {
+          try {
+            return await fn();
+          } catch (e: any) {
+            lastErr = e;
+            if (!isTransientNet(e) || i === attempts - 1) throw e;
+            await new Promise((r) => setTimeout(r, 2000 * 2 ** i)); // 2s,4s,8s
+          }
+        }
+        throw lastErr;
+      };
+
       let completed = 0;
 
       // Run agent on each instance — REAL implementation
@@ -586,26 +724,30 @@ program
               // Use --filter=blob:none to avoid pulling full history while
               // still allowing checkout of any commit. --depth 100 was too
               // shallow for SWE-bench's historical commits.
-              execGit(
-                "git",
-                [
-                  "clone",
-                  "--filter=blob:none",
-                  "--no-checkout",
-                  `https://github.com/${instance.repo}.git`,
-                  "repo",
-                ],
-                {
-                  cwd: workDir,
-                  timeout: 180000,
-                  stdio: ["ignore", "pipe", "pipe"],
-                },
+              await withNetRetry(() =>
+                execGit(
+                  "git",
+                  [
+                    "clone",
+                    "--filter=blob:none",
+                    "--no-checkout",
+                    `https://github.com/${instance.repo}.git`,
+                    "repo",
+                  ],
+                  {
+                    cwd: workDir,
+                    timeout: 180000,
+                    stdio: ["ignore", "pipe", "pipe"],
+                  },
+                ),
               );
-              execGit("git", ["fetch", "origin", instance.baseCommit], {
-                cwd: repoDir,
-                timeout: 60000,
-                stdio: ["ignore", "pipe", "pipe"],
-              });
+              await withNetRetry(() =>
+                execGit("git", ["fetch", "origin", instance.baseCommit], {
+                  cwd: repoDir,
+                  timeout: 60000,
+                  stdio: ["ignore", "pipe", "pipe"],
+                }),
+              );
               execGit("git", ["checkout", instance.baseCommit], {
                 cwd: repoDir,
                 timeout: 30000,
@@ -636,21 +778,27 @@ program
                 `If you finish without calling file_edit or file_write at least once, you have failed the task.`,
               ].join("\n");
 
-              const result = await spawnSubagent(issuePrompt, {
-                config,
-                registry,
-                router,
-                costTracker,
-                tools,
-                projectPath: repoDir,
-                type: "code",
-                maxSteps: 40, // SWE-bench issues need room for exploration + edits + verification
-                budgetLimit: 3.0,
-                permissionCheck: () => "allow", // unattended — auto-approve everything
-                // Honor --model flag if provided — otherwise subagent
-                // re-routes internally and ignores parent's preference.
-                preferredModelId: opts.model,
-              });
+              // Retry once on a transient network failure to BR — network
+              // blips almost always hit the first model call, before any edit.
+              const result = await withNetRetry(
+                () =>
+                  spawnSubagent(issuePrompt, {
+                    config,
+                    registry,
+                    router,
+                    costTracker,
+                    tools,
+                    projectPath: repoDir,
+                    type: "code",
+                    maxSteps: 40, // SWE-bench issues need room for exploration + edits + verification
+                    budgetLimit: 3.0,
+                    permissionCheck: () => "allow", // unattended — auto-approve everything
+                    // Honor --model flag if provided — otherwise subagent
+                    // re-routes internally and ignores parent's preference.
+                    preferredModelId: opts.model,
+                  }),
+                2,
+              );
 
               // 4. Capture the diff (what the agent actually changed)
               let patch = "";
@@ -674,18 +822,27 @@ program
                 // git diff failed — no changes made
               }
 
+              // Distinguish a genuine empty answer from a provider-terminated
+              // one (e.g. content-filter moderation) so an empty patch isn't
+              // silently reported as "no changes" when the provider refused.
+              const finishNote = describeFinishReason(result.finishReason);
               const success = patch.length > 0 && !result.budgetExceeded;
               const status = success
                 ? "✓"
-                : patch.length === 0
-                  ? "no changes"
-                  : "budget exceeded";
+                : result.budgetExceeded
+                  ? "budget exceeded"
+                  : finishNote
+                    ? `no changes (${result.finishReason})`
+                    : "no changes";
               process.stderr.write(
                 ` ${status} ($${result.cost.toFixed(3)}, ${result.modelUsed})\n`,
               );
-              // Diagnostic: on no-changes, dump the first 500 chars of what
-              // the subagent said it did. This helps debug empty-patch runs.
+              // Diagnostic: on no-changes, surface WHY — the provider finish
+              // reason if it wasn't a normal stop, then what the subagent said.
               if (!success && patch.length === 0) {
+                if (finishNote) {
+                  process.stderr.write(`    reason: ${finishNote}\n`);
+                }
                 const preview = result.text.slice(0, 500).replace(/\n/g, " ");
                 process.stderr.write(`    agent said: ${preview}\n`);
               }
@@ -1163,6 +1320,24 @@ program
     if (config.routing.rules.length > 0) {
       console.log(`  Routing rules: ${config.routing.rules.length}`);
     }
+    // Sandbox + warm pool
+    const pool = config.shell.sandboxPool;
+    console.log(
+      `  Sandbox:      ${config.shell.sandbox}${
+        config.shell.sandbox === "container" && pool.enabled
+          ? ` (warm pool: ${pool.maxIdlePerKey}/key, ${pool.maxIdleTotal} total, idle ${Math.round(pool.idleTimeoutMs / 1000)}s)`
+          : ""
+      }`,
+    );
+    // Channel intake
+    const slack = config.channels?.slack;
+    console.log(
+      `  Slack channel: ${
+        slack?.enabled
+          ? `enabled (authority: ${slack.authority}, mode: ${slack.mode})`
+          : "disabled"
+      }`,
+    );
     console.log();
   });
 
@@ -1896,12 +2071,26 @@ program
         config.shell.maxOutputBytes,
         config.shell.containerImage,
         config.shell.containerTimeout,
+        config.shell.sandboxPool,
       );
+      // Complexity-aware prompt tiering: the `run` command is single-shot, so
+      // varying the cached prefix by complexity here is cache-safe (no cross-turn
+      // cache to defeat). A trivial prompt ("hi") ships the lean prefix instead
+      // of the full ~12K context.
+      let runComplexity: import("@brainst0rm/shared").Complexity | undefined;
+      try {
+        const { classifyTask } = await import("@brainst0rm/router");
+        runComplexity = classifyTask(finalPrompt).complexity;
+      } catch {
+        runComplexity = undefined; // fall back to full prefix on any failure
+      }
       const {
         prompt: rawPrompt,
         segments: rawSegments,
         frontmatter,
-      } = buildSystemPrompt(projectPath);
+      } = buildSystemPrompt(projectPath, undefined, undefined, runComplexity, {
+        taskText: finalPrompt,
+      });
       const toolSection = buildToolAwarenessSection(tools.listTools());
       const systemPrompt = rawPrompt + toolSection;
       const systemSegments: SystemPromptSegment[] =
@@ -2184,6 +2373,19 @@ program
         sessionManager.addAssistantMessage(fullResponse);
         sessionManager.flush();
       }
+
+      // Fire-and-forget LLM memory extraction; this command's process exits
+      // right after the action resolves, so await with a hard cap.
+      await runMemoryExtractionTeardown({
+        projectPath,
+        sessionManager,
+        config,
+        registry,
+        router,
+        costTracker,
+        tools,
+        hardTimeoutMs: 15_000,
+      });
     },
   );
 
@@ -3319,6 +3521,18 @@ orchestrateCmd
     "--skip-build-verify",
     "Skip per-worktree build verification (faster but less safe)",
   )
+  .option(
+    "--model <id>",
+    "Pin planner + workers to a specific model id (e.g. brainstormrouter/auto), bypassing capability routing",
+  )
+  .option(
+    "--panel <name>",
+    "Merge gate: run a diverse judge panel ('merge-gate' = 3 provider-diverse LLM judges + build/test, majority + security veto) instead of the deterministic judge. Enables per-task contracts. Default: deterministic judge (today's behavior).",
+  )
+  .option(
+    "--revise-max <n>",
+    "Merge gate: max automatic revise rounds when the panel returns 'revise'. Each round re-runs the failed tasks under the same contract with corrective feedback + a rotated model. Requires --panel. Overrides [orchestrator.revise].maxIterations. Default 0 (off).",
+  )
   .description(
     "Plan → parallel workers → judge: decompose a request, run N workers in isolated worktrees, merge approved branches",
   )
@@ -3330,25 +3544,57 @@ orchestrateCmd
         budget: string;
         merge?: boolean;
         skipBuildVerify?: boolean;
+        model?: string;
+        panel?: string;
+        reviseMax?: string;
       },
     ) => {
-      const { planMultiAgentRun, runWorkerPool, runJudge } =
+      const { planMultiAgentRun, runWorkerPool, runJudge, runGateWithRevise } =
         await import("@brainst0rm/core");
+      const { DEFAULT_PANELS } = await import("@brainst0rm/contracts");
 
       const projectPath = process.cwd();
       const concurrency = parseInt(opts.workers, 10);
       const budgetLimit = parseFloat(opts.budget);
       const autoMerge = opts.merge !== false;
 
+      // Set up runtime — same pattern as other CLI commands
+      const config = loadConfig();
+
+      // Panel merge gate: --panel wins, else optional [orchestrator] panel TOML.
+      // Absent → deterministic judge (today's behavior), no contracts emitted.
+      const panelName = opts.panel ?? config.orchestrator?.panel ?? undefined;
+      const panelConfig = panelName ? DEFAULT_PANELS[panelName] : undefined;
+      if (panelName && !panelConfig) {
+        console.error(
+          `  Unknown panel '${panelName}'. Available: ${Object.keys(DEFAULT_PANELS).join(", ")}\n`,
+        );
+        process.exit(1);
+      }
+      const usePanel = Boolean(panelConfig);
+
+      // Revise loop: --revise-max wins, else [orchestrator.revise].maxIterations,
+      // else 0 (off — exact current behavior). Only meaningful with a panel.
+      const maxReviseIterations =
+        opts.reviseMax !== undefined
+          ? Math.max(0, parseInt(opts.reviseMax, 10) || 0)
+          : (config.orchestrator?.revise?.maxIterations ?? 0);
+
       console.log(`\n  Multi-Agent Parallel Orchestration\n`);
       console.log(`  Request:  "${request.slice(0, 80)}"`);
       console.log(`  Workers:  ${concurrency} concurrent`);
       console.log(`  Budget:   $${budgetLimit.toFixed(2)}`);
       console.log(`  Merge:    ${autoMerge ? "auto on approve" : "manual"}`);
+      console.log(
+        `  Gate:     ${usePanel ? `panel '${panelName}'` : "deterministic judge"}`,
+      );
+      if (usePanel && maxReviseIterations > 0) {
+        console.log(
+          `  Revise:   up to ${maxReviseIterations} round(s)${opts.model ? ` (rotation skipped: run pinned to ${opts.model})` : ""}`,
+        );
+      }
       console.log();
 
-      // Set up runtime — same pattern as other CLI commands
-      const config = loadConfig();
       config.general.defaultPermissionMode = "auto"; // unattended
       const db = getDb();
       const resolvedKeys = await resolveProviderKeys();
@@ -3362,7 +3608,12 @@ orchestrateCmd
         costTracker,
         frontmatter,
       );
-      router.setStrategy("capability");
+      // A pinned model bypasses per-subagent routing entirely (see
+      // spawnSubagent's preferredModelId handling), so the capability
+      // strategy only matters when no model is pinned.
+      if (!opts.model) {
+        router.setStrategy("capability");
+      }
 
       // Resolve the project ID — orchestration_runs needs an FK target
       const { ProjectManager } = await import("@brainst0rm/projects");
@@ -3384,6 +3635,9 @@ orchestrateCmd
         projectPath,
         permissionCheck: () => "allow",
         budgetLimit: budgetLimit / Math.max(1, concurrency * 2),
+        // When set, planner + every worker pin to this model instead of
+        // letting the router pick one the gateway may not be able to serve.
+        ...(opts.model ? { preferredModelId: opts.model } : {}),
       };
 
       // ── Phase 1: Planner ────────────────────────────────────────────
@@ -3396,6 +3650,8 @@ orchestrateCmd
           budgetLimit,
           subagentOptions: sharedSubagentOptions,
           db,
+          // The panel gate reviews against per-task contracts; emit them.
+          emitContracts: usePanel,
         });
       } catch (err: any) {
         console.error(`  ✗ Planner failed: ${err.message}\n`);
@@ -3406,82 +3662,157 @@ orchestrateCmd
       );
       console.log(`  [Planner] strategy: ${plan.summary.slice(0, 200)}\n`);
 
-      // ── Phase 2: Worker Pool ────────────────────────────────────────
-      console.log(`  [Workers] starting ${concurrency} workers...`);
-      let poolResult: any;
-      const eventGen = runWorkerPool({
-        runId: plan.runId,
-        db,
-        subagentOptions: sharedSubagentOptions,
-        concurrency,
-        preserveWorktrees: true,
-      });
-      while (true) {
-        const next = await eventGen.next();
-        if (next.done) {
-          poolResult = next.value;
-          break;
-        }
-        const event = next.value;
+      // Shared worker-pool event printer. `attempt` labels revise rounds.
+      const printPoolEvent = (event: any, attempt = 0): void => {
+        const tag = attempt > 0 ? `[revise ${attempt}] ` : "";
         switch (event.type) {
           case "worker-claimed":
             console.log(
-              `  [${event.workerId}] claimed: ${event.task?.prompt.slice(0, 60)}...`,
+              `  ${tag}[${event.workerId}] claimed: ${event.task?.prompt.slice(0, 60)}...`,
             );
             break;
           case "worker-completed":
             console.log(
-              `  [${event.workerId}] ✓ ($${event.cost?.toFixed(4)}, ${event.filesTouched?.length ?? 0} files)`,
+              `  ${tag}[${event.workerId}] ✓ ($${event.cost?.toFixed(4)}, ${event.filesTouched?.length ?? 0} files)`,
             );
             break;
           case "worker-failed":
             console.log(
-              `  [${event.workerId}] ✗ ${event.error?.slice(0, 80) ?? "failed"}`,
+              `  ${tag}[${event.workerId}] ✗ ${event.error?.slice(0, 80) ?? "failed"}`,
             );
             break;
           case "pool-finished":
             console.log(
-              `  [Workers] done — ${event.totalCompleted} completed, ${event.totalFailed} failed`,
+              `  ${tag}[Workers] done — ${event.totalCompleted} completed, ${event.totalFailed} failed`,
             );
             break;
         }
-      }
+      };
 
-      // ── Phase 3: Judge ──────────────────────────────────────────────
-      console.log(`\n  [Judge] verifying worktrees...`);
-      const verdict = await runJudge({
-        runId: plan.runId,
-        db,
-        projectPath,
-        skipBuildVerify: opts.skipBuildVerify ?? false,
-        autoMerge,
-      });
+      // ── Phase 2/3: Worker Pool → Judge / Panel gate ─────────────────
+      // The panel path runs pool + gate inside runGateWithRevise so a 'revise'
+      // decision can drive a bounded retry loop (maxReviseIterations=0 → one
+      // pool pass + one gate = exact legacy behavior). The deterministic judge
+      // path keeps its own single pool pass.
+      let decision: "approve" | "revise" | "reject";
+      let mergedTaskIds: string[];
+      let panelCost = 0;
+      let poolCost = 0;
 
-      console.log(
-        `  [Judge] decision: ${verdict.decision.toUpperCase()} (${verdict.reason})`,
-      );
-      const conflicts = Object.keys(verdict.conflictMatrix);
-      if (conflicts.length > 0) {
-        console.log(`  [Judge] conflicts on ${conflicts.length} files:`);
-        for (const file of conflicts.slice(0, 10)) {
+      if (usePanel && panelConfig) {
+        console.log(`  [Workers] starting ${concurrency} workers...`);
+        const result = await runGateWithRevise({
+          runId: plan.runId,
+          db,
+          projectPath,
+          panel: panelConfig,
+          subagentOptions: sharedSubagentOptions,
+          registry,
+          getModels: () => router.getModels(),
+          skipBuildVerify: opts.skipBuildVerify ?? false,
+          autoMerge,
+          concurrency,
+          maxReviseIterations,
+          ...(opts.model ? { pinnedModelId: opts.model } : {}),
+          onPoolEvent: (e, attempt) => printPoolEvent(e, attempt),
+          onGate: (gate, attempt) => {
+            const label = attempt > 0 ? ` (revise ${attempt})` : "";
+            console.log(
+              `\n  [Panel]${label} decision: ${gate.panelDecision.decision.toUpperCase()} (${gate.panelDecision.quorum.rule}: ${gate.panelDecision.quorum.achieved}/${gate.panelDecision.quorum.required})`,
+            );
+            for (const line of gate.panelDecision.combinedRationale.split(
+              "\n",
+            )) {
+              console.log(`    ${line}`);
+            }
+            if (gate.panelDecision.dissent.length > 0) {
+              console.log(`  [Panel] dissent:`);
+              for (const d of gate.panelDecision.dissent.slice(0, 5)) {
+                console.log(`    - ${d.slice(0, 160)}`);
+              }
+            }
+            if (gate.mergedTaskIds.length > 0) {
+              console.log(
+                `  [Panel] merged ${gate.mergedTaskIds.length} task branch(es) into ${projectPath}`,
+              );
+            }
+          },
+          onRevise: (records, attempt) => {
+            console.log(
+              `  [Revise ${attempt}] re-enqueued ${records.length} task(s):`,
+            );
+            for (const r of records) {
+              console.log(
+                `    - ${r.originalTaskId.slice(0, 8)} → ${r.newTaskId.slice(0, 8)} (${r.rotation})`,
+              );
+            }
+          },
+        });
+        decision = result.panelDecision.decision;
+        mergedTaskIds = result.mergedTaskIds;
+        panelCost = result.totalPanelCost;
+        poolCost = result.totalPoolCost;
+        if (result.exhausted) {
           console.log(
-            `    ${file} (tasks: ${verdict.conflictMatrix[file].join(", ")})`,
+            `  [Revise] budget exhausted after ${result.reviseIterations} round(s) — contract(s) marked failed, not merged.`,
+          );
+        }
+      } else {
+        console.log(`  [Workers] starting ${concurrency} workers...`);
+        let poolResult: any;
+        const eventGen = runWorkerPool({
+          runId: plan.runId,
+          db,
+          subagentOptions: sharedSubagentOptions,
+          concurrency,
+          preserveWorktrees: true,
+        });
+        while (true) {
+          const next = await eventGen.next();
+          if (next.done) {
+            poolResult = next.value;
+            break;
+          }
+          printPoolEvent(next.value);
+        }
+        poolCost = poolResult?.totalCost ?? 0;
+
+        console.log(`\n  [Judge] verifying worktrees...`);
+        const verdict = await runJudge({
+          runId: plan.runId,
+          db,
+          projectPath,
+          skipBuildVerify: opts.skipBuildVerify ?? false,
+          autoMerge,
+        });
+        decision = verdict.decision;
+        mergedTaskIds = verdict.mergedTaskIds;
+        console.log(
+          `  [Judge] decision: ${verdict.decision.toUpperCase()} (${verdict.reason})`,
+        );
+        const conflicts = Object.keys(verdict.conflictMatrix);
+        if (conflicts.length > 0) {
+          console.log(`  [Judge] conflicts on ${conflicts.length} files:`);
+          for (const file of conflicts.slice(0, 10)) {
+            console.log(
+              `    ${file} (tasks: ${verdict.conflictMatrix[file].join(", ")})`,
+            );
+          }
+        }
+        if (mergedTaskIds.length > 0) {
+          console.log(
+            `  [Judge] merged ${mergedTaskIds.length} task branch(es) into ${projectPath}`,
           );
         }
       }
-      if (verdict.mergedTaskIds.length > 0) {
-        console.log(
-          `  [Judge] merged ${verdict.mergedTaskIds.length} task branch(es) into ${projectPath}`,
-        );
-      }
 
       console.log(
-        `\n  Total cost: $${(plan.cost + (poolResult?.totalCost ?? 0)).toFixed(4)}`,
+        `\n  Total cost: $${(plan.cost + poolCost + panelCost).toFixed(4)}`,
       );
       console.log(`  Run id: ${plan.runId}`);
       console.log();
 
-      process.exit(verdict.decision === "approve" ? 0 : 1);
+      process.exit(decision === "approve" ? 0 : 1);
     },
   );
 
@@ -6068,7 +6399,7 @@ program
 
 // ── Audit Command ────────────────────────────────────────────────
 
-program
+const auditCmd = program
   .command("audit")
   .description(
     "Full code audit: security, quality, tech debt, dependency review",
@@ -6162,6 +6493,92 @@ program
       console.log();
     },
   );
+
+auditCmd
+  .command("report")
+  .description(
+    "Render God Mode ChangeSet audit entries to a self-contained HTML evidence report",
+  )
+  .option("--changeset <id>", "Filter to a single changeset id")
+  .option("-o, --output <dir>", "Output directory")
+  .action(async (opts: { changeset?: string; output?: string }) => {
+    const { ChangeSetLogRepository } = await import("@brainst0rm/db");
+    const { renderChangeSetReport, createEvidenceBundle } =
+      await import("@brainst0rm/godmode");
+    const { ensureWorkspace, getWorkspaceDir } =
+      await import("@brainst0rm/workflow");
+    const { mkdirSync, writeFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+
+    const db = getDb();
+    const repo = new ChangeSetLogRepository(db);
+    // Evidence tool: never silently truncate. Filtered lookups scan the
+    // full table (a missed old changeset would be a false negative);
+    // unfiltered reports cap at 1000 newest but say so.
+    const total = repo.count();
+    const REPORT_CAP = 1000;
+    const rows = opts.changeset
+      ? repo
+          .recent(Math.max(total, 1))
+          .filter((r) => r.changesetId === opts.changeset)
+      : repo.recent(REPORT_CAP);
+
+    if (rows.length === 0) {
+      console.log("  No ChangeSet audit entries found.");
+      return;
+    }
+    if (!opts.changeset && total > REPORT_CAP) {
+      console.log(
+        `  Note: report covers the ${REPORT_CAP} most recent of ${total} entries. Use --changeset <id> for older ones.`,
+      );
+    }
+
+    const entries = rows.map((r) => ({
+      changesetId: r.changesetId,
+      connector: r.connector,
+      action: r.action,
+      description: r.description,
+      riskScore: r.riskScore,
+      status: r.status,
+      changesJson: r.changesJson ?? "",
+      simulationJson: r.simulationJson ?? "",
+      rollbackJson: r.rollbackJson,
+      createdAt: r.createdAt,
+      executedAt: r.executedAt,
+    }));
+
+    const reportHtml = renderChangeSetReport(entries);
+
+    const runId = `audit-report-${Date.now()}`;
+    let outDir: string;
+    if (opts.output) {
+      outDir = opts.output;
+      mkdirSync(outDir, { recursive: true });
+    } else {
+      ensureWorkspace(runId);
+      outDir = join(getWorkspaceDir(runId), "outputs");
+      mkdirSync(outDir, { recursive: true });
+    }
+
+    const reportPath = join(outDir, "report.html");
+    writeFileSync(reportPath, reportHtml, "utf8");
+    console.log(`  Wrote ${reportPath}`);
+
+    const secret = process.env.BRAINSTORM_PLATFORM_SECRET;
+    if (secret) {
+      const bundle = createEvidenceBundle(entries, reportHtml, secret);
+      const evidencePath = join(outDir, "evidence.json");
+      writeFileSync(evidencePath, JSON.stringify(bundle, null, 2), "utf8");
+      console.log(`  Wrote ${evidencePath}`);
+    } else {
+      console.log(
+        "  WARNING: report is UNSIGNED (BRAINSTORM_PLATFORM_SECRET not set).",
+      );
+      console.log(
+        "  Set BRAINSTORM_PLATFORM_SECRET to produce a signed evidence.json bundle.",
+      );
+    }
+  });
 
 // ── Share Command ────────────────────────────────────────────────
 
@@ -6933,7 +7350,9 @@ program
 program
   .command("serve")
   .description(
-    "Start the Brainstorm control plane HTTP API server (God Mode over HTTP)",
+    "Start the Brainstorm control plane HTTP API server (God Mode over HTTP). " +
+      "Also starts configured message channels (e.g. Slack) when [channels.slack] " +
+      "is enabled in config.",
   )
   .option("--port <port>", "Port to listen on", "8000")
   .option("--host <host>", "Host to bind to", "127.0.0.1")
@@ -6984,6 +7403,19 @@ program
 
     const costTracker = new CostTracker(db, config.budget);
     const tools = createDefaultToolRegistry();
+
+    // Initialize the shell sandbox BEFORE exposing tools. The run/chat paths
+    // do this; serve previously did not, so with sandbox="container" the
+    // shell tool stayed in default restricted-host mode and channel-initiated
+    // commands ran on the host instead of in Docker.
+    configureSandbox(
+      config.shell.sandbox,
+      process.cwd(),
+      config.shell.maxOutputBytes,
+      config.shell.containerImage,
+      config.shell.containerTimeout,
+      config.shell.sandboxPool,
+    );
 
     // Wire memory tool in IPC server mode
     const { MemoryManager: ServerMemoryManager } =
@@ -7046,6 +7478,84 @@ program
     const { MemoryManager } = await import("@brainst0rm/core");
     const memoryManager = new MemoryManager(process.cwd());
 
+    // ── Boot: Slack channel intake (optional) ───────────────────
+    // Transport/reasoning split: the adapter only moves messages; the
+    // IntakeCoordinator drives the same agent loop as every other client,
+    // under the channel's configured authority.
+    let channelAdapters: Array<{
+      name: string;
+      start(): Promise<void>;
+      stop(): Promise<void>;
+    }> = [];
+    if (config.channels?.slack?.enabled) {
+      try {
+        const { SlackAdapter, IntakeCoordinator, ChannelSessionStore } =
+          await import("@brainst0rm/channels");
+        const slackCfg = config.channels.slack;
+        if (slackCfg.mode === "events-api") {
+          // The Events-API HTTP transport isn't wired yet (no route, the
+          // signing secret is unused). Refuse rather than silently starting
+          // Socket Mode, which would run a different transport than configured.
+          throw new Error(
+            "channels.slack.mode='events-api' is not yet supported — use 'socket'.",
+          );
+        }
+        // Token values are either literals (xoxb-/xapp- prefixed) or env
+        // var names. serve is non-interactive by design (env-only key
+        // resolution, no vault prompt — see the boot comment above), so
+        // vault-stored tokens should be exported to the environment or
+        // resolved via 1Password shell plugins.
+        const resolveToken = (value: string): string => {
+          if (!value) return "";
+          if (value.startsWith("xoxb-") || value.startsWith("xapp-")) {
+            return value;
+          }
+          return process.env[value] ?? "";
+        };
+        const botToken = resolveToken(slackCfg.botToken);
+        const appToken = resolveToken(slackCfg.appToken);
+        if (!botToken || !appToken) {
+          console.log(
+            "  Slack channel: enabled but botToken/appToken could not be resolved — skipping.",
+          );
+        } else {
+          const coordinator = new IntakeCoordinator(
+            {
+              db,
+              config,
+              registry,
+              router,
+              costTracker,
+              tools,
+              projectPath: process.cwd(),
+              sessionStore: new ChannelSessionStore(db),
+            },
+            {
+              authority: slackCfg.authority,
+              preferredModelId: slackCfg.model,
+            },
+          );
+          channelAdapters = [
+            new SlackAdapter({
+              botToken,
+              appToken,
+              authority: slackCfg.authority,
+              allowedChannels: slackCfg.allowedChannels,
+              allowedUsers: slackCfg.allowedUsers,
+              coordinator,
+            }),
+          ];
+          console.log(
+            `  Slack channel: enabled (authority: ${slackCfg.authority}, mode: ${slackCfg.mode})`,
+          );
+        }
+      } catch (err: any) {
+        console.log(
+          `  Slack channel: failed to initialize — ${err?.message ?? err}`,
+        );
+      }
+    }
+
     // ── Start server via @brainst0rm/server ────────────────────
     const server = new BrainstormServer(
       {
@@ -7057,6 +7567,7 @@ program
         tools,
         godmode,
         memoryManager,
+        channels: channelAdapters,
         version: CLI_VERSION,
       },
       {
@@ -7305,6 +7816,7 @@ program
         config.shell.maxOutputBytes,
         config.shell.containerImage,
         config.shell.containerTimeout,
+        config.shell.sandboxPool,
       );
       const permissionManager = new PermissionManager(
         config.general.defaultPermissionMode,
@@ -8314,7 +8826,7 @@ program
         process.once("SIGTERM", peerShutdown);
       }
 
-      render(
+      const inkInstance = render(
         React.createElement(App, {
           strategy: config.general.defaultStrategy,
           modelCount: { local: localCount, cloud: cloudCount },
@@ -8327,6 +8839,16 @@ program
             permissionMode: config.general.defaultPermissionMode ?? "confirm",
             outputStyle: config.general.outputStyle ?? "concise",
             sandbox: config.shell?.sandbox ?? "none",
+            sandboxPool: config.shell?.sandboxPool,
+            channels: config.channels?.slack
+              ? {
+                  slack: {
+                    enabled: config.channels.slack.enabled,
+                    authority: config.channels.slack.authority,
+                    mode: config.channels.slack.mode,
+                  },
+                }
+              : undefined,
           },
           vaultInfo: {
             exists: new BrainstormVault(VAULT_PATH).exists(),
@@ -8497,6 +9019,29 @@ program
           },
         }),
       );
+
+      // LLM memory extraction at session teardown. Without an explicit
+      // process.exit() this path exits by event-loop drain, and the
+      // extraction subagent's pending network I/O would otherwise keep
+      // the process alive until it settles — so await with a hard cap
+      // and then force exit to preserve prior quit behavior (immediate
+      // terminal return).
+      inkInstance.waitUntilExit().then(async () => {
+        await runMemoryExtractionTeardown({
+          projectPath,
+          sessionManager,
+          config,
+          registry,
+          router,
+          costTracker,
+          tools,
+          // Shorter cap than the one-shot `run` path: this holds the
+          // user's terminal at quit, so give extraction a brief window
+          // rather than a full LLM-call budget.
+          hardTimeoutMs: 5_000,
+        });
+        process.exit(0);
+      });
     },
   );
 
@@ -8507,7 +9052,15 @@ export function run() {
   // Graceful shutdown: stop Docker sandbox, close DB, flush Sentry
   const cleanup = () => {
     try {
-      stopDockerSandbox();
+      // Discard (not release) the live sandbox directly — drain() below
+      // stops it anyway, so running the pool's hygiene-reset exec first
+      // is a wasted round-trip that can also stall shutdown if the
+      // container/daemon is wedged (see teardownDockerSandbox() doc).
+      teardownDockerSandbox();
+      // Full teardown on process exit — release() alone would just park
+      // the container as idle-warm, which we don't want to leak past
+      // the CLI process lifetime.
+      getSandboxPool().drain();
     } catch {
       // Best effort — container may already be stopped
     }

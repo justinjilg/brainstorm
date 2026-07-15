@@ -21,6 +21,7 @@
  */
 
 import { OrchestrationTaskRepository } from "@brainst0rm/orchestrator";
+import { ContractRepository } from "@brainst0rm/db";
 import type {
   OrchestrationStatus,
   OrchestrationTask,
@@ -65,6 +66,14 @@ export interface WorkerPoolOptions {
   /** When true, leave worktrees on disk after the pool finishes — useful for
    * the Judge to inspect them. Default true (Judge needs them). */
   preserveWorktrees?: boolean;
+  /**
+   * Per-task subagent option overrides, keyed by task id. Merged over the
+   * shared `subagentOptions` template when spawning that task's worker (spread
+   * last, so an override wins). Used by the revise loop to pin a rotated
+   * `preferredModelId` and thread `contractFeedback` into a specific retry.
+   * Absent / missing key → the shared template is used unchanged.
+   */
+  perTaskOptions?: Record<string, Partial<SubagentOptions>>;
 }
 
 export interface WorkerPoolResult {
@@ -91,9 +100,11 @@ export async function* runWorkerPool(
     concurrency = 3,
     timeoutMs = 30 * 60 * 1000,
     preserveWorktrees = true,
+    perTaskOptions,
   } = options;
   const startedAt = Date.now();
   const taskRepo = new OrchestrationTaskRepository(db);
+  const contractRepo = new ContractRepository(db);
   const projectPath = subagentOptions.projectPath;
 
   let totalCompleted = 0;
@@ -178,12 +189,33 @@ export async function* runWorkerPool(
         // (addresses Dogfood #2 Bug #3: unnecessary `npm install`).
         const safeTaskPrompt = wrapTaskWithSafetyPreamble(claimed.prompt);
 
+        // Contract-carried handoff (opt-in): when the task has a contractId,
+        // load the contract and pass it to spawnSubagent, which renders it and
+        // maps its authority onto the narrowing chain. The contract's rendered
+        // Non-goals carry the scope/dependency safety rules the freeform
+        // preamble adds; the scope path fence is set to the worktree.
+        // No contractId → exact freeform behavior.
+        const contract = claimed.contractId
+          ? contractRepo.getById(claimed.contractId)
+          : undefined;
+        if (contract) {
+          contract.authority = {
+            ...contract.authority,
+            scopePaths: [worktreePath],
+          };
+        }
+
         // Spawn the subagent against the worktree (NOT the project root).
+        // Per-task overrides (revise loop: rotated preferredModelId +
+        // contractFeedback) are spread LAST so they win over the template.
+        const taskOverrides = perTaskOptions?.[claimed.id] ?? {};
         try {
           const result = await spawnSubagent(safeTaskPrompt, {
             ...subagentOptions,
             projectPath: worktreePath,
             type: claimed.subagentType as SubagentType,
+            ...(contract ? { contract } : {}),
+            ...taskOverrides,
           });
 
           if (result.budgetExceeded) {
@@ -206,6 +238,28 @@ export async function* runWorkerPool(
           // Capture what the agent actually changed.
           const filesTouched = listFilesTouched(worktreePath);
 
+          // A "code" task exists to implement a change. Completing it with
+          // zero file edits is a silent no-op — the model narrated what it
+          // *would* do instead of calling an edit tool (observed dogfooding
+          // a weaker routed model). Fail it explicitly so the run surfaces
+          // the failure rather than the Judge approving an empty worktree.
+          // Read-only/analysis types (explore, review, plan) legitimately
+          // touch no files, so this only applies to "code".
+          if (claimed.subagentType === "code" && filesTouched.length === 0) {
+            taskRepo.failTask(
+              claimed.id,
+              "code task produced no file changes — the worker did not apply an edit",
+            );
+            totalFailed++;
+            pushEvent({
+              type: "worker-failed",
+              workerId,
+              task: claimed,
+              error: "no file changes produced",
+            });
+            continue;
+          }
+
           // Detect unauthorized dep changes. If the task didn't ask for
           // a dep change but the worker modified package.json / lockfiles,
           // log a warning on the completion event. We don't fail the task
@@ -225,12 +279,54 @@ export async function* runWorkerPool(
             );
           }
 
+          // Record contract validation (if this task ran against a contract)
+          // as a prefix on the result summary so it is durable and visible in
+          // the task board. completeWithMetadata has no dedicated column; the
+          // marker keeps the audit within the existing schema.
+          const outcome = result.contractOutcome;
+          const validationMarker = outcome
+            ? `[contract:${outcome.valid ? "valid" : "invalid"}${
+                outcome.repairAttempted ? "+repaired" : ""
+              }${outcome.valid ? "" : ` — ${(outcome.errors ?? []).join("; ").slice(0, 200)}`}] `
+            : "";
+          if (outcome && !outcome.valid) {
+            log.warn(
+              { taskId: claimed.id, errors: outcome.errors },
+              "Contract output validation failed after repair round-trip",
+            );
+          }
+
           taskRepo.completeWithMetadata(claimed.id, {
-            resultSummary: result.text.slice(0, 1000),
+            resultSummary: (validationMarker + result.text).slice(0, 1000),
             cost: result.cost,
             worktreePath,
             filesTouched,
           });
+          if (contract) {
+            contractRepo.updateStatus(
+              contract.id,
+              outcome && !outcome.valid ? "failed" : "fulfilled",
+            );
+            // Record the model that actually AUTHORED the diff (the worker),
+            // not the planner that authored the contract. The merge-gate panel
+            // excludes contract.provenance.producerModelId's family from the
+            // judge pool so a model never reviews its own family's work; without
+            // this the planner's family would be excluded while a judge of the
+            // worker's own family reviews the worker's code — the exact
+            // anchoring the panel exists to prevent. producerModelId is withheld
+            // from judges (renderContractPrompt forJudge), so this only steers
+            // decorrelated judge selection. Raw UPDATE mirrors the planner's
+            // contract_id write; keeps producer_agent_id (the planner) intact.
+            if (result.modelUsed) {
+              db.prepare(
+                `UPDATE agent_contracts SET producer_model_id = ?, updated_at = ? WHERE id = ?`,
+              ).run(
+                result.modelUsed,
+                Math.floor(Date.now() / 1000),
+                contract.id,
+              );
+            }
+          }
           totalCompleted++;
           totalCost += result.cost;
           pushEvent({

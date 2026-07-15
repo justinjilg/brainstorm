@@ -384,7 +384,18 @@ export async function* runWorkflow(
         }
       }
 
-      // Create artifact from response
+      // Create artifact from response.
+      //
+      // kind is always "output" here: at write time the engine doesn't yet
+      // know whether this iteration will be superseded by a review-loop
+      // rejection (that's only known after the escalation/review checks
+      // below run, and by then the artifact is already on disk). Marking
+      // discarded iterations "scratch" retroactively would mean rewriting
+      // already-written files or threading iteration-outcome state back
+      // through the loop, which isn't worth contorting the step loop for
+      // in v1 — every artifact is written as "output" and the manifest's
+      // per-step `iteration` field remains the source of truth for which
+      // write was the latest.
       const artifact: Artifact = {
         id: stepDef.outputArtifact,
         stepId: stepDef.id,
@@ -396,6 +407,7 @@ export async function* runWorkflow(
         cost: stepRun.cost,
         timestamp: Math.floor(Date.now() / 1000),
         iteration: run.iteration,
+        kind: "output",
       };
 
       // Extract confidence

@@ -35,6 +35,20 @@ const compactionSchema = z.object({
 
 // ── Shell Config ─────────────────────────────────────────────────────
 
+// Warm pool for Docker sandbox containers — keyed by image + hostWorkspace,
+// since bind mounts are fixed at `docker run` and a container can never be
+// re-pointed at another workspace. See packages/tools/src/sandbox/sandbox-pool.ts.
+const sandboxPoolSchema = z.object({
+  enabled: z.boolean().default(true),
+  // Non-negative integers: a negative cap makes release()'s eviction loop
+  // (`while idleCount() > cap`) spin forever or throw on an empty bucket.
+  maxIdlePerKey: z.number().int().nonnegative().default(2),
+  maxIdleTotal: z.number().int().nonnegative().default(4),
+  // Positive: a zero/negative idle timeout would evict a container the same
+  // tick it's parked, defeating the pool.
+  idleTimeoutMs: z.number().int().positive().default(300_000),
+});
+
 const shellSchema = z.object({
   defaultTimeout: z.number().default(120_000),
   maxOutputBytes: z.number().default(50_000),
@@ -42,6 +56,7 @@ const shellSchema = z.object({
   sandbox: z.enum(["none", "restricted", "container"]).default("restricted"),
   containerImage: z.string().default("node:22-slim"),
   containerTimeout: z.number().default(120_000),
+  sandboxPool: sandboxPoolSchema.default({}),
 });
 
 // ── Budget Config ────────────────────────────────────────────────────
@@ -106,6 +121,42 @@ const generalSchema = z.object({
     .default({}),
   /** Subagent filesystem isolation: none, git-stash, docker */
   subagentIsolation: z.enum(["none", "git-stash", "docker"]).default("none"),
+  /**
+   * In-loop verify / self-correction (Phase 3). After an edit-producing turn,
+   * verify the files the model just changed and, on failure, feed diagnostics
+   * back so the model self-corrects within the same agentic run.
+   *   - mode "off": disabled — no behavior change. This is the DEFAULT so the
+   *     out-of-the-box path has zero extra typechecks/perf cost; opt in per
+   *     project (or via the per-invocation loop override) to enable it.
+   *   - mode "typecheck": run the project's typecheck (tsc) over changed files.
+   *   - mode "full": typecheck + affected tests.
+   *   - maxIterations: cap on self-correction turns (infinite-loop guard).
+   */
+  verify: z
+    .object({
+      mode: z.enum(["off", "typecheck", "full"]).default("off"),
+      maxIterations: z.number().int().min(0).default(2),
+    })
+    .default({}),
+  /**
+   * Tool-use enforcement (Phase 7). Weak models sometimes NARRATE a tool
+   * action in prose ("Let me read config.ts") and then stop WITHOUT emitting
+   * a real function call. When enabled, a completed turn that has zero tool
+   * calls, stopped on its own (not mid-tool), AND whose text reads as an
+   * un-acted tool intent is corrected: a user-role nudge is fed back and the
+   * turn re-run with toolChoice forced to "required" so a real call is made.
+   *   - enabled: DEFAULT true — it only fires on this specific failure state,
+   *     so well-behaved models that call tools (or give a plain final answer)
+   *     never trigger it and pay nothing. Set false for exact legacy behavior.
+   *   - maxNudges: hard cap on corrective re-prompts (infinite-loop guard).
+   *     After the cap the turn is accepted as-is rather than spinning.
+   */
+  toolEnforcement: z
+    .object({
+      enabled: z.boolean().default(true),
+      maxNudges: z.number().int().min(0).default(2),
+    })
+    .default({}),
 });
 
 // ── Full Config ──────────────────────────────────────────────────────
@@ -282,6 +333,55 @@ const serveSchema = z.object({
   supabaseAnonKey: z.string().optional(),
 });
 
+// Slack channel intake — DeerFlow-style transport/reasoning split. The
+// adapter lives in packages/channels; tokens are vault refs or env-style
+// values resolved through the key resolver chain at startup, never stored
+// plaintext-required. Socket Mode (default) needs no public URL.
+const slackChannelSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** "socket" needs only tokens; "events-api" additionally needs signing_secret + a public URL. */
+  mode: z.enum(["socket", "events-api"]).default("socket"),
+  /** xapp-… app-level token (Socket Mode). Vault ref or literal. */
+  appToken: z.string().default(""),
+  /** xoxb-… bot token. Vault ref or literal. */
+  botToken: z.string().default(""),
+  /** Events-API request signing secret (unused in socket mode). */
+  signingSecret: z.string().default(""),
+  /** What channel-initiated agents may do. */
+  authority: z.enum(["read-only", "approvals", "full"]).default("read-only"),
+  /** Channel ID allowlist; empty = all channels the bot is in. */
+  allowedChannels: z.array(z.string()).default([]),
+  /** Slack user ID allowlist; empty = any workspace member. */
+  allowedUsers: z.array(z.string()).default([]),
+  /** Optional model pin for channel-initiated runs. */
+  model: z.string().optional(),
+});
+
+const channelsSchema = z.object({
+  slack: slackChannelSchema.default({}),
+});
+
+// ── Orchestrator Config ─────────────────────────────────────────────
+// Governs `brainstorm orchestrate parallel`. Both fields are opt-in: absent →
+// today's behavior (deterministic judge, no revise loop).
+const orchestratorSchema = z.object({
+  /** Merge-gate panel name (e.g. 'merge-gate', 'deterministic'). When set, the
+   * parallel orchestrator runs a diverse judge panel instead of the
+   * deterministic judge and emits per-task contracts. */
+  panel: z.string().optional(),
+  /**
+   * Bounded revise loop. Its PRESENCE is the opt-in: writing `[orchestrator.revise]`
+   * with no maxIterations defaults to 1 automatic revise round. Omitting the
+   * section entirely disables the loop (the CLI treats a missing section as 0 —
+   * exact current behavior). `--revise-max <n>` overrides at runtime.
+   */
+  revise: z
+    .object({
+      maxIterations: z.number().int().min(0).default(1),
+    })
+    .optional(),
+});
+
 // ── Full Config ─────────────────────────────────────────────────────
 
 export const brainstormConfigSchema = z.object({
@@ -350,6 +450,8 @@ export const brainstormConfigSchema = z.object({
   daemon: daemonSchema.default({}),
   godmode: godmodeSchema.default({}),
   serve: serveSchema.default({}),
+  channels: channelsSchema.default({}),
+  orchestrator: orchestratorSchema.default({}),
 });
 
 export type BrainstormConfig = z.infer<typeof brainstormConfigSchema>;
@@ -366,5 +468,8 @@ export type GodModeConfig = z.infer<typeof godmodeSchema>;
 export type GodModeConnectorConfig = z.infer<typeof godmodeConnectorSchema>;
 export type ServeConfig = z.infer<typeof serveSchema>;
 export type ShellConfig = z.infer<typeof shellSchema>;
+export type SandboxPoolConfig = z.infer<typeof sandboxPoolSchema>;
 export type PermissionsConfig = z.infer<typeof permissionsSchema>;
 export type DaemonConfig = z.infer<typeof daemonSchema>;
+export type ChannelsConfig = z.infer<typeof channelsSchema>;
+export type SlackChannelConfig = z.infer<typeof slackChannelSchema>;

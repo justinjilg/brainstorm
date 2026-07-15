@@ -141,6 +141,7 @@ export interface GatewayFeedback {
   efficiency?: number; // X-BR-Efficiency
   overheadMs?: number; // X-BR-Guardian-Overhead-Ms
   cacheHit?: string; // X-BR-Cache
+  cacheHitTokens?: number; // X-BR-Cache-Hit-Tokens / prompt_cache_hit_tokens
   budgetRemaining?: number; // X-BR-Budget-Remaining
   selectedModel?: string; // X-BR-Routed-Model
   selectionMethod?: string; // X-BR-Selection-Method

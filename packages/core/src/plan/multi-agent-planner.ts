@@ -24,6 +24,8 @@ import {
   OrchestrationRunRepository,
   OrchestrationTaskRepository,
 } from "@brainst0rm/orchestrator";
+import { ContractRepository } from "@brainst0rm/db";
+import { createContract } from "@brainst0rm/contracts";
 import { createLogger } from "@brainst0rm/shared";
 import type Database from "better-sqlite3";
 import { spawnSubagent, type SubagentOptions } from "../agent/subagent.js";
@@ -62,6 +64,13 @@ export interface PlanOptions {
   subagentOptions: SubagentOptions;
   /** SQLite database handle (for the persistent task board). */
   db: Database.Database;
+  /**
+   * When true, the planner authors an AgentContract per task, persists it
+   * (status 'issued'), and stamps each task's contractId. Workers then execute
+   * against the rendered contract. OPT-IN — absent/false leaves the freeform
+   * task board byte-for-byte unchanged (no contract rows, no contractId).
+   */
+  emitContracts?: boolean;
 }
 
 /**
@@ -76,34 +85,40 @@ export interface PlanOptions {
 export async function planMultiAgentRun(
   options: PlanOptions,
 ): Promise<PlanResult> {
-  const { request, projectId, runName, budgetLimit, subagentOptions, db } =
-    options;
+  const {
+    request,
+    projectId,
+    runName,
+    budgetLimit,
+    subagentOptions,
+    db,
+    emitContracts = false,
+  } = options;
 
   log.info({ request: request.slice(0, 120) }, "Starting plan decomposition");
 
-  // Spawn the planning subagent. We use the DECOMPOSITION_PROMPT as the
-  // system prompt, but also append a strong "no tools" directive because
-  // the "plan" subagent type ships with read-only tools (file_read, glob,
-  // grep) which the agent will happily use to explore the codebase
-  // instead of immediately returning JSON. Without this directive the
-  // agent burns its step budget on tool calls and returns an empty
-  // response. Discovered in Dogfood #2.
+  // Spawn the planning subagent. The "plan" type ships with read-only tools
+  // (file_read, glob, grep) which a model will happily use to explore the
+  // codebase instead of returning JSON — Dogfood #2 added a prompt directive
+  // against it, but Dogfood #3 (DeepSeek via BR) ignored the directive, made
+  // 6 tool calls, and returned prose. A prompt is a request; noTools is
+  // enforcement. Decomposition is pure text-in/text-out — the planner is
+  // handed the request and must return a plan, so it needs no tools at all.
   const plannerSystemPrompt =
     DECOMPOSITION_PROMPT +
     "\n\n## CRITICAL\n\n" +
-    "DO NOT call any tools. Respond immediately with ONLY the JSON object " +
-    "described above, with no preamble, no prose, no markdown fences, and " +
-    "no tool calls. The first character of your response must be `{` and " +
-    "the last must be `}`.";
+    "Respond with ONLY the JSON object described above — no preamble, no " +
+    "prose, no markdown fences. The first character of your response must be " +
+    "`{` and the last must be `}`.";
 
   const result = await spawnSubagent(request, {
     ...subagentOptions,
     type: "plan",
     systemPrompt: plannerSystemPrompt,
+    // Zero tools: the model physically cannot explore, so it must answer.
+    noTools: true,
     // Decomposition is short — bound it tightly to keep cost predictable.
-    // Allow a couple steps in case the model produces tool calls despite
-    // the directive; it'll still have budget to correct and emit the JSON.
-    maxSteps: 3,
+    maxSteps: 2,
   });
 
   if (result.budgetExceeded) {
@@ -184,12 +199,57 @@ export async function planMultiAgentRun(
     }
   }
 
+  // Opt-in: author + persist an AgentContract per task and stamp contractId.
+  // The contract carries the WHY (intent/context/non-goals) the freeform prompt
+  // loses on a model switch, plus the deliverable shape and authority. Absent
+  // this flag, nothing here runs and the board is exactly the freeform board.
+  if (emitContracts) {
+    const contractRepo = new ContractRepository(db);
+    for (const sub of decomposition.subtasks) {
+      const taskId = idMap.get(sub.id);
+      if (!taskId) continue;
+      const subagentType = pickSubagentType(sub);
+      const contract = createContract({
+        intent:
+          `Deliver subtask "${sub.id}" toward the run goal. ${decomposition.summary}`.slice(
+            0,
+            2000,
+          ),
+        context: `Part of orchestration run ${run.id}. Sibling subtasks may run in parallel in isolated worktrees; stay within your task's scope.`,
+        nonGoals: [
+          "Do not modify files outside this task's scope.",
+          "Do not change dependencies unless the task explicitly requires it.",
+        ],
+        inputs: { task: sub.description },
+        output: {
+          contentType: subagentType === "code" ? "code" : "text",
+        },
+        acceptance: [{ kind: "files_touched_within", paths: ["."] }],
+        authority: {
+          budgetLimitUsd: subagentOptions.budgetLimit,
+        },
+        provenance: {
+          runId: run.id,
+          taskId,
+          producerModelId: result.modelUsed,
+          producerAgentId: "multi-agent-planner",
+        },
+        status: "issued",
+      });
+      contractRepo.save(contract);
+      db.prepare(
+        `UPDATE orchestration_tasks SET contract_id = ? WHERE id = ?`,
+      ).run(contract.id, taskId);
+    }
+  }
+
   log.info(
     {
       runId: run.id,
       subtasks: decomposition.subtasks.length,
       totalDeps,
       cost: result.cost,
+      contracts: emitContracts,
     },
     "Plan persisted",
   );
