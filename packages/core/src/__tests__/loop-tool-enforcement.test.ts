@@ -113,7 +113,7 @@ function buildContext(): RunContext {
       contextWindow: 200000,
       qualityTier: 4,
       speedTier: 3,
-      bestFor: ["code"],
+      bestFor: ["code-generation"],
     },
     pricing: { inputPer1MTokens: 3, outputPer1MTokens: 15 },
     limits: { contextWindow: 200000, maxOutputTokens: 8000 },
