@@ -987,4 +987,19 @@ const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_panel_decisions_run ON panel_decisions(run_id);
     `,
   },
+  {
+    name: "037_revise_loop",
+    // Revise-loop lineage on orchestration_tasks. Three nullable/defaulted
+    // columns so existing rows and every existing query are unaffected:
+    //   attempt   — revise attempt number (0 = original, N = Nth re-enqueue)
+    //   retry_of  — id of the superseded task row this attempt retries
+    //   rotation  — model-rotation outcome ('rotated:<id>' | 'degraded-same-model'
+    //               | 'pinned-global-model')
+    // Additive, mirroring the 029/035 ALTER precedent.
+    sql: `
+      ALTER TABLE orchestration_tasks ADD COLUMN attempt INTEGER DEFAULT 0;
+      ALTER TABLE orchestration_tasks ADD COLUMN retry_of TEXT;
+      ALTER TABLE orchestration_tasks ADD COLUMN rotation TEXT;
+    `,
+  },
 ];

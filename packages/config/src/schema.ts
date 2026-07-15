@@ -361,6 +361,27 @@ const channelsSchema = z.object({
   slack: slackChannelSchema.default({}),
 });
 
+// ── Orchestrator Config ─────────────────────────────────────────────
+// Governs `brainstorm orchestrate parallel`. Both fields are opt-in: absent →
+// today's behavior (deterministic judge, no revise loop).
+const orchestratorSchema = z.object({
+  /** Merge-gate panel name (e.g. 'merge-gate', 'deterministic'). When set, the
+   * parallel orchestrator runs a diverse judge panel instead of the
+   * deterministic judge and emits per-task contracts. */
+  panel: z.string().optional(),
+  /**
+   * Bounded revise loop. Its PRESENCE is the opt-in: writing `[orchestrator.revise]`
+   * with no maxIterations defaults to 1 automatic revise round. Omitting the
+   * section entirely disables the loop (the CLI treats a missing section as 0 —
+   * exact current behavior). `--revise-max <n>` overrides at runtime.
+   */
+  revise: z
+    .object({
+      maxIterations: z.number().int().min(0).default(1),
+    })
+    .optional(),
+});
+
 // ── Full Config ─────────────────────────────────────────────────────
 
 export const brainstormConfigSchema = z.object({
@@ -430,6 +451,7 @@ export const brainstormConfigSchema = z.object({
   godmode: godmodeSchema.default({}),
   serve: serveSchema.default({}),
   channels: channelsSchema.default({}),
+  orchestrator: orchestratorSchema.default({}),
 });
 
 export type BrainstormConfig = z.infer<typeof brainstormConfigSchema>;

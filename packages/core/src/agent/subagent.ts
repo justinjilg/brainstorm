@@ -19,7 +19,7 @@ import {
   createLogger,
   linkSignals,
 } from "@brainst0rm/shared";
-import type { AgentContract } from "@brainst0rm/shared";
+import type { AgentContract, PriorAttemptFeedback } from "@brainst0rm/shared";
 import {
   renderContractPrompt,
   validateContractOutput,
@@ -351,6 +351,14 @@ export interface SubagentOptions {
    * freeform behavior. Purely additive/opt-in.
    */
   contract?: AgentContract;
+  /**
+   * Transient corrective feedback from a prior gate attempt (revise loop).
+   * Only meaningful alongside `contract`: it is threaded into
+   * renderContractPrompt as `priorAttempt`, emitting a deterministic
+   * "Prior attempt — corrective feedback" section. Never mutates the contract.
+   * Absent → byte-identical render. Ignored when there is no contract.
+   */
+  contractFeedback?: PriorAttemptFeedback;
 }
 
 export interface SubagentResult {
@@ -558,7 +566,10 @@ async function runContractSubagent(
     ...contractAuthorityOptions(contract, options),
   };
 
-  const renderedTask = renderContractPrompt(contract);
+  const renderedTask = renderContractPrompt(
+    contract,
+    options.contractFeedback ? { priorAttempt: options.contractFeedback } : {},
+  );
   const first = await runSubagentCore(renderedTask, coreOptions);
 
   // No declared schema → nothing to validate; the handoff is structurally

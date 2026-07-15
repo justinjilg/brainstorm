@@ -66,6 +66,14 @@ export interface WorkerPoolOptions {
   /** When true, leave worktrees on disk after the pool finishes — useful for
    * the Judge to inspect them. Default true (Judge needs them). */
   preserveWorktrees?: boolean;
+  /**
+   * Per-task subagent option overrides, keyed by task id. Merged over the
+   * shared `subagentOptions` template when spawning that task's worker (spread
+   * last, so an override wins). Used by the revise loop to pin a rotated
+   * `preferredModelId` and thread `contractFeedback` into a specific retry.
+   * Absent / missing key → the shared template is used unchanged.
+   */
+  perTaskOptions?: Record<string, Partial<SubagentOptions>>;
 }
 
 export interface WorkerPoolResult {
@@ -92,6 +100,7 @@ export async function* runWorkerPool(
     concurrency = 3,
     timeoutMs = 30 * 60 * 1000,
     preserveWorktrees = true,
+    perTaskOptions,
   } = options;
   const startedAt = Date.now();
   const taskRepo = new OrchestrationTaskRepository(db);
@@ -197,12 +206,16 @@ export async function* runWorkerPool(
         }
 
         // Spawn the subagent against the worktree (NOT the project root).
+        // Per-task overrides (revise loop: rotated preferredModelId +
+        // contractFeedback) are spread LAST so they win over the template.
+        const taskOverrides = perTaskOptions?.[claimed.id] ?? {};
         try {
           const result = await spawnSubagent(safeTaskPrompt, {
             ...subagentOptions,
             projectPath: worktreePath,
             type: claimed.subagentType as SubagentType,
             ...(contract ? { contract } : {}),
+            ...taskOverrides,
           });
 
           if (result.budgetExceeded) {
