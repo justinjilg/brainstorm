@@ -191,7 +191,16 @@ export function chooseRetryModel(args: {
     return { preferredModelId: pinnedModelId, rotation: "pinned-global-model" };
   }
 
-  const failed = models.find((m) => m.id === failedModelId);
+  // producerModelId is written by the worker pool as `result.modelUsed`, which
+  // is `decision.model.name` (a display name, e.g. "Claude Opus 4.6"), NOT the
+  // catalog id (e.g. "anthropic/claude-opus-4-6"). Match on BOTH so the failed
+  // family resolves in production — matching on id alone silently returns
+  // undefined for every real cloud model, which admits the just-failed family
+  // and can re-pick the same model (breaking rotation) or mis-tag a
+  // single-provider degrade as a real rotation.
+  const failed = models.find(
+    (m) => m.id === failedModelId || m.name === failedModelId,
+  );
   const failedFamily = failed?.provider;
 
   const eligible = models.filter(
@@ -291,6 +300,29 @@ export async function runGateWithRevise(
       onPoolEvent?.(next.value, attempt);
     }
     pendingPerTask = {};
+
+    // ── Reconcile failed retries ───────────────────────────────────────
+    // A retry that fails inside the worker pool (throw / budget-exceeded /
+    // no-file-change) is marked 'failed' by failTask, but those paths never
+    // touch contract status — so its contract stays stuck at 'executing'
+    // (set when the retry was enqueued below). Because task selection only
+    // considers 'completed' tasks, such a contract would be neither retried
+    // nor marked failed, leaving a dangling 'executing' row with no audit
+    // resolution. Mark it 'failed' here (terminal evidence: the failed retry
+    // row + prior verdicts) and stop tracking it for further revise rounds.
+    for (const id of lastRoundNewTaskIds) {
+      const retryTask = taskRepo.getById(id);
+      if (retryTask?.status !== "failed" || !retryTask.contractId) continue;
+      const contract = contractRepo.getById(retryTask.contractId);
+      if (contract?.status === "executing") {
+        contractRepo.updateStatus(retryTask.contractId, "failed");
+        log.warn(
+          { runId, taskId: id, contractId: retryTask.contractId },
+          "Retry task failed in worker pool — contract marked failed",
+        );
+      }
+      retriedContractIds.delete(retryTask.contractId);
+    }
 
     // ── Gate ───────────────────────────────────────────────────────────
     gate = await runMergeGateFn({
