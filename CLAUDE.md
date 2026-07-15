@@ -36,8 +36,9 @@ core packages by concern; run `ls packages/` for the authoritative live list.
 - `packages/providers` — Cloud (Anthropic, OpenAI, Google, DeepSeek, Moonshot + BrainstormRouter SaaS) + local (Ollama, LM Studio, llama.cpp), auto-discovery with caching
 - `packages/router` — BrainstormRouter: heuristic task classifier, 6 routing strategies (quality, cost, combined, capability, learned/Thompson, rule-based), CostTracker with forecast, fallback chain
 - `packages/tools` — 58+ built-in tools (filesystem 8, shell 4, git 7, GitHub 8, web 2, tasks 3, agents 7, planning 1, transactions 3, BR intelligence 8, code graph 5, memory 4, pipeline 1, daemon 1) with permission levels + checkpoint system + Docker sandbox
-- `packages/core` — Agentic loop, SessionManager, PermissionManager, context compaction, @-mentions, skills with temporal template vars, memory (4 types + auto-extraction middleware), plan mode, semantic code search (TF-IDF), git history indexing, style learning (code + prose), proactive compaction, 10 middleware pipeline
-- `packages/agents` — Agent profiles, NL parser, role prompts, Zod output schemas, TOML+SQLite merge, 9 subagent types (explore, plan, code, review, general, decompose, external, research, memory-curator)
+- `packages/core` — Agentic loop, SessionManager, PermissionManager, context compaction, @-mentions, skills with temporal template vars, memory (4 types, trust-scored by source, regex auto-extraction middleware + async LLM extraction pass `runExtractionCycle` writing `llm_extraction`-source entries), plan mode, semantic code search (TF-IDF), git history indexing, style learning (code + prose), proactive compaction, 10 middleware pipeline
+- `packages/agents` — Agent profiles, NL parser, role prompts, Zod output schemas, TOML+SQLite merge, 9 subagent types (explore, plan, code, review, general, decompose, external, research, memory-curator). The model-facing `subagent` tool supports per-spawn scope narrowing (toolAllowlist/promptAppend/maxSteps/budgetLimit), always bounded by the type's tool ceiling ∩ parent tools
+- `packages/channels` — Message-gateway intake (DeerFlow-style transport/reasoning split). Slack adapter over Socket Mode; `IntakeCoordinator` drives the shared agent loop under per-channel authority (read-only/approvals/full). Wired into `brainstorm serve` via `[channels.slack]`
 - `packages/workflow` — Workflow engine state machine, context filtering, confidence/escalation, 4 preset workflows, artifact persistence to disk with manifests
 - `packages/hooks` — HookManager for lifecycle automation (PreToolUse, PostToolUse, SessionStart, etc.)
 - `packages/mcp` — MCP client with OAuth (client_credentials), tool normalization, SSE/HTTP/stdio transports
@@ -89,6 +90,29 @@ node packages/cli/dist/brainstorm.js run "prompt"  # Non-interactive single prom
 - 1Password integration: vault "Dev Keys", item names mapped in `packages/vault/src/backends/op-cli.ts`
 - Vault key resolver chain: local vault → 1Password → environment variables
 - Always use latest model names: Opus 4.6, Sonnet 4.6, GPT-5.4, Gemini 3.1 Pro/Flash, Kimi K2.5
+
+## Harness Capabilities (Leader-Parity Work)
+
+Three guides document how the agent loop drives models, applies edits, and
+sizes its own context:
+
+- **[docs/provider-agnostic-tool-calling.md](docs/provider-agnostic-tool-calling.md)**
+  — BR model-catalog import so the router can see any tool-capable model BR
+  serves; per-provider tool-name mapping (canonical `shell`/`file_read`/
+  `file_write`/`file_edit` ↔ OpenAI/Google/DeepSeek names) with the inbound
+  reverse-map wired into dispatch/subagents; streamed tool-call truncation
+  detection; a dual-namespace cache hint (`anthropic.cacheControl` +
+  `openaiCompatible.cache_control`) that survives the BR hop.
+- **[docs/edit-and-verify-loop.md](docs/edit-and-verify-loop.md)** — the
+  Aider-style fuzzy edit cascade (`packages/tools/src/builtin/edit-common.ts`:
+  exact → whitespace-flexible → line-anchored ellipsis → similarity ≥0.85
+  unambiguous, else fail) and the optional in-loop verify/self-correction pass
+  (`config.general.verify.mode`, **default `off`**; scoped diagnostics;
+  environmental errors skip rather than fail).
+- **[docs/context-efficiency.md](docs/context-efficiency.md)** — complexity-aware
+  system-prompt tiering (trivial/simple get a lean prefix; moderate+ or
+  undefined complexity get the full prefix, unchanged) plus cache-prefix
+  stability fixes and gated code-graph retrieval for moderate+ tasks.
 
 ## TUI Architecture
 

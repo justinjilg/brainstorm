@@ -5,6 +5,9 @@ import type {
   Message,
   CostRecord,
   TaskType,
+  AgentContract,
+  Verdict,
+  PanelDecision,
 } from "@brainst0rm/shared";
 
 /**
@@ -1421,4 +1424,266 @@ function mapSyncQueueRow(row: any): SyncQueueRow {
     updatedAt: row.updated_at,
     completedAt: row.completed_at,
   };
+}
+
+// ── Contract layer (migration 035) ───────────────────────────────────
+
+function rowToContract(row: any): AgentContract {
+  return {
+    id: row.id,
+    version: 1,
+    intent: row.intent,
+    context: row.context ?? "",
+    nonGoals: safeParseJson<string[]>(row.non_goals, []),
+    inputs: safeParseJson<AgentContract["inputs"]>(row.inputs_json, {
+      task: "",
+    }),
+    output: safeParseJson<AgentContract["output"]>(row.output_json, {
+      contentType: "text",
+    }),
+    acceptance: safeParseJson<AgentContract["acceptance"]>(
+      row.acceptance_json,
+      [],
+    ),
+    authority: safeParseJson<AgentContract["authority"]>(
+      row.authority_json,
+      {},
+    ),
+    provenance: {
+      producerAgentId: row.producer_agent_id ?? undefined,
+      producerModelId: row.producer_model_id ?? undefined,
+      runId: row.run_id ?? undefined,
+      taskId: row.task_id ?? undefined,
+      parentContractId: row.parent_contract_id ?? undefined,
+      createdAt: row.created_at,
+    },
+    status: row.status,
+  };
+}
+
+/**
+ * Persistence for agent_contracts. Follows the prepared-statement +
+ * JSON-column conventions of the orchestration repositories: complex fields
+ * (inputs/output/acceptance/authority/nonGoals) are serialized to TEXT columns
+ * and rehydrated via rowToContract.
+ */
+export class ContractRepository {
+  constructor(private db: Database.Database) {}
+
+  /** Insert (or replace) a fully-formed contract. */
+  save(contract: AgentContract): AgentContract {
+    const now = Math.floor(Date.now() / 1000);
+    this.db
+      .prepare(
+        `INSERT INTO agent_contracts (
+           id, version, intent, context, non_goals, inputs_json, output_json,
+           acceptance_json, authority_json, producer_agent_id, producer_model_id,
+           run_id, task_id, parent_contract_id, status, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           intent = excluded.intent,
+           context = excluded.context,
+           non_goals = excluded.non_goals,
+           inputs_json = excluded.inputs_json,
+           output_json = excluded.output_json,
+           acceptance_json = excluded.acceptance_json,
+           authority_json = excluded.authority_json,
+           producer_agent_id = excluded.producer_agent_id,
+           producer_model_id = excluded.producer_model_id,
+           run_id = excluded.run_id,
+           task_id = excluded.task_id,
+           parent_contract_id = excluded.parent_contract_id,
+           status = excluded.status,
+           updated_at = excluded.updated_at`,
+      )
+      .run(
+        contract.id,
+        contract.version,
+        contract.intent,
+        contract.context ?? "",
+        JSON.stringify(contract.nonGoals ?? []),
+        JSON.stringify(contract.inputs),
+        JSON.stringify(contract.output),
+        JSON.stringify(contract.acceptance ?? []),
+        JSON.stringify(contract.authority ?? {}),
+        contract.provenance.producerAgentId ?? null,
+        contract.provenance.producerModelId ?? null,
+        contract.provenance.runId ?? null,
+        contract.provenance.taskId ?? null,
+        contract.provenance.parentContractId ?? null,
+        contract.status,
+        contract.provenance.createdAt ?? now,
+        now,
+      );
+    return this.getById(contract.id)!;
+  }
+
+  getById(id: string): AgentContract | undefined {
+    const row = this.db
+      .prepare("SELECT * FROM agent_contracts WHERE id = ?")
+      .get(id);
+    return row ? rowToContract(row) : undefined;
+  }
+
+  listByRun(runId: string): AgentContract[] {
+    return this.db
+      .prepare(
+        "SELECT * FROM agent_contracts WHERE run_id = ? ORDER BY created_at ASC",
+      )
+      .all(runId)
+      .map(rowToContract);
+  }
+
+  updateStatus(id: string, status: AgentContract["status"]): void {
+    const now = Math.floor(Date.now() / 1000);
+    this.db
+      .prepare(
+        "UPDATE agent_contracts SET status = ?, updated_at = ? WHERE id = ?",
+      )
+      .run(status, now, id);
+  }
+}
+
+// ── Judge-panel verdicts (migration 036) ─────────────────────────────
+
+function rowToVerdict(row: any): Verdict {
+  return {
+    judgeId: `${row.judge_lens}:${row.judge_model_id}`,
+    lens: row.judge_lens,
+    modelId: row.judge_model_id,
+    provider: row.judge_provider,
+    pass: row.pass === 1,
+    score: row.score ?? undefined,
+    confidence: row.confidence ?? 0,
+    rationale: row.rationale ?? "",
+    findings: safeParseJson<Verdict["findings"]>(row.findings_json, []),
+    criteriaResults: safeParseJson<Verdict["criteriaResults"]>(
+      row.criteria_json,
+      [],
+    ),
+    cost: row.cost ?? 0,
+    durationMs: row.duration_ms ?? 0,
+    error: row.error ?? undefined,
+  };
+}
+
+function rowToDecision(row: any): PanelDecision {
+  return {
+    panelId: row.id,
+    decision: row.decision,
+    verdicts: [],
+    quorum: safeParseJson<PanelDecision["quorum"]>(row.quorum_json, {
+      required: 0,
+      achieved: 0,
+      rule: "",
+    }),
+    dissent: safeParseJson<string[]>(row.dissent_json, []),
+    combinedRationale: row.combined_rationale ?? "",
+    totalCost: row.total_cost ?? 0,
+  };
+}
+
+/**
+ * Append-only persistence for panel verdicts + decisions. Each judge's Verdict
+ * is one row in panel_verdicts; the aggregated PanelDecision is one row in
+ * panel_decisions. Mirrors the routing_audit append-only evidence convention.
+ */
+export class VerdictRepository {
+  constructor(private db: Database.Database) {}
+
+  /** Record a single judge's verdict against an artifact under a panel. */
+  recordVerdict(
+    verdict: Verdict,
+    ctx: {
+      panelId: string;
+      contractId?: string;
+      runId?: string;
+      taskId?: string;
+      artifactRef?: string;
+    },
+  ): void {
+    const id = randomUUID();
+    const now = Math.floor(Date.now() / 1000);
+    this.db
+      .prepare(
+        `INSERT INTO panel_verdicts (
+           id, panel_id, contract_id, run_id, task_id, artifact_ref,
+           judge_lens, judge_model_id, judge_provider, pass, score, confidence,
+           rationale, findings_json, criteria_json, cost, duration_ms, error, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        ctx.panelId,
+        ctx.contractId ?? null,
+        ctx.runId ?? null,
+        ctx.taskId ?? null,
+        ctx.artifactRef ?? null,
+        verdict.lens,
+        verdict.modelId,
+        verdict.provider,
+        verdict.pass ? 1 : 0,
+        verdict.score ?? null,
+        verdict.confidence ?? null,
+        verdict.rationale ?? "",
+        JSON.stringify(verdict.findings ?? []),
+        JSON.stringify(verdict.criteriaResults ?? []),
+        verdict.cost ?? 0,
+        verdict.durationMs ?? null,
+        verdict.error ?? null,
+        now,
+      );
+  }
+
+  /** Record the aggregated panel decision. Returns the persisted panelId. */
+  recordDecision(
+    decision: PanelDecision,
+    ctx: { contractId?: string; runId?: string; taskId?: string },
+  ): void {
+    const now = Math.floor(Date.now() / 1000);
+    this.db
+      .prepare(
+        `INSERT INTO panel_decisions (
+           id, contract_id, run_id, task_id, decision, quorum_json,
+           combined_rationale, dissent_json, total_cost, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           decision = excluded.decision,
+           quorum_json = excluded.quorum_json,
+           combined_rationale = excluded.combined_rationale,
+           dissent_json = excluded.dissent_json,
+           total_cost = excluded.total_cost`,
+      )
+      .run(
+        decision.panelId,
+        ctx.contractId ?? null,
+        ctx.runId ?? null,
+        ctx.taskId ?? null,
+        decision.decision,
+        JSON.stringify(decision.quorum),
+        decision.combinedRationale ?? "",
+        JSON.stringify(decision.dissent ?? []),
+        decision.totalCost ?? 0,
+        now,
+      );
+  }
+
+  listVerdicts(panelId: string): Verdict[] {
+    return this.db
+      .prepare(
+        "SELECT * FROM panel_verdicts WHERE panel_id = ? ORDER BY created_at ASC",
+      )
+      .all(panelId)
+      .map(rowToVerdict);
+  }
+
+  getDecision(panelId: string): PanelDecision | undefined {
+    const row = this.db
+      .prepare("SELECT * FROM panel_decisions WHERE id = ?")
+      .get(panelId);
+    if (!row) return undefined;
+    const decision = rowToDecision(row);
+    decision.verdicts = this.listVerdicts(panelId);
+    return decision;
+  }
 }

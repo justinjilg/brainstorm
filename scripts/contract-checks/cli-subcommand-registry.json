@@ -31,6 +31,7 @@
     "program:agent": "agent-loop",
     "program:analyze": "tool-driven",
     "program:audit": "infrastructure",
+    "auditCmd:report": "infrastructure",
     "program:budget": "infrastructure",
     "program:chat": "agent-loop",
     "program:ci-gen": "infrastructure",

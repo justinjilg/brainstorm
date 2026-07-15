@@ -8,6 +8,11 @@ import {
 } from "./git-safety.js";
 import { checkSandbox, type SandboxLevel } from "./sandbox.js";
 import { DockerSandbox } from "../sandbox/docker-sandbox.js";
+import {
+  getSandboxPool,
+  configureSandboxPool,
+  type SandboxPoolConfig,
+} from "../sandbox/sandbox-pool.js";
 import { getWorkspace } from "../workspace-context.js";
 
 const DEFAULT_TIMEOUT = 120_000;
@@ -168,6 +173,7 @@ export function configureSandbox(
   maxOutputBytes?: number,
   containerImage?: string,
   containerTimeout?: number,
+  poolConfig?: Partial<SandboxPoolConfig>,
 ): void {
   currentSandboxLevel = level;
   currentProjectPath = projectPath;
@@ -178,10 +184,29 @@ export function configureSandbox(
   }
   if (containerImage) dockerConfig.image = containerImage;
   if (containerTimeout) dockerConfig.timeout = containerTimeout;
+  if (poolConfig) configureSandboxPool(poolConfig);
 }
 
-/** Stop and clean up the Docker sandbox container, if running. */
+/**
+ * Release the current Docker sandbox back to the warm pool (if any) and
+ * clear the module-level reference. Does NOT tear down the whole pool —
+ * for full teardown (process exit), call `getSandboxPool().drain()`.
+ */
 export function stopDockerSandbox(): void {
+  if (dockerSandbox) {
+    getSandboxPool().release(dockerSandbox);
+    dockerSandbox = null;
+  }
+}
+
+/**
+ * Discard the current Docker sandbox directly via `stop()`, bypassing the
+ * pool's hygiene-reset-and-park path. Use this (instead of
+ * `stopDockerSandbox()`) at process-exit teardown: the container is about
+ * to be drained anyway, so running a hygiene exec first is a wasted
+ * (and potentially slow/wedged) round-trip on the shutdown path.
+ */
+export function teardownDockerSandbox(): void {
   if (dockerSandbox) {
     dockerSandbox.stop();
     dockerSandbox = null;
@@ -421,12 +446,11 @@ export const shellTool = defineTool({
             blocked: true,
           };
         }
-        dockerSandbox = new DockerSandbox({
+        dockerSandbox = getSandboxPool().acquire({
           hostWorkspace: currentProjectPath,
           image: dockerConfig.image,
           timeout: dockerConfig.timeout,
-        });
-        dockerSandbox.start();
+        }) as DockerSandbox;
       }
 
       const result = dockerSandbox.exec(command);

@@ -24,4 +24,6 @@ export type {
   PluginHookEvent,
   PluginSkillDef,
   PluginManifest,
+  SubagentHookContext,
+  ChannelIntakeContext,
 } from "./types.js";

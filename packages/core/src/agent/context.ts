@@ -14,6 +14,7 @@ import { loadSkills } from "../skills/loader.js";
 import { formatCommitContext } from "../search/lineage.js";
 import { formatStyleContext } from "../learning/style-learner.js";
 import { generateRepoMap } from "./repo-map.js";
+import type { Complexity } from "@brainst0rm/shared";
 
 const DEFAULT_SYSTEM_PROMPT = `You are Brainstorm, an AI coding assistant powered by BrainstormRouter — an intelligent model routing gateway. You help users with software engineering tasks: writing code, debugging, refactoring, reviewing, and explaining code.
 
@@ -95,19 +96,52 @@ export interface SystemPromptResult {
   frontmatter: StormFrontmatter | null;
 }
 
-/** Convert segments to AI SDK v6 system prompt array with Anthropic cache hints. */
+/**
+ * Cache-control hint applied to the single cache breakpoint. Reused verbatim for
+ * both provider namespaces so the two hints can never drift out of sync.
+ */
+const EPHEMERAL_CACHE_CONTROL = { type: "ephemeral" as const };
+
+/**
+ * Convert segments to AI SDK v6 system prompt array with cache hints.
+ *
+ * Two provider namespaces are emitted on the same segment:
+ *  - `providerOptions.anthropic.cacheControl` — read directly by the Anthropic
+ *    provider (`@ai-sdk/anthropic`).
+ *  - `providerOptions.openaiCompatible.cache_control` — `@ai-sdk/openai-compatible`
+ *    spreads every key of this namespace onto the outgoing `{ role: "system", ... }`
+ *    message object verbatim (see `convertToOpenAICompatibleChatMessages` /
+ *    `getOpenAIMetadata` in that package), so the request body BR receives is
+ *    `{ role: "system", content, cache_control: { type: "ephemeral" } }`.
+ *    BR must forward that `cache_control` field unchanged on the system message
+ *    it proxies upstream (e.g. to Anthropic) for caching to actually take effect —
+ *    this hint is inert (a harmless extra JSON field) against any backend that
+ *    doesn't look for it, so it's safe to always send.
+ *
+ * Only ONE segment ever receives a cache breakpoint — the *last* cacheable
+ * segment — even if more cacheable segments are added in the future. Anthropic
+ * allows at most 4 breakpoints per request, but we deliberately stay at 1: the
+ * stable prefix is the only thing worth a breakpoint today, and capping at one
+ * avoids ever having to reason about breakpoint budgets as segments evolve.
+ */
 export function segmentsToSystemArray(segments: SystemPromptSegment[]): Array<{
   role: "system";
   content: string;
   providerOptions?: Record<string, any>;
 }> {
-  return segments.map((seg) => ({
+  const lastCacheableIndex = segments.reduce(
+    (acc, seg, i) => (seg.cacheable ? i : acc),
+    -1,
+  );
+
+  return segments.map((seg, i) => ({
     role: "system" as const,
     content: seg.text,
-    ...(seg.cacheable
+    ...(seg.cacheable && i === lastCacheableIndex
       ? {
           providerOptions: {
-            anthropic: { cacheControl: { type: "ephemeral" } },
+            anthropic: { cacheControl: EPHEMERAL_CACHE_CONTROL },
+            openaiCompatible: { cache_control: EPHEMERAL_CACHE_CONTROL },
           },
         }
       : {}),
@@ -119,11 +153,159 @@ export function segmentsToString(segments: SystemPromptSegment[]): string {
   return segments.map((s) => s.text).join("\n");
 }
 
+/** System-prompt weight tier — mirrors the tool-tiering split in progressive.ts. */
+export type PromptTier = "minimal" | "full";
+
+/**
+ * Map task complexity to a system-prompt tier, mirroring the tool-tiering
+ * philosophy in packages/tools/src/progressive.ts (COMPLEXITY_TO_TIER):
+ * trivial/simple → a lean prefix; moderate/complex/expert → the full context.
+ *
+ * `undefined` (the default at the ~20 existing call sites that pass only
+ * projectPath) resolves to "full", preserving today's behavior byte-for-byte.
+ */
+export function getPromptTierForComplexity(
+  complexity?: Complexity,
+): PromptTier {
+  if (complexity === "trivial" || complexity === "simple") return "minimal";
+  return "full";
+}
+
+/** A symbol surfaced by code-graph retrieval, ready to render into the prompt. */
+export interface RetrievedSymbol {
+  file: string;
+  name: string;
+  kind: string;
+  line?: number;
+  signature?: string;
+}
+
+export interface CodeGraphRetrievalOptions {
+  /** The user's task/query text — retrieval is a no-op without it. */
+  taskText?: string;
+  /** Max symbols to include (default 8). */
+  topK?: number;
+  /** Hard character cap on the rendered symbol list (default 1500). */
+  charCap?: number;
+  /**
+   * DI hook: resolve ranked symbols for a task. Defaults to the code-graph
+   * (hybrid BM25 + definition enrichment). Return null/[] to emit no block.
+   */
+  retrieve?: (
+    projectPath: string,
+    taskText: string,
+    topK: number,
+  ) => RetrievedSymbol[] | null;
+}
+
+function truncate(s: string, n: number): string {
+  return s.length > n ? s.slice(0, n - 1) + "…" : s;
+}
+
+/**
+ * Default retriever: lazily loads @brainst0rm/code-graph (heavy, tree-sitter,
+ * optional at runtime) and runs hybrid BM25 search over the project's code
+ * graph, enriching hits with definition line/signature. Returns null on any
+ * failure or when no graph index exists — the caller then skips the block.
+ */
+function defaultGraphRetrieve(
+  projectPath: string,
+  taskText: string,
+  topK: number,
+): RetrievedSymbol[] | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const cg = require("@brainst0rm/code-graph");
+    const graph = new cg.CodeGraph({ projectPath });
+    const db = graph.getDb();
+    const hits = cg.hybridSearch(db, taskText, { topK }) as Array<{
+      file: string;
+      name: string;
+      kind: string;
+    }>;
+    if (!hits || hits.length === 0) return null;
+
+    const out: RetrievedSymbol[] = [];
+    for (const h of hits.slice(0, topK)) {
+      let line: number | undefined;
+      let signature: string | undefined;
+      try {
+        const defs = graph.findDefinition(h.name) as Array<{
+          startLine?: number;
+          signature?: string;
+        }>;
+        if (defs && defs.length > 0) {
+          line = defs[0].startLine;
+          signature = defs[0].signature;
+        }
+      } catch {
+        /* enrichment is optional */
+      }
+      out.push({ file: h.file, name: h.name, kind: h.kind, line, signature });
+    }
+    return out;
+  } catch {
+    // code-graph not installed / no index / query error → skip retrieval.
+    return null;
+  }
+}
+
+/**
+ * Build a bounded, well-labeled "Relevant Code" block from code-graph
+ * retrieval. Returns null when there's no task text, no graph, or no hits.
+ *
+ * The output is budget-bounded: at most `topK` symbols and a hard `charCap` on
+ * the rendered list. Callers MUST place the result in the DYNAMIC (non-cacheable)
+ * segment — it varies per turn and would bust the cached prefix otherwise.
+ */
+export function buildCodeGraphBlock(
+  projectPath: string,
+  opts: CodeGraphRetrievalOptions,
+): string | null {
+  const taskText = opts.taskText?.trim();
+  if (!taskText) return null;
+
+  const topK = opts.topK ?? 8;
+  const charCap = opts.charCap ?? 1500;
+
+  let symbols: RetrievedSymbol[] | null;
+  try {
+    const retrieve = opts.retrieve ?? defaultGraphRetrieve;
+    symbols = retrieve(projectPath, taskText, topK);
+  } catch {
+    return null; // never let retrieval crash prompt assembly
+  }
+  if (!symbols || symbols.length === 0) return null;
+
+  const lines: string[] = [];
+  let used = 0;
+  for (const s of symbols.slice(0, topK)) {
+    const loc = s.line ? `${s.file}:${s.line}` : s.file;
+    const sig = s.signature ? ` — ${truncate(s.signature, 120)}` : "";
+    const line = `- \`${s.kind} ${s.name}\` (${loc})${sig}`;
+    // Hard char cap on the symbol list body.
+    if (used + line.length + 1 > charCap) break;
+    lines.push(line);
+    used += line.length + 1;
+  }
+  if (lines.length === 0) return null;
+
+  return `\n## Relevant Code (retrieved via code-graph)\n\nSymbols most relevant to the current task. Read these before editing.\n${lines.join("\n")}`;
+}
+
 export function buildSystemPrompt(
   projectPath: string,
   outputStyle?: OutputStyle,
   basePromptOverride?: string,
+  complexity?: Complexity,
+  retrieval?: CodeGraphRetrievalOptions,
 ): SystemPromptResult {
+  // Prompt tier: trivial/simple tasks ship a lean prefix (no repo map,
+  // conventions, architecture, stack, deps, style guide, or memory dump);
+  // moderate and up ship the full context. Undefined → full (unchanged).
+  const tier = getPromptTierForComplexity(complexity);
+  const minimal = tier === "minimal";
+
   // ── Cacheable zone: stable within a session ──────────────────────
   // These sections don't change between turns. Anthropic caches this prefix.
   const stableParts = [basePromptOverride ?? DEFAULT_SYSTEM_PROMPT];
@@ -135,62 +317,80 @@ export function buildSystemPrompt(
 
   let frontmatter: StormFrontmatter | null = null;
 
-  // Project context from STORM.md / BRAINSTORM.md (hierarchical: global → root → ... → cwd)
-  const storm = loadHierarchicalStormFiles(projectPath);
+  // Project context from STORM.md / BRAINSTORM.md.
+  // Pin the hierarchy load to projectPath (cwd === projectPath) rather than
+  // letting it default to process.cwd(). This keeps the CACHEABLE prefix
+  // independent of the launching directory — a subdir/worktree launch no longer
+  // busts the cache — while preserving root+global context (the standard chat
+  // flow already sets projectPath = process.cwd(), so this is byte-identical
+  // there). For the minimal tier this also elides the subdirectory dump.
+  const storm = loadHierarchicalStormFiles(projectPath, projectPath);
   if (storm.sources.length > 0) {
     frontmatter = storm.frontmatter;
-    stableParts.push(
-      `\n## Project Context (from ${storm.sources.join(", ")})\n\n${storm.body}`,
-    );
 
+    // Safety-relevant sections are ALWAYS included, at every tier: dropping
+    // Verification/Protected Areas would let an under-classified task edit
+    // off-limits files or skip verification. They are cheap (few hundred tokens).
     const verifyCommands = extractVerificationCommands(
       storm.frontmatter,
       storm.body,
     );
+    const protectedAreas = extractSection(storm.body, "Don't touch");
+
+    // Heavy context — full tier only.
+    if (!minimal) {
+      stableParts.push(
+        `\n## Project Context (from ${storm.sources.join(", ")})\n\n${storm.body}`,
+      );
+    }
+
     if (verifyCommands) {
       stableParts.push(
         `\n## Verification Commands\n\nAfter every file_write or file_edit on code files, run the appropriate command:\n${verifyCommands}\n\nRun the build command after edits. Run the test command after completing a logical unit of work.`,
       );
     }
 
-    const protectedAreas = extractSection(storm.body, "Don't touch");
     if (protectedAreas) {
       stableParts.push(
         `\n## Protected Areas\n\nThese files are off-limits. Do NOT modify them without explicit user approval:\n${protectedAreas}\nIf a task requires changes to a protected file, explain WHY and ask before proceeding.`,
       );
     }
 
-    const conventions = extractSection(storm.body, "Conventions");
-    if (conventions) {
-      stableParts.push(
-        `\n## Code Patterns (MANDATORY)\n\nAlways follow these patterns when writing code in this project. Any code blocks below are reference examples — match this style exactly:\n${conventions}`,
-      );
-    }
+    if (!minimal) {
+      const conventions = extractSection(storm.body, "Conventions");
+      if (conventions) {
+        stableParts.push(
+          `\n## Code Patterns (MANDATORY)\n\nAlways follow these patterns when writing code in this project. Any code blocks below are reference examples — match this style exactly:\n${conventions}`,
+        );
+      }
 
-    const architecture = extractSection(storm.body, "Architecture");
-    if (architecture) {
-      stableParts.push(
-        `\n## Architecture Constraints\n\nRespect these architectural decisions when making changes:\n${architecture}`,
-      );
-    }
+      const architecture = extractSection(storm.body, "Architecture");
+      if (architecture) {
+        stableParts.push(
+          `\n## Architecture Constraints\n\nRespect these architectural decisions when making changes:\n${architecture}`,
+        );
+      }
 
-    const stack = extractSection(storm.body, "Stack");
-    if (stack) {
-      stableParts.push(`\n## Stack\n\n${stack}`);
-    }
+      const stack = extractSection(storm.body, "Stack");
+      if (stack) {
+        stableParts.push(`\n## Stack\n\n${stack}`);
+      }
 
-    const dependencies = extractSection(storm.body, "Dependencies");
-    if (dependencies) {
-      stableParts.push(
-        `\n## Dependency Rules\n\nFollow these dependency guidelines:\n${dependencies}`,
-      );
+      const dependencies = extractSection(storm.body, "Dependencies");
+      if (dependencies) {
+        stableParts.push(
+          `\n## Dependency Rules\n\nFollow these dependency guidelines:\n${dependencies}`,
+        );
+      }
     }
   }
 
-  // Structural context (high-signal, stable across session)
-  const repoMapSection = buildRepoMapSection(projectPath);
-  if (repoMapSection) {
-    stableParts.push(repoMapSection);
+  // Structural context (high-signal, stable across session) — full tier only.
+  if (!minimal) {
+    const repoMapSection = buildRepoMapSection(projectPath);
+    if (repoMapSection) {
+      stableParts.push(repoMapSection);
+    }
   }
 
   const skillsSection = buildSkillsSection(projectPath);
@@ -198,18 +398,21 @@ export function buildSystemPrompt(
     stableParts.push(skillsSection);
   }
 
-  const styleContext = formatStyleContext(projectPath);
-  if (styleContext) {
-    stableParts.push(
-      `\n## Project Style Guide (auto-detected)\n\n${styleContext}`,
-    );
+  if (!minimal) {
+    const styleContext = formatStyleContext(projectPath);
+    if (styleContext) {
+      stableParts.push(
+        `\n## Project Style Guide (auto-detected)\n\n${styleContext}`,
+      );
+    }
   }
 
   // ── Dynamic zone: changes per turn or session ────────────────────
   // These sections may change between turns. Not cached.
   const dynamicParts: string[] = [];
 
-  const memoryContext = loadMemoryContext(projectPath);
+  // Memory can be up to ~2000 tokens; skip it entirely for the minimal tier.
+  const memoryContext = minimal ? null : loadMemoryContext(projectPath);
   if (memoryContext) {
     dynamicParts.push(
       `\n## Memory (from previous sessions)\n\n${memoryContext}`,
@@ -224,6 +427,17 @@ export function buildSystemPrompt(
   const commitContext = formatCommitContext(projectPath);
   if (commitContext) {
     dynamicParts.push(`\n## Recent Commits\n\n${commitContext}`);
+  }
+
+  // Code-graph retrieval — moderate/complex/expert only (gated on !minimal,
+  // mirroring memory/repo-map so trivial/simple tasks pay nothing). Lands in the
+  // DYNAMIC (non-cacheable) segment: retrieved symbols vary per task and must
+  // never reach the cached prefix. Bounded (top-K + char cap) inside the helper.
+  if (!minimal && retrieval?.taskText) {
+    const graphBlock = buildCodeGraphBlock(projectPath, retrieval);
+    if (graphBlock) {
+      dynamicParts.push(graphBlock);
+    }
   }
 
   const now = new Date();
@@ -278,10 +492,17 @@ function buildSkillsSection(projectPath: string): string | null {
       return null;
     }
 
-    const lines = skills.map((s) => {
-      const source = s.source === "claude-compat" ? "claude" : s.source;
-      return `- **/${s.name}** (${source}) — ${s.description}`;
-    });
+    // Deterministic ordering: loadSkills iterates readdirSync (filesystem/OS
+    // order), which is not guaranteed alphabetical. Sort by name so the cached
+    // prefix is byte-identical run-to-run for the same skill set. Use a
+    // locale-INDEPENDENT code-unit comparison (not localeCompare, which is
+    // ICU-locale-sensitive) so the order is identical across machines too.
+    const lines = [...skills]
+      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+      .map((s) => {
+        const source = s.source === "claude-compat" ? "claude" : s.source;
+        return `- **/${s.name}** (${source}) — ${s.description}`;
+      });
 
     const result = `\n## Available Skills\n\nYou can invoke these skills when the user requests them with /<name>:\n${lines.join("\n")}`;
     _skillsCache = { path: projectPath, result, ts: Date.now() };
@@ -553,10 +774,14 @@ export function buildToolAwarenessSection(
   }
 
   const home = homedir();
+  // NOTE: process.cwd() is deliberately NOT emitted here. This section is folded
+  // into the CACHEABLE prefix segment by callers, and an absolute cwd string
+  // varies across otherwise-identical logical sessions (subdir launch, worktree),
+  // silently busting the prompt cache. The working directory is already conveyed
+  // by the project structure / STORM context, so omitting it costs nothing.
   const selfAwareness = [
     "\n### Environment",
     `- Home directory: \`${home}\``,
-    `- Current working directory: \`${process.cwd()}\``,
     "- You CAN read files outside the project (e.g., ~/Desktop, ~/Documents). Use absolute paths.",
     "- You should only WRITE files within the project directory unless the user explicitly asks otherwise.",
     "",

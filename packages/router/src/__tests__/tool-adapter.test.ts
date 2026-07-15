@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { adaptToolsForModel, resolveCanonicalName } from "../tool-adapter.js";
+import {
+  adaptToolsForModel,
+  resolveCanonicalName,
+  reverseToolName,
+} from "../tool-adapter.js";
 import { getProviderFamily } from "../tool-mappings.js";
 import type { ModelEntry } from "@brainst0rm/shared";
 
@@ -25,7 +29,7 @@ function mockModel(provider: string): ModelEntry {
 
 function mockTools() {
   return {
-    bash: { execute: async () => "ok", description: "Run shell command" },
+    shell: { execute: async () => "ok", description: "Run shell command" },
     file_read: { execute: async () => "content", description: "Read a file" },
     file_write: { execute: async () => "done", description: "Write a file" },
     file_edit: { execute: async () => "edited", description: "Edit a file" },
@@ -60,7 +64,7 @@ describe("tool-adapter", () => {
       expect(adaptedTools).toHaveProperty("apply_patch");
 
       // Original names removed
-      expect(adaptedTools).not.toHaveProperty("bash");
+      expect(adaptedTools).not.toHaveProperty("shell");
       expect(adaptedTools).not.toHaveProperty("file_read");
       expect(adaptedTools).not.toHaveProperty("file_write");
       expect(adaptedTools).not.toHaveProperty("file_edit");
@@ -70,7 +74,7 @@ describe("tool-adapter", () => {
       expect(adaptedTools).toHaveProperty("grep");
 
       // Reverse map
-      expect(reverseMap.get("shell_command")).toBe("bash");
+      expect(reverseMap.get("shell_command")).toBe("shell");
       expect(reverseMap.get("read_file")).toBe("file_read");
       expect(reverseMap.get("write_file")).toBe("file_write");
       expect(reverseMap.get("apply_patch")).toBe("file_edit");
@@ -90,7 +94,7 @@ describe("tool-adapter", () => {
       // file_read has no Google mapping — passes through
       expect(adaptedTools).toHaveProperty("file_read");
 
-      expect(reverseMap.get("run_shell_command")).toBe("bash");
+      expect(reverseMap.get("run_shell_command")).toBe("shell");
       expect(reverseMap.get("replace")).toBe("file_edit");
       expect(reverseMap.size).toBe(3);
     });
@@ -131,17 +135,71 @@ describe("tool-adapter", () => {
   describe("resolveCanonicalName", () => {
     it("maps provider-specific name back to canonical", () => {
       const reverseMap = new Map([
-        ["shell_command", "bash"],
+        ["shell_command", "shell"],
         ["read_file", "file_read"],
       ]);
 
-      expect(resolveCanonicalName("shell_command", reverseMap)).toBe("bash");
+      expect(resolveCanonicalName("shell_command", reverseMap)).toBe("shell");
       expect(resolveCanonicalName("read_file", reverseMap)).toBe("file_read");
     });
 
     it("returns original name when no mapping exists", () => {
       const reverseMap = new Map<string, string>();
       expect(resolveCanonicalName("glob", reverseMap)).toBe("glob");
+    });
+  });
+
+  describe("reverseToolName", () => {
+    it("round-trips OpenAI renamed names back to canonical", () => {
+      const m = mockModel("openai");
+      expect(reverseToolName("apply_patch", m)).toBe("file_edit");
+      expect(reverseToolName("read_file", m)).toBe("file_read");
+      expect(reverseToolName("write_file", m)).toBe("file_write");
+      expect(reverseToolName("shell_command", m)).toBe("shell");
+    });
+
+    it("round-trips Google renamed names back to canonical", () => {
+      const m = mockModel("google");
+      expect(reverseToolName("replace", m)).toBe("file_edit");
+      expect(reverseToolName("run_shell_command", m)).toBe("shell");
+      expect(reverseToolName("write_file", m)).toBe("file_write");
+      // file_read has no Google mapping — passes through unchanged
+      expect(reverseToolName("file_read", m)).toBe("file_read");
+    });
+
+    it("round-trips DeepSeek renamed names back to canonical", () => {
+      const m = mockModel("deepseek");
+      expect(reverseToolName("shell_command", m)).toBe("shell");
+      expect(reverseToolName("read_file", m)).toBe("file_read");
+      expect(reverseToolName("write_file", m)).toBe("file_write");
+      // file_edit has no DeepSeek mapping — passes through unchanged
+      expect(reverseToolName("apply_patch", m)).toBe("apply_patch");
+    });
+
+    it("leaves canonical names unchanged for Anthropic models", () => {
+      const m = mockModel("anthropic");
+      expect(reverseToolName("file_edit", m)).toBe("file_edit");
+      expect(reverseToolName("shell", m)).toBe("shell");
+    });
+
+    it("is the exact inverse of adaptToolsForModel for each family", () => {
+      for (const provider of ["openai", "google", "deepseek"]) {
+        const m = mockModel(provider);
+        const { adaptedTools } = adaptToolsForModel(mockTools(), m);
+        // Every adapted (outbound) key must reverse back to a canonical tool
+        // that exists in the original tool set.
+        const canonical = Object.keys(mockTools());
+        for (const adaptedName of Object.keys(adaptedTools)) {
+          expect(canonical).toContain(reverseToolName(adaptedName, m));
+        }
+      }
+    });
+
+    it("passes through unmapped/unknown names", () => {
+      expect(reverseToolName("glob", mockModel("openai"))).toBe("glob");
+      expect(reverseToolName("totally_unknown", mockModel("google"))).toBe(
+        "totally_unknown",
+      );
     });
   });
 

@@ -181,6 +181,102 @@ describe("createProviderRegistry", () => {
     );
   });
 
+  const jsonResponse = (body: unknown) =>
+    new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+
+  it("merges BR-catalog models the static catalog lacks (toolCalling from advertised capability)", async () => {
+    const brCatalogFetch = vi.fn(async () =>
+      jsonResponse({
+        object: "list",
+        data: [
+          {
+            id: "novelprovider/tool-model",
+            capabilities: { tool_calling: true },
+          },
+          { id: "novelprovider/no-tools" },
+        ],
+      }),
+    ) as unknown as typeof fetch;
+
+    const registry = await createProviderRegistry(
+      createConfig() as any,
+      createResolvedKeys({ BRAINSTORM_API_KEY: "br-key" }),
+      { brCatalogFetch },
+    );
+
+    const toolModel = registry.getModel("novelprovider/tool-model");
+    expect(toolModel).toBeDefined();
+    expect(toolModel!.provider).toBe("novelprovider");
+    expect(toolModel!.capabilities.toolCalling).toBe(true);
+    expect(toolModel!.pricing).toEqual({
+      inputPer1MTokens: 0,
+      outputPer1MTokens: 0,
+    });
+
+    const noTools = registry.getModel("novelprovider/no-tools");
+    expect(noTools).toBeDefined();
+    // Conservative default: no advertised tool support => false.
+    expect(noTools!.capabilities.toolCalling).toBe(false);
+  });
+
+  it("keeps the static catalog intact when the BR catalog fetch fails", async () => {
+    const failing = vi.fn(async () => {
+      throw new Error("network down");
+    }) as unknown as typeof fetch;
+
+    const registry = await createProviderRegistry(
+      createConfig() as any,
+      createResolvedKeys({ BRAINSTORM_API_KEY: "br-key" }),
+      { brCatalogFetch: failing },
+    );
+
+    // Static cloud catalog + the SaaS "auto" model survive; no BR models added.
+    expect(registry.models.length).toBe(CLOUD_MODELS.length + 1);
+    expect(registry.getModel("brainstormrouter/auto")).toBeDefined();
+    const firstStatic = CLOUD_MODELS[0];
+    expect(registry.getModel(firstStatic.id)).toBeDefined();
+  });
+
+  it("does not overwrite a statically-defined entry on id collision (static wins)", async () => {
+    const firstStatic = CLOUD_MODELS[0];
+    const brCatalogFetch = vi.fn(async () =>
+      jsonResponse({
+        object: "list",
+        // Same id as a static model, but synthesized (0/0 pricing) — must lose.
+        data: [{ id: firstStatic.id, capabilities: { tool_calling: true } }],
+      }),
+    ) as unknown as typeof fetch;
+
+    const registry = await createProviderRegistry(
+      createConfig() as any,
+      createResolvedKeys({ BRAINSTORM_API_KEY: "br-key" }),
+      { brCatalogFetch },
+    );
+
+    const merged = registry.getModel(firstStatic.id);
+    expect(merged).toBeDefined();
+    // Static pricing/provider preserved, not the synthesized 0/0 placeholder.
+    expect(merged!.pricing).toEqual(firstStatic.pricing);
+    expect(merged!.provider).toBe(firstStatic.provider);
+  });
+
+  it("getProvider throws a diagnosable error for an unknown id when BR is not configured", async () => {
+    const registry = await createProviderRegistry(
+      createConfig() as any,
+      createResolvedKeys({ ANTHROPIC_API_KEY: "test-key" }),
+    );
+
+    expect(() => registry.getProvider("mysteryprovider/mystery-model")).toThrow(
+      /mysteryprovider\/mystery-model/,
+    );
+    expect(() => registry.getProvider("mysteryprovider/mystery-model")).toThrow(
+      /BRAINSTORM_API_KEY/,
+    );
+  });
+
   it("supports status filtering for available models and exposes no unavailable cloud models", async () => {
     const registry = await createProviderRegistry(
       createConfig() as any,

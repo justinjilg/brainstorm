@@ -34,6 +34,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@brainst0rm/channels": "workspace:*",
     "@brainst0rm/orchestrator": "workspace:*",
     "@brainst0rm/projects": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
@@ -61,6 +62,7 @@
     "@brainst0rm/broker": "workspace:*",
     "@brainst0rm/code-graph": "workspace:*",
     "@brainst0rm/config": "workspace:*",
+    "@brainst0rm/contracts": "workspace:*",
     "@brainst0rm/core": "workspace:*",
     "@brainst0rm/db": "workspace:*",
     "@brainst0rm/docgen": "workspace:*",

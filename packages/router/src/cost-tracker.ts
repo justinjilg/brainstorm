@@ -11,6 +11,7 @@ export class CostTracker {
   private sessionCost = 0;
   private sessionInputTokens = 0;
   private sessionOutputTokens = 0;
+  private sessionCachedTokens = 0;
   private sessionTurns = 0;
 
   constructor(db: any, budgetConfig: BudgetConfig) {
@@ -27,15 +28,36 @@ export class CostTracker {
     cachedTokens?: number;
     taskType: TaskType;
     projectPath?: string;
-    pricing: { inputPer1MTokens: number; outputPer1MTokens: number };
+    pricing: {
+      inputPer1MTokens: number;
+      outputPer1MTokens: number;
+      cachedInputPer1MTokens?: number;
+    };
   }): CostRecord {
+    // Cache-read tokens are billed at a reduced rate. Anthropic's convention
+    // is 0.1× the base input rate; use that as the default when the pricing
+    // table doesn't specify an explicit cached rate.
+    const cachedRate =
+      params.pricing.cachedInputPer1MTokens ??
+      params.pricing.inputPer1MTokens * 0.1;
+
+    // Clamp: cached tokens can never exceed total input tokens. A provider
+    // reporting more cache-reads than input would otherwise yield a negative
+    // full-rate billable count.
+    const cachedTokens = Math.min(params.cachedTokens ?? 0, params.inputTokens);
+    const fullRateInputTokens = params.inputTokens - cachedTokens;
+
     const cost =
-      (params.inputTokens / 1_000_000) * params.pricing.inputPer1MTokens +
+      (fullRateInputTokens / 1_000_000) * params.pricing.inputPer1MTokens +
+      (cachedTokens / 1_000_000) * cachedRate +
       (params.outputTokens / 1_000_000) * params.pricing.outputPer1MTokens;
 
     this.sessionCost += cost;
+    // sessionInputTokens tracks total input (including cached reads); the
+    // cached subset is additionally tracked in its own counter.
     this.sessionInputTokens += params.inputTokens;
     this.sessionOutputTokens += params.outputTokens;
+    this.sessionCachedTokens += cachedTokens;
     this.sessionTurns++;
 
     return this.repo.record({
@@ -45,7 +67,7 @@ export class CostTracker {
       provider: params.provider,
       inputTokens: params.inputTokens,
       outputTokens: params.outputTokens,
-      cachedTokens: params.cachedTokens ?? 0,
+      cachedTokens,
       cost,
       taskType: params.taskType,
       projectPath: params.projectPath,
@@ -173,8 +195,12 @@ export class CostTracker {
     return this.sessionCost;
   }
 
-  getSessionTokens(): { input: number; output: number } {
-    return { input: this.sessionInputTokens, output: this.sessionOutputTokens };
+  getSessionTokens(): { input: number; output: number; cached: number } {
+    return {
+      input: this.sessionInputTokens,
+      output: this.sessionOutputTokens,
+      cached: this.sessionCachedTokens,
+    };
   }
 
   getSummary() {

@@ -1,4 +1,4 @@
-import type { AgentMiddleware, MiddlewareMessage } from '../types.js';
+import type { AgentMiddleware, MiddlewareMessage } from "../types.js";
 
 /**
  * Hardware-enforces maximum concurrent subagent spawns.
@@ -6,20 +6,28 @@ import type { AgentMiddleware, MiddlewareMessage } from '../types.js';
  * "prompt-based limits are less reliable than hardware enforcement."
  */
 export const subagentLimitMiddleware: AgentMiddleware = {
-  name: 'subagent-limit',
+  name: "subagent-limit",
 
   afterModel(message) {
     const MAX_CONCURRENT = 3;
 
-    // Count subagent tool calls in the response
+    // Count subagent tool calls in the response.
+    // 'subagent' is the actually-registered tool name (see agent/subagent-tool.ts);
+    // 'spawn_subagent'/'spawn_parallel' are kept as cheap insurance against
+    // legacy/renamed variants.
     const subagentCalls = message.toolCalls.filter(
-      (tc) => tc.name === 'spawn_subagent' || tc.name === 'spawn_parallel',
+      (tc) =>
+        tc.name === "subagent" ||
+        tc.name === "spawn_subagent" ||
+        tc.name === "spawn_parallel",
     );
 
     if (subagentCalls.length <= MAX_CONCURRENT) return;
 
     // Truncate to max (keep first N, drop rest)
-    const kept = new Set(subagentCalls.slice(0, MAX_CONCURRENT).map((tc) => tc.id));
+    const kept = new Set(
+      subagentCalls.slice(0, MAX_CONCURRENT).map((tc) => tc.id),
+    );
     return {
       ...message,
       toolCalls: message.toolCalls.filter(

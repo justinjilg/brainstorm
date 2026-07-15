@@ -41,6 +41,19 @@ interface AppProps {
     permissionMode: string;
     outputStyle: string;
     sandbox: string;
+    sandboxPool?: {
+      enabled: boolean;
+      maxIdlePerKey: number;
+      maxIdleTotal: number;
+      idleTimeoutMs: number;
+    };
+    channels?: {
+      slack?: {
+        enabled: boolean;
+        authority: string;
+        mode: string;
+      };
+    };
   };
   vaultInfo?: {
     exists: boolean;
@@ -336,6 +349,8 @@ export function App(props: AppProps) {
           permissionMode={props.configInfo?.permissionMode ?? "confirm"}
           outputStyle={props.configInfo?.outputStyle ?? "concise"}
           sandbox={props.configInfo?.sandbox ?? "none"}
+          sandboxPool={props.configInfo?.sandboxPool}
+          channels={props.configInfo?.channels}
           role={currentRole}
           modelCount={props.modelCount}
           turnCount={turnCount}

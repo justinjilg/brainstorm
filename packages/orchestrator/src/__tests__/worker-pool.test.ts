@@ -122,6 +122,33 @@ describe("OrchestrationTaskRepository worker-pool methods", () => {
     expect(taskRepo.claimNext(runId, "worker-1")).toBeUndefined();
   });
 
+  it("failTask cascade-skips dependents so the pool doesn't orphan them", () => {
+    const upstream = taskRepo.create({ runId, projectId, prompt: "upstream" });
+    const downstream = taskRepo.create({
+      runId,
+      projectId,
+      prompt: "downstream",
+      dependsOn: [upstream.id],
+    });
+    // Transitive: depends on the (to-be) skipped downstream.
+    const leaf = taskRepo.create({
+      runId,
+      projectId,
+      prompt: "leaf",
+      dependsOn: [downstream.id],
+    });
+
+    taskRepo.failTask(upstream.id, "boom");
+
+    // The whole dependency chain below the failure is now terminal (skipped),
+    // not stuck pending — so allTasksFinished can report the run is done.
+    expect(taskRepo.getById(downstream.id)?.status).toBe("skipped");
+    expect(taskRepo.getById(leaf.id)?.status).toBe("skipped");
+    expect(taskRepo.getById(upstream.id)?.status).toBe("failed");
+    expect(taskRepo.claimNext(runId, "w")).toBeUndefined();
+    expect(taskRepo.allTasksFinished(runId)).toBe(true);
+  });
+
   it("claimNext does not return a task whose dependencies aren't completed yet", () => {
     const upstream = taskRepo.create({ runId, projectId, prompt: "upstream" });
     const downstream = taskRepo.create({

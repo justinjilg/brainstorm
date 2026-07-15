@@ -66,6 +66,68 @@ export interface JudgeOptions {
   autoMerge?: boolean;
 }
 
+/** Inputs to the overall Judge decision — pure, so it's unit-testable. */
+export interface JudgeOutcomeInputs {
+  /** Number of files touched by more than one worker. */
+  conflictFileCount: number;
+  /** True if any verdict failed build or test verification. */
+  hasVerificationFailure: boolean;
+  /** How many verdicts are unverified (for the reason message). */
+  unverifiedCount: number;
+  /** Number of tasks that failed during execution. */
+  failedCount: number;
+  /** Number of completed-task verdicts evaluated. */
+  verdictCount: number;
+  /** Total files changed across all completed tasks. */
+  totalFilesChanged: number;
+}
+
+/**
+ * Decide the overall Judge outcome from run signals. Precedence: conflicts
+ * (reject) → verification failure (revise) → execution failure (revise) →
+ * nothing to evaluate (reject) → no-op run with zero file changes (reject) →
+ * approve. Extracted as a pure function so the precedence — including the
+ * no-op guard that stops the Judge approving empty worktrees — is testable
+ * without a DB or real worktrees.
+ */
+export function decideJudgeOutcome(i: JudgeOutcomeInputs): {
+  decision: "approve" | "revise" | "reject";
+  reason: string;
+} {
+  if (i.conflictFileCount > 0) {
+    return {
+      decision: "reject",
+      reason: `${i.conflictFileCount} files were modified by multiple workers — manual reconciliation required`,
+    };
+  }
+  if (i.hasVerificationFailure) {
+    return {
+      decision: "revise",
+      reason: `${i.unverifiedCount} task(s) failed build/test verification`,
+    };
+  }
+  if (i.failedCount > 0) {
+    return {
+      decision: "revise",
+      reason: `${i.failedCount} task(s) failed during execution`,
+    };
+  }
+  if (i.verdictCount === 0) {
+    return { decision: "reject", reason: "no completed tasks to evaluate" };
+  }
+  if (i.totalFilesChanged === 0) {
+    return {
+      decision: "reject",
+      reason:
+        "no file changes were produced by any task — the run is a no-op (workers did not apply edits)",
+    };
+  }
+  return {
+    decision: "approve",
+    reason: `all ${i.verdictCount} tasks passed verification with no conflicts`,
+  };
+}
+
 /**
  * Run the Judge phase. Inspects every completed task, builds the conflict
  * matrix, runs verification, and returns a decision.
@@ -156,50 +218,35 @@ export async function runJudge(options: JudgeOptions): Promise<JudgeDecision> {
   }
 
   // ── Overall decision ───────────────────────────────────────────────
-  const hasConflicts = Object.keys(conflictMatrix).length > 0;
-  const hasVerificationFailure = verdicts.some(
-    (v) => v.buildPassed === false || v.testPassed === false,
+  // A run that completed but changed nothing anywhere is a no-op — every
+  // worker narrated instead of editing. Approving it would merge an empty
+  // result and report false success; refuse it explicitly.
+  const totalFilesChanged = completed.reduce(
+    (n, t) => n + (t.filesTouched?.length ?? 0),
+    0,
   );
-  const hasFailedTasks = failed.length > 0;
 
-  let decision: "approve" | "revise" | "reject";
-  let reason: string;
-  if (hasConflicts) {
-    decision = "reject";
-    reason = `${Object.keys(conflictMatrix).length} files were modified by multiple workers — manual reconciliation required`;
-  } else if (hasVerificationFailure) {
-    decision = "revise";
-    reason = `${verdicts.filter((v) => !v.verified).length} task(s) failed build/test verification`;
-  } else if (hasFailedTasks) {
-    decision = "revise";
-    reason = `${failed.length} task(s) failed during execution`;
-  } else if (verdicts.length === 0) {
-    decision = "reject";
-    reason = "no completed tasks to evaluate";
-  } else {
-    decision = "approve";
-    reason = `all ${verdicts.length} tasks passed verification with no conflicts`;
-  }
+  let { decision, reason } = decideJudgeOutcome({
+    conflictFileCount: Object.keys(conflictMatrix).length,
+    hasVerificationFailure: verdicts.some(
+      (v) => v.buildPassed === false || v.testPassed === false,
+    ),
+    unverifiedCount: verdicts.filter((v) => !v.verified).length,
+    failedCount: failed.length,
+    verdictCount: verdicts.length,
+    totalFilesChanged,
+  });
 
   // ── Auto-merge on approve ──────────────────────────────────────────
-  const mergedTaskIds: string[] = [];
+  let mergedTaskIds: string[] = [];
   if (decision === "approve" && autoMerge) {
-    for (const verdict of verdicts) {
-      if (!verdict.verified || !verdict.worktreePath) continue;
-      try {
-        mergeWorktreeBranch(projectPath, verdict.worktreePath);
-        mergedTaskIds.push(verdict.taskId);
-      } catch (err: any) {
-        log.warn(
-          { taskId: verdict.taskId, err: err.message },
-          "Failed to merge worktree branch — leaving for manual review",
-        );
-        // Downgrade decision: a merge failure on an approved task means
-        // we can't honor the approval.
-        decision = "revise";
-        reason = `verification passed but merge failed for task ${verdict.taskId}: ${err.message}`;
-        break;
-      }
+    const merge = mergeVerifiedWorktrees(projectPath, verdicts);
+    mergedTaskIds = merge.mergedTaskIds;
+    if (merge.failure) {
+      // Downgrade decision: a merge failure on an approved task means
+      // we can't honor the approval.
+      decision = "revise";
+      reason = merge.failure;
     }
   }
 
@@ -216,6 +263,36 @@ export async function runJudge(options: JudgeOptions): Promise<JudgeDecision> {
     durationMs: Date.now() - startedAt,
     reason,
   };
+}
+
+/**
+ * Merge every verified worktree branch into the project. Extracted from
+ * runJudge so a panel gate can perform the SAME merge without re-running build
+ * verification. Stops at the first merge failure and reports it (the caller
+ * downgrades an approval it cannot honor).
+ */
+export function mergeVerifiedWorktrees(
+  projectPath: string,
+  verdicts: JudgeVerdict[],
+): { mergedTaskIds: string[]; failure?: string } {
+  const mergedTaskIds: string[] = [];
+  for (const verdict of verdicts) {
+    if (!verdict.verified || !verdict.worktreePath) continue;
+    try {
+      mergeWorktreeBranch(projectPath, verdict.worktreePath);
+      mergedTaskIds.push(verdict.taskId);
+    } catch (err: any) {
+      log.warn(
+        { taskId: verdict.taskId, err: err.message },
+        "Failed to merge worktree branch — leaving for manual review",
+      );
+      return {
+        mergedTaskIds,
+        failure: `verification passed but merge failed for task ${verdict.taskId}: ${err.message}`,
+      };
+    }
+  }
+  return { mergedTaskIds };
 }
 
 /**
@@ -237,6 +314,22 @@ function verifyWorktree(worktreePath: string): {
       buildPassed: null,
       testPassed: null,
       notes: "no package.json in worktree — verification skipped",
+    };
+  }
+
+  // A git worktree shares .git but NOT node_modules, so `npm run build`
+  // would fail for lack of dependencies — a false negative that rejects a
+  // perfectly correct diff (observed: GLM produced a correct, compiling edit
+  // that was still REVISEd because the worktree had no deps). Treat missing
+  // deps as "unverified" (null), not "failed" (false), so the Judge doesn't
+  // reject on an environmental gap. Enabling real verification would require
+  // installing/linking deps into the worktree first.
+  if (!existsSync(join(worktreePath, "node_modules"))) {
+    return {
+      buildPassed: null,
+      testPassed: null,
+      notes:
+        "deps not installed in worktree — build verification skipped (install/link node_modules in worktrees to enable)",
     };
   }
 

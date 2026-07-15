@@ -9,6 +9,7 @@ import {
   CostTracker,
   recordOutcome,
   adaptToolsForModel,
+  reverseToolName,
 } from "@brainst0rm/router";
 import type { RoutingOutcomeRepository } from "@brainst0rm/db";
 import type { ToolRegistry, PermissionCheckFn } from "@brainst0rm/tools";
@@ -71,6 +72,16 @@ import { segmentsToSystemArray } from "./context.js";
 import { predictTaskCost } from "./cost-predictor.js";
 import { detectTone, toneGuidance } from "./sentiment.js";
 import { shouldUseEnsemble } from "./ensemble.js";
+import {
+  runVerifyPass,
+  formatVerifyDiagnostic,
+  type VerifyMode,
+  type VerifyRunner,
+} from "./verify-loop.js";
+import {
+  detectNarratedToolIntent,
+  buildToolUseCorrection,
+} from "./tool-use-enforcement.js";
 
 const log = createLogger("agent-loop");
 
@@ -343,6 +354,31 @@ export interface AgentLoopOptions {
   _retryDepth?: number;
   /** Internal: tracks models already tried for error reporting. */
   _modelsTried?: string[];
+  /**
+   * Per-invocation override for in-loop verify / self-correction (Phase 3).
+   * When omitted, falls back to config.general.verify.
+   */
+  verify?: { mode: VerifyMode; maxIterations: number };
+  /** Internal: tracks verify self-correction depth to cap re-entry. */
+  _verifyDepth?: number;
+  /** Internal: injectable verifier (tests supply a mock). */
+  _verifyRunner?: VerifyRunner;
+  /**
+   * Per-invocation override for tool-use enforcement (Phase 7). Weak models
+   * that narrate a tool action but never emit the call get a corrective nudge
+   * + a forced tool-call retry. When omitted, falls back to
+   * config.general.toolEnforcement.
+   */
+  toolEnforcement?: { enabled: boolean; maxNudges: number };
+  /** Internal: tracks tool-enforcement nudge depth to cap re-entry. */
+  _nudgeDepth?: number;
+  /**
+   * Internal: force `toolChoice: "required"` for THIS single turn only. Set on
+   * the corrective retry after a narration nudge so the model is compelled to
+   * emit a real tool call instead of narrating again. Never persisted — every
+   * other recursion site resets it so the model can still finish normally.
+   */
+  _forceToolChoice?: boolean;
   /** Optional middleware pipeline for composable agent interceptors. */
   middleware?: MiddlewarePipeline;
   /** Repository for persisting routing outcomes (Thompson sampling). */
@@ -783,14 +819,17 @@ export async function* runAgentLoop(
   }
 
   // Per-model tool name adaptation: rename tools to match what each provider's
-  // models were trained on (e.g., bash → shell_command for OpenAI). Today we
-  // adapt the OUTBOUND tool list so the model sees the right names; the
-  // INBOUND tool-call rename (using adapted.reverseMap to translate calls
-  // back to canonical names for execution) is not yet wired into tool
-  // dispatch — adapted tools work because most renames are aliases the
-  // tool registry already accepts. Wiring the reverse map is tracked as
-  // a follow-up; until then, models that emit non-aliased renamed names
-  // hit "tool not found" in the registry.
+  // models were trained on (e.g., bash → shell_command for OpenAI). We adapt
+  // the OUTBOUND tool list so the model sees provider-native names. The
+  // AI SDK then dispatches a tool call to the executor keyed under that same
+  // adapted name — but every downstream consumer in the stream loop compares
+  // against CANONICAL names (file_read/file_write/file_edit/shell/subagent)
+  // for turn-context tracking, build-state capture, loop detection, and TUI
+  // events. The INBOUND rename (reverseToolName below) maps each observed
+  // tool-call name back to canonical at the point the loop resolves it, so a
+  // model that emits a renamed name (apply_patch, replace, read_file, …) is
+  // tracked and surfaced under its canonical identity rather than silently
+  // missing every comparison.
   let finalTools = aiTools;
   if (aiTools && decision) {
     const adapted = adaptToolsForModel(aiTools, decision.model);
@@ -840,6 +879,13 @@ export async function* runAgentLoop(
       system: systemForApiNormalized as any,
       messages: messagesForApi as any,
       ...(finalTools ? { tools: finalTools } : {}),
+      // Phase 7: on a narration-nudge corrective retry ONLY, force a real tool
+      // call so the model cannot narrate-and-stop again. Scoped to this single
+      // re-entry via options._forceToolChoice; never permanent (that would stop
+      // the model ever finishing). Only meaningful when tools are present.
+      ...(finalTools && options._forceToolChoice
+        ? { toolChoice: "required" as const }
+        : {}),
       ...(metadataHeader
         ? { headers: { "x-br-metadata": metadataHeader } }
         : {}),
@@ -854,6 +900,9 @@ export async function* runAgentLoop(
         if (usage) {
           const inputTokens = usage.inputTokens ?? 0;
           const outputTokens = usage.outputTokens ?? 0;
+          // AI SDK v6 exposes cache-read tokens on the usage object. These
+          // are a subset of inputTokens and are billed at a reduced rate.
+          const cachedTokens = usage.cachedInputTokens ?? 0;
           try {
             costTracker.record({
               sessionId,
@@ -861,6 +910,7 @@ export async function* runAgentLoop(
               provider: decision.model.provider,
               inputTokens,
               outputTokens,
+              cachedTokens,
               taskType: task.type,
               projectPath: options.projectPath,
               pricing: decision.model.pricing,
@@ -872,10 +922,18 @@ export async function* runAgentLoop(
               "Cost tracking write failed — continuing without recording",
             );
           }
-          // Record LLM call to trajectory for learning loop
+          // Record LLM call to trajectory for learning loop. Apply the same
+          // cache-read discount as CostTracker so trajectory cost matches the
+          // billed cost: cached tokens bill at the cached rate (default 0.1×
+          // input), the remainder at the full input rate.
+          const cachedRate =
+            decision.model.pricing.cachedInputPer1MTokens ??
+            decision.model.pricing.inputPer1MTokens * 0.1;
+          const billableCached = Math.min(cachedTokens, inputTokens);
           const stepCost =
-            (inputTokens / 1_000_000) *
+            ((inputTokens - billableCached) / 1_000_000) *
               decision.model.pricing.inputPer1MTokens +
+            (billableCached / 1_000_000) * cachedRate +
             (outputTokens / 1_000_000) *
               decision.model.pricing.outputPer1MTokens;
           trajectory?.recordLLMCall({
@@ -896,6 +954,19 @@ export async function* runAgentLoop(
     let textDeltaCount = 0;
     let toolCallCount = 0;
     let accumulatedText = ""; // For afterModel middleware (stop-detection, etc.)
+    // ── Streamed tool-call assembly integrity tracking ──
+    // pendingToolInputs: incremented when the provider signals the start of a
+    // tool-call (tool-input-start) and decremented when that call materializes
+    // as a dispatchable tool-call part. A residual > 0 after the stream ends
+    // means a tool call began assembling but never completed — the classic
+    // symptom of a truncated/duplicate terminal finish (seen from BR) cutting
+    // the AI-SDK parser off mid-tool-call.
+    let pendingToolInputs = 0;
+    // finishReason from the terminal finish / finish-step parts. "tool-calls"
+    // means the model intended to act; if we then saw zero dispatchable
+    // tool-calls the assembly was truncated (not a genuine empty turn).
+    let finishReason: string | undefined;
+    let finishPartCount = 0;
     let lastEventTime = Date.now();
     const toolCallResults: Array<{ name: string; ok: boolean }> = [];
     const filesRead: string[] = [];
@@ -965,18 +1036,39 @@ export async function* runAgentLoop(
               type: "text-delta" as const,
               delta: normalizeInsightMarkers(filtered),
             };
+        } else if (part.type === "tool-input-start") {
+          // A tool call began streaming. Track it so we can detect a stream
+          // that finishes before the call materializes into a tool-call part.
+          pendingToolInputs++;
         } else if (part.type === "tool-call") {
           toolCallCount++;
+          // Balance the tool-input-start we counted above (if the provider
+          // emitted one). Floor at 0 so providers that emit tool-call without
+          // a preceding tool-input-start don't drive the counter negative.
+          pendingToolInputs = Math.max(0, pendingToolInputs - 1);
+          // INBOUND rename: map the provider-native tool name back to canonical
+          // so downstream comparisons and TUI events see the canonical identity.
+          const canonicalName = reverseToolName(part.toolName, decision.model);
           enterToolExecution(); // gate compaction while tools are in-flight
           localToolGateDepth++;
           yield {
             type: "tool-call-start" as const,
-            toolName: part.toolName,
+            toolName: canonicalName,
             args: getPartInput(part as Record<string, unknown>),
           };
+        } else if (part.type === "finish" || part.type === "finish-step") {
+          // Capture the terminal finish reason. A duplicate/malformed finish
+          // (BR sometimes sends more than one) is itself a truncation signal —
+          // count them so the diagnostic can report it.
+          finishPartCount++;
+          finishReason =
+            ((part as Record<string, unknown>).finishReason as string) ??
+            finishReason;
         } else if (part.type === "tool-result") {
           exitToolExecution(); // ungate compaction
           localToolGateDepth--;
+          // INBOUND rename: canonical name for all comparisons/tracking below.
+          const canonicalName = reverseToolName(part.toolName, decision.model);
           const toolResult = getPartOutput(
             part as Record<string, unknown>,
           ) as any;
@@ -986,15 +1078,15 @@ export async function* runAgentLoop(
             typeof toolResult === "object" &&
             (toolResult.error || toolResult.ok === false)
           );
-          toolCallResults.push({ name: part.toolName, ok: toolOk });
+          toolCallResults.push({ name: canonicalName, ok: toolOk });
           // Track file access for turn context
-          if (part.toolName === "file_read" && toolOk) {
+          if (canonicalName === "file_read" && toolOk) {
             const path = getPartInput(part as Record<string, unknown>)?.path as
               | string
               | undefined;
             if (path) filesRead.push(path);
           } else if (
-            (part.toolName === "file_write" || part.toolName === "file_edit") &&
+            (canonicalName === "file_write" || canonicalName === "file_edit") &&
             toolOk
           ) {
             const path = getPartInput(part as Record<string, unknown>)?.path as
@@ -1004,7 +1096,7 @@ export async function* runAgentLoop(
           }
           // Track build/test results for persistent build state warnings
           if (
-            part.toolName === "shell" &&
+            canonicalName === "shell" &&
             options.buildState &&
             toolResult &&
             typeof toolResult === "object"
@@ -1020,14 +1112,14 @@ export async function* runAgentLoop(
           }
           yield {
             type: "tool-call-result",
-            toolName: part.toolName,
+            toolName: canonicalName,
             result: toolResult,
           };
           // Loop detection — warn about repetitive behavior
           const toolPath = getPartInput(part as Record<string, unknown>)
             ?.path as string | undefined;
           const loopWarnings = loopDetector.recordToolCall(
-            part.toolName,
+            canonicalName,
             toolPath,
           );
           for (const w of loopWarnings) {
@@ -1035,7 +1127,7 @@ export async function* runAgentLoop(
           }
           // Emit subagent-result events for TUI display
           if (
-            part.toolName === "subagent" &&
+            canonicalName === "subagent" &&
             toolResult &&
             typeof toolResult === "object"
           ) {
@@ -1146,18 +1238,63 @@ export async function* runAgentLoop(
     // ── Empty/blocked response detection + retry with fallback model ──
     const isEmpty = textDeltaCount === 0 && toolCallCount === 0;
 
+    // ── Truncated tool-call detection ──
+    // Distinct from an empty turn: here the model INTENDED to call a tool but
+    // the stream ended before a dispatchable tool-call materialized. Two
+    // signals, either of which is sufficient:
+    //   1. pendingToolInputs > 0 — a tool-input-start never resolved into a
+    //      tool-call (parser cut off mid-assembly).
+    //   2. finishReason === "tool-calls" but toolCallCount === 0 — the provider
+    //      reported it stopped to make tool calls, yet emitted none.
+    // A duplicate terminal finish (finishPartCount > 1), which BR has been seen
+    // to send, is the usual trigger for (1)/(2) — surfaced in the diagnostic.
+    // We must NOT let this record as a silent empty-success: it retries.
+    const toolCallTruncated =
+      pendingToolInputs > 0 ||
+      (finishReason === "tool-calls" && toolCallCount === 0);
+
+    if (toolCallTruncated) {
+      log.warn(
+        {
+          model: decision.model.id,
+          pendingToolInputs,
+          finishReason,
+          finishPartCount,
+          textDeltas: textDeltaCount,
+          toolCalls: toolCallCount,
+        },
+        "Stream truncated mid-tool-call — tool-call assembly incomplete",
+      );
+      trajectory?.recordError({
+        message: `Truncated tool-call assembly (pending=${pendingToolInputs}, finishReason=${finishReason ?? "none"}, finishParts=${finishPartCount})`,
+        model: decision.model.id,
+      });
+      yield {
+        type: "loop-warning" as const,
+        message: `Stream from ${decision.model.id} truncated mid-tool-call (finishReason=${finishReason ?? "none"}, ${pendingToolInputs} pending). Retrying.`,
+      };
+    }
+
+    // A turn needs a retry when the model gave us nothing (empty) OR when it
+    // tried to act but the tool-call was truncated. Both are model-side
+    // failures that a fallback may recover.
+    const shouldRetry = isEmpty || toolCallTruncated;
+
     // Record circuit breaker outcome for this model.
-    // Empty response = failure (the model gave us nothing).
-    // Non-empty = success (closes half-open circuits, resets consecutive failures).
+    // Empty response / truncated tool-call = failure (nothing usable).
+    // Non-empty & complete = success (closes half-open circuits, resets
+    // consecutive failures).
     const breaker = getLLMCircuit(decision.model.id);
-    if (isEmpty) {
-      breaker.recordFailure("empty_response");
+    if (shouldRetry) {
+      breaker.recordFailure(
+        toolCallTruncated ? "truncated_tool_call" : "empty_response",
+      );
     } else {
       breaker.recordSuccess();
     }
     // Build fallback list: use decision.fallbacks, or generate from registry if empty
     let fallbacks = decision.fallbacks;
-    if (fallbacks.length === 0 && isEmpty) {
+    if (fallbacks.length === 0 && shouldRetry) {
       // Fallback models for empty responses — configurable via config.routing.fallbackModels
       const RETRY_MODELS: string[] = (config as any).routing
         ?.fallbackModels ?? [
@@ -1174,8 +1311,14 @@ export async function* runAgentLoop(
     const retryDepth = options._retryDepth ?? 0;
     const modelsTried = [...(options._modelsTried ?? []), decision.model.id];
 
-    if (isEmpty && fallbacks.length > 0 && retryDepth < MAX_FALLBACK_DEPTH) {
-      const reason = isEmpty ? "empty_response" : "tool_blocked";
+    if (
+      shouldRetry &&
+      fallbacks.length > 0 &&
+      retryDepth < MAX_FALLBACK_DEPTH
+    ) {
+      const reason = toolCallTruncated
+        ? "truncated_tool_call"
+        : "empty_response";
       router.recordFailure(decision.model.id, reason);
       // Record failure for Thompson sampling on fallback path
       const fallbackLatencyMs = Date.now() - turnStartMs;
@@ -1211,17 +1354,24 @@ export async function* runAgentLoop(
           preferredModelId: fallbackModel.id,
           _retryDepth: retryDepth + 1,
           _modelsTried: modelsTried,
+          // A forced tool-call is scoped to a single nudge retry; never carry
+          // it into an unrelated fallback turn.
+          _forceToolChoice: false,
         } as any);
         return;
       }
     }
 
-    // All retries exhausted — yield structured error so caller can surface it
-    if (isEmpty) {
+    // All retries exhausted — yield structured error so caller can surface it.
+    // Distinguish a genuinely empty turn from a truncated tool-call so the
+    // operator knows whether the model said nothing or was cut off mid-action.
+    if (shouldRetry) {
       yield {
         type: "fallback-exhausted" as const,
         modelsTried,
-        reason: "All fallback models returned empty responses",
+        reason: toolCallTruncated
+          ? "All fallback models truncated their tool-call streams"
+          : "All fallback models returned empty responses",
       };
     }
 
@@ -1291,7 +1441,7 @@ export async function* runAgentLoop(
 
     // Record routing outcome for Thompson sampling (in-memory + DB persistence)
     const turnLatencyMs = Date.now() - turnStartMs;
-    const turnSuccess = !isEmpty;
+    const turnSuccess = !shouldRetry;
     const turnCost = costTracker.getSessionCost() - sessionCostBefore;
     recordOutcome(
       task.type,
@@ -1311,6 +1461,209 @@ export async function* runAgentLoop(
         );
       } catch (e) {
         log.warn({ err: e }, "Failed to persist routing outcome to DB");
+      }
+    }
+
+    // ── Phase 7: tool-use enforcement (narration → forced tool call) ────
+    // A weak model may NARRATE a tool action ("Let me read config.ts") and
+    // then stop WITHOUT emitting the call. Such a turn is not empty and not a
+    // truncated tool-call, so it records as turnSuccess and would silently
+    // complete. When enabled, and only when the turn (a) stopped on its own
+    // (finishReason !== "tool-calls"), (b) made zero tool calls, (c) has tools
+    // available to call, and (d) its text reads as an un-acted tool intent, we
+    // push a corrective user-role nudge and RE-RUN with toolChoice="required"
+    // so a real call is forced. Guards (mirroring the verify block below):
+    //   - opt-in-safe: fires only on this failure state, DEFAULT enabled=true,
+    //     so well-behaved models never trigger it (set enabled:false for exact
+    //     legacy behavior),
+    //   - bounded by maxNudges to prevent infinite re-prompting,
+    //   - gated on remaining budget (same 20% threshold as verify/budget-warn),
+    //   - placed BEFORE verify: a narrated turn wrote no files, so verify would
+    //     skip it anyway — and only ONE recursion+return runs per turn, so the
+    //     two corrective mechanisms cannot compound into an unbounded loop.
+    const teEnabled =
+      options.toolEnforcement?.enabled ??
+      config.general?.toolEnforcement?.enabled ??
+      true;
+    const teMaxNudges =
+      options.toolEnforcement?.maxNudges ??
+      config.general?.toolEnforcement?.maxNudges ??
+      2;
+    const nudgeDepth = options._nudgeDepth ?? 0;
+
+    if (
+      teEnabled &&
+      turnSuccess &&
+      toolCallCount === 0 &&
+      finishReason !== "tool-calls" &&
+      !!finalTools &&
+      nudgeDepth < teMaxNudges &&
+      !options.signal?.aborted &&
+      detectNarratedToolIntent(accumulatedText)
+    ) {
+      // Budget guard — a nudge is a full extra model turn. Reuse the same
+      // 20%-remaining threshold verify/budget-warning use; skip rather than
+      // risk blowing config.budget.perSession.
+      const nudgeBudgetRemaining = costTracker.getRemainingBudget();
+      const nudgeSessionLimit = (config.budget as any)?.perSession;
+      const nudgeBudgetTooLow =
+        nudgeBudgetRemaining !== null &&
+        nudgeSessionLimit &&
+        nudgeBudgetRemaining <= nudgeSessionLimit * 0.2;
+
+      if (nudgeBudgetTooLow) {
+        log.warn(
+          {
+            remaining: nudgeBudgetRemaining,
+            sessionLimit: nudgeSessionLimit,
+          },
+          "tool-use nudge skipped — remaining budget below 20% threshold",
+        );
+      } else {
+        const nextNudge = nudgeDepth + 1;
+        log.info(
+          {
+            model: decision.model.id,
+            iteration: nextNudge,
+            maxNudges: teMaxNudges,
+          },
+          "Model narrated a tool action without calling it — nudging with forced tool call",
+        );
+        yield {
+          type: "tool-nudge" as const,
+          iteration: nextNudge,
+          maxNudges: teMaxNudges,
+        };
+        // Feed the correction back as a user-role turn and re-run, mirroring
+        // the verify self-recursion below. _forceToolChoice compels a real
+        // call on the retry; it is scoped to that single re-entry (the verify
+        // and fallback recursions explicitly clear it, so the model can still
+        // finish normally afterwards).
+        //
+        // Do NOT force on the TERMINAL retry: when `nextNudge === teMaxNudges`
+        // the re-entry can no longer nudge again (`nudgeDepth < teMaxNudges`
+        // fails there), so whatever it emits is ACCEPTED as the turn's finish.
+        // Forcing tools on that accepted turn would compel it into a tool call
+        // and rob the model of a clean text answer. Only force while a further
+        // corrective opportunity still remains.
+        const forceOnRetry = nextNudge < teMaxNudges;
+        messages.push({ role: "user", content: buildToolUseCorrection() });
+        yield* runAgentLoop(messages, {
+          ...options,
+          _nudgeDepth: nextNudge,
+          _forceToolChoice: forceOnRetry,
+        });
+        return;
+      }
+    }
+
+    // ── Phase 3: in-loop verify / self-correction ──────────────────────
+    // After an edit-producing turn, verify the files the model just changed
+    // (typecheck always; affected tests in "full" mode). On failure, feed the
+    // diagnostics back as another turn so the model self-corrects WITHIN this
+    // agentic run (Cline/OpenHands pattern; the single-agent analogue of the
+    // Judge's verifyWorktree gate). Guards:
+    //   - only when the turn actually changed files (a no-op turn skips it),
+    //   - only when the model turn itself succeeded (never verify a failed turn),
+    //   - bounded by verify.maxIterations to prevent infinite oscillation,
+    //   - gated on remaining budget so self-correction can't blow perSession,
+    //   - a verify pass that errors degrades to a skip (never crashes the turn).
+    const verifyMode: VerifyMode =
+      options.verify?.mode ?? config.general?.verify?.mode ?? "off";
+    const verifyMaxIterations =
+      options.verify?.maxIterations ??
+      config.general?.verify?.maxIterations ??
+      2;
+    const verifyDepth = options._verifyDepth ?? 0;
+    const changedThisTurn = Array.from(new Set(filesWritten));
+
+    if (
+      verifyMode !== "off" &&
+      turnSuccess &&
+      changedThisTurn.length > 0 &&
+      verifyDepth < verifyMaxIterations &&
+      !options.signal?.aborted
+    ) {
+      // Budget guard — each verify-fix is a full extra model turn. Reuse the
+      // same 20%-remaining threshold the budget-warning uses above; if we're
+      // under it, skip verify rather than risk blowing config.budget.perSession.
+      const verifyBudgetRemaining = costTracker.getRemainingBudget();
+      const verifySessionLimit = (config.budget as any)?.perSession;
+      const budgetTooLow =
+        verifyBudgetRemaining !== null &&
+        verifySessionLimit &&
+        verifyBudgetRemaining <= verifySessionLimit * 0.2;
+
+      if (budgetTooLow) {
+        log.warn(
+          {
+            remaining: verifyBudgetRemaining,
+            sessionLimit: verifySessionLimit,
+          },
+          "verify skipped — remaining budget below 20% threshold",
+        );
+      } else {
+        const outcome = runVerifyPass(
+          changedThisTurn,
+          verifyMode,
+          { projectPath: options.projectPath, signal: options.signal },
+          options._verifyRunner,
+        );
+
+        if (outcome.ran && !outcome.ok) {
+          const nextIteration = verifyDepth + 1;
+          const isFinalAttempt = nextIteration >= verifyMaxIterations;
+          yield {
+            type: "verify-failed" as const,
+            iteration: nextIteration,
+            maxIterations: verifyMaxIterations,
+            diagnostics: outcome.diagnostics,
+          };
+          // Feed diagnostics back as a user-role correction turn and recurse,
+          // mirroring the fallback self-recursion at the top of this function.
+          messages.push({
+            role: "user",
+            content: formatVerifyDiagnostic(
+              outcome,
+              verifyMode,
+              isFinalAttempt,
+            ),
+          });
+          // Checkpoint THIS turn's edits before recursing. The outer invocation
+          // returns right after the recursive yield*, so without this the
+          // original turn's filesWritten are never persisted and crash-recovery/
+          // undo would under-report the edits (only the final correction's files
+          // would survive). Mirrors the checkpointer.saveIfNeeded below.
+          if (options.checkpointer) {
+            options.checkpointer.saveIfNeeded({
+              sessionId,
+              turnNumber: Math.floor(Date.now() / 1000),
+              conversationHistory: messages,
+              scratchpad: {},
+              filesRead,
+              filesWritten,
+              buildStatus: options.buildState?.getStatus() ?? "unknown",
+              totalCost: costTracker.getSessionCost(),
+              projectPath: options.projectPath,
+            });
+          }
+          yield* runAgentLoop(messages, {
+            ...options,
+            _verifyDepth: nextIteration,
+            // Forced tool-call is scoped to the nudge retry only — don't leak
+            // it into a verify self-correction turn.
+            _forceToolChoice: false,
+          });
+          return;
+        }
+
+        if (outcome.ran && outcome.ok) {
+          yield {
+            type: "verify-passed" as const,
+            iteration: verifyDepth,
+            mode: verifyMode === "full" ? "full" : "typecheck",
+          };
+        }
       }
     }
 

@@ -1,0 +1,47 @@
+{
+  "name": "@brainst0rm/channels",
+  "version": "0.14.4",
+  "type": "module",
+  "description": "Governed chat-platform gateway (Slack, etc.): transport adapters + IntakeCoordinator bridging inbound messages to the agent loop.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@brainst0rm/core": "workspace:*",
+    "@brainst0rm/tools": "workspace:*",
+    "@brainst0rm/db": "workspace:*",
+    "@brainst0rm/shared": "workspace:*",
+    "better-sqlite3": "^11"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7",
+    "@types/node": "^22.0.0",
+    "tsup": "^8",
+    "typescript": "^5.7",
+    "vitest": "^3.2.4"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/justinjilg/brainstorm.git",
+    "directory": "packages/channels"
+  },
+  "homepage": "https://brainstorm.co",
+  "keywords": [
+    "ai",
+    "coding-assistant",
+    "llm",
+    "slack",
+    "channels",
+    "chat"
+  ]
+}

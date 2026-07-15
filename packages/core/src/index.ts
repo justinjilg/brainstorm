@@ -12,12 +12,15 @@ export {
 } from "./personas/index.js";
 export {
   buildSystemPrompt,
+  buildCodeGraphBlock,
   parseAtMentions,
   buildToolAwarenessSection,
   segmentsToSystemArray,
   segmentsToString,
   type SystemPromptSegment,
   type SystemPromptResult,
+  type CodeGraphRetrievalOptions,
+  type RetrievedSymbol,
 } from "./agent/context.js";
 export { SessionManager } from "./session/manager.js";
 export { PermissionManager } from "./permissions/manager.js";
@@ -34,6 +37,8 @@ export {
   spawnSubagent,
   spawnParallel,
   getSubagentTypeConfig,
+  describeFinishReason,
+  contractAuthorityOptions,
   SUBAGENT_TYPE_NAMES,
   type SubagentOptions,
   type SubagentResult,
@@ -84,6 +89,11 @@ export {
   type CuratorCycleOptions,
   type CuratorCycleResult,
 } from "./memory/curator-runner.js";
+export {
+  runExtractionCycle,
+  type ExtractCycleOptions,
+  type ExtractCycleResult,
+} from "./memory/extract-runner.js";
 // Team Auth
 export {
   resolveTeamContext,
@@ -176,10 +186,26 @@ export {
 export {
   runJudge,
   detectConflicts,
+  mergeVerifiedWorktrees,
   type JudgeDecision,
   type JudgeOptions,
   type JudgeVerdict,
 } from "./plan/multi-agent-judge.js";
+export {
+  runMergeGate,
+  createPanelSpawn,
+  deterministicVerdict,
+  type MergeGateOptions,
+  type MergeGateResult,
+} from "./plan/judge-panel.js";
+export {
+  runGateWithRevise,
+  buildContractFeedback,
+  chooseRetryModel,
+  type GateWithReviseOptions,
+  type GateWithReviseResult,
+  type ReviseAttemptRecord,
+} from "./plan/revise-loop.js";
 export {
   FindingsStore,
   type FindingsFilter,
@@ -347,9 +373,22 @@ export {
 } from "./agent/repo-map.js";
 export {
   semanticSearch,
+  semanticSearchEmbedded,
   indexProject,
   type SearchResult,
+  type EmbeddedSearchOptions,
 } from "./search/semantic.js";
+export {
+  resolveEmbeddingProvider,
+  createOllamaEmbeddingProvider,
+  openEmbeddingStore,
+  denseCosine,
+  hashContent,
+  type EmbeddingProvider,
+  type EmbeddingResolveOptions,
+  type EmbeddingStore,
+  type EmbeddingStoreRecord,
+} from "./search/embeddings.js";
 export {
   indexRecentCommits,
   searchCommitHistory,
