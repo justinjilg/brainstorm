@@ -38,6 +38,7 @@ export {
   spawnParallel,
   getSubagentTypeConfig,
   describeFinishReason,
+  contractAuthorityOptions,
   SUBAGENT_TYPE_NAMES,
   type SubagentOptions,
   type SubagentResult,
@@ -185,10 +186,18 @@ export {
 export {
   runJudge,
   detectConflicts,
+  mergeVerifiedWorktrees,
   type JudgeDecision,
   type JudgeOptions,
   type JudgeVerdict,
 } from "./plan/multi-agent-judge.js";
+export {
+  runMergeGate,
+  createPanelSpawn,
+  deterministicVerdict,
+  type MergeGateOptions,
+  type MergeGateResult,
+} from "./plan/judge-panel.js";
 export {
   FindingsStore,
   type FindingsFilter,

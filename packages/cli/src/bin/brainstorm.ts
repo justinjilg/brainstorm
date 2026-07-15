@@ -3525,6 +3525,10 @@ orchestrateCmd
     "--model <id>",
     "Pin planner + workers to a specific model id (e.g. brainstormrouter/auto), bypassing capability routing",
   )
+  .option(
+    "--panel <name>",
+    "Merge gate: run a diverse judge panel ('merge-gate' = 3 provider-diverse LLM judges + build/test, majority + security veto) instead of the deterministic judge. Enables per-task contracts. Default: deterministic judge (today's behavior).",
+  )
   .description(
     "Plan → parallel workers → judge: decompose a request, run N workers in isolated worktrees, merge approved branches",
   )
@@ -3537,25 +3541,44 @@ orchestrateCmd
         merge?: boolean;
         skipBuildVerify?: boolean;
         model?: string;
+        panel?: string;
       },
     ) => {
-      const { planMultiAgentRun, runWorkerPool, runJudge } =
+      const { planMultiAgentRun, runWorkerPool, runJudge, runMergeGate } =
         await import("@brainst0rm/core");
+      const { DEFAULT_PANELS } = await import("@brainst0rm/contracts");
 
       const projectPath = process.cwd();
       const concurrency = parseInt(opts.workers, 10);
       const budgetLimit = parseFloat(opts.budget);
       const autoMerge = opts.merge !== false;
 
+      // Set up runtime — same pattern as other CLI commands
+      const config = loadConfig();
+
+      // Panel merge gate: --panel wins, else optional [orchestrator] panel TOML.
+      // Absent → deterministic judge (today's behavior), no contracts emitted.
+      const panelName =
+        opts.panel ?? (config as any).orchestrator?.panel ?? undefined;
+      const panelConfig = panelName ? DEFAULT_PANELS[panelName] : undefined;
+      if (panelName && !panelConfig) {
+        console.error(
+          `  Unknown panel '${panelName}'. Available: ${Object.keys(DEFAULT_PANELS).join(", ")}\n`,
+        );
+        process.exit(1);
+      }
+      const usePanel = Boolean(panelConfig);
+
       console.log(`\n  Multi-Agent Parallel Orchestration\n`);
       console.log(`  Request:  "${request.slice(0, 80)}"`);
       console.log(`  Workers:  ${concurrency} concurrent`);
       console.log(`  Budget:   $${budgetLimit.toFixed(2)}`);
       console.log(`  Merge:    ${autoMerge ? "auto on approve" : "manual"}`);
+      console.log(
+        `  Gate:     ${usePanel ? `panel '${panelName}'` : "deterministic judge"}`,
+      );
       console.log();
 
-      // Set up runtime — same pattern as other CLI commands
-      const config = loadConfig();
       config.general.defaultPermissionMode = "auto"; // unattended
       const db = getDb();
       const resolvedKeys = await resolveProviderKeys();
@@ -3611,6 +3634,8 @@ orchestrateCmd
           budgetLimit,
           subagentOptions: sharedSubagentOptions,
           db,
+          // The panel gate reviews against per-task contracts; emit them.
+          emitContracts: usePanel,
         });
       } catch (err: any) {
         console.error(`  ✗ Planner failed: ${err.message}\n`);
@@ -3662,41 +3687,81 @@ orchestrateCmd
         }
       }
 
-      // ── Phase 3: Judge ──────────────────────────────────────────────
-      console.log(`\n  [Judge] verifying worktrees...`);
-      const verdict = await runJudge({
-        runId: plan.runId,
-        db,
-        projectPath,
-        skipBuildVerify: opts.skipBuildVerify ?? false,
-        autoMerge,
-      });
+      // ── Phase 3: Judge / Panel gate ─────────────────────────────────
+      let decision: "approve" | "revise" | "reject";
+      let mergedTaskIds: string[];
+      let panelCost = 0;
 
-      console.log(
-        `  [Judge] decision: ${verdict.decision.toUpperCase()} (${verdict.reason})`,
-      );
-      const conflicts = Object.keys(verdict.conflictMatrix);
-      if (conflicts.length > 0) {
-        console.log(`  [Judge] conflicts on ${conflicts.length} files:`);
-        for (const file of conflicts.slice(0, 10)) {
+      if (usePanel && panelConfig) {
+        console.log(`\n  [Panel] verifying worktrees with '${panelName}'...`);
+        const gate = await runMergeGate({
+          runId: plan.runId,
+          db,
+          projectPath,
+          panel: panelConfig,
+          subagentOptions: sharedSubagentOptions,
+          registry,
+          getModels: () => router.getModels(),
+          skipBuildVerify: opts.skipBuildVerify ?? false,
+          autoMerge,
+        });
+        decision = gate.panelDecision.decision;
+        mergedTaskIds = gate.mergedTaskIds;
+        panelCost = gate.panelDecision.totalCost;
+        console.log(
+          `  [Panel] decision: ${decision.toUpperCase()} (${gate.panelDecision.quorum.rule}: ${gate.panelDecision.quorum.achieved}/${gate.panelDecision.quorum.required})`,
+        );
+        for (const line of gate.panelDecision.combinedRationale.split("\n")) {
+          console.log(`    ${line}`);
+        }
+        if (gate.panelDecision.dissent.length > 0) {
+          console.log(`  [Panel] dissent:`);
+          for (const d of gate.panelDecision.dissent.slice(0, 5)) {
+            console.log(`    - ${d.slice(0, 160)}`);
+          }
+        }
+        if (mergedTaskIds.length > 0) {
           console.log(
-            `    ${file} (tasks: ${verdict.conflictMatrix[file].join(", ")})`,
+            `  [Panel] merged ${mergedTaskIds.length} task branch(es) into ${projectPath}`,
+          );
+        }
+      } else {
+        console.log(`\n  [Judge] verifying worktrees...`);
+        const verdict = await runJudge({
+          runId: plan.runId,
+          db,
+          projectPath,
+          skipBuildVerify: opts.skipBuildVerify ?? false,
+          autoMerge,
+        });
+        decision = verdict.decision;
+        mergedTaskIds = verdict.mergedTaskIds;
+        console.log(
+          `  [Judge] decision: ${verdict.decision.toUpperCase()} (${verdict.reason})`,
+        );
+        const conflicts = Object.keys(verdict.conflictMatrix);
+        if (conflicts.length > 0) {
+          console.log(`  [Judge] conflicts on ${conflicts.length} files:`);
+          for (const file of conflicts.slice(0, 10)) {
+            console.log(
+              `    ${file} (tasks: ${verdict.conflictMatrix[file].join(", ")})`,
+            );
+          }
+        }
+        if (mergedTaskIds.length > 0) {
+          console.log(
+            `  [Judge] merged ${mergedTaskIds.length} task branch(es) into ${projectPath}`,
           );
         }
       }
-      if (verdict.mergedTaskIds.length > 0) {
-        console.log(
-          `  [Judge] merged ${verdict.mergedTaskIds.length} task branch(es) into ${projectPath}`,
-        );
-      }
 
       console.log(
-        `\n  Total cost: $${(plan.cost + (poolResult?.totalCost ?? 0)).toFixed(4)}`,
+        `\n  Total cost: $${(plan.cost + (poolResult?.totalCost ?? 0) + panelCost).toFixed(4)}`,
       );
       console.log(`  Run id: ${plan.runId}`);
       console.log();
 
-      process.exit(verdict.decision === "approve" ? 0 : 1);
+      process.exit(decision === "approve" ? 0 : 1);
     },
   );
 

@@ -365,6 +365,9 @@ importers:
       "@brainst0rm/config":
         specifier: workspace:*
         version: link:../config
+      "@brainst0rm/contracts":
+        specifier: workspace:*
+        version: link:../contracts
       "@brainst0rm/core":
         specifier: workspace:*
         version: link:../core
@@ -569,6 +572,9 @@ importers:
       "@brainst0rm/config":
         specifier: workspace:*
         version: link:../config
+      "@brainst0rm/contracts":
+        specifier: workspace:*
+        version: link:../contracts
       "@brainst0rm/db":
         specifier: workspace:*
         version: link:../db

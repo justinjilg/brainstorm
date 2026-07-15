@@ -18,11 +18,31 @@ export {
 
 export {
   runAcceptanceGates,
+  runAcceptanceGatesAsync,
   type GateReport,
   type GateResult,
   type GateDeps,
   type ContractResult,
+  type AsyncGateDeps,
+  type AsyncGateReport,
 } from "./gates.js";
+
+export {
+  selectDiverseJudges,
+  decidePanelOutcome,
+  runJudgePanel,
+  buildLensPrompt,
+  scoreJudgeCapability,
+  DEFAULT_PANELS,
+  DEFAULT_JUDGE_CAPABILITY_FLOOR,
+  type DiversitySelectionConfig,
+  type DiverseJudgeSelection,
+  type AchievedDiversity,
+  type PanelSpawn,
+  type PanelSpawnRequest,
+  type PanelSpawnResult,
+  type PanelDeps,
+} from "./panel.js";
 
 // Re-export the contract/panel types from shared for convenience.
 export type {
