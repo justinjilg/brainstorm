@@ -36,11 +36,18 @@
       "path": "/api/v1/audit/changesets",
       "category": "audit"
     },
+    { "method": "GET", "path": "/api/v1/audit/report", "category": "audit" },
+    {
+      "method": "POST",
+      "path": "/api/v1/audit/report/verify",
+      "category": "audit"
+    },
     {
       "method": "POST",
       "path": "/api/v1/platform/events",
       "category": "platform"
     },
+    { "method": "GET", "path": "/api/v1/channels", "category": "platform" },
     { "method": "POST", "path": "/api/v1/chat", "category": "chat" },
     { "method": "POST", "path": "/api/v1/chat/stream", "category": "chat" },
     { "method": "GET", "path": "/api/v1/conversations", "category": "chat" },
@@ -88,6 +95,11 @@
       "category": "memory"
     },
     { "method": "POST", "path": "/api/v1/memory/dream", "category": "memory" },
+    {
+      "method": "POST",
+      "path": "/api/v1/memory/extract",
+      "category": "memory"
+    },
     { "method": "GET", "path": "/api/v1/skills", "category": "discovery" },
     { "method": "GET", "path": "/api/v1/models", "category": "discovery" },
     {
