@@ -8,21 +8,26 @@
  */
 
 import { spawnSync } from "node:child_process";
-import * as path from "node:path";
 
 export async function check({ repoRoot }) {
-  // Resolve tsx via `pnpm exec` (not `npx`): tsx is a devDependency of
-  // @brainst0rm/tools, and pnpm exec deterministically finds it in the
-  // workspace's node_modules/.bin. `npx tsx` relied on npm's hoist layout and
-  // failed in CI with `sh: 1: tsx: not found` even though tsx was installed.
+  // Resolve tsx via `pnpm --filter @brainst0rm/tools exec` — tsx is a
+  // devDependency of the tools PACKAGE, not the root, so `npx tsx` (hoist-
+  // dependent) and bare `pnpm exec tsx` (resolves from root node_modules/.bin,
+  // where tsx isn't linked in CI's layout) both fail with "tsx not found".
+  // `--filter` runs in the tools package dir where tsx IS in node_modules/.bin
+  // — the same mechanism ci.yml uses for `export-catalog:check`. The script
+  // path is package-relative; export-catalog.ts resolves its own paths from
+  // import.meta.url, so the working directory does not matter.
   // pnpm.cmd needs a shell to resolve on Windows; this gate only runs in the
   // ubuntu build-and-test job, but the flag keeps it portable.
   const result = spawnSync(
     "pnpm",
     [
+      "--filter",
+      "@brainst0rm/tools",
       "exec",
       "tsx",
-      path.join(repoRoot, "packages/tools/src/export-catalog.ts"),
+      "src/export-catalog.ts",
       "--check",
     ],
     {
