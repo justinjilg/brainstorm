@@ -123,7 +123,7 @@ const ROUTES = [
     codeRefs: [
       [
         "packages/providers/src/cloud/brainstorm-saas.ts",
-        'baseURL: "https://api.brainstormrouter.com/v1"',
+        'BR_BASE_URL = "https://api.brainstormrouter.com/v1"',
       ],
       [
         "packages/providers/src/__tests__/br-live-contract.live.test.ts",
