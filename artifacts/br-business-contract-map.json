@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "scope": "bounded to Brainstorm routes currently touching BR/product actuator contracts",
-  "repo_root": "/Users/justin/Projects/brainstorm-pr-br-seam",
+  "repo_root": "/Users/justin/Projects/brainstorm",
   "br_repo_root": "/Users/justin/Projects/brainstormrouter",
   "br_repo_detected": true,
   "ok": true,
@@ -9,10 +9,10 @@
     "routes": 20,
     "failures": 0,
     "warnings": 0,
-    "br_openapi_paths_seen": 490,
-    "br_capability_routes_seen": 616,
+    "br_openapi_paths_seen": 517,
+    "br_capability_routes_seen": 645,
     "br_rbac_entries_seen": 278,
-    "br_sdk_paths_seen": 124
+    "br_sdk_paths_seen": 132
   },
   "routes": [
     {
@@ -295,7 +295,7 @@
       "codeRefs": [
         [
           "packages/providers/src/cloud/brainstorm-saas.ts",
-          "baseURL: \"https://api.brainstormrouter.com/v1\""
+          "BR_BASE_URL = \"https://api.brainstormrouter.com/v1\""
         ],
         [
           "packages/providers/src/__tests__/br-live-contract.live.test.ts",
@@ -311,7 +311,7 @@
         "code": [
           {
             "file": "packages/providers/src/cloud/brainstorm-saas.ts",
-            "needle": "baseURL: \"https://api.brainstormrouter.com/v1\"",
+            "needle": "BR_BASE_URL = \"https://api.brainstormrouter.com/v1\"",
             "present": true
           },
           {
