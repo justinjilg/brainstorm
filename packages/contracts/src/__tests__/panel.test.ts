@@ -31,8 +31,8 @@ function model(id: string, provider: string, cap = 0.8): ModelEntry {
       vision: false,
       reasoning: true,
       contextWindow: 200000,
-      qualityTier: "high",
-      speedTier: "medium",
+      qualityTier: 4,
+      speedTier: 3,
       bestFor: [],
       capabilityScores: {
         toolSelection: cap,
