@@ -11,13 +11,25 @@ import { spawnSync } from "node:child_process";
 import * as path from "node:path";
 
 export async function check({ repoRoot }) {
+  // Resolve tsx via `pnpm exec` (not `npx`): tsx is a devDependency of
+  // @brainst0rm/tools, and pnpm exec deterministically finds it in the
+  // workspace's node_modules/.bin. `npx tsx` relied on npm's hoist layout and
+  // failed in CI with `sh: 1: tsx: not found` even though tsx was installed.
+  // pnpm.cmd needs a shell to resolve on Windows; this gate only runs in the
+  // ubuntu build-and-test job, but the flag keeps it portable.
   const result = spawnSync(
-    "npx",
-    ["tsx", path.join(repoRoot, "packages/tools/src/export-catalog.ts"), "--check"],
+    "pnpm",
+    [
+      "exec",
+      "tsx",
+      path.join(repoRoot, "packages/tools/src/export-catalog.ts"),
+      "--check",
+    ],
     {
       cwd: repoRoot,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
+      shell: process.platform === "win32",
     },
   );
 
