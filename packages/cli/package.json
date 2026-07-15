@@ -34,9 +34,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brainst0rm/channels": "workspace:*",
-    "@brainst0rm/orchestrator": "workspace:*",
-    "@brainst0rm/projects": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "ai": "^6",
     "better-sqlite3": "^12.2.0",
@@ -60,6 +57,7 @@
     "@brainst0rm/archetype-msp": "workspace:*",
     "@brainst0rm/archetype-saas-platform": "workspace:*",
     "@brainst0rm/broker": "workspace:*",
+    "@brainst0rm/channels": "workspace:*",
     "@brainst0rm/code-graph": "workspace:*",
     "@brainst0rm/config": "workspace:*",
     "@brainst0rm/contracts": "workspace:*",
@@ -76,6 +74,8 @@
     "@brainst0rm/ingest": "workspace:*",
     "@brainst0rm/mcp": "workspace:*",
     "@brainst0rm/onboard": "workspace:*",
+    "@brainst0rm/orchestrator": "workspace:*",
+    "@brainst0rm/projects": "workspace:*",
     "@brainst0rm/providers": "workspace:*",
     "@brainst0rm/relay": "workspace:*",
     "@brainst0rm/router": "workspace:*",
