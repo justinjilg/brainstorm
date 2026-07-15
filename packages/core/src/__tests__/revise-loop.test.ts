@@ -273,6 +273,47 @@ describe("chooseRetryModel", () => {
     expect(r.rotation).toBe(`rotated:${r.preferredModelId}`);
   });
 
+  it("rotates when producerModelId is a display NAME, not the catalog id (production divergence)", () => {
+    // In production the worker pool stamps producer_model_id with
+    // decision.model.name (e.g. "Claude Opus 4.6"), which is NOT the catalog
+    // id ("anthropic/claude-opus-4-6"). chooseRetryModel must still resolve the
+    // failed family from the name so it rotates to a different provider.
+    const pool = [
+      {
+        ...model("anthropic/claude-opus-4-6", "anthropic"),
+        name: "Claude Opus 4.6",
+      },
+      { ...model("openai/gpt-5.4", "openai"), name: "GPT-5.4" },
+    ] as ModelEntry[];
+    const r = chooseRetryModel({
+      failedModelId: "Claude Opus 4.6", // the NAME, as stored in production
+      models: pool,
+    });
+    expect(r.preferredModelId).toBe("openai/gpt-5.4");
+    expect(r.rotation).toBe("rotated:openai/gpt-5.4");
+  });
+
+  it("degrades (not mislabels) when producerModelId is a NAME and only one family exists", () => {
+    // Same name/id divergence, single-provider install: must degrade to the
+    // same model, NOT return a same-family model tagged 'rotated:'.
+    const pool = [
+      {
+        ...model("anthropic/claude-opus-4-6", "anthropic"),
+        name: "Claude Opus 4.6",
+      },
+      {
+        ...model("anthropic/claude-sonnet-4-6", "anthropic"),
+        name: "Claude Sonnet 4.6",
+      },
+    ] as ModelEntry[];
+    const r = chooseRetryModel({
+      failedModelId: "Claude Opus 4.6",
+      models: pool,
+    });
+    expect(r.rotation).toBe("degraded-same-model");
+    expect(r.preferredModelId).toBe("Claude Opus 4.6");
+  });
+
   it("degrades to same-model when only one provider family exists", () => {
     const single = [model("anthropic/opus-4.6", "anthropic")];
     const r = chooseRetryModel({
@@ -537,6 +578,88 @@ describe("runGateWithRevise", () => {
     const rows = new OrchestrationTaskRepository(db).listByRun(runId);
     const finalRetry = rows.find((r) => r.attempt === 1)!;
     expect(finalRetry.error).toBe("revise budget exhausted");
+    db.close();
+  });
+
+  it("a retry that FAILS in the worker pool marks its contract failed (no stuck 'executing')", async () => {
+    const db = getTestDb();
+    const runId = "run_retry_fail";
+    const { projectId } = seedRun(db, runId);
+    const { contract } = seedTaskWithContract(db, runId, projectId);
+
+    const mergeCalls: string[] = [];
+    // Pool: complete on the initial pass; FAIL any retry (a task carrying
+    // per-task contractFeedback) via failTask WITHOUT touching contract status,
+    // exactly like the real pool's throw / budget / no-file-change paths.
+    const poolStub = async function* (
+      options: any,
+    ): AsyncGenerator<WorkerPoolEvent, WorkerPoolResult> {
+      const taskRepo = new OrchestrationTaskRepository(options.db);
+      const pending = taskRepo
+        .listByRun(options.runId)
+        .filter((t: any) => t.status === "pending");
+      let failed = 0;
+      let completed = 0;
+      for (const t of pending) {
+        const override = options.perTaskOptions?.[t.id] ?? {};
+        if (override.contractFeedback) {
+          taskRepo.failTask(t.id, "budget exceeded mid-task"); // no contract update
+          failed++;
+        } else {
+          taskRepo.completeWithMetadata(t.id, {
+            resultSummary: "done",
+            cost: 0.1,
+            worktreePath: `/tmp/wt-${t.id.slice(0, 8)}`,
+            filesTouched: ["a.ts"],
+          });
+          if (t.contractId) {
+            options.db
+              .prepare(
+                "UPDATE agent_contracts SET producer_model_id = ?, updated_at = ? WHERE id = ?",
+              )
+              .run(
+                "anthropic/opus-4.6",
+                Math.floor(Date.now() / 1000),
+                t.contractId,
+              );
+          }
+          completed++;
+        }
+      }
+      yield {
+        type: "pool-finished",
+        totalCompleted: completed,
+        totalFailed: failed,
+      };
+      return {
+        runId: options.runId,
+        status: failed > 0 ? "failed" : "completed",
+        totalCompleted: completed,
+        totalFailed: failed,
+        totalCost: 0.1,
+        durationMs: 1,
+        worktrees: [],
+      };
+    };
+
+    const result = await runGateWithRevise({
+      ...baseOpts(db, runId),
+      maxReviseIterations: 2,
+      runWorkerPoolFn: poolStub as any,
+      // revise on the first gate (enqueue retry), revise again (retry failed,
+      // nothing selectable → break).
+      runMergeGateFn: makeGateStub(["revise", "revise"], mergeCalls) as any,
+    });
+
+    // The contract must NOT be left stuck at 'executing' — the failed retry
+    // resolved it to 'failed'.
+    const c = new ContractRepository(db).getById(contract.id)!;
+    expect(c.status).toBe("failed");
+    expect(mergeCalls.length).toBe(0);
+    // One retry row exists and it failed in the pool.
+    const rows = new OrchestrationTaskRepository(db).listByRun(runId);
+    const retry = rows.find((r) => r.attempt === 1)!;
+    expect(retry.status).toBe("failed");
     db.close();
   });
 
