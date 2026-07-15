@@ -238,24 +238,15 @@ export async function runJudge(options: JudgeOptions): Promise<JudgeDecision> {
   });
 
   // ── Auto-merge on approve ──────────────────────────────────────────
-  const mergedTaskIds: string[] = [];
+  let mergedTaskIds: string[] = [];
   if (decision === "approve" && autoMerge) {
-    for (const verdict of verdicts) {
-      if (!verdict.verified || !verdict.worktreePath) continue;
-      try {
-        mergeWorktreeBranch(projectPath, verdict.worktreePath);
-        mergedTaskIds.push(verdict.taskId);
-      } catch (err: any) {
-        log.warn(
-          { taskId: verdict.taskId, err: err.message },
-          "Failed to merge worktree branch — leaving for manual review",
-        );
-        // Downgrade decision: a merge failure on an approved task means
-        // we can't honor the approval.
-        decision = "revise";
-        reason = `verification passed but merge failed for task ${verdict.taskId}: ${err.message}`;
-        break;
-      }
+    const merge = mergeVerifiedWorktrees(projectPath, verdicts);
+    mergedTaskIds = merge.mergedTaskIds;
+    if (merge.failure) {
+      // Downgrade decision: a merge failure on an approved task means
+      // we can't honor the approval.
+      decision = "revise";
+      reason = merge.failure;
     }
   }
 
@@ -272,6 +263,36 @@ export async function runJudge(options: JudgeOptions): Promise<JudgeDecision> {
     durationMs: Date.now() - startedAt,
     reason,
   };
+}
+
+/**
+ * Merge every verified worktree branch into the project. Extracted from
+ * runJudge so a panel gate can perform the SAME merge without re-running build
+ * verification. Stops at the first merge failure and reports it (the caller
+ * downgrades an approval it cannot honor).
+ */
+export function mergeVerifiedWorktrees(
+  projectPath: string,
+  verdicts: JudgeVerdict[],
+): { mergedTaskIds: string[]; failure?: string } {
+  const mergedTaskIds: string[] = [];
+  for (const verdict of verdicts) {
+    if (!verdict.verified || !verdict.worktreePath) continue;
+    try {
+      mergeWorktreeBranch(projectPath, verdict.worktreePath);
+      mergedTaskIds.push(verdict.taskId);
+    } catch (err: any) {
+      log.warn(
+        { taskId: verdict.taskId, err: err.message },
+        "Failed to merge worktree branch — leaving for manual review",
+      );
+      return {
+        mergedTaskIds,
+        failure: `verification passed but merge failed for task ${verdict.taskId}: ${err.message}`,
+      };
+    }
+  }
+  return { mergedTaskIds };
 }
 
 /**

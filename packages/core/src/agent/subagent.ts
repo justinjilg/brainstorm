@@ -19,6 +19,12 @@ import {
   createLogger,
   linkSignals,
 } from "@brainst0rm/shared";
+import type { AgentContract } from "@brainst0rm/shared";
+import {
+  renderContractPrompt,
+  validateContractOutput,
+} from "@brainst0rm/contracts";
+import { getOutputSchema } from "@brainst0rm/agents";
 import type { SystemPromptSegment } from "./context.js";
 import { segmentsToSystemArray } from "./context.js";
 import {
@@ -329,6 +335,22 @@ export interface SubagentOptions {
    * either source triggers termination.
    */
   parentSignal?: AbortSignal;
+  /**
+   * Force the read-only tool downgrade for this spawn, regardless of type.
+   * Routes through applyReadOnlyDowngrade (narrowing-only, never widening) —
+   * used to map an AgentContract's `authority.readOnly` onto the existing
+   * narrowing chain. Absent → unchanged behavior.
+   */
+  readOnly?: boolean;
+  /**
+   * Optional AgentContract this spawn executes against. When present, the
+   * task prompt is the deterministic contract render (renderContractPrompt),
+   * the contract's authority.* maps onto the narrowing chain
+   * (toolAllowlist/maxSteps/budgetLimit/readOnly), and the output is validated
+   * against the declared schema with one repair round-trip. Absent → exact
+   * freeform behavior. Purely additive/opt-in.
+   */
+  contract?: AgentContract;
 }
 
 export interface SubagentResult {
@@ -347,6 +369,17 @@ export interface SubagentResult {
    * silent "no changes". Undefined if the run never produced a finish event.
    */
   finishReason?: string;
+  /**
+   * Contract validation outcome — present only when the spawn ran against an
+   * AgentContract (options.contract). `valid` reflects the final validation
+   * (after one repair round-trip, if attempted). Absent on the freeform path.
+   */
+  contractOutcome?: {
+    valid: boolean;
+    parsed?: unknown;
+    errors?: string[];
+    repairAttempted?: boolean;
+  };
 }
 
 /**
@@ -464,7 +497,125 @@ export function composeSystemPrompt(
  * - System prompt behavior (review = bug-focused, plan = structured output)
  * - Model selection hint (explore → cheap, code → capable)
  */
+/**
+ * Spawn a subagent. Thin dispatcher: the freeform path (no contract) runs the
+ * core loop unchanged — byte-for-byte today's behavior; the contract path
+ * renders the contract, maps its authority onto the narrowing chain, runs the
+ * core loop, and validates the output with one repair round-trip.
+ */
 export async function spawnSubagent(
+  task: string,
+  options: SubagentOptions,
+): Promise<SubagentResult> {
+  if (!options.contract) {
+    return runSubagentCore(task, options);
+  }
+  return runContractSubagent(options.contract, options);
+}
+
+/**
+ * Map an AgentContract's `authority.*` onto the SubagentOptions narrowing
+ * fields. Every field is a FLOOR: an explicit option wins, else the contract's
+ * authority applies, else (undefined) the type default resolved downstream.
+ * These feed the EXISTING resolveToolScope / applyReadOnlyDowngrade chain — the
+ * contract never bypasses the security-critical narrowing. Pure, so the mapping
+ * is unit-testable without spawning a model.
+ */
+export function contractAuthorityOptions(
+  contract: AgentContract,
+  options: Pick<
+    SubagentOptions,
+    "toolAllowlist" | "maxSteps" | "budgetLimit" | "readOnly"
+  >,
+): {
+  toolAllowlist?: string[];
+  maxSteps?: number;
+  budgetLimit?: number;
+  readOnly?: boolean;
+} {
+  const auth = contract.authority;
+  return {
+    toolAllowlist: options.toolAllowlist ?? auth.toolAllowlist,
+    maxSteps: options.maxSteps ?? auth.maxSteps,
+    budgetLimit: options.budgetLimit ?? auth.budgetLimitUsd,
+    readOnly: options.readOnly ?? auth.readOnly,
+  };
+}
+
+/**
+ * Contract-carried handoff. The rendered contract IS the task prompt; the
+ * contract's authority maps onto the EXISTING SubagentOptions narrowing fields
+ * (never bypassing resolveToolScope); the output is validated against the
+ * declared schema, with exactly one bounded repair round-trip on failure.
+ */
+async function runContractSubagent(
+  contract: AgentContract,
+  options: SubagentOptions,
+): Promise<SubagentResult> {
+  const coreOptions: SubagentOptions = {
+    ...options,
+    contract: undefined, // prevent re-entry
+    ...contractAuthorityOptions(contract, options),
+  };
+
+  const renderedTask = renderContractPrompt(contract);
+  const first = await runSubagentCore(renderedTask, coreOptions);
+
+  // No declared schema → nothing to validate; the handoff is structurally
+  // complete once the run returns.
+  if (!contract.output.schemaRef) {
+    return { ...first, contractOutcome: { valid: true } };
+  }
+
+  let validation = validateContractOutput(
+    contract,
+    first.text,
+    getOutputSchema,
+  );
+  if (validation.ok) {
+    return {
+      ...first,
+      contractOutcome: { valid: true, parsed: validation.parsed },
+    };
+  }
+
+  // One bounded repair round-trip: re-prompt with the exact validation error.
+  const repairAppend =
+    `## Output validation failed\n\nYour previous response did not match the ` +
+    `required '${contract.output.schemaRef}' schema:\n` +
+    validation.errors.map((e) => `- ${e}`).join("\n") +
+    `\n\nRespond again with ONLY a single JSON object matching the schema, ` +
+    `fenced in a \`\`\`json block.`;
+  // The repair is a TEXT-ONLY re-prompt: the worker's WORK is already done (a
+  // code subagent has already edited the worktree). Re-running the full agentic
+  // loop with tools here could double-apply or conflict those edits — the
+  // round-trip only needs the model to reformat its output to match the schema,
+  // not to touch the workspace again. noTools makes that structural: the model
+  // physically cannot edit, so it must answer with the JSON.
+  const repaired = await runSubagentCore(renderedTask, {
+    ...coreOptions,
+    noTools: true,
+    maxSteps: 1,
+    promptAppend: [options.promptAppend, repairAppend]
+      .filter(Boolean)
+      .join("\n\n"),
+  });
+  validation = validateContractOutput(contract, repaired.text, getOutputSchema);
+
+  return {
+    ...repaired,
+    // Fold both attempts' cost so the handoff reports its true price.
+    cost: first.cost + repaired.cost,
+    contractOutcome: {
+      valid: validation.ok,
+      parsed: validation.parsed,
+      errors: validation.ok ? undefined : validation.errors,
+      repairAttempted: true,
+    },
+  };
+}
+
+async function runSubagentCore(
   task: string,
   options: SubagentOptions,
 ): Promise<SubagentResult> {
@@ -568,6 +719,13 @@ export async function spawnSubagent(
     // Intersect (never replace): the downgrade can only NARROW. Overwriting
     // would widen past an already-narrower per-spawn toolAllowlist / parent
     // ceiling, re-granting tools the caller deliberately excluded.
+    typeAllowed = applyReadOnlyDowngrade(typeAllowed, READ_ONLY_TOOLS);
+  }
+
+  // Step 3a2: an explicit read-only request (e.g. mapped from a contract's
+  // authority.readOnly) narrows to the read-only tool set. Narrowing-only —
+  // intersects with whatever the chain above already produced.
+  if (options.readOnly) {
     typeAllowed = applyReadOnlyDowngrade(typeAllowed, READ_ONLY_TOOLS);
   }
 

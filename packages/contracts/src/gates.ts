@@ -1,7 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { relative, isAbsolute } from "node:path";
 import type { z } from "zod";
-import type { AgentContract, AcceptanceGate } from "@brainst0rm/shared";
+import type {
+  AgentContract,
+  AcceptanceGate,
+  PanelConfig,
+  PanelDecision,
+} from "@brainst0rm/shared";
 import { validateContractOutput } from "./contract.js";
 
 /** The outcome of evaluating a single acceptance gate. */
@@ -99,6 +104,151 @@ export function runAcceptanceGates(
 
   const ok = gates.every((g) => g.deferred || g.pass === true);
   return { ok, gates };
+}
+
+// ── Async gate runner (panel + criterion kinds) ──────────────────────
+
+/** Injected panel runner + artifact for the async gate runner. When present,
+ * `panel` gates are dispatched (runJudgePanel) and `criterion` gates are
+ * evaluated BY the panel (against the aggregated per-criterion results). */
+export interface AsyncGateDeps extends GateDeps {
+  /** Runs a panel against the contract + artifact. Injected by core (wraps
+   * runJudgePanel with the real spawn + model pool) so this package never
+   * imports core/router. */
+  runPanel?: (
+    config: PanelConfig,
+    ctx: { contract: AgentContract; artifact: string },
+  ) => Promise<PanelDecision>;
+  /** Resolve a panelConfigRef (e.g. "merge-gate") to a PanelConfig. */
+  resolvePanel?: (ref?: string) => PanelConfig | undefined;
+  /** The artifact/diff the panel reviews. */
+  artifact?: string;
+}
+
+/** A GateReport augmented with the panel decision (when a panel gate ran). */
+export interface AsyncGateReport extends GateReport {
+  panelDecision?: PanelDecision;
+}
+
+/**
+ * Run ALL acceptance gates including the panel and criterion kinds. Deterministic
+ * gates (schema/command/files_touched_within) are evaluated exactly as the sync
+ * runner does; `panel` gates dispatch the injected panel runner and pass iff the
+ * PanelDecision approves; `criterion` gates are evaluated BY the panel — a
+ * criterion passes when the panel ran and the matching per-criterion result
+ * passed (or, absent a per-criterion result, when the panel approved).
+ *
+ * Additive: the sync `runAcceptanceGates` is unchanged and still DEFERS
+ * panel/criterion. Callers that want panel evaluation opt into this async form
+ * and inject `runPanel`.
+ */
+export async function runAcceptanceGatesAsync(
+  contract: AgentContract,
+  result: ContractResult,
+  deps: AsyncGateDeps,
+): Promise<AsyncGateReport> {
+  const gates: GateResult[] = [];
+  let panelDecision: PanelDecision | undefined;
+
+  for (const gate of contract.acceptance) {
+    switch (gate.kind) {
+      case "schema":
+        gates.push(evalSchemaGate(contract, result, deps));
+        break;
+      case "command":
+        gates.push(evalCommandGate(gate, deps));
+        break;
+      case "files_touched_within":
+        gates.push(evalFilesTouchedGate(gate, result));
+        break;
+      case "panel": {
+        if (!deps.runPanel || deps.artifact === undefined) {
+          gates.push(deferredGate("panel", "no panel runner injected"));
+          break;
+        }
+        const config =
+          deps.resolvePanel?.(gate.panelConfigRef) ??
+          (gate.quorum
+            ? {
+                judges: [],
+                diversity: "provider" as const,
+                quorum: gate.quorum,
+                includeDeterministic: true,
+              }
+            : undefined);
+        if (!config) {
+          gates.push(
+            deferredGate(
+              "panel",
+              `panel config '${gate.panelConfigRef ?? "(none)"}' could not be resolved`,
+            ),
+          );
+          break;
+        }
+        panelDecision = await deps.runPanel(config, {
+          contract,
+          artifact: deps.artifact,
+        });
+        gates.push({
+          kind: "panel",
+          pass: panelDecision.decision === "approve",
+          detail: `panel ${panelDecision.decision}: ${panelDecision.combinedRationale.split("\n")[0]}`,
+        });
+        break;
+      }
+      case "criterion":
+        gates.push(evalCriterionGate(gate, panelDecision));
+        break;
+      default:
+        gates.push(
+          deferredGate((gate as AcceptanceGate).kind, "unknown gate kind"),
+        );
+    }
+  }
+
+  const ok = gates.every((g) => g.deferred || g.pass === true);
+  return { ok, gates, panelDecision };
+}
+
+function deferredGate(
+  kind: AcceptanceGate["kind"],
+  detail: string,
+): GateResult {
+  return { kind, pass: null, deferred: true, detail };
+}
+
+/** Evaluate an NL criterion against the panel's per-criterion results. A
+ * criterion the panel scored is authoritative; absent an explicit per-criterion
+ * result, fall back to the panel's overall approval; absent a panel, defer. */
+function evalCriterionGate(
+  gate: Extract<AcceptanceGate, { kind: "criterion" }>,
+  panelDecision: PanelDecision | undefined,
+): GateResult {
+  if (!panelDecision) {
+    return deferredGate(
+      "criterion",
+      "no panel ran — NL criterion left for the panel (stage 2)",
+    );
+  }
+  // Look for a judge that evaluated this exact criterion.
+  const results = panelDecision.verdicts
+    .flatMap((v) => v.criteriaResults ?? [])
+    .filter((c) => c.criterion.trim() === gate.text.trim());
+  if (results.length > 0) {
+    // Criterion passes iff a majority of judges that scored it passed it.
+    const passes = results.filter((c) => c.pass).length;
+    const pass = passes * 2 >= results.length;
+    return {
+      kind: "criterion",
+      pass,
+      detail: `criterion "${gate.text.slice(0, 60)}": ${passes}/${results.length} judges satisfied`,
+    };
+  }
+  return {
+    kind: "criterion",
+    pass: panelDecision.decision === "approve",
+    detail: `criterion "${gate.text.slice(0, 60)}": no per-criterion result — using panel decision (${panelDecision.decision})`,
+  };
 }
 
 function evalSchemaGate(
