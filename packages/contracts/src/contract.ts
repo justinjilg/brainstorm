@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { randomBytes } from "node:crypto";
-import type { AgentContract, AcceptanceGate } from "@brainst0rm/shared";
+import type {
+  AgentContract,
+  AcceptanceGate,
+  PriorAttemptFeedback,
+} from "@brainst0rm/shared";
 
 // ── Zod validation ───────────────────────────────────────────────────
 
@@ -156,6 +160,11 @@ export interface RenderOptions {
    * consumer, never for a judge. Not a stored contract field — it lives on the
    * producer's structured output. */
   producerConfidence?: number;
+  /** Transient corrective feedback from a prior gate attempt (revise loop).
+   * When present, renders a deterministic "Prior attempt — corrective
+   * feedback" section between Task and Deliverable. NEVER mutates the contract;
+   * the acceptance criteria are unchanged. Absent → byte-identical to today. */
+  priorAttempt?: PriorAttemptFeedback;
 }
 
 /**
@@ -194,6 +203,45 @@ export function renderContractPrompt(
     out.push("");
     out.push("Input artifacts:");
     for (const a of contract.inputs.artifacts) out.push(`- ${a}`);
+  }
+
+  // Prior-attempt corrective feedback (revise loop). Deterministic, and only
+  // emitted when a prior gate attempt supplied it — so every existing caller
+  // (including the panel's forJudge render) is byte-identical to today.
+  if (opts.priorAttempt) {
+    const fb = opts.priorAttempt;
+    out.push("");
+    out.push("## Prior attempt — corrective feedback");
+    out.push(
+      `A prior attempt (attempt ${fb.attempt}) did not pass the merge gate. ` +
+        `Address the issues below before re-satisfying the acceptance criteria; ` +
+        `the criteria themselves are unchanged.`,
+    );
+    if (fb.failedCriteria.length > 0) {
+      out.push("");
+      out.push("Unmet acceptance criteria:");
+      for (const c of fb.failedCriteria) {
+        out.push(`- ${c.criterion}${c.evidence ? ` — ${c.evidence}` : ""}`);
+      }
+    }
+    if (fb.findings.length > 0) {
+      out.push("");
+      out.push("Top findings:");
+      for (const f of fb.findings) {
+        out.push(
+          `- [${f.severity}] ${f.description}${f.file ? ` (${f.file})` : ""}`,
+        );
+      }
+    }
+    if (fb.dissent.length > 0) {
+      out.push("");
+      out.push("Dissent:");
+      for (const d of fb.dissent) out.push(`- ${d}`);
+    }
+    if (fb.summary.trim()) {
+      out.push("");
+      out.push(`Summary: ${fb.summary.trim()}`);
+    }
   }
 
   out.push("");

@@ -54,4 +54,5 @@ export type {
   Verdict,
   PanelDecision,
   ReviewFinding,
+  PriorAttemptFeedback,
 } from "@brainst0rm/shared";

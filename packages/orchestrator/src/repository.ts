@@ -46,6 +46,13 @@ function rowToTask(row: any): OrchestrationTask {
     worktreePath: row.worktree_path ?? undefined,
     filesTouched: row.files_touched ? JSON.parse(row.files_touched) : undefined,
     error: row.error ?? undefined,
+    // Contract layer (migration 035) + revise-loop lineage (migration 037).
+    // Backward compatible — older databases without these columns return
+    // undefined.
+    contractId: row.contract_id ?? undefined,
+    attempt: row.attempt ?? undefined,
+    retryOf: row.retry_of ?? undefined,
+    rotation: row.rotation ?? undefined,
   };
 }
 

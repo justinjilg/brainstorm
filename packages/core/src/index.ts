@@ -199,6 +199,14 @@ export {
   type MergeGateResult,
 } from "./plan/judge-panel.js";
 export {
+  runGateWithRevise,
+  buildContractFeedback,
+  chooseRetryModel,
+  type GateWithReviseOptions,
+  type GateWithReviseResult,
+  type ReviseAttemptRecord,
+} from "./plan/revise-loop.js";
+export {
   FindingsStore,
   type FindingsFilter,
   type FindingsSummary,

@@ -3529,6 +3529,10 @@ orchestrateCmd
     "--panel <name>",
     "Merge gate: run a diverse judge panel ('merge-gate' = 3 provider-diverse LLM judges + build/test, majority + security veto) instead of the deterministic judge. Enables per-task contracts. Default: deterministic judge (today's behavior).",
   )
+  .option(
+    "--revise-max <n>",
+    "Merge gate: max automatic revise rounds when the panel returns 'revise'. Each round re-runs the failed tasks under the same contract with corrective feedback + a rotated model. Requires --panel. Overrides [orchestrator.revise].maxIterations. Default 0 (off).",
+  )
   .description(
     "Plan → parallel workers → judge: decompose a request, run N workers in isolated worktrees, merge approved branches",
   )
@@ -3542,9 +3546,10 @@ orchestrateCmd
         skipBuildVerify?: boolean;
         model?: string;
         panel?: string;
+        reviseMax?: string;
       },
     ) => {
-      const { planMultiAgentRun, runWorkerPool, runJudge, runMergeGate } =
+      const { planMultiAgentRun, runWorkerPool, runJudge, runGateWithRevise } =
         await import("@brainst0rm/core");
       const { DEFAULT_PANELS } = await import("@brainst0rm/contracts");
 
@@ -3558,8 +3563,7 @@ orchestrateCmd
 
       // Panel merge gate: --panel wins, else optional [orchestrator] panel TOML.
       // Absent → deterministic judge (today's behavior), no contracts emitted.
-      const panelName =
-        opts.panel ?? (config as any).orchestrator?.panel ?? undefined;
+      const panelName = opts.panel ?? config.orchestrator?.panel ?? undefined;
       const panelConfig = panelName ? DEFAULT_PANELS[panelName] : undefined;
       if (panelName && !panelConfig) {
         console.error(
@@ -3569,6 +3573,13 @@ orchestrateCmd
       }
       const usePanel = Boolean(panelConfig);
 
+      // Revise loop: --revise-max wins, else [orchestrator.revise].maxIterations,
+      // else 0 (off — exact current behavior). Only meaningful with a panel.
+      const maxReviseIterations =
+        opts.reviseMax !== undefined
+          ? Math.max(0, parseInt(opts.reviseMax, 10) || 0)
+          : (config.orchestrator?.revise?.maxIterations ?? 0);
+
       console.log(`\n  Multi-Agent Parallel Orchestration\n`);
       console.log(`  Request:  "${request.slice(0, 80)}"`);
       console.log(`  Workers:  ${concurrency} concurrent`);
@@ -3577,6 +3588,11 @@ orchestrateCmd
       console.log(
         `  Gate:     ${usePanel ? `panel '${panelName}'` : "deterministic judge"}`,
       );
+      if (usePanel && maxReviseIterations > 0) {
+        console.log(
+          `  Revise:   up to ${maxReviseIterations} round(s)${opts.model ? ` (rotation skipped: run pinned to ${opts.model})` : ""}`,
+        );
+      }
       console.log();
 
       config.general.defaultPermissionMode = "auto"; // unattended
@@ -3646,55 +3662,46 @@ orchestrateCmd
       );
       console.log(`  [Planner] strategy: ${plan.summary.slice(0, 200)}\n`);
 
-      // ── Phase 2: Worker Pool ────────────────────────────────────────
-      console.log(`  [Workers] starting ${concurrency} workers...`);
-      let poolResult: any;
-      const eventGen = runWorkerPool({
-        runId: plan.runId,
-        db,
-        subagentOptions: sharedSubagentOptions,
-        concurrency,
-        preserveWorktrees: true,
-      });
-      while (true) {
-        const next = await eventGen.next();
-        if (next.done) {
-          poolResult = next.value;
-          break;
-        }
-        const event = next.value;
+      // Shared worker-pool event printer. `attempt` labels revise rounds.
+      const printPoolEvent = (event: any, attempt = 0): void => {
+        const tag = attempt > 0 ? `[revise ${attempt}] ` : "";
         switch (event.type) {
           case "worker-claimed":
             console.log(
-              `  [${event.workerId}] claimed: ${event.task?.prompt.slice(0, 60)}...`,
+              `  ${tag}[${event.workerId}] claimed: ${event.task?.prompt.slice(0, 60)}...`,
             );
             break;
           case "worker-completed":
             console.log(
-              `  [${event.workerId}] ✓ ($${event.cost?.toFixed(4)}, ${event.filesTouched?.length ?? 0} files)`,
+              `  ${tag}[${event.workerId}] ✓ ($${event.cost?.toFixed(4)}, ${event.filesTouched?.length ?? 0} files)`,
             );
             break;
           case "worker-failed":
             console.log(
-              `  [${event.workerId}] ✗ ${event.error?.slice(0, 80) ?? "failed"}`,
+              `  ${tag}[${event.workerId}] ✗ ${event.error?.slice(0, 80) ?? "failed"}`,
             );
             break;
           case "pool-finished":
             console.log(
-              `  [Workers] done — ${event.totalCompleted} completed, ${event.totalFailed} failed`,
+              `  ${tag}[Workers] done — ${event.totalCompleted} completed, ${event.totalFailed} failed`,
             );
             break;
         }
-      }
+      };
 
-      // ── Phase 3: Judge / Panel gate ─────────────────────────────────
+      // ── Phase 2/3: Worker Pool → Judge / Panel gate ─────────────────
+      // The panel path runs pool + gate inside runGateWithRevise so a 'revise'
+      // decision can drive a bounded retry loop (maxReviseIterations=0 → one
+      // pool pass + one gate = exact legacy behavior). The deterministic judge
+      // path keeps its own single pool pass.
       let decision: "approve" | "revise" | "reject";
       let mergedTaskIds: string[];
       let panelCost = 0;
+      let poolCost = 0;
 
       if (usePanel && panelConfig) {
-        console.log(`\n  [Panel] verifying worktrees with '${panelName}'...`);
-        const gate = await runMergeGate({
+        console.log(`  [Workers] starting ${concurrency} workers...`);
+        const result = await runGateWithRevise({
           runId: plan.runId,
           db,
           projectPath,
@@ -3704,28 +3711,72 @@ orchestrateCmd
           getModels: () => router.getModels(),
           skipBuildVerify: opts.skipBuildVerify ?? false,
           autoMerge,
+          concurrency,
+          maxReviseIterations,
+          ...(opts.model ? { pinnedModelId: opts.model } : {}),
+          onPoolEvent: (e, attempt) => printPoolEvent(e, attempt),
+          onGate: (gate, attempt) => {
+            const label = attempt > 0 ? ` (revise ${attempt})` : "";
+            console.log(
+              `\n  [Panel]${label} decision: ${gate.panelDecision.decision.toUpperCase()} (${gate.panelDecision.quorum.rule}: ${gate.panelDecision.quorum.achieved}/${gate.panelDecision.quorum.required})`,
+            );
+            for (const line of gate.panelDecision.combinedRationale.split(
+              "\n",
+            )) {
+              console.log(`    ${line}`);
+            }
+            if (gate.panelDecision.dissent.length > 0) {
+              console.log(`  [Panel] dissent:`);
+              for (const d of gate.panelDecision.dissent.slice(0, 5)) {
+                console.log(`    - ${d.slice(0, 160)}`);
+              }
+            }
+            if (gate.mergedTaskIds.length > 0) {
+              console.log(
+                `  [Panel] merged ${gate.mergedTaskIds.length} task branch(es) into ${projectPath}`,
+              );
+            }
+          },
+          onRevise: (records, attempt) => {
+            console.log(
+              `  [Revise ${attempt}] re-enqueued ${records.length} task(s):`,
+            );
+            for (const r of records) {
+              console.log(
+                `    - ${r.originalTaskId.slice(0, 8)} → ${r.newTaskId.slice(0, 8)} (${r.rotation})`,
+              );
+            }
+          },
         });
-        decision = gate.panelDecision.decision;
-        mergedTaskIds = gate.mergedTaskIds;
-        panelCost = gate.panelDecision.totalCost;
-        console.log(
-          `  [Panel] decision: ${decision.toUpperCase()} (${gate.panelDecision.quorum.rule}: ${gate.panelDecision.quorum.achieved}/${gate.panelDecision.quorum.required})`,
-        );
-        for (const line of gate.panelDecision.combinedRationale.split("\n")) {
-          console.log(`    ${line}`);
-        }
-        if (gate.panelDecision.dissent.length > 0) {
-          console.log(`  [Panel] dissent:`);
-          for (const d of gate.panelDecision.dissent.slice(0, 5)) {
-            console.log(`    - ${d.slice(0, 160)}`);
-          }
-        }
-        if (mergedTaskIds.length > 0) {
+        decision = result.panelDecision.decision;
+        mergedTaskIds = result.mergedTaskIds;
+        panelCost = result.totalPanelCost;
+        poolCost = result.totalPoolCost;
+        if (result.exhausted) {
           console.log(
-            `  [Panel] merged ${mergedTaskIds.length} task branch(es) into ${projectPath}`,
+            `  [Revise] budget exhausted after ${result.reviseIterations} round(s) — contract(s) marked failed, not merged.`,
           );
         }
       } else {
+        console.log(`  [Workers] starting ${concurrency} workers...`);
+        let poolResult: any;
+        const eventGen = runWorkerPool({
+          runId: plan.runId,
+          db,
+          subagentOptions: sharedSubagentOptions,
+          concurrency,
+          preserveWorktrees: true,
+        });
+        while (true) {
+          const next = await eventGen.next();
+          if (next.done) {
+            poolResult = next.value;
+            break;
+          }
+          printPoolEvent(next.value);
+        }
+        poolCost = poolResult?.totalCost ?? 0;
+
         console.log(`\n  [Judge] verifying worktrees...`);
         const verdict = await runJudge({
           runId: plan.runId,
@@ -3756,7 +3807,7 @@ orchestrateCmd
       }
 
       console.log(
-        `\n  Total cost: $${(plan.cost + (poolResult?.totalCost ?? 0) + panelCost).toFixed(4)}`,
+        `\n  Total cost: $${(plan.cost + poolCost + panelCost).toFixed(4)}`,
       );
       console.log(`  Run id: ${plan.runId}`);
       console.log();

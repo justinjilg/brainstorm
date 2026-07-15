@@ -765,6 +765,34 @@ export interface OrchestrationTask {
    * set, the worker renders the contract instead of the freeform prompt.
    * Added in migration 035; undefined for pre-contract rows. */
   contractId?: string;
+  /** Revise-loop attempt number. 0 (or undefined) = the original attempt;
+   * N>0 = the Nth revise re-enqueue. Added in migration 037. */
+  attempt?: number;
+  /** For a revise re-enqueue: the id of the superseded task row this one
+   * retries. Forms the lineage chain original → retry → retry. */
+  retryOf?: string;
+  /** Model-rotation outcome stamped on a revise attempt:
+   * 'rotated:<modelId>' | 'degraded-same-model' | 'pinned-global-model'. */
+  rotation?: string;
+}
+
+/**
+ * Transient corrective feedback threaded into a revise re-attempt. Built from
+ * the prior gate's PanelDecision and rendered as a deterministic "Prior
+ * attempt" section by renderContractPrompt(priorAttempt). NEVER mutates the
+ * contract — it is render-time context only, like producerConfidence.
+ */
+export interface PriorAttemptFeedback {
+  /** 1-based revise attempt number. */
+  attempt: number;
+  /** Acceptance criteria the prior panel judged unmet, with evidence. */
+  failedCriteria: { criterion: string; evidence?: string }[];
+  /** Top findings from the prior panel, highest severity first. */
+  findings: { severity: string; description: string; file?: string }[];
+  /** Losing-side judge rationales from the prior panel (judgeId: rationale). */
+  dissent: string[];
+  /** One-paragraph combined rationale from the prior panel. */
+  summary: string;
 }
 
 // ── Contract layer ───────────────────────────────────────────────────
