@@ -23,7 +23,14 @@
 
 import { execFileSync } from "node:child_process";
 
-const AS_ANY_BUDGET = 285;
+const AS_ANY_BUDGET = 295;
+// 2026-07-15 (revise loop): 285 → 295. The +10 delta is entirely
+// DI test-double stubs in packages/core/src/__tests__/revise-loop.test.ts
+// (stubbed worker-pool/merge-gate generators + `{} as any` for the
+// panel/subagentOptions/registry deps the loop never reads under test),
+// mirroring the existing packages/core/src/__tests__/judge-panel.test.ts
+// style. The production module packages/core/src/plan/revise-loop.ts adds
+// ZERO `as any` — the ratchet's actual target (prod type erosion) did not move.
 // 2026-04-18 (post-v9): raw count was 291 with gratuitous Zod-enum
 // casts in packages/cli/src/bin/brainstorm.ts removed to reach 285.
 // v8 baseline was 274 (3 days earlier). The +11 delta is the combined
