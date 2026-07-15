@@ -79,7 +79,7 @@ function buildCtx(toolEnforcement?: { enabled?: boolean; maxNudges?: number }) {
       contextWindow: 200000,
       qualityTier: 3,
       speedTier: 2,
-      bestFor: ["code"],
+      bestFor: ["code-generation"],
     },
     pricing: { inputPer1MTokens: 1, outputPer1MTokens: 3 },
     limits: { contextWindow: 200000, maxOutputTokens: 4000 },
