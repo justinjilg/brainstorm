@@ -286,15 +286,6 @@ importers:
 
   packages/cli:
     dependencies:
-      "@brainst0rm/channels":
-        specifier: workspace:*
-        version: link:../channels
-      "@brainst0rm/orchestrator":
-        specifier: workspace:*
-        version: link:../orchestrator
-      "@brainst0rm/projects":
-        specifier: workspace:*
-        version: link:../projects
       "@modelcontextprotocol/sdk":
         specifier: ^1.29.0
         version: 1.29.0(zod@3.25.76)
@@ -359,6 +350,9 @@ importers:
       "@brainst0rm/broker":
         specifier: workspace:*
         version: link:../broker
+      "@brainst0rm/channels":
+        specifier: workspace:*
+        version: link:../channels
       "@brainst0rm/code-graph":
         specifier: workspace:*
         version: link:../code-graph
@@ -407,6 +401,12 @@ importers:
       "@brainst0rm/onboard":
         specifier: workspace:*
         version: link:../onboard
+      "@brainst0rm/orchestrator":
+        specifier: workspace:*
+        version: link:../orchestrator
+      "@brainst0rm/projects":
+        specifier: workspace:*
+        version: link:../projects
       "@brainst0rm/providers":
         specifier: workspace:*
         version: link:../providers
