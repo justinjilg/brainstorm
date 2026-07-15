@@ -19,7 +19,7 @@
   "dependencies": {
     "@brainst0rm/shared": "workspace:*",
     "ai": "^6",
-    "zod": "^3",
+    "zod": "^4",
     "fast-glob": "^3",
     "zod-to-json-schema": "^3.25"
   },
