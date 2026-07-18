@@ -1,0 +1,48 @@
+{
+  "seed": "221407c0",
+  "seats": {
+    "codex": {
+      "status": "completed",
+      "findings": 5,
+      "verified_blocking": 5,
+      "precision": "5/5",
+      "rounds": [
+        "R1: 5 findings (3 P1, 2 P2) all real. P1-1 middleware return discarded by loop.ts (ALSO disabled secret-substitution fail-closed redaction in prod \u2014 latent security bug); P1-2 whitespace-only turn classified success; P1-3 failure attributed to 'auto' not real model; P2-4 unbounded quarantine maps; P2-5 one-shot burned on serialize throw.",
+        "R2: 3 P1 + P2-5 resolved; P2-4 partial (recentOutcomes LRU'd, caught+fixed my own eviction-order bug via existing tests).",
+        "R3: P2-5 resolved. P2-4 REBUTTED: quarantinedUntil holds ABSOLUTE expiry timestamps with equal cooldown duration, so insertion order == expiry order; FIFO eviction removes the soonest-to-expire entry, which is correct. LRU-refreshing it on read would wrongly EXTEND a quarantine. Cardinality is bounded (the actual concern). Non-gating."
+      ]
+    },
+    "qwen3-coder": {
+      "status": "no-deliverable",
+      "note": "15 tool steps, step cap exhausted, session ended with EMPTY final output \u2014 no review delivered.",
+      "harness_finding": "CONVERGENT iter-004 item: on max-steps exhaustion the loop ends with empty output; it should force one final tools-disabled synthesis turn. Same disease as: empty workflow artifacts (consensus seats), gpt-oss eval step-cap failures with missing output text."
+    },
+    "consensus-workflow": {
+      "status": "failed-by-design",
+      "note": "W validation fired on its first live run: gpt-oss security step emitted an empty artifact and the workflow FAILED LOUDLY instead of silently completing (iteration-002 behavior). Dogfood PASS for W.",
+      "new_finding": "iter-004 backlog: gpt-oss intermittently emits reasoning-only responses (empty content, populated reasoning_content) \u2014 workflow/agent artifact extraction should detect and recover (reprompt or extract from reasoning)."
+    }
+  },
+  "reviewer_precision_running": {
+    "codex": "12/12 verified across iters 001-003",
+    "gpt-oss-120b": "1/N",
+    "qwen3-next": "0/2",
+    "qwen3-coder": "0/N (+2 delegated fixes landed)"
+  },
+  "gate": {
+    "tests": "core (quality-signals 10) / router 117 / workflow 130 green; typecheck green",
+    "dogfood": "W validation caught its own consensus-review empty artifact live; middleware-return fix restores secret-redaction guarantee",
+    "all_P0_P1": "resolved",
+    "remaining": "1 P2 rebutted",
+    "decision": "GREEN",
+    "milestone": {
+      "full_eval": {
+        "gpt-oss": "35% (+7)",
+        "q3-next": "43% (code-corr 50% vs 100/90 prior = variance)",
+        "q3-coder": "35% (+2, code-corr 70%)"
+      },
+      "swe_bench": "not attempted \u2014 docker daemon down; no heuristic pass reported",
+      "read": "eval too noisy to gate (100/90/50 on identical probes); falsification test + dogfound bugs are the real evidence"
+    }
+  }
+}

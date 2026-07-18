@@ -1,0 +1,57 @@
+{"level":40,"time":1784361474136,"pid":62794,"hostname":"FVFGP251Q05N","name":"brainstorm","module":"storm","dropped":["deploy","entry_points"],"kept":["version","name","type","language","framework","runtime","build_command","test_command","routing"],"msg":"Partial STORM.md frontmatter — kept valid fields, dropped invalid ones"}
+[godmode] Msp: tools endpoint unavailable — No API key for Msp (BRAINSTORM_MSP_API_KEY)
+
+⠼ Classifying task...⠼ Selecting model...[capability] → mac/qwen/qwen3-coder-next
+⠼ Connecting...{"level":30,"time":1784361474411,"pid":62794,"hostname":"FVFGP251Q05N","name":"brainstorm","module":"router","entries":8,"totalSamples":13,"msg":"Loaded historical routing outcomes for Thompson sampling"}
+
+[tool: file_read]
+[done]
+
+[tool: glob]
+[done]
+
+[tool: file_read]
+[done]
+
+[tool: file_read]
+[done]
+
+[tool: shell]
+[done]
+
+[tool: file_read]
+[done]
+
+[tool: file_read]
+[done]
+
+[tool: shell]
+[done]
+
+[tool: shell]
+[done]
+
+[tool: file_read]
+[done]
+
+[tool: shell]
+[done]
+
+[tool: shell]
+{"level":40,"time":1784361560554,"pid":62794,"hostname":"FVFGP251Q05N","name":"brainstorm","module":"quality-signals","readCount":7,"writeCount":5,"ratio":"1.4","msg":"Read:Edit ratio below threshold — agent may be editing without sufficient research"}
+[done]
+
+[tool: shell]
+[done]
+
+[tool: shell]
+[done]
+
+[tool: shell]
+[done]
+{"level":30,"time":1784361569126,"pid":62794,"hostname":"FVFGP251Q05N","name":"brainstorm","module":"circuit-breaker","name":"llm:acronis:mac/qwen/qwen3-coder-next","msg":"Returning existing circuit breaker — options from first registration apply"}
+
+
+[cost: $0.0000]
+{"level":30,"time":1784361569380,"pid":62794,"hostname":"FVFGP251Q05N","name":"brainstorm","module":"trajectory-analyzer","sessionCount":574,"filesScanned":574,"msg":"Analyzed trajectories"}
+{"level":30,"time":1784361569382,"pid":62794,"hostname":"FVFGP251Q05N","name":"brainstorm","module":"trajectory-analyzer","outputPath":"/Users/justin.jilg/.brainstorm/routing-intelligence.json","msg":"Routing intelligence updated"}

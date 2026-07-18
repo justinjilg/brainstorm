@@ -850,7 +850,13 @@ export async function* runAgentLoop(
             output: result,
             durationMs,
           };
-          pipeline.runAfterToolResult(mwResult);
+          // The pipeline's return value IS the tool result the model must
+          // see: quality-signal hints ride on it, and the secret-substitution
+          // fail-closed path REPLACES the output with a redaction notice.
+          // Discarding it (the previous behavior) silently disabled every
+          // result-modifying middleware in production — including the
+          // redaction guarantee.
+          const mwProcessed = pipeline.runAfterToolResult(mwResult);
           // Record tool-result event to trajectory
           trajectory?.recordToolResult({
             name: toolName,
@@ -863,7 +869,7 @@ export async function* runAgentLoop(
           });
           // Flush trust window back to per-session metadata after taint recording
           flushTrustWindow(mwMetadata, mwCall.id);
-          return result;
+          return mwProcessed.output;
         };
       }
     }
@@ -1301,7 +1307,14 @@ export async function* runAgentLoop(
     }
 
     // ── Empty/blocked response detection + retry with fallback model ──
-    const isEmpty = textDeltaCount === 0 && toolCallCount === 0;
+    // Whitespace-only text counts as empty: models occasionally stream a
+    // bare newline (or reasoning-only turns leak a blank content delta),
+    // which previously classified the turn as successful — routing recorded
+    // a success and downstream consumers (workflow artifact validation)
+    // failed on an "empty" artifact the loop had called good.
+    const isEmpty =
+      (textDeltaCount === 0 || accumulatedText.trim().length === 0) &&
+      toolCallCount === 0;
 
     // ── Truncated tool-call detection ──
     // Distinct from an empty turn: here the model INTENDED to call a tool but

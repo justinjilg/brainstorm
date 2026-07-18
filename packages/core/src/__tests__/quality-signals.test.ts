@@ -108,3 +108,105 @@ describe("createQualitySignalsMiddleware", () => {
     expect(warnCount()).toBe(firstCount);
   });
 });
+
+describe("corrective feedback injection", () => {
+  beforeEach(() => {
+    warnSpy.mockClear();
+  });
+
+  function fire(
+    mw: ReturnType<typeof createQualitySignalsMiddleware>,
+    name: string,
+    output: unknown = "tool output",
+  ) {
+    return mw.afterToolResult?.({
+      toolCallId: "t1",
+      name,
+      ok: true,
+      output,
+      durationMs: 1,
+    } as any);
+  }
+
+  it("appends a one-shot corrective hint to the triggering tool result", () => {
+    const mw = createQualitySignalsMiddleware();
+    // 5 reads then 5 writes → ratio 1.0 at write #5 (10 total calls).
+    for (let i = 0; i < 5; i++) fire(mw, "file_read");
+    for (let i = 0; i < 4; i++) fire(mw, "file_write");
+    const modified = fire(mw, "file_write", "write ok");
+
+    expect(modified).toBeDefined();
+    expect(String((modified as any).output)).toContain("write ok");
+    expect(String((modified as any).output)).toContain("[quality-signal]");
+    expect(String((modified as any).output)).toContain("re-read the code");
+  });
+
+  it("injects at most once per degradation episode", () => {
+    const mw = createQualitySignalsMiddleware();
+    for (let i = 0; i < 5; i++) fire(mw, "file_read");
+    for (let i = 0; i < 4; i++) fire(mw, "file_write");
+    const first = fire(mw, "file_write");
+    expect(String((first as any).output)).toContain("[quality-signal]");
+
+    // Ratio still bad on the next write — no second injection.
+    const second = fire(mw, "file_write");
+    expect(second).toBeUndefined();
+  });
+
+  it("serializes non-string outputs rather than dropping them", () => {
+    const mw = createQualitySignalsMiddleware();
+    for (let i = 0; i < 5; i++) fire(mw, "file_read");
+    for (let i = 0; i < 4; i++) fire(mw, "file_write");
+    const modified = fire(mw, "file_write", { success: true, path: "x.ts" });
+    expect(String((modified as any).output)).toContain('"path":"x.ts"');
+    expect(String((modified as any).output)).toContain("[quality-signal]");
+  });
+});
+
+describe("pipeline integration (returned result reaches the caller)", () => {
+  it("the pipeline propagates the injected output, not the original", async () => {
+    const { MiddlewarePipeline } =
+      await import("../middleware/pipeline.js");
+    const mw = createQualitySignalsMiddleware();
+    const pipeline = new MiddlewarePipeline();
+    pipeline.use(mw);
+
+    const fire = (name: string, output: unknown = "ok") =>
+      pipeline.runAfterToolResult({
+        toolCallId: "t",
+        name,
+        ok: true,
+        output,
+        durationMs: 1,
+      } as any);
+
+    for (let i = 0; i < 5; i++) fire("file_read");
+    for (let i = 0; i < 4; i++) fire("file_write");
+    const out = fire("file_write", "final write");
+
+    // The pipeline's RETURN VALUE carries the hint — this is what loop.ts
+    // must forward to the model (regression guard for the discarded-return bug).
+    expect(String(out.output)).toContain("[quality-signal]");
+    expect(String(out.output)).toContain("final write");
+  });
+
+  it("does not lose the one-shot when output is non-serializable", () => {
+    const mw = createQualitySignalsMiddleware();
+    const cyclic: any = {};
+    cyclic.self = cyclic;
+    const fire = (name: string, output: unknown = "ok") =>
+      mw.afterToolResult?.({
+        toolCallId: "t",
+        name,
+        ok: true,
+        output,
+        durationMs: 1,
+      } as any);
+
+    for (let i = 0; i < 5; i++) fire("file_read");
+    for (let i = 0; i < 4; i++) fire("file_write");
+    const out = fire("file_write", cyclic);
+    expect(out).toBeDefined();
+    expect(String((out as any).output)).toContain("[quality-signal]");
+  });
+});

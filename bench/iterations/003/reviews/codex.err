@@ -1,0 +1,2869 @@
+Reading additional input from stdin...
+OpenAI Codex v0.144.4
+--------
+workdir: /Users/justin.jilg/Projects/brainstorm
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 019f743b-40c6-7e00-b25c-d6af962fd487
+--------
+user
+You are the performance-focused anchor reviewer (also flag correctness bugs). Review this repo's diff at bench/iterations/003/reviews/iter.diff. It contains: (1) quality-signals middleware corrective-hint injection into tool results (packages/core/src/middleware/builtin/quality-signals.ts); (2) learned-routing quarantine with rolling windows (packages/router/src/strategies/learned.ts); (3) workflow step empty-artifact validation (packages/workflow/src/engine.ts); (4) tests. Focus: hot-path overhead, memory growth of the new Maps/windows, algorithmic issues, plus any correctness bugs. Output ONLY a JSON array: [{"file": string, "line": number, "severity": "P0"|"P1"|"P2", "finding": string, "suggested_fix": string}]. Empty array if none.
+exec
+/bin/zsh -lc "sed -n '1,240p' bench/iterations/003/reviews/iter.diff" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+diff --git a/bench/iterations/001/reviews/codex-final.err b/bench/iterations/001/reviews/codex-final.err
+index d9ca076..6004689 100644
+--- a/bench/iterations/001/reviews/codex-final.err
++++ b/bench/iterations/001/reviews/codex-final.err
+@@ -1478,3 +1478,626 @@ bench/iterations/001/reviews/panel.json
+ bench/iterations/001/reviews/qwen3-coder.out
+ bench/iterations/001/reviews/verdicts.json
+ 
++exec
++/bin/zsh -lc "sed -n '130,220p' packages/core/src/__tests__/loop-max-output-tokens.test.ts && sed -n '1,180p' package.json && sed -n '1,120p' packages/core/package.json && sed -n '1,120p' packages/providers/package.json" in /Users/justin.jilg/Projects/brainstorm
++ succeeded in 0ms:
++        sessionId,
++        projectPath: tmpProjectPath,
++        systemPrompt: "You are a test agent.",
++        preferredModelId: model.id,
++        disableTools: true,
++        trajectoryEnabled: false,
++      } as any);
++      const events: any[] = [];
++      for await (const ev of gen) {
++        events.push(ev);
++        if (events.length > 50) break;
++      }
++      return events;
++    },
++  };
++}
++
++describe("computeOutputBudget", () => {
++  const model = (contextWindow?: number, maxOutputTokens?: number) => ({
++    limits: { contextWindow, maxOutputTokens },
++  });
++
++  it("returns the advertised budget when the prompt is small", () => {
++    const msgs = [{ role: "user", content: "hi" }];
++    expect(computeOutputBudget(model(131072, 32768), msgs)).toEqual({
++      maxOutputTokens: 32768,
++    });
++  });
++
++  it("clamps the budget to remaining context near the window limit", () => {
++    // ~100k-token prompt in a 128k window: 32k output would overflow.
++    const msgs = [{ role: "user", content: "A".repeat(400_000) }];
++    const { maxOutputTokens } = computeOutputBudget(
++      model(131072, 32768),
++      msgs,
++    ) as { maxOutputTokens: number };
++    expect(maxOutputTokens).toBeLessThan(32768);
++    expect(maxOutputTokens).toBeGreaterThanOrEqual(256);
++  });
++
++  it("requests exactly the remainder when less than the floor is left", () => {
++    // Requesting the 256 floor here would overflow the window — the budget
++    // must shrink to what actually remains.
++    const window = 131072;
++    const msgs = [{ role: "user", content: "hi" }];
++    const bigSystem = "S".repeat((window - 1024 - 100) * 4);
++    const { maxOutputTokens } = computeOutputBudget(
++      model(window, 32768),
++      msgs,
++      bigSystem,
++    ) as { maxOutputTokens: number };
++    expect(maxOutputTokens).toBeGreaterThan(0);
++    expect(maxOutputTokens).toBeLessThan(256);
++  });
++
++  it("keeps a well-formed floor request when the prompt alone exceeds the window", () => {
++    const msgs = [{ role: "user", content: "A".repeat(600_000) }];
++    expect(computeOutputBudget(model(131072, 32768), msgs)).toEqual({
++      maxOutputTokens: 256,
++    });
++  });
++
++  it("accounts for the measured system prompt, not just messages", () => {
++    const msgs = [{ role: "user", content: "hi" }];
++    const smallBudget = computeOutputBudget(
++      model(131072, 32768),
++      msgs,
++      "S".repeat(500_000),
++    ) as { maxOutputTokens: number };
++    expect(smallBudget.maxOutputTokens).toBeLessThan(32768);
++  });
++
++  it("omits the option when the model advertises no output limit", () => {
++    expect(
++      computeOutputBudget(model(131072, undefined), [
++        { role: "user", content: "hi" },
++      ]),
++    ).toEqual({});
++  });
++});
++
++describe("agent loop — maxOutputTokens forwarding", () => {
++  beforeEach(() => {
++    _streamTextCalls = [];
++  });
++  afterEach(() => {
++    vi.clearAllMocks();
++  });
++
++  it("forwards the routed model's maxOutputTokens to streamText", async () => {
++    const ctx = buildContext(buildModel(32768));
++{
++  "name": "brainstorm",
++  "private": true,
++  "description": "Governed control plane for AI-managed infrastructure. Connect AI operators to your product ecosystem through a standardized protocol.",
++  "keywords": [
++    "ai",
++    "cli",
++    "llm",
++    "mcp",
++    "agent",
++    "routing",
++    "infrastructure",
++    "control-plane",
++    "ai-ops",
++    "model-context-protocol",
++    "thompson-sampling"
++  ],
++  "repository": {
++    "type": "git",
++    "url": "https://github.com/justinjilg/brainstorm.git"
++  },
++  "homepage": "https://brainstorm.co",
++  "author": "Justin Jilg <jj@brainstorm.co>",
++  "license": "Apache-2.0",
++  "scripts": {
++    "build": "turbo run build && pnpm run contract-check",
++    "build:dangerous-skip-gates": "node -e \"console.error('[dangerous] Skipping Brainstorm preflight/contract gates; use pnpm run build for release/CI.')\" && turbo run build",
++    "br:contract-map": "node scripts/br-business-contract-map.mjs",
++    "br:contract-map:check": "node scripts/br-business-contract-map.mjs --check",
++    "br:a2a-registry": "tsx tests/business-harness/a2a-registry-smoke.ts",
++    "br:live-discovery": "tsx tests/business-harness/live-br-discovery.ts",
++    "br:provider-envelope": "tsx tests/business-harness/provider-envelope-smoke.ts",
++    "business:posture-trace": "tsx tests/business-harness/business-posture-trace.ts",
++    "contract-check": "node scripts/contract-check.mjs",
++    "contract-check:json": "node scripts/contract-check.mjs --json",
++    "dev": "turbo run dev",
++    "lint": "turbo run lint",
++    "lint:abort-signal": "node scripts/lint-abort-signal-timeout.mjs",
++    "test": "turbo run test",
++    "test:dogfood": "npx tsx tests/dogfood/run-dogfood.ts",
++    "test:product-platform": "tsx tests/business-harness/product-platform-smoke.ts",
++    "test:workflow": "npx tsx tests/workflow-demo/run-demo.ts",
++    "typecheck": "turbo run typecheck",
++    "postinstall": "pnpm -r rebuild better-sqlite3",
++    "prepare": "husky",
++    "changeset": "changeset",
++    "version-packages": "changeset version",
++    "release": "changeset publish",
++    "sbom": "node scripts/generate-sbom.mjs",
++    "setup:tooling": "node scripts/setup-tooling.mjs",
++    "setup:tooling:dry": "node scripts/setup-tooling.mjs --dry-run"
++  },
++  "devDependencies": {
++    "@changesets/changelog-github": "^0.6.0",
++    "@changesets/cli": "^2.30.0",
++    "dependency-cruiser": "17.3.10",
++    "husky": "^9",
++    "lint-staged": "^15",
++    "prettier": "^3",
++    "turbo": "^2.9.14",
++    "typescript": "^5.7",
++    "vitest": "^3.2.4",
++    "zod": "^3"
++  },
++  "lint-staged": {
++    "*.{ts,tsx}": [
++      "prettier --write"
++    ],
++    "*.{json,md,yml,yaml}": [
++      "prettier --write"
++    ],
++    "packages/tools/src/builtin/**/*.ts": [
++      "scripts/precommit-regen-catalog.sh"
++    ]
++  },
++  "workspaces": [
++    "packages/*",
++    "apps/*"
++  ],
++  "packageManager": "pnpm@10.9.0",
++  "engines": {
++    "node": ">=22"
++  },
++  "dependencies": {
++    "@ai-sdk/anthropic": "^3.0.63",
++    "@ai-sdk/google": "^3.0.53",
++    "@ai-sdk/openai": "^3.0.48"
++  },
++  "overrides": {
++    "@xmldom/xmldom": "0.8.13",
++    "dompurify": ">=3.4.0",
++    "express-rate-limit": "8.5.2",
++    "fast-uri": "3.1.2",
++    "hono": "4.12.21",
++    "ip-address": "10.2.0",
++    "mermaid": "11.15.0",
++    "minimatch@10": {
++      "brace-expansion": "5.0.6"
++    },
++    "postcss": "8.5.15",
++    "uuid": "11.1.1",
++    "ws": "8.20.1"
++  }
++}
++{
++  "name": "@brainst0rm/core",
++  "version": "0.14.5",
++  "type": "module",
++  "exports": {
++    ".": {
++      "types": "./dist/index.d.ts",
++      "import": "./dist/index.js"
++    },
++    "./package.json": "./package.json"
++  },
++  "scripts": {
++    "build": "tsup && node scripts/copy-skills.mjs",
++    "dev": "tsup --watch",
++    "typecheck": "tsc --noEmit",
++    "test": "vitest run"
++  },
++  "dependencies": {
++    "@brainst0rm/agents": "workspace:*",
++    "@brainst0rm/code-graph": "workspace:*",
++    "@brainst0rm/config": "workspace:*",
++    "@brainst0rm/contracts": "workspace:*",
++    "@brainst0rm/db": "workspace:*",
++    "@brainst0rm/gateway": "workspace:*",
++    "@brainst0rm/orchestrator": "workspace:*",
++    "@brainst0rm/providers": "workspace:*",
++    "@brainst0rm/router": "workspace:*",
++    "@brainst0rm/shared": "workspace:*",
++    "@brainst0rm/tools": "workspace:*",
++    "ai": "^6",
++    "better-sqlite3": "^11",
++    "pdf-parse": "^2.4.5",
++    "zod": "^3"
++  },
+
+exec
+/bin/zsh -lc "rg -n '"'^diff --git a/(packages/(core/src/middleware/builtin/quality-signals|router/src/strategies/learned|workflow/src/engine)|packages/.+test)'"' bench/iterations/003/reviews/iter.diff" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+638:diff --git a/packages/core/src/__tests__/quality-signals.test.ts b/packages/core/src/__tests__/quality-signals.test.ts
+700:diff --git a/packages/core/src/middleware/builtin/quality-signals.ts b/packages/core/src/middleware/builtin/quality-signals.ts
+725:diff --git a/packages/router/src/__tests__/learned-quarantine.test.ts b/packages/router/src/__tests__/learned-quarantine.test.ts
+790:diff --git a/packages/router/src/strategies/learned.ts b/packages/router/src/strategies/learned.ts
+880:diff --git a/packages/workflow/src/__tests__/artifact-validation.test.ts b/packages/workflow/src/__tests__/artifact-validation.test.ts
+962:diff --git a/packages/workflow/src/engine.ts b/packages/workflow/src/engine.ts
+
+exec
+/bin/zsh -lc "sed -n '620,1040p' bench/iterations/003/reviews/iter.diff" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
++  compacted: boolean;
++  summaryCost: number;
++  /** Compaction commit ID if persisted (for selective rehydration). */
++  commitId?: string;
++}> {
++  const { contextWindow, keepRecent = 5, summarizeModel } = options;
++
++
++codex
++{"verdicts":[{"item":1,"status":"resolved","note":"computeOutputBudget includes normalized system-prompt text in its estimate and reserves 1024 tokens for tool schemas."},{"item":2,"status":"resolved","note":"Recognized checkpoints with a parameter suffix below 7B are capped at a 32768-token inferred context window."},{"item":3,"status":"resolved","note":"When the calculated remainder is positive but below 256, maxOutputTokens is set to that exact remainder."}],"new_P0_P1":[]}
++tokens used
++37,569
+diff --git a/bench/iterations/001/reviews/codex-final.out b/bench/iterations/001/reviews/codex-final.out
+index e69de29..383e5c7 100644
+--- a/bench/iterations/001/reviews/codex-final.out
++++ b/bench/iterations/001/reviews/codex-final.out
+@@ -0,0 +1 @@
++{"verdicts":[{"item":1,"status":"resolved","note":"computeOutputBudget includes normalized system-prompt text in its estimate and reserves 1024 tokens for tool schemas."},{"item":2,"status":"resolved","note":"Recognized checkpoints with a parameter suffix below 7B are capped at a 32768-token inferred context window."},{"item":3,"status":"resolved","note":"When the calculated remainder is positive but below 256, maxOutputTokens is set to that exact remainder."}],"new_P0_P1":[]}
+diff --git a/packages/core/src/__tests__/quality-signals.test.ts b/packages/core/src/__tests__/quality-signals.test.ts
+index d07aa79..48e8789 100644
+--- a/packages/core/src/__tests__/quality-signals.test.ts
++++ b/packages/core/src/__tests__/quality-signals.test.ts
+@@ -108,3 +108,57 @@ describe("createQualitySignalsMiddleware", () => {
+     expect(warnCount()).toBe(firstCount);
+   });
+ });
++
++describe("corrective feedback injection", () => {
++  beforeEach(() => {
++    warnSpy.mockClear();
++  });
++
++  function fire(
++    mw: ReturnType<typeof createQualitySignalsMiddleware>,
++    name: string,
++    output: unknown = "tool output",
++  ) {
++    return mw.afterToolResult?.({
++      toolCallId: "t1",
++      name,
++      ok: true,
++      output,
++      durationMs: 1,
++    } as any);
++  }
++
++  it("appends a one-shot corrective hint to the triggering tool result", () => {
++    const mw = createQualitySignalsMiddleware();
++    // 5 reads then 5 writes → ratio 1.0 at write #5 (10 total calls).
++    for (let i = 0; i < 5; i++) fire(mw, "file_read");
++    for (let i = 0; i < 4; i++) fire(mw, "file_write");
++    const modified = fire(mw, "file_write", "write ok");
++
++    expect(modified).toBeDefined();
++    expect(String((modified as any).output)).toContain("write ok");
++    expect(String((modified as any).output)).toContain("[quality-signal]");
++    expect(String((modified as any).output)).toContain("re-read the code");
++  });
++
++  it("injects at most once per degradation episode", () => {
++    const mw = createQualitySignalsMiddleware();
++    for (let i = 0; i < 5; i++) fire(mw, "file_read");
++    for (let i = 0; i < 4; i++) fire(mw, "file_write");
++    const first = fire(mw, "file_write");
++    expect(String((first as any).output)).toContain("[quality-signal]");
++
++    // Ratio still bad on the next write — no second injection.
++    const second = fire(mw, "file_write");
++    expect(second).toBeUndefined();
++  });
++
++  it("serializes non-string outputs rather than dropping them", () => {
++    const mw = createQualitySignalsMiddleware();
++    for (let i = 0; i < 5; i++) fire(mw, "file_read");
++    for (let i = 0; i < 4; i++) fire(mw, "file_write");
++    const modified = fire(mw, "file_write", { success: true, path: "x.ts" });
++    expect(String((modified as any).output)).toContain('"path":"x.ts"');
++    expect(String((modified as any).output)).toContain("[quality-signal]");
++  });
++});
+diff --git a/packages/core/src/middleware/builtin/quality-signals.ts b/packages/core/src/middleware/builtin/quality-signals.ts
+index fcde0c9..dec2f23 100644
+--- a/packages/core/src/middleware/builtin/quality-signals.ts
++++ b/packages/core/src/middleware/builtin/quality-signals.ts
+@@ -85,6 +85,20 @@ export function createQualitySignalsMiddleware(): AgentMiddleware {
+           { readCount, writeCount, ratio: ratio.toFixed(1) },
+           "Read:Edit ratio below threshold — agent may be editing without sufficient research",
+         );
++        // One-shot corrective feedback INTO the session, not just the log —
++        // observability without control never changes model behavior. The
++        // hint rides the current tool result (the one channel the model is
++        // guaranteed to read next turn) and fires at most once per
++        // degradation episode; the flag resets only after the ratio
++        // recovers, so a persistently low ratio doesn't nag every call.
++        return {
++          ...result,
++          output:
++            `${typeof result.output === "string" ? result.output : JSON.stringify(result.output)}\n\n` +
++            `[quality-signal] Your read:edit ratio this session is ${ratio.toFixed(1)} ` +
++            `(${readCount} reads / ${writeCount} writes; healthy sessions stay above ${WARN_THRESHOLD}). ` +
++            `Before your next edit, re-read the code you are changing and its call sites.`,
++        };
+       }
+ 
+       // Reset warning flag when ratio recovers
+diff --git a/packages/router/src/__tests__/learned-quarantine.test.ts b/packages/router/src/__tests__/learned-quarantine.test.ts
+new file mode 100644
+index 0000000..f049018
+--- /dev/null
++++ b/packages/router/src/__tests__/learned-quarantine.test.ts
+@@ -0,0 +1,59 @@
++import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
++import {
++  recordOutcome,
++  isQuarantined,
++  _resetQuarantineForTests,
++} from "../strategies/learned.js";
++
++describe("learned strategy — quarantine", () => {
++  beforeEach(() => {
++    _resetQuarantineForTests();
++    vi.useFakeTimers();
++    vi.setSystemTime(new Date("2026-07-18T12:00:00Z"));
++  });
++  afterEach(() => {
++    vi.useRealTimers();
++    _resetQuarantineForTests();
++  });
++
++  const fail = (model: string) =>
++    recordOutcome("code-generation", model, false, 100, 0);
++  const succeed = (model: string) =>
++    recordOutcome("code-generation", model, true, 100, 0);
++
++  it("quarantines a model after >80% failures across a full window", () => {
++    for (let i = 0; i < 10; i++) fail("acronis:broken/model");
++    expect(isQuarantined("acronis:broken/model")).toBe(true);
++  });
++
++  it("does not quarantine below the window size or failure threshold", () => {
++    for (let i = 0; i < 9; i++) fail("acronis:new/model");
++    expect(isQuarantined("acronis:new/model")).toBe(false);
++
++    // 8 failures / 2 successes = exactly 80% — threshold is strict >.
++    _resetQuarantineForTests();
++    for (let i = 0; i < 8; i++) fail("acronis:flaky/model");
++    for (let i = 0; i < 2; i++) succeed("acronis:flaky/model");
++    expect(isQuarantined("acronis:flaky/model")).toBe(false);
++  });
++
++  it("counts outcomes across task types in one per-model window", () => {
++    for (let i = 0; i < 5; i++)
++      recordOutcome("debugging", "acronis:broken/model", false, 100, 0);
++    for (let i = 0; i < 5; i++)
++      recordOutcome("analysis", "acronis:broken/model", false, 100, 0);
++    expect(isQuarantined("acronis:broken/model")).toBe(true);
++  });
++
++  it("releases after the cooldown and requires fresh evidence to re-trip", () => {
++    for (let i = 0; i < 10; i++) fail("acronis:broken/model");
++    expect(isQuarantined("acronis:broken/model")).toBe(true);
++
++    vi.advanceTimersByTime(30 * 60 * 1000 + 1);
++    expect(isQuarantined("acronis:broken/model")).toBe(false);
++
++    // One more failure alone must not re-quarantine (window was cleared).
++    fail("acronis:broken/model");
++    expect(isQuarantined("acronis:broken/model")).toBe(false);
++  });
++});
+diff --git a/packages/router/src/strategies/learned.ts b/packages/router/src/strategies/learned.ts
+index 2196545..9b969a9 100644
+--- a/packages/router/src/strategies/learned.ts
++++ b/packages/router/src/strategies/learned.ts
+@@ -29,6 +29,63 @@ const log = createLogger("learned-strategy");
+ // In-memory stats — loaded from DB on init, updated per-turn, persisted per-outcome
+ const modelStats = new Map<string, ModelStats>();
+ 
++// ── Quarantine ─────────────────────────────────────────────────────
++// A model that fails almost every recent attempt (e.g. a local endpoint that
++// is down or a checkpoint that can't tool-call) must not keep winning
++// Thompson samples on stale priors and burning turns on doomed requests.
++// Rolling per-model window across task types; on breach, the model is
++// excluded from learned selection for a cooldown — but never when that would
++// leave zero eligible candidates.
++
++const QUARANTINE_WINDOW = 10;
++const QUARANTINE_FAILURE_RATE = 0.8;
++const QUARANTINE_COOLDOWN_MS = 30 * 60 * 1000;
++
++const recentOutcomes = new Map<string, boolean[]>();
++const quarantinedUntil = new Map<string, number>();
++
++export function isQuarantined(modelId: string, now = Date.now()): boolean {
++  const until = quarantinedUntil.get(modelId);
++  if (until === undefined) return false;
++  if (now >= until) {
++    // Cooldown over: clear the window too, so one lingering failure doesn't
++    // immediately re-trip the breaker before fresh evidence accumulates.
++    quarantinedUntil.delete(modelId);
++    recentOutcomes.delete(modelId);
++    return false;
++  }
++  return true;
++}
++
++function trackForQuarantine(modelId: string, success: boolean): void {
++  const window = recentOutcomes.get(modelId) ?? [];
++  window.push(success);
++  if (window.length > QUARANTINE_WINDOW) window.shift();
++  recentOutcomes.set(modelId, window);
++
++  if (window.length < QUARANTINE_WINDOW) return;
++  const failures = window.filter((s) => !s).length;
++  if (failures / window.length > QUARANTINE_FAILURE_RATE) {
++    quarantinedUntil.set(modelId, Date.now() + QUARANTINE_COOLDOWN_MS);
++    recentOutcomes.delete(modelId);
++    log.warn(
++      {
++        modelId,
++        failures,
++        window: QUARANTINE_WINDOW,
++        cooldownMinutes: QUARANTINE_COOLDOWN_MS / 60_000,
++      },
++      "Model quarantined from learned routing after sustained failures",
++    );
++  }
++}
++
++/** Test-only: reset quarantine state between cases. */
++export function _resetQuarantineForTests(): void {
++  recentOutcomes.clear();
++  quarantinedUntil.clear();
++}
++
+ // ── Audit Trail ────────────────────────────────────────────────────
+ 
+ export interface OutcomeAuditEntry {
+@@ -128,6 +185,7 @@ export function recordOutcome(
+   stats.samples++;
+ 
+   modelStats.set(key, stats);
++  trackForQuarantine(modelId, success);
+ 
+   // Audit trail: log every outcome
+   const entry: OutcomeAuditEntry = {
+@@ -335,8 +393,11 @@ export const learnedStrategy: RoutingStrategy = {
+     candidates: ModelEntry[],
+     context: RoutingContext,
+   ): RoutingDecision | null {
+-    const eligible = candidates.filter((m) => m.status === "available");
+-    if (eligible.length === 0) return null;
++    const available = candidates.filter((m) => m.status === "available");
++    if (available.length === 0) return null;
++    // Skip quarantined models — unless that would leave nothing to route to.
++    const healthy = available.filter((m) => !isQuarantined(m.id));
++    const eligible = healthy.length > 0 ? healthy : available;
+ 
+     // Collect raw scores and avg costs
+     const raw = eligible.map((model) => {
+diff --git a/packages/workflow/src/__tests__/artifact-validation.test.ts b/packages/workflow/src/__tests__/artifact-validation.test.ts
+new file mode 100644
+index 0000000..e1ae56b
+--- /dev/null
++++ b/packages/workflow/src/__tests__/artifact-validation.test.ts
+@@ -0,0 +1,76 @@
++import { describe, it, expect, afterAll } from "vitest";
++import {
++  mkdtempSync,
++  mkdirSync,
++  rmSync,
++} from "node:fs";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++
++// CRITICAL: artifact-store captures ARTIFACTS_BASE at module import time
++const TEST_HOME = mkdtempSync(join(tmpdir(), "brainstorm-artifact-validation-"));
++const ORIGINAL_HOME = process.env.HOME;
++process.env.HOME = TEST_HOME;
++
++import { validateStepOutput } from "../engine.js";
++
++// ── Artifact validation tests ───────────────────────────────────────
++
++describe("validateStepOutput", () => {
++  afterAll(() => {
++    if (ORIGINAL_HOME !== undefined) process.env.HOME = ORIGINAL_HOME;
++    else delete process.env.HOME;
++    rmSync(TEST_HOME, { recursive: true, force: true });
++  });
++
++  it("accepts non-empty content", () => {
++    const result = validateStepOutput(
++      "step-1",
++      "This is a valid output with content"
++    );
++    expect(result.valid).toBe(true);
++    expect(result.error).toBeUndefined();
++  });
++
++  it("rejects empty string as invalid", () => {
++    const result = validateStepOutput("step-empty", "");
++    expect(result.valid).toBe(false);
++    expect(result.error).toMatch(/step-empty/i);
++    expect(result.error).toMatch(/empty|whitespace/i);
++  });
++
++  it("rejects whitespace-only content as invalid", () => {
++    const result = validateStepOutput("step-whitespace", "   \t\n  ");
++    expect(result.valid).toBe(false);
++    expect(result.error).toMatch(/step-whitespace/i);
++    expect(result.error).toMatch(/empty|whitespace/i);
++  });
++
++  it("rejects string of only spaces", () => {
++    const result = validateStepOutput("step-spaces", "     ");
++    expect(result.valid).toBe(false);
++    expect(result.error).toMatch(/step-spaces/i);
++  });
++
++  it("accepts content with just one non-whitespace character", () => {
++    const result = validateStepOutput("step-minimal", "x");
++    expect(result.valid).toBe(true);
++    expect(result.error).toBeUndefined();
++  });
++
++  it("accepts content with leading/trailing whitespace but non-empty body", () => {
++    const result = validateStepOutput(
++      "step-trimmed",
++      "  some content here  "
++    );
++    expect(result.valid).toBe(true);
++    expect(result.error).toBeUndefined();
++  });
++
++  it("provides clear error message naming the step and artifact", () => {
++    const result = validateStepOutput("my-review-step", "");
++    expect(result.valid).toBe(false);
++    expect(result.error).toContain(`Step "my-review-step"`);
++    expect(result.error).toContain("artifact");
++  });
++});
+diff --git a/packages/workflow/src/engine.ts b/packages/workflow/src/engine.ts
+index f23c3df..cb9a032 100644
+--- a/packages/workflow/src/engine.ts
++++ b/packages/workflow/src/engine.ts
+@@ -104,6 +104,31 @@ const DANGER_PATTERNS: ReadonlyArray<RegExp> = [
+   /(?:^|\s)-{1,2}import(?:$|[\s=])/, // node --import — preload ESM module
+ ];
+ 
++/**
++ * Validate a step's output artifact content.
++ *
++ * Empty or whitespace-only artifacts indicate a workflow step that
++ * produced no meaningful output. These must be treated as failures,
++ * not silent successes, to trigger the workflow's existing failure/retry
++ * paths.
++ *
++ * Returns `{valid: true}` if the content has non-whitespace characters,
++ * or `{valid: false, error}` with a clear message naming the step and
++ * artifact.
++ */
++export function validateStepOutput(
++  stepId: string,
++  content: string
++): { valid: boolean; error?: string } {
++  if (!content || content.trim().length === 0) {
++    return {
++      valid: false,
++      error: `Step "${stepId}" produced an empty or whitespace-only artifact (zero content). This step failed.`,
++    };
++  }
++  return { valid: true };
++}
++
+ /**
+  * Validate a kill-gate command string before execution. Gates run via
+  * /bin/sh -c, so a prefix match alone is not safe — "npm test; rm -rf /"
+@@ -410,9 +435,37 @@ export async function* runWorkflow(
+         kind: "output",
+       };
+ 
+-      // Extract confidence
++      // Extract confidence before validation (so we can log it)
+       artifact.confidence = extractConfidence(artifact);
+ 
++      // Validate output artifact — empty/whitespace-only content is a failure
++      const outputValidation = validateStepOutput(stepDef.id, artifact.content);
++      if (!outputValidation.valid) {
++        const failureMessage =
++          outputValidation.error ??
++          `Step "${stepDef.id}" produced an empty artifact`;
++        stepRun.status = "failed";
++        stepRun.error = failureMessage;
++        stepRun.completedAt = Math.floor(Date.now() / 1000);
++
++        yield {
++          type: "step-failed",
++          step: stepRun,
++          error: new Error(failureMessage),
++        };
++
++        // Record failure for routing fallback
++        router.recordFailure(agent.modelId, failureMessage);
++
++        run.status = "failed";
++        yield {
++          type: "workflow-failed",
++          run,
++          error: new Error(failureMessage),
++        };
++        return;
++      }
++
+       run.artifacts.push(artifact);
+       writeArtifact(run.id, artifact);
+       stepRun.artifactId = artifact.id;
+
+exec
+/bin/zsh -lc "sed -n '1,470p' packages/router/src/strategies/learned.ts && sed -n '350,510p' packages/workflow/src/engine.ts && sed -n '1,150p' packages/core/src/middleware/builtin/quality-signals.ts" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+/**
+ * Learned Routing Strategy — Client-side Thompson Sampling.
+ *
+ * Records (taskType, modelId, success, latency, cost) per turn.
+ * Uses Beta distribution sampling to balance exploration vs exploitation.
+ * Stats are persisted to model_performance_v2 via RoutingOutcomeRepository
+ * and loaded on router init for cross-session learning.
+ */
+
+import type {
+  TaskProfile,
+  ModelEntry,
+  RoutingContext,
+  RoutingDecision,
+} from "@brainst0rm/shared";
+import type { RoutingStrategy } from "./types.js";
+import { createLogger } from "@brainst0rm/shared";
+
+export interface ModelStats {
+  successes: number;
+  failures: number;
+  totalLatencyMs: number;
+  totalCost: number;
+  samples: number;
+}
+
+const log = createLogger("learned-strategy");
+
+// In-memory stats — loaded from DB on init, updated per-turn, persisted per-outcome
+const modelStats = new Map<string, ModelStats>();
+
+// ── Quarantine ─────────────────────────────────────────────────────
+// A model that fails almost every recent attempt (e.g. a local endpoint that
+// is down or a checkpoint that can't tool-call) must not keep winning
+// Thompson samples on stale priors and burning turns on doomed requests.
+// Rolling per-model window across task types; on breach, the model is
+// excluded from learned selection for a cooldown — but never when that would
+// leave zero eligible candidates.
+
+const QUARANTINE_WINDOW = 10;
+const QUARANTINE_FAILURE_RATE = 0.8;
+const QUARANTINE_COOLDOWN_MS = 30 * 60 * 1000;
+
+const recentOutcomes = new Map<string, boolean[]>();
+const quarantinedUntil = new Map<string, number>();
+
+export function isQuarantined(modelId: string, now = Date.now()): boolean {
+  const until = quarantinedUntil.get(modelId);
+  if (until === undefined) return false;
+  if (now >= until) {
+    // Cooldown over: clear the window too, so one lingering failure doesn't
+    // immediately re-trip the breaker before fresh evidence accumulates.
+    quarantinedUntil.delete(modelId);
+    recentOutcomes.delete(modelId);
+    return false;
+  }
+  return true;
+}
+
+function trackForQuarantine(modelId: string, success: boolean): void {
+  const window = recentOutcomes.get(modelId) ?? [];
+  window.push(success);
+  if (window.length > QUARANTINE_WINDOW) window.shift();
+  recentOutcomes.set(modelId, window);
+
+  if (window.length < QUARANTINE_WINDOW) return;
+  const failures = window.filter((s) => !s).length;
+  if (failures / window.length > QUARANTINE_FAILURE_RATE) {
+    quarantinedUntil.set(modelId, Date.now() + QUARANTINE_COOLDOWN_MS);
+    recentOutcomes.delete(modelId);
+    log.warn(
+      {
+        modelId,
+        failures,
+        window: QUARANTINE_WINDOW,
+        cooldownMinutes: QUARANTINE_COOLDOWN_MS / 60_000,
+      },
+      "Model quarantined from learned routing after sustained failures",
+    );
+  }
+}
+
+/** Test-only: reset quarantine state between cases. */
+export function _resetQuarantineForTests(): void {
+  recentOutcomes.clear();
+  quarantinedUntil.clear();
+}
+
+// ── Audit Trail ────────────────────────────────────────────────────
+
+export interface OutcomeAuditEntry {
+  timestamp: number;
+  taskType: string;
+  modelId: string;
+  success: boolean;
+  latencyMs: number;
+  cost: number;
+}
+
+export interface ConvergenceAlert {
+  type: "suspicious_convergence" | "outcome_bias" | "rapid_shift";
+  taskType: string;
+  detail: string;
+  timestamp: number;
+}
+
+const auditLog: OutcomeAuditEntry[] = [];
+const convergenceAlerts: ConvergenceAlert[] = [];
+const MAX_AUDIT_ENTRIES = 500;
+/**
+ * Bound convergenceAlerts same way auditLog is bounded. The 5-
+ * minute dedup window prevents RAPID growth from the same task/
+ * model pair, but over long-running daemons with many task types
+ * the alert list still grows without limit. 200 is plenty for
+ * "most recent alerts" consumers; the logger is the durable record.
+ */
+const MAX_CONVERGENCE_ALERTS = 200;
+
+function trimAlerts(): void {
+  if (convergenceAlerts.length > MAX_CONVERGENCE_ALERTS) {
+    convergenceAlerts.splice(
+      0,
+      convergenceAlerts.length - MAX_CONVERGENCE_ALERTS,
+    );
+  }
+}
+
+/** Threshold: if one model gets >80% of recent outcomes, flag it. */
+const CONVERGENCE_THRESHOLD = 0.8;
+/** Minimum samples before checking convergence. */
+const MIN_CONVERGENCE_SAMPLES = 10;
+
+/**
+ * Load historical stats from aggregated DB data.
+ * Called once during router initialization.
+ */
+export function loadStats(
+  aggregated: Array<{
+    taskType: string;
+    modelId: string;
+    successes: number;
+    failures: number;
+    avgLatencyMs: number;
+    avgCost: number;
+    samples: number;
+  }>,
+): void {
+  modelStats.clear();
+  for (const row of aggregated) {
+    const key = `${row.taskType}:${row.modelId}`;
+    modelStats.set(key, {
+      successes: row.successes,
+      failures: row.failures,
+      totalLatencyMs: row.avgLatencyMs * row.samples,
+      totalCost: row.avgCost * row.samples,
+      samples: row.samples,
+    });
+  }
+}
+
+/**
+ * Record an outcome for a model on a task type.
+ * Updates in-memory stats immediately. Caller is responsible for DB persistence.
+ */
+export function recordOutcome(
+  taskType: string,
+  modelId: string,
+  success: boolean,
+  latencyMs: number,
+  cost: number,
+): void {
+  const key = `${taskType}:${modelId}`;
+  const stats = modelStats.get(key) ?? {
+    successes: 0,
+    failures: 0,
+    totalLatencyMs: 0,
+    totalCost: 0,
+    samples: 0,
+  };
+
+  if (success) stats.successes++;
+  else stats.failures++;
+  stats.totalLatencyMs += latencyMs;
+  stats.totalCost += cost;
+  stats.samples++;
+
+  modelStats.set(key, stats);
+  trackForQuarantine(modelId, success);
+
+  // Audit trail: log every outcome
+  const entry: OutcomeAuditEntry = {
+    timestamp: Date.now(),
+    taskType,
+    modelId,
+    success,
+    latencyMs,
+    cost,
+  };
+  auditLog.push(entry);
+  if (auditLog.length > MAX_AUDIT_ENTRIES) {
+    auditLog.splice(0, auditLog.length - MAX_AUDIT_ENTRIES);
+  }
+
+  // Convergence detection: check if one model dominates recent outcomes
+  checkConvergence(taskType);
+}
+
+/**
+ * Get total sample count across all task_type:model pairs.
+ * Used to determine if learned strategy has enough data.
+ */
+export function getTotalSamples(): number {
+  let total = 0;
+  for (const stats of modelStats.values()) {
+    total += stats.samples;
+  }
+  return total;
+}
+
+/**
+ * Get sample count for a specific task type (across all models).
+ * Used by combined strategy to decide whether to delegate to learned.
+ */
+export function getSamplesForTaskType(taskType: string): number {
+  let total = 0;
+  for (const [key, stats] of modelStats.entries()) {
+    if (key.startsWith(`${taskType}:`)) {
+      total += stats.samples;
+    }
+  }
+  return total;
+}
+
+/**
+ * Sample from Beta(successes+1, failures+1) distribution.
+ * Uses Gamma-ratio method: Beta(a,b) = Ga/(Ga+Gb) where Ga~Gamma(a), Gb~Gamma(b).
+ */
+function betaSample(successes: number, failures: number): number {
+  const a = gammaSample(successes + 1);
+  const b = gammaSample(failures + 1);
+  return a / (a + b);
+}
+
+/** Box-Muller normal sample. */
+function randn(): number {
+  return (
+    Math.sqrt(-2 * Math.log(Math.random())) *
+    Math.cos(2 * Math.PI * Math.random())
+  );
+}
+
+/** Marsaglia-Tsang Gamma sampler (shape >= 1; recursion for shape < 1). */
+function gammaSample(shape: number): number {
+  if (shape < 1) return gammaSample(1 + shape) * Math.random() ** (1 / shape);
+  const d = shape - 1 / 3;
+  const c = 1 / Math.sqrt(9 * d);
+  for (;;) {
+    let x: number, v: number;
+    do {
+      x = randn();
+      v = 1 + c * x;
+    } while (v <= 0);
+    v = v ** 3;
+    const u = Math.random();
+    if (u < 1 - 0.0331 * x ** 4) return d * v;
+    if (Math.log(u) < 0.5 * x ** 2 + d * (1 - v + Math.log(v))) return d * v;
+  }
+}
+
+/**
+ * Check for suspicious convergence on a single model for a task type.
+ * If one model gets >80% of recent outcomes, something may be gaming the sampler.
+ */
+function checkConvergence(taskType: string): void {
+  // Get recent outcomes for this task type
+  const recent = auditLog.filter((e) => e.taskType === taskType).slice(-50);
+
+  if (recent.length < MIN_CONVERGENCE_SAMPLES) return;
+
+  // Count outcomes per model
+  const modelCounts = new Map<string, number>();
+  for (const entry of recent) {
+    modelCounts.set(entry.modelId, (modelCounts.get(entry.modelId) ?? 0) + 1);
+  }
+
+  // Check if any model dominates
+  for (const [modelId, count] of modelCounts) {
+    const ratio = count / recent.length;
+    if (ratio >= CONVERGENCE_THRESHOLD) {
+      // Only alert once per model/taskType (deduplicate within last 10 alerts)
+      const recentAlerts = convergenceAlerts.slice(-10);
+      const isDuplicate = recentAlerts.some(
+        (a) =>
+          a.taskType === taskType &&
+          a.detail.includes(modelId) &&
+          Date.now() - a.timestamp < 300_000, // 5-minute dedup window
+      );
+
+      if (!isDuplicate) {
+        const alert: ConvergenceAlert = {
+          type: "suspicious_convergence",
+          taskType,
+          detail: `Model ${modelId} received ${(ratio * 100).toFixed(0)}% of last ${recent.length} outcomes for "${taskType}". Possible Thompson sampling poisoning or natural convergence.`,
+          timestamp: Date.now(),
+        };
+        convergenceAlerts.push(alert);
+        trimAlerts();
+
+        log.warn(
+          { taskType, modelId, ratio, sampleCount: recent.length },
+          "Suspicious convergence detected in Thompson sampling",
+        );
+      }
+    }
+  }
+
+  // Check for rapid shift: if model selection changed >3 times in last 10 outcomes
+  if (recent.length >= 10) {
+    const last10 = recent.slice(-10);
+    let shifts = 0;
+    for (let i = 1; i < last10.length; i++) {
+      if (last10[i].modelId !== last10[i - 1].modelId) shifts++;
+    }
+    if (shifts > 6) {
+      const recentAlerts = convergenceAlerts.slice(-10);
+      const isDuplicate = recentAlerts.some(
+        (a) =>
+          a.type === "rapid_shift" &&
+          a.taskType === taskType &&
+          Date.now() - a.timestamp < 300_000,
+      );
+
+      if (!isDuplicate) {
+        convergenceAlerts.push({
+          type: "rapid_shift",
+          taskType,
+          detail: `${shifts} model switches in last 10 outcomes for "${taskType}". Sampling may be unstable.`,
+          timestamp: Date.now(),
+        });
+        trimAlerts();
+      }
+    }
+  }
+}
+
+/**
+ * Get the audit log for external inspection.
+ */
+export function getOutcomeAuditLog(limit = 100): OutcomeAuditEntry[] {
+  return auditLog.slice(-limit);
+}
+
+/**
+ * Get convergence alerts.
+ */
+export function getConvergenceAlerts(limit = 20): ConvergenceAlert[] {
+  return convergenceAlerts.slice(-limit);
+}
+
+/**
+ * Get a summary of model distribution for a task type.
+ */
+export function getModelDistribution(
+  taskType: string,
+): Array<{ modelId: string; count: number; successRate: number }> {
+  const entries = auditLog.filter((e) => e.taskType === taskType);
+  const models = new Map<string, { count: number; successes: number }>();
+
+  for (const entry of entries) {
+    const stat = models.get(entry.modelId) ?? { count: 0, successes: 0 };
+    stat.count++;
+    if (entry.success) stat.successes++;
+    models.set(entry.modelId, stat);
+  }
+
+  return Array.from(models.entries())
+    .map(([modelId, stat]) => ({
+      modelId,
+      count: stat.count,
+      successRate: stat.count > 0 ? stat.successes / stat.count : 0,
+    }))
+    .sort((a, b) => b.count - a.count);
+}
+
+/** Weight given to cost efficiency in the final score (0 = ignore cost, 1 = cost dominates). */
+const COST_WEIGHT = 0.25;
+
+export const learnedStrategy: RoutingStrategy = {
+  name: "learned",
+
+  select(
+    task: TaskProfile,
+    candidates: ModelEntry[],
+    context: RoutingContext,
+  ): RoutingDecision | null {
+    const available = candidates.filter((m) => m.status === "available");
+    if (available.length === 0) return null;
+    // Skip quarantined models — unless that would leave nothing to route to.
+    const healthy = available.filter((m) => !isQuarantined(m.id));
+    const eligible = healthy.length > 0 ? healthy : available;
+
+    // Collect raw scores and avg costs
+    const raw = eligible.map((model) => {
+      const key = `${task.type}:${model.id}`;
+      const stats = modelStats.get(key);
+
+      // Thompson sample for success probability
+      const successSample = stats
+        ? betaSample(stats.successes, stats.failures)
+        : 0.7 + Math.random() * 0.3;
+
+      // Average cost per turn (from historical data, or estimate from pricing)
+      const avgCost =
+        stats && stats.samples > 0
+          ? stats.totalCost / stats.samples
+          : (task.estimatedTokens.input / 1_000_000) *
+              model.pricing.inputPer1MTokens +
+            (task.estimatedTokens.output / 1_000_000) *
+              model.pricing.outputPer1MTokens;
+
+      return { model, successSample, avgCost, samples: stats?.samples ?? 0 };
+    });
+
+    // Normalize cost to [0, 1] range (0 = cheapest, 1 = most expensive)
+    const maxCost = Math.max(...raw.map((r) => r.avgCost), 0.0001);
+    const scored = raw.map((r) => {
+      const costPenalty = r.avgCost / maxCost; // 0..1
+      // Final score: success probability with cost penalty
+      // A model with 95% success at $15/M gets penalized vs 90% success at $0.50/M
+      const score = r.successSample * (1 - COST_WEIGHT * costPenalty);
+      return { ...r, score };
+    });
+
+    scored.sort((a, b) => b.score - a.score);
+    const selected = scored[0];
+
+    return {
+      model: selected.model,
+      fallbacks: scored.slice(1, 3).map((s) => s.model),
+      strategy: "learned",
+      reason: `Thompson sampling (score: ${selected.score.toFixed(3)}, success: ${selected.successSample.toFixed(3)}, cost: $${selected.avgCost.toFixed(4)}, ${selected.samples} samples)`,
+      estimatedCost: selected.avgCost,
+    };
+  },
+};
+    // Check build state before executing step — pause if build is broken
+    if (options.buildState) {
+      const bs = options.buildState;
+      if (bs.isBroken()) {
+        yield {
+          type: "workflow-paused",
+          reason: `Build is broken: ${bs.getLastError()}. Fix before continuing.`,
+          run,
+        };
+        stepRun.status = "skipped";
+        stepRun.error = "Build broken — step skipped";
+        break;
+      }
+    }
+
+    try {
+      // Build context for this step
+      const isRetry = run.iteration > 0 && stepDef.loopBackTo !== undefined;
+      const ctx = buildStepContext(stepDef, agent, run, isRetry, skillMap);
+
+      // Build tools (respect agent's allowedTools)
+      const tools = createDefaultToolRegistry();
+
+      // Run the agent loop
+      let fullResponse = "";
+      const sessionId = run.id;
+      const systemPrompt = ctx.systemPrompt;
+
+      // Per-step model override for cross-model workflows
+      const stepModelId = options.stepModelOverrides?.[stepDef.id];
+
+      // Enforce per-agent tool allowlist via roleToolFilter
+      const roleToolFilter =
+        agent.allowedTools && agent.allowedTools !== "all"
+          ? { allowedTools: agent.allowedTools as string[] }
+          : undefined;
+
+      for await (const event of runAgentLoop(ctx.messages, {
+        config,
+        registry,
+        router,
+        costTracker,
+        tools,
+        sessionId,
+        projectPath,
+        systemPrompt,
+        disableTools: !shouldUseTools(stepDef, agent),
+        roleToolFilter,
+        ...(stepModelId ? { preferredModelId: stepModelId } : {}),
+      })) {
+        // Forward agent events as step progress
+        yield { type: "step-progress", stepId: stepDef.id, event };
+
+        if (event.type === "text-delta") {
+          fullResponse += event.delta;
+        }
+        if (event.type === "done") {
+          stepRun.cost = event.totalCost - run.totalCost;
+          run.totalCost = event.totalCost;
+        }
+      }
+
+      // Create artifact from response.
+      //
+      // kind is always "output" here: at write time the engine doesn't yet
+      // know whether this iteration will be superseded by a review-loop
+      // rejection (that's only known after the escalation/review checks
+      // below run, and by then the artifact is already on disk). Marking
+      // discarded iterations "scratch" retroactively would mean rewriting
+      // already-written files or threading iteration-outcome state back
+      // through the loop, which isn't worth contorting the step loop for
+      // in v1 — every artifact is written as "output" and the manifest's
+      // per-step `iteration` field remains the source of truth for which
+      // write was the latest.
+      const artifact: Artifact = {
+        id: stepDef.outputArtifact,
+        stepId: stepDef.id,
+        agentId: agent.id,
+        content: fullResponse,
+        contentType: detectContentType(fullResponse),
+        metadata: {},
+        confidence: 0,
+        cost: stepRun.cost,
+        timestamp: Math.floor(Date.now() / 1000),
+        iteration: run.iteration,
+        kind: "output",
+      };
+
+      // Extract confidence before validation (so we can log it)
+      artifact.confidence = extractConfidence(artifact);
+
+      // Validate output artifact — empty/whitespace-only content is a failure
+      const outputValidation = validateStepOutput(stepDef.id, artifact.content);
+      if (!outputValidation.valid) {
+        const failureMessage =
+          outputValidation.error ??
+          `Step "${stepDef.id}" produced an empty artifact`;
+        stepRun.status = "failed";
+        stepRun.error = failureMessage;
+        stepRun.completedAt = Math.floor(Date.now() / 1000);
+
+        yield {
+          type: "step-failed",
+          step: stepRun,
+          error: new Error(failureMessage),
+        };
+
+        // Record failure for routing fallback
+        router.recordFailure(agent.modelId, failureMessage);
+
+        run.status = "failed";
+        yield {
+          type: "workflow-failed",
+          run,
+          error: new Error(failureMessage),
+        };
+        return;
+      }
+
+      run.artifacts.push(artifact);
+      writeArtifact(run.id, artifact);
+      stepRun.artifactId = artifact.id;
+      stepRun.status = "completed";
+      stepRun.completedAt = Math.floor(Date.now() / 1000);
+
+      yield { type: "step-completed", step: stepRun, artifact };
+
+      if (stepDef.killGates && stepDef.killGates.length > 0) {
+        for (const gate of stepDef.killGates) {
+          const verdict = validateGateCommand(gate);
+          if (!verdict.allowed) {
+            yield {
+              type: "gate-failed" as const,
+              step: stepRun,
+              gate,
+              output: verdict.reason ?? "Gate rejected",
+            };
+            run.status = "paused";
+            return;
+          }
+
+          try {
+            const { execFileSync } = await import("node:child_process");
+            execFileSync("/bin/sh", ["-c", gate], {
+              cwd: projectPath,
+              timeout: 60000,
+              stdio: ["ignore", "pipe", "pipe"],
+            });
+            yield {
+              type: "gate-passed",
+              step: stepRun,
+              gate,
+            };
+          } catch (err: any) {
+            const output = (err.stderr?.toString() ?? err.message ?? "").slice(
+              0,
+              500,
+            );
+            yield {
+              type: "gate-failed",
+              step: stepRun,
+/**
+ * Quality Signals Middleware — Read:Edit ratio tracking.
+ *
+ * Inspired by Stella Laurenzo's analysis (anthropics/claude-code#42796):
+ * Read:Edit ratio dropped from 6.6 to 2.0 during quality degradation.
+ * Good agents read 6x more than they edit. When the ratio drops below 3.0,
+ * the model is editing without sufficient research.
+ *
+ * Tracks per-session tool calls categorized as reads vs writes.
+ * Injects a warning into tool results when ratio degrades.
+ */
+
+import type {
+  AgentMiddleware,
+  MiddlewareToolCall,
+  MiddlewareToolResult,
+} from "../types.js";
+import { createLogger } from "@brainst0rm/shared";
+
+const log = createLogger("quality-signals");
+
+const READ_TOOLS = new Set([
+  "file_read",
+  "glob",
+  "grep",
+  "list_dir",
+  "git_status",
+  "git_diff",
+  "git_log",
+  "git_blame",
+  "web_fetch",
+  "web_search",
+  "memory",
+]);
+
+const WRITE_TOOLS = new Set([
+  "file_write",
+  "file_edit",
+  "multi_edit",
+  "batch_edit",
+  "shell",
+]);
+
+const WARN_THRESHOLD = 3.0;
+
+// Sample-size gates so the Read:Edit warning only fires when the ratio is
+// statistically meaningful. Fixes Dogfood #1 Bug 3: previously the warning
+// fired at 1 read / 3 writes (ratio 0.33) which was a false positive —
+// the agent had barely started and its session-end ratio was 10:1.
+//
+// Raised MIN_WRITES from 3 → 5 and added MIN_TOTAL_CALLS = 10 so the
+// warning only fires once the agent has made meaningful progress. In
+// Dogfood #1, the first warning at write=3 was false; the second at
+// write=6 / total=21 is exactly the threshold this catches.
+const MIN_WRITES_BEFORE_WARNING = 5;
+const MIN_TOTAL_CALLS_BEFORE_WARNING = 10;
+
+export function createQualitySignalsMiddleware(): AgentMiddleware {
+  let readCount = 0;
+  let writeCount = 0;
+  let warningIssued = false;
+
+  return {
+    name: "quality-signals",
+
+    afterToolResult(result: MiddlewareToolResult): MiddlewareToolResult | void {
+      if (READ_TOOLS.has(result.name)) {
+        readCount++;
+      } else if (WRITE_TOOLS.has(result.name)) {
+        writeCount++;
+      }
+
+      // Sample-size gates: need enough writes AND enough total calls for
+      // the ratio to be meaningful. Without these, a session with 1 read
+      // and 3 writes triggers a false-positive warning on literally the
+      // first few tool calls.
+      if (writeCount < MIN_WRITES_BEFORE_WARNING) return;
+      if (readCount + writeCount < MIN_TOTAL_CALLS_BEFORE_WARNING) return;
+
+      const ratio = writeCount > 0 ? readCount / writeCount : Infinity;
+
+      if (ratio < WARN_THRESHOLD && !warningIssued) {
+        warningIssued = true;
+        log.warn(
+          { readCount, writeCount, ratio: ratio.toFixed(1) },
+          "Read:Edit ratio below threshold — agent may be editing without sufficient research",
+        );
+        // One-shot corrective feedback INTO the session, not just the log —
+        // observability without control never changes model behavior. The
+        // hint rides the current tool result (the one channel the model is
+        // guaranteed to read next turn) and fires at most once per
+        // degradation episode; the flag resets only after the ratio
+        // recovers, so a persistently low ratio doesn't nag every call.
+        return {
+          ...result,
+          output:
+            `${typeof result.output === "string" ? result.output : JSON.stringify(result.output)}\n\n` +
+            `[quality-signal] Your read:edit ratio this session is ${ratio.toFixed(1)} ` +
+            `(${readCount} reads / ${writeCount} writes; healthy sessions stay above ${WARN_THRESHOLD}). ` +
+            `Before your next edit, re-read the code you are changing and its call sites.`,
+        };
+      }
+
+      // Reset warning flag when ratio recovers
+      if (ratio >= WARN_THRESHOLD) {
+        warningIssued = false;
+      }
+    },
+  };
+}
+
+/** Get current quality metrics for fleet aggregation. */
+export interface QualityMetrics {
+  readCount: number;
+  writeCount: number;
+  readEditRatio: number;
+}
+
+exec
+/bin/zsh -lc "rg -n 'recordFailure\\(|step-failed|workflow-failed|preferredModelId|interface.*Agent|modelId' packages/workflow/src/engine.ts packages/workflow/src -g '*.ts' | head -120 && sed -n '280,450p' packages/workflow/src/engine.ts && rg -n 'afterToolResult' packages/core/src -g '*.ts' | head -60 && sed -n '1,180p' packages/core/src/middleware/types.ts" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+packages/workflow/src/engine.ts:218:  /** Per-step model overrides: stepId → modelId. Used for cross-model workflows. */
+packages/workflow/src/engine.ts:321:        type: "step-failed" as any,
+packages/workflow/src/engine.ts:398:        ...(stepModelId ? { preferredModelId: stepModelId } : {}),
+packages/workflow/src/engine.ts:452:          type: "step-failed",
+packages/workflow/src/engine.ts:458:        router.recordFailure(agent.modelId, failureMessage);
+packages/workflow/src/engine.ts:462:          type: "workflow-failed",
+packages/workflow/src/engine.ts:583:      yield { type: "step-failed", step: stepRun, error };
+packages/workflow/src/engine.ts:586:      router.recordFailure(agent.modelId, error.message);
+packages/workflow/src/engine.ts:589:      yield { type: "workflow-failed", run, error };
+packages/workflow/src/engine.ts:626:    modelId: "auto",
+packages/workflow/src/engine.ts:218:  /** Per-step model overrides: stepId → modelId. Used for cross-model workflows. */
+packages/workflow/src/engine.ts:321:        type: "step-failed" as any,
+packages/workflow/src/engine.ts:398:        ...(stepModelId ? { preferredModelId: stepModelId } : {}),
+packages/workflow/src/engine.ts:452:          type: "step-failed",
+packages/workflow/src/engine.ts:458:        router.recordFailure(agent.modelId, failureMessage);
+packages/workflow/src/engine.ts:462:          type: "workflow-failed",
+packages/workflow/src/engine.ts:583:      yield { type: "step-failed", step: stepRun, error };
+packages/workflow/src/engine.ts:586:      router.recordFailure(agent.modelId, error.message);
+packages/workflow/src/engine.ts:589:      yield { type: "workflow-failed", run, error };
+packages/workflow/src/engine.ts:626:    modelId: "auto",
+packages/workflow/src/__tests__/engine.test.ts:47:    modelId: "auto",
+  // Cost forecast
+  const forecast: Array<{ step: string; cost: number }> = [];
+  for (const step of definition.steps) {
+    const agent = stepAgents.get(step.id);
+    if (!agent) continue;
+    const task = router.classify(userRequest);
+    const decision = router.route(task);
+    forecast.push({ step: step.id, cost: decision.estimatedCost });
+  }
+  const safetyMargin = config.general?.costSafetyMargin ?? 1.3;
+  const totalEstimate =
+    forecast.reduce((sum, f) => sum + f.cost, 0) * safetyMargin;
+  run.estimatedCost = totalEstimate;
+
+  yield {
+    type: "cost-forecast",
+    estimated: totalEstimate,
+    breakdown: forecast,
+  };
+  yield { type: "workflow-started", run };
+
+  // Execute steps
+  let stepIndex = 0;
+  const MAX_CONFIDENCE_RETRIES = 2;
+  // Retry counter is scoped by stepIndex, not by loop iteration. The
+  // previous version declared `let confidenceRetries = 0` inside the
+  // while body, so every `continue` (used below to re-run the same
+  // step after a low-confidence escalation) re-entered the loop head
+  // and reset the counter to 0 — MAX_CONFIDENCE_RETRIES was never
+  // reachable and the step could loop indefinitely against the budget.
+  let confidenceRetries = 0;
+  let confidenceRetryStepIndex = stepIndex;
+  while (stepIndex < definition.steps.length) {
+    if (confidenceRetryStepIndex !== stepIndex) {
+      confidenceRetries = 0;
+      confidenceRetryStepIndex = stepIndex;
+    }
+    const stepDef = definition.steps[stepIndex];
+    const agent = stepAgents.get(stepDef.id);
+    if (!agent) {
+      yield {
+        type: "step-failed" as any,
+        step: {
+          id: randomUUID(),
+          stepDefId: stepDef.id,
+          agentId: "unknown",
+          status: "failed" as const,
+          cost: 0,
+          iteration: run.iteration,
+        },
+        error: new Error(`No agent resolved for step "${stepDef.id}"`),
+      };
+      stepIndex++;
+      continue;
+    }
+
+    // Create step run
+    const stepRun: WorkflowStepRun = {
+      id: randomUUID(),
+      stepDefId: stepDef.id,
+      agentId: agent.id,
+      status: "running",
+      cost: 0,
+      iteration: run.iteration,
+      startedAt: Math.floor(Date.now() / 1000),
+    };
+    run.steps.push(stepRun);
+
+    yield { type: "step-started", step: stepRun, agent };
+
+    // Check build state before executing step — pause if build is broken
+    if (options.buildState) {
+      const bs = options.buildState;
+      if (bs.isBroken()) {
+        yield {
+          type: "workflow-paused",
+          reason: `Build is broken: ${bs.getLastError()}. Fix before continuing.`,
+          run,
+        };
+        stepRun.status = "skipped";
+        stepRun.error = "Build broken — step skipped";
+        break;
+      }
+    }
+
+    try {
+      // Build context for this step
+      const isRetry = run.iteration > 0 && stepDef.loopBackTo !== undefined;
+      const ctx = buildStepContext(stepDef, agent, run, isRetry, skillMap);
+
+      // Build tools (respect agent's allowedTools)
+      const tools = createDefaultToolRegistry();
+
+      // Run the agent loop
+      let fullResponse = "";
+      const sessionId = run.id;
+      const systemPrompt = ctx.systemPrompt;
+
+      // Per-step model override for cross-model workflows
+      const stepModelId = options.stepModelOverrides?.[stepDef.id];
+
+      // Enforce per-agent tool allowlist via roleToolFilter
+      const roleToolFilter =
+        agent.allowedTools && agent.allowedTools !== "all"
+          ? { allowedTools: agent.allowedTools as string[] }
+          : undefined;
+
+      for await (const event of runAgentLoop(ctx.messages, {
+        config,
+        registry,
+        router,
+        costTracker,
+        tools,
+        sessionId,
+        projectPath,
+        systemPrompt,
+        disableTools: !shouldUseTools(stepDef, agent),
+        roleToolFilter,
+        ...(stepModelId ? { preferredModelId: stepModelId } : {}),
+      })) {
+        // Forward agent events as step progress
+        yield { type: "step-progress", stepId: stepDef.id, event };
+
+        if (event.type === "text-delta") {
+          fullResponse += event.delta;
+        }
+        if (event.type === "done") {
+          stepRun.cost = event.totalCost - run.totalCost;
+          run.totalCost = event.totalCost;
+        }
+      }
+
+      // Create artifact from response.
+      //
+      // kind is always "output" here: at write time the engine doesn't yet
+      // know whether this iteration will be superseded by a review-loop
+      // rejection (that's only known after the escalation/review checks
+      // below run, and by then the artifact is already on disk). Marking
+      // discarded iterations "scratch" retroactively would mean rewriting
+      // already-written files or threading iteration-outcome state back
+      // through the loop, which isn't worth contorting the step loop for
+      // in v1 — every artifact is written as "output" and the manifest's
+      // per-step `iteration` field remains the source of truth for which
+      // write was the latest.
+      const artifact: Artifact = {
+        id: stepDef.outputArtifact,
+        stepId: stepDef.id,
+        agentId: agent.id,
+        content: fullResponse,
+        contentType: detectContentType(fullResponse),
+        metadata: {},
+        confidence: 0,
+        cost: stepRun.cost,
+        timestamp: Math.floor(Date.now() / 1000),
+        iteration: run.iteration,
+        kind: "output",
+      };
+
+      // Extract confidence before validation (so we can log it)
+      artifact.confidence = extractConfidence(artifact);
+
+      // Validate output artifact — empty/whitespace-only content is a failure
+      const outputValidation = validateStepOutput(stepDef.id, artifact.content);
+      if (!outputValidation.valid) {
+        const failureMessage =
+          outputValidation.error ??
+          `Step "${stepDef.id}" produced an empty artifact`;
+        stepRun.status = "failed";
+        stepRun.error = failureMessage;
+        stepRun.completedAt = Math.floor(Date.now() / 1000);
+
+packages/core/src/audit/logger.ts:48:    afterToolResult(result: MiddlewareToolResult): void {
+packages/core/src/audit/logger.ts:57:          null, // args not available in afterToolResult — logged from wrapToolCall
+packages/core/src/security/red-team-engine.ts:279:    // Simulate afterToolResult for web tools (content injection filter)
+packages/core/src/__tests__/loop-errors.test.ts:53:    it("continues after middleware throws in afterToolResult", () => {
+packages/core/src/__tests__/loop-errors.test.ts:59:        afterToolResult() {
+packages/core/src/__tests__/loop-errors.test.ts:68:      // afterToolResult is fail-safe (logs and continues)
+packages/core/src/__tests__/trust-propagation-parallel.test.ts:35:    //   → afterToolResult(A) → afterToolResult(B)
+packages/core/src/__tests__/trust-propagation-parallel.test.ts:52:    middleware.afterToolResult!({
+packages/core/src/__tests__/trust-propagation-parallel.test.ts:59:    middleware.afterToolResult!({
+packages/core/src/agent/loop.ts:840:          // Post-execution: run afterToolResult for taint tracking
+packages/core/src/middleware/builtin/fleet-signals.ts:71:    afterToolResult(result: MiddlewareToolResult): MiddlewareToolResult | void {
+packages/core/src/__tests__/fleet-signals.test.ts:53:    middleware.afterToolResult?.(successResult);
+packages/core/src/__tests__/fleet-signals.test.ts:54:    middleware.afterToolResult?.(failResult);
+packages/core/src/__tests__/fleet-signals.test.ts:55:    middleware.afterToolResult?.(failResult);
+packages/core/src/__tests__/fleet-signals.test.ts:66:      middleware.afterToolResult?.({
+packages/core/src/__tests__/fleet-signals.test.ts:77:      middleware.afterToolResult?.({
+packages/core/src/__tests__/fleet-signals.test.ts:97:      middleware.afterToolResult?.({
+packages/core/src/__tests__/fleet-signals.test.ts:108:      middleware.afterToolResult?.({
+packages/core/src/__tests__/fleet-signals.test.ts:127:    middleware.afterToolResult?.({
+packages/core/src/__tests__/quality-signals.test.ts:57:    mw.afterToolResult?.({
+packages/core/src/__tests__/quality-signals.test.ts:122:    return mw.afterToolResult?.({
+packages/core/src/__tests__/content-injection-filter.test.ts:40:    const result = middleware.afterToolResult!(
+packages/core/src/__tests__/content-injection-filter.test.ts:51:    const result = middleware.afterToolResult!(
+packages/core/src/__tests__/content-injection-filter.test.ts:63:    const result = middleware.afterToolResult!(
+packages/core/src/__tests__/content-injection-filter.test.ts:76:    const result = middleware.afterToolResult!({
+packages/core/src/__tests__/content-injection-filter.test.ts:88:    const result = middleware.afterToolResult!({
+packages/core/src/middleware/builtin/tool-sequence-detector.ts:188:      // afterToolResult will skip re-recording if already pre-scanned.
+packages/core/src/middleware/builtin/tool-sequence-detector.ts:252:    afterToolResult(result: MiddlewareToolResult): MiddlewareToolResult | void {
+packages/core/src/__tests__/approval-friction.test.ts:53:    // B's afterToolResult must NOT attach A's warning.
+packages/core/src/__tests__/approval-friction.test.ts:54:    const bResult = mwB.afterToolResult!({ ...RESULT }) as any;
+packages/core/src/__tests__/approval-friction.test.ts:57:    // A's afterToolResult DOES attach it.
+packages/core/src/__tests__/approval-friction.test.ts:58:    const aResult = mwA.afterToolResult!({ ...RESULT }) as any;
+packages/core/src/__tests__/approval-friction.test.ts:65:  it("consumes the warning once (second afterToolResult is a no-op)", () => {
+packages/core/src/__tests__/approval-friction.test.ts:72:    expect(mw.afterToolResult!({ ...RESULT })).toBeTruthy();
+packages/core/src/__tests__/approval-friction.test.ts:73:    expect(mw.afterToolResult!({ ...RESULT })).toBeFalsy();
+packages/core/src/__tests__/middleware-pipeline.test.ts:116:  it("afterToolResult middleware can modify results", () => {
+packages/core/src/__tests__/middleware-pipeline.test.ts:121:      afterToolResult(result) {
+packages/core/src/middleware/builtin/trust-propagation.ts:78:    afterToolResult(result: MiddlewareToolResult): MiddlewareToolResult | void {
+packages/core/src/middleware/builtin/quality-signals.ts:66:    afterToolResult(result: MiddlewareToolResult): MiddlewareToolResult | void {
+packages/core/src/middleware/builtin/convention-monitor.ts:91:    afterToolResult(result: MiddlewareToolResult): MiddlewareToolResult | void {
+packages/core/src/middleware/types.ts:22:  afterToolResult?(result: MiddlewareToolResult): MiddlewareToolResult | void;
+packages/core/src/middleware/pipeline.ts:97:   * Run afterToolResult hooks. Returns modified result.
+packages/core/src/middleware/pipeline.ts:104:      if (mw.afterToolResult) {
+packages/core/src/middleware/pipeline.ts:106:          const modified = mw.afterToolResult(current);
+packages/core/src/middleware/pipeline.ts:125:            "Middleware afterToolResult threw — continuing with unmodified result",
+packages/core/src/middleware/builtin/approval-friction.ts:73:    afterToolResult(result: MiddlewareToolResult): MiddlewareToolResult | void {
+packages/core/src/middleware/builtin/approval-friction.ts:75:      // it to the next result. afterToolResult receives no state/metadata,
+packages/core/src/middleware/builtin/content-injection-filter.ts:4: * Runs afterToolResult on web_fetch and web_search outputs. Combines the
+packages/core/src/middleware/builtin/content-injection-filter.ts:31:    afterToolResult(result: MiddlewareToolResult): MiddlewareToolResult | void {
+packages/core/src/middleware/builtin/security-scan.ts:5: * Runs afterToolResult for file_write, file_edit, and git_commit.
+packages/core/src/middleware/builtin/security-scan.ts:33:    afterToolResult(result: MiddlewareToolResult): MiddlewareToolResult | void {
+packages/core/src/middleware/builtin/tool-output-truncation.ts:36: * Runs in afterToolResult, before the output reaches the conversation history.
+packages/core/src/middleware/builtin/tool-output-truncation.ts:53:    afterToolResult(result: MiddlewareToolResult): MiddlewareToolResult | void {
+packages/core/src/middleware/builtin/secret-substitution.ts:7: *   Phase 2 (afterToolResult): Scrubs resolved secret values from tool outputs,
+packages/core/src/middleware/builtin/secret-substitution.ts:43:// afterToolResult calls consumeScrubMap() to scrub output.
+packages/core/src/middleware/builtin/secret-substitution.ts:56:  // Prune stale entries (fix #15: memory leak if afterToolResult never fires)
+packages/core/src/middleware/builtin/secret-substitution.ts:64:/** Get and consume a scrub map (called from afterToolResult). */
+packages/core/src/middleware/builtin/secret-substitution.ts:194:    afterToolResult(result: MiddlewareToolResult): MiddlewareToolResult | void {
+packages/core/src/middleware/builtin/egress-monitor.ts:4: * Runs as afterToolResult middleware on shell/process_spawn outputs.
+packages/core/src/middleware/builtin/egress-monitor.ts:200:    afterToolResult(result: MiddlewareToolResult): MiddlewareToolResult | void {
+/**
+ * Agent Middleware — composable interceptors for the agent loop.
+ *
+ * Inspired by DeerFlow's 12-middleware pipeline, adapted for Brainstorm's
+ * TypeScript architecture. Each middleware handles one cross-cutting concern.
+ */
+
+export interface AgentMiddleware {
+  /** Unique middleware name. */
+  name: string;
+
+  /** Called before each agent turn. Modify state or inject context. */
+  beforeAgent?(state: MiddlewareState): MiddlewareState | void;
+
+  /** Called after model response, before tool execution. Modify or filter the response. */
+  afterModel?(message: MiddlewareMessage): MiddlewareMessage | void;
+
+  /** Called before each tool execution. Can modify, block, or redirect. */
+  wrapToolCall?(call: MiddlewareToolCall): MiddlewareToolCall | MiddlewareBlock | void;
+
+  /** Called after each tool execution. Modify the result or trigger side effects. */
+  afterToolResult?(result: MiddlewareToolResult): MiddlewareToolResult | void;
+}
+
+export interface MiddlewareState {
+  turn: number;
+  messages: Array<{ role: string; content: string }>;
+  systemPrompt: string;
+  toolNames: string[];
+  metadata: Record<string, unknown>;
+}
+
+export interface MiddlewareMessage {
+  text: string;
+  toolCalls: MiddlewareToolCall[];
+  model: string;
+  tokens: { input: number; output: number };
+}
+
+export interface MiddlewareToolCall {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+}
+
+export interface MiddlewareToolResult {
+  toolCallId: string;
+  name: string;
+  ok: boolean;
+  output: unknown;
+  error?: string;
+  durationMs: number;
+}
+
+export interface MiddlewareBlock {
+  blocked: true;
+  reason: string;
+  middleware: string;
+}
+
+/** Type guard for blocked tool calls. */
+export function isBlocked(result: MiddlewareToolCall | MiddlewareBlock | void): result is MiddlewareBlock {
+  return result !== undefined && result !== null && 'blocked' in result && result.blocked === true;
+}
+
+exec
+/bin/zsh -lc "sed -n '510,650p' packages/workflow/src/engine.ts && sed -n '80,145p' packages/core/src/middleware/pipeline.ts && sed -n '810,875p' packages/core/src/agent/loop.ts && nl -ba packages/router/src/strategies/learned.ts | sed -n '25,105p' && nl -ba packages/core/src/middleware/builtin/quality-signals.ts | sed -n '78,120p' && nl -ba packages/workflow/src/engine.ts | sed -n '430,475p'" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+              step: stepRun,
+              gate,
+              output,
+            };
+            // Gate failed — pause workflow
+            run.status = "paused";
+            return;
+          }
+        }
+      }
+
+      // Check confidence escalation
+      const escalation = determineEscalation(
+        artifact.confidence,
+        agent.confidenceThreshold,
+        run.iteration < run.maxIterations,
+      );
+      if (escalation === "pause") {
+        yield {
+          type: "confidence-escalation",
+          step: stepRun,
+          confidence: artifact.confidence,
+          action: "paused — low confidence",
+        };
+        run.status = "paused";
+        return; // Pause workflow for user decision
+      }
+      if (escalation === "retry") {
+        confidenceRetries++;
+        if (confidenceRetries > MAX_CONFIDENCE_RETRIES) {
+          yield {
+            type: "confidence-escalation",
+            step: stepRun,
+            confidence: artifact.confidence,
+            action: "max confidence retries reached — continuing",
+          };
+        } else {
+          yield {
+            type: "confidence-escalation",
+            step: stepRun,
+            confidence: artifact.confidence,
+            action: `retrying step (${confidenceRetries}/${MAX_CONFIDENCE_RETRIES})`,
+          };
+          continue; // Re-run same step
+        }
+      }
+
+      // Handle review step rejection → loop back
+      if (stepDef.isReviewStep && !isReviewApproved(artifact)) {
+        if (run.iteration < run.maxIterations && stepDef.loopBackTo) {
+          run.iteration++;
+          const loopBackIndex = definition.steps.findIndex(
+            (s) => s.id === stepDef.loopBackTo,
+          );
+          if (loopBackIndex >= 0) {
+            yield {
+              type: "review-rejected",
+              step: stepRun,
+              reason: artifact.content.slice(0, 200),
+              loopingBackTo: stepDef.loopBackTo,
+            };
+            stepIndex = loopBackIndex;
+            continue;
+          }
+        }
+      }
+
+      stepIndex++;
+    } catch (error: any) {
+      stepRun.status = "failed";
+      stepRun.error = error.message;
+      stepRun.completedAt = Math.floor(Date.now() / 1000);
+
+      yield { type: "step-failed", step: stepRun, error };
+
+      // Record failure for routing fallback
+      router.recordFailure(agent.modelId, error.message);
+
+      run.status = "failed";
+      yield { type: "workflow-failed", run, error };
+      return;
+    }
+  }
+
+  run.status = "completed";
+  run.updatedAt = Math.floor(Date.now() / 1000);
+  yield { type: "workflow-completed", run };
+}
+
+function shouldUseTools(step: WorkflowStepDef, agent: AgentProfile): boolean {
+  if (agent.allowedTools === "all") return true;
+  if (Array.isArray(agent.allowedTools) && agent.allowedTools.length > 0)
+    return true;
+  return false;
+}
+
+function detectContentType(content: string): Artifact["contentType"] {
+  const trimmed = content.trim();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      JSON.parse(trimmed);
+      return "json";
+    } catch {}
+  }
+  if (trimmed.includes("```")) return "code";
+  if (trimmed.includes("# ") || trimmed.includes("## ")) return "markdown";
+  return "text";
+}
+
+function createDefaultAgent(role: string): AgentProfile {
+  const now = Math.floor(Date.now() / 1000);
+  return {
+    id: `default-${role}`,
+    displayName: role.charAt(0).toUpperCase() + role.slice(1),
+    role: role as AgentRole,
+    description: "",
+    modelId: "auto",
+    allowedTools: role === "coder" ? "all" : ["file_read", "glob", "grep"],
+    budget: { exhaustionAction: "downgrade" },
+    confidenceThreshold: 0.7,
+    maxSteps: 10,
+    fallbackChain: [],
+    guardrails: {},
+    lifecycle: "active",
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+        } catch (err) {
+          log.error(
+            { middleware: mw.name, tool: call.name, err },
+            "Middleware wrapToolCall threw — blocking call (fail-closed)",
+          );
+          return {
+            blocked: true,
+            reason: `Security middleware error in ${mw.name}`,
+            middleware: mw.name,
+          };
+        }
+      }
+    }
+    return current;
+  }
+
+  /**
+   * Run afterToolResult hooks. Returns modified result.
+   * FAIL-SAFE for most middleware, but FAIL-CLOSED for secret-substitution
+   * (a scrub failure must not leak secrets to the model).
+   */
+  runAfterToolResult(result: MiddlewareToolResult): MiddlewareToolResult {
+    let current = result;
+    for (const mw of this.middleware) {
+      if (mw.afterToolResult) {
+        try {
+          const modified = mw.afterToolResult(current);
+          if (modified) current = modified;
+        } catch (err) {
+          if (mw.name === "secret-substitution") {
+            // FAIL-CLOSED: secret scrub failure must not leak secrets
+            log.error(
+              { middleware: mw.name, tool: result.name, err },
+              "Secret scrubbing failed — redacting entire tool output to prevent leak",
+            );
+            return {
+              ...current,
+              output:
+                "[REDACTED: secret scrubbing failed — output withheld for security]",
+              ok: false,
+              error: "Secret scrubbing failed",
+            };
+          }
+          log.error(
+            { middleware: mw.name, tool: result.name, err },
+            "Middleware afterToolResult threw — continuing with unmodified result",
+          );
+        }
+      }
+    }
+    return current;
+  }
+}
+                setScrubMap(mwCall.id, scrubMap);
+              }
+            } catch (vaultErr) {
+              log.warn(
+                { err: vaultErr, patterns: vaultSubs },
+                "Vault secret resolution failed — patterns passed unresolved",
+              );
+            }
+            delete mwCall.input._vaultSubstitutions;
+          }
+
+          // Execute the tool
+          const startMs = Date.now();
+          // Record tool-call event to trajectory (with placeholders, not secrets)
+          trajectory?.recordToolCall({
+            name: toolName,
+            input: input ?? {},
+            durationMs: 0,
+          });
+          const rawResult = await originalExecute(
+            vaultSubs?.length ? mwCall.input : input,
+            opts,
+          );
+          const durationMs = Date.now() - startMs;
+
+          // Scrub secrets from tool output before returning to model
+          const result = scrubMap?.size
+            ? scrubSecrets(rawResult, scrubMap)
+            : rawResult;
+
+          // Post-execution: run afterToolResult for taint tracking
+          const isOk = !(
+            result &&
+            typeof result === "object" &&
+            (result.error || result.ok === false)
+          );
+          const mwResult = {
+            toolCallId: mwCall.id,
+            name: toolName,
+            ok: isOk,
+            output: result,
+            durationMs,
+          };
+          pipeline.runAfterToolResult(mwResult);
+          // Record tool-result event to trajectory
+          trajectory?.recordToolResult({
+            name: toolName,
+            ok: isOk,
+            error:
+              !isOk && typeof result === "object" && result !== null
+                ? (result as any).error
+                : undefined,
+            durationMs,
+          });
+          // Flush trust window back to per-session metadata after taint recording
+          flushTrustWindow(mwMetadata, mwCall.id);
+          return result;
+        };
+      }
+    }
+  }
+
+  // Per-model tool name adaptation: rename tools to match what each provider's
+  // models were trained on (e.g., bash → shell_command for OpenAI). We adapt
+  // the OUTBOUND tool list so the model sees provider-native names. The
+  // AI SDK then dispatches a tool call to the executor keyed under that same
+    25	}
+    26	
+    27	const log = createLogger("learned-strategy");
+    28	
+    29	// In-memory stats — loaded from DB on init, updated per-turn, persisted per-outcome
+    30	const modelStats = new Map<string, ModelStats>();
+    31	
+    32	// ── Quarantine ─────────────────────────────────────────────────────
+    33	// A model that fails almost every recent attempt (e.g. a local endpoint that
+    34	// is down or a checkpoint that can't tool-call) must not keep winning
+    35	// Thompson samples on stale priors and burning turns on doomed requests.
+    36	// Rolling per-model window across task types; on breach, the model is
+    37	// excluded from learned selection for a cooldown — but never when that would
+    38	// leave zero eligible candidates.
+    39	
+    40	const QUARANTINE_WINDOW = 10;
+    41	const QUARANTINE_FAILURE_RATE = 0.8;
+    42	const QUARANTINE_COOLDOWN_MS = 30 * 60 * 1000;
+    43	
+    44	const recentOutcomes = new Map<string, boolean[]>();
+    45	const quarantinedUntil = new Map<string, number>();
+    46	
+    47	export function isQuarantined(modelId: string, now = Date.now()): boolean {
+    48	  const until = quarantinedUntil.get(modelId);
+    49	  if (until === undefined) return false;
+    50	  if (now >= until) {
+    51	    // Cooldown over: clear the window too, so one lingering failure doesn't
+    52	    // immediately re-trip the breaker before fresh evidence accumulates.
+    53	    quarantinedUntil.delete(modelId);
+    54	    recentOutcomes.delete(modelId);
+    55	    return false;
+    56	  }
+    57	  return true;
+    58	}
+    59	
+    60	function trackForQuarantine(modelId: string, success: boolean): void {
+    61	  const window = recentOutcomes.get(modelId) ?? [];
+    62	  window.push(success);
+    63	  if (window.length > QUARANTINE_WINDOW) window.shift();
+    64	  recentOutcomes.set(modelId, window);
+    65	
+    66	  if (window.length < QUARANTINE_WINDOW) return;
+    67	  const failures = window.filter((s) => !s).length;
+    68	  if (failures / window.length > QUARANTINE_FAILURE_RATE) {
+    69	    quarantinedUntil.set(modelId, Date.now() + QUARANTINE_COOLDOWN_MS);
+    70	    recentOutcomes.delete(modelId);
+    71	    log.warn(
+    72	      {
+    73	        modelId,
+    74	        failures,
+    75	        window: QUARANTINE_WINDOW,
+    76	        cooldownMinutes: QUARANTINE_COOLDOWN_MS / 60_000,
+    77	      },
+    78	      "Model quarantined from learned routing after sustained failures",
+    79	    );
+    80	  }
+    81	}
+    82	
+    83	/** Test-only: reset quarantine state between cases. */
+    84	export function _resetQuarantineForTests(): void {
+    85	  recentOutcomes.clear();
+    86	  quarantinedUntil.clear();
+    87	}
+    88	
+    89	// ── Audit Trail ────────────────────────────────────────────────────
+    90	
+    91	export interface OutcomeAuditEntry {
+    92	  timestamp: number;
+    93	  taskType: string;
+    94	  modelId: string;
+    95	  success: boolean;
+    96	  latencyMs: number;
+    97	  cost: number;
+    98	}
+    99	
+   100	export interface ConvergenceAlert {
+   101	  type: "suspicious_convergence" | "outcome_bias" | "rapid_shift";
+   102	  taskType: string;
+   103	  detail: string;
+   104	  timestamp: number;
+   105	}
+    78	      if (readCount + writeCount < MIN_TOTAL_CALLS_BEFORE_WARNING) return;
+    79	
+    80	      const ratio = writeCount > 0 ? readCount / writeCount : Infinity;
+    81	
+    82	      if (ratio < WARN_THRESHOLD && !warningIssued) {
+    83	        warningIssued = true;
+    84	        log.warn(
+    85	          { readCount, writeCount, ratio: ratio.toFixed(1) },
+    86	          "Read:Edit ratio below threshold — agent may be editing without sufficient research",
+    87	        );
+    88	        // One-shot corrective feedback INTO the session, not just the log —
+    89	        // observability without control never changes model behavior. The
+    90	        // hint rides the current tool result (the one channel the model is
+    91	        // guaranteed to read next turn) and fires at most once per
+    92	        // degradation episode; the flag resets only after the ratio
+    93	        // recovers, so a persistently low ratio doesn't nag every call.
+    94	        return {
+    95	          ...result,
+    96	          output:
+    97	            `${typeof result.output === "string" ? result.output : JSON.stringify(result.output)}\n\n` +
+    98	            `[quality-signal] Your read:edit ratio this session is ${ratio.toFixed(1)} ` +
+    99	            `(${readCount} reads / ${writeCount} writes; healthy sessions stay above ${WARN_THRESHOLD}). ` +
+   100	            `Before your next edit, re-read the code you are changing and its call sites.`,
+   101	        };
+   102	      }
+   103	
+   104	      // Reset warning flag when ratio recovers
+   105	      if (ratio >= WARN_THRESHOLD) {
+   106	        warningIssued = false;
+   107	      }
+   108	    },
+   109	  };
+   110	}
+   111	
+   112	/** Get current quality metrics for fleet aggregation. */
+   113	export interface QualityMetrics {
+   114	  readCount: number;
+   115	  writeCount: number;
+   116	  readEditRatio: number;
+   117	}
+   430	        metadata: {},
+   431	        confidence: 0,
+   432	        cost: stepRun.cost,
+   433	        timestamp: Math.floor(Date.now() / 1000),
+   434	        iteration: run.iteration,
+   435	        kind: "output",
+   436	      };
+   437	
+   438	      // Extract confidence before validation (so we can log it)
+   439	      artifact.confidence = extractConfidence(artifact);
+   440	
+   441	      // Validate output artifact — empty/whitespace-only content is a failure
+   442	      const outputValidation = validateStepOutput(stepDef.id, artifact.content);
+   443	      if (!outputValidation.valid) {
+   444	        const failureMessage =
+   445	          outputValidation.error ??
+   446	          `Step "${stepDef.id}" produced an empty artifact`;
+   447	        stepRun.status = "failed";
+   448	        stepRun.error = failureMessage;
+   449	        stepRun.completedAt = Math.floor(Date.now() / 1000);
+   450	
+   451	        yield {
+   452	          type: "step-failed",
+   453	          step: stepRun,
+   454	          error: new Error(failureMessage),
+   455	        };
+   456	
+   457	        // Record failure for routing fallback
+   458	        router.recordFailure(agent.modelId, failureMessage);
+   459	
+   460	        run.status = "failed";
+   461	        yield {
+   462	          type: "workflow-failed",
+   463	          run,
+   464	          error: new Error(failureMessage),
+   465	        };
+   466	        return;
+   467	      }
+   468	
+   469	      run.artifacts.push(artifact);
+   470	      writeArtifact(run.id, artifact);
+   471	      stepRun.artifactId = artifact.id;
+   472	      stepRun.status = "completed";
+   473	      stepRun.completedAt = Math.floor(Date.now() / 1000);
+   474	
+   475	      yield { type: "step-completed", step: stepRun, artifact };
+
+exec
+/bin/zsh -lc "rg -n 'recordFailure' packages/router packages/core -g '*.ts' && rg -n 'fallback|retry' packages/workflow/src/engine.ts | head -80 && git diff -- packages/core/src/middleware/builtin/quality-signals.ts packages/router/src/strategies/learned.ts packages/workflow/src/engine.ts" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 5213ms:
+2026-07-18 03:58:54.520 xcodebuild[62986:9702875]  DVTFilePathFSEvents: Failed to start fs event stream.
+2026-07-18 03:58:54.849 xcodebuild[62986:9702874] [MT] DVTDeveloperPaths: Failed to get length of DARWIN_USER_CACHE_DIR from confstr(3), error = Error Domain=NSPOSIXErrorDomain Code=5 "Input/output error". Using NSCachesDirectory instead.
+git: warning: confstr() failed with code 5: couldn't get path of DARWIN_USER_TEMP_DIR; using /tmp instead
+git: error: couldn't create cache file '/tmp/xcrun_db-l4fWQtcV' (errno=Operation not permitted)
+2026-07-18 03:58:55.615 xcodebuild[62988:9702917]  DVTFilePathFSEvents: Failed to start fs event stream.
+2026-07-18 03:58:55.801 xcodebuild[62988:9702916] [MT] DVTDeveloperPaths: Failed to get length of DARWIN_USER_CACHE_DIR from confstr(3), error = Error Domain=NSPOSIXErrorDomain Code=5 "Input/output error". Using NSCachesDirectory instead.
+diff --git a/packages/core/src/middleware/builtin/quality-signals.ts b/packages/core/src/middleware/builtin/quality-signals.ts
+index fcde0c9..dec2f23 100644
+--- a/packages/core/src/middleware/builtin/quality-signals.ts
++++ b/packages/core/src/middleware/builtin/quality-signals.ts
+@@ -85,6 +85,20 @@ export function createQualitySignalsMiddleware(): AgentMiddleware {
+           { readCount, writeCount, ratio: ratio.toFixed(1) },
+           "Read:Edit ratio below threshold — agent may be editing without sufficient research",
+         );
++        // One-shot corrective feedback INTO the session, not just the log —
++        // observability without control never changes model behavior. The
++        // hint rides the current tool result (the one channel the model is
++        // guaranteed to read next turn) and fires at most once per
++        // degradation episode; the flag resets only after the ratio
++        // recovers, so a persistently low ratio doesn't nag every call.
++        return {
++          ...result,
++          output:
++            `${typeof result.output === "string" ? result.output : JSON.stringify(result.output)}\n\n` +
++            `[quality-signal] Your read:edit ratio this session is ${ratio.toFixed(1)} ` +
++            `(${readCount} reads / ${writeCount} writes; healthy sessions stay above ${WARN_THRESHOLD}). ` +
++            `Before your next edit, re-read the code you are changing and its call sites.`,
++        };
+       }
+ 
+       // Reset warning flag when ratio recovers
+diff --git a/packages/router/src/strategies/learned.ts b/packages/router/src/strategies/learned.ts
+index 2196545..9b969a9 100644
+--- a/packages/router/src/strategies/learned.ts
++++ b/packages/router/src/strategies/learned.ts
+@@ -29,6 +29,63 @@ const log = createLogger("learned-strategy");
+ // In-memory stats — loaded from DB on init, updated per-turn, persisted per-outcome
+ const modelStats = new Map<string, ModelStats>();
+ 
++// ── Quarantine ─────────────────────────────────────────────────────
++// A model that fails almost every recent attempt (e.g. a local endpoint that
++// is down or a checkpoint that can't tool-call) must not keep winning
++// Thompson samples on stale priors and burning turns on doomed requests.
++// Rolling per-model window across task types; on breach, the model is
++// excluded from learned selection for a cooldown — but never when that would
++// leave zero eligible candidates.
++
++const QUARANTINE_WINDOW = 10;
++const QUARANTINE_FAILURE_RATE = 0.8;
++const QUARANTINE_COOLDOWN_MS = 30 * 60 * 1000;
++
++const recentOutcomes = new Map<string, boolean[]>();
++const quarantinedUntil = new Map<string, number>();
++
++export function isQuarantined(modelId: string, now = Date.now()): boolean {
++  const until = quarantinedUntil.get(modelId);
++  if (until === undefined) return false;
++  if (now >= until) {
++    // Cooldown over: clear the window too, so one lingering failure doesn't
++    // immediately re-trip the breaker before fresh evidence accumulates.
++    quarantinedUntil.delete(modelId);
++    recentOutcomes.delete(modelId);
++    return false;
++  }
++  return true;
++}
++
++function trackForQuarantine(modelId: string, success: boolean): void {
++  const window = recentOutcomes.get(modelId) ?? [];
++  window.push(success);
++  if (window.length > QUARANTINE_WINDOW) window.shift();
++  recentOutcomes.set(modelId, window);
++
++  if (window.length < QUARANTINE_WINDOW) return;
++  const failures = window.filter((s) => !s).length;
++  if (failures / window.length > QUARANTINE_FAILURE_RATE) {
++    quarantinedUntil.set(modelId, Date.now() + QUARANTINE_COOLDOWN_MS);
++    recentOutcomes.delete(modelId);
++    log.warn(
++      {
++        modelId,
++        failures,
++        window: QUARANTINE_WINDOW,
++        cooldownMinutes: QUARANTINE_COOLDOWN_MS / 60_000,
++      },
++      "Model quarantined from learned routing after sustained failures",
++    );
++  }
++}
++
++/** Test-only: reset quarantine state between cases. */
++export function _resetQuarantineForTests(): void {
++  recentOutcomes.clear();
++  quarantinedUntil.clear();
++}
++
+ // ── Audit Trail ────────────────────────────────────────────────────
+ 
+ export interface OutcomeAuditEntry {
+@@ -128,6 +185,7 @@ export function recordOutcome(
+   stats.samples++;
+ 
+   modelStats.set(key, stats);
++  trackForQuarantine(modelId, success);
+ 
+   // Audit trail: log every outcome
+   const entry: OutcomeAuditEntry = {
+@@ -335,8 +393,11 @@ export const learnedStrategy: RoutingStrategy = {
+     candidates: ModelEntry[],
+     context: RoutingContext,
+   ): RoutingDecision | null {
+-    const eligible = candidates.filter((m) => m.status === "available");
+-    if (eligible.length === 0) return null;
++    const available = candidates.filter((m) => m.status === "available");
++    if (available.length === 0) return null;
++    // Skip quarantined models — unless that would leave nothing to route to.
++    const healthy = available.filter((m) => !isQuarantined(m.id));
++    const eligible = healthy.length > 0 ? healthy : available;
+ 
+     // Collect raw scores and avg costs
+     const raw = eligible.map((model) => {
+diff --git a/packages/workflow/src/engine.ts b/packages/workflow/src/engine.ts
+index f23c3df..cb9a032 100644
+--- a/packages/workflow/src/engine.ts
++++ b/packages/workflow/src/engine.ts
+@@ -104,6 +104,31 @@ const DANGER_PATTERNS: ReadonlyArray<RegExp> = [
+   /(?:^|\s)-{1,2}import(?:$|[\s=])/, // node --import — preload ESM module
+ ];
+ 
++/**
++ * Validate a step's output artifact content.
++ *
++ * Empty or whitespace-only artifacts indicate a workflow step that
++ * produced no meaningful output. These must be treated as failures,
++ * not silent successes, to trigger the workflow's existing failure/retry
++ * paths.
++ *
++ * Returns `{valid: true}` if the content has non-whitespace characters,
++ * or `{valid: false, error}` with a clear message naming the step and
++ * artifact.
++ */
++export function validateStepOutput(
++  stepId: string,
++  content: string
++): { valid: boolean; error?: string } {
++  if (!content || content.trim().length === 0) {
++    return {
++      valid: false,
++      error: `Step "${stepId}" produced an empty or whitespace-only artifact (zero content). This step failed.`,
++    };
++  }
++  return { valid: true };
++}
++
+ /**
+  * Validate a kill-gate command string before execution. Gates run via
+  * /bin/sh -c, so a prefix match alone is not safe — "npm test; rm -rf /"
+@@ -410,9 +435,37 @@ export async function* runWorkflow(
+         kind: "output",
+       };
+ 
+-      // Extract confidence
++      // Extract confidence before validation (so we can log it)
+       artifact.confidence = extractConfidence(artifact);
+ 
++      // Validate output artifact — empty/whitespace-only content is a failure
++      const outputValidation = validateStepOutput(stepDef.id, artifact.content);
++      if (!outputValidation.valid) {
++        const failureMessage =
++          outputValidation.error ??
++          `Step "${stepDef.id}" produced an empty artifact`;
++        stepRun.status = "failed";
++        stepRun.error = failureMessage;
++        stepRun.completedAt = Math.floor(Date.now() / 1000);
++
++        yield {
++          type: "step-failed",
++          step: stepRun,
++          error: new Error(failureMessage),
++        };
++
++        // Record failure for routing fallback
++        router.recordFailure(agent.modelId, failureMessage);
++
++        run.status = "failed";
++        yield {
++          type: "workflow-failed",
++          run,
++          error: new Error(failureMessage),
++        };
++        return;
++      }
++
+       run.artifacts.push(artifact);
+       writeArtifact(run.id, artifact);
+       stepRun.artifactId = artifact.id;
+
+exec
+/bin/zsh -lc "rg -n 'type: \"done\"|interface.*Done|modelId.*done|AgentLoopEvent' packages/core/src packages/shared/src -g '*.ts' | head -100 && sed -n '200,245p' packages/router/src/router.ts && rg -n 'yield \\{["'^'"\\n]*type: \"done\"|type: \"done\"' packages/core/src/agent/loop.ts | tail -20" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+packages/shared/src/types.ts:282:      type: "done";
+packages/core/src/agent/loop.ts:1782:      type: "done",
+      strategy: this.activeStrategy,
+    };
+  }
+
+  /** Inject agent-profile fallback chain into a routing decision. */
+  applyAgentFallbacks(
+    decision: RoutingDecision,
+    fallbackChain: string[],
+  ): RoutingDecision {
+    if (fallbackChain.length === 0) return decision;
+    const agentFallbacks = fallbackChain
+      .map((id) => this.registry.getModel(id))
+      .filter(
+        (m): m is ModelEntry => m !== undefined && m.status === "available",
+      );
+    if (agentFallbacks.length === 0) return decision;
+    return {
+      ...decision,
+      fallbacks: [...agentFallbacks, ...decision.fallbacks],
+    };
+  }
+
+  recordFailure(modelId: string, error: string): void {
+    this.recentFailures.push({ modelId, timestamp: Date.now(), error });
+    // Keep only last 10 failures
+    if (this.recentFailures.length > 10) this.recentFailures.shift();
+    // Break momentum on failure
+    if (this.momentum?.modelId === modelId) {
+      this.momentum = null;
+    }
+  }
+
+  /** Record a successful completion — builds model momentum (scoped by task type). */
+  recordSuccess(modelId: string, taskType?: string): void {
+    if (this.momentum?.modelId === modelId) {
+      this.momentum.successCount++;
+      this.momentum.lastSuccess = Date.now();
+      if (taskType) this.momentum.taskType = taskType;
+    } else {
+      this.momentum = {
+        modelId,
+        successCount: 1,
+        lastSuccess: Date.now(),
+        taskType: taskType ?? "unknown",
+      };
+    }
+1782:      type: "done",
+
+exec
+/bin/zsh -lc "sed -n '250,300p' packages/shared/src/types.ts && sed -n '1750,1805p' packages/core/src/agent/loop.ts && rg -n 'model-selected|routing|decision.model.id' packages/core/src/agent/loop.ts | head -60" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+  | {
+      type: "verify-passed";
+      iteration: number;
+      mode: "typecheck" | "full";
+    }
+  | {
+      type: "verify-failed";
+      iteration: number;
+      maxIterations: number;
+      diagnostics: string;
+    }
+  | {
+      type: "tool-nudge";
+      iteration: number;
+      maxNudges: number;
+    }
+  | {
+      type: "daemon-tick";
+      tickNumber: number;
+      idleSeconds: number;
+      cost: number;
+    }
+  | { type: "daemon-sleep"; sleepMs: number; reason: string }
+  | { type: "daemon-wake"; trigger: "timer" | "user" | "scheduler" }
+  | { type: "daemon-stopped"; tickCount: number; totalCost: number }
+  | { type: "interrupted" }
+  | {
+      type: "error";
+      error: Error;
+      category?: "model-api" | "database" | "middleware" | "unknown";
+    }
+  | {
+      type: "done";
+      totalCost: number;
+      totalTokens?: { input: number; output: number };
+    };
+
+// ── Turn Context ─────────────────────────────────────────────────────
+
+/** Per-turn state injected between turns so the agent knows what just happened. */
+export interface TurnContext {
+  turn: number;
+  model: string;
+  strategy: string;
+  toolCalls: Array<{ name: string; ok: boolean }>;
+  turnCost: number;
+  budgetRemaining: number;
+  budgetPercent: number;
+  filesRead: string[];
+  filesWritten: string[];
+  sessionMinutes: number;
+        turnCost,
+        budgetRemaining,
+        budgetPercent,
+        filesRead,
+        filesWritten,
+        sessionMinutes: 0, // caller sets this
+        unhealthyTools: getToolHealthTracker().getUnhealthy(),
+        buildStatus: options.buildState?.getStatus() ?? "unknown",
+        buildWarning: options.buildState?.formatBuildWarning() ?? "",
+        costPerHour: 0, // caller sets this based on session duration
+      });
+    }
+
+    // Save checkpoint for crash recovery (if checkpointer provided)
+    if (options.checkpointer) {
+      // Force save on every turn by using current timestamp as turn number.
+      // The checkpointer interval check (turnNumber - lastSaveTurn < interval)
+      // will always pass with a monotonically increasing value.
+      options.checkpointer.saveIfNeeded({
+        sessionId,
+        turnNumber: Math.floor(Date.now() / 1000),
+        conversationHistory: messages,
+        scratchpad: {},
+        filesRead: filesRead,
+        filesWritten: filesWritten,
+        buildStatus: options.buildState?.getStatus() ?? "unknown",
+        totalCost: costTracker.getSessionCost(),
+        projectPath: options.projectPath,
+      });
+    }
+
+    yield {
+      type: "done",
+      totalCost: costTracker.getSessionCost(),
+      totalTokens: costTracker.getSessionTokens(),
+    };
+  } catch (error: any) {
+    // ── Error Classification ────────────────────────────────────
+    // Differentiate error types so callers can make informed retry decisions.
+
+    // 1. User abort — not an error
+    if (error.name === "AbortError" || options.signal?.aborted) {
+      yield { type: "interrupted" };
+
+      // 2. Model API error (rate limit, auth, network) — record failure for routing
+    } else if (isModelApiError(error)) {
+      router.recordFailure(decision.model.id, error.message);
+      const failLatencyMs = Date.now() - turnStartMs;
+      recordOutcome(task.type, decision.model.id, false, failLatencyMs, 0);
+      if (options.routingOutcomeRepo) {
+        try {
+          options.routingOutcomeRepo.record(
+            decision.model.id,
+            task.type,
+            false,
+            failLatencyMs,
+435:  /** Repository for persisting routing outcomes (Thompson sampling). */
+436:  routingOutcomeRepo?: RoutingOutcomeRepository;
+574:  // Phase: routing
+575:  yield { type: "thinking" as const, phase: "routing" as const };
+581:      // Explicit model pin overrides routing strategy unconditionally
+588:      // Model not in registry — warn and fall back to routing (don't fail silently)
+605:  const primaryCircuit = getLLMCircuit(decision.model.id);
+607:    const openModelId = decision.model.id;
+614:        message: `Circuit open for ${openModelId} — routing to ${fallbackWithClosedCircuit.id}`,
+626:  yield { type: "routing", decision };
+628:  // Record routing decision in trajectory
+631:    winner: decision.model.id,
+715:  const modelId = options.registry.getProvider(decision.model.id);
+974:              modelId: decision.model.id,
+1005:            model: decision.model.id,
+1069:            model: decision.model.id,
+1079:          model: decision.model.id,
+1249:        getLLMCircuit(decision.model.id).recordFailure(
+1255:        // Record the stall so circuit-breaker + routing see it as a failure
+1257:        getLLMCircuit(decision.model.id).recordFailure("stream_stall");
+1284:        model: decision.model.id,
+1324:          model: decision.model.id,
+1335:        model: decision.model.id,
+1339:        message: `Stream from ${decision.model.id} truncated mid-tool-call (finishReason=${finishReason ?? "none"}, ${pendingToolInputs} pending). Retrying.`,
+1352:    const breaker = getLLMCircuit(decision.model.id);
+1363:      // Fallback models for empty responses — configurable via config.routing.fallbackModels
+1364:      const RETRY_MODELS: string[] = (config as any).routing
+1370:      fallbacks = RETRY_MODELS.filter((id: string) => id !== decision.model.id)
+1377:    const modelsTried = [...(options._modelsTried ?? []), decision.model.id];
+1387:      router.recordFailure(decision.model.id, reason);
+1390:      recordOutcome(task.type, decision.model.id, false, fallbackLatencyMs, 0);
+1391:      if (options.routingOutcomeRepo) {
+1393:          options.routingOutcomeRepo.record(
+1394:            decision.model.id,
+1401:          log.warn({ err: outcomeErr }, "Failed to persist routing outcome");
+1411:          fromModel: decision.model.id,
+1479:          { model: decision.model.id, timeoutMs: HEADERS_TIMEOUT_MS },
+1499:        { err, model: decision.model.id },
+1505:    router.recordSuccess?.(decision.model.id);
+1507:    // Record routing outcome for Thompson sampling (in-memory + DB persistence)
+1513:      decision.model.id,
+1518:    if (options.routingOutcomeRepo) {
+1520:        options.routingOutcomeRepo.record(
+1521:          decision.model.id,
+1528:        log.warn({ err: e }, "Failed to persist routing outcome to DB");
+1591:            model: decision.model.id,
+1794:      // 2. Model API error (rate limit, auth, network) — record failure for routing
+1796:      router.recordFailure(decision.model.id, error.message);
+1798:      recordOutcome(task.type, decision.model.id, false, failLatencyMs, 0);
+1799:      if (options.routingOutcomeRepo) {
+1801:          options.routingOutcomeRepo.record(
+1802:            decision.model.id,
+1809:          log.warn({ err: outcomeErr }, "Failed to persist routing outcome");
+1812:      const enriched = enrichError(error, decision.model.id);
+1841:      router.recordFailure(decision.model.id, error.message);
+1843:      recordOutcome(task.type, decision.model.id, false, failLatencyMs, 0);
+1844:      if (options.routingOutcomeRepo) {
+1846:          options.routingOutcomeRepo.record(
+1847:            decision.model.id,
+1854:          log.warn({ err: outcomeErr }, "Failed to persist routing outcome");
+
+exec
+/bin/zsh -lc "sed -n '1340,1430p' packages/core/src/agent/loop.ts && sed -n '1450,1530p' packages/core/src/agent/loop.ts" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+      };
+    }
+
+    // A turn needs a retry when the model gave us nothing (empty) OR when it
+    // tried to act but the tool-call was truncated. Both are model-side
+    // failures that a fallback may recover.
+    const shouldRetry = isEmpty || toolCallTruncated;
+
+    // Record circuit breaker outcome for this model.
+    // Empty response / truncated tool-call = failure (nothing usable).
+    // Non-empty & complete = success (closes half-open circuits, resets
+    // consecutive failures).
+    const breaker = getLLMCircuit(decision.model.id);
+    if (shouldRetry) {
+      breaker.recordFailure(
+        toolCallTruncated ? "truncated_tool_call" : "empty_response",
+      );
+    } else {
+      breaker.recordSuccess();
+    }
+    // Build fallback list: use decision.fallbacks, or generate from registry if empty
+    let fallbacks = decision.fallbacks;
+    if (fallbacks.length === 0 && shouldRetry) {
+      // Fallback models for empty responses — configurable via config.routing.fallbackModels
+      const RETRY_MODELS: string[] = (config as any).routing
+        ?.fallbackModels ?? [
+        "anthropic/claude-sonnet-4.6",
+        "openai/gpt-5.4",
+        "anthropic/claude-haiku-4.5",
+      ];
+      fallbacks = RETRY_MODELS.filter((id: string) => id !== decision.model.id)
+        .map((id: string) => options.registry.getModel(id))
+        .filter((m): m is ModelEntry => m != null && m.status === "available");
+    }
+
+    const MAX_FALLBACK_DEPTH = 2;
+    const retryDepth = options._retryDepth ?? 0;
+    const modelsTried = [...(options._modelsTried ?? []), decision.model.id];
+
+    if (
+      shouldRetry &&
+      fallbacks.length > 0 &&
+      retryDepth < MAX_FALLBACK_DEPTH
+    ) {
+      const reason = toolCallTruncated
+        ? "truncated_tool_call"
+        : "empty_response";
+      router.recordFailure(decision.model.id, reason);
+      // Record failure for Thompson sampling on fallback path
+      const fallbackLatencyMs = Date.now() - turnStartMs;
+      recordOutcome(task.type, decision.model.id, false, fallbackLatencyMs, 0);
+      if (options.routingOutcomeRepo) {
+        try {
+          options.routingOutcomeRepo.record(
+            decision.model.id,
+            task.type,
+            false,
+            fallbackLatencyMs,
+            0,
+          );
+        } catch (outcomeErr) {
+          log.warn({ err: outcomeErr }, "Failed to persist routing outcome");
+        }
+      }
+      // Pick next fallback that hasn't been tried yet
+      const fallbackModel = fallbacks.find(
+        (f: { id: string }) => !modelsTried.includes(f.id),
+      );
+      if (fallbackModel) {
+        yield {
+          type: "model-retry" as const,
+          fromModel: decision.model.id,
+          toModel: fallbackModel.id,
+          reason,
+        };
+
+        // Retry with fallback model — increment depth and track models tried
+        yield* runAgentLoop(messages, {
+          ...options,
+          preferredModelId: fallbackModel.id,
+          _retryDepth: retryDepth + 1,
+          _modelsTried: modelsTried,
+          // A forced tool-call is scoped to a single nudge retry; never carry
+          // it into an unrelated fallback turn.
+          _forceToolChoice: false,
+        } as any);
+        return;
+      }
+    }
+
+    // All retries exhausted — yield structured error so caller can surface it.
+    let headersTimedOut = false;
+    const headersTimeoutController = new AbortController();
+    const headersTimeoutTimer = setTimeout(
+      () => headersTimeoutController.abort(),
+      HEADERS_TIMEOUT_MS,
+    );
+    try {
+      let response: Awaited<typeof result.response> | null;
+      try {
+        response = await Promise.race([
+          result.response,
+          new Promise<null>((resolve) => {
+            headersTimeoutController.signal.addEventListener(
+              "abort",
+              () => {
+                headersTimedOut = true;
+                resolve(null);
+              },
+              { once: true },
+            );
+          }),
+        ]);
+      } finally {
+        clearTimeout(headersTimeoutTimer);
+      }
+      if (headersTimedOut) {
+        // Cost reconciliation is skipped for this turn — surface it instead of
+        // silently dropping the gateway feedback.
+        log.warn(
+          { model: decision.model.id, timeoutMs: HEADERS_TIMEOUT_MS },
+          "Gateway response headers timed out; cost reconciliation skipped",
+        );
+      } else if (response?.headers) {
+        const feedback = parseGatewayHeaders(response.headers);
+        if (Object.keys(feedback).length > 0) {
+          yield {
+            type: "gateway-feedback",
+            feedback: feedback as GatewayFeedbackData,
+          };
+
+          // Reconcile actual cost from gateway if available (PR #5)
+          if (feedback.actualCost !== undefined) {
+            costTracker.reconcile(sessionId, feedback.actualCost);
+          }
+        }
+      }
+    } catch (err) {
+      // Gateway headers not available (local models) — non-fatal, but log for triage.
+      log.debug(
+        { err, model: decision.model.id },
+        "Gateway headers unavailable",
+      );
+    }
+
+    // Record success for model momentum
+    router.recordSuccess?.(decision.model.id);
+
+    // Record routing outcome for Thompson sampling (in-memory + DB persistence)
+    const turnLatencyMs = Date.now() - turnStartMs;
+    const turnSuccess = !shouldRetry;
+    const turnCost = costTracker.getSessionCost() - sessionCostBefore;
+    recordOutcome(
+      task.type,
+      decision.model.id,
+      turnSuccess,
+      turnLatencyMs,
+      turnCost,
+    );
+    if (options.routingOutcomeRepo) {
+      try {
+        options.routingOutcomeRepo.record(
+          decision.model.id,
+          task.type,
+          turnSuccess,
+          turnLatencyMs,
+          turnCost,
+        );
+      } catch (e) {
+        log.warn({ err: e }, "Failed to persist routing outcome to DB");
+      }
+    }
+
+exec
+/bin/zsh -lc "sed -n '1290,1360p' packages/core/src/agent/loop.ts" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+    const budgetRemaining = costTracker.getRemainingBudget();
+    if (budgetRemaining !== null) {
+      const sessionLimit = (config.budget as any)?.perSession;
+      if (sessionLimit && budgetRemaining <= sessionLimit * 0.2) {
+        yield {
+          type: "budget-warning" as const,
+          used: costTracker.getSessionCost(),
+          limit: sessionLimit,
+          remaining: budgetRemaining,
+        };
+      }
+    }
+
+    // ── Empty/blocked response detection + retry with fallback model ──
+    const isEmpty = textDeltaCount === 0 && toolCallCount === 0;
+
+    // ── Truncated tool-call detection ──
+    // Distinct from an empty turn: here the model INTENDED to call a tool but
+    // the stream ended before a dispatchable tool-call materialized. Two
+    // signals, either of which is sufficient:
+    //   1. pendingToolInputs > 0 — a tool-input-start never resolved into a
+    //      tool-call (parser cut off mid-assembly).
+    //   2. finishReason === "tool-calls" but toolCallCount === 0 — the provider
+    //      reported it stopped to make tool calls, yet emitted none.
+    // A duplicate terminal finish (finishPartCount > 1), which BR has been seen
+    // to send, is the usual trigger for (1)/(2) — surfaced in the diagnostic.
+    // We must NOT let this record as a silent empty-success: it retries.
+    const toolCallTruncated =
+      pendingToolInputs > 0 ||
+      (finishReason === "tool-calls" && toolCallCount === 0);
+
+    if (toolCallTruncated) {
+      log.warn(
+        {
+          model: decision.model.id,
+          pendingToolInputs,
+          finishReason,
+          finishPartCount,
+          textDeltas: textDeltaCount,
+          toolCalls: toolCallCount,
+        },
+        "Stream truncated mid-tool-call — tool-call assembly incomplete",
+      );
+      trajectory?.recordError({
+        message: `Truncated tool-call assembly (pending=${pendingToolInputs}, finishReason=${finishReason ?? "none"}, finishParts=${finishPartCount})`,
+        model: decision.model.id,
+      });
+      yield {
+        type: "loop-warning" as const,
+        message: `Stream from ${decision.model.id} truncated mid-tool-call (finishReason=${finishReason ?? "none"}, ${pendingToolInputs} pending). Retrying.`,
+      };
+    }
+
+    // A turn needs a retry when the model gave us nothing (empty) OR when it
+    // tried to act but the tool-call was truncated. Both are model-side
+    // failures that a fallback may recover.
+    const shouldRetry = isEmpty || toolCallTruncated;
+
+    // Record circuit breaker outcome for this model.
+    // Empty response / truncated tool-call = failure (nothing usable).
+    // Non-empty & complete = success (closes half-open circuits, resets
+    // consecutive failures).
+    const breaker = getLLMCircuit(decision.model.id);
+    if (shouldRetry) {
+      breaker.recordFailure(
+        toolCallTruncated ? "truncated_tool_call" : "empty_response",
+      );
+    } else {
+      breaker.recordSuccess();
+    }
+    // Build fallback list: use decision.fallbacks, or generate from registry if empty
+
+codex
+[
+  {
+    "file": "packages/core/src/middleware/builtin/quality-signals.ts",
+    "line": 94,
+    "severity": "P1",
+    "finding": "The corrective result never reaches the model: the agent-loop executor calls pipeline.runAfterToolResult(mwResult) but discards its return value and returns the original tool result. The unit tests call this middleware directly, so they miss that the feature is ineffective in production.",
+    "suggested_fix": "In packages/core/src/agent/loop.ts, retain the value returned by runAfterToolResult and return its output to the AI SDK; add an integration test through the middleware pipeline/tool executor."
+  },
+  {
+    "file": "packages/workflow/src/engine.ts",
+    "line": 442,
+    "severity": "P1",
+    "finding": "Whitespace-only output is recognized only after runAgentLoop has classified the turn as successful, recorded a successful learned-routing outcome, and skipped its empty-response fallback path. The workflow then terminates, so the promised retry/fallback behavior does not occur and routing learns the opposite outcome.",
+    "suggested_fix": "Classify whitespace-only text as empty inside runAgentLoop before success/outcome recording so its existing fallback and failure accounting run, or return the producing model ID and an explicit retryable-empty status that the workflow can feed back into the same retry path."
+  },
+  {
+    "file": "packages/workflow/src/engine.ts",
+    "line": 458,
+    "severity": "P1",
+    "finding": "The failure is attributed to agent.modelId, which is commonly \"auto\" and can also differ from a per-step override or fallback model. Consequently the actual failing model is not excluded from subsequent routing.",
+    "suggested_fix": "Track the model selected by routing events, including fallback changes, and pass that concrete model ID to recordFailure; ideally handle this failure in runAgentLoop where decision.model.id is already available."
+  },
+  {
+    "file": "packages/router/src/strategies/learned.ts",
+    "line": 44,
+    "severity": "P2",
+    "finding": "recentOutcomes and quarantinedUntil have no cardinality bound or global expiry sweep. Every distinct model ID can retain a window, and expired quarantine entries remain forever when a model is removed and isQuarantined is never called for it, causing monotonic memory growth in long-running routers.",
+    "suggested_fix": "Store last-seen timestamps and periodically evict expired/inactive entries, or enforce an LRU/cardinality cap; sweep expired quarantines during recordOutcome or selection rather than only when that exact ID is queried."
+  },
+  {
+    "file": "packages/core/src/middleware/builtin/quality-signals.ts",
+    "line": 97,
+    "severity": "P2",
+    "finding": "JSON.stringify can throw for BigInt or cyclic tool outputs. Because warningIssued is set before serialization and the pipeline swallows middleware errors, such an output suppresses the corrective hint for the remainder of the degradation episode.",
+    "suggested_fix": "Serialize with a non-throwing formatter or try/catch fallback, and set warningIssued only after the modified result has been constructed successfully."
+  }
+]
+tokens used
+51,469

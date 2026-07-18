@@ -1,0 +1,37 @@
+[
+  {
+    "file": "packages/core/src/middleware/builtin/quality-signals.ts",
+    "line": 94,
+    "severity": "P1",
+    "finding": "The corrective result never reaches the model: the agent-loop executor calls pipeline.runAfterToolResult(mwResult) but discards its return value and returns the original tool result. The unit tests call this middleware directly, so they miss that the feature is ineffective in production.",
+    "suggested_fix": "In packages/core/src/agent/loop.ts, retain the value returned by runAfterToolResult and return its output to the AI SDK; add an integration test through the middleware pipeline/tool executor."
+  },
+  {
+    "file": "packages/workflow/src/engine.ts",
+    "line": 442,
+    "severity": "P1",
+    "finding": "Whitespace-only output is recognized only after runAgentLoop has classified the turn as successful, recorded a successful learned-routing outcome, and skipped its empty-response fallback path. The workflow then terminates, so the promised retry/fallback behavior does not occur and routing learns the opposite outcome.",
+    "suggested_fix": "Classify whitespace-only text as empty inside runAgentLoop before success/outcome recording so its existing fallback and failure accounting run, or return the producing model ID and an explicit retryable-empty status that the workflow can feed back into the same retry path."
+  },
+  {
+    "file": "packages/workflow/src/engine.ts",
+    "line": 458,
+    "severity": "P1",
+    "finding": "The failure is attributed to agent.modelId, which is commonly \"auto\" and can also differ from a per-step override or fallback model. Consequently the actual failing model is not excluded from subsequent routing.",
+    "suggested_fix": "Track the model selected by routing events, including fallback changes, and pass that concrete model ID to recordFailure; ideally handle this failure in runAgentLoop where decision.model.id is already available."
+  },
+  {
+    "file": "packages/router/src/strategies/learned.ts",
+    "line": 44,
+    "severity": "P2",
+    "finding": "recentOutcomes and quarantinedUntil have no cardinality bound or global expiry sweep. Every distinct model ID can retain a window, and expired quarantine entries remain forever when a model is removed and isQuarantined is never called for it, causing monotonic memory growth in long-running routers.",
+    "suggested_fix": "Store last-seen timestamps and periodically evict expired/inactive entries, or enforce an LRU/cardinality cap; sweep expired quarantines during recordOutcome or selection rather than only when that exact ID is queried."
+  },
+  {
+    "file": "packages/core/src/middleware/builtin/quality-signals.ts",
+    "line": 97,
+    "severity": "P2",
+    "finding": "JSON.stringify can throw for BigInt or cyclic tool outputs. Because warningIssued is set before serialization and the pipeline swallows middleware errors, such an output suppresses the corrective hint for the remainder of the degradation episode.",
+    "suggested_fix": "Serialize with a non-throwing formatter or try/catch fallback, and set warningIssued only after the modified result has been constructed successfully."
+  }
+]

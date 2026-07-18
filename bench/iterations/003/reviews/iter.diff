@@ -1,0 +1,1036 @@
+diff --git a/bench/iterations/001/reviews/codex-final.err b/bench/iterations/001/reviews/codex-final.err
+index d9ca076..6004689 100644
+--- a/bench/iterations/001/reviews/codex-final.err
++++ b/bench/iterations/001/reviews/codex-final.err
+@@ -1478,3 +1478,626 @@ bench/iterations/001/reviews/panel.json
+ bench/iterations/001/reviews/qwen3-coder.out
+ bench/iterations/001/reviews/verdicts.json
+ 
++exec
++/bin/zsh -lc "sed -n '130,220p' packages/core/src/__tests__/loop-max-output-tokens.test.ts && sed -n '1,180p' package.json && sed -n '1,120p' packages/core/package.json && sed -n '1,120p' packages/providers/package.json" in /Users/justin.jilg/Projects/brainstorm
++ succeeded in 0ms:
++        sessionId,
++        projectPath: tmpProjectPath,
++        systemPrompt: "You are a test agent.",
++        preferredModelId: model.id,
++        disableTools: true,
++        trajectoryEnabled: false,
++      } as any);
++      const events: any[] = [];
++      for await (const ev of gen) {
++        events.push(ev);
++        if (events.length > 50) break;
++      }
++      return events;
++    },
++  };
++}
++
++describe("computeOutputBudget", () => {
++  const model = (contextWindow?: number, maxOutputTokens?: number) => ({
++    limits: { contextWindow, maxOutputTokens },
++  });
++
++  it("returns the advertised budget when the prompt is small", () => {
++    const msgs = [{ role: "user", content: "hi" }];
++    expect(computeOutputBudget(model(131072, 32768), msgs)).toEqual({
++      maxOutputTokens: 32768,
++    });
++  });
++
++  it("clamps the budget to remaining context near the window limit", () => {
++    // ~100k-token prompt in a 128k window: 32k output would overflow.
++    const msgs = [{ role: "user", content: "A".repeat(400_000) }];
++    const { maxOutputTokens } = computeOutputBudget(
++      model(131072, 32768),
++      msgs,
++    ) as { maxOutputTokens: number };
++    expect(maxOutputTokens).toBeLessThan(32768);
++    expect(maxOutputTokens).toBeGreaterThanOrEqual(256);
++  });
++
++  it("requests exactly the remainder when less than the floor is left", () => {
++    // Requesting the 256 floor here would overflow the window — the budget
++    // must shrink to what actually remains.
++    const window = 131072;
++    const msgs = [{ role: "user", content: "hi" }];
++    const bigSystem = "S".repeat((window - 1024 - 100) * 4);
++    const { maxOutputTokens } = computeOutputBudget(
++      model(window, 32768),
++      msgs,
++      bigSystem,
++    ) as { maxOutputTokens: number };
++    expect(maxOutputTokens).toBeGreaterThan(0);
++    expect(maxOutputTokens).toBeLessThan(256);
++  });
++
++  it("keeps a well-formed floor request when the prompt alone exceeds the window", () => {
++    const msgs = [{ role: "user", content: "A".repeat(600_000) }];
++    expect(computeOutputBudget(model(131072, 32768), msgs)).toEqual({
++      maxOutputTokens: 256,
++    });
++  });
++
++  it("accounts for the measured system prompt, not just messages", () => {
++    const msgs = [{ role: "user", content: "hi" }];
++    const smallBudget = computeOutputBudget(
++      model(131072, 32768),
++      msgs,
++      "S".repeat(500_000),
++    ) as { maxOutputTokens: number };
++    expect(smallBudget.maxOutputTokens).toBeLessThan(32768);
++  });
++
++  it("omits the option when the model advertises no output limit", () => {
++    expect(
++      computeOutputBudget(model(131072, undefined), [
++        { role: "user", content: "hi" },
++      ]),
++    ).toEqual({});
++  });
++});
++
++describe("agent loop — maxOutputTokens forwarding", () => {
++  beforeEach(() => {
++    _streamTextCalls = [];
++  });
++  afterEach(() => {
++    vi.clearAllMocks();
++  });
++
++  it("forwards the routed model's maxOutputTokens to streamText", async () => {
++    const ctx = buildContext(buildModel(32768));
++{
++  "name": "brainstorm",
++  "private": true,
++  "description": "Governed control plane for AI-managed infrastructure. Connect AI operators to your product ecosystem through a standardized protocol.",
++  "keywords": [
++    "ai",
++    "cli",
++    "llm",
++    "mcp",
++    "agent",
++    "routing",
++    "infrastructure",
++    "control-plane",
++    "ai-ops",
++    "model-context-protocol",
++    "thompson-sampling"
++  ],
++  "repository": {
++    "type": "git",
++    "url": "https://github.com/justinjilg/brainstorm.git"
++  },
++  "homepage": "https://brainstorm.co",
++  "author": "Justin Jilg <jj@brainstorm.co>",
++  "license": "Apache-2.0",
++  "scripts": {
++    "build": "turbo run build && pnpm run contract-check",
++    "build:dangerous-skip-gates": "node -e \"console.error('[dangerous] Skipping Brainstorm preflight/contract gates; use pnpm run build for release/CI.')\" && turbo run build",
++    "br:contract-map": "node scripts/br-business-contract-map.mjs",
++    "br:contract-map:check": "node scripts/br-business-contract-map.mjs --check",
++    "br:a2a-registry": "tsx tests/business-harness/a2a-registry-smoke.ts",
++    "br:live-discovery": "tsx tests/business-harness/live-br-discovery.ts",
++    "br:provider-envelope": "tsx tests/business-harness/provider-envelope-smoke.ts",
++    "business:posture-trace": "tsx tests/business-harness/business-posture-trace.ts",
++    "contract-check": "node scripts/contract-check.mjs",
++    "contract-check:json": "node scripts/contract-check.mjs --json",
++    "dev": "turbo run dev",
++    "lint": "turbo run lint",
++    "lint:abort-signal": "node scripts/lint-abort-signal-timeout.mjs",
++    "test": "turbo run test",
++    "test:dogfood": "npx tsx tests/dogfood/run-dogfood.ts",
++    "test:product-platform": "tsx tests/business-harness/product-platform-smoke.ts",
++    "test:workflow": "npx tsx tests/workflow-demo/run-demo.ts",
++    "typecheck": "turbo run typecheck",
++    "postinstall": "pnpm -r rebuild better-sqlite3",
++    "prepare": "husky",
++    "changeset": "changeset",
++    "version-packages": "changeset version",
++    "release": "changeset publish",
++    "sbom": "node scripts/generate-sbom.mjs",
++    "setup:tooling": "node scripts/setup-tooling.mjs",
++    "setup:tooling:dry": "node scripts/setup-tooling.mjs --dry-run"
++  },
++  "devDependencies": {
++    "@changesets/changelog-github": "^0.6.0",
++    "@changesets/cli": "^2.30.0",
++    "dependency-cruiser": "17.3.10",
++    "husky": "^9",
++    "lint-staged": "^15",
++    "prettier": "^3",
++    "turbo": "^2.9.14",
++    "typescript": "^5.7",
++    "vitest": "^3.2.4",
++    "zod": "^3"
++  },
++  "lint-staged": {
++    "*.{ts,tsx}": [
++      "prettier --write"
++    ],
++    "*.{json,md,yml,yaml}": [
++      "prettier --write"
++    ],
++    "packages/tools/src/builtin/**/*.ts": [
++      "scripts/precommit-regen-catalog.sh"
++    ]
++  },
++  "workspaces": [
++    "packages/*",
++    "apps/*"
++  ],
++  "packageManager": "pnpm@10.9.0",
++  "engines": {
++    "node": ">=22"
++  },
++  "dependencies": {
++    "@ai-sdk/anthropic": "^3.0.63",
++    "@ai-sdk/google": "^3.0.53",
++    "@ai-sdk/openai": "^3.0.48"
++  },
++  "overrides": {
++    "@xmldom/xmldom": "0.8.13",
++    "dompurify": ">=3.4.0",
++    "express-rate-limit": "8.5.2",
++    "fast-uri": "3.1.2",
++    "hono": "4.12.21",
++    "ip-address": "10.2.0",
++    "mermaid": "11.15.0",
++    "minimatch@10": {
++      "brace-expansion": "5.0.6"
++    },
++    "postcss": "8.5.15",
++    "uuid": "11.1.1",
++    "ws": "8.20.1"
++  }
++}
++{
++  "name": "@brainst0rm/core",
++  "version": "0.14.5",
++  "type": "module",
++  "exports": {
++    ".": {
++      "types": "./dist/index.d.ts",
++      "import": "./dist/index.js"
++    },
++    "./package.json": "./package.json"
++  },
++  "scripts": {
++    "build": "tsup && node scripts/copy-skills.mjs",
++    "dev": "tsup --watch",
++    "typecheck": "tsc --noEmit",
++    "test": "vitest run"
++  },
++  "dependencies": {
++    "@brainst0rm/agents": "workspace:*",
++    "@brainst0rm/code-graph": "workspace:*",
++    "@brainst0rm/config": "workspace:*",
++    "@brainst0rm/contracts": "workspace:*",
++    "@brainst0rm/db": "workspace:*",
++    "@brainst0rm/gateway": "workspace:*",
++    "@brainst0rm/orchestrator": "workspace:*",
++    "@brainst0rm/providers": "workspace:*",
++    "@brainst0rm/router": "workspace:*",
++    "@brainst0rm/shared": "workspace:*",
++    "@brainst0rm/tools": "workspace:*",
++    "ai": "^6",
++    "better-sqlite3": "^11",
++    "pdf-parse": "^2.4.5",
++    "zod": "^3"
++  },
++  "devDependencies": {
++    "@types/better-sqlite3": "^7",
++    "@types/node": "^22.0.0",
++    "@types/pdf-parse": "^1.1.5",
++    "fast-check": "^4.6.0",
++    "tsup": "^8",
++    "typescript": "^5.7"
++  },
++  "description": "Agent loop engine, session manager, middleware pipeline, and intelligence",
++  "license": "Apache-2.0",
++  "repository": {
++    "type": "git",
++    "url": "https://github.com/justinjilg/brainstorm.git",
++    "directory": "packages/core"
++  },
++  "homepage": "https://brainstorm.co",
++  "keywords": [
++    "ai",
++    "coding-assistant",
++    "llm",
++    "multi-model",
++    "routing",
++    "agent",
++    "developer-tools",
++    "brainstorm"
++  ],
++  "files": [
++    "dist"
++  ],
++  "main": "./dist/index.js",
++  "types": "./dist/index.d.ts",
++  "publishConfig": {
++    "access": "public"
++  }
++}
++{
++  "name": "@brainst0rm/providers",
++  "version": "0.14.4",
++  "type": "module",
++  "exports": {
++    ".": {
++      "types": "./dist/index.d.ts",
++      "import": "./dist/index.js"
++    }
++  },
++  "scripts": {
++    "build": "tsup",
++    "dev": "tsup --watch",
++    "typecheck": "tsc --noEmit",
++    "test": "vitest run"
++  },
++  "dependencies": {
++    "@brainst0rm/shared": "workspace:*",
++    "@brainst0rm/config": "workspace:*",
++    "ai": "^6",
++    "@ai-sdk/openai-compatible": "^1",
++    "@ai-sdk/anthropic": "^3",
++    "@ai-sdk/openai": "^3",
++    "@ai-sdk/google": "^3"
++  },
++  "devDependencies": {
++    "tsup": "^8",
++    "typescript": "^5.7"
++  },
++  "description": "Cloud and local LLM provider discovery and management",
++  "license": "Apache-2.0",
++  "repository": {
++    "type": "git",
++    "url": "https://github.com/justinjilg/brainstorm.git",
++    "directory": "packages/providers"
++  },
++  "homepage": "https://brainstorm.co",
++  "keywords": [
++    "ai",
++    "coding-assistant",
++    "llm",
++    "multi-model",
++    "routing",
++    "agent",
++    "developer-tools",
++    "brainstorm"
++  ],
++  "files": [
++    "dist"
++  ],
++  "main": "./dist/index.js",
++  "types": "./dist/index.d.ts",
++  "publishConfig": {
++    "access": "public"
++  }
++}
++
++exec
++/bin/zsh -lc 'pnpm --filter @brainst0rm/core exec vitest run src/__tests__/loop-max-output-tokens.test.ts && pnpm --filter @brainst0rm/providers exec vitest run src/__tests__/custom-provider.test.ts' in /Users/justin.jilg/Projects/brainstorm
++ exited 1 in 642ms:
++failed to load config from /Users/justin.jilg/Projects/brainstorm/packages/core/vitest.config.ts
++
++⎯⎯⎯⎯⎯⎯⎯ Startup Error ⎯⎯⎯⎯⎯⎯⎯⎯
++Error: EPERM: operation not permitted, open '/Users/justin.jilg/Projects/brainstorm/packages/core/node_modules/.vite-temp/vitest.config.ts.timestamp-1784358784736-6a15128c2d2a8.mjs'
++    at async open (node:internal/fs/promises:640:25)
++    at async Object.writeFile (node:internal/fs/promises:1257:14)
++    at async loadConfigFromBundledFile (file:///Users/justin.jilg/Projects/brainstorm/node_modules/.pnpm/vite@6.4.2_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/dep-Dq2t6Dq0.js:49483:5)
++    at async bundleAndLoadConfigFile (file:///Users/justin.jilg/Projects/brainstorm/node_modules/.pnpm/vite@6.4.2_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/dep-Dq2t6Dq0.js:49328:22)
++    at async loadConfigFromFile (file:///Users/justin.jilg/Projects/brainstorm/node_modules/.pnpm/vite@6.4.2_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/dep-Dq2t6Dq0.js:49291:44)
++    at async resolveConfig (file:///Users/justin.jilg/Projects/brainstorm/node_modules/.pnpm/vite@6.4.2_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/dep-Dq2t6Dq0.js:48786:24)
++    at async _createServer (file:///Users/justin.jilg/Projects/brainstorm/node_modules/.pnpm/vite@6.4.2_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/dep-Dq2t6Dq0.js:38373:66)
++    at async createViteServer (file:///Users/justin.jilg/Projects/brainstorm/node_modules/.pnpm/vitest@3.2.4_@types+debug@4.1.13_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vitest/dist/chunks/cli-api.BkDphVBG.js:6911:17)
++    at async createVitest (file:///Users/justin.jilg/Projects/brainstorm/node_modules/.pnpm/vitest@3.2.4_@types+debug@4.1.13_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vitest/dist/chunks/cli-api.BkDphVBG.js:10202:17)
++    at async prepareVitest (file:///Users/justin.jilg/Projects/brainstorm/node_modules/.pnpm/vitest@3.2.4_@types+debug@4.1.13_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vitest/dist/chunks/cli-api.BkDphVBG.js:10541:14) {
++  errno: -1,
++  code: 'EPERM',
++  syscall: 'open',
++  path: '/Users/justin.jilg/Projects/brainstorm/packages/core/node_modules/.vite-temp/vitest.config.ts.timestamp-1784358784736-6a15128c2d2a8.mjs'
++}
++
++
++
++undefined
++/Users/justin.jilg/Projects/brainstorm/packages/core:
++ ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command failed with exit code 1: vitest run src/__tests__/loop-max-output-tokens.test.ts
++
++exec
++/bin/zsh -lc "rg -n \"function normalizeSystemMessagesForProvider|systemForApiNormalized|segmentsToSystemArray|SystemPromptSegment\" packages/core/src/agent/loop.ts packages/core/src/agent/context.ts packages/core/src -g '*.ts' | head -80 && sed -n '850,940p' packages/core/src/agent/loop.ts && rg -n \"export function estimateTokenCount|function estimateTokenCount\" packages/core/src/session/compaction.ts && sed -n '1,100p' packages/core/src/session/compaction.ts" in /Users/justin.jilg/Projects/brainstorm
++ succeeded in 0ms:
++packages/core/src/agent/context.ts:85:export interface SystemPromptSegment {
++packages/core/src/agent/context.ts:95:  segments: SystemPromptSegment[];
++packages/core/src/agent/context.ts:127:export function segmentsToSystemArray(segments: SystemPromptSegment[]): Array<{
++packages/core/src/agent/context.ts:152:export function segmentsToString(segments: SystemPromptSegment[]): string {
++packages/core/src/agent/context.ts:457:  const segments: SystemPromptSegment[] = [
++packages/core/src/agent/loop.ts:71:import type { SystemPromptSegment } from "./context.js";
++packages/core/src/agent/loop.ts:122:import { segmentsToSystemArray } from "./context.js";
++packages/core/src/agent/loop.ts:293:export function normalizeSystemMessagesForProvider(
++packages/core/src/agent/loop.ts:303:  systemForApiNormalized:
++packages/core/src/agent/loop.ts:315:    return { systemForApiNormalized: systemForAPI, messagesForApi: messages };
++packages/core/src/agent/loop.ts:339:  let systemForApiNormalized:
++packages/core/src/agent/loop.ts:348:    systemForApiNormalized = [
++packages/core/src/agent/loop.ts:353:    systemForApiNormalized = [...systemForAPI, ...additionalSegments];
++packages/core/src/agent/loop.ts:355:    systemForApiNormalized = additionalSegments;
++packages/core/src/agent/loop.ts:358:  return { systemForApiNormalized, messagesForApi: filtered };
++packages/core/src/agent/loop.ts:388:  systemSegments?: SystemPromptSegment[];
++packages/core/src/agent/loop.ts:900:      ? segmentsToSystemArray(options.systemSegments)
++packages/core/src/agent/loop.ts:914:    const { systemForApiNormalized, messagesForApi } =
++packages/core/src/agent/loop.ts:930:      system: systemForApiNormalized as any,
++packages/core/src/agent/loop.ts:955:        systemForApiNormalized,
++packages/core/src/index.ts:18:  segmentsToSystemArray,
++packages/core/src/index.ts:20:  type SystemPromptSegment,
++packages/core/src/agent/subagent.ts:28:import type { SystemPromptSegment } from "./context.js";
++packages/core/src/agent/subagent.ts:29:import { segmentsToSystemArray } from "./context.js";
++packages/core/src/agent/subagent.ts:293:  parentSegments?: SystemPromptSegment[];
++packages/core/src/agent/subagent.ts:853:        ? segmentsToSystemArray([
++packages/core/src/__tests__/segments-to-system-array.test.ts:3:  segmentsToSystemArray,
++packages/core/src/__tests__/segments-to-system-array.test.ts:4:  type SystemPromptSegment,
++packages/core/src/__tests__/segments-to-system-array.test.ts:7:describe("segmentsToSystemArray", () => {
++packages/core/src/__tests__/segments-to-system-array.test.ts:9:    const segments: SystemPromptSegment[] = [
++packages/core/src/__tests__/segments-to-system-array.test.ts:14:    const result = segmentsToSystemArray(segments);
++packages/core/src/__tests__/segments-to-system-array.test.ts:30:    const segments: SystemPromptSegment[] = [
++packages/core/src/__tests__/segments-to-system-array.test.ts:34:    const result = segmentsToSystemArray(segments);
++packages/core/src/__tests__/segments-to-system-array.test.ts:42:    const segments: SystemPromptSegment[] = [
++packages/core/src/__tests__/segments-to-system-array.test.ts:49:    const result = segmentsToSystemArray(segments);
++packages/core/src/__tests__/normalize-system-messages.test.ts:10:    const { systemForApiNormalized, messagesForApi } =
++packages/core/src/__tests__/normalize-system-messages.test.ts:13:    expect(systemForApiNormalized).toBe("you are helpful");
++packages/core/src/__tests__/normalize-system-messages.test.ts:24:    const { systemForApiNormalized, messagesForApi } =
++packages/core/src/__tests__/normalize-system-messages.test.ts:34:    expect(Array.isArray(systemForApiNormalized)).toBe(true);
++packages/core/src/__tests__/normalize-system-messages.test.ts:35:    expect(systemForApiNormalized).toEqual([
++packages/core/src/__tests__/normalize-system-messages.test.ts:53:    const { systemForApiNormalized, messagesForApi } =
++packages/core/src/__tests__/normalize-system-messages.test.ts:61:    expect(systemForApiNormalized).toEqual([
++packages/core/src/__tests__/normalize-system-messages.test.ts:83:    const { systemForApiNormalized, messagesForApi } =
++packages/core/src/__tests__/normalize-system-messages.test.ts:87:    expect(systemForApiNormalized).toEqual([
++packages/core/src/__tests__/normalize-system-messages.test.ts:100:    // Mirrors what context.ts's segmentsToSystemArray() actually emits: the
++packages/core/src/__tests__/normalize-system-messages.test.ts:118:    const { systemForApiNormalized, messagesForApi } =
++packages/core/src/__tests__/normalize-system-messages.test.ts:122:    expect(systemForApiNormalized).toEqual([
++packages/core/src/__tests__/normalize-system-messages.test.ts:140:    const { messagesForApi, systemForApiNormalized } =
++packages/core/src/__tests__/normalize-system-messages.test.ts:144:    expect(Array.isArray(systemForApiNormalized)).toBe(true);
++packages/core/src/__tests__/normalize-system-messages.test.ts:145:    const arr = systemForApiNormalized as Array<{
++packages/core/src/agent/loop.ts:71:import type { SystemPromptSegment } from "./context.js";
++packages/core/src/agent/loop.ts:122:import { segmentsToSystemArray } from "./context.js";
++packages/core/src/agent/loop.ts:293:export function normalizeSystemMessagesForProvider(
++packages/core/src/agent/loop.ts:303:  systemForApiNormalized:
++packages/core/src/agent/loop.ts:315:    return { systemForApiNormalized: systemForAPI, messagesForApi: messages };
++packages/core/src/agent/loop.ts:339:  let systemForApiNormalized:
++packages/core/src/agent/loop.ts:348:    systemForApiNormalized = [
++packages/core/src/agent/loop.ts:353:    systemForApiNormalized = [...systemForAPI, ...additionalSegments];
++packages/core/src/agent/loop.ts:355:    systemForApiNormalized = additionalSegments;
++packages/core/src/agent/loop.ts:358:  return { systemForApiNormalized, messagesForApi: filtered };
++packages/core/src/agent/loop.ts:388:  systemSegments?: SystemPromptSegment[];
++packages/core/src/agent/loop.ts:900:      ? segmentsToSystemArray(options.systemSegments)
++packages/core/src/agent/loop.ts:914:    const { systemForApiNormalized, messagesForApi } =
++packages/core/src/agent/loop.ts:930:      system: systemForApiNormalized as any,
++packages/core/src/agent/loop.ts:955:        systemForApiNormalized,
++packages/core/src/agent/context.ts:85:export interface SystemPromptSegment {
++packages/core/src/agent/context.ts:95:  segments: SystemPromptSegment[];
++packages/core/src/agent/context.ts:127:export function segmentsToSystemArray(segments: SystemPromptSegment[]): Array<{
++packages/core/src/agent/context.ts:152:export function segmentsToString(segments: SystemPromptSegment[]): string {
++packages/core/src/agent/context.ts:457:  const segments: SystemPromptSegment[] = [
++            output: result,
++            durationMs,
++          };
++          pipeline.runAfterToolResult(mwResult);
++          // Record tool-result event to trajectory
++          trajectory?.recordToolResult({
++            name: toolName,
++            ok: isOk,
++            error:
++              !isOk && typeof result === "object" && result !== null
++                ? (result as any).error
++                : undefined,
++            durationMs,
++          });
++          // Flush trust window back to per-session metadata after taint recording
++          flushTrustWindow(mwMetadata, mwCall.id);
++          return result;
++        };
++      }
++    }
++  }
++
++  // Per-model tool name adaptation: rename tools to match what each provider's
++  // models were trained on (e.g., bash → shell_command for OpenAI). We adapt
++  // the OUTBOUND tool list so the model sees provider-native names. The
++  // AI SDK then dispatches a tool call to the executor keyed under that same
++  // adapted name — but every downstream consumer in the stream loop compares
++  // against CANONICAL names (file_read/file_write/file_edit/shell/subagent)
++  // for turn-context tracking, build-state capture, loop detection, and TUI
++  // events. The INBOUND rename (reverseToolName below) maps each observed
++  // tool-call name back to canonical at the point the loop resolves it, so a
++  // model that emits a renamed name (apply_patch, replace, read_file, …) is
++  // tracked and surfaced under its canonical identity rather than silently
++  // missing every comparison.
++  let finalTools = aiTools;
++  if (aiTools && decision) {
++    const adapted = adaptToolsForModel(aiTools, decision.model);
++    finalTools = adapted.adaptedTools;
++  }
++
++  // Serialize task context for gateway telemetry (x-br-metadata header)
++  const metadataHeader = serializeRoutingMetadata(task, decision);
++
++  const turnStartMs = Date.now();
++  const sessionCostBefore = costTracker.getSessionCost();
++  try {
++    // Use segmented system prompt for prompt caching when available.
++    // AI SDK v6 accepts system as string | SystemModelMessage | Array<SystemModelMessage>.
++    // Segments with cacheable=true get Anthropic cache_control hints; ignored by other providers.
++    const systemForAPI = options.systemSegments
++      ? segmentsToSystemArray(options.systemSegments)
++      : systemPrompt;
++
++    // Provider-safety normalization: extract any system-role messages from the
++    // history and fold them into the system field. Compaction injects 4-5
++    // system-role messages mid-stream (preserved-context block, summary,
++    // scratchpad, etc.). Anthropic + OpenAI tolerate this; Gemini's provider
++    // throws AI_UnsupportedFunctionalityError because Google's API only
++    // accepts system messages at the start of the conversation.
++    //
++    // We append extracted system content to the system field as additional
++    // segments so the model still sees it, just routed through the right
++    // channel. The remaining messages array contains only user/assistant
++    // turns — what every provider expects.
++    const { systemForApiNormalized, messagesForApi } =
++      normalizeSystemMessagesForProvider(systemForAPI, messages);
++
++    // Stream-stall watchdog: a provider may open the SSE connection but
++    // never send any event (silent proxy drop, network stall, provider
++    // hang). The for-await-of below only checks the staleness timer when
++    // a part arrives, so without this watchdog a truly-hung stream would
++    // block the loop forever. Link the watchdog's signal with any parent
++    // signal so both sources terminate the stream.
++    const streamAbort = new AbortController();
++    const effectiveStreamSignal = linkSignals(
++      streamAbort.signal,
++      options.signal,
++    );
++    const result = streamText({
++      model: modelId,
++      system: systemForApiNormalized as any,
++      messages: messagesForApi as any,
++      ...(finalTools ? { tools: finalTools } : {}),
++      // Phase 7: on a narration-nudge corrective retry ONLY, force a real tool
++      // call so the model cannot narrate-and-stop again. Scoped to this single
++      // re-entry via options._forceToolChoice; never permanent (that would stop
++      // the model ever finishing). Only meaningful when tools are present.
++      ...(finalTools && options._forceToolChoice
++        ? { toolChoice: "required" as const }
++        : {}),
++      ...(metadataHeader
++31:export function estimateTokenCount(messages: ConversationMessage[]): number {
++import { streamText } from "ai";
++import { randomUUID } from "node:crypto";
++import type { ConversationMessage } from "./manager.js";
++import { formatScratchpadContext } from "@brainst0rm/tools";
++import { reduceTrajectory } from "./trajectory-reducer.js";
++import type { CompactionCommitRepository } from "@brainst0rm/db";
++
++// ── Compaction Gate ──────────────────────────────────────────────
++
++let _toolsInFlight = 0;
++
++/** Increment the in-flight tool counter. Call before each tool execution. */
++export function enterToolExecution(): void {
++  _toolsInFlight++;
++}
++
++/** Decrement the in-flight tool counter. Call after each tool completes. */
++export function exitToolExecution(): void {
++  _toolsInFlight = Math.max(0, _toolsInFlight - 1);
++}
++
++/** Returns true if tools are currently executing (compaction should be deferred). */
++export function isToolInFlight(): boolean {
++  return _toolsInFlight > 0;
++}
++
++/**
++ * Estimate token count for a list of messages.
++ * Uses ~4 chars per token as a rough heuristic (good enough for budget checks).
++ */
++export function estimateTokenCount(messages: ConversationMessage[]): number {
++  let chars = 0;
++  for (const m of messages) {
++    chars += m.content.length + 20; // 20 chars overhead for role + formatting
++  }
++  return Math.ceil(chars / 4);
++}
++
++/**
++ * Check if compaction is needed based on token count vs context window.
++ * Triggers at 80% of the model's context window.
++ */
++export function needsCompaction(
++  messages: ConversationMessage[],
++  contextWindow: number,
++): boolean {
++  // Defer compaction while tools are executing to avoid corrupting in-flight state
++  if (isToolInFlight()) return false;
++  const tokens = estimateTokenCount(messages);
++  return tokens > contextWindow * 0.8;
++}
++
++/** Get context usage as a percentage (0-100). Useful for pre-compaction warnings. */
++export function getContextPercent(
++  messages: ConversationMessage[],
++  contextWindow: number,
++): number {
++  const tokens = estimateTokenCount(messages);
++  return Math.round((tokens / contextWindow) * 100);
++}
++
++/**
++ * Compact conversation history by summarizing old messages.
++ *
++ * Strategy:
++ * 1. Keep system prompt (first message if role=system) intact
++ * 2. Keep the last `keepRecent` messages intact
++ * 3. Summarize everything in between using the provided model
++ * 4. Return the compacted message list
++ *
++ * If no model is available for summarization, falls back to simple truncation.
++ */
++export async function compactContext(
++  messages: ConversationMessage[],
++  options: {
++    contextWindow: number;
++    keepRecent?: number;
++    summarizeModel?: any; // AI SDK model instance for summarization
++    pricing?: { inputPer1MTokens: number; outputPer1MTokens: number };
++    /** Session ID for compaction commit tracking. */
++    sessionId?: string;
++    /** Repository for persisting compaction commits (enables reversible compaction). */
++    commitRepo?: CompactionCommitRepository;
++    /**
++     * Snapshot of DB message IDs present in this session at compaction time.
++     * Stored verbatim on the commit so rehydrate can fetch the exact original
++     * rows by ID instead of relying on a positional slice (which breaks if any
++     * messages are later deleted or if persistence lags).
++     */
++    dbMessageIds?: string[];
++  },
++): Promise<{
++  messages: ConversationMessage[];
++  compacted: boolean;
++  summaryCost: number;
++  /** Compaction commit ID if persisted (for selective rehydration). */
++  commitId?: string;
++}> {
++  const { contextWindow, keepRecent = 5, summarizeModel } = options;
++
++
++codex
++{"verdicts":[{"item":1,"status":"resolved","note":"computeOutputBudget includes normalized system-prompt text in its estimate and reserves 1024 tokens for tool schemas."},{"item":2,"status":"resolved","note":"Recognized checkpoints with a parameter suffix below 7B are capped at a 32768-token inferred context window."},{"item":3,"status":"resolved","note":"When the calculated remainder is positive but below 256, maxOutputTokens is set to that exact remainder."}],"new_P0_P1":[]}
++tokens used
++37,569
+diff --git a/bench/iterations/001/reviews/codex-final.out b/bench/iterations/001/reviews/codex-final.out
+index e69de29..383e5c7 100644
+--- a/bench/iterations/001/reviews/codex-final.out
++++ b/bench/iterations/001/reviews/codex-final.out
+@@ -0,0 +1 @@
++{"verdicts":[{"item":1,"status":"resolved","note":"computeOutputBudget includes normalized system-prompt text in its estimate and reserves 1024 tokens for tool schemas."},{"item":2,"status":"resolved","note":"Recognized checkpoints with a parameter suffix below 7B are capped at a 32768-token inferred context window."},{"item":3,"status":"resolved","note":"When the calculated remainder is positive but below 256, maxOutputTokens is set to that exact remainder."}],"new_P0_P1":[]}
+diff --git a/packages/core/src/__tests__/quality-signals.test.ts b/packages/core/src/__tests__/quality-signals.test.ts
+index d07aa79..48e8789 100644
+--- a/packages/core/src/__tests__/quality-signals.test.ts
++++ b/packages/core/src/__tests__/quality-signals.test.ts
+@@ -108,3 +108,57 @@ describe("createQualitySignalsMiddleware", () => {
+     expect(warnCount()).toBe(firstCount);
+   });
+ });
++
++describe("corrective feedback injection", () => {
++  beforeEach(() => {
++    warnSpy.mockClear();
++  });
++
++  function fire(
++    mw: ReturnType<typeof createQualitySignalsMiddleware>,
++    name: string,
++    output: unknown = "tool output",
++  ) {
++    return mw.afterToolResult?.({
++      toolCallId: "t1",
++      name,
++      ok: true,
++      output,
++      durationMs: 1,
++    } as any);
++  }
++
++  it("appends a one-shot corrective hint to the triggering tool result", () => {
++    const mw = createQualitySignalsMiddleware();
++    // 5 reads then 5 writes → ratio 1.0 at write #5 (10 total calls).
++    for (let i = 0; i < 5; i++) fire(mw, "file_read");
++    for (let i = 0; i < 4; i++) fire(mw, "file_write");
++    const modified = fire(mw, "file_write", "write ok");
++
++    expect(modified).toBeDefined();
++    expect(String((modified as any).output)).toContain("write ok");
++    expect(String((modified as any).output)).toContain("[quality-signal]");
++    expect(String((modified as any).output)).toContain("re-read the code");
++  });
++
++  it("injects at most once per degradation episode", () => {
++    const mw = createQualitySignalsMiddleware();
++    for (let i = 0; i < 5; i++) fire(mw, "file_read");
++    for (let i = 0; i < 4; i++) fire(mw, "file_write");
++    const first = fire(mw, "file_write");
++    expect(String((first as any).output)).toContain("[quality-signal]");
++
++    // Ratio still bad on the next write — no second injection.
++    const second = fire(mw, "file_write");
++    expect(second).toBeUndefined();
++  });
++
++  it("serializes non-string outputs rather than dropping them", () => {
++    const mw = createQualitySignalsMiddleware();
++    for (let i = 0; i < 5; i++) fire(mw, "file_read");
++    for (let i = 0; i < 4; i++) fire(mw, "file_write");
++    const modified = fire(mw, "file_write", { success: true, path: "x.ts" });
++    expect(String((modified as any).output)).toContain('"path":"x.ts"');
++    expect(String((modified as any).output)).toContain("[quality-signal]");
++  });
++});
+diff --git a/packages/core/src/middleware/builtin/quality-signals.ts b/packages/core/src/middleware/builtin/quality-signals.ts
+index fcde0c9..dec2f23 100644
+--- a/packages/core/src/middleware/builtin/quality-signals.ts
++++ b/packages/core/src/middleware/builtin/quality-signals.ts
+@@ -85,6 +85,20 @@ export function createQualitySignalsMiddleware(): AgentMiddleware {
+           { readCount, writeCount, ratio: ratio.toFixed(1) },
+           "Read:Edit ratio below threshold — agent may be editing without sufficient research",
+         );
++        // One-shot corrective feedback INTO the session, not just the log —
++        // observability without control never changes model behavior. The
++        // hint rides the current tool result (the one channel the model is
++        // guaranteed to read next turn) and fires at most once per
++        // degradation episode; the flag resets only after the ratio
++        // recovers, so a persistently low ratio doesn't nag every call.
++        return {
++          ...result,
++          output:
++            `${typeof result.output === "string" ? result.output : JSON.stringify(result.output)}\n\n` +
++            `[quality-signal] Your read:edit ratio this session is ${ratio.toFixed(1)} ` +
++            `(${readCount} reads / ${writeCount} writes; healthy sessions stay above ${WARN_THRESHOLD}). ` +
++            `Before your next edit, re-read the code you are changing and its call sites.`,
++        };
+       }
+ 
+       // Reset warning flag when ratio recovers
+diff --git a/packages/router/src/__tests__/learned-quarantine.test.ts b/packages/router/src/__tests__/learned-quarantine.test.ts
+new file mode 100644
+index 0000000..f049018
+--- /dev/null
++++ b/packages/router/src/__tests__/learned-quarantine.test.ts
+@@ -0,0 +1,59 @@
++import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
++import {
++  recordOutcome,
++  isQuarantined,
++  _resetQuarantineForTests,
++} from "../strategies/learned.js";
++
++describe("learned strategy — quarantine", () => {
++  beforeEach(() => {
++    _resetQuarantineForTests();
++    vi.useFakeTimers();
++    vi.setSystemTime(new Date("2026-07-18T12:00:00Z"));
++  });
++  afterEach(() => {
++    vi.useRealTimers();
++    _resetQuarantineForTests();
++  });
++
++  const fail = (model: string) =>
++    recordOutcome("code-generation", model, false, 100, 0);
++  const succeed = (model: string) =>
++    recordOutcome("code-generation", model, true, 100, 0);
++
++  it("quarantines a model after >80% failures across a full window", () => {
++    for (let i = 0; i < 10; i++) fail("acronis:broken/model");
++    expect(isQuarantined("acronis:broken/model")).toBe(true);
++  });
++
++  it("does not quarantine below the window size or failure threshold", () => {
++    for (let i = 0; i < 9; i++) fail("acronis:new/model");
++    expect(isQuarantined("acronis:new/model")).toBe(false);
++
++    // 8 failures / 2 successes = exactly 80% — threshold is strict >.
++    _resetQuarantineForTests();
++    for (let i = 0; i < 8; i++) fail("acronis:flaky/model");
++    for (let i = 0; i < 2; i++) succeed("acronis:flaky/model");
++    expect(isQuarantined("acronis:flaky/model")).toBe(false);
++  });
++
++  it("counts outcomes across task types in one per-model window", () => {
++    for (let i = 0; i < 5; i++)
++      recordOutcome("debugging", "acronis:broken/model", false, 100, 0);
++    for (let i = 0; i < 5; i++)
++      recordOutcome("analysis", "acronis:broken/model", false, 100, 0);
++    expect(isQuarantined("acronis:broken/model")).toBe(true);
++  });
++
++  it("releases after the cooldown and requires fresh evidence to re-trip", () => {
++    for (let i = 0; i < 10; i++) fail("acronis:broken/model");
++    expect(isQuarantined("acronis:broken/model")).toBe(true);
++
++    vi.advanceTimersByTime(30 * 60 * 1000 + 1);
++    expect(isQuarantined("acronis:broken/model")).toBe(false);
++
++    // One more failure alone must not re-quarantine (window was cleared).
++    fail("acronis:broken/model");
++    expect(isQuarantined("acronis:broken/model")).toBe(false);
++  });
++});
+diff --git a/packages/router/src/strategies/learned.ts b/packages/router/src/strategies/learned.ts
+index 2196545..9b969a9 100644
+--- a/packages/router/src/strategies/learned.ts
++++ b/packages/router/src/strategies/learned.ts
+@@ -29,6 +29,63 @@ const log = createLogger("learned-strategy");
+ // In-memory stats — loaded from DB on init, updated per-turn, persisted per-outcome
+ const modelStats = new Map<string, ModelStats>();
+ 
++// ── Quarantine ─────────────────────────────────────────────────────
++// A model that fails almost every recent attempt (e.g. a local endpoint that
++// is down or a checkpoint that can't tool-call) must not keep winning
++// Thompson samples on stale priors and burning turns on doomed requests.
++// Rolling per-model window across task types; on breach, the model is
++// excluded from learned selection for a cooldown — but never when that would
++// leave zero eligible candidates.
++
++const QUARANTINE_WINDOW = 10;
++const QUARANTINE_FAILURE_RATE = 0.8;
++const QUARANTINE_COOLDOWN_MS = 30 * 60 * 1000;
++
++const recentOutcomes = new Map<string, boolean[]>();
++const quarantinedUntil = new Map<string, number>();
++
++export function isQuarantined(modelId: string, now = Date.now()): boolean {
++  const until = quarantinedUntil.get(modelId);
++  if (until === undefined) return false;
++  if (now >= until) {
++    // Cooldown over: clear the window too, so one lingering failure doesn't
++    // immediately re-trip the breaker before fresh evidence accumulates.
++    quarantinedUntil.delete(modelId);
++    recentOutcomes.delete(modelId);
++    return false;
++  }
++  return true;
++}
++
++function trackForQuarantine(modelId: string, success: boolean): void {
++  const window = recentOutcomes.get(modelId) ?? [];
++  window.push(success);
++  if (window.length > QUARANTINE_WINDOW) window.shift();
++  recentOutcomes.set(modelId, window);
++
++  if (window.length < QUARANTINE_WINDOW) return;
++  const failures = window.filter((s) => !s).length;
++  if (failures / window.length > QUARANTINE_FAILURE_RATE) {
++    quarantinedUntil.set(modelId, Date.now() + QUARANTINE_COOLDOWN_MS);
++    recentOutcomes.delete(modelId);
++    log.warn(
++      {
++        modelId,
++        failures,
++        window: QUARANTINE_WINDOW,
++        cooldownMinutes: QUARANTINE_COOLDOWN_MS / 60_000,
++      },
++      "Model quarantined from learned routing after sustained failures",
++    );
++  }
++}
++
++/** Test-only: reset quarantine state between cases. */
++export function _resetQuarantineForTests(): void {
++  recentOutcomes.clear();
++  quarantinedUntil.clear();
++}
++
+ // ── Audit Trail ────────────────────────────────────────────────────
+ 
+ export interface OutcomeAuditEntry {
+@@ -128,6 +185,7 @@ export function recordOutcome(
+   stats.samples++;
+ 
+   modelStats.set(key, stats);
++  trackForQuarantine(modelId, success);
+ 
+   // Audit trail: log every outcome
+   const entry: OutcomeAuditEntry = {
+@@ -335,8 +393,11 @@ export const learnedStrategy: RoutingStrategy = {
+     candidates: ModelEntry[],
+     context: RoutingContext,
+   ): RoutingDecision | null {
+-    const eligible = candidates.filter((m) => m.status === "available");
+-    if (eligible.length === 0) return null;
++    const available = candidates.filter((m) => m.status === "available");
++    if (available.length === 0) return null;
++    // Skip quarantined models — unless that would leave nothing to route to.
++    const healthy = available.filter((m) => !isQuarantined(m.id));
++    const eligible = healthy.length > 0 ? healthy : available;
+ 
+     // Collect raw scores and avg costs
+     const raw = eligible.map((model) => {
+diff --git a/packages/workflow/src/__tests__/artifact-validation.test.ts b/packages/workflow/src/__tests__/artifact-validation.test.ts
+new file mode 100644
+index 0000000..e1ae56b
+--- /dev/null
++++ b/packages/workflow/src/__tests__/artifact-validation.test.ts
+@@ -0,0 +1,76 @@
++import { describe, it, expect, afterAll } from "vitest";
++import {
++  mkdtempSync,
++  mkdirSync,
++  rmSync,
++} from "node:fs";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++
++// CRITICAL: artifact-store captures ARTIFACTS_BASE at module import time
++const TEST_HOME = mkdtempSync(join(tmpdir(), "brainstorm-artifact-validation-"));
++const ORIGINAL_HOME = process.env.HOME;
++process.env.HOME = TEST_HOME;
++
++import { validateStepOutput } from "../engine.js";
++
++// ── Artifact validation tests ───────────────────────────────────────
++
++describe("validateStepOutput", () => {
++  afterAll(() => {
++    if (ORIGINAL_HOME !== undefined) process.env.HOME = ORIGINAL_HOME;
++    else delete process.env.HOME;
++    rmSync(TEST_HOME, { recursive: true, force: true });
++  });
++
++  it("accepts non-empty content", () => {
++    const result = validateStepOutput(
++      "step-1",
++      "This is a valid output with content"
++    );
++    expect(result.valid).toBe(true);
++    expect(result.error).toBeUndefined();
++  });
++
++  it("rejects empty string as invalid", () => {
++    const result = validateStepOutput("step-empty", "");
++    expect(result.valid).toBe(false);
++    expect(result.error).toMatch(/step-empty/i);
++    expect(result.error).toMatch(/empty|whitespace/i);
++  });
++
++  it("rejects whitespace-only content as invalid", () => {
++    const result = validateStepOutput("step-whitespace", "   \t\n  ");
++    expect(result.valid).toBe(false);
++    expect(result.error).toMatch(/step-whitespace/i);
++    expect(result.error).toMatch(/empty|whitespace/i);
++  });
++
++  it("rejects string of only spaces", () => {
++    const result = validateStepOutput("step-spaces", "     ");
++    expect(result.valid).toBe(false);
++    expect(result.error).toMatch(/step-spaces/i);
++  });
++
++  it("accepts content with just one non-whitespace character", () => {
++    const result = validateStepOutput("step-minimal", "x");
++    expect(result.valid).toBe(true);
++    expect(result.error).toBeUndefined();
++  });
++
++  it("accepts content with leading/trailing whitespace but non-empty body", () => {
++    const result = validateStepOutput(
++      "step-trimmed",
++      "  some content here  "
++    );
++    expect(result.valid).toBe(true);
++    expect(result.error).toBeUndefined();
++  });
++
++  it("provides clear error message naming the step and artifact", () => {
++    const result = validateStepOutput("my-review-step", "");
++    expect(result.valid).toBe(false);
++    expect(result.error).toContain(`Step "my-review-step"`);
++    expect(result.error).toContain("artifact");
++  });
++});
+diff --git a/packages/workflow/src/engine.ts b/packages/workflow/src/engine.ts
+index f23c3df..cb9a032 100644
+--- a/packages/workflow/src/engine.ts
++++ b/packages/workflow/src/engine.ts
+@@ -104,6 +104,31 @@ const DANGER_PATTERNS: ReadonlyArray<RegExp> = [
+   /(?:^|\s)-{1,2}import(?:$|[\s=])/, // node --import — preload ESM module
+ ];
+ 
++/**
++ * Validate a step's output artifact content.
++ *
++ * Empty or whitespace-only artifacts indicate a workflow step that
++ * produced no meaningful output. These must be treated as failures,
++ * not silent successes, to trigger the workflow's existing failure/retry
++ * paths.
++ *
++ * Returns `{valid: true}` if the content has non-whitespace characters,
++ * or `{valid: false, error}` with a clear message naming the step and
++ * artifact.
++ */
++export function validateStepOutput(
++  stepId: string,
++  content: string
++): { valid: boolean; error?: string } {
++  if (!content || content.trim().length === 0) {
++    return {
++      valid: false,
++      error: `Step "${stepId}" produced an empty or whitespace-only artifact (zero content). This step failed.`,
++    };
++  }
++  return { valid: true };
++}
++
+ /**
+  * Validate a kill-gate command string before execution. Gates run via
+  * /bin/sh -c, so a prefix match alone is not safe — "npm test; rm -rf /"
+@@ -410,9 +435,37 @@ export async function* runWorkflow(
+         kind: "output",
+       };
+ 
+-      // Extract confidence
++      // Extract confidence before validation (so we can log it)
+       artifact.confidence = extractConfidence(artifact);
+ 
++      // Validate output artifact — empty/whitespace-only content is a failure
++      const outputValidation = validateStepOutput(stepDef.id, artifact.content);
++      if (!outputValidation.valid) {
++        const failureMessage =
++          outputValidation.error ??
++          `Step "${stepDef.id}" produced an empty artifact`;
++        stepRun.status = "failed";
++        stepRun.error = failureMessage;
++        stepRun.completedAt = Math.floor(Date.now() / 1000);
++
++        yield {
++          type: "step-failed",
++          step: stepRun,
++          error: new Error(failureMessage),
++        };
++
++        // Record failure for routing fallback
++        router.recordFailure(agent.modelId, failureMessage);
++
++        run.status = "failed";
++        yield {
++          type: "workflow-failed",
++          run,
++          error: new Error(failureMessage),
++        };
++        return;
++      }
++
+       run.artifacts.push(artifact);
+       writeArtifact(run.id, artifact);
+       stepRun.artifactId = artifact.id;

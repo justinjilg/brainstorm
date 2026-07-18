@@ -80,11 +80,44 @@ export function createQualitySignalsMiddleware(): AgentMiddleware {
       const ratio = writeCount > 0 ? readCount / writeCount : Infinity;
 
       if (ratio < WARN_THRESHOLD && !warningIssued) {
-        warningIssued = true;
         log.warn(
           { readCount, writeCount, ratio: ratio.toFixed(1) },
           "Read:Edit ratio below threshold — agent may be editing without sufficient research",
         );
+        // One-shot corrective feedback INTO the session, not just the log —
+        // observability without control never changes model behavior. The
+        // hint rides the current tool result (the one channel the model is
+        // guaranteed to read next turn) and fires at most once per
+        // degradation episode; the flag resets only after the ratio
+        // recovers, so a persistently low ratio doesn't nag every call.
+        //
+        // Serialize defensively (cyclic/BigInt outputs) and only mark the
+        // warning as issued once the modified result is safely constructed —
+        // a throw here would otherwise burn the one-shot without the model
+        // ever seeing the hint.
+        let serialized: string;
+        if (typeof result.output === "string") {
+          serialized = result.output;
+        } else {
+          try {
+            serialized = JSON.stringify(result.output);
+          } catch {
+            serialized = String(result.output);
+          }
+        }
+        // Build the full result FIRST; only then consume the one-shot. If the
+        // spread throws (a getter/proxy on `result`), warningIssued stays
+        // false so the hint re-arms next call instead of being silently lost.
+        const modified = {
+          ...result,
+          output:
+            `${serialized}\n\n` +
+            `[quality-signal] Your read:edit ratio this session is ${ratio.toFixed(1)} ` +
+            `(${readCount} reads / ${writeCount} writes; healthy sessions stay above ${WARN_THRESHOLD}). ` +
+            `Before your next edit, re-read the code you are changing and its call sites.`,
+        };
+        warningIssued = true;
+        return modified;
       }
 
       // Reset warning flag when ratio recovers

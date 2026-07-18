@@ -29,6 +29,95 @@ const log = createLogger("learned-strategy");
 // In-memory stats — loaded from DB on init, updated per-turn, persisted per-outcome
 const modelStats = new Map<string, ModelStats>();
 
+// ── Quarantine ─────────────────────────────────────────────────────
+// A model that fails almost every recent attempt (e.g. a local endpoint that
+// is down or a checkpoint that can't tool-call) must not keep winning
+// Thompson samples on stale priors and burning turns on doomed requests.
+// Rolling per-model window across task types; on breach, the model is
+// excluded from learned selection for a cooldown — but never when that would
+// leave zero eligible candidates.
+
+const QUARANTINE_WINDOW = 10;
+const QUARANTINE_FAILURE_RATE = 0.8;
+const QUARANTINE_COOLDOWN_MS = 30 * 60 * 1000;
+
+const recentOutcomes = new Map<string, boolean[]>();
+const quarantinedUntil = new Map<string, number>();
+
+export function isQuarantined(modelId: string, now = Date.now()): boolean {
+  const until = quarantinedUntil.get(modelId);
+  if (until === undefined) return false;
+  if (now >= until) {
+    // Cooldown over: clear the window too, so one lingering failure doesn't
+    // immediately re-trip the breaker before fresh evidence accumulates.
+    quarantinedUntil.delete(modelId);
+    recentOutcomes.delete(modelId);
+    return false;
+  }
+  return true;
+}
+
+// Cardinality bound: long-running daemons see arbitrary model ids come and
+// go (BR catalogs, renamed local models). Without a cap plus an expiry sweep,
+// both maps grow monotonically.
+const MAX_TRACKED_MODELS = 200;
+
+function sweepQuarantine(now: number): void {
+  for (const [id, until] of quarantinedUntil) {
+    if (now >= until) {
+      quarantinedUntil.delete(id);
+      recentOutcomes.delete(id);
+    }
+  }
+}
+
+function evictOldest(map: Map<string, unknown>): void {
+  // Map preserves insertion order; re-set on access below keeps live keys
+  // young, approximating LRU for the eviction that matters (idle keys).
+  const oldest = map.keys().next().value;
+  if (oldest !== undefined) map.delete(oldest);
+}
+
+function trackForQuarantine(modelId: string, success: boolean): void {
+  sweepQuarantine(Date.now());
+  const window = recentOutcomes.get(modelId) ?? [];
+  window.push(success);
+  if (window.length > QUARANTINE_WINDOW) window.shift();
+  // Refresh insertion order (delete+set) so active models stay young and
+  // eviction falls on the least-recently-updated key — real LRU, not FIFO.
+  recentOutcomes.delete(modelId);
+  if (recentOutcomes.size >= MAX_TRACKED_MODELS) evictOldest(recentOutcomes);
+  recentOutcomes.set(modelId, window);
+
+  if (window.length < QUARANTINE_WINDOW) return;
+  const failures = window.filter((s) => !s).length;
+  if (failures / window.length > QUARANTINE_FAILURE_RATE) {
+    if (
+      !quarantinedUntil.has(modelId) &&
+      quarantinedUntil.size >= MAX_TRACKED_MODELS
+    ) {
+      evictOldest(quarantinedUntil);
+    }
+    quarantinedUntil.set(modelId, Date.now() + QUARANTINE_COOLDOWN_MS);
+    recentOutcomes.delete(modelId);
+    log.warn(
+      {
+        modelId,
+        failures,
+        window: QUARANTINE_WINDOW,
+        cooldownMinutes: QUARANTINE_COOLDOWN_MS / 60_000,
+      },
+      "Model quarantined from learned routing after sustained failures",
+    );
+  }
+}
+
+/** Test-only: reset quarantine state between cases. */
+export function _resetQuarantineForTests(): void {
+  recentOutcomes.clear();
+  quarantinedUntil.clear();
+}
+
 // ── Audit Trail ────────────────────────────────────────────────────
 
 export interface OutcomeAuditEntry {
@@ -128,6 +217,7 @@ export function recordOutcome(
   stats.samples++;
 
   modelStats.set(key, stats);
+  trackForQuarantine(modelId, success);
 
   // Audit trail: log every outcome
   const entry: OutcomeAuditEntry = {
@@ -335,8 +425,11 @@ export const learnedStrategy: RoutingStrategy = {
     candidates: ModelEntry[],
     context: RoutingContext,
   ): RoutingDecision | null {
-    const eligible = candidates.filter((m) => m.status === "available");
-    if (eligible.length === 0) return null;
+    const available = candidates.filter((m) => m.status === "available");
+    if (available.length === 0) return null;
+    // Skip quarantined models — unless that would leave nothing to route to.
+    const healthy = available.filter((m) => !isQuarantined(m.id));
+    const eligible = healthy.length > 0 ? healthy : available;
 
     // Collect raw scores and avg costs
     const raw = eligible.map((model) => {

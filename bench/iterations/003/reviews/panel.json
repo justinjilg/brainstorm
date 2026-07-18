@@ -1,0 +1,21 @@
+{
+  "seed": "221407c0",
+  "mandatory": {
+    "seat": "codex",
+    "axis": "performance"
+  },
+  "drawn": [
+    {
+      "seat": "qwen3-coder",
+      "role": "code-reviewer",
+      "model": "acronis:mac/qwen/qwen3-coder-next",
+      "axis": "correctness"
+    },
+    {
+      "seat": "consensus-workflow",
+      "role": "panel",
+      "model": "workflow:consensus-review",
+      "axis": "architecture"
+    }
+  ]
+}

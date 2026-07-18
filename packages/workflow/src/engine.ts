@@ -105,6 +105,31 @@ const DANGER_PATTERNS: ReadonlyArray<RegExp> = [
 ];
 
 /**
+ * Validate a step's output artifact content.
+ *
+ * Empty or whitespace-only artifacts indicate a workflow step that
+ * produced no meaningful output. These must be treated as failures,
+ * not silent successes, to trigger the workflow's existing failure/retry
+ * paths.
+ *
+ * Returns `{valid: true}` if the content has non-whitespace characters,
+ * or `{valid: false, error}` with a clear message naming the step and
+ * artifact.
+ */
+export function validateStepOutput(
+  stepId: string,
+  content: string
+): { valid: boolean; error?: string } {
+  if (!content || content.trim().length === 0) {
+    return {
+      valid: false,
+      error: `Step "${stepId}" produced an empty or whitespace-only artifact (zero content). This step failed.`,
+    };
+  }
+  return { valid: true };
+}
+
+/**
  * Validate a kill-gate command string before execution. Gates run via
  * /bin/sh -c, so a prefix match alone is not safe — "npm test; rm -rf /"
  * starts with "npm test" but chains a second command. Defenses, in order:
@@ -337,6 +362,9 @@ export async function* runWorkflow(
       }
     }
 
+    // Hoisted above the try so the catch path can attribute failures to the
+    // concretely-routed model (updated from routing/model-retry events).
+    let routedModelId = agent.modelId;
     try {
       // Build context for this step
       const isRetry = run.iteration > 0 && stepDef.loopBackTo !== undefined;
@@ -378,6 +406,15 @@ export async function* runWorkflow(
         if (event.type === "text-delta") {
           fullResponse += event.delta;
         }
+        // Track the concretely-routed model: agent.modelId is often "auto"
+        // (or overridden/fallen-back mid-run), and failure accounting against
+        // the wrong id never excludes the actual failing model from routing.
+        if (event.type === "routing") {
+          routedModelId = event.decision.model.id;
+        }
+        if (event.type === "model-retry") {
+          routedModelId = event.toModel;
+        }
         if (event.type === "done") {
           stepRun.cost = event.totalCost - run.totalCost;
           run.totalCost = event.totalCost;
@@ -410,8 +447,37 @@ export async function* runWorkflow(
         kind: "output",
       };
 
-      // Extract confidence
+      // Extract confidence before validation (so we can log it)
       artifact.confidence = extractConfidence(artifact);
+
+      // Validate output artifact — empty/whitespace-only content is a failure
+      const outputValidation = validateStepOutput(stepDef.id, artifact.content);
+      if (!outputValidation.valid) {
+        const failureMessage =
+          outputValidation.error ??
+          `Step "${stepDef.id}" produced an empty artifact`;
+        stepRun.status = "failed";
+        stepRun.error = failureMessage;
+        stepRun.completedAt = Math.floor(Date.now() / 1000);
+
+        yield {
+          type: "step-failed",
+          step: stepRun,
+          error: new Error(failureMessage),
+        };
+
+        // Record failure for routing fallback — against the model that
+        // actually produced the empty artifact, not the "auto" alias.
+        router.recordFailure(routedModelId, failureMessage);
+
+        run.status = "failed";
+        yield {
+          type: "workflow-failed",
+          run,
+          error: new Error(failureMessage),
+        };
+        return;
+      }
 
       run.artifacts.push(artifact);
       writeArtifact(run.id, artifact);
@@ -530,7 +596,7 @@ export async function* runWorkflow(
       yield { type: "step-failed", step: stepRun, error };
 
       // Record failure for routing fallback
-      router.recordFailure(agent.modelId, error.message);
+      router.recordFailure(routedModelId, error.message);
 
       run.status = "failed";
       yield { type: "workflow-failed", run, error };
