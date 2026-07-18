@@ -9,17 +9,9 @@ import { describe, it, expect } from "vitest";
 import * as fc from "fast-check";
 import { MemoryManager } from "../memory/manager.js";
 import { join } from "node:path";
-import { tmpdir, homedir } from "node:os";
-import { rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { mkdtempSync, rmSync } from "node:fs";
 import { createHash } from "node:crypto";
-
-function getMemoryDir(projectPath: string): string {
-  const hash = createHash("sha256")
-    .update(projectPath)
-    .digest("hex")
-    .slice(0, 16);
-  return join(homedir(), ".brainstorm", "projects", hash, "memory");
-}
 
 describe("Property-Based Tests", () => {
   describe("Memory ID generation", () => {
@@ -47,39 +39,50 @@ describe("Property-Based Tests", () => {
   });
 
   describe("Memory save/get round-trip", () => {
-    it("saved content is retrievable unchanged", () => {
-      const projectPath = join(
-        tmpdir(),
-        `brainstorm-prop-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      );
-      const manager = new MemoryManager(projectPath);
-
-      try {
-        fc.assert(
-          fc.property(
-            fc.record({
-              name: fc.stringMatching(/^[a-z][a-z0-9-]{2,20}$/),
-              content: fc.string({ minLength: 1, maxLength: 500 }),
-            }),
-            ({ name, content }) => {
-              const saved = manager.save({
-                name,
-                description: "property test",
-                content,
-                type: "project",
-                source: "user_input",
-              });
-              const retrieved = manager.get(saved.id);
-              expect(retrieved).toBeDefined();
-              expect(retrieved!.content).toBe(content);
-            },
-          ),
-          { numRuns: 20 }, // Keep low — each creates a file
-        );
-      } finally {
-        rmSync(getMemoryDir(projectPath), { recursive: true, force: true });
-      }
-    });
+    // MemoryManager derives its storage dir from os.homedir(), which honors
+    // $HOME on POSIX. Point HOME at an isolated temp dir so the property runs
+    // never touch the real ~/.brainstorm — that's the flake source (git repo
+    // init + Spotlight/AV contention on the home dir made this reproducibly
+    // exceed the 5s default). Generous explicit timeout as a backstop; each
+    // of the 20 runs does a real file write + git add.
+    it(
+      "saved content is retrievable unchanged",
+      () => {
+        const originalHome = process.env.HOME;
+        const fakeHome = mkdtempSync(join(tmpdir(), "brainstorm-prop-home-"));
+        process.env.HOME = fakeHome;
+        const projectPath = join(fakeHome, "project");
+        try {
+          const manager = new MemoryManager(projectPath);
+          fc.assert(
+            fc.property(
+              fc.record({
+                name: fc.stringMatching(/^[a-z][a-z0-9-]{2,20}$/),
+                content: fc.string({ minLength: 1, maxLength: 500 }),
+              }),
+              ({ name, content }) => {
+                const saved = manager.save({
+                  name,
+                  description: "property test",
+                  content,
+                  type: "project",
+                  source: "user_input",
+                });
+                const retrieved = manager.get(saved.id);
+                expect(retrieved).toBeDefined();
+                expect(retrieved!.content).toBe(content);
+              },
+            ),
+            { numRuns: 20 }, // Keep low — each creates a file
+          );
+        } finally {
+          if (originalHome === undefined) delete process.env.HOME;
+          else process.env.HOME = originalHome;
+          rmSync(fakeHome, { recursive: true, force: true });
+        }
+      },
+      20_000,
+    );
   });
 
   describe("Trust score invariants", () => {

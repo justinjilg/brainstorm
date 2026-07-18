@@ -66,7 +66,6 @@ function getLLMCircuit(modelId: string) {
 import {
   enterToolExecution,
   exitToolExecution,
-  estimateTokenCount,
 } from "../session/compaction.js";
 import type { SystemPromptSegment } from "./context.js";
 
@@ -79,6 +78,27 @@ import type { SystemPromptSegment } from "./context.js";
  * Returns a spreadable object so callers can omit the option entirely for
  * models that advertise no output limit.
  */
+/**
+ * Robust char estimate for message content that may be a string OR the AI
+ * SDK's array-of-parts shape (text/tool-call/tool-result parts). Avoids the
+ * string-only assumption in estimateTokenCount, which would mis-measure
+ * array content and silently under-reserve prompt space.
+ */
+function contentCharLength(content: unknown): number {
+  if (typeof content === "string") return content.length;
+  if (Array.isArray(content)) {
+    let n = 0;
+    for (const part of content) {
+      if (typeof part === "string") n += part.length;
+      else if (part && typeof (part as { text?: unknown }).text === "string")
+        n += (part as { text: string }).text.length;
+      else n += JSON.stringify(part ?? "").length;
+    }
+    return n;
+  }
+  return content == null ? 0 : JSON.stringify(content).length;
+}
+
 export function computeOutputBudget(
   model: {
     limits?: { contextWindow?: number; maxOutputTokens?: number };
@@ -100,11 +120,18 @@ export function computeOutputBudget(
       ? systemPrompt
       : Array.isArray(systemPrompt)
         ? systemPrompt
-            .map((s: any) => (typeof s?.content === "string" ? s.content : ""))
+            .map((s) =>
+              s && typeof (s as { content?: unknown }).content === "string"
+                ? (s as { content: string }).content
+                : "",
+            )
             .join("")
         : "";
+  // 20 chars/message overhead mirrors estimateTokenCount's role+formatting fudge.
+  let messageChars = 0;
+  for (const m of messages) messageChars += contentCharLength(m.content) + 20;
   const promptEstimate =
-    estimateTokenCount(messages as any) +
+    Math.ceil(messageChars / 4) +
     Math.ceil(systemText.length / 4) +
     TOOL_SCHEMA_OVERHEAD_TOKENS;
   const remaining = window - promptEstimate;
@@ -957,7 +984,7 @@ export async function* runAgentLoop(
       // request outright.
       ...computeOutputBudget(
         decision.model,
-        messagesForApi as any,
+        messagesForApi,
         systemForApiNormalized,
       ),
       abortSignal: effectiveStreamSignal,

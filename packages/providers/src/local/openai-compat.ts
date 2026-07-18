@@ -164,7 +164,7 @@ export function createCustomProvider(
     baseURL: `${baseUrl}/v1`,
     ...(apiKey ? { headers: { Authorization: `Bearer ${apiKey}` } } : {}),
     includeUsage: true,
-    fetch: createToolCallIdNormalizingFetch() as any,
+    fetch: createToolCallIdNormalizingFetch(),
   });
 }
 
