@@ -125,6 +125,8 @@ function buildContext() {
     get: () => undefined,
     filterByNames: () => [],
     toAISDKTools: () => ({}),
+    toAISDKToolsFiltered: () => ({}),
+    toAISDKToolsWithPermissions: () => ({}),
   };
   return {
     cleanup: () => {
@@ -146,7 +148,7 @@ function buildContext() {
           projectPath: tmpProjectPath,
           systemPrompt: "test",
           preferredModelId: model.id,
-          disableTools: true,
+          disableTools: false, // real tool session — synthesis only applies here
           trajectoryEnabled: false,
         } as any,
       )) {
@@ -230,6 +232,27 @@ describe("forced synthesis on step-cap with no final response", () => {
       expect(done.outcome.initialStopCause).toBe("natural_stop");
       expect(done.outcome.hasFinalResponse).toBe(true);
       expect(_streamTextCalls).toHaveLength(2);
+    } finally {
+      ctx.cleanup();
+    }
+  });
+
+  it("does not record a silent success when synthesis also produces nothing", async () => {
+    // Tool work, no answer → synthesis runs but ALSO returns empty. With no
+    // fallbacks configured the run must NOT report hasFinalResponse:true.
+    _scripts = [
+      toolCallScript("stop", 1),
+      { parts: [], text: "", finishReason: "stop", steps: 1 },
+    ];
+    const ctx = buildContext();
+    try {
+      const events = await ctx.run();
+      const done = events.find((e) => e.type === "done");
+      // Synthesis was attempted (2 calls) but produced nothing usable.
+      expect(_streamTextCalls).toHaveLength(2);
+      expect(done.outcome.hasFinalResponse).toBe(false);
+      expect(done.outcome.recovery).toBeUndefined();
+      expect(done.outcome.status).toBe("failed");
     } finally {
       ctx.cleanup();
     }

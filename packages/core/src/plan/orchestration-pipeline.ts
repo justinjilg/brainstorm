@@ -246,16 +246,19 @@ export async function* runOrchestrationPipeline(
       else continue;
     }
 
-    // Budget guard — pause is a terminal state: emit once, finalize once,
-    // and DON'T fall through to the post-loop completed/failed terminal.
+    // Budget guard — pause is a terminal state: record + finalize BEFORE
+    // yielding, so a consumer that stops iterating on the terminal event
+    // doesn't close the generator before finalize runs. Emit once; DON'T fall
+    // through to the post-loop completed/failed terminal.
     if (options.budget && totalCost >= options.budget) {
-      yield record({
+      const pausedEvent = record({
         type: "pipeline-paused",
         phase,
         reason: `Budget exhausted: $${totalCost.toFixed(2)}`,
       });
       recorder.finalize();
       terminated = true;
+      yield pausedEvent;
       break;
     }
 
@@ -312,6 +315,14 @@ export async function* runOrchestrationPipeline(
         );
         const combinedTools = parallelResults.flatMap((r) => r.toolCalls);
 
+        // A parallel phase fails if it produced zero results or EVERY agent
+        // returned blank text — otherwise a review phase with all-empty
+        // reviewers would still be marked success with no usable artifact.
+        const anyNonBlank = parallelResults.some(
+          (r) => (r.text ?? "").trim().length > 0,
+        );
+        const parallelOk = parallelResults.length > 0 && anyNonBlank;
+
         result = {
           phase,
           agentId: config.agents.join("+"),
@@ -319,7 +330,12 @@ export async function* runOrchestrationPipeline(
           cost: combinedCost,
           toolCalls: combinedTools,
           duration: Date.now() - startTime,
-          success: true,
+          success: parallelOk,
+          ...(parallelOk
+            ? {}
+            : {
+                error: `Parallel phase "${phase}" produced no usable agent output`,
+              }),
         };
 
         // Check for critical review findings
@@ -432,24 +448,20 @@ export async function* runOrchestrationPipeline(
     const failedPhases = results
       .filter((r) => !r.success)
       .map((r) => r.phase);
-    if (failedPhases.length > 0) {
-      yield record({
-        type: "pipeline-failed",
-        results,
-        totalCost,
-        failedPhases,
-      });
-    } else {
-      yield record({ type: "pipeline-completed", results, totalCost });
-    }
+    const terminalEvent =
+      failedPhases.length > 0
+        ? record({ type: "pipeline-failed", results, totalCost, failedPhases })
+        : record({ type: "pipeline-completed", results, totalCost });
 
-    // Finalize trajectory — persists to disk as training data for BrainstormLLM v2
+    // Finalize BEFORE yielding the terminal event — a consumer that stops
+    // iterating on it would otherwise close the generator before finalize runs.
     const trajectory = recorder.finalize();
     if (trajectory.phases.length > 0) {
       console.error(
         `[trajectory] ${trajectory.id} — ${trajectory.phases.length} phases, $${trajectory.totalCost.toFixed(4)}, ${trajectory.totalDuration}ms`,
       );
     }
+    yield terminalEvent;
   }
 }
 

@@ -562,6 +562,13 @@ export interface AgentLoopOptions {
    * attempt it just gave up on.
    */
   _attemptsSoFar?: ModelAttemptOutcome[];
+  /**
+   * Internal: session cost at the START of this logical run, captured once at
+   * the root and propagated through recursion so RunOutcome.costUsd is the run
+   * delta — not the CostTracker's cumulative session/process total (which a
+   * long-lived caller reuses across many runs).
+   */
+  _runCostBaseline?: number;
   /** Optional middleware pipeline for composable agent interceptors. */
   middleware?: MiddlewarePipeline;
   /** Repository for persisting routing outcomes (Thompson sampling). */
@@ -1492,8 +1499,14 @@ export async function* runAgentLoop(
     // final response, wasn't truncated. NOT producedArtifacts (edits ARE an
     // artifact). Run exactly ONE tools-disabled synthesis turn through the
     // shared seam; `initialStopCause` preserves how it actually stopped.
+    // hasFinalResponse: the turn produced usable text. (A stricter "text AFTER
+    // the last tool call" signal — Codex's finding #1 — would also flag
+    // narrate-then-act turns that legitimately conclude on the next turn as
+    // needing synthesis, over-firing; the sharper distinction is deferred to
+    // the iter-006 TurnController, which models a turn's phases explicitly.)
     let hasFinalResponse = accumulatedText.trim().length > 0;
     let recovery: RunOutcome["recovery"] | undefined;
+    let synthesisAttempted = options._synthesized ?? false;
     const initialStopCause = classifyStopCause({
       isEmpty,
       toolCallTruncated,
@@ -1503,22 +1516,55 @@ export async function* runAgentLoop(
       providerFinishReason: finishReason,
     });
     const needsSynthesis =
+      shouldUseTools && // only a genuine tool-using session can lack a summary
       !hasFinalResponse &&
       toolCallCount > 0 &&
       !toolCallTruncated &&
-      !options._synthesized;
+      !synthesisAttempted;
     if (needsSynthesis) {
+      synthesisAttempted = true; // once per logical run, even on failure
+      // Own AbortController linked to the caller signal so a hung synthesis
+      // stream can't hang the run; distinct timeout vs caller-cancellation.
+      const SYNTH_TIMEOUT_MS = 60_000;
+      const synthTimeoutController = new AbortController();
+      const synthTimer = setTimeout(
+        () => synthTimeoutController.abort(),
+        SYNTH_TIMEOUT_MS,
+      );
+      const synthSignal = linkSignals(
+        synthTimeoutController.signal,
+        options.signal,
+      );
       try {
         yield {
           type: "loop-warning" as const,
           message: `${decision.model.id} made ${toolCallCount} tool call(s) but wrote no final answer (stop: ${initialStopCause}) — running one tools-disabled synthesis turn.`,
         };
+        // Give synthesis the model's OWN work to summarize: the assistant
+        // tool-call + tool-result messages from the completed invocation, not
+        // just the input history it can't see its work in.
+        let synthContext = messagesForApi as Array<{
+          role: string;
+          content: unknown;
+        }>;
+        try {
+          const resp = await result.response;
+          const respMessages = (resp as { messages?: unknown[] })?.messages;
+          if (Array.isArray(respMessages) && respMessages.length > 0) {
+            synthContext = [
+              ...synthContext,
+              ...(respMessages as Array<{ role: string; content: unknown }>),
+            ];
+          }
+        } catch {
+          /* response unavailable — fall back to input history */
+        }
         const synthResult = invokeModelAttempt({
           providerModel: modelId,
           modelEntry: decision.model,
           system: systemForApiNormalized,
           messages: [
-            ...messagesForApi,
+            ...synthContext,
             {
               role: "user",
               content:
@@ -1526,47 +1572,66 @@ export async function* runAgentLoop(
                 "Using only the work you have already done, write your final answer/result now.",
             },
           ],
-          abortSignal: effectiveStreamSignal,
+          abortSignal: synthSignal,
           maxSteps: 1,
           metadataHeader,
         });
         const synthText = (await synthResult.text)?.trim() ?? "";
+        // Record synthesis cost regardless of whether it produced text — an
+        // empty synthesis is still billable.
+        try {
+          const u = await synthResult.usage;
+          costTracker.record({
+            sessionId,
+            modelId: decision.model.id,
+            provider: decision.model.provider,
+            inputTokens: u?.inputTokens ?? 0,
+            outputTokens: u?.outputTokens ?? 0,
+            cachedTokens: 0,
+            taskType: task.type,
+            projectPath: options.projectPath,
+            pricing: decision.model.pricing,
+          });
+        } catch {
+          /* usage/cost best-effort */
+        }
         if (synthText) {
           accumulatedText += (accumulatedText ? "\n\n" : "") + synthText;
           hasFinalResponse = true;
           recovery = "forced_synthesis";
-          yield { type: "text-delta", delta: normalizeInsightMarkers(synthText) };
-          // Record the synthesis attempt's cost against the session.
-          try {
-            const u = await synthResult.usage;
-            costTracker.record({
-              sessionId,
-              modelId: decision.model.id,
-              provider: decision.model.provider,
-              inputTokens: u?.inputTokens ?? 0,
-              outputTokens: u?.outputTokens ?? 0,
-              cachedTokens: 0,
-              taskType: task.type,
-              projectPath: options.projectPath,
-              pricing: decision.model.pricing,
-            });
-          } catch {
-            /* usage/cost best-effort */
-          }
+          yield {
+            type: "text-delta",
+            delta: normalizeInsightMarkers(synthText),
+          };
         }
-      } catch (synthErr) {
+      } catch (synthErr: any) {
+        // A caller cancellation must propagate as interrupted, not be
+        // swallowed into a recovered "done".
+        if (synthErr?.name === "AbortError" || options.signal?.aborted) {
+          clearTimeout(synthTimer);
+          if (options.signal?.aborted) {
+            yield { type: "interrupted" };
+            return;
+          }
+          // else: our own synthesis timeout fired — fall through as a failed
+          // synthesis (hasFinalResponse stays false → handled below).
+        }
         log.warn(
           { err: synthErr, model: decision.model.id },
-          "Forced synthesis turn failed — falling through to normal handling",
+          "Forced synthesis turn failed — treating as no final response",
         );
+      } finally {
+        clearTimeout(synthTimer);
       }
     }
 
-    // A turn needs a retry when the model gave us nothing (empty) OR when it
-    // tried to act but the tool-call was truncated. Both are model-side
-    // failures that a fallback may recover. Forced synthesis that produced a
-    // final response clears the empty condition.
-    const shouldRetry = (isEmpty && !hasFinalResponse) || toolCallTruncated;
+    // A turn needs a retry when a tool-call was truncated, OR — when forced
+    // synthesis ran this turn (a tool session that produced no answer) — when
+    // even synthesis failed to produce a final response. When synthesis did
+    // NOT run, fall back to the classic empty-turn signal so a normal completed
+    // tool-call turn still records as success.
+    const shouldRetry =
+      toolCallTruncated || (needsSynthesis ? !hasFinalResponse : isEmpty);
 
     // Record circuit breaker outcome for this model.
     // Empty response / truncated tool-call = failure (nothing usable).
@@ -1660,6 +1725,11 @@ export async function* runAgentLoop(
           // emits the full attempt chain in its aggregate RunOutcome; mark
           // recovery=fallback there.
           _attemptsSoFar: [...(options._attemptsSoFar ?? []), failedAttempt],
+          // Synthesis is once per logical run — a fallback model must not
+          // synthesize again if this attempt already did.
+          _synthesized: synthesisAttempted,
+          // Preserve the run-cost baseline across the whole fallback chain.
+          _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
         } as any);
         return;
       }
@@ -1750,8 +1820,10 @@ export async function* runAgentLoop(
       modelId: decision.model.id,
       taskType: task.type,
       status: turnSuccess ? "succeeded" : "failed",
-      // A synthesized run's initial stop was still the cap — preserve it.
-      stopCause: turnSuccess ? initialStopCause : "empty_output",
+      // Always the classified cause — a failed attempt that truncated /
+      // hit output_limit / was capped keeps that evidence, not a blanket
+      // empty_output.
+      stopCause: initialStopCause,
       providerFinishReason: finishReason,
       latencyMs: turnLatencyMs,
       costUsd: turnCost,
@@ -1875,6 +1947,8 @@ export async function* runAgentLoop(
           ...options,
           _nudgeDepth: nextNudge,
           _forceToolChoice: forceOnRetry,
+          _synthesized: synthesisAttempted,
+          _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
         });
         return;
       }
@@ -1976,6 +2050,8 @@ export async function* runAgentLoop(
             // Forced tool-call is scoped to the nudge retry only — don't leak
             // it into a verify self-correction turn.
             _forceToolChoice: false,
+            _synthesized: synthesisAttempted,
+            _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
           });
           return;
         }
@@ -2061,7 +2137,11 @@ export async function* runAgentLoop(
       verification: "not_run",
       security: "not_run",
       judge: "not_run",
-      costUsd: costTracker.getSessionCost(),
+      // Run delta, not the cumulative session total (a long-lived caller
+      // reuses the tracker across runs). Baseline captured at the root.
+      costUsd:
+        costTracker.getSessionCost() -
+        (options._runCostBaseline ?? sessionCostBefore),
     };
 
     yield {
