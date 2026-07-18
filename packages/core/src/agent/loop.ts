@@ -1515,12 +1515,19 @@ export async function* runAgentLoop(
       lastStepFinishReason,
       providerFinishReason: finishReason,
     });
+    // Budget guard: synthesis is a direct extra model call that bypasses the
+    // router — don't start it once the hard session budget is spent.
+    const synthesisBudgetOk = (() => {
+      const remaining = costTracker.getRemainingBudget();
+      return remaining === null || remaining > 0;
+    })();
     const needsSynthesis =
       shouldUseTools && // only a genuine tool-using session can lack a summary
       !hasFinalResponse &&
       toolCallCount > 0 &&
       !toolCallTruncated &&
-      !synthesisAttempted;
+      !synthesisAttempted &&
+      synthesisBudgetOk;
     if (needsSynthesis) {
       synthesisAttempted = true; // once per logical run, even on failure
       // Own AbortController linked to the caller signal so a hung synthesis
@@ -1548,8 +1555,19 @@ export async function* runAgentLoop(
           content: unknown;
         }>;
         try {
-          const resp = await result.response;
-          const respMessages = (resp as { messages?: unknown[] })?.messages;
+          // Bound the response-metadata await against the synthesis watchdog +
+          // caller signal — result.response can itself hang (a stalled/errored
+          // stream), and an unbounded await here would defeat the watchdog.
+          const resp = await Promise.race([
+            result.response,
+            new Promise<null>((resolve) => {
+              synthSignal.addEventListener("abort", () => resolve(null), {
+                once: true,
+              });
+            }),
+          ]);
+          const respMessages = (resp as { messages?: unknown[] } | null)
+            ?.messages;
           if (Array.isArray(respMessages) && respMessages.length > 0) {
             synthContext = [
               ...synthContext,
@@ -1558,6 +1576,13 @@ export async function* runAgentLoop(
           }
         } catch {
           /* response unavailable — fall back to input history */
+        }
+        // If the caller cancelled while we were fetching response metadata,
+        // stop before spending another model call.
+        if (options.signal?.aborted) {
+          clearTimeout(synthTimer);
+          yield { type: "interrupted" };
+          return;
         }
         const synthResult = invokeModelAttempt({
           providerModel: modelId,
@@ -1625,13 +1650,15 @@ export async function* runAgentLoop(
       }
     }
 
-    // A turn needs a retry when a tool-call was truncated, OR — when forced
-    // synthesis ran this turn (a tool session that produced no answer) — when
-    // even synthesis failed to produce a final response. When synthesis did
-    // NOT run, fall back to the classic empty-turn signal so a normal completed
-    // tool-call turn still records as success.
+    // A turn needs a retry when a tool-call was truncated, OR a genuine
+    // tool-using turn made tool calls but produced no final response (whether
+    // synthesis ran-and-failed this turn OR was already spent upstream by a
+    // _synthesized descendant — either way a tool-only turn with no answer is
+    // not a success). Non-tool turns fall back to the classic empty signal.
+    const toolTurnWithoutAnswer =
+      shouldUseTools && toolCallCount > 0 && !hasFinalResponse;
     const shouldRetry =
-      toolCallTruncated || (needsSynthesis ? !hasFinalResponse : isEmpty);
+      toolCallTruncated || toolTurnWithoutAnswer || isEmpty;
 
     // Record circuit breaker outcome for this model.
     // Empty response / truncated tool-call = failure (nothing usable).
