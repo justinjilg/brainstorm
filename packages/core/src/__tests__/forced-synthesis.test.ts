@@ -166,11 +166,23 @@ describe("forced synthesis on step-cap with no final response", () => {
   });
   afterEach(() => vi.clearAllMocks());
 
-  it("runs one tools-disabled synthesis turn and marks recovery=forced_synthesis", async () => {
-    // Call 1: 2 steps, finishReason 'tool-calls' at the cap, NO text → capped-empty.
+    const toolCallScript = (finishReason: string, steps: number) => ({
+      parts: [
+        { type: "tool-input-start", id: "1", toolName: "file_read" },
+        { type: "tool-call", toolName: "file_read", input: { path: "/x" } },
+        { type: "tool-result", toolName: "file_read", output: "contents" },
+        { type: "finish", finishReason },
+      ],
+      text: "",
+      finishReason,
+      steps,
+    });
+
+  it("runs one tools-disabled synthesis turn when a capped run wrote no answer", async () => {
+    // Call 1: made a tool call, hit the cap (2 steps ≥ maxStepsForRun), no text.
     // Call 2 (synthesis): returns final text.
     _scripts = [
-      { parts: [], text: "", finishReason: "tool-calls", steps: 2 },
+      toolCallScript("tool-calls", 2),
       {
         parts: [{ type: "text-delta", text: "Here is the final answer." }],
         text: "Here is the final answer.",
@@ -188,10 +200,36 @@ describe("forced synthesis on step-cap with no final response", () => {
       expect(done.outcome.initialStopCause).toBe("step_cap_reached");
       expect(done.outcome.status).toBe("succeeded");
       expect(done.outcome.hasFinalResponse).toBe(true);
-      // Exactly two model calls: the capped attempt + one synthesis turn.
+      // Exactly two model calls: the original attempt + one synthesis turn.
       expect(_streamTextCalls).toHaveLength(2);
       // The synthesis call had NO tools.
       expect(_streamTextCalls[1].tools).toBeUndefined();
+    } finally {
+      ctx.cleanup();
+    }
+  });
+
+  it("synthesizes when a model stops EARLY after tool calls with no answer (live gpt-oss case)", async () => {
+    // The iter-004 live proof: gpt-oss made tool calls then stopped on its own
+    // (finishReason 'stop', NOT at the cap) without writing a final answer.
+    _scripts = [
+      toolCallScript("stop", 1),
+      {
+        parts: [{ type: "text-delta", text: "Summary of what I found." }],
+        text: "Summary of what I found.",
+        finishReason: "stop",
+        steps: 1,
+      },
+    ];
+    const ctx = buildContext();
+    try {
+      const events = await ctx.run();
+      const done = events.find((e) => e.type === "done");
+      expect(done.outcome.recovery).toBe("forced_synthesis");
+      // Preserves that this was a natural early stop, not a cap.
+      expect(done.outcome.initialStopCause).toBe("natural_stop");
+      expect(done.outcome.hasFinalResponse).toBe(true);
+      expect(_streamTextCalls).toHaveLength(2);
     } finally {
       ctx.cleanup();
     }

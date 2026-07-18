@@ -1477,16 +1477,21 @@ export async function* runAgentLoop(
       };
     }
 
-    // ── Forced synthesis: step-cap reached with no final response ──
-    // A model (often a coder) can spend its whole step budget making tool
-    // calls and hit the cap WITHOUT ever writing a final answer. That turn is
-    // not `isEmpty` (it made tool calls) yet has no usable response — it would
-    // otherwise record as a silent success with empty text, breaking the two
-    // dead reviewer seats + gpt-oss eval step-cap failures + empty workflow
-    // artifacts this iteration targets. Trigger on step_cap_reached &&
-    // !hasFinalResponse (NOT producedArtifacts — edits ARE an artifact). Run
-    // exactly ONE tools-disabled synthesis turn through the shared seam;
-    // preserve the fact that the run hit its cap via `recovery`.
+    // ── Forced synthesis: tool work done, but no final answer written ──
+    // A model (often a coder, or a reasoning model whose answer leaked into
+    // reasoning_content) can make tool calls and then STOP — whether by
+    // exhausting its step budget or by finishing early — WITHOUT ever writing
+    // a final answer. Such a turn is not `isEmpty` (it made tool calls) yet has
+    // no usable response; it would otherwise record as a silent success with
+    // empty text, which is exactly what dead-ended the reviewer seats + gpt-oss
+    // eval step-cap failures + empty workflow artifacts this iteration targets.
+    //
+    // Live dogfooding (gpt-oss, iter-004) showed the hard-cap case is only HALF
+    // of it — the model frequently stops EARLY after tool calls with no
+    // summary. So trigger on the general condition: made tool calls, has no
+    // final response, wasn't truncated. NOT producedArtifacts (edits ARE an
+    // artifact). Run exactly ONE tools-disabled synthesis turn through the
+    // shared seam; `initialStopCause` preserves how it actually stopped.
     let hasFinalResponse = accumulatedText.trim().length > 0;
     let recovery: RunOutcome["recovery"] | undefined;
     const initialStopCause = classifyStopCause({
@@ -1497,15 +1502,16 @@ export async function* runAgentLoop(
       lastStepFinishReason,
       providerFinishReason: finishReason,
     });
-    if (
-      initialStopCause === "step_cap_reached" &&
+    const needsSynthesis =
       !hasFinalResponse &&
-      !options._synthesized
-    ) {
+      toolCallCount > 0 &&
+      !toolCallTruncated &&
+      !options._synthesized;
+    if (needsSynthesis) {
       try {
         yield {
           type: "loop-warning" as const,
-          message: `${decision.model.id} hit its step cap (${maxStepsForRun}) without a final answer — running one tools-disabled synthesis turn.`,
+          message: `${decision.model.id} made ${toolCallCount} tool call(s) but wrote no final answer (stop: ${initialStopCause}) — running one tools-disabled synthesis turn.`,
         };
         const synthResult = invokeModelAttempt({
           providerModel: modelId,
