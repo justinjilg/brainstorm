@@ -6,6 +6,7 @@ import {
   clearTasks,
   setTaskEventHandler,
 } from "../builtin/task-manage.js";
+import { withSession } from "../session-context.js";
 
 describe("task-manage tools", () => {
   beforeEach(() => {
@@ -89,5 +90,69 @@ describe("task-manage tools", () => {
 
     expect(updateResult).toHaveProperty("error");
     expect((updateResult as any).error).toContain("not found");
+  });
+});
+
+describe("task-manage — concurrent session isolation", () => {
+  beforeEach(() => {
+    clearTasks("session-A");
+    clearTasks("session-B");
+  });
+
+  it("keeps two concurrent sessions' tasks and IDs separate", async () => {
+    // Interleave two sessions exactly as concurrent runs would.
+    const a1 = await withSession("session-A", () =>
+      taskCreateTool.execute({ description: "A-first" }),
+    );
+    const b1 = await withSession("session-B", () =>
+      taskCreateTool.execute({ description: "B-first" }),
+    );
+    const a2 = await withSession("session-A", () =>
+      taskCreateTool.execute({ description: "A-second" }),
+    );
+
+    // Each session numbers from 1 independently — no cross-session collision.
+    expect(a1.id).toBe("task-1");
+    expect(b1.id).toBe("task-1");
+    expect(a2.id).toBe("task-2");
+
+    // Each session sees ONLY its own tasks.
+    const aList = await withSession("session-A", () => taskListTool.execute({}));
+    const bList = await withSession("session-B", () => taskListTool.execute({}));
+    expect(aList.tasks.map((t) => t.description)).toEqual([
+      "A-first",
+      "A-second",
+    ]);
+    expect(bList.tasks.map((t) => t.description)).toEqual(["B-first"]);
+  });
+
+  it("routes task events to the session that registered the handler", async () => {
+    const aHandler = vi.fn();
+    const bHandler = vi.fn();
+    await withSession("session-A", async () => setTaskEventHandler(aHandler));
+    await withSession("session-B", async () => setTaskEventHandler(bHandler));
+
+    await withSession("session-A", () =>
+      taskCreateTool.execute({ description: "A work" }),
+    );
+
+    // A's handler fired; B's did NOT (no cross-wiring).
+    expect(aHandler).toHaveBeenCalledTimes(1);
+    expect(bHandler).not.toHaveBeenCalled();
+  });
+
+  it("clearTasks releases only the named session's store", async () => {
+    await withSession("session-A", () =>
+      taskCreateTool.execute({ description: "A" }),
+    );
+    await withSession("session-B", () =>
+      taskCreateTool.execute({ description: "B" }),
+    );
+    clearTasks("session-A");
+
+    const aList = await withSession("session-A", () => taskListTool.execute({}));
+    const bList = await withSession("session-B", () => taskListTool.execute({}));
+    expect(aList.total).toBe(0);
+    expect(bList.total).toBe(1);
   });
 });

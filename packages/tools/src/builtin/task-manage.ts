@@ -1,26 +1,59 @@
 import { z } from "zod";
 import { defineTool } from "../base.js";
 import type { AgentTask, TaskStatus } from "@brainst0rm/shared";
+import { getSessionId } from "../session-context.js";
+
+type TaskEventHandler = (
+  type: "task-created" | "task-updated",
+  task: AgentTask,
+) => void;
 
 /**
- * In-session task store. Shared across the three task tools.
- * Tasks are ephemeral — they live only for the duration of the session.
+ * Per-session task store. Previously a single module-global Map + counter +
+ * handler, which two concurrent runs (server request + Slack message, or two
+ * subagents) would corrupt — colliding IDs, clearing each other's tasks,
+ * cross-wiring the event handler. Keyed by the current session id instead.
+ * Tasks are ephemeral — they live only for the session's duration.
  */
-const tasks = new Map<string, AgentTask>();
-let nextId = 1;
-
-/** Event callback set by the agent loop to forward task events to the TUI. */
-let onTaskEvent:
-  | ((type: "task-created" | "task-updated", task: AgentTask) => void)
-  | null = null;
-
-export function setTaskEventHandler(handler: typeof onTaskEvent): void {
-  onTaskEvent = handler;
+interface SessionTaskStore {
+  tasks: Map<string, AgentTask>;
+  nextId: number;
+  onTaskEvent: TaskEventHandler | null;
 }
 
-export function clearTasks(): void {
-  tasks.clear();
-  nextId = 1;
+// Cardinality bound so a missed clearTasks() (crash, forgotten teardown) can't
+// leak stores forever; oldest-inserted is evicted (mirrors the iter-003
+// quarantine bound).
+const MAX_TRACKED_SESSIONS = 256;
+const sessionStores = new Map<string, SessionTaskStore>();
+
+function storeFor(sessionId: string): SessionTaskStore {
+  let store = sessionStores.get(sessionId);
+  if (!store) {
+    if (sessionStores.size >= MAX_TRACKED_SESSIONS) {
+      const oldest = sessionStores.keys().next().value;
+      if (oldest !== undefined) sessionStores.delete(oldest);
+    }
+    store = { tasks: new Map(), nextId: 1, onTaskEvent: null };
+    sessionStores.set(sessionId, store);
+  }
+  return store;
+}
+
+/**
+ * Register the TUI task-event handler for a session. Defaults to the current
+ * session scope; pass an explicit id from outside a session context.
+ */
+export function setTaskEventHandler(
+  handler: TaskEventHandler | null,
+  sessionId: string = getSessionId(),
+): void {
+  storeFor(sessionId).onTaskEvent = handler;
+}
+
+/** Clear a session's tasks and release its store. */
+export function clearTasks(sessionId: string = getSessionId()): void {
+  sessionStores.delete(sessionId);
 }
 
 export const taskCreateTool = defineTool({
@@ -34,7 +67,8 @@ export const taskCreateTool = defineTool({
       .describe("Short description of the task (1 sentence)"),
   }),
   async execute({ description }) {
-    const id = `task-${nextId++}`;
+    const store = storeFor(getSessionId());
+    const id = `task-${store.nextId++}`;
     const now = Date.now();
     const task: AgentTask = {
       id,
@@ -43,8 +77,8 @@ export const taskCreateTool = defineTool({
       createdAt: now,
       updatedAt: now,
     };
-    tasks.set(id, task);
-    onTaskEvent?.("task-created", task);
+    store.tasks.set(id, task);
+    store.onTaskEvent?.("task-created", task);
     return { id, status: task.status };
   },
 });
@@ -61,11 +95,12 @@ export const taskUpdateTool = defineTool({
       .describe("New status"),
   }),
   async execute({ id, status }) {
-    const task = tasks.get(id);
+    const store = storeFor(getSessionId());
+    const task = store.tasks.get(id);
     if (!task) return { error: `Task ${id} not found` };
     task.status = status as TaskStatus;
     task.updatedAt = Date.now();
-    onTaskEvent?.("task-updated", task);
+    store.onTaskEvent?.("task-updated", task);
     return { id, status: task.status };
   },
 });
@@ -76,7 +111,8 @@ export const taskListTool = defineTool({
   permission: "auto",
   inputSchema: z.object({}),
   async execute() {
-    const all = Array.from(tasks.values()).map((t) => ({
+    const store = storeFor(getSessionId());
+    const all = Array.from(store.tasks.values()).map((t) => ({
       id: t.id,
       description: t.description,
       status: t.status,

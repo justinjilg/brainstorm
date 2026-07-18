@@ -22,6 +22,7 @@ import {
   getTierForComplexity,
   getToolsForTier,
   enterWorkspace,
+  enterSession,
 } from "@brainst0rm/tools";
 import {
   createLogger,
@@ -606,6 +607,10 @@ export async function* runAgentLoop(
   // the rest of the current async execution. Nested spawnSubagent calls can
   // override this scope with their own withWorkspace.
   enterWorkspace(options.projectPath);
+  // Same rationale for the session scope: session-scoped tool stores (tasks,
+  // …) key off getSessionId(), so concurrent runs must each enter their own
+  // session before any tool executes.
+  enterSession(sessionId);
 
   // Initialize trajectory recorder — enabled by default for learning loop.
   // Explicitly opt out with trajectoryEnabled: false.

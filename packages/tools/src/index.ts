@@ -21,6 +21,12 @@ export {
   enterWorkspace,
 } from "./workspace-context.js";
 export {
+  withSession,
+  enterSession,
+  getSessionId,
+  DEFAULT_SESSION_ID,
+} from "./session-context.js";
+export {
   FileReadCache,
   getFileReadCache,
   resetFileReadCache,
