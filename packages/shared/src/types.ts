@@ -205,6 +205,77 @@ export interface AgentTask {
   updatedAt: number;
 }
 
+// ── Execution Outcome Contract ───────────────────────────────────────
+// One aggregate RunOutcome composed of one or more ModelAttemptOutcomes, with
+// explicit termination, recovery, artifacts, checks, and cost. Two levels
+// because a single logical run can span multiple model attempts (fallback:
+// model A fails empty → model B succeeds): routing (Thompson/quarantine) needs
+// per-attempt evidence, while surfaces (workflow/pipeline/UI/trajectory) need
+// one aggregate. A flat outcome would erase model A's failure.
+
+/** Why a single model attempt (or the aggregate run) stopped producing. */
+export type StopCause =
+  | "natural_stop" // model finished on its own
+  | "step_cap_reached" // hit the max-steps budget mid-work
+  | "empty_output" // produced no usable text
+  | "truncated_tool_call" // stream ended mid tool-call assembly
+  | "output_limit" // provider length / max_tokens
+  | "content_filtered" // provider content filter
+  | "error" // threw
+  | "budget_exhausted" // cost ceiling
+  | "fallback_exhausted" // all fallback models tried, none succeeded
+  | "aborted"; // cancelled by signal
+
+/**
+ * Tri-state gate result. `not_run` (gate was skipped) and `unknown` (gate ran
+ * but couldn't decide) are distinct from `failed` — an optional boolean can't
+ * express that. Security especially: BLOCKING a dangerous action means the
+ * security CONTROL succeeded while the requested execution failed; a single
+ * `false` conflates the two.
+ */
+export type CheckStatus = "passed" | "failed" | "not_run" | "unknown";
+
+/** Outcome of one model attempt within a run. Feeds routing learning. */
+export interface ModelAttemptOutcome {
+  modelId: string;
+  taskType: TaskType;
+  status: "succeeded" | "failed" | "aborted";
+  stopCause: StopCause;
+  /** Raw provider finish_reason, when available (diagnostics). */
+  providerFinishReason?: string;
+  latencyMs: number;
+  costUsd: number;
+}
+
+/** Aggregate outcome of a logical run. Feeds surfaces + momentum + trajectory. */
+export interface RunOutcome {
+  status: "succeeded" | "failed" | "partial" | "aborted";
+  /** Every model attempt this run made, in order. At least one. */
+  attempts: ModelAttemptOutcome[];
+  /** The model whose output the run ultimately used (if it succeeded). */
+  finalModelId?: string;
+  /** How the FIRST attempt terminated — preserved even after recovery, so a
+   *  step-capped-then-synthesized run doesn't masquerade as a clean stop. */
+  initialStopCause: StopCause;
+  /** How the run recovered from a non-clean initial stop, if it did. */
+  recovery?:
+    | "fallback"
+    | "forced_synthesis"
+    | "tool_nudge"
+    | "verification_retry";
+  /** Did the run produce usable final text? (distinct from making changes) */
+  hasFinalResponse: boolean;
+  /** Artifact references produced (files written, etc.), if tracked. */
+  producedArtifacts?: string[];
+  /** Did the run mutate the workspace? (a coder can edit files yet emit no
+   *  final text — it made changes but still needs synthesis) */
+  madeChanges?: boolean;
+  verification: CheckStatus;
+  security: CheckStatus;
+  judge: CheckStatus;
+  costUsd: number;
+}
+
 export type AgentEvent =
   | {
       type: "thinking";
@@ -282,6 +353,9 @@ export type AgentEvent =
       type: "done";
       totalCost: number;
       totalTokens?: { input: number; output: number };
+      /** The canonical run outcome. Additive: existing consumers keep reading
+       *  totalCost/totalTokens while surfaces migrate to `outcome`. */
+      outcome?: RunOutcome;
     };
 
 // ── Turn Context ─────────────────────────────────────────────────────

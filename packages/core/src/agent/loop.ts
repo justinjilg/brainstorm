@@ -29,6 +29,9 @@ import {
   type GatewayFeedbackData,
   type ModelEntry,
   type TurnContext,
+  type StopCause,
+  type RunOutcome,
+  type ModelAttemptOutcome,
 } from "@brainst0rm/shared";
 import type { BuildStateTracker } from "./build-state.js";
 import { LoopDetector } from "./loop-detector.js";
@@ -68,6 +71,49 @@ import {
   exitToolExecution,
 } from "../session/compaction.js";
 import type { SystemPromptSegment } from "./context.js";
+
+/**
+ * Classify how a single model attempt terminated into a canonical StopCause.
+ * Ordering matters: truncation and emptiness are model-side failures a
+ * fallback may recover; step-cap is only asserted when the run actually
+ * exhausted its budget AND the last step still wanted to continue (a bare
+ * terminal `finishReason:"tool-calls"` is not itself proof of a cap).
+ */
+export function classifyStopCause(input: {
+  isEmpty: boolean;
+  toolCallTruncated: boolean;
+  stepsCompleted: number;
+  maxSteps: number;
+  lastStepFinishReason?: string;
+  providerFinishReason?: string;
+}): StopCause {
+  const {
+    isEmpty,
+    toolCallTruncated,
+    stepsCompleted,
+    maxSteps,
+    lastStepFinishReason,
+    providerFinishReason,
+  } = input;
+  if (toolCallTruncated) return "truncated_tool_call";
+  const providerLength =
+    providerFinishReason === "length" || lastStepFinishReason === "length";
+  const contentFiltered =
+    providerFinishReason === "content-filter" ||
+    providerFinishReason === "content_filter" ||
+    lastStepFinishReason === "content-filter";
+  // Hit the step budget while the last step still wanted to act.
+  if (
+    stepsCompleted >= maxSteps &&
+    (lastStepFinishReason === "tool-calls" || lastStepFinishReason === "length")
+  ) {
+    return "step_cap_reached";
+  }
+  if (contentFiltered) return "content_filtered";
+  if (providerLength) return "output_limit";
+  if (isEmpty) return "empty_output";
+  return "natural_stop";
+}
 
 /**
  * Request-level output budget: the model's advertised maxOutputTokens,
@@ -958,6 +1004,16 @@ export async function* runAgentLoop(
       streamAbort.signal,
       options.signal,
     );
+    // Step-cap detection: count completed steps and remember the last step's
+    // finish reason. A bare terminal `finishReason:"tool-calls"` is NOT proof
+    // the run hit its budget — only `stepsCompleted >= maxStepsForRun` with the
+    // last step still wanting to continue is. Hoisted maxStepsForRun so both
+    // stopWhen and the post-loop classifier read the same number.
+    const maxStepsForRun = shouldUseTools
+      ? (options.maxSteps ?? config.general.maxSteps)
+      : 1;
+    let stepsCompleted = 0;
+    let lastStepFinishReason: string | undefined;
     const result = streamText({
       model: modelId,
       system: systemForApiNormalized as any,
@@ -991,10 +1047,10 @@ export async function* runAgentLoop(
       // Retry on 429/503 with exponential backoff (1s, 2s, 4s).
       // Without this, rate limits during long KAIROS runs crash the daemon.
       maxRetries: 3,
-      stopWhen: stepCountIs(
-        shouldUseTools ? (options.maxSteps ?? config.general.maxSteps) : 1,
-      ),
-      onStepFinish: async ({ usage }: any) => {
+      stopWhen: stepCountIs(maxStepsForRun),
+      onStepFinish: async ({ usage, finishReason: stepFinish }: any) => {
+        stepsCompleted++;
+        if (typeof stepFinish === "string") lastStepFinishReason = stepFinish;
         if (usage) {
           const inputTokens = usage.inputTokens ?? 0;
           const outputTokens = usage.outputTokens ?? 0;
@@ -1541,13 +1597,20 @@ export async function* runAgentLoop(
       );
     }
 
-    // Record success for model momentum
-    router.recordSuccess?.(decision.model.id);
-
     // Record routing outcome for Thompson sampling (in-memory + DB persistence)
     const turnLatencyMs = Date.now() - turnStartMs;
     const turnSuccess = !shouldRetry;
     const turnCost = costTracker.getSessionCost() - sessionCostBefore;
+
+    // Momentum records ONLY a genuinely successful final attempt, WITH task
+    // type. Previously recordSuccess fired unconditionally, before turnSuccess
+    // was known and without the task type — so momentum learned "the model
+    // said something" (and disagreed with the Thompson outcome below on
+    // exhausted-retry turns that reach here with turnSuccess=false).
+    if (turnSuccess) {
+      router.recordSuccess?.(decision.model.id, task.type);
+    }
+
     recordOutcome(
       task.type,
       decision.model.id,
