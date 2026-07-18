@@ -1,0 +1,37 @@
+{
+  "note": "Frozen stratified subset (first 2 probes per dimension, chosen 2026-07-18, never tuned against). brainstorm eval lacks a per-probe filter; until one exists, per-iteration gates run the 2-3 most relevant --capability dimensions in full and compare dimension scores.",
+  "probes": {
+    "code-correctness": [
+      "code-correct-01",
+      "code-correct-02"
+    ],
+    "context-utilization": [
+      "context-01",
+      "context-02"
+    ],
+    "instruction-adherence": [
+      "instruct-01",
+      "instruct-02"
+    ],
+    "multi-model-workflow": [
+      "e2e-decompose-01",
+      "e2e-decompose-02"
+    ],
+    "multi-step": [
+      "multi-step-01",
+      "multi-step-02"
+    ],
+    "self-correction": [
+      "self-correct-01",
+      "self-correct-02"
+    ],
+    "tool-selection": [
+      "tool-select-01",
+      "tool-select-02"
+    ],
+    "tool-sequencing": [
+      "tool-seq-01",
+      "tool-seq-02"
+    ]
+  }
+}
