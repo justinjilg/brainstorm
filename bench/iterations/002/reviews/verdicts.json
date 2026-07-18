@@ -1,0 +1,73 @@
+{
+  "seed": "6fc978af",
+  "seats": {
+    "codex": {
+      "status": "completed",
+      "findings": 3,
+      "verified_blocking": 3,
+      "precision": "3/3",
+      "rounds": [
+        "R1: 3 P1s \u2014 interleaved parallel continuations misrouted (real, fixed with seen-index map + test); unbounded SSE buffer (real, converged with gpt-oss seat, fixed with 4MiB fail-open cap + test); resolveRepoRoot regression for sandbox probes/installed CLIs (real, fixed: sandbox skips resolution, projectDir honored, error text corrected)",
+        "R2: all 3 resolved, no new P0/P1"
+      ]
+    },
+    "consensus-workflow": {
+      "status": "completed",
+      "dogfood": "workflow ran end-to-end; gpt-oss security step through harness with tools \u2014 streaming fix held",
+      "security_step_gpt_oss": {
+        "findings": 7,
+        "verified_blocking": 1,
+        "verified": [
+          {
+            "sev": "P1",
+            "loc": "openai-compat SSE buffer",
+            "action": "FIXED \u2014 4MiB line cap, fail-open pass-through + test"
+          }
+        ],
+        "rebutted": [
+          "P1 CPU/tiny-lines: normalizer adds one JSON.parse per line the SDK already parses; no new surface",
+          "P2 path in resolveRepoRoot error: local CLI error, not a server response",
+          "P2 existsSync traversal: bounded 15 levels, local tool",
+          "P2 npm-warn stripping visibility: intentional + commented",
+          "P2 predictable synthetic ids: internal correlation tokens only",
+          "P2 content-type check: includes() is the correct predicate here"
+        ]
+      },
+      "harness_finding": "quality/style steps emitted empty/truncated artifacts yet workflow reported complete (confidence 0.60) \u2014 workflow presets need artifact non-empty/schema validation (backlog iter-003+)"
+    },
+    "qwen3-next": {
+      "status": "completed",
+      "findings": 2,
+      "verified_blocking": 0,
+      "triage": [
+        {
+          "sev": "P1",
+          "loc": "openai-compat.ts:94 delete null id",
+          "verdict": "rebutted \u2014 canonical OpenAI continuations OMIT the id key; SDK validates id only on first chunk per call (vendor source checked). Deleting converges to spec shape."
+        },
+        {
+          "sev": "P2",
+          "loc": "verifiers/typescript.ts npx env",
+          "verdict": "pre-existing pattern, not introduced by this diff; filed as hardening backlog candidate. Non-gating."
+        }
+      ],
+      "dogfood": "completed cleanly through harness"
+    }
+  },
+  "reviewer_precision_running": {
+    "codex": "7/7 across iters 001-002",
+    "gpt-oss-120b": "1/7 verified (iter 002, post-streaming-fix; crashed in 001)",
+    "qwen3-next": "0/2",
+    "qwen3-coder": "0/4 (iter 001)"
+  },
+  "gate": {
+    "tests": "providers 77 / eval 73 green; builds+typecheck green",
+    "live": "gpt-oss multi-step tool session crash-free",
+    "falsification": "crash-floored dims jumped (tool-sel +30, multi-step +14, instr-adh +30); overall flat 29% due to code-correctness step-cap/output-text eval-design issue (filed iter-003)",
+    "re_anchor": {
+      "q3-next code-correctness": "90%",
+      "q3-coder code-correctness": "80%"
+    },
+    "decision": "GREEN"
+  }
+}

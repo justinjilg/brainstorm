@@ -9,7 +9,7 @@
       "rounds": [
         "R1: 4 findings, all verified real (output-budget overflow, overclaiming heuristics, refresh() dropping overrides, embedding models routable)",
         "R2: 2/4 resolved; 2 refinements + 1 new P1 (floor overflow near-exhausted window) \u2014 all fixed with dedicated unit tests",
-        "R3: first attempt hung on stdin (codex exec background quirk; use < /dev/null); clean re-run launched at close"
+        "R3: clean re-run (stdin closed) \u2014 all 3 refinements resolved, no new P0/P1"
       ]
     },
     "qwen3-coder": {

@@ -47,7 +47,10 @@ export function verifyTypeScriptCompiles(filePath: string): {
   } catch (error: any) {
     const stderr = error.stderr?.toString() ?? "";
     const stdout = error.stdout?.toString() ?? "";
-    const msg = stderr || stdout || error.message;
+    // Strip npm warnings caused by pnpm-set env vars
+    const cleanStderr = stderr.replace(/^npm warn[^\n]*\n/gm, "");
+    const cleanStdout = stdout.replace(/^npm warn[^\n]*\n/gm, "");
+    const msg = cleanStderr || cleanStdout || error.message;
     log.debug({ filePath, error: msg }, "TypeScript compilation failed");
     return { ok: false, error: msg.slice(0, 500) };
   }

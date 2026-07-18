@@ -1,0 +1,1273 @@
+Reading additional input from stdin...
+OpenAI Codex v0.144.4
+--------
+workdir: /Users/justin.jilg/Projects/brainstorm
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 019f741f-8107-7261-a3eb-f3dcae7bdeba
+--------
+user
+Verification round on this repo's diff at bench/iterations/002/reviews/iter-fixed.diff. Your prior review raised 3 P1s: (1) interleaved parallel tool-call continuations misrouted by the recent-call fallback — now a per-choice seen-index map routes known server indices to their calls, fallback only for unseen indices, with an interleaved test; (2) unbounded SSE line buffering — now a 4MiB cap fails open to byte pass-through, with an oversized-line test; (3) mandatory repo-root discovery regressing sandbox probes and installed CLIs — now sandbox probes skip resolution, explicit projectDir is honored as-is, error text corrected. Verify each. Output ONLY JSON: {"verdicts":[{"item":1|2|3,"status":"resolved"|"not-resolved","note":string}],"new_P0_P1":[]}
+exec
+/bin/zsh -lc "sed -n '1,240p' bench/iterations/002/reviews/iter-fixed.diff" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+diff --git a/bench/iterations/001/reviews/codex-final.err b/bench/iterations/001/reviews/codex-final.err
+index d9ca076..6004689 100644
+--- a/bench/iterations/001/reviews/codex-final.err
++++ b/bench/iterations/001/reviews/codex-final.err
+@@ -1478,3 +1478,626 @@ bench/iterations/001/reviews/panel.json
+ bench/iterations/001/reviews/qwen3-coder.out
+ bench/iterations/001/reviews/verdicts.json
+ 
++exec
++/bin/zsh -lc "sed -n '130,220p' packages/core/src/__tests__/loop-max-output-tokens.test.ts && sed -n '1,180p' package.json && sed -n '1,120p' packages/core/package.json && sed -n '1,120p' packages/providers/package.json" in /Users/justin.jilg/Projects/brainstorm
++ succeeded in 0ms:
++        sessionId,
++        projectPath: tmpProjectPath,
++        systemPrompt: "You are a test agent.",
++        preferredModelId: model.id,
++        disableTools: true,
++        trajectoryEnabled: false,
++      } as any);
++      const events: any[] = [];
++      for await (const ev of gen) {
++        events.push(ev);
++        if (events.length > 50) break;
++      }
++      return events;
++    },
++  };
++}
++
++describe("computeOutputBudget", () => {
++  const model = (contextWindow?: number, maxOutputTokens?: number) => ({
++    limits: { contextWindow, maxOutputTokens },
++  });
++
++  it("returns the advertised budget when the prompt is small", () => {
++    const msgs = [{ role: "user", content: "hi" }];
++    expect(computeOutputBudget(model(131072, 32768), msgs)).toEqual({
++      maxOutputTokens: 32768,
++    });
++  });
++
++  it("clamps the budget to remaining context near the window limit", () => {
++    // ~100k-token prompt in a 128k window: 32k output would overflow.
++    const msgs = [{ role: "user", content: "A".repeat(400_000) }];
++    const { maxOutputTokens } = computeOutputBudget(
++      model(131072, 32768),
++      msgs,
++    ) as { maxOutputTokens: number };
++    expect(maxOutputTokens).toBeLessThan(32768);
++    expect(maxOutputTokens).toBeGreaterThanOrEqual(256);
++  });
++
++  it("requests exactly the remainder when less than the floor is left", () => {
++    // Requesting the 256 floor here would overflow the window — the budget
++    // must shrink to what actually remains.
++    const window = 131072;
++    const msgs = [{ role: "user", content: "hi" }];
++    const bigSystem = "S".repeat((window - 1024 - 100) * 4);
++    const { maxOutputTokens } = computeOutputBudget(
++      model(window, 32768),
++      msgs,
++      bigSystem,
++    ) as { maxOutputTokens: number };
++    expect(maxOutputTokens).toBeGreaterThan(0);
++    expect(maxOutputTokens).toBeLessThan(256);
++  });
++
++  it("keeps a well-formed floor request when the prompt alone exceeds the window", () => {
++    const msgs = [{ role: "user", content: "A".repeat(600_000) }];
++    expect(computeOutputBudget(model(131072, 32768), msgs)).toEqual({
++      maxOutputTokens: 256,
++    });
++  });
++
++  it("accounts for the measured system prompt, not just messages", () => {
++    const msgs = [{ role: "user", content: "hi" }];
++    const smallBudget = computeOutputBudget(
++      model(131072, 32768),
++      msgs,
++      "S".repeat(500_000),
++    ) as { maxOutputTokens: number };
++    expect(smallBudget.maxOutputTokens).toBeLessThan(32768);
++  });
++
++  it("omits the option when the model advertises no output limit", () => {
++    expect(
++      computeOutputBudget(model(131072, undefined), [
++        { role: "user", content: "hi" },
++      ]),
++    ).toEqual({});
++  });
++});
++
++describe("agent loop — maxOutputTokens forwarding", () => {
++  beforeEach(() => {
++    _streamTextCalls = [];
++  });
++  afterEach(() => {
++    vi.clearAllMocks();
++  });
++
++  it("forwards the routed model's maxOutputTokens to streamText", async () => {
++    const ctx = buildContext(buildModel(32768));
++{
++  "name": "brainstorm",
++  "private": true,
++  "description": "Governed control plane for AI-managed infrastructure. Connect AI operators to your product ecosystem through a standardized protocol.",
++  "keywords": [
++    "ai",
++    "cli",
++    "llm",
++    "mcp",
++    "agent",
++    "routing",
++    "infrastructure",
++    "control-plane",
++    "ai-ops",
++    "model-context-protocol",
++    "thompson-sampling"
++  ],
++  "repository": {
++    "type": "git",
++    "url": "https://github.com/justinjilg/brainstorm.git"
++  },
++  "homepage": "https://brainstorm.co",
++  "author": "Justin Jilg <jj@brainstorm.co>",
++  "license": "Apache-2.0",
++  "scripts": {
++    "build": "turbo run build && pnpm run contract-check",
++    "build:dangerous-skip-gates": "node -e \"console.error('[dangerous] Skipping Brainstorm preflight/contract gates; use pnpm run build for release/CI.')\" && turbo run build",
++    "br:contract-map": "node scripts/br-business-contract-map.mjs",
++    "br:contract-map:check": "node scripts/br-business-contract-map.mjs --check",
++    "br:a2a-registry": "tsx tests/business-harness/a2a-registry-smoke.ts",
++    "br:live-discovery": "tsx tests/business-harness/live-br-discovery.ts",
++    "br:provider-envelope": "tsx tests/business-harness/provider-envelope-smoke.ts",
++    "business:posture-trace": "tsx tests/business-harness/business-posture-trace.ts",
++    "contract-check": "node scripts/contract-check.mjs",
++    "contract-check:json": "node scripts/contract-check.mjs --json",
++    "dev": "turbo run dev",
++    "lint": "turbo run lint",
++    "lint:abort-signal": "node scripts/lint-abort-signal-timeout.mjs",
++    "test": "turbo run test",
++    "test:dogfood": "npx tsx tests/dogfood/run-dogfood.ts",
++    "test:product-platform": "tsx tests/business-harness/product-platform-smoke.ts",
++    "test:workflow": "npx tsx tests/workflow-demo/run-demo.ts",
++    "typecheck": "turbo run typecheck",
++    "postinstall": "pnpm -r rebuild better-sqlite3",
++    "prepare": "husky",
++    "changeset": "changeset",
++    "version-packages": "changeset version",
++    "release": "changeset publish",
++    "sbom": "node scripts/generate-sbom.mjs",
++    "setup:tooling": "node scripts/setup-tooling.mjs",
++    "setup:tooling:dry": "node scripts/setup-tooling.mjs --dry-run"
++  },
++  "devDependencies": {
++    "@changesets/changelog-github": "^0.6.0",
++    "@changesets/cli": "^2.30.0",
++    "dependency-cruiser": "17.3.10",
++    "husky": "^9",
++    "lint-staged": "^15",
++    "prettier": "^3",
++    "turbo": "^2.9.14",
++    "typescript": "^5.7",
++    "vitest": "^3.2.4",
++    "zod": "^3"
++  },
++  "lint-staged": {
++    "*.{ts,tsx}": [
++      "prettier --write"
++    ],
++    "*.{json,md,yml,yaml}": [
++      "prettier --write"
++    ],
++    "packages/tools/src/builtin/**/*.ts": [
++      "scripts/precommit-regen-catalog.sh"
++    ]
++  },
++  "workspaces": [
++    "packages/*",
++    "apps/*"
++  ],
++  "packageManager": "pnpm@10.9.0",
++  "engines": {
++    "node": ">=22"
++  },
++  "dependencies": {
++    "@ai-sdk/anthropic": "^3.0.63",
++    "@ai-sdk/google": "^3.0.53",
++    "@ai-sdk/openai": "^3.0.48"
++  },
++  "overrides": {
++    "@xmldom/xmldom": "0.8.13",
++    "dompurify": ">=3.4.0",
++    "express-rate-limit": "8.5.2",
++    "fast-uri": "3.1.2",
++    "hono": "4.12.21",
++    "ip-address": "10.2.0",
++    "mermaid": "11.15.0",
++    "minimatch@10": {
++      "brace-expansion": "5.0.6"
++    },
++    "postcss": "8.5.15",
++    "uuid": "11.1.1",
++    "ws": "8.20.1"
++  }
++}
++{
++  "name": "@brainst0rm/core",
++  "version": "0.14.5",
++  "type": "module",
++  "exports": {
++    ".": {
++      "types": "./dist/index.d.ts",
++      "import": "./dist/index.js"
++    },
++    "./package.json": "./package.json"
++  },
++  "scripts": {
++    "build": "tsup && node scripts/copy-skills.mjs",
++    "dev": "tsup --watch",
++    "typecheck": "tsc --noEmit",
++    "test": "vitest run"
++  },
++  "dependencies": {
++    "@brainst0rm/agents": "workspace:*",
++    "@brainst0rm/code-graph": "workspace:*",
++    "@brainst0rm/config": "workspace:*",
++    "@brainst0rm/contracts": "workspace:*",
++    "@brainst0rm/db": "workspace:*",
++    "@brainst0rm/gateway": "workspace:*",
++    "@brainst0rm/orchestrator": "workspace:*",
++    "@brainst0rm/providers": "workspace:*",
++    "@brainst0rm/router": "workspace:*",
++    "@brainst0rm/shared": "workspace:*",
++    "@brainst0rm/tools": "workspace:*",
++    "ai": "^6",
++    "better-sqlite3": "^11",
++    "pdf-parse": "^2.4.5",
++    "zod": "^3"
++  },
+
+exec
+/bin/zsh -lc "rg '"'^diff --git '"' bench/iterations/002/reviews/iter-fixed.diff" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+diff --git a/bench/iterations/001/reviews/codex-final.err b/bench/iterations/001/reviews/codex-final.err
+diff --git a/bench/iterations/001/reviews/codex-final.out b/bench/iterations/001/reviews/codex-final.out
+diff --git a/bench/iterations/001/reviews/verdicts.json b/bench/iterations/001/reviews/verdicts.json
+diff --git a/packages/eval/src/runner.ts b/packages/eval/src/runner.ts
+diff --git a/packages/eval/src/verifiers/typescript.ts b/packages/eval/src/verifiers/typescript.ts
+diff --git a/packages/providers/src/__tests__/custom-provider.test.ts b/packages/providers/src/__tests__/custom-provider.test.ts
+diff --git a/packages/providers/src/local/openai-compat.ts b/packages/providers/src/local/openai-compat.ts
+
+exec
+/bin/zsh -lc "sed -n '/"'^diff --git a'"\\/packages\\/eval\\/src\\/runner.ts/,"'$p'"' bench/iterations/002/reviews/iter-fixed.diff" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+diff --git a/packages/eval/src/runner.ts b/packages/eval/src/runner.ts
+index 468f37e..bfcdda6 100644
+--- a/packages/eval/src/runner.ts
++++ b/packages/eval/src/runner.ts
+@@ -16,13 +16,41 @@ import {
+   rmSync,
+   existsSync,
+ } from "node:fs";
+-import { join, resolve, sep } from "node:path";
++import { join, resolve, sep, dirname } from "node:path";
+ import { tmpdir } from "node:os";
+ import type { Probe, ProbeResult } from "./types.js";
+ import { scoreProbe } from "./scorer.js";
+ 
+ const log = createLogger("eval");
+ 
++/**
++ * Walk parent directories from start until finding pnpm-workspace.yaml.
++ * Returns the directory containing the workspace file.
++ * Throws if not found within 15 levels.
++ */
++export function resolveRepoRoot(start: string): string {
++  let current = resolve(start);
++  const maxDepth = 15;
++
++  for (let i = 0; i < maxDepth; i++) {
++    const workspaceFile = join(current, "pnpm-workspace.yaml");
++    if (existsSync(workspaceFile)) {
++      return current;
++    }
++
++    const parent = dirname(current);
++    // Stop if we've reached the filesystem root (parent === current)
++    if (parent === current) {
++      break;
++    }
++    current = parent;
++  }
++
++  throw new Error(
++    `Could not find pnpm-workspace.yaml walking up from "${start}" (searched ${maxDepth} levels). Introspection probes must run from inside the brainstorm repo — cd there, or supply RunnerOptions.projectDir.`,
++  );
++}
++
+ // Probes that operate against the real project (everything except sandboxed
+ // code-correctness runs) get read-only tools. Every current introspection
+ // probe only verifies grep/file_read/glob usage; leaving write/shell tools
+@@ -91,12 +119,19 @@ export async function runProbe(
+     // Determine workspace: code-correctness probes operate in sandbox,
+     // everything else operates against the brainstorm project so tools
+     // like grep/glob/file_read can find real files to introspect.
+-    const configDir = options.projectDir ?? process.cwd();
+-    const agentWorkspace: string =
++    //
++    // Repo-root discovery applies ONLY to introspection probes without an
++    // explicit projectDir: an explicit projectDir is honored as-is, and
++    // sandboxed probes never touch the repo — requiring a workspace marker
++    // for them would break `brainstorm eval` for installed-CLI users running
++    // outside a pnpm workspace.
++    const isSandboxProbe =
+       probe.workspace === "sandbox" ||
+-      (!probe.workspace && probe.capability === "code-correctness")
+-        ? sandboxDir
+-        : configDir;
++      (!probe.workspace && probe.capability === "code-correctness");
++    const configDir =
++      options.projectDir ??
++      (isSandboxProbe ? process.cwd() : resolveRepoRoot(process.cwd()));
++    const agentWorkspace: string = isSandboxProbe ? sandboxDir : configDir;
+     const config = loadConfig(configDir);
+     const db = getDb();
+     const registry = await createProviderRegistry(config);
+diff --git a/packages/eval/src/verifiers/typescript.ts b/packages/eval/src/verifiers/typescript.ts
+index 56ef103..75a4908 100644
+--- a/packages/eval/src/verifiers/typescript.ts
++++ b/packages/eval/src/verifiers/typescript.ts
+@@ -47,7 +47,10 @@ export function verifyTypeScriptCompiles(filePath: string): {
+   } catch (error: any) {
+     const stderr = error.stderr?.toString() ?? "";
+     const stdout = error.stdout?.toString() ?? "";
+-    const msg = stderr || stdout || error.message;
++    // Strip npm warnings caused by pnpm-set env vars
++    const cleanStderr = stderr.replace(/^npm warn[^\n]*\n/gm, "");
++    const cleanStdout = stdout.replace(/^npm warn[^\n]*\n/gm, "");
++    const msg = cleanStderr || cleanStdout || error.message;
+     log.debug({ filePath, error: msg }, "TypeScript compilation failed");
+     return { ok: false, error: msg.slice(0, 500) };
+   }
+diff --git a/packages/providers/src/__tests__/custom-provider.test.ts b/packages/providers/src/__tests__/custom-provider.test.ts
+index 8fae298..f92bf15 100644
+--- a/packages/providers/src/__tests__/custom-provider.test.ts
++++ b/packages/providers/src/__tests__/custom-provider.test.ts
+@@ -6,6 +6,7 @@ import {
+   resolveCustomProviderKey,
+   discoverOpenAICompatModels,
+   inferModelLimits,
++  createToolCallIdNormalizingFetch,
+ } from "../local/openai-compat.js";
+ 
+ describe("resolveCustomProviderKey", () => {
+@@ -201,3 +202,197 @@ describe("discoverOpenAICompatModels with custom providers", () => {
+     expect("headers" in init).toBe(false);
+   });
+ });
++
++describe("createToolCallIdNormalizingFetch", () => {
++  const sseResponse = (lines: string[]) =>
++    new Response(lines.join("\n") + "\n", {
++      status: 200,
++      headers: { "content-type": "text/event-stream" },
++    });
++
++  const readAll = async (res: Response) => {
++    const text = await res.text();
++    return text.split("\n").filter(Boolean);
++  };
++
++  it("synthesizes an id for the first chunk of an id-less tool call", async () => {
++    const baseFetch = async () =>
++      sseResponse([
++        `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":null,"function":{"name":"file_read","arguments":"{\\"pa"}}]}}]}`,
++        `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"th\\":\\"x\\"}"}}]}}]}`,
++        "data: [DONE]",
++      ]);
++    const fetch = createToolCallIdNormalizingFetch(baseFetch as any);
++    const lines = await readAll(await fetch("http://x/v1/chat/completions"));
++
++    const first = JSON.parse(lines[0].slice(5));
++    expect(first.choices[0].delta.tool_calls[0].id).toBe("call_norm_0");
++    // Continuation chunk (legal null/absent id) left untouched.
++    const second = JSON.parse(lines[1].slice(5));
++    expect("id" in second.choices[0].delta.tool_calls[0]).toBe(false);
++    expect(lines[2]).toBe("data: [DONE]");
++  });
++
++  it("leaves server-provided ids and non-SSE responses untouched", async () => {
++    const withId = `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_abc","function":{"name":"grep"}}]}}]}`;
++    const sse = createToolCallIdNormalizingFetch(
++      (async () => sseResponse([withId, "data: [DONE]"])) as any,
++    );
++    const lines = await readAll(await sse("http://x"));
++    expect(lines[0]).toBe(withId);
++
++    const jsonBody = JSON.stringify({ ok: true });
++    const plain = createToolCallIdNormalizingFetch(
++      (async () =>
++        new Response(jsonBody, {
++          headers: { "content-type": "application/json" },
++        })) as any,
++    );
++    expect(await (await plain("http://x")).text()).toBe(jsonBody);
++  });
++
++  it("assigns distinct ids per tool-call index and survives split chunks", async () => {
++    const line1 = `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":null,"function":{"name":"a"}},{"index":1,"id":null,"function":{"name":"b"}}]}}]}`;
++    // Deliver the SSE payload split mid-line across two body chunks.
++    const encoder = new TextEncoder();
++    const body = new ReadableStream({
++      start(controller) {
++        controller.enqueue(encoder.encode(line1.slice(0, 40)));
++        controller.enqueue(encoder.encode(line1.slice(40) + "\ndata: [DONE]\n"));
++        controller.close();
++      },
++    });
++    const baseFetch = async () =>
++      new Response(body, {
++        status: 200,
++        headers: { "content-type": "text/event-stream" },
++      });
++    const fetch = createToolCallIdNormalizingFetch(baseFetch as any);
++    const lines = await readAll(await fetch("http://x"));
++    const calls = JSON.parse(lines[0].slice(5)).choices[0].delta.tool_calls;
++    expect(calls[0].id).toBe("call_norm_0");
++    expect(calls[1].id).toBe("call_norm_1");
++  });
++});
++
++describe("createToolCallIdNormalizingFetch — vLLM index-bump quirk", () => {
++  it("re-points bumped-index argument fragments at the open call (captured gpt-oss shape)", async () => {
++    // Verbatim shape captured live from vLLM/gpt-oss: one logical call whose
++    // argument fragments arrive under a bumped index with no id/name.
++    const lines = [
++      `data: {"choices":[{"index":0,"delta":{"reasoning_content":" file_read.","tool_calls":[{"id":"chatcmpl-tool-b7c2","function":{"arguments":"","name":"file_read"},"type":"function","index":0},{"function":{"arguments":"{\\n "},"type":"function","index":0}]}}]}`,
++      `data: {"choices":[{"stop_reason":200012,"index":0,"delta":{"tool_calls":[{"function":{"arguments":" \\"path\\": \\"/tmp/x.txt\\"\\n}"},"type":"function","index":1}]}}]}`,
++      `data: {"choices":[{"finish_reason":"tool_calls","index":0,"delta":{}}]}`,
++      "data: [DONE]",
++    ];
++    const baseFetch = async () =>
++      new Response(lines.join("\n") + "\n", {
++        status: 200,
++        headers: { "content-type": "text/event-stream" },
++      });
++    const fetch = createToolCallIdNormalizingFetch(baseFetch as any);
++    const out = (await (await fetch("http://x")).text())
++      .split("\n")
++      .filter(Boolean);
++
++    const chunk1 = JSON.parse(out[0].slice(5));
++    const [start, frag1] = chunk1.choices[0].delta.tool_calls;
++    expect(start.index).toBe(0);
++    expect(start.id).toBe("chatcmpl-tool-b7c2");
++    expect(frag1.index).toBe(0);
++
++    // The bumped index-1 fragment must be re-pointed at call 0.
++    const chunk2 = JSON.parse(out[1].slice(5));
++    expect(chunk2.choices[0].delta.tool_calls[0].index).toBe(0);
++    expect("id" in chunk2.choices[0].delta.tool_calls[0]).toBe(false);
++
++    // finish + DONE untouched.
++    expect(out[2]).toBe(lines[2]);
++    expect(out[3]).toBe("data: [DONE]");
++  });
++
++  it("keeps genuinely parallel calls distinct while collapsing their fragments", async () => {
++    const lines = [
++      `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"id":"c1","function":{"name":"grep","arguments":""},"index":0}]}}]}`,
++      `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"function":{"arguments":"{}"},"index":1}]}}]}`,
++      `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"id":"c2","function":{"name":"glob","arguments":""},"index":2}]}}]}`,
++      `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"function":{"arguments":"{}"},"index":3}]}}]}`,
++    ];
++    const baseFetch = async () =>
++      new Response(lines.join("\n") + "\n", {
++        status: 200,
++        headers: { "content-type": "text/event-stream" },
++      });
++    const fetch = createToolCallIdNormalizingFetch(baseFetch as any);
++    const out = (await (await fetch("http://x")).text())
++      .split("\n")
++      .filter(Boolean)
++      .map((l) => JSON.parse(l.slice(5)).choices[0].delta.tool_calls[0]);
++
++    expect(out[0].index).toBe(0); // grep starts call 0
++    expect(out[1].index).toBe(0); // its fragment follows it
++    expect(out[2].index).toBe(1); // glob starts call 1 (server said 2)
++    expect(out[3].index).toBe(1); // its fragment follows it
++  });
++});
++
++describe("createToolCallIdNormalizingFetch — buffer cap", () => {
++  it("fails open to pass-through when a single line exceeds the buffer cap", async () => {
++    // >4MiB with no newline: normalization must stop buffering and pass raw
++    // bytes through instead of exhausting memory.
++    const huge = "data: " + "x".repeat(5 * 1024 * 1024);
++    const tail = `\ndata: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":null,"function":{"name":"a","arguments":""}}]}}]}\n`;
++    const encoder = new TextEncoder();
++    const body = new ReadableStream({
++      start(controller) {
++        controller.enqueue(encoder.encode(huge));
++        controller.enqueue(encoder.encode(tail));
++        controller.close();
++      },
++    });
++    const baseFetch = async () =>
++      new Response(body, {
++        status: 200,
++        headers: { "content-type": "text/event-stream" },
++      });
++    const fetch = createToolCallIdNormalizingFetch(baseFetch as any);
++    const text = await (await fetch("http://x")).text();
++
++    // All bytes preserved, and the post-overflow tool-call line is NOT
++    // normalized (fail-open) — id stays null.
++    expect(text).toContain("x".repeat(1024));
++    expect(text).toContain('"id":null');
++    expect(text).not.toContain("call_norm_");
++  });
++});
++
++describe("createToolCallIdNormalizingFetch — interleaved parallel continuations", () => {
++  it("routes fragments by seen server index, not just the most recent call", async () => {
++    // Valid interleaved stream: both calls start, then their fragments
++    // alternate using correct server indices. Fragments must follow their
++    // own call — the recent-call fallback is only for unseen (quirk) indices.
++    const lines = [
++      `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"id":"c1","function":{"name":"grep","arguments":""},"index":0},{"id":"c2","function":{"name":"glob","arguments":""},"index":1}]}}]}`,
++      `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"function":{"arguments":"{\\"a\\":1"},"index":0}]}}]}`,
++      `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"function":{"arguments":"{\\"b\\":2"},"index":1}]}}]}`,
++      `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"function":{"arguments":"}"},"index":0}]}}]}`,
++      `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"function":{"arguments":"}"},"index":1}]}}]}`,
++    ];
++    const baseFetch = async () =>
++      new Response(lines.join("\n") + "\n", {
++        status: 200,
++        headers: { "content-type": "text/event-stream" },
++      });
++    const fetch = createToolCallIdNormalizingFetch(baseFetch as any);
++    const out = (await (await fetch("http://x")).text())
++      .split("\n")
++      .filter(Boolean)
++      .map((l) => JSON.parse(l.slice(5)).choices[0].delta.tool_calls);
++
++    expect(out[0].map((c: any) => c.index)).toEqual([0, 1]);
++    expect(out[1][0].index).toBe(0); // c1 fragment stays on call 0
++    expect(out[2][0].index).toBe(1); // c2 fragment stays on call 1
++    expect(out[3][0].index).toBe(0);
++    expect(out[4][0].index).toBe(1);
++  });
++});
+diff --git a/packages/providers/src/local/openai-compat.ts b/packages/providers/src/local/openai-compat.ts
+index dff3f4d..44a2de7 100644
+--- a/packages/providers/src/local/openai-compat.ts
++++ b/packages/providers/src/local/openai-compat.ts
+@@ -25,6 +25,135 @@ export function createLlamaCppProvider(baseUrl = "http://localhost:8080") {
+ // Custom OpenAI-compatible endpoints ([providers.custom.<name>] in config) —
+ // same protocol as LM Studio/llama.cpp but may sit behind a bearer token.
+ 
++/**
++ * SSE-normalizing fetch for broken tool-call index bookkeeping.
++ *
++ * Observed live from vLLM serving gpt-oss: a single logical tool call is
++ * streamed as `{id, function:{name,arguments:""}, index:0}` followed by bare
++ * argument fragments under a BUMPED index (`{function:{arguments:"…"},
++ * index:1}`) — the server increments `index` per fragment, not per call.
++ * @ai-sdk/openai-compatible treats each new index as a new call and
++ * hard-throws (`Expected 'id' to be a string.` / `Expected 'function.name'
++ * to be a string.`), killing the whole agent session.
++ *
++ * Normalization: entries that carry a `function.name` or an id START a call
++ * and get sequential normalized indices (with a synthesized id if missing);
++ * bare argument fragments are re-pointed at the most recently started call,
++ * whatever index the server claimed.
++ */
++export function createToolCallIdNormalizingFetch(
++  baseFetch: typeof globalThis.fetch = globalThis.fetch,
++): typeof globalThis.fetch {
++  return async (input, init) => {
++    const response = await baseFetch(input, init);
++    const contentType = response.headers.get("content-type") ?? "";
++    if (!response.body || !contentType.includes("text/event-stream")) {
++      return response;
++    }
++
++    // Per-choice stream state: server-claimed index of each call START mapped
++    // to its normalized index, plus the most recently started call (fallback
++    // target for quirk fragments whose server index was never seen as a
++    // start). Valid interleaved parallel streams route by the seen-index map;
++    // only unseen indices (the vLLM bump quirk) fall back to the open call.
++    const indexMap = new Map<number, Map<number, number>>();
++    const openCall = new Map<number, number>();
++    let synthCounter = 0;
++    const decoder = new TextDecoder();
++    const encoder = new TextEncoder();
++    let buffer = "";
++    // A single SSE line longer than this stops normalization for the rest of
++    // the stream (fail-open: bytes pass through untransformed, restoring
++    // pre-normalizer behavior) instead of buffering unboundedly — a broken or
++    // hostile server must not be able to exhaust process memory here.
++    const MAX_BUFFERED_LINE_BYTES = 4 * 1024 * 1024;
++    let passThrough = false;
++
++    const normalizeLine = (line: string): string => {
++      if (!line.startsWith("data:")) return line;
++      const payload = line.slice(5).trim();
++      if (!payload || payload === "[DONE]") return line;
++      try {
++        const json = JSON.parse(payload);
++        let changed = false;
++        for (const choice of json?.choices ?? []) {
++          const choiceIdx = typeof choice?.index === "number" ? choice.index : 0;
++          for (const tc of choice?.delta?.tool_calls ?? []) {
++            if (typeof tc?.index !== "number") continue;
++            const seen =
++              indexMap.get(choiceIdx) ??
++              indexMap.set(choiceIdx, new Map()).get(choiceIdx)!;
++            const isCallStart =
++              typeof tc?.function?.name === "string" ||
++              (typeof tc.id === "string" && tc.id.length > 0);
++            if (isCallStart) {
++              const normIndex = (openCall.get(choiceIdx) ?? -1) + 1;
++              openCall.set(choiceIdx, normIndex);
++              seen.set(tc.index, normIndex);
++              if (tc.index !== normIndex) {
++                tc.index = normIndex;
++                changed = true;
++              }
++              if (typeof tc.id !== "string" || tc.id.length === 0) {
++                tc.id = `call_norm_${synthCounter++}`;
++                changed = true;
++              }
++            } else {
++              // Known server index (valid stream, possibly interleaved) →
++              // route to that call. Unseen index → the vLLM bump quirk →
++              // fall back to the most recently started call.
++              const target = seen.get(tc.index) ?? openCall.get(choiceIdx);
++              if (target === undefined) continue; // fragment before any call — leave untouched
++              if (tc.index !== target) {
++                tc.index = target;
++                changed = true;
++              }
++              if ("id" in tc && tc.id == null) {
++                delete tc.id;
++                changed = true;
++              }
++            }
++          }
++        }
++        return changed ? `data: ${JSON.stringify(json)}` : line;
++      } catch {
++        // Non-JSON data line — pass through untouched.
++        return line;
++      }
++    };
++
++    const transform = new TransformStream<Uint8Array, Uint8Array>({
++      transform(chunk, controller) {
++        if (passThrough) {
++          controller.enqueue(chunk);
++          return;
++        }
++        buffer += decoder.decode(chunk, { stream: true });
++        if (buffer.length > MAX_BUFFERED_LINE_BYTES) {
++          passThrough = true;
++          controller.enqueue(encoder.encode(buffer));
++          buffer = "";
++          return;
++        }
++        const lines = buffer.split("\n");
++        buffer = lines.pop() ?? "";
++        for (const line of lines) {
++          controller.enqueue(encoder.encode(normalizeLine(line) + "\n"));
++        }
++      },
++      flush(controller) {
++        if (buffer) controller.enqueue(encoder.encode(normalizeLine(buffer)));
++      },
++    });
++
++    return new Response(response.body.pipeThrough(transform), {
++      status: response.status,
++      statusText: response.statusText,
++      headers: response.headers,
++    });
++  };
++}
++
+ export function createCustomProvider(
+   name: string,
+   baseUrl: string,
+@@ -35,6 +164,7 @@ export function createCustomProvider(
+     baseURL: `${baseUrl}/v1`,
+     ...(apiKey ? { headers: { Authorization: `Bearer ${apiKey}` } } : {}),
+     includeUsage: true,
++    fetch: createToolCallIdNormalizingFetch() as any,
+   });
+ }
+ 
+
+exec
+/bin/zsh -lc "rg -n -C 6 'repo-root|sandbox|installed|resolveRepoRoot|recent-call|unbounded|4MiB|P1' bench/iterations/002/reviews/iter-fixed.diff | tail -n 260" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+623-+  commitId?: string;
+624-+}> {
+625-+  const { contextWindow, keepRecent = 5, summarizeModel } = options;
+626-+
+627-+
+628-+codex
+629:+{"verdicts":[{"item":1,"status":"resolved","note":"computeOutputBudget includes normalized system-prompt text in its estimate and reserves 1024 tokens for tool schemas."},{"item":2,"status":"resolved","note":"Recognized checkpoints with a parameter suffix below 7B are capped at a 32768-token inferred context window."},{"item":3,"status":"resolved","note":"When the calculated remainder is positive but below 256, maxOutputTokens is set to that exact remainder."}],"new_P0_P1":[]}
+630-+tokens used
+631-+37,569
+632-diff --git a/bench/iterations/001/reviews/codex-final.out b/bench/iterations/001/reviews/codex-final.out
+633-index e69de29..383e5c7 100644
+634---- a/bench/iterations/001/reviews/codex-final.out
+635-+++ b/bench/iterations/001/reviews/codex-final.out
+636-@@ -0,0 +1 @@
+637:+{"verdicts":[{"item":1,"status":"resolved","note":"computeOutputBudget includes normalized system-prompt text in its estimate and reserves 1024 tokens for tool schemas."},{"item":2,"status":"resolved","note":"Recognized checkpoints with a parameter suffix below 7B are capped at a 32768-token inferred context window."},{"item":3,"status":"resolved","note":"When the calculated remainder is positive but below 256, maxOutputTokens is set to that exact remainder."}],"new_P0_P1":[]}
+638-diff --git a/bench/iterations/001/reviews/verdicts.json b/bench/iterations/001/reviews/verdicts.json
+639-index 773b58c..4606a98 100644
+640---- a/bench/iterations/001/reviews/verdicts.json
+641-+++ b/bench/iterations/001/reviews/verdicts.json
+642-@@ -9,7 +9,7 @@
+643-       "rounds": [
+644-         "R1: 4 findings, all verified real (output-budget overflow, overclaiming heuristics, refresh() dropping overrides, embedding models routable)",
+645:         "R2: 2/4 resolved; 2 refinements + 1 new P1 (floor overflow near-exhausted window) \u2014 all fixed with dedicated unit tests",
+646--        "R3: first attempt hung on stdin (codex exec background quirk; use < /dev/null); clean re-run launched at close"
+647:+        "R3: clean re-run (stdin closed) \u2014 all 3 refinements resolved, no new P0/P1"
+648-       ]
+649-     },
+650-     "qwen3-coder": {
+651-diff --git a/packages/eval/src/runner.ts b/packages/eval/src/runner.ts
+652-index 468f37e..bfcdda6 100644
+653---- a/packages/eval/src/runner.ts
+--
+666- 
+667-+/**
+668-+ * Walk parent directories from start until finding pnpm-workspace.yaml.
+669-+ * Returns the directory containing the workspace file.
+670-+ * Throws if not found within 15 levels.
+671-+ */
+672:+export function resolveRepoRoot(start: string): string {
+673-+  let current = resolve(start);
+674-+  const maxDepth = 15;
+675-+
+676-+  for (let i = 0; i < maxDepth; i++) {
+677-+    const workspaceFile = join(current, "pnpm-workspace.yaml");
+678-+    if (existsSync(workspaceFile)) {
+--
+689-+
+690-+  throw new Error(
+691-+    `Could not find pnpm-workspace.yaml walking up from "${start}" (searched ${maxDepth} levels). Introspection probes must run from inside the brainstorm repo — cd there, or supply RunnerOptions.projectDir.`,
+692-+  );
+693-+}
+694-+
+695: // Probes that operate against the real project (everything except sandboxed
+696- // code-correctness runs) get read-only tools. Every current introspection
+697- // probe only verifies grep/file_read/glob usage; leaving write/shell tools
+698-@@ -91,12 +119,19 @@ export async function runProbe(
+699:     // Determine workspace: code-correctness probes operate in sandbox,
+700-     // everything else operates against the brainstorm project so tools
+701-     // like grep/glob/file_read can find real files to introspect.
+702--    const configDir = options.projectDir ?? process.cwd();
+703--    const agentWorkspace: string =
+704-+    //
+705-+    // Repo-root discovery applies ONLY to introspection probes without an
+706-+    // explicit projectDir: an explicit projectDir is honored as-is, and
+707:+    // sandboxed probes never touch the repo — requiring a workspace marker
+708:+    // for them would break `brainstorm eval` for installed-CLI users running
+709-+    // outside a pnpm workspace.
+710-+    const isSandboxProbe =
+711:       probe.workspace === "sandbox" ||
+712--      (!probe.workspace && probe.capability === "code-correctness")
+713:-        ? sandboxDir
+714--        : configDir;
+715-+      (!probe.workspace && probe.capability === "code-correctness");
+716-+    const configDir =
+717-+      options.projectDir ??
+718:+      (isSandboxProbe ? process.cwd() : resolveRepoRoot(process.cwd()));
+719:+    const agentWorkspace: string = isSandboxProbe ? sandboxDir : configDir;
+720-     const config = loadConfig(configDir);
+721-     const db = getDb();
+722-     const registry = await createProviderRegistry(config);
+723-diff --git a/packages/eval/src/verifiers/typescript.ts b/packages/eval/src/verifiers/typescript.ts
+724-index 56ef103..75a4908 100644
+725---- a/packages/eval/src/verifiers/typescript.ts
+--
+885-+    expect(out[3].index).toBe(1); // its fragment follows it
+886-+  });
+887-+});
+888-+
+889-+describe("createToolCallIdNormalizingFetch — buffer cap", () => {
+890-+  it("fails open to pass-through when a single line exceeds the buffer cap", async () => {
+891:+    // >4MiB with no newline: normalization must stop buffering and pass raw
+892-+    // bytes through instead of exhausting memory.
+893-+    const huge = "data: " + "x".repeat(5 * 1024 * 1024);
+894-+    const tail = `\ndata: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":null,"function":{"name":"a","arguments":""}}]}}]}\n`;
+895-+    const encoder = new TextEncoder();
+896-+    const body = new ReadableStream({
+897-+      start(controller) {
+--
+917-+});
+918-+
+919-+describe("createToolCallIdNormalizingFetch — interleaved parallel continuations", () => {
+920-+  it("routes fragments by seen server index, not just the most recent call", async () => {
+921-+    // Valid interleaved stream: both calls start, then their fragments
+922-+    // alternate using correct server indices. Fragments must follow their
+923:+    // own call — the recent-call fallback is only for unseen (quirk) indices.
+924-+    const lines = [
+925-+      `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"id":"c1","function":{"name":"grep","arguments":""},"index":0},{"id":"c2","function":{"name":"glob","arguments":""},"index":1}]}}]}`,
+926-+      `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"function":{"arguments":"{\\"a\\":1"},"index":0}]}}]}`,
+927-+      `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"function":{"arguments":"{\\"b\\":2"},"index":1}]}}]}`,
+928-+      `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"function":{"arguments":"}"},"index":0}]}}]}`,
+929-+      `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"function":{"arguments":"}"},"index":1}]}}]}`,
+--
+990-+    let synthCounter = 0;
+991-+    const decoder = new TextDecoder();
+992-+    const encoder = new TextEncoder();
+993-+    let buffer = "";
+994-+    // A single SSE line longer than this stops normalization for the rest of
+995-+    // the stream (fail-open: bytes pass through untransformed, restoring
+996:+    // pre-normalizer behavior) instead of buffering unboundedly — a broken or
+997-+    // hostile server must not be able to exhaust process memory here.
+998-+    const MAX_BUFFERED_LINE_BYTES = 4 * 1024 * 1024;
+999-+    let passThrough = false;
+1000-+
+1001-+    const normalizeLine = (line: string): string => {
+1002-+      if (!line.startsWith("data:")) return line;
+
+exec
+/bin/zsh -lc "sed -n '1,220p' packages/eval/src/runner.ts && rg -n \"runProbe\\(|projectDir|workspace.*sandbox|code-correctness\" packages/eval/src packages/eval -g '*.ts'" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+import { loadConfig } from "@brainst0rm/config";
+import { getDb } from "@brainst0rm/db";
+import { createProviderRegistry } from "@brainst0rm/providers";
+import { BrainstormRouter, CostTracker } from "@brainst0rm/router";
+import { createDefaultToolRegistry, withWorkspace } from "@brainst0rm/tools";
+import {
+  runAgentLoop,
+  buildSystemPrompt,
+  SessionManager,
+} from "@brainst0rm/core";
+import { createLogger } from "@brainst0rm/shared";
+import {
+  mkdirSync,
+  mkdtempSync,
+  writeFileSync,
+  rmSync,
+  existsSync,
+} from "node:fs";
+import { join, resolve, sep, dirname } from "node:path";
+import { tmpdir } from "node:os";
+import type { Probe, ProbeResult } from "./types.js";
+import { scoreProbe } from "./scorer.js";
+
+const log = createLogger("eval");
+
+/**
+ * Walk parent directories from start until finding pnpm-workspace.yaml.
+ * Returns the directory containing the workspace file.
+ * Throws if not found within 15 levels.
+ */
+export function resolveRepoRoot(start: string): string {
+  let current = resolve(start);
+  const maxDepth = 15;
+
+  for (let i = 0; i < maxDepth; i++) {
+    const workspaceFile = join(current, "pnpm-workspace.yaml");
+    if (existsSync(workspaceFile)) {
+      return current;
+    }
+
+    const parent = dirname(current);
+    // Stop if we've reached the filesystem root (parent === current)
+    if (parent === current) {
+      break;
+    }
+    current = parent;
+  }
+
+  throw new Error(
+    `Could not find pnpm-workspace.yaml walking up from "${start}" (searched ${maxDepth} levels). Introspection probes must run from inside the brainstorm repo — cd there, or supply RunnerOptions.projectDir.`,
+  );
+}
+
+// Probes that operate against the real project (everything except sandboxed
+// code-correctness runs) get read-only tools. Every current introspection
+// probe only verifies grep/file_read/glob usage; leaving write/shell tools
+// enabled let a wayward model mutate the actual repo mid-eval (observed:
+// a probe agent created stray dirs and cleared node_modules symlinks).
+const READ_ONLY_PROBE_TOOLS = ["file_read", "list_dir", "glob", "grep"];
+
+export interface RunnerOptions {
+  /** Override the model ID (otherwise uses default routing) */
+  modelId?: string;
+  /** Project directory for context (default: cwd) */
+  projectDir?: string;
+  /** Timeout per probe in ms (default: 30000) */
+  defaultTimeout?: number;
+  /** Override max agentic steps per probe */
+  maxSteps?: number;
+}
+
+/**
+ * Run a single probe through the agentic loop and score the result.
+ */
+export async function runProbe(
+  probe: Probe,
+  options: RunnerOptions = {},
+): Promise<ProbeResult> {
+  const startTime = Date.now();
+  const timeout = probe.timeout_ms ?? options.defaultTimeout ?? 30000;
+
+  // Sandbox directory for probe setup files AND for code-correctness runs.
+  // Always created — scorer checks it for code_compiles — but the agent's
+  // actual workspace depends on probe.workspace.
+  //
+  // mkdtempSync (rather than join + mkdirSync with a Date.now() suffix)
+  // closes the TOCTOU window CodeQL flagged: an attacker on the same
+  // machine could otherwise pre-create the predictable path as a
+  // symlink to a sensitive directory before our mkdir runs, causing
+  // the subsequent writeFileSync to land outside the intended sandbox.
+  const sandboxDir = mkdtempSync(
+    join(tmpdir(), `brainstorm-eval-${probe.id}-`),
+  );
+
+  try {
+    // Write setup files. Probe definitions come from arbitrary JSONL
+    // (shared SWE-bench mirrors, --probes-dir, user-authored files) so
+    // a malicious key like "../../../.ssh/authorized_keys" could write
+    // outside the sandbox. Reject any path that resolves outside
+    // sandboxDir before touching the filesystem.
+    if (probe.setup?.files) {
+      const sandboxRoot = resolve(sandboxDir);
+      for (const [path, content] of Object.entries(probe.setup.files)) {
+        const fullPath = join(sandboxDir, path);
+        const resolvedPath = resolve(fullPath);
+        if (
+          resolvedPath !== sandboxRoot &&
+          !resolvedPath.startsWith(sandboxRoot + sep)
+        ) {
+          throw new Error(
+            `Probe ${probe.id}: setup file path escapes sandbox (${path})`,
+          );
+        }
+        mkdirSync(join(fullPath, ".."), { recursive: true });
+        writeFileSync(fullPath, content, "utf-8");
+      }
+    }
+
+    // Determine workspace: code-correctness probes operate in sandbox,
+    // everything else operates against the brainstorm project so tools
+    // like grep/glob/file_read can find real files to introspect.
+    //
+    // Repo-root discovery applies ONLY to introspection probes without an
+    // explicit projectDir: an explicit projectDir is honored as-is, and
+    // sandboxed probes never touch the repo — requiring a workspace marker
+    // for them would break `brainstorm eval` for installed-CLI users running
+    // outside a pnpm workspace.
+    const isSandboxProbe =
+      probe.workspace === "sandbox" ||
+      (!probe.workspace && probe.capability === "code-correctness");
+    const configDir =
+      options.projectDir ??
+      (isSandboxProbe ? process.cwd() : resolveRepoRoot(process.cwd()));
+    const agentWorkspace: string = isSandboxProbe ? sandboxDir : configDir;
+    const config = loadConfig(configDir);
+    const db = getDb();
+    const registry = await createProviderRegistry(config);
+    const costTracker = new CostTracker(db, config.budget);
+    const router = new BrainstormRouter(config, registry, costTracker);
+    const tools = createDefaultToolRegistry();
+    const sessionManager = new SessionManager(db);
+    const session = sessionManager.start(agentWorkspace);
+    const { prompt: systemPrompt } = buildSystemPrompt(agentWorkspace);
+
+    sessionManager.addUserMessage(probe.prompt);
+
+    const toolCalls: Array<{ name: string; argsPreview: string }> = [];
+    let output = "";
+    let steps = 0;
+
+    // Run with timeout — wrap in withWorkspace so path-based tools resolve
+    // paths relative to agentWorkspace. Code-correctness probes use sandbox
+    // (clean slate for generated files); everything else uses the project
+    // root so introspection tools can search real code.
+    const runPromise = withWorkspace(agentWorkspace, async () => {
+      for await (const event of runAgentLoop(sessionManager.getHistory(), {
+        config,
+        registry,
+        router,
+        costTracker,
+        tools,
+        sessionId: session.id,
+        projectPath: agentWorkspace,
+        systemPrompt,
+        ...(options.modelId && options.modelId !== "default"
+          ? { preferredModelId: options.modelId }
+          : {}),
+        ...(options.maxSteps ? { maxSteps: options.maxSteps } : {}),
+        // Project-workspace probes must not mutate the real project.
+        ...(agentWorkspace === sandboxDir
+          ? {}
+          : { roleToolFilter: { allowedTools: READ_ONLY_PROBE_TOOLS } }),
+      })) {
+        switch (event.type) {
+          case "text-delta":
+            output += event.delta;
+            break;
+          case "tool-call-start":
+            toolCalls.push({
+              name: event.toolName,
+              argsPreview: JSON.stringify(event.args).slice(0, 100),
+            });
+            steps++;
+            break;
+          case "error":
+            throw event.error;
+        }
+      }
+    });
+
+    // Race against timeout. Caller-owns the timer so we can clear it after
+    // the race — otherwise the abort listener stays attached and fires on an
+    // already-resolved promise for every probe that finishes under the
+    // timeout, calling reject() on nothing and retaining the closure.
+    const probeTimeoutController = new AbortController();
+    const probeTimeoutTimer = setTimeout(
+      () => probeTimeoutController.abort(),
+      timeout,
+    );
+    try {
+      await Promise.race([
+        runPromise,
+        new Promise((_, reject) => {
+          probeTimeoutController.signal.addEventListener(
+            "abort",
+            () => reject(new Error(`Probe timed out after ${timeout}ms`)),
+            { once: true },
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(probeTimeoutTimer);
+    }
+
+    const durationMs = Date.now() - startTime;
+    const cost = costTracker.getSessionCost();
+
+    // Score the result
+    const checks = scoreProbe(probe, { output, toolCalls, steps, sandboxDir });
+
+packages/eval/src/runner.ts:50:    `Could not find pnpm-workspace.yaml walking up from "${start}" (searched ${maxDepth} levels). Introspection probes must run from inside the brainstorm repo — cd there, or supply RunnerOptions.projectDir.`,
+packages/eval/src/runner.ts:55:// code-correctness runs) get read-only tools. Every current introspection
+packages/eval/src/runner.ts:65:  projectDir?: string;
+packages/eval/src/runner.ts:75:export async function runProbe(
+packages/eval/src/runner.ts:82:  // Sandbox directory for probe setup files AND for code-correctness runs.
+packages/eval/src/runner.ts:119:    // Determine workspace: code-correctness probes operate in sandbox,
+packages/eval/src/runner.ts:124:    // explicit projectDir: an explicit projectDir is honored as-is, and
+packages/eval/src/runner.ts:129:      probe.workspace === "sandbox" ||
+packages/eval/src/runner.ts:130:      (!probe.workspace && probe.capability === "code-correctness");
+packages/eval/src/runner.ts:132:      options.projectDir ??
+packages/eval/src/runner.ts:271:    const result = await runProbe(probe, options);
+packages/eval/src/runner.ts:50:    `Could not find pnpm-workspace.yaml walking up from "${start}" (searched ${maxDepth} levels). Introspection probes must run from inside the brainstorm repo — cd there, or supply RunnerOptions.projectDir.`,
+packages/eval/src/runner.ts:55:// code-correctness runs) get read-only tools. Every current introspection
+packages/eval/src/runner.ts:65:  projectDir?: string;
+packages/eval/src/runner.ts:75:export async function runProbe(
+packages/eval/src/runner.ts:82:  // Sandbox directory for probe setup files AND for code-correctness runs.
+packages/eval/src/runner.ts:119:    // Determine workspace: code-correctness probes operate in sandbox,
+packages/eval/src/runner.ts:124:    // explicit projectDir: an explicit projectDir is honored as-is, and
+packages/eval/src/runner.ts:129:      probe.workspace === "sandbox" ||
+packages/eval/src/runner.ts:130:      (!probe.workspace && probe.capability === "code-correctness");
+packages/eval/src/runner.ts:132:      options.projectDir ??
+packages/eval/src/runner.ts:271:    const result = await runProbe(probe, options);
+packages/eval/src/types.ts:6:  | "code-correctness"
+packages/eval/src/types.ts:52:   *   Use for code-correctness probes that expect a clean slate.
+packages/eval/src/types.ts:54:  workspace?: "project" | "sandbox";
+packages/eval/src/__tests__/scorer.test.ts:29:    capability: "code-correctness",
+packages/eval/src/export.ts:22:    "code-correctness": "codeGeneration",
+packages/eval/src/scorecard.ts:6:  'code-correctness': 'Code Correctness',
+packages/eval/src/scorecard.ts:25:    'tool-selection', 'tool-sequencing', 'code-correctness',
+packages/eval/src/scorecard.ts:58:    'tool-selection', 'tool-sequencing', 'code-correctness',
+packages/eval/src/__tests__/runner-repo-root.test.ts:49:    // at RunnerOptions.projectDir instead.
+packages/eval/src/__tests__/runner-repo-root.test.ts:50:    expect(() => resolveRepoRoot(deepDir)).toThrow(/RunnerOptions\.projectDir/);
+packages/eval/src/__tests__/scorecard.test.ts:16:      "code-correctness": { score: 0.6, passed: 3, total: 5 },
+packages/eval/src/__tests__/scorecard.test.ts:117:      "code-correctness": createDimension(0, 0, 0),
+packages/eval/src/storage.ts:63:    "code-correctness",
+packages/eval/src/__tests__/runner-sandbox.test.ts:7:  capability: "code-correctness",
+packages/eval/src/__tests__/runner-sandbox.test.ts:13:  workspace: "sandbox",
+packages/eval/src/__tests__/runner-sandbox.test.ts:32:    const result = await runProbe(malicious);
+packages/eval/src/__tests__/storage.test.ts:28:      "code-correctness",
+packages/eval/src/__tests__/storage.test.ts:66:      createProbeResult("code-correctness", false),
+packages/eval/src/__tests__/storage.test.ts:82:    expect(scorecard.dimensions["code-correctness"]).toEqual({
+packages/eval/src/__tests__/storage.test.ts:110:      createProbeResult("code-correctness", false),
+packages/eval/src/__tests__/storage.test.ts:145:      createProbeResult("code-correctness", false, { cost: 0.002 }),
+packages/eval/src/__tests__/runner-tool-scope.test.ts:56:    const result = await runProbe(probe({ capability: "tool-selection" }));
+packages/eval/src/__tests__/runner-tool-scope.test.ts:65:  it("leaves sandboxed code-correctness probes unrestricted", async () => {
+packages/eval/src/__tests__/runner-tool-scope.test.ts:66:    const result = await runProbe(
+packages/eval/src/__tests__/runner-tool-scope.test.ts:67:      probe({ id: "scope-sandbox", capability: "code-correctness" }),
+packages/eval/src/__tests__/runner-tool-scope.test.ts:75:  it("respects an explicit workspace: sandbox override", async () => {
+packages/eval/src/__tests__/runner-tool-scope.test.ts:76:    const result = await runProbe(
+packages/eval/src/__tests__/runner-tool-scope.test.ts:80:        workspace: "sandbox",
+packages/eval/src/__tests__/scorer.test.ts:29:    capability: "code-correctness",
+packages/eval/src/storage.ts:63:    "code-correctness",
+packages/eval/src/__tests__/loader.test.ts:22:      createProbe("probe-3", "code-correctness"),
+packages/eval/src/__tests__/loader.test.ts:36:      createProbe("probe-2", "code-correctness"),
+packages/eval/src/__tests__/loader.test.ts:86:      "code-correctness",
+packages/eval/src/__tests__/export.test.ts:36:      "code-correctness": 0,
+packages/eval/src/__tests__/export.test.ts:50:      "code-correctness": 0.7,
+packages/eval/src/__tests__/export.test.ts:90:  it("correctly maps code-correctness to codeGeneration", () => {
+packages/eval/src/__tests__/export.test.ts:91:    const run = createEvalRun([], { "code-correctness": 0.92 });
+packages/eval/src/__tests__/scorecard.test.ts:16:      "code-correctness": { score: 0.6, passed: 3, total: 5 },
+packages/eval/src/__tests__/scorecard.test.ts:117:      "code-correctness": createDimension(0, 0, 0),
+packages/eval/src/types.ts:6:  | "code-correctness"
+packages/eval/src/types.ts:52:   *   Use for code-correctness probes that expect a clean slate.
+packages/eval/src/types.ts:54:  workspace?: "project" | "sandbox";
+packages/eval/src/__tests__/runner-repo-root.test.ts:49:    // at RunnerOptions.projectDir instead.
+packages/eval/src/__tests__/runner-repo-root.test.ts:50:    expect(() => resolveRepoRoot(deepDir)).toThrow(/RunnerOptions\.projectDir/);
+packages/eval/src/__tests__/runner-tool-scope.test.ts:56:    const result = await runProbe(probe({ capability: "tool-selection" }));
+packages/eval/src/__tests__/runner-tool-scope.test.ts:65:  it("leaves sandboxed code-correctness probes unrestricted", async () => {
+packages/eval/src/__tests__/runner-tool-scope.test.ts:66:    const result = await runProbe(
+packages/eval/src/__tests__/runner-tool-scope.test.ts:67:      probe({ id: "scope-sandbox", capability: "code-correctness" }),
+packages/eval/src/__tests__/runner-tool-scope.test.ts:75:  it("respects an explicit workspace: sandbox override", async () => {
+packages/eval/src/__tests__/runner-tool-scope.test.ts:76:    const result = await runProbe(
+packages/eval/src/__tests__/runner-tool-scope.test.ts:80:        workspace: "sandbox",
+packages/eval/src/__tests__/storage.test.ts:28:      "code-correctness",
+packages/eval/src/__tests__/storage.test.ts:66:      createProbeResult("code-correctness", false),
+packages/eval/src/__tests__/storage.test.ts:82:    expect(scorecard.dimensions["code-correctness"]).toEqual({
+packages/eval/src/__tests__/storage.test.ts:110:      createProbeResult("code-correctness", false),
+packages/eval/src/__tests__/storage.test.ts:145:      createProbeResult("code-correctness", false, { cost: 0.002 }),
+packages/eval/src/__tests__/runner-sandbox.test.ts:7:  capability: "code-correctness",
+packages/eval/src/__tests__/runner-sandbox.test.ts:13:  workspace: "sandbox",
+packages/eval/src/__tests__/runner-sandbox.test.ts:32:    const result = await runProbe(malicious);
+packages/eval/src/__tests__/export.test.ts:36:      "code-correctness": 0,
+packages/eval/src/__tests__/export.test.ts:50:      "code-correctness": 0.7,
+packages/eval/src/__tests__/export.test.ts:90:  it("correctly maps code-correctness to codeGeneration", () => {
+packages/eval/src/__tests__/export.test.ts:91:    const run = createEvalRun([], { "code-correctness": 0.92 });
+packages/eval/src/__tests__/loader.test.ts:22:      createProbe("probe-3", "code-correctness"),
+packages/eval/src/__tests__/loader.test.ts:36:      createProbe("probe-2", "code-correctness"),
+packages/eval/src/__tests__/loader.test.ts:86:      "code-correctness",
+packages/eval/src/scorecard.ts:6:  'code-correctness': 'Code Correctness',
+packages/eval/src/scorecard.ts:25:    'tool-selection', 'tool-sequencing', 'code-correctness',
+packages/eval/src/scorecard.ts:58:    'tool-selection', 'tool-sequencing', 'code-correctness',
+packages/eval/src/export.ts:22:    "code-correctness": "codeGeneration",
+
+exec
+/bin/zsh -lc "sed -n '1,140p' packages/eval/src/__tests__/runner-repo-root.test.ts && sed -n '1,130p' packages/eval/src/__tests__/runner-tool-scope.test.ts && git status --short" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 3201ms:
+2026-07-18 03:28:37.889 xcodebuild[45166:9636367]  DVTFilePathFSEvents: Failed to start fs event stream.
+2026-07-18 03:28:38.183 xcodebuild[45166:9636366] [MT] DVTDeveloperPaths: Failed to get length of DARWIN_USER_CACHE_DIR from confstr(3), error = Error Domain=NSPOSIXErrorDomain Code=5 "Input/output error". Using NSCachesDirectory instead.
+git: warning: confstr() failed with code 5: couldn't get path of DARWIN_USER_TEMP_DIR; using /tmp instead
+git: error: couldn't create cache file '/tmp/xcrun_db-DVhYh9Pn' (errno=Operation not permitted)
+2026-07-18 03:28:38.966 xcodebuild[45188:9636528]  DVTFilePathFSEvents: Failed to start fs event stream.
+2026-07-18 03:28:39.146 xcodebuild[45188:9636527] [MT] DVTDeveloperPaths: Failed to get length of DARWIN_USER_CACHE_DIR from confstr(3), error = Error Domain=NSPOSIXErrorDomain Code=5 "Input/output error". Using NSCachesDirectory instead.
+ M bench/iterations/001/reviews/codex-final.err
+ M bench/iterations/001/reviews/codex-final.out
+ M bench/iterations/001/reviews/verdicts.json
+ M packages/eval/src/runner.ts
+ M packages/eval/src/verifiers/typescript.ts
+ M packages/providers/src/__tests__/custom-provider.test.ts
+ M packages/providers/src/local/openai-compat.ts
+?? bench/iterations/002/
+?? packages/eval/close-002.mjs
+?? packages/eval/gate-eval.mjs
+?? packages/eval/src/__tests__/runner-repo-root.test.ts
+
+exec
+/bin/zsh -lc 'pnpm --filter @brainst0rm/providers test -- --run src/__tests__/custom-provider.test.ts' in /Users/justin.jilg/Projects/brainstorm
+ exited 1 in 1173ms:
+
+> @brainst0rm/providers@0.14.4 test /Users/justin.jilg/Projects/brainstorm/packages/providers
+> vitest run -- --run src/__tests__/custom-provider.test.ts
+
+
+ RUN  v3.2.4 /Users/justin.jilg/Projects/brainstorm/packages/providers
+
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 8 unhandled errors during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯⎯⎯ Unhandled Error ⎯⎯⎯⎯⎯⎯⎯
+Error: EPERM: operation not permitted, mkdir '/var/folders/7w/zyxt9fv97w1fx0nv2tkjw2fr0000gp/T/9_6NZ-ut_IPtrl40ZNIs5/ssr'
+ ❯ mkdirSync node:fs:1350:26
+ ❯ Proxy.fetch ../../node_modules/.pnpm/vitest@3.2.4_@types+debug@4.1.13_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vitest/dist/chunks/coverage.DL5VHqXY.js:2471:5
+ ❯ EventEmitter.onMessage ../../node_modules/.pnpm/vitest@3.2.4_@types+debug@4.1.13_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vitest/dist/chunks/index.B521nVV-.js:103:20
+
+
+⎯⎯⎯⎯⎯⎯ Unhandled Error ⎯⎯⎯⎯⎯⎯⎯
+Error: EPERM: operation not permitted, mkdir '/var/folders/7w/zyxt9fv97w1fx0nv2tkjw2fr0000gp/T/9_6NZ-ut_IPtrl40ZNIs5/ssr'
+ ❯ mkdirSync node:fs:1350:26
+ ❯ Proxy.fetch ../../node_modules/.pnpm/vitest@3.2.4_@types+debug@4.1.13_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vitest/dist/chunks/coverage.DL5VHqXY.js:2471:5
+ ❯ EventEmitter.onMessage ../../node_modules/.pnpm/vitest@3.2.4_@types+debug@4.1.13_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vitest/dist/chunks/index.B521nVV-.js:103:20
+
+
+⎯⎯⎯⎯⎯⎯ Unhandled Error ⎯⎯⎯⎯⎯⎯⎯
+Error: EPERM: operation not permitted, mkdir '/var/folders/7w/zyxt9fv97w1fx0nv2tkjw2fr0000gp/T/9_6NZ-ut_IPtrl40ZNIs5/ssr'
+ ❯ mkdirSync node:fs:1350:26
+ ❯ Proxy.fetch ../../node_modules/.pnpm/vitest@3.2.4_@types+debug@4.1.13_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vitest/dist/chunks/coverage.DL5VHqXY.js:2471:5
+ ❯ EventEmitter.onMessage ../../node_modules/.pnpm/vitest@3.2.4_@types+debug@4.1.13_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vitest/dist/chunks/index.B521nVV-.js:103:20
+
+
+⎯⎯⎯⎯⎯⎯ Unhandled Error ⎯⎯⎯⎯⎯⎯⎯
+Error: EPERM: operation not permitted, mkdir '/var/folders/7w/zyxt9fv97w1fx0nv2tkjw2fr0000gp/T/9_6NZ-ut_IPtrl40ZNIs5/ssr'
+ ❯ mkdirSync node:fs:1350:26
+ ❯ Proxy.fetch ../../node_modules/.pnpm/vitest@3.2.4_@types+debug@4.1.13_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vitest/dist/chunks/coverage.DL5VHqXY.js:2471:5
+ ❯ EventEmitter.onMessage ../../node_modules/.pnpm/vitest@3.2.4_@types+debug@4.1.13_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vitest/dist/chunks/index.B521nVV-.js:103:20
+
+
+⎯⎯⎯⎯⎯⎯ Unhandled Error ⎯⎯⎯⎯⎯⎯⎯
+Error: EPERM: operation not permitted, mkdir '/var/folders/7w/zyxt9fv97w1fx0nv2tkjw2fr0000gp/T/9_6NZ-ut_IPtrl40ZNIs5/ssr'
+ ❯ mkdirSync node:fs:1350:26
+ ❯ Proxy.fetch ../../node_modules/.pnpm/vitest@3.2.4_@types+debug@4.1.13_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vitest/dist/chunks/coverage.DL5VHqXY.js:2471:5
+ ❯ EventEmitter.onMessage ../../node_modules/.pnpm/vitest@3.2.4_@types+debug@4.1.13_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vitest/dist/chunks/index.B521nVV-.js:103:20
+
+
+⎯⎯⎯⎯⎯⎯ Unhandled Error ⎯⎯⎯⎯⎯⎯⎯
+Error: EPERM: operation not permitted, mkdir '/var/folders/7w/zyxt9fv97w1fx0nv2tkjw2fr0000gp/T/9_6NZ-ut_IPtrl40ZNIs5/ssr'
+ ❯ mkdirSync node:fs:1350:26
+ ❯ Proxy.fetch ../../node_modules/.pnpm/vitest@3.2.4_@types+debug@4.1.13_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vitest/dist/chunks/coverage.DL5VHqXY.js:2471:5
+ ❯ EventEmitter.onMessage ../../node_modules/.pnpm/vitest@3.2.4_@types+debug@4.1.13_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vitest/dist/chunks/index.B521nVV-.js:103:20
+
+
+⎯⎯⎯⎯⎯⎯ Unhandled Error ⎯⎯⎯⎯⎯⎯⎯
+Error: EPERM: operation not permitted, mkdir '/var/folders/7w/zyxt9fv97w1fx0nv2tkjw2fr0000gp/T/9_6NZ-ut_IPtrl40ZNIs5/ssr'
+ ❯ mkdirSync node:fs:1350:26
+ ❯ Proxy.fetch ../../node_modules/.pnpm/vitest@3.2.4_@types+debug@4.1.13_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vitest/dist/chunks/coverage.DL5VHqXY.js:2471:5
+ ❯ EventEmitter.onMessage ../../node_modules/.pnpm/vitest@3.2.4_@types+debug@4.1.13_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vitest/dist/chunks/index.B521nVV-.js:103:20
+
+
+⎯⎯⎯⎯⎯⎯ Unhandled Error ⎯⎯⎯⎯⎯⎯⎯
+Error: EPERM: operation not permitted, mkdir '/var/folders/7w/zyxt9fv97w1fx0nv2tkjw2fr0000gp/T/9_6NZ-ut_IPtrl40ZNIs5/ssr'
+ ❯ mkdirSync node:fs:1350:26
+ ❯ Proxy.fetch ../../node_modules/.pnpm/vitest@3.2.4_@types+debug@4.1.13_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vitest/dist/chunks/coverage.DL5VHqXY.js:2471:5
+ ❯ process.processTicksAndRejections node:internal/process/task_queues:104:5
+ ❯ EventEmitter.onMessage ../../node_modules/.pnpm/vitest@3.2.4_@types+debug@4.1.13_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vitest/dist/chunks/index.B521nVV-.js:103:20
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files   (8)
+      Tests  no tests
+     Errors  8 errors
+   Start at  03:29:12
+   Duration  446ms (transform 18ms, setup 0ms, collect 0ms, tests 0ms, environment 0ms, prepare 0ms)
+
+/Users/justin.jilg/Projects/brainstorm/packages/providers:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @brainst0rm/providers@0.14.4 test: `vitest run -- --run src/__tests__/custom-provider.test.ts`
+Exit status 1
+
+codex
+{"verdicts":[{"item":1,"status":"resolved","note":"Per-choice server-index maps route known continuation indices to the correct normalized calls; only unseen indices use the recent-call fallback, and the interleaved test covers alternating parallel continuations."},{"item":2,"status":"resolved","note":"Buffered SSE state is capped at 4 MiB, after which normalization stops and subsequent data passes through; the oversized-line test verifies preservation and fail-open behavior."},{"item":3,"status":"resolved","note":"Repo-root discovery now applies only to introspection probes lacking projectDir; sandbox probes bypass it, explicit projectDir is used unchanged, and the error references RunnerOptions.projectDir instead of a nonexistent CLI flag."}],"new_P0_P1":[]}
+tokens used
+37,902

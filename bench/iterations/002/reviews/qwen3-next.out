@@ -1,0 +1,33 @@
+{"level":40,"time":1784359174676,"pid":42784,"hostname":"FVFGP251Q05N","name":"brainstorm","module":"storm","dropped":["deploy","entry_points"],"kept":["version","name","type","language","framework","runtime","build_command","test_command","routing"],"msg":"Partial STORM.md frontmatter — kept valid fields, dropped invalid ones"}
+[godmode] Msp: tools endpoint unavailable — No API key for Msp (BRAINSTORM_MSP_API_KEY)
+
+⠏ Classifying task...⠏ Selecting model...[capability] → h200/Qwen/Qwen3-Next-80B-A3B-Instruct-FP8
+⠏ Connecting...{"level":30,"time":1784359174894,"pid":42784,"hostname":"FVFGP251Q05N","name":"brainstorm","module":"router","entries":7,"totalSamples":11,"msg":"Loaded historical routing outcomes for Thompson sampling"}
+
+[tool: file_read]
+[done]
+
+[tool: file_read]
+[done]
+
+[tool: file_read]
+[done]
+{"level":30,"time":1784359182002,"pid":42784,"hostname":"FVFGP251Q05N","name":"brainstorm","module":"circuit-breaker","name":"llm:acronis:h200/Qwen/Qwen3-Next-80B-A3B-Instruct-FP8","msg":"Returning existing circuit breaker — options from first registration apply"}
+[
+  {
+    "file": "packages/providers/src/local/openai-compat.ts",
+    "line": 94,
+    "severity": "P1",
+    "finding": "Deleting 'id' property when null may cause downstream consumers to treat tool calls as incomplete; should preserve null to maintain protocol fidelity."
+  },
+  {
+    "file": "packages/eval/src/verifiers/typescript.ts",
+    "line": 20,
+    "severity": "P2",
+    "finding": "Using execFileSync with npx tsc without explicit cwd or env sanitization risks executing unintended binaries if PATH is manipulated."
+  }
+]
+
+[cost: $0.0000]
+{"level":30,"time":1784359182164,"pid":42784,"hostname":"FVFGP251Q05N","name":"brainstorm","module":"trajectory-analyzer","sessionCount":476,"filesScanned":476,"msg":"Analyzed trajectories"}
+{"level":30,"time":1784359182165,"pid":42784,"hostname":"FVFGP251Q05N","name":"brainstorm","module":"trajectory-analyzer","outputPath":"/Users/justin.jilg/.brainstorm/routing-intelligence.json","msg":"Routing intelligence updated"}

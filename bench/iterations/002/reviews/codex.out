@@ -1,0 +1,23 @@
+[
+  {
+    "file": "packages/providers/src/local/openai-compat.ts",
+    "line": 88,
+    "severity": "P1",
+    "finding": "Bare fragments are always assigned to the most recently started call. In a valid parallel-tool stream, continuations for index 0 and index 1 may be interleaved; after both starts, this rewrites index-0 fragments to index 1, corrupting arguments and leaving the first call incomplete. The added parallel-call test completes each call before starting the next, so it misses this case.",
+    "suggested_fix": "Maintain per-choice mappings from server index and call ID to normalized index. Route known indices/IDs to their existing calls, and use the current-call fallback only for previously unseen indices matching the observed vLLM quirk. Add an interleaved parallel-continuation test."
+  },
+  {
+    "file": "packages/providers/src/local/openai-compat.ts",
+    "line": 110,
+    "severity": "P1",
+    "finding": "The transformer buffers until a newline with no size limit. A malformed or hostile endpoint can stream an arbitrarily long line, causing unbounded memory growth and repeated string-copying before the downstream consumer can cancel.",
+    "suggested_fix": "Use a bounded byte-oriented line buffer. On exceeding a documented limit, either error the transform so cancellation propagates upstream or switch safely to byte-preserving pass-through. Test oversized lines and source cancellation."
+  },
+  {
+    "file": "packages/eval/src/runner.ts",
+    "line": 123,
+    "severity": "P1",
+    "finding": "Repository-root discovery is now mandatory before workspace selection, so even fully sandboxed code-correctness probes fail outside a Brainstorm source checkout. This regresses the exported runner and installed CLI for ordinary projects without pnpm-workspace.yaml; the error also recommends --project-dir although the eval CLI exposes no such option.",
+    "suggested_fix": "Separate configuration context, requested project workspace, and Brainstorm source-root discovery. Skip source-root resolution for sandbox probes, honor an explicit projectDir directly, and resolve a source root only for probes that actually introspect this repository. If CLI selection is intended, expose and forward the corresponding option."
+  }
+]

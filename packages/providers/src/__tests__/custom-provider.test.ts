@@ -6,6 +6,7 @@ import {
   resolveCustomProviderKey,
   discoverOpenAICompatModels,
   inferModelLimits,
+  createToolCallIdNormalizingFetch,
 } from "../local/openai-compat.js";
 
 describe("resolveCustomProviderKey", () => {
@@ -199,5 +200,199 @@ describe("discoverOpenAICompatModels with custom providers", () => {
 
     const init = fetchMock.mock.calls[0][1] ?? {};
     expect("headers" in init).toBe(false);
+  });
+});
+
+describe("createToolCallIdNormalizingFetch", () => {
+  const sseResponse = (lines: string[]) =>
+    new Response(lines.join("\n") + "\n", {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    });
+
+  const readAll = async (res: Response) => {
+    const text = await res.text();
+    return text.split("\n").filter(Boolean);
+  };
+
+  it("synthesizes an id for the first chunk of an id-less tool call", async () => {
+    const baseFetch = async () =>
+      sseResponse([
+        `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":null,"function":{"name":"file_read","arguments":"{\\"pa"}}]}}]}`,
+        `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"th\\":\\"x\\"}"}}]}}]}`,
+        "data: [DONE]",
+      ]);
+    const fetch = createToolCallIdNormalizingFetch(baseFetch as any);
+    const lines = await readAll(await fetch("http://x/v1/chat/completions"));
+
+    const first = JSON.parse(lines[0].slice(5));
+    expect(first.choices[0].delta.tool_calls[0].id).toBe("call_norm_0");
+    // Continuation chunk (legal null/absent id) left untouched.
+    const second = JSON.parse(lines[1].slice(5));
+    expect("id" in second.choices[0].delta.tool_calls[0]).toBe(false);
+    expect(lines[2]).toBe("data: [DONE]");
+  });
+
+  it("leaves server-provided ids and non-SSE responses untouched", async () => {
+    const withId = `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_abc","function":{"name":"grep"}}]}}]}`;
+    const sse = createToolCallIdNormalizingFetch(
+      (async () => sseResponse([withId, "data: [DONE]"])) as any,
+    );
+    const lines = await readAll(await sse("http://x"));
+    expect(lines[0]).toBe(withId);
+
+    const jsonBody = JSON.stringify({ ok: true });
+    const plain = createToolCallIdNormalizingFetch(
+      (async () =>
+        new Response(jsonBody, {
+          headers: { "content-type": "application/json" },
+        })) as any,
+    );
+    expect(await (await plain("http://x")).text()).toBe(jsonBody);
+  });
+
+  it("assigns distinct ids per tool-call index and survives split chunks", async () => {
+    const line1 = `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":null,"function":{"name":"a"}},{"index":1,"id":null,"function":{"name":"b"}}]}}]}`;
+    // Deliver the SSE payload split mid-line across two body chunks.
+    const encoder = new TextEncoder();
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(line1.slice(0, 40)));
+        controller.enqueue(encoder.encode(line1.slice(40) + "\ndata: [DONE]\n"));
+        controller.close();
+      },
+    });
+    const baseFetch = async () =>
+      new Response(body, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    const fetch = createToolCallIdNormalizingFetch(baseFetch as any);
+    const lines = await readAll(await fetch("http://x"));
+    const calls = JSON.parse(lines[0].slice(5)).choices[0].delta.tool_calls;
+    expect(calls[0].id).toBe("call_norm_0");
+    expect(calls[1].id).toBe("call_norm_1");
+  });
+});
+
+describe("createToolCallIdNormalizingFetch — vLLM index-bump quirk", () => {
+  it("re-points bumped-index argument fragments at the open call (captured gpt-oss shape)", async () => {
+    // Verbatim shape captured live from vLLM/gpt-oss: one logical call whose
+    // argument fragments arrive under a bumped index with no id/name.
+    const lines = [
+      `data: {"choices":[{"index":0,"delta":{"reasoning_content":" file_read.","tool_calls":[{"id":"chatcmpl-tool-b7c2","function":{"arguments":"","name":"file_read"},"type":"function","index":0},{"function":{"arguments":"{\\n "},"type":"function","index":0}]}}]}`,
+      `data: {"choices":[{"stop_reason":200012,"index":0,"delta":{"tool_calls":[{"function":{"arguments":" \\"path\\": \\"/tmp/x.txt\\"\\n}"},"type":"function","index":1}]}}]}`,
+      `data: {"choices":[{"finish_reason":"tool_calls","index":0,"delta":{}}]}`,
+      "data: [DONE]",
+    ];
+    const baseFetch = async () =>
+      new Response(lines.join("\n") + "\n", {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    const fetch = createToolCallIdNormalizingFetch(baseFetch as any);
+    const out = (await (await fetch("http://x")).text())
+      .split("\n")
+      .filter(Boolean);
+
+    const chunk1 = JSON.parse(out[0].slice(5));
+    const [start, frag1] = chunk1.choices[0].delta.tool_calls;
+    expect(start.index).toBe(0);
+    expect(start.id).toBe("chatcmpl-tool-b7c2");
+    expect(frag1.index).toBe(0);
+
+    // The bumped index-1 fragment must be re-pointed at call 0.
+    const chunk2 = JSON.parse(out[1].slice(5));
+    expect(chunk2.choices[0].delta.tool_calls[0].index).toBe(0);
+    expect("id" in chunk2.choices[0].delta.tool_calls[0]).toBe(false);
+
+    // finish + DONE untouched.
+    expect(out[2]).toBe(lines[2]);
+    expect(out[3]).toBe("data: [DONE]");
+  });
+
+  it("keeps genuinely parallel calls distinct while collapsing their fragments", async () => {
+    const lines = [
+      `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"id":"c1","function":{"name":"grep","arguments":""},"index":0}]}}]}`,
+      `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"function":{"arguments":"{}"},"index":1}]}}]}`,
+      `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"id":"c2","function":{"name":"glob","arguments":""},"index":2}]}}]}`,
+      `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"function":{"arguments":"{}"},"index":3}]}}]}`,
+    ];
+    const baseFetch = async () =>
+      new Response(lines.join("\n") + "\n", {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    const fetch = createToolCallIdNormalizingFetch(baseFetch as any);
+    const out = (await (await fetch("http://x")).text())
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l.slice(5)).choices[0].delta.tool_calls[0]);
+
+    expect(out[0].index).toBe(0); // grep starts call 0
+    expect(out[1].index).toBe(0); // its fragment follows it
+    expect(out[2].index).toBe(1); // glob starts call 1 (server said 2)
+    expect(out[3].index).toBe(1); // its fragment follows it
+  });
+});
+
+describe("createToolCallIdNormalizingFetch — buffer cap", () => {
+  it("fails open to pass-through when a single line exceeds the buffer cap", async () => {
+    // >4MiB with no newline: normalization must stop buffering and pass raw
+    // bytes through instead of exhausting memory.
+    const huge = "data: " + "x".repeat(5 * 1024 * 1024);
+    const tail = `\ndata: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":null,"function":{"name":"a","arguments":""}}]}}]}\n`;
+    const encoder = new TextEncoder();
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(huge));
+        controller.enqueue(encoder.encode(tail));
+        controller.close();
+      },
+    });
+    const baseFetch = async () =>
+      new Response(body, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    const fetch = createToolCallIdNormalizingFetch(baseFetch as any);
+    const text = await (await fetch("http://x")).text();
+
+    // All bytes preserved, and the post-overflow tool-call line is NOT
+    // normalized (fail-open) — id stays null.
+    expect(text).toContain("x".repeat(1024));
+    expect(text).toContain('"id":null');
+    expect(text).not.toContain("call_norm_");
+  });
+});
+
+describe("createToolCallIdNormalizingFetch — interleaved parallel continuations", () => {
+  it("routes fragments by seen server index, not just the most recent call", async () => {
+    // Valid interleaved stream: both calls start, then their fragments
+    // alternate using correct server indices. Fragments must follow their
+    // own call — the recent-call fallback is only for unseen (quirk) indices.
+    const lines = [
+      `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"id":"c1","function":{"name":"grep","arguments":""},"index":0},{"id":"c2","function":{"name":"glob","arguments":""},"index":1}]}}]}`,
+      `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"function":{"arguments":"{\\"a\\":1"},"index":0}]}}]}`,
+      `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"function":{"arguments":"{\\"b\\":2"},"index":1}]}}]}`,
+      `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"function":{"arguments":"}"},"index":0}]}}]}`,
+      `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"function":{"arguments":"}"},"index":1}]}}]}`,
+    ];
+    const baseFetch = async () =>
+      new Response(lines.join("\n") + "\n", {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    const fetch = createToolCallIdNormalizingFetch(baseFetch as any);
+    const out = (await (await fetch("http://x")).text())
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l.slice(5)).choices[0].delta.tool_calls);
+
+    expect(out[0].map((c: any) => c.index)).toEqual([0, 1]);
+    expect(out[1][0].index).toBe(0); // c1 fragment stays on call 0
+    expect(out[2][0].index).toBe(1); // c2 fragment stays on call 1
+    expect(out[3][0].index).toBe(0);
+    expect(out[4][0].index).toBe(1);
   });
 });

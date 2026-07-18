@@ -16,12 +16,40 @@ import {
   rmSync,
   existsSync,
 } from "node:fs";
-import { join, resolve, sep } from "node:path";
+import { join, resolve, sep, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import type { Probe, ProbeResult } from "./types.js";
 import { scoreProbe } from "./scorer.js";
 
 const log = createLogger("eval");
+
+/**
+ * Walk parent directories from start until finding pnpm-workspace.yaml.
+ * Returns the directory containing the workspace file.
+ * Throws if not found within 15 levels.
+ */
+export function resolveRepoRoot(start: string): string {
+  let current = resolve(start);
+  const maxDepth = 15;
+
+  for (let i = 0; i < maxDepth; i++) {
+    const workspaceFile = join(current, "pnpm-workspace.yaml");
+    if (existsSync(workspaceFile)) {
+      return current;
+    }
+
+    const parent = dirname(current);
+    // Stop if we've reached the filesystem root (parent === current)
+    if (parent === current) {
+      break;
+    }
+    current = parent;
+  }
+
+  throw new Error(
+    `Could not find pnpm-workspace.yaml walking up from "${start}" (searched ${maxDepth} levels). Introspection probes must run from inside the brainstorm repo — cd there, or supply RunnerOptions.projectDir.`,
+  );
+}
 
 // Probes that operate against the real project (everything except sandboxed
 // code-correctness runs) get read-only tools. Every current introspection
@@ -91,12 +119,19 @@ export async function runProbe(
     // Determine workspace: code-correctness probes operate in sandbox,
     // everything else operates against the brainstorm project so tools
     // like grep/glob/file_read can find real files to introspect.
-    const configDir = options.projectDir ?? process.cwd();
-    const agentWorkspace: string =
+    //
+    // Repo-root discovery applies ONLY to introspection probes without an
+    // explicit projectDir: an explicit projectDir is honored as-is, and
+    // sandboxed probes never touch the repo — requiring a workspace marker
+    // for them would break `brainstorm eval` for installed-CLI users running
+    // outside a pnpm workspace.
+    const isSandboxProbe =
       probe.workspace === "sandbox" ||
-      (!probe.workspace && probe.capability === "code-correctness")
-        ? sandboxDir
-        : configDir;
+      (!probe.workspace && probe.capability === "code-correctness");
+    const configDir =
+      options.projectDir ??
+      (isSandboxProbe ? process.cwd() : resolveRepoRoot(process.cwd()));
+    const agentWorkspace: string = isSandboxProbe ? sandboxDir : configDir;
     const config = loadConfig(configDir);
     const db = getDb();
     const registry = await createProviderRegistry(config);

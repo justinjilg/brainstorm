@@ -1,0 +1,21 @@
+{
+  "seed": "6fc978af",
+  "mandatory": {
+    "seat": "codex",
+    "axis": "architecture"
+  },
+  "drawn": [
+    {
+      "seat": "consensus-workflow",
+      "role": "panel",
+      "model": "workflow:consensus-review",
+      "axis": "security"
+    },
+    {
+      "seat": "qwen3-next",
+      "role": "code-reviewer",
+      "model": "acronis:h200/Qwen/Qwen3-Next-80B-A3B-Instruct-FP8",
+      "axis": "security"
+    }
+  ]
+}

@@ -25,6 +25,135 @@ export function createLlamaCppProvider(baseUrl = "http://localhost:8080") {
 // Custom OpenAI-compatible endpoints ([providers.custom.<name>] in config) —
 // same protocol as LM Studio/llama.cpp but may sit behind a bearer token.
 
+/**
+ * SSE-normalizing fetch for broken tool-call index bookkeeping.
+ *
+ * Observed live from vLLM serving gpt-oss: a single logical tool call is
+ * streamed as `{id, function:{name,arguments:""}, index:0}` followed by bare
+ * argument fragments under a BUMPED index (`{function:{arguments:"…"},
+ * index:1}`) — the server increments `index` per fragment, not per call.
+ * @ai-sdk/openai-compatible treats each new index as a new call and
+ * hard-throws (`Expected 'id' to be a string.` / `Expected 'function.name'
+ * to be a string.`), killing the whole agent session.
+ *
+ * Normalization: entries that carry a `function.name` or an id START a call
+ * and get sequential normalized indices (with a synthesized id if missing);
+ * bare argument fragments are re-pointed at the most recently started call,
+ * whatever index the server claimed.
+ */
+export function createToolCallIdNormalizingFetch(
+  baseFetch: typeof globalThis.fetch = globalThis.fetch,
+): typeof globalThis.fetch {
+  return async (input, init) => {
+    const response = await baseFetch(input, init);
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!response.body || !contentType.includes("text/event-stream")) {
+      return response;
+    }
+
+    // Per-choice stream state: server-claimed index of each call START mapped
+    // to its normalized index, plus the most recently started call (fallback
+    // target for quirk fragments whose server index was never seen as a
+    // start). Valid interleaved parallel streams route by the seen-index map;
+    // only unseen indices (the vLLM bump quirk) fall back to the open call.
+    const indexMap = new Map<number, Map<number, number>>();
+    const openCall = new Map<number, number>();
+    let synthCounter = 0;
+    const decoder = new TextDecoder();
+    const encoder = new TextEncoder();
+    let buffer = "";
+    // A single SSE line longer than this stops normalization for the rest of
+    // the stream (fail-open: bytes pass through untransformed, restoring
+    // pre-normalizer behavior) instead of buffering unboundedly — a broken or
+    // hostile server must not be able to exhaust process memory here.
+    const MAX_BUFFERED_LINE_BYTES = 4 * 1024 * 1024;
+    let passThrough = false;
+
+    const normalizeLine = (line: string): string => {
+      if (!line.startsWith("data:")) return line;
+      const payload = line.slice(5).trim();
+      if (!payload || payload === "[DONE]") return line;
+      try {
+        const json = JSON.parse(payload);
+        let changed = false;
+        for (const choice of json?.choices ?? []) {
+          const choiceIdx = typeof choice?.index === "number" ? choice.index : 0;
+          for (const tc of choice?.delta?.tool_calls ?? []) {
+            if (typeof tc?.index !== "number") continue;
+            const seen =
+              indexMap.get(choiceIdx) ??
+              indexMap.set(choiceIdx, new Map()).get(choiceIdx)!;
+            const isCallStart =
+              typeof tc?.function?.name === "string" ||
+              (typeof tc.id === "string" && tc.id.length > 0);
+            if (isCallStart) {
+              const normIndex = (openCall.get(choiceIdx) ?? -1) + 1;
+              openCall.set(choiceIdx, normIndex);
+              seen.set(tc.index, normIndex);
+              if (tc.index !== normIndex) {
+                tc.index = normIndex;
+                changed = true;
+              }
+              if (typeof tc.id !== "string" || tc.id.length === 0) {
+                tc.id = `call_norm_${synthCounter++}`;
+                changed = true;
+              }
+            } else {
+              // Known server index (valid stream, possibly interleaved) →
+              // route to that call. Unseen index → the vLLM bump quirk →
+              // fall back to the most recently started call.
+              const target = seen.get(tc.index) ?? openCall.get(choiceIdx);
+              if (target === undefined) continue; // fragment before any call — leave untouched
+              if (tc.index !== target) {
+                tc.index = target;
+                changed = true;
+              }
+              if ("id" in tc && tc.id == null) {
+                delete tc.id;
+                changed = true;
+              }
+            }
+          }
+        }
+        return changed ? `data: ${JSON.stringify(json)}` : line;
+      } catch {
+        // Non-JSON data line — pass through untouched.
+        return line;
+      }
+    };
+
+    const transform = new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        if (passThrough) {
+          controller.enqueue(chunk);
+          return;
+        }
+        buffer += decoder.decode(chunk, { stream: true });
+        if (buffer.length > MAX_BUFFERED_LINE_BYTES) {
+          passThrough = true;
+          controller.enqueue(encoder.encode(buffer));
+          buffer = "";
+          return;
+        }
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          controller.enqueue(encoder.encode(normalizeLine(line) + "\n"));
+        }
+      },
+      flush(controller) {
+        if (buffer) controller.enqueue(encoder.encode(normalizeLine(buffer)));
+      },
+    });
+
+    return new Response(response.body.pipeThrough(transform), {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
+  };
+}
+
 export function createCustomProvider(
   name: string,
   baseUrl: string,
@@ -35,6 +164,7 @@ export function createCustomProvider(
     baseURL: `${baseUrl}/v1`,
     ...(apiKey ? { headers: { Authorization: `Bearer ${apiKey}` } } : {}),
     includeUsage: true,
+    fetch: createToolCallIdNormalizingFetch() as any,
   });
 }
 
