@@ -12,6 +12,10 @@ export {
   getOutcomeAuditLog,
   getConvergenceAlerts,
   getModelDistribution,
+  createRoutingLearningState,
+  getRoutingLearningState,
+  __setRoutingLearningState,
+  type RoutingLearningState,
   type OutcomeAuditEntry,
   type ConvergenceAlert,
 } from "./strategies/learned.js";

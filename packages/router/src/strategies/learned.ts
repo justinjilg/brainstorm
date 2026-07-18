@@ -26,8 +26,35 @@ export interface ModelStats {
 
 const log = createLogger("learned-strategy");
 
-// In-memory stats — loaded from DB on init, updated per-turn, persisted per-outcome
-const modelStats = new Map<string, ModelStats>();
+// ── Learning state (injectable) ──────────────────────────────────────
+// The cross-session flywheel is INTENTIONALLY process-global — routing learns
+// across runs. But module globals give no isolation for tests or for a
+// deliberately separate router instance. Bundling the state behind live `let`
+// bindings + a setter keeps every function reading the current instance with
+// no logic change, while `__setRoutingLearningState` allows swapping a fresh
+// state (test isolation) without destroying the default flywheel.
+
+export interface RoutingLearningState {
+  modelStats: Map<string, ModelStats>;
+  recentOutcomes: Map<string, boolean[]>;
+  quarantinedUntil: Map<string, number>;
+  auditLog: OutcomeAuditEntry[];
+  convergenceAlerts: ConvergenceAlert[];
+}
+
+export function createRoutingLearningState(): RoutingLearningState {
+  return {
+    modelStats: new Map(),
+    recentOutcomes: new Map(),
+    quarantinedUntil: new Map(),
+    auditLog: [],
+    convergenceAlerts: [],
+  };
+}
+
+// In-memory stats — loaded from DB on init, updated per-turn, persisted per-outcome.
+// `let` (not const) so __setRoutingLearningState can point them at a new instance.
+let modelStats = new Map<string, ModelStats>();
 
 // ── Quarantine ─────────────────────────────────────────────────────
 // A model that fails almost every recent attempt (e.g. a local endpoint that
@@ -41,8 +68,8 @@ const QUARANTINE_WINDOW = 10;
 const QUARANTINE_FAILURE_RATE = 0.8;
 const QUARANTINE_COOLDOWN_MS = 30 * 60 * 1000;
 
-const recentOutcomes = new Map<string, boolean[]>();
-const quarantinedUntil = new Map<string, number>();
+let recentOutcomes = new Map<string, boolean[]>();
+let quarantinedUntil = new Map<string, number>();
 
 export function isQuarantined(modelId: string, now = Date.now()): boolean {
   const until = quarantinedUntil.get(modelId);
@@ -118,6 +145,11 @@ export function _resetQuarantineForTests(): void {
   quarantinedUntil.clear();
 }
 
+/** Test-only: reset ALL learning state to a fresh instance. */
+export function _resetLearningStateForTests(): void {
+  __setRoutingLearningState(createRoutingLearningState());
+}
+
 // ── Audit Trail ────────────────────────────────────────────────────
 
 export interface OutcomeAuditEntry {
@@ -136,9 +168,33 @@ export interface ConvergenceAlert {
   timestamp: number;
 }
 
-const auditLog: OutcomeAuditEntry[] = [];
-const convergenceAlerts: ConvergenceAlert[] = [];
+let auditLog: OutcomeAuditEntry[] = [];
+let convergenceAlerts: ConvergenceAlert[] = [];
 const MAX_AUDIT_ENTRIES = 500;
+
+/**
+ * Swap the process learning state. Every stateful function reads the live
+ * `let` bindings, so this atomically re-points them at `s`. Isolation +
+ * testability without threading an instance through every call site.
+ */
+export function __setRoutingLearningState(s: RoutingLearningState): void {
+  modelStats = s.modelStats;
+  recentOutcomes = s.recentOutcomes;
+  quarantinedUntil = s.quarantinedUntil;
+  auditLog = s.auditLog;
+  convergenceAlerts = s.convergenceAlerts;
+}
+
+/** Snapshot the current state's containers (by reference). */
+export function getRoutingLearningState(): RoutingLearningState {
+  return {
+    modelStats,
+    recentOutcomes,
+    quarantinedUntil,
+    auditLog,
+    convergenceAlerts,
+  };
+}
 /**
  * Bound convergenceAlerts same way auditLog is bounded. The 5-
  * minute dedup window prevents RAPID growth from the same task/

@@ -84,3 +84,30 @@ describe("learned strategy — quarantine map bounds", () => {
     expect(isQuarantined("acronis:broken/model-0")).toBe(false);
   });
 });
+
+describe("learned strategy — injectable learning state", () => {
+  it("swapping to a fresh state isolates quarantine/stats (no cross-instance leak)", async () => {
+    const {
+      createRoutingLearningState,
+      __setRoutingLearningState,
+      getRoutingLearningState,
+    } = await import("../strategies/learned.js");
+
+    // Instance 1: quarantine a model.
+    __setRoutingLearningState(createRoutingLearningState());
+    for (let i = 0; i < 10; i++)
+      recordOutcome("code-generation", "acronis:broken/model", false, 100, 0);
+    expect(isQuarantined("acronis:broken/model")).toBe(true);
+    const first = getRoutingLearningState();
+
+    // Instance 2: a fresh state — the model is NOT quarantined here.
+    __setRoutingLearningState(createRoutingLearningState());
+    expect(isQuarantined("acronis:broken/model")).toBe(false);
+
+    // Instance 1 still holds its quarantine (state was swapped, not mutated).
+    expect(first.quarantinedUntil.has("acronis:broken/model")).toBe(true);
+
+    // Restore the default process state so other tests are unaffected.
+    __setRoutingLearningState(createRoutingLearningState());
+  });
+});
