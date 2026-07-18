@@ -14,6 +14,7 @@ import {
   type SandboxPoolConfig,
 } from "../sandbox/sandbox-pool.js";
 import { getWorkspace } from "../workspace-context.js";
+import { getSessionId } from "../session-context.js";
 
 const DEFAULT_TIMEOUT = 120_000;
 const BACKGROUND_TIMEOUT = 600_000; // 10 minutes max for background tasks
@@ -253,6 +254,9 @@ interface BackgroundTask {
   id: string;
   command: string;
   startedAt: number;
+  /** Session that spawned this job — completion events route back to it even
+   *  though the job (by design) outlives its originating turn. */
+  sessionId: string;
 }
 
 const backgroundTasks = new Map<string, BackgroundTask>();
@@ -267,34 +271,52 @@ type BackgroundEvent = {
   stderr: string;
 };
 
-let backgroundEventHandler: ((event: BackgroundEvent) => void) | null = null;
-const pendingEvents: BackgroundEvent[] = [];
+// Per-session handlers + pending queues: a single module-global handler meant
+// two concurrent runs cross-wired their shell output (one run's background
+// completion / streamed chunk fired the other's handler). Keyed by session id;
+// bounded so a missed teardown can't leak.
+type BackgroundEventHandler = (event: BackgroundEvent) => void;
+type ToolOutputHandler = (event: { toolName: string; chunk: string }) => void;
 const MAX_PENDING_EVENTS = 100;
+const MAX_TRACKED_SESSIONS = 256;
+const backgroundEventHandlers = new Map<string, BackgroundEventHandler>();
+const pendingEventsBySession = new Map<string, BackgroundEvent[]>();
+const toolOutputHandlers = new Map<string, ToolOutputHandler>();
+
+function boundedSet<V>(map: Map<string, V>, key: string, value: V): void {
+  if (!map.has(key) && map.size >= MAX_TRACKED_SESSIONS) {
+    const oldest = map.keys().next().value;
+    if (oldest !== undefined) map.delete(oldest);
+  }
+  map.set(key, value);
+}
 
 /** Set a callback for background task completion events. Replays any queued events. */
 export function setBackgroundEventHandler(
-  handler: typeof backgroundEventHandler,
+  handler: BackgroundEventHandler | null,
+  sessionId: string = getSessionId(),
 ): void {
-  backgroundEventHandler = handler;
-  if (handler && pendingEvents.length > 0) {
-    // Replay events that arrived before handler was registered
-    for (const event of pendingEvents) handler(event);
+  if (handler) {
+    boundedSet(backgroundEventHandlers, sessionId, handler);
+    const pending = pendingEventsBySession.get(sessionId);
+    if (pending) for (const event of pending) handler(event);
+  } else {
+    backgroundEventHandlers.delete(sessionId);
   }
-  // Clear pending events on every handler change (including null).
-  // Without this, orphaned events from background test runs accumulate
-  // in the module-level array holding full stdout/stderr strings.
-  pendingEvents.length = 0;
+  // Clear this session's pending events on every handler change (including
+  // null) — orphaned events hold full stdout/stderr strings.
+  pendingEventsBySession.delete(sessionId);
 }
 
 // ── Tool Output Streaming ──────────────────────────────────────
 
-let toolOutputHandler:
-  | ((event: { toolName: string; chunk: string }) => void)
-  | null = null;
-
 /** Set a callback for streaming tool output chunks during foreground execution. */
-export function setToolOutputHandler(handler: typeof toolOutputHandler): void {
-  toolOutputHandler = handler;
+export function setToolOutputHandler(
+  handler: ToolOutputHandler | null,
+  sessionId: string = getSessionId(),
+): void {
+  if (handler) boundedSet(toolOutputHandlers, sessionId, handler);
+  else toolOutputHandlers.delete(sessionId);
 }
 
 /** Get list of currently running background tasks. */
@@ -464,6 +486,7 @@ export const shellTool = defineTool({
     // Background mode: spawn and return immediately, notify on completion
     if (background) {
       const taskId = `bg-${nextTaskId++}`;
+      const bgSessionId = getSessionId();
       const timeoutMs = timeout ?? BACKGROUND_TIMEOUT;
       const child = spawn("/bin/sh", ["-c", command], {
         cwd: cwd ?? getWorkspace(),
@@ -487,6 +510,7 @@ export const shellTool = defineTool({
         id: taskId,
         command,
         startedAt: Date.now(),
+        sessionId: bgSessionId,
       });
 
       const bgStdout = new OutputCollector();
@@ -539,11 +563,21 @@ export const shellTool = defineTool({
           stdout: bgStdout.toString(),
           stderr: stderr ?? bgStderr.toString(),
         };
-        if (backgroundEventHandler) {
-          backgroundEventHandler(event);
+        // Route to the ORIGINATING session's handler — not "the current
+        // handler" — since the job outlived its turn and another session may
+        // now be active.
+        const handler = backgroundEventHandlers.get(bgSessionId);
+        if (handler) {
+          handler(event);
         } else {
-          if (pendingEvents.length < MAX_PENDING_EVENTS)
-            pendingEvents.push(event);
+          const pending =
+            pendingEventsBySession.get(bgSessionId) ??
+            (() => {
+              const q: BackgroundEvent[] = [];
+              boundedSet(pendingEventsBySession, bgSessionId, q);
+              return q;
+            })();
+          if (pending.length < MAX_PENDING_EVENTS) pending.push(event);
         }
       };
 
@@ -578,6 +612,10 @@ export const shellTool = defineTool({
 
     const timeoutMs = timeout ?? DEFAULT_TIMEOUT;
 
+    // Capture the session now (ALS is active here) — the stream 'data'
+    // callbacks below fire async, where the context may not propagate.
+    const fgSessionId = getSessionId();
+
     return new Promise((resolve) => {
       const stdout = new OutputCollector();
       const stderr = new OutputCollector();
@@ -596,11 +634,11 @@ export const shellTool = defineTool({
 
       child.stdout.on("data", (chunk: string) => {
         stdout.append(chunk);
-        if (toolOutputHandler) toolOutputHandler({ toolName: "shell", chunk });
+        toolOutputHandlers.get(fgSessionId)?.({ toolName: "shell", chunk });
       });
       child.stderr.on("data", (chunk: string) => {
         stderr.append(chunk);
-        if (toolOutputHandler) toolOutputHandler({ toolName: "shell", chunk });
+        toolOutputHandlers.get(fgSessionId)?.({ toolName: "shell", chunk });
       });
 
       const timer = setTimeout(() => {
