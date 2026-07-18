@@ -31,6 +31,7 @@ import {
   configureSandbox,
   teardownDockerSandbox,
   getSandboxPool,
+  enterWorkspace,
 } from "@brainst0rm/tools";
 import {
   runAgentLoop,
@@ -2034,6 +2035,13 @@ program
       const costTracker = new CostTracker(db, config.budget);
       const tools = createDefaultToolRegistry();
       const runProjectPath = process.cwd();
+      // Pin the workspace context for the whole run. Path-based tools resolve
+      // via getWorkspace(), whose process.cwd() fallback is only read at
+      // tool-execution time — without this pin, any cwd drift between startup
+      // and a tool call lands file writes in the wrong directory ($HOME was
+      // observed). enterWorkspace (vs withWorkspace) because the event loop
+      // below is a for-await we can't wrap in a callback.
+      enterWorkspace(runProjectPath);
 
       // Wire memory tool for run command
       {

@@ -14,6 +14,19 @@ const localProviderSchema = z.object({
   autoDiscover: z.boolean().default(true),
 });
 
+// Arbitrary OpenAI-compatible endpoints (corporate LLM gateways, vLLM,
+// LiteLLM proxies …). Unlike the fixed local slots these may require a
+// bearer token, resolved from apiKeyEnv first, then apiKeyFile.
+const customProviderSchema = z.object({
+  enabled: z.boolean().default(true),
+  baseUrl: z.string(),
+  /** Name of the env var holding the bearer token. */
+  apiKeyEnv: z.string().optional(),
+  /** Path to a file whose trimmed contents are the bearer token ("~/" ok). */
+  apiKeyFile: z.string().optional(),
+  autoDiscover: z.boolean().default(true),
+});
+
 const providersSchema = z.object({
   gateway: gatewayProviderSchema.default({}),
   ollama: localProviderSchema.default({ baseUrl: "http://localhost:11434" }),
@@ -22,6 +35,10 @@ const providersSchema = z.object({
     baseUrl: "http://localhost:8080",
     enabled: false,
   }),
+  // Keyed by provider name — becomes the model-id prefix ("<name>:<model>").
+  // Names must not collide with built-in providers (ollama, lmstudio,
+  // llamacpp, anthropic, openai, google, deepseek, moonshot, brainstormrouter).
+  custom: z.record(customProviderSchema).default({}),
 });
 
 // ── Compaction Config ────────────────────────────────────────────────

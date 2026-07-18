@@ -40,6 +40,38 @@ describe("Config Schema", () => {
     }
   });
 
+  test("accepts custom OpenAI-compatible providers and defaults custom to {}", () => {
+    const empty = brainstormConfigSchema.safeParse({});
+    expect(empty.success).toBe(true);
+    if (empty.success) {
+      expect(empty.data.providers.custom).toEqual({});
+    }
+
+    const result = brainstormConfigSchema.safeParse({
+      providers: {
+        custom: {
+          acronis: {
+            baseUrl: "https://local-llm.adc.corp.acronis.com",
+            apiKeyFile: "~/.acronis_llm_key",
+          },
+        },
+      },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const acronis = result.data.providers.custom.acronis;
+      expect(acronis.enabled).toBe(true);
+      expect(acronis.autoDiscover).toBe(true);
+      expect(acronis.apiKeyEnv).toBeUndefined();
+    }
+
+    // baseUrl is the one required field
+    const missingBase = brainstormConfigSchema.safeParse({
+      providers: { custom: { broken: {} } },
+    });
+    expect(missingBase.success).toBe(false);
+  });
+
   test("accepts all AgentRole variants from shared types", () => {
     for (const role of ALL_AGENT_ROLES) {
       const result = brainstormConfigSchema.safeParse({

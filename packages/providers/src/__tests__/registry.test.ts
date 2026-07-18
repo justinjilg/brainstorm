@@ -137,6 +137,38 @@ describe("createProviderRegistry", () => {
     );
   });
 
+  it("registers custom OpenAI-compatible providers and resolves their model ids", async () => {
+    const config = createConfig() as any;
+    config.providers.custom = {
+      acme: {
+        enabled: true,
+        baseUrl: "http://llm.acme.internal",
+        apiKeyEnv: "ACME_LLM_KEY",
+        autoDiscover: false,
+      },
+      disabled: {
+        enabled: false,
+        baseUrl: "http://off.acme.internal",
+        autoDiscover: false,
+      },
+    };
+
+    const registry = await createProviderRegistry(
+      config,
+      createResolvedKeys({ ACME_LLM_KEY: "acme-token" }),
+    );
+
+    // "<name>:<model>" resolves through the custom provider, including
+    // model ids that themselves contain slashes.
+    const model = registry.getProvider("acme:h200/some-model");
+    expect(model).toBeDefined();
+    expect(model.modelId).toBe("h200/some-model");
+
+    expect(() => registry.getProvider("disabled:x")).toThrow(
+      /Cannot resolve a provider/,
+    );
+  });
+
   it("looks up models by ID", async () => {
     const targetModel = CLOUD_MODELS.find(
       (model) => model.provider === "anthropic",

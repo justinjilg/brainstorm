@@ -23,6 +23,13 @@ import { scoreProbe } from "./scorer.js";
 
 const log = createLogger("eval");
 
+// Probes that operate against the real project (everything except sandboxed
+// code-correctness runs) get read-only tools. Every current introspection
+// probe only verifies grep/file_read/glob usage; leaving write/shell tools
+// enabled let a wayward model mutate the actual repo mid-eval (observed:
+// a probe agent created stray dirs and cleared node_modules symlinks).
+const READ_ONLY_PROBE_TOOLS = ["file_read", "list_dir", "glob", "grep"];
+
 export interface RunnerOptions {
   /** Override the model ID (otherwise uses default routing) */
   modelId?: string;
@@ -124,6 +131,10 @@ export async function runProbe(
           ? { preferredModelId: options.modelId }
           : {}),
         ...(options.maxSteps ? { maxSteps: options.maxSteps } : {}),
+        // Project-workspace probes must not mutate the real project.
+        ...(agentWorkspace === sandboxDir
+          ? {}
+          : { roleToolFilter: { allowedTools: READ_ONLY_PROBE_TOOLS } }),
       })) {
         switch (event.type) {
           case "text-delta":

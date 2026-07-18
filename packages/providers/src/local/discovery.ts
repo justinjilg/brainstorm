@@ -5,7 +5,10 @@ import type { ProviderConfig } from "@brainst0rm/config";
 import type { ModelEntry } from "@brainst0rm/shared";
 import { createLogger } from "@brainst0rm/shared";
 import { discoverOllamaModels } from "./ollama.js";
-import { discoverOpenAICompatModels } from "./openai-compat.js";
+import {
+  discoverOpenAICompatModels,
+  resolveCustomProviderKey,
+} from "./openai-compat.js";
 
 const log = createLogger("discovery");
 
@@ -71,6 +74,18 @@ export async function discoverLocalModels(
     probes.push({
       provider: "llamacpp",
       promise: discoverOpenAICompatModels("llamacpp", config.llamacpp.baseUrl),
+    });
+  }
+  for (const [name, custom] of Object.entries(config.custom ?? {})) {
+    if (!custom.enabled || !custom.autoDiscover) continue;
+    const key = resolveCustomProviderKey(custom);
+    probes.push({
+      provider: name,
+      promise: discoverOpenAICompatModels(
+        name,
+        custom.baseUrl,
+        key ? { Authorization: `Bearer ${key}` } : undefined,
+      ),
     });
   }
 

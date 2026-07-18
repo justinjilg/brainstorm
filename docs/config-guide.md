@@ -41,6 +41,17 @@ baseUrl = "http://localhost:1234"
 enabled = false
 baseUrl = "http://localhost:8080"
 
+# Any OpenAI-compatible endpoint (corporate LLM gateway, vLLM, LiteLLM proxy).
+# The name ("mygateway") becomes the model-id prefix: "mygateway:<model>".
+# Bearer token comes from apiKeyEnv (env var name) or apiKeyFile (path, "~/" ok);
+# omit both for unauthenticated endpoints. If the endpoint uses a private CA,
+# start brainstorm with NODE_EXTRA_CA_CERTS=/path/to/ca.pem.
+[providers.custom.mygateway]
+enabled = true
+baseUrl = "https://llm.example.internal"
+apiKeyEnv = "MYGATEWAY_API_KEY"
+# apiKeyFile = "~/.mygateway_key"
+
 [providers.anthropic]
 enabled = false                    # Direct Anthropic (bypass BrainstormRouter)
 

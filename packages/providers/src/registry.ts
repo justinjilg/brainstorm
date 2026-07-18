@@ -7,6 +7,8 @@ import { createOllamaProvider } from "./local/ollama.js";
 import {
   createLMStudioProvider,
   createLlamaCppProvider,
+  createCustomProvider,
+  resolveCustomProviderKey,
 } from "./local/openai-compat.js";
 import { discoverLocalModels } from "./local/discovery.js";
 import { CLOUD_MODELS } from "./cloud/models.js";
@@ -76,6 +78,20 @@ export async function createProviderRegistry(
   if (config.providers.llamacpp.enabled) {
     providers.llamacpp = createLlamaCppProvider(
       config.providers.llamacpp.baseUrl,
+    );
+  }
+  // Custom OpenAI-compatible endpoints. Registered before the cloud SDKs so a
+  // name collision with a built-in provider is overwritten by the built-in
+  // rather than silently hijacking it.
+  for (const [name, custom] of Object.entries(
+    config.providers.custom ?? {},
+  )) {
+    if (!custom.enabled) continue;
+    const key = resolveCustomProviderKey(custom, getKey);
+    providers[name] = createCustomProvider(
+      name,
+      custom.baseUrl,
+      key ?? undefined,
     );
   }
 
