@@ -16,19 +16,21 @@ Session-scope mutable runtime state by lifecycle. Open iteration; units land inc
 Both green: core 625 + the new tool tests; as-any 295/295; contract-check green. (Docker sandbox
 integration tests fail on Docker Desktop org sign-in — environmental, unrelated.)
 
-## Remaining (each its own focused pass — larger ripple, deliberately not rushed)
-- **005.3 — Shell background registry + sandbox config** (`shell.ts:258`, `:150` currentSandboxLevel/
-  currentProjectPath/active Docker sandbox — safety-critical). Background-job lifecycle: jobs outlive
-  their turn, so explicit job-id maps + cleanup, not just the session ALS.
-- **005.4 — Learned routing → injected `RoutingLearningState`.** Process-scoped (the cross-session
-  flywheel is intentional); move `learned.ts` modelStats/recentOutcomes/quarantinedUntil/auditLog out
-  of module globals into an instance owned by the router. Ripples across ~7 call sites at the core↔router
-  boundary + the exported routing API — an API-changing refactor best done as its own reviewed pass.
-- **005.5 — Eval reliability.** Artifact-correctness scoring (compile/test the sandbox result, not
-  output-substring); correctness vs efficiency separated; 3-trial noisy subset; paired same-seed
-  comparisons — so the capability eval can gate again.
+- **005.3 — Shell background + tool-output handlers.** DONE. Module-global handlers cross-wired
+  concurrent runs' shell output; now per-session, with each background job tagged by its originating
+  session so completion events route back to it (the job outlives its turn). 2 isolation tests.
+- **005.4 — Learned routing → injectable `RoutingLearningState`.** DONE. Process-scoped (flywheel kept);
+  the 5 state containers sit behind live `let` bindings + a setter, so swapping state is atomic with
+  zero logic change — isolation + testability, no call-site ripple. 1 isolation test.
 
-## Note
-The two landed units are self-contained in `packages/tools` (clean seams). 005.3/005.4 cross package
-boundaries and change public APIs; per the iteration-004 lesson (rushing a large kernel refactor cost
-three adversarial-review rounds), each gets its own focused, review-gated pass rather than a hurried one.
+## Remaining
+- **005.5 — Eval reliability** (separate work, not session-scoping): artifact-correctness scoring
+  (compile/test the sandbox result, not output-substring); correctness vs efficiency separated; 3-trial
+  noisy subset; paired same-seed comparisons — so the capability eval can gate again.
+
+## Status
+All FOUR correctness-critical concurrency globals Codex flagged are now session/process-scoped (task,
+transaction, checkpoint, shell handlers, learned routing). Six isolation tests. Every unit self-contained
+and green (core 625 / router 118 / new tool tests; as-any 295/295). The routing injection used a live-
+`let`-binding swap rather than threading an instance through ~7 call sites — the plan's isolation goal
+with minimal ripple. 005.5 (eval reliability) is the remaining, independent piece.
