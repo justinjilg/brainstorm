@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineTool } from "../base.js";
 import { readFileSync, existsSync } from "node:fs";
 import { relative, resolve } from "node:path";
+import { getSessionId } from "../session-context.js";
 
 /**
  * Transaction Tool Calls — atomic multi-file edits.
@@ -11,22 +12,44 @@ import { relative, resolve } from "node:path";
  * On commit, changes are finalized (already written to disk by file tools).
  *
  * This uses the existing CheckpointManager for rollback capability.
+ *
+ * Per-session: a single module-global `transactionActive` flag meant two
+ * concurrent runs corrupted each other's transactions (one committing while
+ * the other tracked files). Keyed by the current session id instead.
  */
 
-let transactionActive = false;
-let transactionFiles: string[] = [];
+interface TxState {
+  active: boolean;
+  files: string[];
+}
+const MAX_TRACKED_SESSIONS = 256;
+const txStates = new Map<string, TxState>();
+
+function txFor(sessionId: string): TxState {
+  let s = txStates.get(sessionId);
+  if (!s) {
+    if (txStates.size >= MAX_TRACKED_SESSIONS) {
+      const oldest = txStates.keys().next().value;
+      if (oldest !== undefined) txStates.delete(oldest);
+    }
+    s = { active: false, files: [] };
+    txStates.set(sessionId, s);
+  }
+  return s;
+}
 
 export function isTransactionActive(): boolean {
-  return transactionActive;
+  return txFor(getSessionId()).active;
 }
 
 export function getTransactionFiles(): string[] {
-  return [...transactionFiles];
+  return [...txFor(getSessionId()).files];
 }
 
 export function recordTransactionFile(path: string): void {
-  if (transactionActive && !transactionFiles.includes(path)) {
-    transactionFiles.push(path);
+  const s = txFor(getSessionId());
+  if (s.active && !s.files.includes(path)) {
+    s.files.push(path);
   }
 }
 
@@ -39,11 +62,12 @@ export const beginTransactionTool = defineTool({
     description: z.string().optional().describe("What this transaction is for"),
   }),
   async execute({ description }) {
-    if (transactionActive) {
+    const s = txFor(getSessionId());
+    if (s.active) {
       return { error: "Transaction already active. Commit or rollback first." };
     }
-    transactionActive = true;
-    transactionFiles = [];
+    s.active = true;
+    s.files = [];
     return {
       success: true,
       message: `Transaction started.${description ? ` Purpose: ${description}` : ""} All file writes are now tracked. Use commit_transaction to finalize or rollback_transaction to revert.`,
@@ -58,12 +82,13 @@ export const commitTransactionTool = defineTool({
   permission: "auto",
   inputSchema: z.object({}),
   async execute() {
-    if (!transactionActive) {
+    const s = txFor(getSessionId());
+    if (!s.active) {
       return { error: "No active transaction to commit." };
     }
-    const files = [...transactionFiles];
-    transactionActive = false;
-    transactionFiles = [];
+    const files = [...s.files];
+    s.active = false;
+    s.files = [];
     return {
       success: true,
       filesCommitted: files,
@@ -81,7 +106,8 @@ export const rollbackTransactionTool = defineTool({
     reason: z.string().optional().describe("Why the rollback is needed"),
   }),
   async execute({ reason }) {
-    if (!transactionActive) {
+    const s = txFor(getSessionId());
+    if (!s.active) {
       return { error: "No active transaction to rollback." };
     }
 
@@ -92,7 +118,7 @@ export const rollbackTransactionTool = defineTool({
     const failed: Array<{ file: string; error: string }> = [];
 
     // Order files by dependencies: dependents first, then dependencies
-    const ordered = orderByDependencies(transactionFiles);
+    const ordered = orderByDependencies(s.files);
 
     if (cp) {
       // Revert dependents before dependencies to maintain consistency
@@ -110,13 +136,13 @@ export const rollbackTransactionTool = defineTool({
       }
     } else {
       // No checkpoint manager — all files fail
-      for (const file of transactionFiles) {
+      for (const file of s.files) {
         failed.push({ file, error: "CheckpointManager not initialized" });
       }
     }
 
-    transactionActive = false;
-    transactionFiles = [];
+    s.active = false;
+    s.files = [];
 
     const partialRollback = failed.length > 0 && reverted.length > 0;
 

@@ -11,6 +11,7 @@ import {
 import { join, dirname, basename, relative } from "node:path";
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
+import { getSessionId } from "./session-context.js";
 
 const CHECKPOINT_DIR = join(homedir(), ".brainstorm", "checkpoints");
 
@@ -174,14 +175,38 @@ export class CheckpointManager {
   }
 }
 
-/** Global checkpoint manager singleton — set during session init. */
-let activeCheckpoint: CheckpointManager | null = null;
+/**
+ * Per-session checkpoint managers. A single module-global singleton meant two
+ * concurrent runs calling initCheckpointManager() would overwrite each other's
+ * reference — the first run's later getCheckpointManager() returned the second
+ * run's manager, so its rollbacks reverted the wrong session's files. Keyed by
+ * session id (falls back to the current session scope on read).
+ */
+const MAX_TRACKED_SESSIONS = 256;
+const checkpointManagers = new Map<string, CheckpointManager>();
 
 export function initCheckpointManager(sessionId: string): CheckpointManager {
-  activeCheckpoint = new CheckpointManager(sessionId);
-  return activeCheckpoint;
+  if (
+    !checkpointManagers.has(sessionId) &&
+    checkpointManagers.size >= MAX_TRACKED_SESSIONS
+  ) {
+    const oldest = checkpointManagers.keys().next().value;
+    if (oldest !== undefined) checkpointManagers.delete(oldest);
+  }
+  const manager = new CheckpointManager(sessionId);
+  checkpointManagers.set(sessionId, manager);
+  return manager;
 }
 
-export function getCheckpointManager(): CheckpointManager | null {
-  return activeCheckpoint;
+export function getCheckpointManager(
+  sessionId: string = getSessionId(),
+): CheckpointManager | null {
+  return checkpointManagers.get(sessionId) ?? null;
+}
+
+/** Release a session's checkpoint manager (teardown). */
+export function clearCheckpointManager(
+  sessionId: string = getSessionId(),
+): void {
+  checkpointManagers.delete(sessionId);
 }
