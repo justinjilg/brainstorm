@@ -185,8 +185,13 @@ export class TrajectoryRecorder {
         break;
 
       case "pipeline-completed":
+      case "pipeline-failed": {
+        // Both carry the full results set; success is derived from the phase
+        // results (a pipeline-failed event is, by construction, not a success).
         this.outcome.success =
-          event.results.every((r) => r.success) && event.totalCost >= 0;
+          event.type === "pipeline-completed" &&
+          event.results.every((r) => r.success) &&
+          event.totalCost >= 0;
         this.outcome.phasesCompleted = event.results.filter(
           (r) => r.success,
         ).length;
@@ -200,6 +205,7 @@ export class TrajectoryRecorder {
             verifyResult.output.includes("Tests: PASS");
         }
         break;
+      }
     }
   }
 

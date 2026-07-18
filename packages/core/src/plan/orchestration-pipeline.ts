@@ -50,6 +50,12 @@ export type PipelineEvent =
       reason: string;
     }
   | { type: "pipeline-completed"; results: PhaseResult[]; totalCost: number }
+  | {
+      type: "pipeline-failed";
+      results: PhaseResult[];
+      totalCost: number;
+      failedPhases: PipelinePhase[];
+    }
   | { type: "pipeline-paused"; phase: PipelinePhase; reason: string };
 
 export interface ReviewFinding {
@@ -221,6 +227,10 @@ export async function* runOrchestrationPipeline(
 
   // Skip phases before resumeFrom
   let skipping = !!options.resumeFrom;
+  // Terminal-state guard: the loop can break early (budget pause) and also
+  // fall through to the post-loop terminal. Exactly one terminal event and
+  // exactly one recorder.finalize() must happen — this flag enforces it.
+  let terminated = false;
 
   // Helper: yield event AND record to trajectory
   function record(event: PipelineEvent) {
@@ -236,7 +246,8 @@ export async function* runOrchestrationPipeline(
       else continue;
     }
 
-    // Budget guard
+    // Budget guard — pause is a terminal state: emit once, finalize once,
+    // and DON'T fall through to the post-loop completed/failed terminal.
     if (options.budget && totalCost >= options.budget) {
       yield record({
         type: "pipeline-paused",
@@ -244,6 +255,7 @@ export async function* runOrchestrationPipeline(
         reason: `Budget exhausted: $${totalCost.toFixed(2)}`,
       });
       recorder.finalize();
+      terminated = true;
       break;
     }
 
@@ -368,14 +380,23 @@ export async function* runOrchestrationPipeline(
           { budget: budgetPerPhase, projectPath: options.projectPath },
         );
 
+        // An empty/whitespace-only phase output is a failure, not a silent
+        // success — otherwise a step-capped or reasoning-only agent turn
+        // produces a "successful" phase with no artifact for downstream
+        // phases to build on. (Mirrors the workflow engine's artifact check.)
+        const phaseText = agentResult.text ?? "";
+        const phaseEmpty = phaseText.trim().length === 0;
         result = {
           phase,
           agentId: config.agentId,
-          output: agentResult.text,
+          output: phaseText,
           cost: agentResult.cost,
           toolCalls: agentResult.toolCalls,
           duration: Date.now() - startTime,
-          success: true,
+          success: !phaseEmpty,
+          ...(phaseEmpty
+            ? { error: `Phase "${phase}" produced an empty output` }
+            : {}),
         };
       }
 
@@ -403,15 +424,32 @@ export async function* runOrchestrationPipeline(
     }
   }
 
-  yield record({ type: "pipeline-completed", results, totalCost });
+  // Post-loop terminal. Skipped entirely if the loop already terminated
+  // (budget pause emitted its terminal + finalized). Otherwise emit exactly
+  // ONE of completed/failed based on whether any phase failed, and finalize
+  // exactly once — never both a pause and a completed for one run.
+  if (!terminated) {
+    const failedPhases = results
+      .filter((r) => !r.success)
+      .map((r) => r.phase);
+    if (failedPhases.length > 0) {
+      yield record({
+        type: "pipeline-failed",
+        results,
+        totalCost,
+        failedPhases,
+      });
+    } else {
+      yield record({ type: "pipeline-completed", results, totalCost });
+    }
 
-  // Finalize trajectory — persists to disk as training data for BrainstormLLM v2
-  const trajectory = recorder.finalize();
-  // Log trajectory ID for linking to BR API
-  if (trajectory.phases.length > 0) {
-    console.error(
-      `[trajectory] ${trajectory.id} — ${trajectory.phases.length} phases, $${trajectory.totalCost.toFixed(4)}, ${trajectory.totalDuration}ms`,
-    );
+    // Finalize trajectory — persists to disk as training data for BrainstormLLM v2
+    const trajectory = recorder.finalize();
+    if (trajectory.phases.length > 0) {
+      console.error(
+        `[trajectory] ${trajectory.id} — ${trajectory.phases.length} phases, $${trajectory.totalCost.toFixed(4)}, ${trajectory.totalDuration}ms`,
+      );
+    }
   }
 }
 
