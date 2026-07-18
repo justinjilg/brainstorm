@@ -1,0 +1,100 @@
+[
+  {
+    "file": "packages/core/src/agent/loop.ts",
+    "line": 1495,
+    "severity": "P1",
+    "finding": "hasFinalResponse is derived from any accumulated text, so pre-tool narration such as \"I'll inspect this\" counts as a final response. If the model then performs tools and reaches the cap without a concluding answer, forced synthesis is incorrectly skipped.",
+    "suggested_fix": "Track text from the final model step, or whether usable text was emitted after the last tool call, and base hasFinalResponse on that signal."
+  },
+  {
+    "file": "packages/core/src/agent/loop.ts",
+    "line": 1520,
+    "severity": "P1",
+    "finding": "The synthesis request receives messagesForApi, which is only the input history; the assistant tool calls and tool results produced by the preceding invocation are not included. The model is therefore told to summarize work it cannot see.",
+    "suggested_fix": "Append the completed invocation's assistant/tool response messages from the SDK result, or explicitly capture tool calls and results into synthesis context before adding the final instruction."
+  },
+  {
+    "file": "packages/core/src/agent/loop.ts",
+    "line": 1516,
+    "severity": "P1",
+    "finding": "The normal stream watchdog is cleared before forced synthesis, and the synthesis result is awaited without a replacement timeout. A stalled synthesis stream can hang the logical run indefinitely despite the intended one-turn bound.",
+    "suggested_fix": "Give synthesis its own linked AbortController and watchdog/timeout, clearing it in finally while preserving distinction between timeout and caller cancellation."
+  },
+  {
+    "file": "packages/core/src/agent/loop.ts",
+    "line": 1557,
+    "severity": "P1",
+    "finding": "The synthesis catch swallows AbortError, including cancellation from options.signal. The loop can subsequently emit done instead of propagating an interrupted terminal state.",
+    "suggested_fix": "Rethrow or immediately emit interrupted and return when the caller signal is aborted or the synthesis error is AbortError; only recover from non-cancellation synthesis failures."
+  },
+  {
+    "file": "packages/core/src/agent/loop.ts",
+    "line": 1569,
+    "severity": "P1",
+    "finding": "If synthesis throws or returns empty after a tool-using turn, isEmpty remains false because toolCallCount is nonzero. shouldRetry is therefore false, so the attempt is recorded as succeeded and done reports hasFinalResponse:false instead of falling back or failing.",
+    "suggested_fix": "When synthesis was required, make success contingent on synthesis producing a final response; route an empty/failed synthesis through fallback or fallback-exhausted handling."
+  },
+  {
+    "file": "packages/core/src/agent/loop.ts",
+    "line": 1509,
+    "severity": "P1",
+    "finding": "_synthesized is checked but never set after synthesis. A subsequent verification or tool-nudge recursion can run another forced-synthesis turn, violating the once-per-logical-run guarantee.",
+    "suggested_fix": "Persist a synthesis-attempted flag into every later recursive call, regardless of whether synthesis produced text, and add a regression test combining synthesis with verification recursion."
+  },
+  {
+    "file": "packages/core/src/agent/loop.ts",
+    "line": 1540,
+    "severity": "P1",
+    "finding": "Synthesis usage is recorded only inside the nonempty-text branch, and the direct extra model call bypasses the router's budget check. Empty synthesis is still billable but omitted from cost, and synthesis may start after the first attempt exhausted a hard session budget.",
+    "suggested_fix": "Check the remaining budget before invoking synthesis and record its usage independently of whether text was produced, preferably in a finally-style path."
+  },
+  {
+    "file": "packages/core/src/agent/loop.ts",
+    "line": 1765,
+    "severity": "P1",
+    "finding": "Momentum success is recorded before tool-enforcement and verification decide whether this is the final accepted attempt. Narrated-tool turns and attempts whose verification fails therefore still add success momentum.",
+    "suggested_fix": "Move recordSuccess to the terminal path immediately before done, after all nudge and verification recursion decisions, and record only the final accepted attempt."
+  },
+  {
+    "file": "packages/core/src/agent/loop.ts",
+    "line": 2045,
+    "severity": "P1",
+    "finding": "The attempts accumulator includes only fallback failures plus the terminal invocation. Forced synthesis, tool-nudge retries, and verification retries are model invocations but are omitted; prior edits and recovery attribution are also lost across the latter recursive paths.",
+    "suggested_fix": "Use one root-owned run accumulator updated by every invokeModelAttempt and recursive recovery path, carrying attempt outcomes, artifacts, madeChanges, initialStopCause, and recovery history through recursion."
+  },
+  {
+    "file": "packages/core/src/agent/loop.ts",
+    "line": 2048,
+    "severity": "P1",
+    "finding": "recovery prefers the terminal attempt's forced_synthesis over fallback. For A-empty -> B-tool-only -> synthesis-success, initialStopCause describes A but recovery says forced_synthesis, incorrectly attributing recovery of A's failure to synthesis and erasing the fallback.",
+    "suggested_fix": "Represent recovery as an ordered sequence, or keep aggregate recovery relative to the first attempt as fallback and annotate forced synthesis on the final attempt separately."
+  },
+  {
+    "file": "packages/core/src/agent/loop.ts",
+    "line": 1754,
+    "severity": "P2",
+    "finding": "Every exhausted failed terminal attempt is assigned empty_output, even when initialStopCause is truncated_tool_call, output_limit, content_filtered, or step_cap_reached. This corrupts per-attempt routing evidence.",
+    "suggested_fix": "Always use initialStopCause for this attempt, changing it only when a later recovery attempt has its own independently classified stop cause."
+  },
+  {
+    "file": "packages/core/src/agent/loop.ts",
+    "line": 2064,
+    "severity": "P1",
+    "finding": "RunOutcome.costUsd uses the CostTracker's cumulative session/process total rather than the logical run delta. Long-lived callers reuse the tracker, so later RunOutcomes include unrelated earlier runs even though per-attempt costs are deltas.",
+    "suggested_fix": "Capture a root run-cost baseline once, propagate it through recursion, and set RunOutcome.costUsd to current cost minus that root baseline."
+  },
+  {
+    "file": "packages/core/src/plan/orchestration-pipeline.ts",
+    "line": 315,
+    "severity": "P1",
+    "finding": "Empty-output validation applies only to standard single-agent phases. A parallel phase can return zero results or reviewers with blank text and is still marked success, allowing pipeline-completed with no usable review artifact.",
+    "suggested_fix": "Apply meaningful-output validation to parallel results as well, requiring at least one nonblank agent result and marking the phase failed otherwise."
+  },
+  {
+    "file": "packages/core/src/plan/orchestration-pipeline.ts",
+    "line": 257,
+    "severity": "P2",
+    "finding": "Pause finalization occurs after yielding the terminal event; completed/failed finalization is likewise after its terminal yield. A consumer that stops iteration upon receiving a terminal event closes the generator before recorder.finalize executes, violating the one-finalize contract.",
+    "suggested_fix": "Record the terminal state and finalize before yielding it, or place idempotent finalization in a generator finally block."
+  }
+]

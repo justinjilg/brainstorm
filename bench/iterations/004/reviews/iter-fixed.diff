@@ -1,0 +1,1533 @@
+diff --git a/artifacts/br-business-contract-map.json b/artifacts/br-business-contract-map.json
+index 986fb0f..ee7d02c 100644
+--- a/artifacts/br-business-contract-map.json
++++ b/artifacts/br-business-contract-map.json
+@@ -1,16 +1,16 @@
+ {
+   "schema_version": 1,
+   "scope": "bounded to Brainstorm routes currently touching BR/product actuator contracts",
+-  "repo_root": "/Users/justin/Projects/brainstorm",
+-  "br_repo_root": "/Users/justin/Projects/brainstormrouter",
++  "repo_root": "/Users/justin.jilg/Projects/brainstorm",
++  "br_repo_root": "/Users/justin.jilg/Projects/brainstormrouter",
+   "br_repo_detected": true,
+   "ok": true,
+   "counts": {
+     "routes": 20,
+     "failures": 0,
+     "warnings": 0,
+-    "br_openapi_paths_seen": 517,
+-    "br_capability_routes_seen": 645,
++    "br_openapi_paths_seen": 515,
++    "br_capability_routes_seen": 643,
+     "br_rbac_entries_seen": 278,
+     "br_sdk_paths_seen": 132
+   },
+diff --git a/bench/iterations/004/plan.md b/bench/iterations/004/plan.md
+index 4d6fb96..04dca91 100644
+--- a/bench/iterations/004/plan.md
++++ b/bench/iterations/004/plan.md
+@@ -1,31 +1,53 @@
+-# Iteration 004 — empty-output recovery + eval reliability
++# Iteration 004 — Two-level outcome contract + forced synthesis (FOUNDATION)
+ 
+ Seed: `ITER=004` → SEED = first 8 chars of `printf 004 | shasum`.
++Supersedes the earlier narrow 004 plan (forced-synthesis-only), per the approved consolidation arc and
++two rounds of Codex design review.
+ 
+-## Context
+-Three convergent failures this program, one root cause: a session that reaches its step cap (or a
+-reasoning model that emits reasoning-only turns) ends with EMPTY final output. Observed in:
+-- iteration-003 qwen3-coder reviewer seat (15 steps, no review)
+-- iteration-002/003 consensus-review workflow steps (empty artifacts)
+-- gpt-oss eval failures ("Used 10 steps, max allowed is 6", no output text)
+-The harness has all the pieces (empty detection now exists post-iter-003) but no RECOVERY.
+-
+-## Items
+-- **R1 (lead, direct — hot path)** — force a final synthesis turn. When the agent loop exits because it
+-  hit maxSteps (not a natural stop) AND accumulated text is empty, run ONE more turn with tools
+-  disabled and a synthesis instruction ("You've done the work; now write your answer/result"), so the
+-  session produces output instead of nothing. Bounded to a single extra turn. Tests: step-cap-with-
+-  empty-output triggers exactly one tools-disabled synthesis turn; natural stop does not.
+-- **R2 (eval reliability)** — the capability eval cannot gate (100/90/50 on identical probes). Options
+-  to evaluate: (a) run each probe N times, score by majority/mean; (b) separate step-budget from
+-  correctness (a right answer in 10 steps when cap is 6 should not score 0); (c) score code-correctness
+-  by the sandbox artifact (does the file compile + pass), not by output-text substring match. Pick the
+-  cheapest that cuts variance; measure variance before/after on one dimension.
+-- **Process** — trim the review panel: Codex anchor (12/12) + ONE earned local seat (gpt-oss post-fix),
+-  drop the three-seat ceremony. Local seats that die empty should benefit from R1 anyway.
++## The contract
++> One aggregate **RunOutcome**, composed of one or more **ModelAttemptOutcome**s, with explicit
++> termination, recovery, artifacts, checks, and cost.
++
++Two levels because a logical run can span multiple model attempts (fallback: A fails empty → B
++succeeds). Thompson/quarantine need per-attempt evidence; surfaces need one aggregate. A flat outcome
++would erase A's failure.
++
++## 004.0 Preflight (get to green first) — DONE
++- Memory property test isolated to a temp `$HOME` (was flaking on real `~/.brainstorm`; +20s backstop).
++- `as any` 298 → 295 by fixing the 3 net-new casts properly (tolerant `contentCharLength` in
++  `computeOutputBudget`; removed the `FetchFunction` cast).
++- Regenerated the two stale BR contract artifacts. `contract-check` green.
++
++## 004.1 Types (`packages/shared/src/types.ts`)
++`StopCause` (natural_stop|step_cap_reached|empty_output|truncated_tool_call|output_limit|
++content_filtered|error|budget_exhausted|fallback_exhausted|aborted), `CheckStatus`
++(passed|failed|not_run|unknown), `ModelAttemptOutcome`, `RunOutcome` (attempts[], initialStopCause,
++recovery, hasFinalResponse, producedArtifacts?, madeChanges?, tri-state verification/security/judge,
++costUsd). Security note: blocking a dangerous action = control succeeded while execution failed → tri-
++state, distinct from run status.
++
++## 004.2 loop.ts — per-attempt vs aggregate + step-cap detection
++Record each attempt as `ModelAttemptOutcome` → Thompson/quarantine (the fallback record at `:1400`
++becomes attempt N). Delete unconditional `router.recordSuccess?.()` at `:1518`; momentum records only
++the successful final attempt WITH task type. Increment `stepsCompleted` in `onStepFinish`; classify
++`step_cap_reached` only when max reached AND last step still requested continuation (reuse the
++length/content-filter split at `subagent.ts:393`).
++
++## 004.3 invokeModelAttempt seam + forced synthesis
++Extract `invokeModelAttempt()` (first strangler seam) sharing provider normalization, output budgeting,
++abort, watchdog, cost, trajectory — used by normal AND synthesis attempts (no duplicated streamText
++block). Forced synthesis triggers on `step_cap_reached && !hasFinalResponse` (NOT producedArtifacts).
++One tools-disabled turn; record `initialStopCause:step_cap_reached`, `status:succeeded`,
++`recovery:forced_synthesis`.
++
++## 004.4 Emit outcome + fix pipeline
++`AgentEvent.done` gains `outcome: RunOutcome` additively (keep old fields). `orchestration-pipeline.ts`:
++exactly one terminal event + one finalization (completed|failed|paused|aborted); fix budget-pause
++double-finalize (`:246`+`:406`); emit `failed` on any phase `success===false`; validate empty
++standard-phase outputs. Update `trajectory-capture.ts:187` terminal switch for all four types.
+ 
+ ## Gate
+-- core/eval tests + typecheck green.
+-- R1 live proof: a capped gpt-oss session that previously ended empty now returns a synthesized answer.
+-- R2: measured variance reduction on the chosen dimension.
+-- Codex anchor review clean on verified P0/P1.
++core/shared/router/workflow tests + typecheck green; outcome-contract + pipeline regression tests;
++preflight baseline green (contract-check, memory test). Live: a step-capped gpt-oss session that
++previously ended empty returns a synthesized answer with `recovery:forced_synthesis`. Codex anchor +
++one advisory local seat; verified P0/P1 closed. Commit on `iter/004-outcome-contract`.
+diff --git a/docs/internal/br-business-harness-contract-matrix.md b/docs/internal/br-business-harness-contract-matrix.md
+index 8e979c5..e28ff1e 100644
+--- a/docs/internal/br-business-harness-contract-matrix.md
++++ b/docs/internal/br-business-harness-contract-matrix.md
+@@ -10,8 +10,8 @@ Scope is intentionally bounded to the BR and product actuator routes this harnes
+ - Failures: 0
+ - Warnings: 0
+ - BR repo detected: yes
+-- BR OpenAPI paths seen: 517
+-- BR capability routes seen: 645
++- BR OpenAPI paths seen: 515
++- BR capability routes seen: 643
+ - BR RBAC entries seen: 278
+ 
+ ## Route Matrix
+diff --git a/packages/core/src/__tests__/forced-synthesis.test.ts b/packages/core/src/__tests__/forced-synthesis.test.ts
+new file mode 100644
+index 0000000..2e9ce28
+--- /dev/null
++++ b/packages/core/src/__tests__/forced-synthesis.test.ts
+@@ -0,0 +1,281 @@
++import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
++import { mkdtempSync, rmSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++
++// Drive the streamText mock to simulate a step-capped turn that emits NO final
++// text (the coding-model-hit-the-cap scenario), then a synthesis turn that
++// does. The mock returns queued scripts in call order.
++let _scripts: Array<{
++  parts: any[];
++  text: string;
++  finishReason: string;
++  steps: number;
++}> = [];
++let _callIndex = 0;
++const _streamTextCalls: any[] = [];
++
++vi.mock("ai", async (importOriginal) => {
++  const actual: any = await importOriginal();
++  return {
++    ...actual,
++    streamText: vi.fn((opts: any) => {
++      const script = _scripts[_callIndex] ?? {
++        parts: [],
++        text: "",
++        finishReason: "stop",
++        steps: 1,
++      };
++      _callIndex++;
++      _streamTextCalls.push(opts);
++      if (opts.onStepFinish) {
++        // Call synchronously (as real streamText does during stream
++        // consumption) so stepsCompleted/lastStepFinishReason are set before
++        // the loop's post-stream classifier reads them.
++        for (let i = 0; i < script.steps; i++) {
++          opts.onStepFinish({
++            usage: { inputTokens: 5, outputTokens: 2 },
++            finishReason: script.finishReason,
++          });
++        }
++      }
++      async function* fullStream() {
++        for (const p of script.parts) yield p;
++      }
++      return {
++        fullStream: fullStream(),
++        textStream: (async function* () {})(),
++        text: Promise.resolve(script.text),
++        usage: Promise.resolve({ inputTokens: 5, outputTokens: 2 }),
++        finishReason: Promise.resolve(script.finishReason),
++        response: Promise.resolve({ headers: new Map() }),
++      };
++    }),
++  };
++});
++
++import { runAgentLoop } from "../agent/loop.js";
++import { BrainstormRouter, CostTracker } from "@brainst0rm/router";
++import { getTestDb } from "@brainst0rm/db";
++import type { ModelEntry } from "@brainst0rm/shared";
++
++const model: ModelEntry = {
++  id: "acronis:mac/qwen/qwen3-coder-next",
++  provider: "acronis",
++  name: "qwen3-coder-next",
++  capabilities: {
++    toolCalling: true,
++    streaming: true,
++    vision: false,
++    reasoning: false,
++    contextWindow: 262144,
++    qualityTier: 3,
++    speedTier: 2,
++    bestFor: ["code-generation"],
++  },
++  pricing: { inputPer1MTokens: 0, outputPer1MTokens: 0 },
++  limits: { contextWindow: 262144, maxOutputTokens: 32768 },
++  status: "available",
++  isLocal: true,
++  lastHealthCheck: 0,
++};
++
++function buildContext() {
++  const tmpProjectPath = mkdtempSync(join(tmpdir(), "brainstorm-synth-"));
++  const originalHome = process.env.HOME;
++  const fakeHome = mkdtempSync(join(tmpdir(), "brainstorm-home-"));
++  process.env.HOME = fakeHome;
++
++  const config: any = {
++    general: {
++      defaultStrategy: "combined",
++      confirmTools: false,
++      defaultPermissionMode: "auto",
++      theme: "dark",
++      maxSteps: 2,
++      outputStyle: "concise",
++      costSafetyMargin: 1.3,
++      loopDetector: { readThreshold: 10, repeatThreshold: 5 },
++      subagentIsolation: "none",
++    },
++    budget: { hardLimit: false },
++    routing: { rules: [], fallbackModels: [] }, // no fallback → isolate synthesis
++    shell: { defaultTimeout: 60000, maxOutputBytes: 50000 },
++  };
++  const registry: any = {
++    models: [model],
++    getModel: (id: string) => (id === model.id ? model : undefined),
++    getProvider: () => ({}),
++  };
++  const db = getTestDb();
++  const sessionId = `synth-${Math.random().toString(36).slice(2, 8)}`;
++  db.prepare(
++    `INSERT INTO sessions (id, project_path, created_at, updated_at) VALUES (?, ?, ?, ?)`,
++  ).run(
++    sessionId,
++    tmpProjectPath,
++    Math.floor(Date.now() / 1000),
++    Math.floor(Date.now() / 1000),
++  );
++  const costTracker = new CostTracker(db, config.budget);
++  const router = new BrainstormRouter(config, registry, costTracker);
++  const tools: any = {
++    listTools: () => [],
++    list: () => [],
++    get: () => undefined,
++    filterByNames: () => [],
++    toAISDKTools: () => ({}),
++    toAISDKToolsFiltered: () => ({}),
++    toAISDKToolsWithPermissions: () => ({}),
++  };
++  return {
++    cleanup: () => {
++      rmSync(tmpProjectPath, { recursive: true, force: true });
++      rmSync(fakeHome, { recursive: true, force: true });
++      if (originalHome) process.env.HOME = originalHome;
++    },
++    run: async () => {
++      const events: any[] = [];
++      for await (const ev of runAgentLoop(
++        [{ role: "user" as const, content: "do a thing" }],
++        {
++          config,
++          registry,
++          router,
++          costTracker,
++          tools,
++          sessionId,
++          projectPath: tmpProjectPath,
++          systemPrompt: "test",
++          preferredModelId: model.id,
++          disableTools: false, // real tool session — synthesis only applies here
++          trajectoryEnabled: false,
++        } as any,
++      )) {
++        events.push(ev);
++        if (events.length > 60) break;
++      }
++      return events;
++    },
++  };
++}
++
++describe("forced synthesis on step-cap with no final response", () => {
++  beforeEach(() => {
++    _scripts = [];
++    _callIndex = 0;
++    _streamTextCalls.length = 0;
++  });
++  afterEach(() => vi.clearAllMocks());
++
++    const toolCallScript = (finishReason: string, steps: number) => ({
++      parts: [
++        { type: "tool-input-start", id: "1", toolName: "file_read" },
++        { type: "tool-call", toolName: "file_read", input: { path: "/x" } },
++        { type: "tool-result", toolName: "file_read", output: "contents" },
++        { type: "finish", finishReason },
++      ],
++      text: "",
++      finishReason,
++      steps,
++    });
++
++  it("runs one tools-disabled synthesis turn when a capped run wrote no answer", async () => {
++    // Call 1: made a tool call, hit the cap (2 steps ≥ maxStepsForRun), no text.
++    // Call 2 (synthesis): returns final text.
++    _scripts = [
++      toolCallScript("tool-calls", 2),
++      {
++        parts: [{ type: "text-delta", text: "Here is the final answer." }],
++        text: "Here is the final answer.",
++        finishReason: "stop",
++        steps: 1,
++      },
++    ];
++    const ctx = buildContext();
++    try {
++      const events = await ctx.run();
++      const done = events.find((e) => e.type === "done");
++      expect(done).toBeDefined();
++      expect(done.outcome).toBeDefined();
++      expect(done.outcome.recovery).toBe("forced_synthesis");
++      expect(done.outcome.initialStopCause).toBe("step_cap_reached");
++      expect(done.outcome.status).toBe("succeeded");
++      expect(done.outcome.hasFinalResponse).toBe(true);
++      // Exactly two model calls: the original attempt + one synthesis turn.
++      expect(_streamTextCalls).toHaveLength(2);
++      // The synthesis call had NO tools.
++      expect(_streamTextCalls[1].tools).toBeUndefined();
++    } finally {
++      ctx.cleanup();
++    }
++  });
++
++  it("synthesizes when a model stops EARLY after tool calls with no answer (live gpt-oss case)", async () => {
++    // The iter-004 live proof: gpt-oss made tool calls then stopped on its own
++    // (finishReason 'stop', NOT at the cap) without writing a final answer.
++    _scripts = [
++      toolCallScript("stop", 1),
++      {
++        parts: [{ type: "text-delta", text: "Summary of what I found." }],
++        text: "Summary of what I found.",
++        finishReason: "stop",
++        steps: 1,
++      },
++    ];
++    const ctx = buildContext();
++    try {
++      const events = await ctx.run();
++      const done = events.find((e) => e.type === "done");
++      expect(done.outcome.recovery).toBe("forced_synthesis");
++      // Preserves that this was a natural early stop, not a cap.
++      expect(done.outcome.initialStopCause).toBe("natural_stop");
++      expect(done.outcome.hasFinalResponse).toBe(true);
++      expect(_streamTextCalls).toHaveLength(2);
++    } finally {
++      ctx.cleanup();
++    }
++  });
++
++  it("does not record a silent success when synthesis also produces nothing", async () => {
++    // Tool work, no answer → synthesis runs but ALSO returns empty. With no
++    // fallbacks configured the run must NOT report hasFinalResponse:true.
++    _scripts = [
++      toolCallScript("stop", 1),
++      { parts: [], text: "", finishReason: "stop", steps: 1 },
++    ];
++    const ctx = buildContext();
++    try {
++      const events = await ctx.run();
++      const done = events.find((e) => e.type === "done");
++      // Synthesis was attempted (2 calls) but produced nothing usable.
++      expect(_streamTextCalls).toHaveLength(2);
++      expect(done.outcome.hasFinalResponse).toBe(false);
++      expect(done.outcome.recovery).toBeUndefined();
++      expect(done.outcome.status).toBe("failed");
++    } finally {
++      ctx.cleanup();
++    }
++  });
++
++  it("does NOT synthesize on a normal completed turn", async () => {
++    _scripts = [
++      {
++        parts: [{ type: "text-delta", text: "done normally" }],
++        text: "done normally",
++        finishReason: "stop",
++        steps: 1,
++      },
++    ];
++    const ctx = buildContext();
++    try {
++      const events = await ctx.run();
++      const done = events.find((e) => e.type === "done");
++      expect(done.outcome.recovery).toBeUndefined();
++      expect(done.outcome.initialStopCause).toBe("natural_stop");
++      expect(_streamTextCalls).toHaveLength(1);
++    } finally {
++      ctx.cleanup();
++    }
++  });
++});
+diff --git a/packages/core/src/__tests__/orchestration-pipeline-terminal.test.ts b/packages/core/src/__tests__/orchestration-pipeline-terminal.test.ts
+new file mode 100644
+index 0000000..e052c35
+--- /dev/null
++++ b/packages/core/src/__tests__/orchestration-pipeline-terminal.test.ts
+@@ -0,0 +1,88 @@
++import { describe, it, expect } from "vitest";
++import { runOrchestrationPipeline } from "../plan/orchestration-pipeline.js";
++import type {
++  PhaseDispatcher,
++  PipelineEvent,
++} from "../plan/orchestration-pipeline.js";
++
++/** Dispatcher whose phase text + cost are configurable. */
++function dispatcher(opts: {
++  text?: (phase: string) => string;
++  cost?: number;
++}): PhaseDispatcher {
++  return {
++    runPhase: async (_agentId, _type, prompt) => ({
++      text: opts.text ? opts.text(prompt) : "some output",
++      cost: opts.cost ?? 0,
++      toolCalls: [],
++    }),
++    runParallel: async () => [],
++    runCommand: async () => ({ passed: true, output: "" }),
++  };
++}
++
++async function collect(gen: AsyncGenerator<PipelineEvent>) {
++  const events: PipelineEvent[] = [];
++  for await (const e of gen) events.push(e);
++  return events;
++}
++
++const TERMINALS = new Set([
++  "pipeline-completed",
++  "pipeline-failed",
++  "pipeline-paused",
++]);
++
++describe("runOrchestrationPipeline — exactly one terminal event", () => {
++  it("emits pipeline-completed when every phase produces output", async () => {
++    const events = await collect(
++      runOrchestrationPipeline("build", dispatcher({}), {
++        projectPath: "/tmp",
++        phases: ["spec", "architecture"],
++      }),
++    );
++    const terminals = events.filter((e) => TERMINALS.has(e.type));
++    expect(terminals).toHaveLength(1);
++    expect(terminals[0].type).toBe("pipeline-completed");
++  });
++
++  it("emits pipeline-failed (not completed) when a phase output is empty", async () => {
++    // Second phase (architecture) produces empty output → that phase fails.
++    let call = 0;
++    const emptySecond: PhaseDispatcher = {
++      runPhase: async () => {
++        call++;
++        return { text: call >= 2 ? "" : "output", cost: 0, toolCalls: [] };
++      },
++      runParallel: async () => [],
++      runCommand: async () => ({ passed: true, output: "" }),
++    };
++    const events = await collect(
++      runOrchestrationPipeline("build", emptySecond, {
++        projectPath: "/tmp",
++        phases: ["spec", "architecture"],
++      }),
++    );
++    const terminals = events.filter((e) => TERMINALS.has(e.type));
++    expect(terminals).toHaveLength(1);
++    expect(terminals[0].type).toBe("pipeline-failed");
++    expect(
++      events.some((e) => e.type === "pipeline-completed"),
++    ).toBe(false);
++  });
++
++  it("emits ONLY pipeline-paused on budget exhaustion — no trailing completed", async () => {
++    // Each phase costs 10; budget 5 → the guard trips before the first phase.
++    const events = await collect(
++      runOrchestrationPipeline("build", dispatcher({ cost: 10 }), {
++        projectPath: "/tmp",
++        phases: ["spec", "architecture", "implementation"],
++        budget: 5,
++      }),
++    );
++    const terminals = events.filter((e) => TERMINALS.has(e.type));
++    // The double-finalize bug emitted pipeline-paused AND pipeline-completed.
++    expect(terminals).toHaveLength(1);
++    expect(terminals[0].type).toBe("pipeline-paused");
++  });
++});
+diff --git a/packages/core/src/__tests__/property-tests.test.ts b/packages/core/src/__tests__/property-tests.test.ts
+index 66dc6c8..8343120 100644
+--- a/packages/core/src/__tests__/property-tests.test.ts
++++ b/packages/core/src/__tests__/property-tests.test.ts
+@@ -9,18 +9,10 @@ import { describe, it, expect } from "vitest";
+ import * as fc from "fast-check";
+ import { MemoryManager } from "../memory/manager.js";
+ import { join } from "node:path";
+-import { tmpdir, homedir } from "node:os";
+-import { rmSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { mkdtempSync, rmSync } from "node:fs";
+ import { createHash } from "node:crypto";
+ 
+-function getMemoryDir(projectPath: string): string {
+-  const hash = createHash("sha256")
+-    .update(projectPath)
+-    .digest("hex")
+-    .slice(0, 16);
+-  return join(homedir(), ".brainstorm", "projects", hash, "memory");
+-}
+-
+ describe("Property-Based Tests", () => {
+   describe("Memory ID generation", () => {
+     it("always produces lowercase IDs with only alphanumeric and hyphens", () => {
+@@ -47,39 +39,50 @@ describe("Property-Based Tests", () => {
+   });
+ 
+   describe("Memory save/get round-trip", () => {
+-    it("saved content is retrievable unchanged", () => {
+-      const projectPath = join(
+-        tmpdir(),
+-        `brainstorm-prop-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+-      );
+-      const manager = new MemoryManager(projectPath);
+-
+-      try {
+-        fc.assert(
+-          fc.property(
+-            fc.record({
+-              name: fc.stringMatching(/^[a-z][a-z0-9-]{2,20}$/),
+-              content: fc.string({ minLength: 1, maxLength: 500 }),
+-            }),
+-            ({ name, content }) => {
+-              const saved = manager.save({
+-                name,
+-                description: "property test",
+-                content,
+-                type: "project",
+-                source: "user_input",
+-              });
+-              const retrieved = manager.get(saved.id);
+-              expect(retrieved).toBeDefined();
+-              expect(retrieved!.content).toBe(content);
+-            },
+-          ),
+-          { numRuns: 20 }, // Keep low — each creates a file
+-        );
+-      } finally {
+-        rmSync(getMemoryDir(projectPath), { recursive: true, force: true });
+-      }
+-    });
++    // MemoryManager derives its storage dir from os.homedir(), which honors
++    // $HOME on POSIX. Point HOME at an isolated temp dir so the property runs
++    // never touch the real ~/.brainstorm — that's the flake source (git repo
++    // init + Spotlight/AV contention on the home dir made this reproducibly
++    // exceed the 5s default). Generous explicit timeout as a backstop; each
++    // of the 20 runs does a real file write + git add.
++    it(
++      "saved content is retrievable unchanged",
++      () => {
++        const originalHome = process.env.HOME;
++        const fakeHome = mkdtempSync(join(tmpdir(), "brainstorm-prop-home-"));
++        process.env.HOME = fakeHome;
++        const projectPath = join(fakeHome, "project");
++        try {
++          const manager = new MemoryManager(projectPath);
++          fc.assert(
++            fc.property(
++              fc.record({
++                name: fc.stringMatching(/^[a-z][a-z0-9-]{2,20}$/),
++                content: fc.string({ minLength: 1, maxLength: 500 }),
++              }),
++              ({ name, content }) => {
++                const saved = manager.save({
++                  name,
++                  description: "property test",
++                  content,
++                  type: "project",
++                  source: "user_input",
++                });
++                const retrieved = manager.get(saved.id);
++                expect(retrieved).toBeDefined();
++                expect(retrieved!.content).toBe(content);
++              },
++            ),
++            { numRuns: 20 }, // Keep low — each creates a file
++          );
++        } finally {
++          if (originalHome === undefined) delete process.env.HOME;
++          else process.env.HOME = originalHome;
++          rmSync(fakeHome, { recursive: true, force: true });
++        }
++      },
++      20_000,
++    );
+   });
+ 
+   describe("Trust score invariants", () => {
+diff --git a/packages/core/src/__tests__/stop-cause.test.ts b/packages/core/src/__tests__/stop-cause.test.ts
+new file mode 100644
+index 0000000..22e0fc4
+--- /dev/null
++++ b/packages/core/src/__tests__/stop-cause.test.ts
+@@ -0,0 +1,75 @@
++import { describe, it, expect } from "vitest";
++import { classifyStopCause } from "../agent/loop.js";
++
++const base = {
++  isEmpty: false,
++  toolCallTruncated: false,
++  stepsCompleted: 1,
++  maxSteps: 10,
++  lastStepFinishReason: "stop" as string | undefined,
++  providerFinishReason: undefined as string | undefined,
++};
++
++describe("classifyStopCause", () => {
++  it("returns natural_stop for a clean completed turn", () => {
++    expect(classifyStopCause(base)).toBe("natural_stop");
++  });
++
++  it("prioritizes truncation over everything else", () => {
++    expect(
++      classifyStopCause({
++        ...base,
++        toolCallTruncated: true,
++        isEmpty: true,
++        stepsCompleted: 10,
++        lastStepFinishReason: "tool-calls",
++      }),
++    ).toBe("truncated_tool_call");
++  });
++
++  it("asserts step_cap_reached only when the budget is spent AND the last step wanted to continue", () => {
++    // Cap reached, last step still wants tools → capped.
++    expect(
++      classifyStopCause({
++        ...base,
++        stepsCompleted: 10,
++        maxSteps: 10,
++        lastStepFinishReason: "tool-calls",
++      }),
++    ).toBe("step_cap_reached");
++    // A bare terminal "tool-calls" WITHOUT reaching the cap is NOT a cap.
++    expect(
++      classifyStopCause({
++        ...base,
++        stepsCompleted: 3,
++        maxSteps: 10,
++        lastStepFinishReason: "tool-calls",
++      }),
++    ).not.toBe("step_cap_reached");
++  });
++
++  it("maps provider length and content-filter finish reasons", () => {
++    expect(
++      classifyStopCause({ ...base, providerFinishReason: "length" }),
++    ).toBe("output_limit");
++    expect(
++      classifyStopCause({ ...base, providerFinishReason: "content-filter" }),
++    ).toBe("content_filtered");
++  });
++
++  it("returns empty_output for a no-text non-truncated turn", () => {
++    expect(classifyStopCause({ ...base, isEmpty: true })).toBe("empty_output");
++  });
++
++  it("length at the step cap classifies as a cap, not output_limit", () => {
++    // A capped run whose final step hit length is still fundamentally a cap.
++    expect(
++      classifyStopCause({
++        ...base,
++        stepsCompleted: 6,
++        maxSteps: 6,
++        lastStepFinishReason: "length",
++      }),
++    ).toBe("step_cap_reached");
++  });
++});
+diff --git a/packages/core/src/agent/loop.ts b/packages/core/src/agent/loop.ts
+index 8ea13f7..503106b 100644
+--- a/packages/core/src/agent/loop.ts
++++ b/packages/core/src/agent/loop.ts
+@@ -29,6 +29,9 @@ import {
+   type GatewayFeedbackData,
+   type ModelEntry,
+   type TurnContext,
++  type StopCause,
++  type RunOutcome,
++  type ModelAttemptOutcome,
+ } from "@brainst0rm/shared";
+ import type { BuildStateTracker } from "./build-state.js";
+ import { LoopDetector } from "./loop-detector.js";
+@@ -66,10 +69,52 @@ function getLLMCircuit(modelId: string) {
+ import {
+   enterToolExecution,
+   exitToolExecution,
+-  estimateTokenCount,
+ } from "../session/compaction.js";
+ import type { SystemPromptSegment } from "./context.js";
+ 
++/**
++ * Classify how a single model attempt terminated into a canonical StopCause.
++ * Ordering matters: truncation and emptiness are model-side failures a
++ * fallback may recover; step-cap is only asserted when the run actually
++ * exhausted its budget AND the last step still wanted to continue (a bare
++ * terminal `finishReason:"tool-calls"` is not itself proof of a cap).
++ */
++export function classifyStopCause(input: {
++  isEmpty: boolean;
++  toolCallTruncated: boolean;
++  stepsCompleted: number;
++  maxSteps: number;
++  lastStepFinishReason?: string;
++  providerFinishReason?: string;
++}): StopCause {
++  const {
++    isEmpty,
++    toolCallTruncated,
++    stepsCompleted,
++    maxSteps,
++    lastStepFinishReason,
++    providerFinishReason,
++  } = input;
++  if (toolCallTruncated) return "truncated_tool_call";
++  const providerLength =
++    providerFinishReason === "length" || lastStepFinishReason === "length";
++  const contentFiltered =
++    providerFinishReason === "content-filter" ||
++    providerFinishReason === "content_filter" ||
++    lastStepFinishReason === "content-filter";
++  // Hit the step budget while the last step still wanted to act.
++  if (
++    stepsCompleted >= maxSteps &&
++    (lastStepFinishReason === "tool-calls" || lastStepFinishReason === "length")
++  ) {
++    return "step_cap_reached";
++  }
++  if (contentFiltered) return "content_filtered";
++  if (providerLength) return "output_limit";
++  if (isEmpty) return "empty_output";
++  return "natural_stop";
++}
++
+ /**
+  * Request-level output budget: the model's advertised maxOutputTokens,
+  * clamped to what its context window can still hold after the prompt.
+@@ -79,6 +124,27 @@ import type { SystemPromptSegment } from "./context.js";
+  * Returns a spreadable object so callers can omit the option entirely for
+  * models that advertise no output limit.
+  */
++/**
++ * Robust char estimate for message content that may be a string OR the AI
++ * SDK's array-of-parts shape (text/tool-call/tool-result parts). Avoids the
++ * string-only assumption in estimateTokenCount, which would mis-measure
++ * array content and silently under-reserve prompt space.
++ */
++function contentCharLength(content: unknown): number {
++  if (typeof content === "string") return content.length;
++  if (Array.isArray(content)) {
++    let n = 0;
++    for (const part of content) {
++      if (typeof part === "string") n += part.length;
++      else if (part && typeof (part as { text?: unknown }).text === "string")
++        n += (part as { text: string }).text.length;
++      else n += JSON.stringify(part ?? "").length;
++    }
++    return n;
++  }
++  return content == null ? 0 : JSON.stringify(content).length;
++}
++
+ export function computeOutputBudget(
+   model: {
+     limits?: { contextWindow?: number; maxOutputTokens?: number };
+@@ -100,11 +166,18 @@ export function computeOutputBudget(
+       ? systemPrompt
+       : Array.isArray(systemPrompt)
+         ? systemPrompt
+-            .map((s: any) => (typeof s?.content === "string" ? s.content : ""))
++            .map((s) =>
++              s && typeof (s as { content?: unknown }).content === "string"
++                ? (s as { content: string }).content
++                : "",
++            )
+             .join("")
+         : "";
++  // 20 chars/message overhead mirrors estimateTokenCount's role+formatting fudge.
++  let messageChars = 0;
++  for (const m of messages) messageChars += contentCharLength(m.content) + 20;
+   const promptEstimate =
+-    estimateTokenCount(messages as any) +
++    Math.ceil(messageChars / 4) +
+     Math.ceil(systemText.length / 4) +
+     TOOL_SCHEMA_OVERHEAD_TOKENS;
+   const remaining = window - promptEstimate;
+@@ -119,6 +192,51 @@ export function computeOutputBudget(
+     maxOutputTokens: remaining > 0 ? remaining : MIN_OUTPUT_TOKENS,
+   };
+ }
++
++/**
++ * Smallest shared model-call seam (first TurnController strangler seam; the
++ * full extraction is iteration 006). Assembles the streamText config that is
++ * common to every attempt — model, system, messages, output budget, abort,
++ * retries, headers — in ONE place, so the normal attempt and the forced-
++ * synthesis attempt can't drift. Callers pass only what differs: the normal
++ * attempt supplies tools + onStepFinish + a multi-step budget; synthesis
++ * supplies neither and a single step.
++ */
++type StreamTextArgs = Parameters<typeof streamText>[0];
++
++function invokeModelAttempt(params: {
++  /** Provider-resolved model (registry.getProvider(...)). */
++  providerModel: unknown;
++  /** Catalog entry — for output budgeting. */
++  modelEntry: { limits?: { contextWindow?: number; maxOutputTokens?: number } };
++  system: unknown;
++  messages: Array<{ role: string; content: unknown }>;
++  abortSignal: AbortSignal;
++  maxSteps: number;
++  metadataHeader?: string;
++  tools?: StreamTextArgs["tools"];
++  forceToolChoice?: boolean;
++  onStepFinish?: StreamTextArgs["onStepFinish"];
++}) {
++  return streamText({
++    model: params.providerModel as StreamTextArgs["model"],
++    system: params.system as any,
++    messages: params.messages as any,
++    ...(params.tools ? { tools: params.tools } : {}),
++    ...(params.tools && params.forceToolChoice
++      ? { toolChoice: "required" as const }
++      : {}),
++    ...(params.metadataHeader
++      ? { headers: { "x-br-metadata": params.metadataHeader } }
++      : {}),
++    ...computeOutputBudget(params.modelEntry, params.messages, params.system),
++    abortSignal: params.abortSignal,
++    maxRetries: 3,
++    stopWhen: stepCountIs(params.maxSteps),
++    ...(params.onStepFinish ? { onStepFinish: params.onStepFinish } : {}),
++  });
++}
++
+ import { segmentsToSystemArray } from "./context.js";
+ import { predictTaskCost } from "./cost-predictor.js";
+ import { detectTone, toneGuidance } from "./sentiment.js";
+@@ -430,6 +548,27 @@ export interface AgentLoopOptions {
+    * other recursion site resets it so the model can still finish normally.
+    */
+   _forceToolChoice?: boolean;
++  /**
++   * Internal: set on a fallback re-entry to signal that a forced-synthesis
++   * turn already ran upstream, so a re-entered loop doesn't synthesize again.
++   * (Forced synthesis itself is a direct call, not a recursion, but fallback
++   * retries DO recurse — this keeps synthesis strictly once per logical run.)
++   */
++  _synthesized?: boolean;
++  /**
++   * Internal: failed model-attempt outcomes accumulated by upstream fallback
++   * levels, so the terminal (successful) level can emit ONE aggregate
++   * RunOutcome carrying every attempt. Each fallback re-entry appends the
++   * attempt it just gave up on.
++   */
++  _attemptsSoFar?: ModelAttemptOutcome[];
++  /**
++   * Internal: session cost at the START of this logical run, captured once at
++   * the root and propagated through recursion so RunOutcome.costUsd is the run
++   * delta — not the CostTracker's cumulative session/process total (which a
++   * long-lived caller reuses across many runs).
++   */
++  _runCostBaseline?: number;
+   /** Optional middleware pipeline for composable agent interceptors. */
+   middleware?: MiddlewarePipeline;
+   /** Repository for persisting routing outcomes (Thompson sampling). */
+@@ -931,43 +1070,35 @@ export async function* runAgentLoop(
+       streamAbort.signal,
+       options.signal,
+     );
+-    const result = streamText({
+-      model: modelId,
+-      system: systemForApiNormalized as any,
+-      messages: messagesForApi as any,
+-      ...(finalTools ? { tools: finalTools } : {}),
+-      // Phase 7: on a narration-nudge corrective retry ONLY, force a real tool
+-      // call so the model cannot narrate-and-stop again. Scoped to this single
+-      // re-entry via options._forceToolChoice; never permanent (that would stop
+-      // the model ever finishing). Only meaningful when tools are present.
+-      ...(finalTools && options._forceToolChoice
+-        ? { toolChoice: "required" as const }
+-        : {}),
+-      ...(metadataHeader
+-        ? { headers: { "x-br-metadata": metadataHeader } }
+-        : {}),
+-      // Give the model its full advertised output budget. The AI SDK does not
+-      // infer per-model output limits for OpenAI-compatible providers, and the
+-      // server default can be far below the model's real limit — reasoning
+-      // models (gpt-oss) then burn the whole budget on reasoning tokens and
+-      // finish with `length` + empty text, triggering wasteful fallback
+-      // retries. Clamped to the context still remaining after the prompt:
+-      // compaction admits input up to 80% of the window, so prompt + full
+-      // advertised output can exceed the window and the server rejects the
+-      // request outright.
+-      ...computeOutputBudget(
+-        decision.model,
+-        messagesForApi as any,
+-        systemForApiNormalized,
+-      ),
++    // Step-cap detection: count completed steps and remember the last step's
++    // finish reason. A bare terminal `finishReason:"tool-calls"` is NOT proof
++    // the run hit its budget — only `stepsCompleted >= maxStepsForRun` with the
++    // last step still wanting to continue is. Hoisted maxStepsForRun so both
++    // stopWhen and the post-loop classifier read the same number.
++    const maxStepsForRun = shouldUseTools
++      ? (options.maxSteps ?? config.general.maxSteps)
++      : 1;
++    let stepsCompleted = 0;
++    let lastStepFinishReason: string | undefined;
++    // Phase 7: on a narration-nudge corrective retry ONLY, force a real tool
++    // call so the model cannot narrate-and-stop again. Scoped to this single
++    // re-entry via options._forceToolChoice; never permanent. The seam applies
++    // the output budget (full advertised max, clamped to remaining context —
++    // reasoning models otherwise burn their whole budget on reasoning tokens
++    // and finish empty) shared with the forced-synthesis attempt below.
++    const result = invokeModelAttempt({
++      providerModel: modelId,
++      modelEntry: decision.model,
++      system: systemForApiNormalized,
++      messages: messagesForApi,
+       abortSignal: effectiveStreamSignal,
+-      // Retry on 429/503 with exponential backoff (1s, 2s, 4s).
+-      // Without this, rate limits during long KAIROS runs crash the daemon.
+-      maxRetries: 3,
+-      stopWhen: stepCountIs(
+-        shouldUseTools ? (options.maxSteps ?? config.general.maxSteps) : 1,
+-      ),
+-      onStepFinish: async ({ usage }: any) => {
++      maxSteps: maxStepsForRun,
++      metadataHeader,
++      tools: finalTools ?? undefined,
++      forceToolChoice: options._forceToolChoice,
++      onStepFinish: async ({ usage, finishReason: stepFinish }: any) => {
++        stepsCompleted++;
++        if (typeof stepFinish === "string") lastStepFinishReason = stepFinish;
+         if (usage) {
+           const inputTokens = usage.inputTokens ?? 0;
+           const outputTokens = usage.outputTokens ?? 0;
+@@ -1353,10 +1484,154 @@ export async function* runAgentLoop(
+       };
+     }
+ 
+-    // A turn needs a retry when the model gave us nothing (empty) OR when it
+-    // tried to act but the tool-call was truncated. Both are model-side
+-    // failures that a fallback may recover.
+-    const shouldRetry = isEmpty || toolCallTruncated;
++    // ── Forced synthesis: tool work done, but no final answer written ──
++    // A model (often a coder, or a reasoning model whose answer leaked into
++    // reasoning_content) can make tool calls and then STOP — whether by
++    // exhausting its step budget or by finishing early — WITHOUT ever writing
++    // a final answer. Such a turn is not `isEmpty` (it made tool calls) yet has
++    // no usable response; it would otherwise record as a silent success with
++    // empty text, which is exactly what dead-ended the reviewer seats + gpt-oss
++    // eval step-cap failures + empty workflow artifacts this iteration targets.
++    //
++    // Live dogfooding (gpt-oss, iter-004) showed the hard-cap case is only HALF
++    // of it — the model frequently stops EARLY after tool calls with no
++    // summary. So trigger on the general condition: made tool calls, has no
++    // final response, wasn't truncated. NOT producedArtifacts (edits ARE an
++    // artifact). Run exactly ONE tools-disabled synthesis turn through the
++    // shared seam; `initialStopCause` preserves how it actually stopped.
++    // hasFinalResponse: the turn produced usable text. (A stricter "text AFTER
++    // the last tool call" signal — Codex's finding #1 — would also flag
++    // narrate-then-act turns that legitimately conclude on the next turn as
++    // needing synthesis, over-firing; the sharper distinction is deferred to
++    // the iter-006 TurnController, which models a turn's phases explicitly.)
++    let hasFinalResponse = accumulatedText.trim().length > 0;
++    let recovery: RunOutcome["recovery"] | undefined;
++    let synthesisAttempted = options._synthesized ?? false;
++    const initialStopCause = classifyStopCause({
++      isEmpty,
++      toolCallTruncated,
++      stepsCompleted,
++      maxSteps: maxStepsForRun,
++      lastStepFinishReason,
++      providerFinishReason: finishReason,
++    });
++    const needsSynthesis =
++      shouldUseTools && // only a genuine tool-using session can lack a summary
++      !hasFinalResponse &&
++      toolCallCount > 0 &&
++      !toolCallTruncated &&
++      !synthesisAttempted;
++    if (needsSynthesis) {
++      synthesisAttempted = true; // once per logical run, even on failure
++      // Own AbortController linked to the caller signal so a hung synthesis
++      // stream can't hang the run; distinct timeout vs caller-cancellation.
++      const SYNTH_TIMEOUT_MS = 60_000;
++      const synthTimeoutController = new AbortController();
++      const synthTimer = setTimeout(
++        () => synthTimeoutController.abort(),
++        SYNTH_TIMEOUT_MS,
++      );
++      const synthSignal = linkSignals(
++        synthTimeoutController.signal,
++        options.signal,
++      );
++      try {
++        yield {
++          type: "loop-warning" as const,
++          message: `${decision.model.id} made ${toolCallCount} tool call(s) but wrote no final answer (stop: ${initialStopCause}) — running one tools-disabled synthesis turn.`,
++        };
++        // Give synthesis the model's OWN work to summarize: the assistant
++        // tool-call + tool-result messages from the completed invocation, not
++        // just the input history it can't see its work in.
++        let synthContext = messagesForApi as Array<{
++          role: string;
++          content: unknown;
++        }>;
++        try {
++          const resp = await result.response;
++          const respMessages = (resp as { messages?: unknown[] })?.messages;
++          if (Array.isArray(respMessages) && respMessages.length > 0) {
++            synthContext = [
++              ...synthContext,
++              ...(respMessages as Array<{ role: string; content: unknown }>),
++            ];
++          }
++        } catch {
++          /* response unavailable — fall back to input history */
++        }
++        const synthResult = invokeModelAttempt({
++          providerModel: modelId,
++          modelEntry: decision.model,
++          system: systemForApiNormalized,
++          messages: [
++            ...synthContext,
++            {
++              role: "user",
++              content:
++                "You have reached your tool-use budget. Do NOT call any more tools. " +
++                "Using only the work you have already done, write your final answer/result now.",
++            },
++          ],
++          abortSignal: synthSignal,
++          maxSteps: 1,
++          metadataHeader,
++        });
++        const synthText = (await synthResult.text)?.trim() ?? "";
++        // Record synthesis cost regardless of whether it produced text — an
++        // empty synthesis is still billable.
++        try {
++          const u = await synthResult.usage;
++          costTracker.record({
++            sessionId,
++            modelId: decision.model.id,
++            provider: decision.model.provider,
++            inputTokens: u?.inputTokens ?? 0,
++            outputTokens: u?.outputTokens ?? 0,
++            cachedTokens: 0,
++            taskType: task.type,
++            projectPath: options.projectPath,
++            pricing: decision.model.pricing,
++          });
++        } catch {
++          /* usage/cost best-effort */
++        }
++        if (synthText) {
++          accumulatedText += (accumulatedText ? "\n\n" : "") + synthText;
++          hasFinalResponse = true;
++          recovery = "forced_synthesis";
++          yield {
++            type: "text-delta",
++            delta: normalizeInsightMarkers(synthText),
++          };
++        }
++      } catch (synthErr: any) {
++        // A caller cancellation must propagate as interrupted, not be
++        // swallowed into a recovered "done".
++        if (synthErr?.name === "AbortError" || options.signal?.aborted) {
++          clearTimeout(synthTimer);
++          if (options.signal?.aborted) {
++            yield { type: "interrupted" };
++            return;
++          }
++          // else: our own synthesis timeout fired — fall through as a failed
++          // synthesis (hasFinalResponse stays false → handled below).
++        }
++        log.warn(
++          { err: synthErr, model: decision.model.id },
++          "Forced synthesis turn failed — treating as no final response",
++        );
++      } finally {
++        clearTimeout(synthTimer);
++      }
++    }
++
++    // A turn needs a retry when a tool-call was truncated, OR — when forced
++    // synthesis ran this turn (a tool session that produced no answer) — when
++    // even synthesis failed to produce a final response. When synthesis did
++    // NOT run, fall back to the classic empty-turn signal so a normal completed
++    // tool-call turn still records as success.
++    const shouldRetry =
++      toolCallTruncated || (needsSynthesis ? !hasFinalResponse : isEmpty);
+ 
+     // Record circuit breaker outcome for this model.
+     // Empty response / truncated tool-call = failure (nothing usable).
+@@ -1401,6 +1676,17 @@ export async function* runAgentLoop(
+       // Record failure for Thompson sampling on fallback path
+       const fallbackLatencyMs = Date.now() - turnStartMs;
+       recordOutcome(task.type, decision.model.id, false, fallbackLatencyMs, 0);
++      // This failed attempt's per-model outcome — carried into the fallback
++      // so the eventual successful level emits it in the aggregate.
++      const failedAttempt: ModelAttemptOutcome = {
++        modelId: decision.model.id,
++        taskType: task.type,
++        status: "failed",
++        stopCause: initialStopCause,
++        providerFinishReason: finishReason,
++        latencyMs: fallbackLatencyMs,
++        costUsd: costTracker.getSessionCost() - sessionCostBefore,
++      };
+       if (options.routingOutcomeRepo) {
+         try {
+           options.routingOutcomeRepo.record(
+@@ -1435,6 +1721,15 @@ export async function* runAgentLoop(
+           // A forced tool-call is scoped to a single nudge retry; never carry
+           // it into an unrelated fallback turn.
+           _forceToolChoice: false,
++          // Carry this failed attempt forward so the successful fallback level
++          // emits the full attempt chain in its aggregate RunOutcome; mark
++          // recovery=fallback there.
++          _attemptsSoFar: [...(options._attemptsSoFar ?? []), failedAttempt],
++          // Synthesis is once per logical run — a fallback model must not
++          // synthesize again if this attempt already did.
++          _synthesized: synthesisAttempted,
++          // Preserve the run-cost baseline across the whole fallback chain.
++          _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
+         } as any);
+         return;
+       }
+@@ -1514,13 +1809,35 @@ export async function* runAgentLoop(
+       );
+     }
+ 
+-    // Record success for model momentum
+-    router.recordSuccess?.(decision.model.id);
+-
+     // Record routing outcome for Thompson sampling (in-memory + DB persistence)
+     const turnLatencyMs = Date.now() - turnStartMs;
+     const turnSuccess = !shouldRetry;
+     const turnCost = costTracker.getSessionCost() - sessionCostBefore;
++
++    // This attempt's per-model outcome (feeds routing learning). The aggregate
++    // RunOutcome below stitches it onto any upstream failed attempts.
++    const thisAttempt: ModelAttemptOutcome = {
++      modelId: decision.model.id,
++      taskType: task.type,
++      status: turnSuccess ? "succeeded" : "failed",
++      // Always the classified cause — a failed attempt that truncated /
++      // hit output_limit / was capped keeps that evidence, not a blanket
++      // empty_output.
++      stopCause: initialStopCause,
++      providerFinishReason: finishReason,
++      latencyMs: turnLatencyMs,
++      costUsd: turnCost,
++    };
++
++    // Momentum records ONLY a genuinely successful final attempt, WITH task
++    // type. Previously recordSuccess fired unconditionally, before turnSuccess
++    // was known and without the task type — so momentum learned "the model
++    // said something" (and disagreed with the Thompson outcome below on
++    // exhausted-retry turns that reach here with turnSuccess=false).
++    if (turnSuccess) {
++      router.recordSuccess?.(decision.model.id, task.type);
++    }
++
+     recordOutcome(
+       task.type,
+       decision.model.id,
+@@ -1630,6 +1947,8 @@ export async function* runAgentLoop(
+           ...options,
+           _nudgeDepth: nextNudge,
+           _forceToolChoice: forceOnRetry,
++          _synthesized: synthesisAttempted,
++          _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
+         });
+         return;
+       }
+@@ -1731,6 +2050,8 @@ export async function* runAgentLoop(
+             // Forced tool-call is scoped to the nudge retry only — don't leak
+             // it into a verify self-correction turn.
+             _forceToolChoice: false,
++            _synthesized: synthesisAttempted,
++            _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
+           });
+           return;
+         }
+@@ -1791,10 +2112,43 @@ export async function* runAgentLoop(
+       });
+     }
+ 
++    // Aggregate outcome: this attempt stitched onto any upstream failed
++    // fallback attempts. initialStopCause is the FIRST attempt's cause (the
++    // upstream one if this is a fallback re-entry), so a recovered run doesn't
++    // masquerade as a clean first stop. verification/security/judge are left
++    // not_run here; wiring their live results into the outcome is a follow-on
++    // (the contract + termination/recovery/cost are established this iteration).
++    const allAttempts = [...(options._attemptsSoFar ?? []), thisAttempt];
++    // If earlier attempts failed and this one succeeded, the run recovered via
++    // fallback (unless it already recovered via forced synthesis this turn).
++    const aggregateRecovery: RunOutcome["recovery"] =
++      recovery ??
++      (turnSuccess && (options._attemptsSoFar?.length ?? 0) > 0
++        ? "fallback"
++        : undefined);
++    const runOutcome: RunOutcome = {
++      status: turnSuccess ? "succeeded" : "failed",
++      attempts: allAttempts,
++      finalModelId: turnSuccess ? decision.model.id : undefined,
++      initialStopCause: allAttempts[0]?.stopCause ?? initialStopCause,
++      recovery: aggregateRecovery,
++      hasFinalResponse,
++      madeChanges: filesWritten.length > 0,
++      verification: "not_run",
++      security: "not_run",
++      judge: "not_run",
++      // Run delta, not the cumulative session total (a long-lived caller
++      // reuses the tracker across runs). Baseline captured at the root.
++      costUsd:
++        costTracker.getSessionCost() -
++        (options._runCostBaseline ?? sessionCostBefore),
++    };
++
+     yield {
+       type: "done",
+       totalCost: costTracker.getSessionCost(),
+       totalTokens: costTracker.getSessionTokens(),
++      outcome: runOutcome,
+     };
+   } catch (error: any) {
+     // ── Error Classification ────────────────────────────────────
+diff --git a/packages/core/src/plan/orchestration-pipeline.ts b/packages/core/src/plan/orchestration-pipeline.ts
+index dfcb417..1bff702 100644
+--- a/packages/core/src/plan/orchestration-pipeline.ts
++++ b/packages/core/src/plan/orchestration-pipeline.ts
+@@ -50,6 +50,12 @@ export type PipelineEvent =
+       reason: string;
+     }
+   | { type: "pipeline-completed"; results: PhaseResult[]; totalCost: number }
++  | {
++      type: "pipeline-failed";
++      results: PhaseResult[];
++      totalCost: number;
++      failedPhases: PipelinePhase[];
++    }
+   | { type: "pipeline-paused"; phase: PipelinePhase; reason: string };
+ 
+ export interface ReviewFinding {
+@@ -221,6 +227,10 @@ export async function* runOrchestrationPipeline(
+ 
+   // Skip phases before resumeFrom
+   let skipping = !!options.resumeFrom;
++  // Terminal-state guard: the loop can break early (budget pause) and also
++  // fall through to the post-loop terminal. Exactly one terminal event and
++  // exactly one recorder.finalize() must happen — this flag enforces it.
++  let terminated = false;
+ 
+   // Helper: yield event AND record to trajectory
+   function record(event: PipelineEvent) {
+@@ -236,14 +246,19 @@ export async function* runOrchestrationPipeline(
+       else continue;
+     }
+ 
+-    // Budget guard
++    // Budget guard — pause is a terminal state: record + finalize BEFORE
++    // yielding, so a consumer that stops iterating on the terminal event
++    // doesn't close the generator before finalize runs. Emit once; DON'T fall
++    // through to the post-loop completed/failed terminal.
+     if (options.budget && totalCost >= options.budget) {
+-      yield record({
++      const pausedEvent = record({
+         type: "pipeline-paused",
+         phase,
+         reason: `Budget exhausted: $${totalCost.toFixed(2)}`,
+       });
+       recorder.finalize();
++      terminated = true;
++      yield pausedEvent;
+       break;
+     }
+ 
+@@ -300,6 +315,14 @@ export async function* runOrchestrationPipeline(
+         );
+         const combinedTools = parallelResults.flatMap((r) => r.toolCalls);
+ 
++        // A parallel phase fails if it produced zero results or EVERY agent
++        // returned blank text — otherwise a review phase with all-empty
++        // reviewers would still be marked success with no usable artifact.
++        const anyNonBlank = parallelResults.some(
++          (r) => (r.text ?? "").trim().length > 0,
++        );
++        const parallelOk = parallelResults.length > 0 && anyNonBlank;
++
+         result = {
+           phase,
+           agentId: config.agents.join("+"),
+@@ -307,7 +330,12 @@ export async function* runOrchestrationPipeline(
+           cost: combinedCost,
+           toolCalls: combinedTools,
+           duration: Date.now() - startTime,
+-          success: true,
++          success: parallelOk,
++          ...(parallelOk
++            ? {}
++            : {
++                error: `Parallel phase "${phase}" produced no usable agent output`,
++              }),
+         };
+ 
+         // Check for critical review findings
+@@ -368,14 +396,23 @@ export async function* runOrchestrationPipeline(
+           { budget: budgetPerPhase, projectPath: options.projectPath },
+         );
+ 
++        // An empty/whitespace-only phase output is a failure, not a silent
++        // success — otherwise a step-capped or reasoning-only agent turn
++        // produces a "successful" phase with no artifact for downstream
++        // phases to build on. (Mirrors the workflow engine's artifact check.)
++        const phaseText = agentResult.text ?? "";
++        const phaseEmpty = phaseText.trim().length === 0;
+         result = {
+           phase,
+           agentId: config.agentId,
+-          output: agentResult.text,
++          output: phaseText,
+           cost: agentResult.cost,
+           toolCalls: agentResult.toolCalls,
+           duration: Date.now() - startTime,
+-          success: true,
++          success: !phaseEmpty,
++          ...(phaseEmpty
++            ? { error: `Phase "${phase}" produced an empty output` }
++            : {}),
+         };
+       }
+ 
+@@ -403,15 +440,28 @@ export async function* runOrchestrationPipeline(
+     }
+   }
+ 
+-  yield record({ type: "pipeline-completed", results, totalCost });
+-
+-  // Finalize trajectory — persists to disk as training data for BrainstormLLM v2
+-  const trajectory = recorder.finalize();
+-  // Log trajectory ID for linking to BR API
+-  if (trajectory.phases.length > 0) {
+-    console.error(
+-      `[trajectory] ${trajectory.id} — ${trajectory.phases.length} phases, $${trajectory.totalCost.toFixed(4)}, ${trajectory.totalDuration}ms`,
+-    );
++  // Post-loop terminal. Skipped entirely if the loop already terminated
++  // (budget pause emitted its terminal + finalized). Otherwise emit exactly
++  // ONE of completed/failed based on whether any phase failed, and finalize
++  // exactly once — never both a pause and a completed for one run.
++  if (!terminated) {
++    const failedPhases = results
++      .filter((r) => !r.success)
++      .map((r) => r.phase);
++    const terminalEvent =
++      failedPhases.length > 0
++        ? record({ type: "pipeline-failed", results, totalCost, failedPhases })
++        : record({ type: "pipeline-completed", results, totalCost });
++
++    // Finalize BEFORE yielding the terminal event — a consumer that stops
++    // iterating on it would otherwise close the generator before finalize runs.
++    const trajectory = recorder.finalize();
++    if (trajectory.phases.length > 0) {
++      console.error(
++        `[trajectory] ${trajectory.id} — ${trajectory.phases.length} phases, $${trajectory.totalCost.toFixed(4)}, ${trajectory.totalDuration}ms`,
++      );
++    }
++    yield terminalEvent;
+   }
+ }
+ 
+diff --git a/packages/core/src/plan/trajectory-capture.ts b/packages/core/src/plan/trajectory-capture.ts
+index bcd73e1..6f138e9 100644
+--- a/packages/core/src/plan/trajectory-capture.ts
++++ b/packages/core/src/plan/trajectory-capture.ts
+@@ -185,8 +185,13 @@ export class TrajectoryRecorder {
+         break;
+ 
+       case "pipeline-completed":
++      case "pipeline-failed": {
++        // Both carry the full results set; success is derived from the phase
++        // results (a pipeline-failed event is, by construction, not a success).
+         this.outcome.success =
+-          event.results.every((r) => r.success) && event.totalCost >= 0;
++          event.type === "pipeline-completed" &&
++          event.results.every((r) => r.success) &&
++          event.totalCost >= 0;
+         this.outcome.phasesCompleted = event.results.filter(
+           (r) => r.success,
+         ).length;
+@@ -200,6 +205,7 @@ export class TrajectoryRecorder {
+             verifyResult.output.includes("Tests: PASS");
+         }
+         break;
++      }
+     }
+   }
+ 
+diff --git a/packages/providers/src/local/openai-compat.ts b/packages/providers/src/local/openai-compat.ts
+index 44a2de7..88a87d2 100644
+--- a/packages/providers/src/local/openai-compat.ts
++++ b/packages/providers/src/local/openai-compat.ts
+@@ -164,7 +164,7 @@ export function createCustomProvider(
+     baseURL: `${baseUrl}/v1`,
+     ...(apiKey ? { headers: { Authorization: `Bearer ${apiKey}` } } : {}),
+     includeUsage: true,
+-    fetch: createToolCallIdNormalizingFetch() as any,
++    fetch: createToolCallIdNormalizingFetch(),
+   });
+ }
+ 
+diff --git a/packages/shared/src/types.ts b/packages/shared/src/types.ts
+index b585b1f..c367562 100644
+--- a/packages/shared/src/types.ts
++++ b/packages/shared/src/types.ts
+@@ -205,6 +205,77 @@ export interface AgentTask {
+   updatedAt: number;
+ }
+ 
++// ── Execution Outcome Contract ───────────────────────────────────────
++// One aggregate RunOutcome composed of one or more ModelAttemptOutcomes, with
++// explicit termination, recovery, artifacts, checks, and cost. Two levels
++// because a single logical run can span multiple model attempts (fallback:
++// model A fails empty → model B succeeds): routing (Thompson/quarantine) needs
++// per-attempt evidence, while surfaces (workflow/pipeline/UI/trajectory) need
++// one aggregate. A flat outcome would erase model A's failure.
++
++/** Why a single model attempt (or the aggregate run) stopped producing. */
++export type StopCause =
++  | "natural_stop" // model finished on its own
++  | "step_cap_reached" // hit the max-steps budget mid-work
++  | "empty_output" // produced no usable text
++  | "truncated_tool_call" // stream ended mid tool-call assembly
++  | "output_limit" // provider length / max_tokens
++  | "content_filtered" // provider content filter
++  | "error" // threw
++  | "budget_exhausted" // cost ceiling
++  | "fallback_exhausted" // all fallback models tried, none succeeded
++  | "aborted"; // cancelled by signal
++
++/**
++ * Tri-state gate result. `not_run` (gate was skipped) and `unknown` (gate ran
++ * but couldn't decide) are distinct from `failed` — an optional boolean can't
++ * express that. Security especially: BLOCKING a dangerous action means the
++ * security CONTROL succeeded while the requested execution failed; a single
++ * `false` conflates the two.
++ */
++export type CheckStatus = "passed" | "failed" | "not_run" | "unknown";
++
++/** Outcome of one model attempt within a run. Feeds routing learning. */
++export interface ModelAttemptOutcome {
++  modelId: string;
++  taskType: TaskType;
++  status: "succeeded" | "failed" | "aborted";
++  stopCause: StopCause;
++  /** Raw provider finish_reason, when available (diagnostics). */
++  providerFinishReason?: string;
++  latencyMs: number;
++  costUsd: number;
++}
++
++/** Aggregate outcome of a logical run. Feeds surfaces + momentum + trajectory. */
++export interface RunOutcome {
++  status: "succeeded" | "failed" | "partial" | "aborted";
++  /** Every model attempt this run made, in order. At least one. */
++  attempts: ModelAttemptOutcome[];
++  /** The model whose output the run ultimately used (if it succeeded). */
++  finalModelId?: string;
++  /** How the FIRST attempt terminated — preserved even after recovery, so a
++   *  step-capped-then-synthesized run doesn't masquerade as a clean stop. */
++  initialStopCause: StopCause;
++  /** How the run recovered from a non-clean initial stop, if it did. */
++  recovery?:
++    | "fallback"
++    | "forced_synthesis"
++    | "tool_nudge"
++    | "verification_retry";
++  /** Did the run produce usable final text? (distinct from making changes) */
++  hasFinalResponse: boolean;
++  /** Artifact references produced (files written, etc.), if tracked. */
++  producedArtifacts?: string[];
++  /** Did the run mutate the workspace? (a coder can edit files yet emit no
++   *  final text — it made changes but still needs synthesis) */
++  madeChanges?: boolean;
++  verification: CheckStatus;
++  security: CheckStatus;
++  judge: CheckStatus;
++  costUsd: number;
++}
++
+ export type AgentEvent =
+   | {
+       type: "thinking";
+@@ -282,6 +353,9 @@ export type AgentEvent =
+       type: "done";
+       totalCost: number;
+       totalTokens?: { input: number; output: number };
++      /** The canonical run outcome. Additive: existing consumers keep reading
++       *  totalCost/totalTokens while surfaces migrate to `outcome`. */
++      outcome?: RunOutcome;
+     };
+ 
+ // ── Turn Context ─────────────────────────────────────────────────────

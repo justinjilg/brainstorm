@@ -1,0 +1,42 @@
+{
+  "seed": "c63528a5",
+  "seats": {
+    "codex": {
+      "status": "completed",
+      "axis": "correctness/aggregation",
+      "findings": 14,
+      "p1": 12,
+      "p2": 2,
+      "verified_real": 14,
+      "fixed": 12,
+      "deferred": 4,
+      "rounds": [
+        "R1: 14 findings, all verified real.",
+        "R2: 7/9 confirmed resolved; 3 new/still-open P1s found in the fixes (unbounded result.response await; _synthesized descendant tool-only silent success; synthesis bypasses budget check).",
+        "R3: those 3 fixed (bounded response await + interrupted bail; shouldRetry requires final response for any tool turn; budget guard before synthesis)."
+      ],
+      "note": "Exceptionally thorough — three rounds. The happy path worked (live proof passed) but the synthesis + aggregate had a dozen real edge-case holes across cancellation, hangs, missing context, empty-as-success, once-per-run, cost, budget, parallel-phase, finalize timing. All 12 fixed with tests; 4 metadata-precision items deferred to iter-006 TurnController.",
+      "triage": [
+        { "id": 2, "sev": "P1", "loc": "synthesis context missing tool results", "verdict": "FIXED — append result.response.messages" },
+        { "id": 3, "sev": "P1", "loc": "no synthesis watchdog", "verdict": "FIXED — own AbortController + 60s timeout" },
+        { "id": 4, "sev": "P1", "loc": "synthesis swallows AbortError", "verdict": "FIXED — propagate caller cancel as interrupted" },
+        { "id": 5, "sev": "P1", "loc": "empty synthesis records silent success", "verdict": "FIXED — shouldRetry keys on no-final-response when synthesis ran" },
+        { "id": 6, "sev": "P1", "loc": "_synthesized never set", "verdict": "FIXED — threaded into fallback/nudge/verify recursion" },
+        { "id": 10, "sev": "P1", "loc": "costUsd cumulative not run-delta", "verdict": "FIXED — root-propagated cost baseline" },
+        { "id": 11, "sev": "P1", "loc": "parallel phase empty not validated", "verdict": "FIXED — require a non-blank agent result" },
+        { "id": 12, "sev": "P2", "loc": "failed attempt blanket empty_output", "verdict": "FIXED — keep classified stopCause" },
+        { "id": 13, "sev": "P2", "loc": "finalize after yield", "verdict": "FIXED — finalize before yielding terminal" },
+        { "id": 1, "sev": "P1", "loc": "hasFinalResponse counts pre-tool narration", "verdict": "DEFERRED iter-006 — the post-tool-text signal over-fires on legitimate narrate-then-act turns (broke 3 tests representing normal tool turns); the sharper distinction needs the TurnController's explicit turn-phase model. Conservative any-text signal still fixes the primary gpt-oss no-text case (live-proven)." },
+        { "id": 7, "sev": "P1", "loc": "momentum recorded before nudge/verify decide", "verdict": "DEFERRED iter-006 — moving recordSuccess past the recursion risks double-counting with the child call's own momentum; entangled with the recursion architecture the TurnController unifies." },
+        { "id": 8, "sev": "P1", "loc": "attempts accumulator omits nudge/verify invocations", "verdict": "PARTIAL/DEFERRED iter-006 — cost baseline + _synthesized now thread through all paths; the full attempt array + artifacts through nudge/verify is the root-owned run accumulator the TurnController introduces." },
+        { "id": 9, "sev": "P1", "loc": "recovery prefers synthesis over fallback in A->B->synth", "verdict": "DEFERRED iter-006 — aggregate recovery is a single tag (fallback|forced_synthesis); an ordered recovery sequence is a schema change best made with the unified accumulator." }
+      ]
+    }
+  },
+  "live_proof": "PASS — same step-capped gpt-oss session that returned text:'' in iter-003 now returns a coherent synthesized answer (bench/iterations/004/runs/gptoss-synthesis-proof.out). The proof itself drove broadening the trigger from cap-only to any-tool-work.",
+  "gate": {
+    "tests": "core 625 green; typecheck clean; as-any 295/295; contract-check green",
+    "verified_p0_p1": "all fixed or deferred-with-rationale (deferred items are iter-006 TurnController scope, not regressions)",
+    "decision": "GREEN"
+  }
+}
