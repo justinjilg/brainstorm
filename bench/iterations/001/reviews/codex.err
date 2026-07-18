@@ -1,0 +1,3120 @@
+Reading additional input from stdin...
+OpenAI Codex v0.144.4
+--------
+workdir: /Users/justin.jilg/Projects/brainstorm
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 019f73d2-f3d1-7191-bb46-1c4cc320a831
+--------
+user
+You are the correctness-focused anchor reviewer. Review the code changes in the file bench/iterations/001/reviews/iter.diff (a git diff of this repo). Read any surrounding source files you need for context. Focus: correctness bugs, regressions, broken edge cases, missing/wrong tests. Ignore style. Output ONLY a JSON array (no prose, no markdown fences): [{"file": string, "line": number, "severity": "P0"|"P1"|"P2", "finding": string, "suggested_fix": string}]. Empty array if no findings.
+exec
+/bin/zsh -lc "sed -n '1,240p' bench/iterations/001/reviews/iter.diff && rg --files -g 'AGENTS.md' -g '"'!node_modules'"' -g '"'!vendor'"'" in /Users/justin.jilg/Projects/brainstorm
+ exited 1 in 0ms:
+diff --git a/bench/.gitignore b/bench/.gitignore
+new file mode 100644
+index 0000000..4c67d34
+--- /dev/null
++++ b/bench/.gitignore
+@@ -0,0 +1 @@
++iterations/*/runs/
+diff --git a/bench/SCOREBOARD.md b/bench/SCOREBOARD.md
+new file mode 100644
+index 0000000..6ebd6b5
+--- /dev/null
++++ b/bench/SCOREBOARD.md
+@@ -0,0 +1,10 @@
++# Brainstorm Self-Improvement Scoreboard
++
++Program: iterative harness hardening with local Acronis models + stochastic review (Codex CLI anchor).
++Full protocol: see the approved plan (plan → implement → smoke → stochastic review → fix → measure/gate/commit).
++Full 75-probe eval and SWE-bench run at milestones (every 3rd iteration). Heuristic (no-Docker) SWE-bench
++results never count as passes.
++
++| iter | date | items | full eval (q3-next / gpt-oss / q3-coder) | SWE-bench (mode) | open P0/P1 | notes |
++|---|---|---|---|---|---|---|
++| 0 | 2026-07-18 | baseline (custom provider + 2 workspace fixes) | 52% / 28% / 33% | not run | 0 | Eval run from repo root, read-only probe tools. q3-next: 100% code-correctness, 36% multi-step. Weakest dims everywhere: tool-selection, multi-step — consistent with 8192-ctx assumption + missing maxOutputTokens (iter 1 targets). |
+diff --git a/bench/eval-subset.json b/bench/eval-subset.json
+new file mode 100644
+index 0000000..b0f3fd8
+--- /dev/null
++++ b/bench/eval-subset.json
+@@ -0,0 +1,37 @@
++{
++  "note": "Frozen stratified subset (first 2 probes per dimension, chosen 2026-07-18, never tuned against). brainstorm eval lacks a per-probe filter; until one exists, per-iteration gates run the 2-3 most relevant --capability dimensions in full and compare dimension scores.",
++  "probes": {
++    "code-correctness": [
++      "code-correct-01",
++      "code-correct-02"
++    ],
++    "context-utilization": [
++      "context-01",
++      "context-02"
++    ],
++    "instruction-adherence": [
++      "instruct-01",
++      "instruct-02"
++    ],
++    "multi-model-workflow": [
++      "e2e-decompose-01",
++      "e2e-decompose-02"
++    ],
++    "multi-step": [
++      "multi-step-01",
++      "multi-step-02"
++    ],
++    "self-correction": [
++      "self-correct-01",
++      "self-correct-02"
++    ],
++    "tool-selection": [
++      "tool-select-01",
++      "tool-select-02"
++    ],
++    "tool-sequencing": [
++      "tool-seq-01",
++      "tool-seq-02"
++    ]
++  }
++}
+\ No newline at end of file
+diff --git a/bench/iterations/001/plan.md b/bench/iterations/001/plan.md
+new file mode 100644
+index 0000000..49fefbe
+--- /dev/null
++++ b/bench/iterations/001/plan.md
+@@ -0,0 +1,22 @@
++# Iteration 001 — model metadata + output tokens
++
++Seed: `ITER=001` → SEED=`$(printf 001 | shasum | cut -c1-8)` = computed at review stage.
++
++## Hypothesis
++The dominant harness-side cap on local-model coding capability is wrong model metadata:
++every custom-endpoint model gets contextWindow 8192 / maxOutputTokens 4096 / reasoning:false,
++and the agent loop never passes an output-token budget to streamText. Fixing A–D should lift
++multi-step and tool-sequencing scores (currently the weakest dimensions for all three models)
++and eliminate gpt-oss-120b's empty-response fallback retries.
++
++## Items
++- **A** — discovery heuristics + honor `context_length`/`max_model_len` from /v1/models (packages/providers/src/local/openai-compat.ts)
++- **B** — `[[models]]` overrides for contextWindow/maxOutputTokens/reasoning (packages/config schema + registry apply)
++- **C** — pass routed model's maxOutputTokens into streamText (packages/core/src/agent/loop.ts)
++- **D** — compaction correctness test with a realistic window
++
++## Gate
++- Unit/typecheck green on providers, config, core.
++- Smoke probes green (registry metadata correct; multi-step coding session with no compaction; gpt-oss long generation without empty-length retry).
++- Stochastic review: verified P0/P1 all resolved; ≥2 of 3 reviewers clean on re-review.
++- Tool-sequencing + multi-step `--capability` eval dims on q3-next and q3-coder ≥ baseline.
+diff --git a/packages/config/src/schema.ts b/packages/config/src/schema.ts
+index 0e75845..76e20d8 100644
+--- a/packages/config/src/schema.ts
++++ b/packages/config/src/schema.ts
+@@ -109,6 +109,12 @@ const modelOverrideSchema = z.object({
+   qualityTier: z.number().min(1).max(5).optional(),
+   speedTier: z.number().min(1).max(5).optional(),
+   bestFor: z.array(z.string()).optional(),
++  // Limit corrections — authoritative when discovery guesses wrong (custom
++  // OpenAI-compatible endpoints often expose no limit metadata). Applied to
++  // both capabilities.contextWindow and limits.* in the registry.
++  contextWindow: z.number().int().positive().optional(),
++  maxOutputTokens: z.number().int().positive().optional(),
++  reasoning: z.boolean().optional(),
+ });
+ 
+ // ── General Config ───────────────────────────────────────────────────
+diff --git a/packages/core/src/__tests__/loop.integration.test.ts b/packages/core/src/__tests__/loop.integration.test.ts
+index 7aed83a..0c44ab2 100644
+--- a/packages/core/src/__tests__/loop.integration.test.ts
++++ b/packages/core/src/__tests__/loop.integration.test.ts
+@@ -116,4 +116,16 @@ describe("Compaction triggers", () => {
+     const percent = getContextPercent(messages, tokens * 2);
+     expect(percent).toBe(50);
+   });
++
++  it("does not compact a realistic coding session under a 128k window", () => {
++    // ~30 turns of tool-heavy coding traffic (~2000 chars each ≈ 15k tokens).
++    // With the old hardcoded 8192-token assumption for custom-endpoint models
++    // this compacted constantly; a real 131072 window must not.
++    const messages = Array.from({ length: 30 }, (_, i) => ({
++      role: (i % 2 === 0 ? "user" : "assistant") as "user" | "assistant",
++      content: "const x = 42; // ".repeat(120),
++    }));
++    expect(needsCompaction(messages, 131072)).toBe(false);
++    expect(needsCompaction(messages, 8192)).toBe(true);
++  });
+ });
+diff --git a/packages/core/src/agent/loop.ts b/packages/core/src/agent/loop.ts
+index 6917248..df4109b 100644
+--- a/packages/core/src/agent/loop.ts
++++ b/packages/core/src/agent/loop.ts
+@@ -889,6 +889,15 @@ export async function* runAgentLoop(
+       ...(metadataHeader
+         ? { headers: { "x-br-metadata": metadataHeader } }
+         : {}),
++      // Give the model its full advertised output budget. The AI SDK does not
++      // infer per-model output limits for OpenAI-compatible providers, and the
++      // server default can be far below the model's real limit — reasoning
++      // models (gpt-oss) then burn the whole budget on reasoning tokens and
++      // finish with `length` + empty text, triggering wasteful fallback
++      // retries.
++      ...(decision.model.limits?.maxOutputTokens
++        ? { maxOutputTokens: decision.model.limits.maxOutputTokens }
++        : {}),
+       abortSignal: effectiveStreamSignal,
+       // Retry on 429/503 with exponential backoff (1s, 2s, 4s).
+       // Without this, rate limits during long KAIROS runs crash the daemon.
+diff --git a/packages/providers/src/__tests__/custom-provider.test.ts b/packages/providers/src/__tests__/custom-provider.test.ts
+index 076feb7..c57c622 100644
+--- a/packages/providers/src/__tests__/custom-provider.test.ts
++++ b/packages/providers/src/__tests__/custom-provider.test.ts
+@@ -5,6 +5,7 @@ import { join } from "node:path";
+ import {
+   resolveCustomProviderKey,
+   discoverOpenAICompatModels,
++  inferModelLimits,
+ } from "../local/openai-compat.js";
+ 
+ describe("resolveCustomProviderKey", () => {
+@@ -51,6 +52,51 @@ describe("resolveCustomProviderKey", () => {
+   });
+ });
+ 
++describe("inferModelLimits", () => {
++  it("recognizes model families by id substring", () => {
++    expect(inferModelLimits({ id: "h200/gpt-oss-120b" })).toEqual({
++      limits: {
++        contextWindow: 131072,
++        maxOutputTokens: 32768,
++        reasoning: true,
++        toolCalling: true,
++      },
++      source: "heuristic",
++    });
++    expect(
++      inferModelLimits({ id: "mac/qwen/qwen3-coder-next" }).limits
++        .contextWindow,
++    ).toBe(262144);
++    expect(
++      inferModelLimits({ id: "mac/text-embedding-qwen3-embedding-4b" }).limits
++        .toolCalling,
++    ).toBe(false);
++  });
++
++  it("prefers server-reported context length over the family heuristic", () => {
++    const { limits, source } = inferModelLimits({
++      id: "h200/gpt-oss-120b",
++      max_model_len: 65536,
++    });
++    expect(source).toBe("server");
++    expect(limits.contextWindow).toBe(65536);
++    expect(limits.reasoning).toBe(true);
++    // Output budget never exceeds the server-reported window.
++    expect(limits.maxOutputTokens).toBeLessThanOrEqual(65536);
++  });
++
++  it("falls back to conservative defaults for unknown families", () => {
++    const { limits, source } = inferModelLimits({ id: "mystery-model-7b" });
++    expect(source).toBe("default");
++    expect(limits).toEqual({
++      contextWindow: 8192,
++      maxOutputTokens: 4096,
++      reasoning: false,
++      toolCalling: true,
++    });
++  });
++});
++
+ describe("discoverOpenAICompatModels with custom providers", () => {
+   afterEach(() => {
+     vi.unstubAllGlobals();
+diff --git a/packages/providers/src/__tests__/registry.test.ts b/packages/providers/src/__tests__/registry.test.ts
+index 91c917d..8910904 100644
+--- a/packages/providers/src/__tests__/registry.test.ts
++++ b/packages/providers/src/__tests__/registry.test.ts
+@@ -137,6 +137,31 @@ describe("createProviderRegistry", () => {
+     );
+   });
+ 
++  it("applies limit overrides from [[models]], honoring explicit falsy values", async () => {
++    const config = createConfig() as any;
++    const target = CLOUD_MODELS.find((m) => m.provider === "anthropic")!;
++    config.models = [
++      {
++        id: target.id,
++        contextWindow: 999_000,
++        maxOutputTokens: 12_345,
++        reasoning: false,
++      },
++    ];
++
++    const registry = await createProviderRegistry(
++      config,
++      createResolvedKeys({ ANTHROPIC_API_KEY: "test-key" }),
+
+exec
+/bin/zsh -lc "sed -n '241,520p' bench/iterations/001/reviews/iter.diff" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
++    );
++
++    const model = registry.getModel(target.id)!;
++    expect(model.capabilities.contextWindow).toBe(999_000);
++    expect(model.limits.contextWindow).toBe(999_000);
++    expect(model.limits.maxOutputTokens).toBe(12_345);
++    // reasoning: false must stick — the old truthiness pattern would drop it.
++    expect(model.capabilities.reasoning).toBe(false);
++  });
++
+   it("registers custom OpenAI-compatible providers and resolves their model ids", async () => {
+     const config = createConfig() as any;
+     config.providers.custom = {
+diff --git a/packages/providers/src/local/openai-compat.ts b/packages/providers/src/local/openai-compat.ts
+index 27beb38..b097084 100644
+--- a/packages/providers/src/local/openai-compat.ts
++++ b/packages/providers/src/local/openai-compat.ts
+@@ -1,8 +1,11 @@
+ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+ import type { ModelEntry } from "@brainst0rm/shared";
++import { createLogger } from "@brainst0rm/shared";
+ import { readFileSync } from "node:fs";
+ import { homedir } from "node:os";
+ 
++const log = createLogger("openai-compat");
++
+ // LM Studio and llama.cpp both expose OpenAI-compatible APIs
+ 
+ export function createLMStudioProvider(baseUrl = "http://localhost:1234") {
+@@ -61,6 +64,113 @@ export function resolveCustomProviderKey(
+   return null;
+ }
+ 
++interface InferredModelLimits {
++  contextWindow: number;
++  maxOutputTokens: number;
++  reasoning: boolean;
++  toolCalling: boolean;
++}
++
++// Family heuristics for endpoints whose /v1/models response carries no limit
++// metadata. Ordered — first match wins. These are conservative floors for the
++// family, not per-checkpoint truth; `[[models]]` config overrides remain the
++// authoritative correction when a deployment differs.
++const MODEL_FAMILY_LIMITS: Array<{
++  match: RegExp;
++  limits: InferredModelLimits;
++}> = [
++  {
++    // Embedding models: not chat-capable at all.
++    match: /embed/i,
++    limits: {
++      contextWindow: 8192,
++      maxOutputTokens: 1,
++      reasoning: false,
++      toolCalling: false,
++    },
++  },
++  {
++    match: /gpt-oss/i,
++    limits: {
++      contextWindow: 131072,
++      maxOutputTokens: 32768,
++      reasoning: true,
++      toolCalling: true,
++    },
++  },
++  {
++    match: /qwen3[-.]?(coder|next)/i,
++    limits: {
++      contextWindow: 262144,
++      maxOutputTokens: 32768,
++      reasoning: false,
++      toolCalling: true,
++    },
++  },
++  {
++    match: /qwen/i,
++    limits: {
++      contextWindow: 131072,
++      maxOutputTokens: 32768,
++      reasoning: false,
++      toolCalling: true,
++    },
++  },
++  {
++    match: /gemma/i,
++    limits: {
++      contextWindow: 131072,
++      maxOutputTokens: 8192,
++      reasoning: false,
++      toolCalling: true,
++    },
++  },
++];
++
++const DEFAULT_INFERRED_LIMITS: InferredModelLimits = {
++  contextWindow: 8192,
++  maxOutputTokens: 4096,
++  reasoning: false,
++  toolCalling: true,
++};
++
++/** Raw /v1/models entry — servers vary in what limit metadata they expose. */
++interface RawModelEntry {
++  id: string;
++  /** LM Studio / OpenRouter convention. */
++  context_length?: number;
++  /** vLLM convention. */
++  max_model_len?: number;
++}
++
++export function inferModelLimits(raw: RawModelEntry): {
++  limits: InferredModelLimits;
++  source: "server" | "heuristic" | "default";
++} {
++  const family =
++    MODEL_FAMILY_LIMITS.find((f) => f.match.test(raw.id))?.limits ?? null;
++  const serverContext =
++    typeof raw.context_length === "number"
++      ? raw.context_length
++      : typeof raw.max_model_len === "number"
++        ? raw.max_model_len
++        : null;
++
++  // Server-reported context wins; family heuristic fills the rest.
++  const base = family ?? DEFAULT_INFERRED_LIMITS;
++  if (serverContext && serverContext > 0) {
++    return {
++      limits: {
++        ...base,
++        contextWindow: serverContext,
++        maxOutputTokens: Math.min(base.maxOutputTokens, serverContext),
++      },
++      source: "server",
++    };
++  }
++  return { limits: base, source: family ? "heuristic" : "default" };
++}
++
+ export async function discoverOpenAICompatModels(
+   name: string,
+   baseUrl: string,
+@@ -72,29 +182,41 @@ export async function discoverOpenAICompatModels(
+       ...(headers ? { headers } : {}),
+     });
+     if (!response.ok) return [];
+-    const data = (await response.json()) as { data?: Array<{ id: string }> };
++    const data = (await response.json()) as { data?: RawModelEntry[] };
+     if (!data.data) return [];
+ 
+-    return data.data.map((m) => ({
+-      id: `${name}:${m.id}`,
+-      provider: name,
+-      name: m.id,
+-      capabilities: {
+-        toolCalling: true,
+-        streaming: true,
+-        vision: false,
+-        reasoning: false,
+-        contextWindow: 8192,
+-        qualityTier: 3 as const,
+-        speedTier: 2 as const,
+-        bestFor: ["conversation" as const, "simple-edit" as const],
+-      },
+-      pricing: { inputPer1MTokens: 0, outputPer1MTokens: 0 },
+-      limits: { contextWindow: 8192, maxOutputTokens: 4096 },
+-      status: "available" as const,
+-      isLocal: true,
+-      lastHealthCheck: Date.now(),
+-    }));
++    return data.data.map((m) => {
++      const { limits, source } = inferModelLimits(m);
++      if (source === "default") {
++        log.warn(
++          { provider: name, model: m.id },
++          "No limit metadata from server and no family heuristic matched — assuming 8192-token context. Correct via [[models]] overrides if wrong.",
++        );
++      }
++      return {
++        id: `${name}:${m.id}`,
++        provider: name,
++        name: m.id,
++        capabilities: {
++          toolCalling: limits.toolCalling,
++          streaming: true,
++          vision: false,
++          reasoning: limits.reasoning,
++          contextWindow: limits.contextWindow,
++          qualityTier: 3 as const,
++          speedTier: 2 as const,
++          bestFor: ["conversation" as const, "simple-edit" as const],
++        },
++        pricing: { inputPer1MTokens: 0, outputPer1MTokens: 0 },
++        limits: {
++          contextWindow: limits.contextWindow,
++          maxOutputTokens: limits.maxOutputTokens,
++        },
++        status: "available" as const,
++        isLocal: true,
++        lastHealthCheck: Date.now(),
++      };
++    });
+   } catch {
+     return [];
+   }
+diff --git a/packages/providers/src/registry.ts b/packages/providers/src/registry.ts
+index 6e67eb5..179fbae 100644
+--- a/packages/providers/src/registry.ts
++++ b/packages/providers/src/registry.ts
+@@ -223,16 +223,25 @@ export async function createProviderRegistry(
+   const { models: localModels } = await discoverLocalModels(config.providers);
+   allModels.push(...localModels);
+ 
+-  // Apply model overrides from config
++  // Apply model overrides from config. `!== undefined` (not truthiness) so
++  // explicit falsy values like `reasoning = false` are honored.
+   for (const override of config.models) {
+     const existing = allModels.find((m) => m.id === override.id);
+     if (existing) {
+-      if (override.qualityTier)
++      if (override.qualityTier !== undefined)
+         existing.capabilities.qualityTier = override.qualityTier as any;
+-      if (override.speedTier)
++      if (override.speedTier !== undefined)
+         existing.capabilities.speedTier = override.speedTier as any;
+-      if (override.bestFor)
++      if (override.bestFor !== undefined)
+         existing.capabilities.bestFor = override.bestFor as any;
++      if (override.contextWindow !== undefined) {
++        existing.capabilities.contextWindow = override.contextWindow;
++        existing.limits.contextWindow = override.contextWindow;
++      }
++      if (override.maxOutputTokens !== undefined)
++        existing.limits.maxOutputTokens = override.maxOutputTokens;
++      if (override.reasoning !== undefined)
++        existing.capabilities.reasoning = override.reasoning;
+     }
+   }
+ 
+
+exec
+/bin/zsh -lc "sed -n '70,145p' packages/config/src/schema.ts
+sed -n '820,930p' packages/core/src/agent/loop.ts
+sed -n '180,270p' packages/providers/src/registry.ts
+rg -n \"maxOutputTokens|contextWindow|reasoning\" packages/shared packages/providers packages/config packages/core/src | head -240
+rg -n \"streamText\\(\" packages/core/src packages -g '*.ts'" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+  defaultTimeout: z.number().default(120_000),
+  maxOutputBytes: z.number().default(50_000),
+  // none: no restrictions, restricted: block dangerous commands, container: Docker sandbox
+  sandbox: z.enum(["none", "restricted", "container"]).default("restricted"),
+  containerImage: z.string().default("node:22-slim"),
+  containerTimeout: z.number().default(120_000),
+  sandboxPool: sandboxPoolSchema.default({}),
+});
+
+// ── Budget Config ────────────────────────────────────────────────────
+
+const budgetSchema = z.object({
+  daily: z.number().optional(),
+  monthly: z.number().optional(),
+  perSession: z.number().optional(),
+  perProject: z.number().optional(),
+  hardLimit: z.boolean().default(false),
+});
+
+// ── Routing Rules ────────────────────────────────────────────────────
+
+const routingRuleMatchSchema = z.object({
+  task: z.string().optional(),
+  complexity: z.string().optional(),
+  filePattern: z.string().optional(),
+  language: z.string().optional(),
+});
+
+const routingRuleSchema = z.object({
+  match: routingRuleMatchSchema,
+  model: z.string().optional(),
+  preferProvider: z.string().optional(),
+  strategy: z.enum(["cost-first", "quality-first"]).optional(),
+});
+
+// ── Model Override ───────────────────────────────────────────────────
+
+const modelOverrideSchema = z.object({
+  id: z.string(),
+  qualityTier: z.number().min(1).max(5).optional(),
+  speedTier: z.number().min(1).max(5).optional(),
+  bestFor: z.array(z.string()).optional(),
+  // Limit corrections — authoritative when discovery guesses wrong (custom
+  // OpenAI-compatible endpoints often expose no limit metadata). Applied to
+  // both capabilities.contextWindow and limits.* in the registry.
+  contextWindow: z.number().int().positive().optional(),
+  maxOutputTokens: z.number().int().positive().optional(),
+  reasoning: z.boolean().optional(),
+});
+
+// ── General Config ───────────────────────────────────────────────────
+
+const generalSchema = z.object({
+  defaultStrategy: z
+    .enum([
+      "cost-first",
+      "quality-first",
+      "rule-based",
+      "combined",
+      "capability",
+      "learned",
+    ])
+    .default("combined"),
+  confirmTools: z.boolean().default(true),
+  defaultPermissionMode: z.enum(["auto", "confirm", "plan"]).default("confirm"),
+  theme: z.enum(["dark", "light"]).default("dark"),
+  maxSteps: z.number().default(10),
+  outputStyle: z.enum(["concise", "detailed", "learning"]).default("concise"),
+  costSafetyMargin: z.number().min(1).max(3).default(1.3),
+  loopDetector: z
+    .object({
+      readThreshold: z.number().default(4),
+      repeatThreshold: z.number().default(3),
+    })
+    .default({}),
+  /** Subagent filesystem isolation: none, git-stash, docker */
+
+  // Per-model tool name adaptation: rename tools to match what each provider's
+  // models were trained on (e.g., bash → shell_command for OpenAI). We adapt
+  // the OUTBOUND tool list so the model sees provider-native names. The
+  // AI SDK then dispatches a tool call to the executor keyed under that same
+  // adapted name — but every downstream consumer in the stream loop compares
+  // against CANONICAL names (file_read/file_write/file_edit/shell/subagent)
+  // for turn-context tracking, build-state capture, loop detection, and TUI
+  // events. The INBOUND rename (reverseToolName below) maps each observed
+  // tool-call name back to canonical at the point the loop resolves it, so a
+  // model that emits a renamed name (apply_patch, replace, read_file, …) is
+  // tracked and surfaced under its canonical identity rather than silently
+  // missing every comparison.
+  let finalTools = aiTools;
+  if (aiTools && decision) {
+    const adapted = adaptToolsForModel(aiTools, decision.model);
+    finalTools = adapted.adaptedTools;
+  }
+
+  // Serialize task context for gateway telemetry (x-br-metadata header)
+  const metadataHeader = serializeRoutingMetadata(task, decision);
+
+  const turnStartMs = Date.now();
+  const sessionCostBefore = costTracker.getSessionCost();
+  try {
+    // Use segmented system prompt for prompt caching when available.
+    // AI SDK v6 accepts system as string | SystemModelMessage | Array<SystemModelMessage>.
+    // Segments with cacheable=true get Anthropic cache_control hints; ignored by other providers.
+    const systemForAPI = options.systemSegments
+      ? segmentsToSystemArray(options.systemSegments)
+      : systemPrompt;
+
+    // Provider-safety normalization: extract any system-role messages from the
+    // history and fold them into the system field. Compaction injects 4-5
+    // system-role messages mid-stream (preserved-context block, summary,
+    // scratchpad, etc.). Anthropic + OpenAI tolerate this; Gemini's provider
+    // throws AI_UnsupportedFunctionalityError because Google's API only
+    // accepts system messages at the start of the conversation.
+    //
+    // We append extracted system content to the system field as additional
+    // segments so the model still sees it, just routed through the right
+    // channel. The remaining messages array contains only user/assistant
+    // turns — what every provider expects.
+    const { systemForApiNormalized, messagesForApi } =
+      normalizeSystemMessagesForProvider(systemForAPI, messages);
+
+    // Stream-stall watchdog: a provider may open the SSE connection but
+    // never send any event (silent proxy drop, network stall, provider
+    // hang). The for-await-of below only checks the staleness timer when
+    // a part arrives, so without this watchdog a truly-hung stream would
+    // block the loop forever. Link the watchdog's signal with any parent
+    // signal so both sources terminate the stream.
+    const streamAbort = new AbortController();
+    const effectiveStreamSignal = linkSignals(
+      streamAbort.signal,
+      options.signal,
+    );
+    const result = streamText({
+      model: modelId,
+      system: systemForApiNormalized as any,
+      messages: messagesForApi as any,
+      ...(finalTools ? { tools: finalTools } : {}),
+      // Phase 7: on a narration-nudge corrective retry ONLY, force a real tool
+      // call so the model cannot narrate-and-stop again. Scoped to this single
+      // re-entry via options._forceToolChoice; never permanent (that would stop
+      // the model ever finishing). Only meaningful when tools are present.
+      ...(finalTools && options._forceToolChoice
+        ? { toolChoice: "required" as const }
+        : {}),
+      ...(metadataHeader
+        ? { headers: { "x-br-metadata": metadataHeader } }
+        : {}),
+      // Give the model its full advertised output budget. The AI SDK does not
+      // infer per-model output limits for OpenAI-compatible providers, and the
+      // server default can be far below the model's real limit — reasoning
+      // models (gpt-oss) then burn the whole budget on reasoning tokens and
+      // finish with `length` + empty text, triggering wasteful fallback
+      // retries.
+      ...(decision.model.limits?.maxOutputTokens
+        ? { maxOutputTokens: decision.model.limits.maxOutputTokens }
+        : {}),
+      abortSignal: effectiveStreamSignal,
+      // Retry on 429/503 with exponential backoff (1s, 2s, 4s).
+      // Without this, rate limits during long KAIROS runs crash the daemon.
+      maxRetries: 3,
+      stopWhen: stepCountIs(
+        shouldUseTools ? (options.maxSteps ?? config.general.maxSteps) : 1,
+      ),
+      onStepFinish: async ({ usage }: any) => {
+        if (usage) {
+          const inputTokens = usage.inputTokens ?? 0;
+          const outputTokens = usage.outputTokens ?? 0;
+          // AI SDK v6 exposes cache-read tokens on the usage object. These
+          // are a subset of inputTokens and are billed at a reduced rate.
+          const cachedTokens = usage.cachedInputTokens ?? 0;
+          try {
+            costTracker.record({
+              sessionId,
+              modelId: decision.model.id,
+              provider: decision.model.provider,
+              inputTokens,
+              outputTokens,
+              cachedTokens,
+              taskType: task.type,
+              projectPath: options.projectPath,
+              pricing: decision.model.pricing,
+            });
+          } catch (dbErr) {
+            // SQLite write failure (disk full, locked, etc.) — log but don't crash the agent loop
+            log.error(
+              { err: dbErr },
+        streaming: true,
+        vision: true,
+        reasoning: true,
+        contextWindow: 200000,
+        qualityTier: 1,
+        speedTier: 1,
+        bestFor: [
+          "code-generation",
+          "debugging",
+          "refactoring",
+          "analysis",
+          "multi-file-edit",
+          "explanation",
+          "conversation",
+        ],
+      },
+      pricing: { inputPer1MTokens: 0, outputPer1MTokens: 0 }, // SaaS handles pricing
+      limits: { contextWindow: 200000, maxOutputTokens: 16384 },
+      status: "available",
+      isLocal: false,
+      lastHealthCheck: Date.now(),
+    });
+  }
+
+  // Import BR's live model catalog (opt-in: only when a BR key is configured).
+  // This lets the router see & select ANY tool-capable model BR serves, not
+  // just the statically curated CLOUD_MODELS. Static entries WIN on id
+  // collision (curated capability/pricing data beats synthesized placeholders).
+  // fetchBrModelCatalog is resilient by contract — it never throws — so a
+  // network failure/timeout/absent key silently keeps the static catalog.
+  if (brApiKey) {
+    const brCatalog = await fetchBrModelCatalog(brApiKey, {
+      fetchImpl: options.brCatalogFetch,
+    });
+    const existingIds = new Set(allModels.map((m) => m.id));
+    for (const model of brCatalog) {
+      if (existingIds.has(model.id)) continue; // static wins
+      existingIds.add(model.id);
+      allModels.push(model);
+    }
+  }
+
+  // Discover local models
+  const { models: localModels } = await discoverLocalModels(config.providers);
+  allModels.push(...localModels);
+
+  // Apply model overrides from config. `!== undefined` (not truthiness) so
+  // explicit falsy values like `reasoning = false` are honored.
+  for (const override of config.models) {
+    const existing = allModels.find((m) => m.id === override.id);
+    if (existing) {
+      if (override.qualityTier !== undefined)
+        existing.capabilities.qualityTier = override.qualityTier as any;
+      if (override.speedTier !== undefined)
+        existing.capabilities.speedTier = override.speedTier as any;
+      if (override.bestFor !== undefined)
+        existing.capabilities.bestFor = override.bestFor as any;
+      if (override.contextWindow !== undefined) {
+        existing.capabilities.contextWindow = override.contextWindow;
+        existing.limits.contextWindow = override.contextWindow;
+      }
+      if (override.maxOutputTokens !== undefined)
+        existing.limits.maxOutputTokens = override.maxOutputTokens;
+      if (override.reasoning !== undefined)
+        existing.capabilities.reasoning = override.reasoning;
+    }
+  }
+
+  // Overlay eval-derived capability scores (from `brainstorm eval`) and mark
+  // them as measured. Models without eval data keep their static assumed
+  // scores but are flagged as unmeasured — the capability strategy prefers
+  // measured scores over assumed ones to avoid rewarding guesses.
+  const evalScores = loadEvalCapabilityScores();
+  for (const [modelId, entry] of Object.entries(evalScores)) {
+    const model = allModels.find((m) => m.id === modelId);
+    if (model) {
+      model.capabilities.capabilityScores = entry.scores;
+      (model.capabilities as any).scoresAreMeasured = true;
+    }
+  }
+
+  // Persist model list to cache for faster subsequent startups
+  saveProviderCache(allModels);
+
+  const registry: ProviderRegistry = {
+    models: allModels,
+    hasBrainstormSaaS,
+
+    getModel(id: string) {
+      return allModels.find((m) => m.id === id);
+    },
+packages/core/src/session/trajectory.ts:68:  reasoning: string;
+packages/core/src/session/compaction.ts:45:  contextWindow: number,
+packages/core/src/session/compaction.ts:50:  return tokens > contextWindow * 0.8;
+packages/core/src/session/compaction.ts:56:  contextWindow: number,
+packages/core/src/session/compaction.ts:59:  return Math.round((tokens / contextWindow) * 100);
+packages/core/src/session/compaction.ts:76:    contextWindow: number;
+packages/core/src/session/compaction.ts:99:  const { contextWindow, keepRecent = 5, summarizeModel } = options;
+packages/core/src/session/compaction.ts:107:  if (!needsCompaction(workingMessages, contextWindow)) {
+packages/core/src/session/manager.ts:212:  needsCompaction(contextWindow: number): boolean {
+packages/core/src/session/manager.ts:213:    return needsCompaction(this.conversationHistory, contextWindow);
+packages/core/src/session/manager.ts:217:    contextWindow: number;
+packages/providers/src/registry.ts:182:        reasoning: true,
+packages/providers/src/registry.ts:183:        contextWindow: 200000,
+packages/providers/src/registry.ts:197:      limits: { contextWindow: 200000, maxOutputTokens: 16384 },
+packages/providers/src/registry.ts:227:  // explicit falsy values like `reasoning = false` are honored.
+packages/providers/src/registry.ts:237:      if (override.contextWindow !== undefined) {
+packages/providers/src/registry.ts:238:        existing.capabilities.contextWindow = override.contextWindow;
+packages/providers/src/registry.ts:239:        existing.limits.contextWindow = override.contextWindow;
+packages/providers/src/registry.ts:241:      if (override.maxOutputTokens !== undefined)
+packages/providers/src/registry.ts:242:        existing.limits.maxOutputTokens = override.maxOutputTokens;
+packages/providers/src/registry.ts:243:      if (override.reasoning !== undefined)
+packages/providers/src/registry.ts:244:        existing.capabilities.reasoning = override.reasoning;
+packages/core/src/personas/base.ts:5: * structured reasoning frameworks, output templates, and model-specific
+packages/core/src/personas/base.ts:19:  tier: "deep-thinker" | "balanced" | "fast" | "reasoning" | "vision";
+packages/core/src/personas/base.ts:31:  /** Embedded reasoning frameworks (C4, OWASP, Given/When/Then, etc.) */
+packages/core/src/personas/base.ts:53:- Show your reasoning: trade-offs, risks, dependencies
+packages/core/src/personas/base.ts:78:You are a reasoning model with internal chain-of-thought.
+packages/core/src/personas/base.ts:79:- Do NOT explain your reasoning step-by-step — reason internally.
+packages/core/src/personas/base.ts:82:- Your internal reasoning is extensive; your output should be concise.`;
+packages/core/src/personas/base.ts:110:    modelPattern: /o3-mini|o1|r1|reasoning/i,
+packages/core/src/personas/base.ts:111:    tier: "reasoning",
+packages/core/src/personas/base.ts:123: * 2. Model-specific tuning (deep-thinker / balanced / fast / reasoning)
+packages/shared/src/telemetry.ts:22:  /** Requires reasoning */
+packages/providers/src/cloud/models.ts:16:      reasoning: true,
+packages/providers/src/cloud/models.ts:17:      contextWindow: 1000000,
+packages/providers/src/cloud/models.ts:42:    limits: { contextWindow: 1000000, maxOutputTokens: 32768 },
+packages/providers/src/cloud/models.ts:55:      reasoning: true,
+packages/providers/src/cloud/models.ts:56:      contextWindow: 1000000,
+packages/providers/src/cloud/models.ts:81:    limits: { contextWindow: 1000000, maxOutputTokens: 16384 },
+packages/providers/src/cloud/models.ts:94:      reasoning: false,
+packages/providers/src/cloud/models.ts:95:      contextWindow: 200000,
+packages/providers/src/cloud/models.ts:114:    limits: { contextWindow: 200000, maxOutputTokens: 8192 },
+packages/providers/src/cloud/models.ts:128:      reasoning: true,
+packages/providers/src/cloud/models.ts:129:      contextWindow: 1048576,
+packages/providers/src/cloud/models.ts:154:    limits: { contextWindow: 1048576, maxOutputTokens: 32768 },
+packages/providers/src/cloud/models.ts:167:      reasoning: false,
+packages/providers/src/cloud/models.ts:168:      contextWindow: 1047576,
+packages/providers/src/cloud/models.ts:187:    limits: { contextWindow: 1047576, maxOutputTokens: 16384 },
+packages/providers/src/cloud/models.ts:200:      reasoning: true,
+packages/providers/src/cloud/models.ts:201:      contextWindow: 200000,
+packages/providers/src/cloud/models.ts:220:    limits: { contextWindow: 200000, maxOutputTokens: 100000 },
+packages/providers/src/cloud/models.ts:234:      reasoning: true,
+packages/providers/src/cloud/models.ts:235:      contextWindow: 2097152,
+packages/providers/src/cloud/models.ts:260:    limits: { contextWindow: 2097152, maxOutputTokens: 65536 },
+packages/providers/src/cloud/models.ts:273:      reasoning: true,
+packages/providers/src/cloud/models.ts:274:      contextWindow: 1048576,
+packages/providers/src/cloud/models.ts:293:    limits: { contextWindow: 1048576, maxOutputTokens: 65536 },
+packages/providers/src/cloud/models.ts:307:      reasoning: true,
+packages/providers/src/cloud/models.ts:308:      contextWindow: 131072,
+packages/providers/src/cloud/models.ts:332:    limits: { contextWindow: 131072, maxOutputTokens: 16384 },
+packages/providers/src/cloud/models.ts:346:      reasoning: false,
+packages/providers/src/cloud/models.ts:347:      contextWindow: 65536,
+packages/providers/src/cloud/models.ts:366:    limits: { contextWindow: 65536, maxOutputTokens: 8192 },
+packages/providers/src/cloud/models.ts:385:      reasoning: true,
+packages/providers/src/cloud/models.ts:386:      contextWindow: 200000,
+packages/providers/src/cloud/models.ts:410:    limits: { contextWindow: 200000, maxOutputTokens: 16384 },
+packages/providers/src/cloud/br-envelope.ts:22: *   ROUTING:  routed-model, route-reason, route-confidence, routing-reasoning,
+packages/providers/src/cloud/br-envelope.ts:74:  "x-br-routing-reasoning",
+packages/providers/src/cloud/br-envelope.ts:161:  /** Full reasoning JSON. Parsed if valid JSON; raw string otherwise. */
+packages/providers/src/cloud/br-envelope.ts:315:    routingReasoning: tryJson(get("x-br-routing-reasoning")),
+packages/providers/src/cloud/brainstorm-saas.ts:264:  const contextWindow =
+packages/providers/src/cloud/brainstorm-saas.ts:270:  const maxOutputTokens =
+packages/providers/src/cloud/brainstorm-saas.ts:283:      reasoning: false,
+packages/providers/src/cloud/brainstorm-saas.ts:284:      contextWindow,
+packages/providers/src/cloud/brainstorm-saas.ts:293:    limits: { contextWindow, maxOutputTokens },
+packages/shared/src/types.ts:56:  reasoning: boolean;
+packages/shared/src/types.ts:57:  contextWindow: number;
+packages/shared/src/types.ts:72:  contextWindow: number;
+packages/shared/src/types.ts:73:  maxOutputTokens: number;
+packages/shared/src/types.ts:235:  | { type: "reasoning"; content: string }
+packages/core/src/skills/builtin/documentation-and-adrs/SKILL.md:25:ADRs capture the reasoning behind significant technical decisions. They're the highest-value documentation you can write.
+packages/providers/src/__tests__/registry.test.ts:146:        contextWindow: 999_000,
+packages/providers/src/__tests__/registry.test.ts:147:        maxOutputTokens: 12_345,
+packages/providers/src/__tests__/registry.test.ts:148:        reasoning: false,
+packages/providers/src/__tests__/registry.test.ts:158:    expect(model.capabilities.contextWindow).toBe(999_000);
+packages/providers/src/__tests__/registry.test.ts:159:    expect(model.limits.contextWindow).toBe(999_000);
+packages/providers/src/__tests__/registry.test.ts:160:    expect(model.limits.maxOutputTokens).toBe(12_345);
+packages/providers/src/__tests__/registry.test.ts:161:    // reasoning: false must stick — the old truthiness pattern would drop it.
+packages/providers/src/__tests__/registry.test.ts:162:    expect(model.capabilities.reasoning).toBe(false);
+packages/config/src/schema.ts:114:  // both capabilities.contextWindow and limits.* in the registry.
+packages/config/src/schema.ts:115:  contextWindow: z.number().int().positive().optional(),
+packages/config/src/schema.ts:116:  maxOutputTokens: z.number().int().positive().optional(),
+packages/config/src/schema.ts:117:  reasoning: z.boolean().optional(),
+packages/config/src/schema.ts:359:// Slack channel intake — DeerFlow-style transport/reasoning split. The
+packages/config/src/schema.ts:461:       * tool-call, reasoning, finish) before declaring the stream dead
+packages/config/src/schema.ts:464:       * long stretches of silent reasoning may need higher values; raw
+packages/providers/src/__tests__/cloud-models.test.ts:63:      expect(model.capabilities.contextWindow).toBeGreaterThanOrEqual(4096);
+packages/providers/src/__tests__/cloud-models.test.ts:64:      expect(model.capabilities.contextWindow).toBeLessThanOrEqual(2_100_000);
+packages/providers/src/__tests__/br-envelope.test.ts:68:  "x-br-routing-reasoning":
+packages/providers/src/__tests__/br-envelope.test.ts:279:    synth["x-br-routing-reasoning"] = JSON.stringify({ marker: "rr" });
+packages/core/src/__tests__/loop-tool-enforcement.test.ts:112:      reasoning: false,
+packages/core/src/__tests__/loop-tool-enforcement.test.ts:113:      contextWindow: 200000,
+packages/core/src/__tests__/loop-tool-enforcement.test.ts:119:    limits: { contextWindow: 200000, maxOutputTokens: 8000 },
+packages/providers/src/__tests__/custom-provider.test.ts:59:        contextWindow: 131072,
+packages/providers/src/__tests__/custom-provider.test.ts:60:        maxOutputTokens: 32768,
+packages/providers/src/__tests__/custom-provider.test.ts:61:        reasoning: true,
+packages/providers/src/__tests__/custom-provider.test.ts:68:        .contextWindow,
+packages/providers/src/__tests__/custom-provider.test.ts:82:    expect(limits.contextWindow).toBe(65536);
+packages/providers/src/__tests__/custom-provider.test.ts:83:    expect(limits.reasoning).toBe(true);
+packages/providers/src/__tests__/custom-provider.test.ts:85:    expect(limits.maxOutputTokens).toBeLessThanOrEqual(65536);
+packages/providers/src/__tests__/custom-provider.test.ts:92:      contextWindow: 8192,
+packages/providers/src/__tests__/custom-provider.test.ts:93:      maxOutputTokens: 4096,
+packages/providers/src/__tests__/custom-provider.test.ts:94:      reasoning: false,
+packages/core/src/agent/loop.ts:315:    contextWindow: number;
+packages/core/src/agent/loop.ts:582:    reasoning: decision.reason ?? "",
+packages/core/src/agent/loop.ts:610:    const contextWindow = decision.model.limits.contextWindow || 128_000;
+packages/core/src/agent/loop.ts:614:    if (tokenEstimate > contextWindow * threshold) {
+packages/core/src/agent/loop.ts:631:              contextWindow,
+packages/core/src/agent/loop.ts:894:      // server default can be far below the model's real limit — reasoning
+packages/core/src/agent/loop.ts:895:      // models (gpt-oss) then burn the whole budget on reasoning tokens and
+packages/core/src/agent/loop.ts:898:      ...(decision.model.limits?.maxOutputTokens
+packages/core/src/agent/loop.ts:899:        ? { maxOutputTokens: decision.model.limits.maxOutputTokens }
+packages/core/src/agent/loop.ts:986:    // models that emit long stretches of silent reasoning may need a
+packages/core/src/agent/loop.ts:1035:        if (part.type === "reasoning-delta") {
+packages/core/src/agent/loop.ts:1037:          if (content) yield { type: "reasoning" as const, content };
+packages/core/src/agent/output-styles.ts:5: * - detailed: Longer explanations, reasoning shown, trade-offs discussed.
+packages/core/src/agent/output-styles.ts:16:- Don't explain your reasoning unless asked.
+packages/core/src/agent/output-styles.ts:22:Provide thorough explanations alongside your actions. Show your reasoning and discuss trade-offs.
+packages/providers/src/local/ollama.ts:42:          reasoning: tier <= 2 || m.name.includes("gemma4"),
+packages/providers/src/local/ollama.ts:43:          contextWindow: inferContextWindow(m.name),
+packages/providers/src/local/ollama.ts:50:          contextWindow: inferContextWindow(m.name),
+packages/providers/src/local/ollama.ts:51:          maxOutputTokens: 4096,
+packages/providers/src/local/openai-compat.ts:68:  contextWindow: number;
+packages/providers/src/local/openai-compat.ts:69:  maxOutputTokens: number;
+packages/providers/src/local/openai-compat.ts:70:  reasoning: boolean;
+packages/providers/src/local/openai-compat.ts:86:      contextWindow: 8192,
+packages/providers/src/local/openai-compat.ts:87:      maxOutputTokens: 1,
+packages/providers/src/local/openai-compat.ts:88:      reasoning: false,
+packages/providers/src/local/openai-compat.ts:95:      contextWindow: 131072,
+packages/providers/src/local/openai-compat.ts:96:      maxOutputTokens: 32768,
+packages/providers/src/local/openai-compat.ts:97:      reasoning: true,
+packages/providers/src/local/openai-compat.ts:104:      contextWindow: 262144,
+packages/providers/src/local/openai-compat.ts:105:      maxOutputTokens: 32768,
+packages/providers/src/local/openai-compat.ts:106:      reasoning: false,
+packages/providers/src/local/openai-compat.ts:113:      contextWindow: 131072,
+packages/providers/src/local/openai-compat.ts:114:      maxOutputTokens: 32768,
+packages/providers/src/local/openai-compat.ts:115:      reasoning: false,
+packages/providers/src/local/openai-compat.ts:122:      contextWindow: 131072,
+packages/providers/src/local/openai-compat.ts:123:      maxOutputTokens: 8192,
+packages/providers/src/local/openai-compat.ts:124:      reasoning: false,
+packages/providers/src/local/openai-compat.ts:131:  contextWindow: 8192,
+packages/providers/src/local/openai-compat.ts:132:  maxOutputTokens: 4096,
+packages/providers/src/local/openai-compat.ts:133:  reasoning: false,
+packages/providers/src/local/openai-compat.ts:165:        contextWindow: serverContext,
+packages/providers/src/local/openai-compat.ts:166:        maxOutputTokens: Math.min(base.maxOutputTokens, serverContext),
+packages/providers/src/local/openai-compat.ts:204:          reasoning: limits.reasoning,
+packages/providers/src/local/openai-compat.ts:205:          contextWindow: limits.contextWindow,
+packages/providers/src/local/openai-compat.ts:212:          contextWindow: limits.contextWindow,
+packages/providers/src/local/openai-compat.ts:213:          maxOutputTokens: limits.maxOutputTokens,
+packages/core/src/middleware/index.ts:98:  contextWindow?: number,
+packages/core/src/middleware/index.ts:118:  pipeline.use(createProactiveCompactionMiddleware(contextWindow));
+packages/core/src/middleware/builtin/proactive-compaction.ts:18: *   without a full compaction pass. The model drops internal reasoning
+packages/core/src/middleware/builtin/proactive-compaction.ts:28:  contextWindow = DEFAULT_CONTEXT_WINDOW,
+packages/core/src/middleware/builtin/proactive-compaction.ts:39:      const percent = Math.round((tokenEstimate / contextWindow) * 100);
+packages/core/src/middleware/builtin/proactive-compaction.ts:62:            "Drop intermediate reasoning and keep only: (1) what task you're working on, " +
+packages/core/src/skills/builtin/daemon-operations/SKILL.md:54:- Use tools directly rather than reasoning about what to do
+packages/core/src/__tests__/revise-loop.test.ts:33:      reasoning: true,
+packages/core/src/__tests__/revise-loop.test.ts:34:      contextWindow: 200000,
+packages/core/src/__tests__/revise-loop.test.ts:49:    limits: { contextWindow: 200000, maxOutputTokens: 8192 },
+packages/core/src/__tests__/loop-verify.test.ts:109:      reasoning: false,
+packages/core/src/__tests__/loop-verify.test.ts:110:      contextWindow: 200000,
+packages/core/src/__tests__/loop-verify.test.ts:116:    limits: { contextWindow: 200000, maxOutputTokens: 8000 },
+packages/core/src/__tests__/subagent-tool-enforcement.test.ts:78:      reasoning: false,
+packages/core/src/__tests__/subagent-tool-enforcement.test.ts:79:      contextWindow: 200000,
+packages/core/src/__tests__/subagent-tool-enforcement.test.ts:85:    limits: { contextWindow: 200000, maxOutputTokens: 4000 },
+packages/core/src/__tests__/loop-max-output-tokens.test.ts:44:function buildModel(maxOutputTokens: number | undefined): ModelEntry {
+packages/core/src/__tests__/loop-max-output-tokens.test.ts:53:      reasoning: true,
+packages/core/src/__tests__/loop-max-output-tokens.test.ts:54:      contextWindow: 131072,
+packages/core/src/__tests__/loop-max-output-tokens.test.ts:60:    limits: { contextWindow: 131072, maxOutputTokens: maxOutputTokens as any },
+packages/core/src/__tests__/loop-max-output-tokens.test.ts:147:describe("agent loop — maxOutputTokens forwarding", () => {
+packages/core/src/__tests__/loop-max-output-tokens.test.ts:155:  it("forwards the routed model's maxOutputTokens to streamText", async () => {
+packages/core/src/__tests__/loop-max-output-tokens.test.ts:160:      expect(_streamTextCalls[0].maxOutputTokens).toBe(32768);
+packages/core/src/__tests__/loop-max-output-tokens.test.ts:166:  it("omits maxOutputTokens when the model advertises no limit", async () => {
+packages/core/src/__tests__/loop-max-output-tokens.test.ts:171:      expect("maxOutputTokens" in _streamTextCalls[0]).toBe(false);
+packages/core/src/__tests__/contract-handoff.test.ts:129:      reasoning: true,
+packages/core/src/__tests__/contract-handoff.test.ts:130:      contextWindow: 200000,
+packages/core/src/__tests__/contract-handoff.test.ts:145:    limits: { contextWindow: 200000, maxOutputTokens: 8192 },
+packages/core/src/__tests__/e2e-pipeline.test.ts:123:        reasoning: false,
+packages/core/src/__tests__/e2e-pipeline.test.ts:124:        contextWindow: 8000,
+packages/core/src/__tests__/e2e-pipeline.test.ts:130:      limits: { contextWindow: 8000, maxOutputTokens: 2000 },
+packages/core/src/__tests__/subagent-tool-adapt.test.ts:72:      reasoning: false,
+packages/core/src/__tests__/subagent-tool-adapt.test.ts:73:      contextWindow: 128000,
+packages/core/src/__tests__/subagent-tool-adapt.test.ts:79:    limits: { contextWindow: 128000, maxOutputTokens: 4000 },
+packages/core/src/skills/builtin/code-review-and-quality/SKILL.md:114:**Body:** What is changing and why. Include context, decisions, and reasoning not visible in the code itself. Link to bug numbers, benchmark results, or design docs where relevant. Acknowledge approach shortcomings when they exist.
+packages/core/src/__tests__/loop-tool-calling.test.ts:111:      reasoning: false,
+packages/core/src/__tests__/loop-tool-calling.test.ts:112:      contextWindow: 128000,
+packages/core/src/__tests__/loop-tool-calling.test.ts:118:    limits: { contextWindow: 128000, maxOutputTokens: 4000 },
+packages/core/src/__tests__/loop-chaos.test.ts:156:      reasoning: false,
+packages/core/src/__tests__/loop-chaos.test.ts:157:      contextWindow: 8000,
+packages/core/src/__tests__/loop-chaos.test.ts:163:    limits: { contextWindow: 8000, maxOutputTokens: 2000 },
+packages/core/src/skills/builtin/multi-model-routing/SKILL.md:14:| quality-first | Complex reasoning, code generation, architecture         | Higher cost, better results    |
+packages/core/src/skills/builtin/godmode-operations/SKILL.md:65:- `agent_ooda_events` — autonomous reasoning trail
+packages/core/src/session/compaction.ts:161:      const result = streamText({
+packages/core/src/agent/subagent.ts:867:  // the run() callback. If we call streamText() outside the callback, the
+packages/core/src/agent/subagent.ts:925:        const result = streamText({
+packages/core/src/agent/loop.ts:877:    const result = streamText({
+packages/core/src/session/compaction.ts:161:      const result = streamText({
+packages/core/src/agent/subagent.ts:867:  // the run() callback. If we call streamText() outside the callback, the
+packages/core/src/agent/subagent.ts:925:        const result = streamText({
+packages/cli/src/bin/brainstorm.ts:4880:            const result = streamText({
+packages/core/src/agent/loop.ts:877:    const result = streamText({
+
+exec
+/bin/zsh -lc "sed -n '1,230p' packages/core/src/__tests__/loop-max-output-tokens.test.ts
+sed -n '1,240p' packages/providers/src/__tests__/custom-provider.test.ts
+sed -n '1,180p' packages/providers/src/local/index.ts
+sed -n '1,120p' packages/providers/src/local/ollama.ts
+sed -n '1,130p' packages/shared/src/types.ts
+rg -n \"models:\" packages/config/src/schema.ts packages/config/src -g '*.ts'" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+// Capture every streamText invocation's options so we can assert the loop
+// forwards the routed model's output-token budget.
+let _streamTextCalls: any[] = [];
+
+vi.mock("ai", async (importOriginal) => {
+  const actual: any = await importOriginal();
+  return {
+    ...actual,
+    streamText: vi.fn((opts: any) => {
+      _streamTextCalls.push(opts);
+      if (opts.onStepFinish) {
+        setImmediate(() => {
+          opts.onStepFinish({
+            usage: { inputTokens: 5, outputTokens: 2 },
+            finishReason: "stop",
+          });
+        });
+      }
+      async function* fullStream() {
+        yield { type: "text-delta", text: "ok" };
+      }
+      return {
+        fullStream: fullStream(),
+        textStream: (async function* () {})(),
+        text: Promise.resolve("ok"),
+        usage: Promise.resolve({ inputTokens: 5, outputTokens: 2 }),
+        finishReason: Promise.resolve("stop"),
+        response: Promise.resolve({ headers: new Map() }),
+      };
+    }),
+  };
+});
+
+import { runAgentLoop } from "../agent/loop.js";
+import { BrainstormRouter, CostTracker } from "@brainst0rm/router";
+import { getTestDb } from "@brainst0rm/db";
+import type { ModelEntry } from "@brainst0rm/shared";
+
+function buildModel(maxOutputTokens: number | undefined): ModelEntry {
+  return {
+    id: "acronis:test/model",
+    provider: "acronis",
+    name: "test/model",
+    capabilities: {
+      toolCalling: true,
+      streaming: true,
+      vision: false,
+      reasoning: true,
+      contextWindow: 131072,
+      qualityTier: 3,
+      speedTier: 2,
+      bestFor: ["code-generation"],
+    },
+    pricing: { inputPer1MTokens: 0, outputPer1MTokens: 0 },
+    limits: { contextWindow: 131072, maxOutputTokens: maxOutputTokens as any },
+    status: "available",
+    isLocal: true,
+    lastHealthCheck: 0,
+  };
+}
+
+function buildContext(model: ModelEntry) {
+  const tmpProjectPath = mkdtempSync(join(tmpdir(), "brainstorm-maxout-"));
+  const originalHome = process.env.HOME;
+  const fakeHome = mkdtempSync(join(tmpdir(), "brainstorm-home-"));
+  process.env.HOME = fakeHome;
+
+  const config: any = {
+    general: {
+      defaultStrategy: "combined",
+      confirmTools: false,
+      defaultPermissionMode: "auto",
+      theme: "dark",
+      maxSteps: 3,
+      outputStyle: "concise",
+      costSafetyMargin: 1.3,
+      loopDetector: { readThreshold: 10, repeatThreshold: 5 },
+      subagentIsolation: "none",
+    },
+    budget: { hardLimit: false },
+    routing: { rules: [], fallbackModels: [] },
+    shell: { defaultTimeout: 60000, maxOutputBytes: 50000 },
+  };
+
+  const registry: any = {
+    models: [model],
+    getModel: (id: string) => (id === model.id ? model : undefined),
+    getProvider: () => ({}),
+  };
+
+  const db = getTestDb();
+  const sessionId = `maxout-${Math.random().toString(36).slice(2, 8)}`;
+  db.prepare(
+    `INSERT INTO sessions (id, project_path, created_at, updated_at)
+     VALUES (?, ?, ?, ?)`,
+  ).run(
+    sessionId,
+    tmpProjectPath,
+    Math.floor(Date.now() / 1000),
+    Math.floor(Date.now() / 1000),
+  );
+  const costTracker = new CostTracker(db, config.budget);
+  const router = new BrainstormRouter(config, registry, costTracker);
+  const tools: any = {
+    listTools: () => [],
+    list: () => [],
+    get: () => undefined,
+    filterByNames: () => [],
+    toAISDKTools: () => ({}),
+  };
+
+  return {
+    cleanup: () => {
+      rmSync(tmpProjectPath, { recursive: true, force: true });
+      rmSync(fakeHome, { recursive: true, force: true });
+      if (originalHome) process.env.HOME = originalHome;
+    },
+    run: async () => {
+      const gen = runAgentLoop([{ role: "user" as const, content: "hi" }], {
+        config,
+        registry,
+        router,
+        costTracker,
+        tools,
+        sessionId,
+        projectPath: tmpProjectPath,
+        systemPrompt: "You are a test agent.",
+        preferredModelId: model.id,
+        disableTools: true,
+        trajectoryEnabled: false,
+      } as any);
+      const events: any[] = [];
+      for await (const ev of gen) {
+        events.push(ev);
+        if (events.length > 50) break;
+      }
+      return events;
+    },
+  };
+}
+
+describe("agent loop — maxOutputTokens forwarding", () => {
+  beforeEach(() => {
+    _streamTextCalls = [];
+  });
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("forwards the routed model's maxOutputTokens to streamText", async () => {
+    const ctx = buildContext(buildModel(32768));
+    try {
+      await ctx.run();
+      expect(_streamTextCalls.length).toBeGreaterThan(0);
+      expect(_streamTextCalls[0].maxOutputTokens).toBe(32768);
+    } finally {
+      ctx.cleanup();
+    }
+  });
+
+  it("omits maxOutputTokens when the model advertises no limit", async () => {
+    const ctx = buildContext(buildModel(undefined));
+    try {
+      await ctx.run();
+      expect(_streamTextCalls.length).toBeGreaterThan(0);
+      expect("maxOutputTokens" in _streamTextCalls[0]).toBe(false);
+    } finally {
+      ctx.cleanup();
+    }
+  });
+});
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  resolveCustomProviderKey,
+  discoverOpenAICompatModels,
+  inferModelLimits,
+} from "../local/openai-compat.js";
+
+describe("resolveCustomProviderKey", () => {
+  it("returns null when neither apiKeyEnv nor apiKeyFile is set", () => {
+    expect(resolveCustomProviderKey({})).toBeNull();
+  });
+
+  it("prefers apiKeyEnv over apiKeyFile", () => {
+    const dir = mkdtempSync(join(tmpdir(), "bs-key-"));
+    const keyFile = join(dir, "key");
+    writeFileSync(keyFile, "file-token\n");
+    try {
+      const key = resolveCustomProviderKey(
+        { apiKeyEnv: "SOME_KEY", apiKeyFile: keyFile },
+        (name) => (name === "SOME_KEY" ? "env-token" : null),
+      );
+      expect(key).toBe("env-token");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("falls back to a trimmed apiKeyFile when the env var is unset", () => {
+    const dir = mkdtempSync(join(tmpdir(), "bs-key-"));
+    const keyFile = join(dir, "key");
+    writeFileSync(keyFile, "  file-token\n");
+    try {
+      const key = resolveCustomProviderKey(
+        { apiKeyEnv: "UNSET_KEY", apiKeyFile: keyFile },
+        () => null,
+      );
+      expect(key).toBe("file-token");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns null for an unreadable key file instead of throwing", () => {
+    const key = resolveCustomProviderKey(
+      { apiKeyFile: "/nonexistent/path/key" },
+      () => null,
+    );
+    expect(key).toBeNull();
+  });
+});
+
+describe("inferModelLimits", () => {
+  it("recognizes model families by id substring", () => {
+    expect(inferModelLimits({ id: "h200/gpt-oss-120b" })).toEqual({
+      limits: {
+        contextWindow: 131072,
+        maxOutputTokens: 32768,
+        reasoning: true,
+        toolCalling: true,
+      },
+      source: "heuristic",
+    });
+    expect(
+      inferModelLimits({ id: "mac/qwen/qwen3-coder-next" }).limits
+        .contextWindow,
+    ).toBe(262144);
+    expect(
+      inferModelLimits({ id: "mac/text-embedding-qwen3-embedding-4b" }).limits
+        .toolCalling,
+    ).toBe(false);
+  });
+
+  it("prefers server-reported context length over the family heuristic", () => {
+    const { limits, source } = inferModelLimits({
+      id: "h200/gpt-oss-120b",
+      max_model_len: 65536,
+    });
+    expect(source).toBe("server");
+    expect(limits.contextWindow).toBe(65536);
+    expect(limits.reasoning).toBe(true);
+    // Output budget never exceeds the server-reported window.
+    expect(limits.maxOutputTokens).toBeLessThanOrEqual(65536);
+  });
+
+  it("falls back to conservative defaults for unknown families", () => {
+    const { limits, source } = inferModelLimits({ id: "mystery-model-7b" });
+    expect(source).toBe("default");
+    expect(limits).toEqual({
+      contextWindow: 8192,
+      maxOutputTokens: 4096,
+      reasoning: false,
+      toolCalling: true,
+    });
+  });
+});
+
+describe("discoverOpenAICompatModels with custom providers", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("passes auth headers and prefixes model ids with the provider name", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        data: [{ id: "h200/gpt-oss-120b" }, { id: "mac/qwen3.6-27b" }],
+      }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const models = await discoverOpenAICompatModels(
+      "acme",
+      "http://llm.acme.internal",
+      { Authorization: "Bearer acme-token" },
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://llm.acme.internal/v1/models",
+      expect.objectContaining({
+        headers: { Authorization: "Bearer acme-token" },
+      }),
+    );
+    expect(models.map((m) => m.id)).toEqual([
+      "acme:h200/gpt-oss-120b",
+      "acme:mac/qwen3.6-27b",
+    ]);
+    expect(models.every((m) => m.provider === "acme" && m.isLocal)).toBe(true);
+  });
+
+  it("omits the headers key entirely when no auth is configured", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({
+      ok: true,
+      json: async () => ({ data: [] }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await discoverOpenAICompatModels("acme", "http://llm.acme.internal");
+
+    const init = fetchMock.mock.calls[0][1] ?? {};
+    expect("headers" in init).toBe(false);
+  });
+});
+sed: packages/providers/src/local/index.ts: No such file or directory
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import type { ModelEntry } from "@brainst0rm/shared";
+
+export function createOllamaProvider(baseUrl = "http://localhost:11434") {
+  return createOpenAICompatible({
+    name: "ollama",
+    baseURL: `${baseUrl}/v1`,
+  });
+}
+
+export async function discoverOllamaModels(
+  baseUrl = "http://localhost:11434",
+): Promise<ModelEntry[]> {
+  try {
+    const response = await fetch(`${baseUrl}/api/tags`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!response.ok) return [];
+    const data = (await response.json()) as {
+      models?: Array<{
+        name: string;
+        size: number;
+        details?: { parameter_size?: string; family?: string };
+      }>;
+    };
+    if (!data.models) return [];
+
+    return data.models.map((m) => {
+      const paramSize = m.details?.parameter_size ?? "";
+      const tier = inferQualityTier(paramSize);
+      return {
+        id: `ollama:${m.name}`,
+        provider: "ollama",
+        name: m.name,
+        capabilities: {
+          toolCalling: true,
+          streaming: true,
+          vision:
+            m.name.includes("vision") ||
+            m.name.includes("llava") ||
+            m.name.includes("gemma4"),
+          reasoning: tier <= 2 || m.name.includes("gemma4"),
+          contextWindow: inferContextWindow(m.name),
+          qualityTier: tier,
+          speedTier: inferSpeedTier(paramSize),
+          bestFor: inferBestFor(m.name, tier),
+        },
+        pricing: { inputPer1MTokens: 0, outputPer1MTokens: 0 },
+        limits: {
+          contextWindow: inferContextWindow(m.name),
+          maxOutputTokens: 4096,
+        },
+        status: "available" as const,
+        isLocal: true,
+        lastHealthCheck: Date.now(),
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+function inferQualityTier(paramSize: string): 1 | 2 | 3 | 4 | 5 {
+  const size = paramSize.toLowerCase();
+  if (size.includes("70b") || size.includes("72b")) return 2;
+  if (size.includes("32b") || size.includes("34b")) return 2;
+  if (size.includes("13b") || size.includes("14b")) return 3;
+  if (size.includes("7b") || size.includes("8b")) return 4;
+  if (size.includes("3b") || size.includes("1b")) return 5;
+  return 3;
+}
+
+function inferSpeedTier(paramSize: string): 1 | 2 | 3 | 4 | 5 {
+  const size = paramSize.toLowerCase();
+  if (size.includes("1b") || size.includes("3b")) return 1;
+  if (size.includes("7b") || size.includes("8b")) return 2;
+  if (size.includes("13b") || size.includes("14b")) return 3;
+  if (size.includes("32b") || size.includes("34b")) return 4;
+  if (size.includes("70b") || size.includes("72b")) return 5;
+  return 3;
+}
+
+function inferContextWindow(name: string): number {
+  if (name.includes("gemma4")) return 262144; // Gemma 4: 256K native
+  if (name.includes("128k")) return 131072;
+  if (name.includes("32k")) return 32768;
+  return 8192;
+}
+
+function inferBestFor(
+  name: string,
+  tier: number,
+): Array<
+  "simple-edit" | "code-generation" | "explanation" | "conversation" | "search"
+> {
+  const best: Array<
+    | "simple-edit"
+    | "code-generation"
+    | "explanation"
+    | "conversation"
+    | "search"
+  > = ["conversation"];
+  if (
+    name.includes("code") ||
+    name.includes("coder") ||
+    name.includes("deepseek")
+  ) {
+    best.push("code-generation", "simple-edit");
+  }
+  if (tier <= 3) best.push("explanation");
+  return best;
+}
+// ── Task Classification ──────────────────────────────────────────────
+
+export type TaskType =
+  | "simple-edit"
+  | "code-generation"
+  | "refactoring"
+  | "debugging"
+  | "explanation"
+  | "conversation"
+  | "analysis"
+  | "search"
+  | "multi-file-edit"
+  | "ingest"
+  | "audit"
+  | "migration"
+  | "documentation";
+
+export type Complexity =
+  | "trivial"
+  | "simple"
+  | "moderate"
+  | "complex"
+  | "expert";
+
+export interface TaskProfile {
+  type: TaskType;
+  complexity: Complexity;
+  estimatedTokens: { input: number; output: number };
+  requiresToolUse: boolean;
+  requiresReasoning: boolean;
+  language?: string;
+  domain?: string;
+}
+
+// ── Model Registry ───────────────────────────────────────────────────
+
+export type QualityTier = 1 | 2 | 3 | 4 | 5;
+export type SpeedTier = 1 | 2 | 3 | 4 | 5;
+export type ModelStatus = "available" | "degraded" | "unavailable";
+
+/** Scored capability dimensions from the eval harness (0-1 scale). */
+export interface CapabilityScores {
+  toolSelection: number;
+  toolSequencing: number;
+  codeGeneration: number;
+  multiStepReasoning: number;
+  instructionFollowing: number;
+  contextUtilization: number;
+  selfCorrection: number;
+}
+
+export interface ModelCapabilities {
+  toolCalling: boolean;
+  streaming: boolean;
+  vision: boolean;
+  reasoning: boolean;
+  contextWindow: number;
+  qualityTier: QualityTier;
+  speedTier: SpeedTier;
+  bestFor: TaskType[];
+  /** Scored capability profile from eval harness. Populated by `brainstorm eval`. */
+  capabilityScores?: CapabilityScores;
+}
+
+export interface ModelPricing {
+  inputPer1MTokens: number;
+  outputPer1MTokens: number;
+  cachedInputPer1MTokens?: number;
+}
+
+export interface ModelLimits {
+  contextWindow: number;
+  maxOutputTokens: number;
+  requestsPerMinute?: number;
+  tokensPerMinute?: number;
+}
+
+export interface ModelEntry {
+  id: string;
+  provider: string;
+  name: string;
+  capabilities: ModelCapabilities;
+  pricing: ModelPricing;
+  limits: ModelLimits;
+  status: ModelStatus;
+  isLocal: boolean;
+  lastHealthCheck: number;
+}
+
+// ── Routing ──────────────────────────────────────────────────────────
+
+export type StrategyName =
+  | "cost-first"
+  | "quality-first"
+  | "rule-based"
+  | "combined"
+  | "capability"
+  | "learned"
+  | "auto";
+
+export interface RoutingDecision {
+  model: ModelEntry;
+  fallbacks: ModelEntry[];
+  reason: string;
+  estimatedCost: number;
+  strategy: StrategyName;
+}
+
+export interface RoutingContext {
+  budget: BudgetState;
+  sessionCost: number;
+  conversationTokens: number;
+  userPreferences: UserModelPrefs;
+  recentFailures: FailureRecord[];
+}
+
+export interface BudgetState {
+  dailyUsed: number;
+  dailyLimit?: number;
+  monthlyUsed: number;
+  monthlyLimit?: number;
+  sessionUsed: number;
+  sessionLimit?: number;
+  hardLimit: boolean;
+}
+
+export interface UserModelPrefs {
+  preferLocal: boolean;
+  preferredProvider?: string;
+  excludeModels?: string[];
+packages/config/src/schema.ts:456:  models: z.array(modelOverrideSchema).default([]),
+packages/config/src/schema.ts:456:  models: z.array(modelOverrideSchema).default([]),
+
+exec
+/bin/zsh -lc "sed -n '540,690p' packages/core/src/agent/loop.ts
+sed -n '140,190p' packages/core/src/session/compaction.ts
+sed -n '900,975p' packages/core/src/agent/subagent.ts
+sed -n '4850,4910p' packages/cli/src/bin/brainstorm.ts
+nl -ba packages/core/src/agent/loop.ts | sed -n '888,907p'
+nl -ba packages/providers/src/local/openai-compat.ts | sed -n '140,225p'
+nl -ba packages/providers/src/registry.ts | sed -n '228,250p'" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+        type: "loop-warning" as const,
+        message: `Model '${options.preferredModelId}' not available — falling back to ${routed.model.id}`,
+      };
+      decision = routed;
+    }
+  } else {
+    decision = router.route(task, conversationTokens);
+  }
+
+  // Circuit breaker check: if the chosen model has an open circuit, swap to
+  // the first available fallback with a closed circuit. This prevents
+  // cascade failures when a provider is degraded — instead of hitting the
+  // failed model 3 times per session, we skip it immediately after 3 total
+  // failures within the cooldown window.
+  const primaryCircuit = getLLMCircuit(decision.model.id);
+  if (!primaryCircuit.canExecute()) {
+    const openModelId = decision.model.id;
+    const fallbackWithClosedCircuit = decision.fallbacks?.find((f) =>
+      getLLMCircuit(f.id).canExecute(),
+    );
+    if (fallbackWithClosedCircuit) {
+      yield {
+        type: "loop-warning" as const,
+        message: `Circuit open for ${openModelId} — routing to ${fallbackWithClosedCircuit.id}`,
+      };
+      decision = {
+        ...decision,
+        model: fallbackWithClosedCircuit,
+        reason: `Circuit breaker: primary ${openModelId} is open, using fallback`,
+      };
+    }
+    // If no fallback has a closed circuit either, proceed anyway — we'll
+    // let streamText try and the failure will be recorded normally.
+  }
+
+  yield { type: "routing", decision };
+
+  // Record routing decision in trajectory
+  trajectory?.recordRoutingDecision({
+    candidates: [],
+    winner: decision.model.id,
+    strategy: decision.strategy ?? "unknown",
+    reasoning: decision.reason ?? "",
+    taskType: task.type,
+    complexity: task.complexity,
+  });
+
+  // Check if ensemble generation should be used for this task
+  const ensembleEnabled = (config as any).ensemble?.enabled ?? false;
+  if (shouldUseEnsemble(task.complexity, ensembleEnabled)) {
+    yield {
+      type: "ensemble-info",
+      message: `Ensemble mode: task complexity "${task.complexity}" qualifies for multi-model verification`,
+    } as any;
+    // Ensemble execution uses selectWinner() + pruneResults() from ensemble.ts.
+    // Currently single-model with ensemble flag — parallel streamText with voting
+    // is activated when budget allows and 2+ models are available via BrainstormRouter.
+  }
+
+  // Cost prediction — yield estimate so CLI can display it
+  const costPrediction = predictTaskCost(task, [decision.model]);
+  if (costPrediction.estimated > 0.01) {
+    yield { type: "cost-prediction", prediction: costPrediction } as any;
+  }
+
+  // Phase: connecting
+  yield { type: "thinking" as const, phase: "connecting" as const };
+
+  // Check if context compaction is needed before the LLM call
+  if (options.compaction && config.compaction?.enabled !== false) {
+    const contextWindow = decision.model.limits.contextWindow || 128_000;
+    const threshold = config.compaction?.threshold ?? 0.8;
+    const tokenEstimate = options.compaction.getTokenEstimate();
+
+    if (tokenEstimate > contextWindow * threshold) {
+      try {
+        // Caller-owned timer + AbortController so the listener is cleaned
+        // up when compact() wins the race (the normal path). Previously an
+        // AbortSignal.timeout() handle retained the abort listener and
+        // fired reject() on an already-resolved promise 30s later, leaking
+        // the closure once per compaction.
+        const COMPACTION_TIMEOUT_MS = 30_000;
+        const compactionTimeoutController = new AbortController();
+        const compactionTimeoutTimer = setTimeout(
+          () => compactionTimeoutController.abort(),
+          COMPACTION_TIMEOUT_MS,
+        );
+        let compactionResult;
+        try {
+          compactionResult = await Promise.race([
+            options.compaction.compact({
+              contextWindow,
+              keepRecent: config.compaction?.keepRecent ?? 5,
+            }),
+            new Promise<never>((_, reject) => {
+              compactionTimeoutController.signal.addEventListener(
+                "abort",
+                () => reject(new Error("Compaction timeout")),
+                { once: true },
+              );
+            }),
+          ]);
+        } finally {
+          clearTimeout(compactionTimeoutTimer);
+        }
+        if (compactionResult.compacted) {
+          yield {
+            type: "compaction",
+            removed: compactionResult.removed,
+            tokensBefore: compactionResult.tokensBefore,
+            tokensAfter: compactionResult.tokensAfter,
+          };
+        }
+      } catch (compactionErr) {
+        // Compaction failed — continue without it rather than crashing the session
+        log.warn(
+          { err: compactionErr },
+          "Compaction failed, continuing without compaction",
+        );
+      }
+    }
+  }
+
+  // Always resolve through the provider registry — it handles local, cloud, and SaaS models
+  const modelId = options.registry.getProvider(decision.model.id);
+
+  // Provide tools unless explicitly disabled by the caller (e.g., brainstorm run without --tools)
+  const shouldUseTools = !options.disableTools;
+
+  // Progressive tool loading: select tool tier based on task complexity.
+  // Only restrict tools for trivial tasks (Q&A, simple reads). All other tasks
+  // get the full tool set until mid-session escalation is implemented.
+  const toolTier = getTierForComplexity(task.complexity);
+  const useFullTools = toolTier !== "minimal";
+  const allToolNames = tools.listTools().map((t) => t.name);
+  let effectiveToolNames = useFullTools
+    ? undefined
+    : getToolsForTier(toolTier, allToolNames);
+
+  // Role-based tool scoping: apply allowedTools/blockedTools from the active role.
+  // allowedTools is a whitelist (only these tools). blockedTools is a blacklist (all except these).
+  // Role filter merges with tier filter — the intersection is used.
+  if (options.roleToolFilter) {
+    const { allowedTools: roleAllowed, blockedTools: roleBlocked } =
+      options.roleToolFilter;
+    const allToolNames = tools.listTools().map((t) => t.name);
+
+    if (roleAllowed && roleAllowed.length > 0) {
+      // Whitelist: only these tools are available
+      const roleSet = new Set(roleAllowed);
+      if (effectiveToolNames) {
+  for (let i = 0; i < oldMessages.length; i++) {
+    const classification = classifyMessage(oldMessages[i], oldMessages, i);
+    if (classification === "keep") {
+      kept.push(oldMessages[i]);
+    } else if (classification === "summarize") {
+      toSummarize.push(oldMessages[i]);
+    } else {
+      dropped++;
+    }
+  }
+
+  let summary: string;
+  let summaryCost = 0;
+
+  if (summarizeModel && toSummarize.length > 0) {
+    // Use an LLM to summarize only the 'summarize' bucket
+    try {
+      const oldText = toSummarize
+        .map((m) => `[${m.role}]: ${m.content.slice(0, 500)}`)
+        .join("\n\n");
+
+      const result = streamText({
+        model: summarizeModel,
+        system:
+          "Summarize this conversation concisely. Preserve: key decisions, file paths mentioned, errors encountered, and current task context. Be brief.",
+        messages: [{ role: "user" as const, content: oldText }],
+        abortSignal: AbortSignal.timeout(30_000),
+      });
+
+      let summaryText = "";
+      for await (const part of result.fullStream) {
+        if (part.type === "text-delta") {
+          summaryText += (part as any).text ?? (part as any).delta ?? "";
+        }
+      }
+
+      // Capture summarization cost from usage
+      try {
+        const usage = await result.usage;
+        if (usage) {
+          const inputTokens = (usage as any).inputTokens ?? 0;
+          const outputTokens = (usage as any).outputTokens ?? 0;
+          const p = options.pricing;
+          summaryCost = p
+            ? (inputTokens / 1_000_000) * p.inputPer1MTokens +
+              (outputTokens / 1_000_000) * p.outputPer1MTokens
+            : (inputTokens + outputTokens) * 0.000001;
+        }
+      } catch {
+        /* usage not available — non-fatal */
+      }
+    const messages: any[] = [
+      {
+        role: "user" as const,
+        content: `[Project: ${projectPath}]\n\n${task}`,
+      },
+    ];
+
+    await withWorkspace(projectPath, async () => {
+      // Bounded re-invocation loop = the single-streamText analogue of the
+      // loop's Phase 7 self-recursion. `nudge` is the nudgeDepth: iteration 0
+      // is the original run; each subsequent iteration is one corrective
+      // re-run. It ALL lives inside this one withWorkspace callback so every
+      // streamText + its internal async tool chain inherits the AsyncLocalStorage
+      // workspace context (see the block comment above — hoisting streamText
+      // out breaks path resolution for tool calls).
+      let forceToolChoice = false;
+      for (let nudge = 0; ; nudge++) {
+        // Per-iteration accumulators (mirror the loop's per-turn state). The
+        // module-scope fullText/toolCallNames accumulate ACROSS retries for the
+        // returned result; these locals hold only THIS run's output so the gate
+        // judges the just-finished turn (like the loop's fresh recursion).
+        let iterText = "";
+        let iterToolCalls = 0;
+        let finishReason: string | undefined;
+
+        const result = streamText({
+          model: modelId,
+          system: systemForAPI as any,
+          messages,
+          tools: filteredTools,
+          // Phase 7: force a real tool call ONLY on a corrective retry, and
+          // never on the terminal retry (see forceToolChoice below), so the
+          // model can still finish with a clean text answer. Only meaningful
+          // when tools are present.
+          ...(hasTools && forceToolChoice
+            ? { toolChoice: "required" as const }
+            : {}),
+          ...(metadataHeader
+            ? { headers: { "x-br-metadata": metadataHeader } }
+            : {}),
+          abortSignal: effectiveAbort,
+          stopWhen: stepCountIs(maxSteps),
+          onStepFinish: async ({ usage }: any) => {
+            if (usage) {
+              const inputTokens = usage.inputTokens ?? 0;
+              const outputTokens = usage.outputTokens ?? 0;
+              const stepCost =
+                (inputTokens / 1_000_000) *
+                  decision.model.pricing.inputPer1MTokens +
+                (outputTokens / 1_000_000) *
+                  decision.model.pricing.outputPer1MTokens;
+              subagentCostAccum += stepCost;
+              costTracker.record({
+                sessionId: subagentSessionId,
+                modelId: decision.model.id,
+                provider: decision.model.provider,
+                inputTokens,
+                outputTokens,
+                taskType: taskProfile.type,
+                projectPath,
+                pricing: decision.model.pricing,
+              });
+            }
+            if (subagentCostAccum >= budgetLimit) {
+              budgetExceeded = true;
+              budgetAbort.abort();
+            }
+          },
+        });
+
+        for await (const part of result.fullStream) {
+          if (part.type === "text-delta") {
+            const delta = (part as any).delta ?? (part as any).text ?? "";
+            iterText += delta;
+            fullText += delta;
+          } else if (part.type === "tool-call") {
+
+      // Create LLM dispatcher for onboard phases (deep exploration, team assembly, etc.)
+      let dispatcher;
+      if (!opts.staticOnly) {
+        const config = loadConfig();
+        const db = getDb();
+        const envKeys = new Map<string, string>();
+        for (const name of PROVIDER_KEY_NAMES) {
+          const val = process.env[name];
+          if (val) envKeys.set(name, val);
+        }
+        const resolvedKeys: ResolvedKeys = {
+          get: (name: string) => envKeys.get(name) ?? null,
+        };
+        const registry = await createProviderRegistry(config, resolvedKeys);
+        const costTracker = new CostTracker(db, config.budget);
+        const { frontmatter } = buildSystemPrompt(absPath);
+        const router = new BrainstormRouter(
+          config,
+          registry,
+          costTracker,
+          frontmatter,
+        );
+
+        const { streamText } = await import("ai");
+        dispatcher = {
+          async explore(prompt: string, budget: number) {
+            const task = router.classify(prompt);
+            const decision = router.route(task, { preferCheap: true });
+            const modelId = registry.getProvider(decision.model.id);
+            const result = streamText({
+              model: modelId,
+              messages: [{ role: "user" as const, content: prompt }],
+              maxRetries: 3,
+            });
+            let text = "";
+            for await (const chunk of (result as any).textStream) {
+              text += chunk;
+            }
+            const usage = await (result as any).usage;
+            const cost =
+              ((usage?.inputTokens ?? 0) / 1_000_000) *
+                decision.model.pricing.inputPer1MTokens +
+              ((usage?.outputTokens ?? 0) / 1_000_000) *
+                decision.model.pricing.outputPer1MTokens;
+            return { text, cost };
+          },
+          async generate(prompt: string, budget: number) {
+            return this.explore(prompt, budget);
+          },
+        };
+      }
+
+      for await (const event of runOnboardPipeline(options, dispatcher)) {
+        switch (event.type) {
+          case "onboard-started":
+            if (event.estimatedBudget > 0) {
+              console.log(
+                `  Budget: $${options.budget?.toFixed(2) ?? "auto"} (estimated ~$${event.estimatedBudget.toFixed(2)})`,
+              );
+              console.log();
+   888	        : {}),
+   889	      ...(metadataHeader
+   890	        ? { headers: { "x-br-metadata": metadataHeader } }
+   891	        : {}),
+   892	      // Give the model its full advertised output budget. The AI SDK does not
+   893	      // infer per-model output limits for OpenAI-compatible providers, and the
+   894	      // server default can be far below the model's real limit — reasoning
+   895	      // models (gpt-oss) then burn the whole budget on reasoning tokens and
+   896	      // finish with `length` + empty text, triggering wasteful fallback
+   897	      // retries.
+   898	      ...(decision.model.limits?.maxOutputTokens
+   899	        ? { maxOutputTokens: decision.model.limits.maxOutputTokens }
+   900	        : {}),
+   901	      abortSignal: effectiveStreamSignal,
+   902	      // Retry on 429/503 with exponential backoff (1s, 2s, 4s).
+   903	      // Without this, rate limits during long KAIROS runs crash the daemon.
+   904	      maxRetries: 3,
+   905	      stopWhen: stepCountIs(
+   906	        shouldUseTools ? (options.maxSteps ?? config.general.maxSteps) : 1,
+   907	      ),
+   140	  /** LM Studio / OpenRouter convention. */
+   141	  context_length?: number;
+   142	  /** vLLM convention. */
+   143	  max_model_len?: number;
+   144	}
+   145	
+   146	export function inferModelLimits(raw: RawModelEntry): {
+   147	  limits: InferredModelLimits;
+   148	  source: "server" | "heuristic" | "default";
+   149	} {
+   150	  const family =
+   151	    MODEL_FAMILY_LIMITS.find((f) => f.match.test(raw.id))?.limits ?? null;
+   152	  const serverContext =
+   153	    typeof raw.context_length === "number"
+   154	      ? raw.context_length
+   155	      : typeof raw.max_model_len === "number"
+   156	        ? raw.max_model_len
+   157	        : null;
+   158	
+   159	  // Server-reported context wins; family heuristic fills the rest.
+   160	  const base = family ?? DEFAULT_INFERRED_LIMITS;
+   161	  if (serverContext && serverContext > 0) {
+   162	    return {
+   163	      limits: {
+   164	        ...base,
+   165	        contextWindow: serverContext,
+   166	        maxOutputTokens: Math.min(base.maxOutputTokens, serverContext),
+   167	      },
+   168	      source: "server",
+   169	    };
+   170	  }
+   171	  return { limits: base, source: family ? "heuristic" : "default" };
+   172	}
+   173	
+   174	export async function discoverOpenAICompatModels(
+   175	  name: string,
+   176	  baseUrl: string,
+   177	  headers?: Record<string, string>,
+   178	): Promise<ModelEntry[]> {
+   179	  try {
+   180	    const response = await fetch(`${baseUrl}/v1/models`, {
+   181	      signal: AbortSignal.timeout(3000),
+   182	      ...(headers ? { headers } : {}),
+   183	    });
+   184	    if (!response.ok) return [];
+   185	    const data = (await response.json()) as { data?: RawModelEntry[] };
+   186	    if (!data.data) return [];
+   187	
+   188	    return data.data.map((m) => {
+   189	      const { limits, source } = inferModelLimits(m);
+   190	      if (source === "default") {
+   191	        log.warn(
+   192	          { provider: name, model: m.id },
+   193	          "No limit metadata from server and no family heuristic matched — assuming 8192-token context. Correct via [[models]] overrides if wrong.",
+   194	        );
+   195	      }
+   196	      return {
+   197	        id: `${name}:${m.id}`,
+   198	        provider: name,
+   199	        name: m.id,
+   200	        capabilities: {
+   201	          toolCalling: limits.toolCalling,
+   202	          streaming: true,
+   203	          vision: false,
+   204	          reasoning: limits.reasoning,
+   205	          contextWindow: limits.contextWindow,
+   206	          qualityTier: 3 as const,
+   207	          speedTier: 2 as const,
+   208	          bestFor: ["conversation" as const, "simple-edit" as const],
+   209	        },
+   210	        pricing: { inputPer1MTokens: 0, outputPer1MTokens: 0 },
+   211	        limits: {
+   212	          contextWindow: limits.contextWindow,
+   213	          maxOutputTokens: limits.maxOutputTokens,
+   214	        },
+   215	        status: "available" as const,
+   216	        isLocal: true,
+   217	        lastHealthCheck: Date.now(),
+   218	      };
+   219	    });
+   220	  } catch {
+   221	    return [];
+   222	  }
+   223	}
+   228	  for (const override of config.models) {
+   229	    const existing = allModels.find((m) => m.id === override.id);
+   230	    if (existing) {
+   231	      if (override.qualityTier !== undefined)
+   232	        existing.capabilities.qualityTier = override.qualityTier as any;
+   233	      if (override.speedTier !== undefined)
+   234	        existing.capabilities.speedTier = override.speedTier as any;
+   235	      if (override.bestFor !== undefined)
+   236	        existing.capabilities.bestFor = override.bestFor as any;
+   237	      if (override.contextWindow !== undefined) {
+   238	        existing.capabilities.contextWindow = override.contextWindow;
+   239	        existing.limits.contextWindow = override.contextWindow;
+   240	      }
+   241	      if (override.maxOutputTokens !== undefined)
+   242	        existing.limits.maxOutputTokens = override.maxOutputTokens;
+   243	      if (override.reasoning !== undefined)
+   244	        existing.capabilities.reasoning = override.reasoning;
+   245	    }
+   246	  }
+   247	
+   248	  // Overlay eval-derived capability scores (from `brainstorm eval`) and mark
+   249	  // them as measured. Models without eval data keep their static assumed
+   250	  // scores but are flagged as unmeasured — the capability strategy prefers
+
+exec
+/bin/zsh -lc "rg -n \"toolCalling|status ===|availableModels|filter\\(\" packages/router/src packages/providers/src/registry.ts | head -240
+sed -n '1,260p' packages/router/src/router.ts 2>/dev/null || true
+rg -n \"class BrainstormRouter\" packages/router/src -g '*.ts'" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+packages/providers/src/registry.ts:168:    : CLOUD_MODELS.filter((m) => availableCloudProviders.has(m.provider));
+packages/providers/src/registry.ts:179:        toolCalling: true,
+packages/providers/src/registry.ts:319:      const cloudAndSaas = allModels.filter((m) => !m.isLocal);
+packages/router/src/stream-observer.ts:82:    if (options.filter && !options.filter(event)) {
+packages/router/src/strategies/cost-first.ts:34:    const eligible = candidates.filter(
+packages/router/src/strategies/cost-first.ts:36:        m.status === "available" && m.capabilities.qualityTier <= minQuality,
+packages/router/src/router.ts:148:            .filter((m) => m.id !== momentumModel.id)
+packages/router/src/router.ts:186:    const anyModel = candidates.find((m) => m.status === "available");
+packages/router/src/router.ts:196:        .filter((m) => m.id !== anyModel.id && m.status === "available")
+packages/router/src/router.ts:212:      .filter(
+packages/router/src/router.ts:213:        (m): m is ModelEntry => m !== undefined && m.status === "available",
+packages/router/src/router.ts:280:    return this.registry.models.filter((m) => {
+packages/router/src/router.ts:288:      if (task.requiresToolUse && !m.capabilities.toolCalling) return false;
+packages/router/src/strategies/learned.ts:218:  const recent = auditLog.filter((e) => e.taskType === taskType).slice(-50);
+packages/router/src/strategies/learned.ts:308:  const entries = auditLog.filter((e) => e.taskType === taskType);
+packages/router/src/strategies/learned.ts:338:    const eligible = candidates.filter((m) => m.status === "available");
+packages/router/src/strategies/combined.ts:78:  const available = candidates.filter((m) => m.status === "available");
+packages/router/src/team-optimizer.ts:56:  const available = models.filter((m) => m.status === "available");
+packages/router/src/team-optimizer.ts:62:      .filter(Boolean);
+packages/router/src/team-optimizer.ts:82:    const eligible = scored.filter((s) => s.match >= threshold);
+packages/router/src/strategies/auto.ts:65:    const available = candidates.filter((m) => m.status === "available");
+packages/router/src/__tests__/capability-strategy.test.ts:19:      toolCalling: true,
+packages/router/src/__tests__/combined-strategy.test.ts:22:      toolCalling: true,
+packages/router/src/strategies/quality-first.ts:17:    let available = candidates.filter((m) => m.status === "available");
+packages/router/src/strategies/quality-first.ts:25:      const explicit = available.filter(
+packages/router/src/strategies/quality-first.ts:40:    const withinBudget = sorted.filter((m) => {
+packages/router/src/__tests__/tool-adapter.test.ts:20:      toolCalling: true,
+packages/router/src/strategies/rule-based.ts:24:            (m) => m.id === rule.model && m.status === "available",
+packages/router/src/strategies/rule-based.ts:30:                .filter((m) => m.id !== model.id && m.status === "available")
+packages/router/src/strategies/rule-based.ts:41:            .filter(
+packages/router/src/strategies/rule-based.ts:43:                m.provider === rule.preferProvider && m.status === "available",
+packages/router/src/strategies/capability.ts:203:    let available = candidates.filter((m) => m.status === "available");
+packages/router/src/strategies/capability.ts:210:      const explicit = available.filter(
+packages/router/src/strategies/capability.ts:224:    const measured = available.filter(
+packages/router/src/__tests__/router.test.ts:46:      toolCalling: true,
+packages/router/src/__tests__/router.test.ts:179:  it("selects a BR-catalog model with toolCalling=true and rejects one with false for a tool-requiring task", () => {
+packages/router/src/__tests__/router.test.ts:181:    toolYes.capabilities.toolCalling = true;
+packages/router/src/__tests__/router.test.ts:183:    toolNo.capabilities.toolCalling = false;
+packages/router/src/__tests__/router.test.ts:200:    expect(decision.model.capabilities.toolCalling).toBe(true);
+packages/router/src/__tests__/router.test.ts:205:    toolNo.capabilities.toolCalling = false;
+import type {
+  TaskProfile,
+  ModelEntry,
+  RoutingDecision,
+  RoutingContext,
+  StrategyName,
+} from "@brainst0rm/shared";
+import { createLogger } from "@brainst0rm/shared";
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
+import type { BrainstormConfig, StormFrontmatter } from "@brainst0rm/config";
+import type { ProviderRegistry } from "@brainst0rm/providers";
+import { classifyTask } from "./classifier.js";
+import { costFirstStrategy } from "./strategies/cost-first.js";
+import { qualityFirstStrategy } from "./strategies/quality-first.js";
+import { createRuleBasedStrategy } from "./strategies/rule-based.js";
+import { createCombinedStrategy } from "./strategies/combined.js";
+import { capabilityStrategy } from "./strategies/capability.js";
+import { learnedStrategy, loadStats } from "./strategies/learned.js";
+import { autoStrategy } from "./strategies/auto.js";
+import type { RoutingStrategy } from "./strategies/types.js";
+import type { CostTracker } from "./cost-tracker.js";
+
+const log = createLogger("router");
+
+export class BrainstormRouter {
+  private strategies: Record<StrategyName, RoutingStrategy>;
+  private activeStrategy: StrategyName;
+  private recentFailures: Array<{
+    modelId: string;
+    timestamp: number;
+    error: string;
+  }> = [];
+  private momentum: {
+    modelId: string;
+    successCount: number;
+    lastSuccess: number;
+    taskType: string;
+  } | null = null;
+  private projectHints?: StormFrontmatter["routing"];
+
+  constructor(
+    private config: BrainstormConfig,
+    private registry: ProviderRegistry,
+    private costTracker: CostTracker,
+    stormFrontmatter?: StormFrontmatter | null,
+    historicalStats?: Array<{
+      taskType: string;
+      modelId: string;
+      successes: number;
+      failures: number;
+      avgLatencyMs: number;
+      avgCost: number;
+      samples: number;
+    }>,
+  ) {
+    this.activeStrategy = config.general.defaultStrategy;
+    const combined = createCombinedStrategy(config.routing.rules);
+    this.strategies = {
+      "cost-first": costFirstStrategy,
+      "quality-first": qualityFirstStrategy,
+      "rule-based": createRuleBasedStrategy(config.routing.rules),
+      combined: combined,
+      capability: capabilityStrategy,
+      learned: learnedStrategy,
+      auto: autoStrategy,
+    };
+
+    // Load historical routing outcomes for Thompson sampling.
+    // Priority: explicit historicalStats > routing-intelligence.json (auto-loaded)
+    let statsToLoad = historicalStats;
+    if (!statsToLoad || statsToLoad.length === 0) {
+      statsToLoad = loadRoutingIntelligenceFromDisk();
+    }
+    if (statsToLoad && statsToLoad.length > 0) {
+      loadStats(statsToLoad);
+      log.info(
+        {
+          entries: statsToLoad.length,
+          totalSamples: statsToLoad.reduce((n, s) => n + s.samples, 0),
+        },
+        "Loaded historical routing outcomes for Thompson sampling",
+      );
+    }
+
+    this.projectHints = stormFrontmatter?.routing;
+
+    // Auto-activate capability strategy when eval data exists
+    this.autoSelectStrategy();
+  }
+
+  /**
+   * If any model in the registry has capability scores from eval,
+   * auto-switch to capability strategy (unless user explicitly set something else).
+   */
+  autoSelectStrategy(): void {
+    const hasEvalData = this.registry.models.some(
+      (m) => m.capabilities.capabilityScores !== undefined,
+    );
+    if (hasEvalData && this.activeStrategy === "combined") {
+      this.activeStrategy = "capability";
+      log.info("Auto-activated capability strategy (eval data available)");
+    }
+  }
+
+  classify(
+    message: string,
+    context?: { fileCount?: number; hasErrors?: boolean },
+  ): TaskProfile {
+    return classifyTask(message, context, this.projectHints);
+  }
+
+  route(
+    task: TaskProfile,
+    optionsOrTokens?:
+      | number
+      | { conversationTokens?: number; preferCheap?: boolean },
+  ): RoutingDecision {
+    // Check budget before routing
+    this.costTracker.checkBudget();
+
+    const opts =
+      typeof optionsOrTokens === "number"
+        ? { conversationTokens: optionsOrTokens, preferCheap: false }
+        : {
+            conversationTokens: optionsOrTokens?.conversationTokens,
+            preferCheap: optionsOrTokens?.preferCheap ?? false,
+          };
+
+    const candidates = this.getEligibleModels(task);
+    const context = this.buildRoutingContext(opts.conversationTokens);
+
+    // Model momentum: if a model has been working well, stick with it (within 5 min)
+    // Only apply momentum when the task type matches to avoid using a chat model for complex work
+    if (
+      this.momentum &&
+      Date.now() - this.momentum.lastSuccess < 300_000 &&
+      this.momentum.taskType === task.type
+    ) {
+      const momentumModel = candidates.find(
+        (m) => m.id === this.momentum!.modelId,
+      );
+      if (momentumModel) {
+        return {
+          model: momentumModel,
+          fallbacks: candidates
+            .filter((m) => m.id !== momentumModel.id)
+            .slice(0, 3),
+          reason: `Momentum: ${momentumModel.name} (${this.momentum.successCount} successes, same task type)`,
+          estimatedCost: 0,
+          strategy: this.activeStrategy,
+        };
+      }
+    }
+
+    // If preferCheap, try cost-first strategy first
+    if (opts.preferCheap && this.strategies["cost-first"]) {
+      const cheapDecision = this.strategies["cost-first"].select(
+        task,
+        candidates,
+        context,
+      );
+      if (cheapDecision) return cheapDecision;
+    }
+
+    // Try active strategy
+    const decision = this.strategies[this.activeStrategy].select(
+      task,
+      candidates,
+      context,
+    );
+    if (decision) return decision;
+
+    // Fallback: try combined if not already active
+    if (this.activeStrategy !== "combined") {
+      const fallback = this.strategies.combined.select(
+        task,
+        candidates,
+        context,
+      );
+      if (fallback) return fallback;
+    }
+
+    // Last resort: pick any available model
+    const anyModel = candidates.find((m) => m.status === "available");
+    if (!anyModel) {
+      throw new Error(
+        "No models available. Check provider connections and configuration.",
+      );
+    }
+
+    return {
+      model: anyModel,
+      fallbacks: candidates
+        .filter((m) => m.id !== anyModel.id && m.status === "available")
+        .slice(0, 3),
+      reason: `Fallback: only available model is ${anyModel.name}`,
+      estimatedCost: 0,
+      strategy: this.activeStrategy,
+    };
+  }
+
+  /** Inject agent-profile fallback chain into a routing decision. */
+  applyAgentFallbacks(
+    decision: RoutingDecision,
+    fallbackChain: string[],
+  ): RoutingDecision {
+    if (fallbackChain.length === 0) return decision;
+    const agentFallbacks = fallbackChain
+      .map((id) => this.registry.getModel(id))
+      .filter(
+        (m): m is ModelEntry => m !== undefined && m.status === "available",
+      );
+    if (agentFallbacks.length === 0) return decision;
+    return {
+      ...decision,
+      fallbacks: [...agentFallbacks, ...decision.fallbacks],
+    };
+  }
+
+  recordFailure(modelId: string, error: string): void {
+    this.recentFailures.push({ modelId, timestamp: Date.now(), error });
+    // Keep only last 10 failures
+    if (this.recentFailures.length > 10) this.recentFailures.shift();
+    // Break momentum on failure
+    if (this.momentum?.modelId === modelId) {
+      this.momentum = null;
+    }
+  }
+
+  /** Record a successful completion — builds model momentum (scoped by task type). */
+  recordSuccess(modelId: string, taskType?: string): void {
+    if (this.momentum?.modelId === modelId) {
+      this.momentum.successCount++;
+      this.momentum.lastSuccess = Date.now();
+      if (taskType) this.momentum.taskType = taskType;
+    } else {
+      this.momentum = {
+        modelId,
+        successCount: 1,
+        lastSuccess: Date.now(),
+        taskType: taskType ?? "unknown",
+      };
+    }
+  }
+
+  /** Get current model momentum for daemon intelligence. */
+  getMomentum(): {
+    modelId: string;
+    successCount: number;
+    lastSuccess: number;
+    taskType: string;
+  } | null {
+    return this.momentum ? { ...this.momentum } : null;
+  }
+
+  /** Get recent failures for daemon intelligence. */
+  getRecentFailures(): Array<{
+    modelId: string;
+packages/router/src/router.ts:27:export class BrainstormRouter {
+
+exec
+/bin/zsh -lc "sed -n '260,315p' packages/router/src/router.ts
+sed -n '1,125p' packages/router/src/strategies/combined.ts
+sed -n '1,100p' packages/router/src/strategies/cost-first.ts
+rg -n \"context_length|max_model_len|max_context\" . -g '*.json' -g '*.ts' -g '*.md' -g '"'!bench/iterations/001/reviews/iter.diff'"' | head -160" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+    modelId: string;
+    timestamp: number;
+    error: string;
+  }> {
+    return [...this.recentFailures];
+  }
+
+  setStrategy(name: StrategyName): void {
+    this.activeStrategy = name;
+  }
+
+  getActiveStrategy(): StrategyName {
+    return this.activeStrategy;
+  }
+
+  getModels(): ModelEntry[] {
+    return this.registry.models;
+  }
+
+  private getEligibleModels(task: TaskProfile): ModelEntry[] {
+    return this.registry.models.filter((m) => {
+      // Exclude recently failed models (within 60 seconds)
+      const recentFail = this.recentFailures.find(
+        (f) => f.modelId === m.id && Date.now() - f.timestamp < 60_000,
+      );
+      if (recentFail) return false;
+
+      // Exclude models that can't handle tool calling if needed
+      if (task.requiresToolUse && !m.capabilities.toolCalling) return false;
+
+      return true;
+    });
+  }
+
+  private buildRoutingContext(conversationTokens?: number): RoutingContext {
+    const budget = this.costTracker.getBudgetState();
+    return {
+      budget,
+      sessionCost: this.costTracker.getSessionCost(),
+      conversationTokens: conversationTokens ?? 0,
+      userPreferences: {
+        preferLocal: false,
+        preferredProvider: undefined,
+        excludeModels: undefined,
+      },
+      recentFailures: this.recentFailures,
+    };
+  }
+}
+
+/**
+ * Load routing intelligence from ~/.brainstorm/routing-intelligence.json and
+ * convert to the format loadStats() expects. Returns [] if file missing/invalid.
+ *
+ * This closes the learning loop: trajectory analyzer writes the file after each
+ * session, the router reads it on startup. Every session makes the next smarter.
+import type {
+  TaskProfile,
+  ModelEntry,
+  RoutingContext,
+  RoutingDecision,
+} from "@brainst0rm/shared";
+import type { RoutingRule } from "@brainst0rm/config";
+import type { RoutingStrategy } from "./types.js";
+import { costFirstStrategy } from "./cost-first.js";
+import { qualityFirstStrategy } from "./quality-first.js";
+import { createRuleBasedStrategy } from "./rule-based.js";
+import { learnedStrategy, getSamplesForTaskType } from "./learned.js";
+
+/** Minimum samples before Thompson sampling is trusted for a task type. */
+const LEARNED_THRESHOLD = 20;
+
+export function createCombinedStrategy(rules: RoutingRule[]): RoutingStrategy {
+  const ruleStrategy = createRuleBasedStrategy(rules);
+
+  return {
+    name: "combined",
+
+    select(
+      task: TaskProfile,
+      candidates: ModelEntry[],
+      context: RoutingContext,
+    ): RoutingDecision | null {
+      // 1. Try rule-based first
+      const ruleResult = ruleStrategy.select(task, candidates, context);
+      if (ruleResult) return ruleResult;
+
+      // 2. Budget pressure check — if >80% daily budget spent, cost must dominate.
+      //    Thompson sampling optimizes for success rate, not cost. Under pressure,
+      //    we skip learned and fall through to cost-first for simple or trivial tasks.
+      const budgetPressure = context.budget.dailyLimit
+        ? context.budget.dailyUsed / context.budget.dailyLimit
+        : 0;
+
+      // 3. If Thompson sampling has enough data and budget allows, use learned strategy.
+      //    This is the key integration: once BR has seen enough outcomes, it stops
+      //    relying on hardcoded tiers and starts routing based on actual performance.
+      if (budgetPressure < 0.8) {
+        const samplesForTask = getSamplesForTaskType(task.type);
+        if (samplesForTask >= LEARNED_THRESHOLD) {
+          const learnedResult = learnedStrategy.select(
+            task,
+            candidates,
+            context,
+          );
+          if (learnedResult) {
+            learnedResult.reason = `Learned (${samplesForTask} samples): ${learnedResult.reason}`;
+            return learnedResult;
+          }
+        }
+      }
+
+      // 4. Trivial/simple tasks → cost-first (use local/cheap models)
+      if (task.complexity === "trivial" || task.complexity === "simple") {
+        return costFirstStrategy.select(task, candidates, context);
+      }
+
+      // 5. Complex/expert tasks → quality-first (use the best available)
+      if (task.complexity === "complex" || task.complexity === "expert") {
+        return qualityFirstStrategy.select(task, candidates, context);
+      }
+
+      // 6. Moderate tasks → weighted scoring
+      return weightedSelect(task, candidates, context);
+    },
+  };
+}
+
+function weightedSelect(
+  task: TaskProfile,
+  candidates: ModelEntry[],
+  context: RoutingContext,
+): RoutingDecision | null {
+  const available = candidates.filter((m) => m.status === "available");
+  if (available.length === 0) return null;
+
+  const scored = available.map((model) => {
+    // Quality score: lower tier = better (1-5 → 1.0-0.2)
+    const qualityScore = (6 - model.capabilities.qualityTier) / 5;
+
+    // Cost score: cheaper = better (normalized against max cost)
+    const cost = estimateCost(model, task);
+    const maxCost = Math.max(
+      ...available.map((m) => estimateCost(m, task)),
+      0.001,
+    );
+    const costScore = 1 - cost / maxCost;
+
+    // Speed score: lower tier = faster (1-5 → 1.0-0.2)
+    const speedScore = (6 - model.capabilities.speedTier) / 5;
+
+    // Bonus for models that list this task type in their bestFor
+    const affinityBonus = model.capabilities.bestFor.includes(task.type)
+      ? 0.15
+      : 0;
+
+    const totalScore =
+      0.4 * qualityScore + 0.35 * costScore + 0.15 * speedScore + affinityBonus;
+
+    return { model, score: totalScore, cost };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+
+  const best = scored[0];
+  return {
+    model: best.model,
+    fallbacks: scored.slice(1, 4).map((s) => s.model),
+    reason: `Combined: weighted score selected ${best.model.name} (score: ${best.score.toFixed(3)}) for ${task.type}/${task.complexity}`,
+    estimatedCost: best.cost,
+    strategy: "combined",
+  };
+}
+
+function estimateCost(model: ModelEntry, task: TaskProfile): number {
+  const { input, output } = task.estimatedTokens;
+  return (
+    (input / 1_000_000) * model.pricing.inputPer1MTokens +
+    (output / 1_000_000) * model.pricing.outputPer1MTokens
+  );
+}
+import type {
+  TaskProfile,
+  ModelEntry,
+  RoutingContext,
+  RoutingDecision,
+  QualityTier,
+} from "@brainst0rm/shared";
+import type { RoutingStrategy } from "./types.js";
+
+// Minimum quality tier required for each task type
+const MIN_QUALITY: Record<string, QualityTier> = {
+  "simple-edit": 5,
+  "code-generation": 3,
+  refactoring: 3,
+  debugging: 2,
+  explanation: 4,
+  conversation: 5,
+  analysis: 2,
+  search: 5,
+  "multi-file-edit": 2,
+};
+
+export const costFirstStrategy: RoutingStrategy = {
+  name: "cost-first",
+
+  select(
+    task: TaskProfile,
+    candidates: ModelEntry[],
+    context: RoutingContext,
+  ): RoutingDecision | null {
+    const minQuality = MIN_QUALITY[task.type] ?? 3;
+
+    // Filter to models that meet the quality threshold
+    const eligible = candidates.filter(
+      (m) =>
+        m.status === "available" && m.capabilities.qualityTier <= minQuality,
+    );
+    if (eligible.length === 0) return null;
+
+    // Sort by estimated cost (local models cost 0)
+    const sorted = eligible.sort((a, b) => {
+      const costA = estimateCost(a, task);
+      const costB = estimateCost(b, task);
+      return costA - costB;
+    });
+
+    const selected = sorted[0];
+    const fallbacks = sorted.slice(1, 4);
+
+    return {
+      model: selected,
+      fallbacks,
+      reason: `Cost-first: cheapest model (${selected.name}) meeting quality tier ${minQuality} for ${task.type}`,
+      estimatedCost: estimateCost(selected, task),
+      strategy: "cost-first",
+    };
+  },
+};
+
+function estimateCost(model: ModelEntry, task: TaskProfile): number {
+  const { input, output } = task.estimatedTokens;
+  return (
+    (input / 1_000_000) * model.pricing.inputPer1MTokens +
+    (output / 1_000_000) * model.pricing.outputPer1MTokens
+  );
+}
+./bench/iterations/001/plan.md:13:- **A** — discovery heuristics + honor `context_length`/`max_model_len` from /v1/models (packages/providers/src/local/openai-compat.ts)
+./packages/providers/src/cloud/brainstorm-saas.ts:267:      : typeof entry.context_length === "number"
+./packages/providers/src/cloud/brainstorm-saas.ts:268:        ? entry.context_length
+./packages/providers/src/__tests__/custom-provider.test.ts:79:      max_model_len: 65536,
+./packages/providers/src/local/openai-compat.ts:141:  context_length?: number;
+./packages/providers/src/local/openai-compat.ts:143:  max_model_len?: number;
+./packages/providers/src/local/openai-compat.ts:153:    typeof raw.context_length === "number"
+./packages/providers/src/local/openai-compat.ts:154:      ? raw.context_length
+./packages/providers/src/local/openai-compat.ts:155:      : typeof raw.max_model_len === "number"
+./packages/providers/src/local/openai-compat.ts:156:        ? raw.max_model_len
+
+exec
+/bin/zsh -lc "sed -n '1,230p' packages/providers/src/registry.ts
+rg -n \"discoverLocalModels|discoverOpenAICompatModels\" packages/providers/src -g '*.ts'
+rg -n \"maxOutputTokens\" node_modules/ai node_modules/@ai-sdk -g '*.d.ts' | head -80 2>/dev/null || true
+rg -n '\"ai\"|\"@ai-sdk/openai-compatible\"' package.json packages/*/package.json pnpm-lock.yaml | head -80" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+import type { BrainstormConfig } from "@brainst0rm/config";
+import type { ModelEntry, CapabilityScores } from "@brainst0rm/shared";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
+import { createOllamaProvider } from "./local/ollama.js";
+import {
+  createLMStudioProvider,
+  createLlamaCppProvider,
+  createCustomProvider,
+  resolveCustomProviderKey,
+} from "./local/openai-compat.js";
+import { discoverLocalModels } from "./local/discovery.js";
+import { CLOUD_MODELS } from "./cloud/models.js";
+import {
+  createBrainstormSaaSProvider,
+  fetchBrModelCatalog,
+} from "./cloud/brainstorm-saas.js";
+import type { BrEnvelopeListener } from "./cloud/br-envelope.js";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+
+export interface ProviderRegistry {
+  models: ModelEntry[];
+  getModel(id: string): ModelEntry | undefined;
+  getProvider(modelId: string): any;
+  hasBrainstormSaaS: boolean;
+  refresh(): Promise<void>;
+}
+
+/**
+ * Optional pre-resolved API keys from the vault/1Password/env chain.
+ * When provided, these take priority over process.env for provider setup.
+ */
+export interface ResolvedKeys {
+  get(name: string): string | null;
+}
+
+/**
+ * Optional callbacks/wires applied during registry construction.
+ * Kept as an open-shape object so we can grow it without re-threading
+ * 9 call sites in the CLI every time a new hook is added.
+ */
+export interface ProviderRegistryOptions {
+  /** Fired per BR response with the parsed envelope. Wired to the
+   *  routing_audit writer by the CLI bootstrap (P2b). The fetch path
+   *  in brainstorm-saas.ts invokes this fire-and-forget; rejections are
+   *  caught at the call site. */
+  onEnvelope?: BrEnvelopeListener;
+
+  /** Injectable fetch for the BR model-catalog import (tests stub this).
+   *  Passed through to fetchBrModelCatalog; production uses globalThis.fetch. */
+  brCatalogFetch?: typeof globalThis.fetch;
+}
+
+export async function createProviderRegistry(
+  config: BrainstormConfig,
+  resolvedKeys?: ResolvedKeys,
+  options: ProviderRegistryOptions = {},
+): Promise<ProviderRegistry> {
+  /** Resolve a key: check resolvedKeys first, then fall back to process.env. */
+  const getKey = (name: string): string | null =>
+    resolvedKeys?.get(name) ?? process.env[name] ?? null;
+
+  const providers: Record<string, any> = {};
+
+  // Local providers
+  if (config.providers.ollama.enabled) {
+    providers.ollama = createOllamaProvider(config.providers.ollama.baseUrl);
+  }
+  if (config.providers.lmstudio.enabled) {
+    providers.lmstudio = createLMStudioProvider(
+      config.providers.lmstudio.baseUrl,
+    );
+  }
+  if (config.providers.llamacpp.enabled) {
+    providers.llamacpp = createLlamaCppProvider(
+      config.providers.llamacpp.baseUrl,
+    );
+  }
+  // Custom OpenAI-compatible endpoints. Registered before the cloud SDKs so a
+  // name collision with a built-in provider is overwritten by the built-in
+  // rather than silently hijacking it.
+  for (const [name, custom] of Object.entries(
+    config.providers.custom ?? {},
+  )) {
+    if (!custom.enabled) continue;
+    const key = resolveCustomProviderKey(custom, getKey);
+    providers[name] = createCustomProvider(
+      name,
+      custom.baseUrl,
+      key ?? undefined,
+    );
+  }
+
+  // BrainstormRouter SaaS — only enabled with an explicit API key.
+  // The embedded community key is NOT used implicitly to prevent sending
+  // prompts/code to a remote service without explicit opt-in.
+  //
+  // (Prior code had a second branch that tried
+  // `getBrainstormApiKey()` when `explicitBrKey` was null but
+  // process.env.BRAINSTORM_API_KEY was set — unreachable, because
+  // getKey() ALREADY falls through to process.env, so
+  // explicitBrKey is never null when env is set. Removed to make
+  // the "explicit opt-in" invariant non-fragile: a future
+  // refactor can't accidentally revive the implicit community-key
+  // path by changing getKey's fallthrough order.)
+  const brApiKey = getKey("BRAINSTORM_API_KEY");
+  const hasBrainstormSaaS = !!brApiKey;
+  if (brApiKey) {
+    providers.brainstormrouter = createBrainstormSaaSProvider(brApiKey, {
+      onEnvelope: options.onEnvelope,
+    });
+  }
+
+  // Direct provider SDKs (fallback when no BR SaaS, or for direct API key usage)
+  const anthropicKey = getKey("ANTHROPIC_API_KEY");
+  if (anthropicKey) {
+    providers.anthropic = createAnthropic({ apiKey: anthropicKey });
+  }
+  const openaiKey = getKey("OPENAI_API_KEY");
+  if (openaiKey) {
+    providers.openai = createOpenAI({ apiKey: openaiKey });
+  }
+  // Accept either GOOGLE_GENERATIVE_AI_API_KEY (AI SDK convention) or
+  // GEMINI_API_KEY (Google's own convention, commonly already set in shells).
+  const googleKey =
+    getKey("GOOGLE_GENERATIVE_AI_API_KEY") ?? getKey("GEMINI_API_KEY");
+  if (googleKey) {
+    providers.google = createGoogleGenerativeAI({ apiKey: googleKey });
+  }
+
+  // Only include cloud models for providers we have credentials for
+  const availableCloudProviders = new Set<string>();
+  if (brApiKey) availableCloudProviders.add("brainstormrouter"); // SaaS can route to any model
+  if (anthropicKey) availableCloudProviders.add("anthropic");
+  if (openaiKey) availableCloudProviders.add("openai");
+  if (googleKey) availableCloudProviders.add("google");
+  const deepseekKey = getKey("DEEPSEEK_API_KEY");
+  if (deepseekKey) {
+    availableCloudProviders.add("deepseek");
+    providers.deepseek = createOpenAICompatible({
+      name: "deepseek",
+      baseURL: "https://api.deepseek.com/v1",
+      headers: { Authorization: `Bearer ${deepseekKey}` },
+      includeUsage: true,
+    });
+  }
+  const moonshotKey = getKey("MOONSHOT_API_KEY");
+  if (moonshotKey) {
+    availableCloudProviders.add("moonshot");
+    providers.moonshot = createOpenAICompatible({
+      name: "moonshot",
+      baseURL: "https://api.moonshot.ai/v1",
+      headers: { Authorization: `Bearer ${moonshotKey}` },
+      includeUsage: true,
+    });
+  }
+
+  // Include all cloud models reachable via SaaS or direct keys.
+  // Models with direct provider keys are marked preferred for routing.
+  const hasDirectKeys =
+    availableCloudProviders.size > (hasBrainstormSaaS ? 1 : 0);
+  const reachableCloudModels = hasBrainstormSaaS
+    ? CLOUD_MODELS
+    : CLOUD_MODELS.filter((m) => availableCloudProviders.has(m.provider));
+
+  let allModels = [...reachableCloudModels];
+
+  // If BR SaaS is available, add "auto" model (intelligent SaaS routing)
+  if (hasBrainstormSaaS) {
+    allModels.unshift({
+      id: "brainstormrouter/auto",
+      provider: "brainstormrouter",
+      name: "BrainstormRouter Auto",
+      capabilities: {
+        toolCalling: true,
+        streaming: true,
+        vision: true,
+        reasoning: true,
+        contextWindow: 200000,
+        qualityTier: 1,
+        speedTier: 1,
+        bestFor: [
+          "code-generation",
+          "debugging",
+          "refactoring",
+          "analysis",
+          "multi-file-edit",
+          "explanation",
+          "conversation",
+        ],
+      },
+      pricing: { inputPer1MTokens: 0, outputPer1MTokens: 0 }, // SaaS handles pricing
+      limits: { contextWindow: 200000, maxOutputTokens: 16384 },
+      status: "available",
+      isLocal: false,
+      lastHealthCheck: Date.now(),
+    });
+  }
+
+  // Import BR's live model catalog (opt-in: only when a BR key is configured).
+  // This lets the router see & select ANY tool-capable model BR serves, not
+  // just the statically curated CLOUD_MODELS. Static entries WIN on id
+  // collision (curated capability/pricing data beats synthesized placeholders).
+  // fetchBrModelCatalog is resilient by contract — it never throws — so a
+  // network failure/timeout/absent key silently keeps the static catalog.
+  if (brApiKey) {
+    const brCatalog = await fetchBrModelCatalog(brApiKey, {
+      fetchImpl: options.brCatalogFetch,
+    });
+    const existingIds = new Set(allModels.map((m) => m.id));
+    for (const model of brCatalog) {
+      if (existingIds.has(model.id)) continue; // static wins
+      existingIds.add(model.id);
+      allModels.push(model);
+    }
+  }
+
+  // Discover local models
+  const { models: localModels } = await discoverLocalModels(config.providers);
+  allModels.push(...localModels);
+
+  // Apply model overrides from config. `!== undefined` (not truthiness) so
+  // explicit falsy values like `reasoning = false` are honored.
+  for (const override of config.models) {
+    const existing = allModels.find((m) => m.id === override.id);
+    if (existing) {
+packages/providers/src/index.ts:10:  discoverOpenAICompatModels,
+packages/providers/src/index.ts:13:  discoverLocalModels,
+packages/providers/src/registry.ts:13:import { discoverLocalModels } from "./local/discovery.js";
+packages/providers/src/registry.ts:223:  const { models: localModels } = await discoverLocalModels(config.providers);
+packages/providers/src/registry.ts:316:      const { models: refreshedLocal } = await discoverLocalModels(
+packages/providers/src/local/discovery.ts:9:  discoverOpenAICompatModels,
+packages/providers/src/local/discovery.ts:52:export async function discoverLocalModels(
+packages/providers/src/local/discovery.ts:70:      promise: discoverOpenAICompatModels("lmstudio", config.lmstudio.baseUrl),
+packages/providers/src/local/discovery.ts:76:      promise: discoverOpenAICompatModels("llamacpp", config.llamacpp.baseUrl),
+packages/providers/src/local/discovery.ts:84:      promise: discoverOpenAICompatModels(
+packages/providers/src/__tests__/registry.test.ts:7:  discoverLocalModels: vi.fn(async () => ({ models: [] })),
+packages/providers/src/local/openai-compat.ts:174:export async function discoverOpenAICompatModels(
+packages/providers/src/__tests__/custom-provider.test.ts:7:  discoverOpenAICompatModels,
+packages/providers/src/__tests__/custom-provider.test.ts:100:describe("discoverOpenAICompatModels with custom providers", () => {
+packages/providers/src/__tests__/custom-provider.test.ts:114:    const models = await discoverOpenAICompatModels(
+packages/providers/src/__tests__/custom-provider.test.ts:140:    await discoverOpenAICompatModels("acme", "http://llm.acme.internal");
+rg: node_modules/ai: No such file or directory (os error 2)
+packages/channels/package.json:40:    "ai",
+package.json:6:    "ai",
+packages/cli/package.json:14:    "ai",
+packages/cli/package.json:38:    "ai": "^6",
+packages/docgen/package.json:28:    "ai",
+packages/config/package.json:36:    "ai",
+packages/db/package.json:35:    "ai",
+packages/agents/package.json:38:    "ai",
+packages/gateway/package.json:36:    "ai",
+packages/eval/package.json:40:    "ai",
+packages/core/package.json:30:    "ai": "^6",
+packages/core/package.json:52:    "ai",
+packages/orchestrator/package.json:37:    "ai",
+packages/contracts/package.json:35:    "ai",
+packages/router/package.json:23:    "ai": "^6"
+packages/router/package.json:39:    "ai",
+packages/godmode/package.json:33:    "ai",
+packages/tools/package.json:21:    "ai": "^6",
+packages/tools/package.json:40:    "ai",
+packages/ingest/package.json:27:    "ai",
+packages/vscode/package.json:72:    "ai",
+packages/mcp/package.json:35:    "ai",
+packages/projects/package.json:37:    "ai",
+packages/shared/package.json:40:    "ai",
+packages/providers/package.json:20:    "ai": "^6",
+packages/providers/package.json:21:    "@ai-sdk/openai-compatible": "^1",
+packages/providers/package.json:39:    "ai",
+packages/hooks/package.json:33:    "ai",
+packages/onboard/package.json:30:    "ai",
+packages/workflow/package.json:41:    "ai",
+packages/vault/package.json:35:    "ai",
+packages/server/package.json:43:    "ai",
+packages/plugin-sdk/package.json:35:    "ai",
+packages/sdk/package.json:36:    "ai",
+packages/scheduler/package.json:38:    "ai",
+pnpm-lock.yaml:1151:      "@ai-sdk/openai-compatible":
+
+exec
+/bin/zsh -lc "sed -n '270,355p' packages/providers/src/registry.ts
+sed -n '1,130p' packages/providers/src/local/discovery.ts
+rg -n \"\\.refresh\\(\\)\" packages -g '*.ts' | head -80" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+    },
+
+    getProvider(modelId: string) {
+      // BrainstormRouter SaaS: route through SaaS provider
+      if (
+        modelId.startsWith("brainstormrouter/") &&
+        providers.brainstormrouter
+      ) {
+        const model = modelId.split("/")[1]; // "auto" or specific model
+        return providers.brainstormrouter(model);
+      }
+
+      // Local models (ollama:xxx, lmstudio:xxx, llamacpp:xxx)
+      const [providerName] = modelId.split(":");
+      if (providerName && providers[providerName]) {
+        const modelName = modelId.slice(providerName.length + 1);
+        return providers[providerName](modelName);
+      }
+
+      // Cloud models ("provider/model" format) — resolve through direct SDK providers
+      const [cloudProvider, ...modelParts] = modelId.split("/");
+      const cloudModelName = modelParts.join("/");
+      if (cloudProvider && providers[cloudProvider]) {
+        return providers[cloudProvider](cloudModelName);
+      }
+
+      // No direct provider SDK available — route through BrainstormRouter if available.
+      // This handles the common case where the router picks "openai/gpt-4.1" but the
+      // user only has a BR key (no OPENAI_API_KEY). BR can route to any model.
+      if (providers.brainstormrouter) {
+        return providers.brainstormrouter(modelId);
+      }
+
+      // No provider could resolve this id. Returning the bare string here used
+      // to hand an unresolvable model to streamText, which fails deep in the
+      // AI SDK with an opaque error. Fail loudly and diagnosably instead.
+      throw new Error(
+        `Cannot resolve a provider for model "${modelId}". No matching direct ` +
+          `provider SDK is configured (checked: ${Object.keys(providers).join(", ") || "none"}) ` +
+          `and BrainstormRouter is not enabled. Configure the model's provider key ` +
+          `(e.g. ANTHROPIC_API_KEY/OPENAI_API_KEY/GOOGLE_GENERATIVE_AI_API_KEY) or set ` +
+          `BRAINSTORM_API_KEY to route "${modelId}" through BrainstormRouter.`,
+      );
+    },
+
+    async refresh() {
+      const { models: refreshedLocal } = await discoverLocalModels(
+        config.providers,
+      );
+      const cloudAndSaas = allModels.filter((m) => !m.isLocal);
+      allModels = [...cloudAndSaas, ...refreshedLocal];
+      // Re-apply eval capability scores (may have been updated by brainstorm eval)
+      const freshScores = loadEvalCapabilityScores();
+      for (const [modelId, entry] of Object.entries(freshScores)) {
+        const model = allModels.find((m) => m.id === modelId);
+        if (model) {
+          model.capabilities.capabilityScores = entry.scores;
+        }
+      }
+      registry.models = allModels;
+    },
+  };
+
+  return registry;
+}
+
+/**
+ * Load eval-derived capability scores from ~/.brainstorm/eval/capability-scores.json.
+ * These are written by `brainstorm eval` via @brainst0rm/eval's exportCapabilityScores().
+ * Reading directly avoids a circular dependency (eval → providers → eval).
+ */
+const CACHE_PATH = join(homedir(), ".brainstorm", ".providers.cache.json");
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+interface ProviderCache {
+  timestamp: number;
+  modelIds: string[];
+}
+
+function loadProviderCache(): ProviderCache | null {
+  try {
+    if (!existsSync(CACHE_PATH)) return null;
+    const raw = readFileSync(CACHE_PATH, "utf-8");
+    // Guard against corrupt/oversized cache files (max 1MB)
+    if (raw.length > 1_000_000) return null;
+    const data = JSON.parse(raw);
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
+import type { ProviderConfig } from "@brainst0rm/config";
+import type { ModelEntry } from "@brainst0rm/shared";
+import { createLogger } from "@brainst0rm/shared";
+import { discoverOllamaModels } from "./ollama.js";
+import {
+  discoverOpenAICompatModels,
+  resolveCustomProviderKey,
+} from "./openai-compat.js";
+
+const log = createLogger("discovery");
+
+export interface DiscoveryResult {
+  models: ModelEntry[];
+  errors: Array<{ provider: string; error: string }>;
+}
+
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const CACHE_DIR = join(homedir(), ".brainstorm");
+const CACHE_FILE = join(CACHE_DIR, ".providers.cache.json");
+
+interface DiscoveryCache {
+  timestamp: number;
+  result: DiscoveryResult;
+}
+
+function readCache(): DiscoveryResult | null {
+  if (process.env.BRAINSTORM_SKIP_DISCOVERY_CACHE) return null;
+  try {
+    if (!existsSync(CACHE_FILE)) return null;
+    const raw: DiscoveryCache = JSON.parse(readFileSync(CACHE_FILE, "utf-8"));
+    if (Date.now() - raw.timestamp > CACHE_TTL_MS) return null;
+    return raw.result;
+  } catch (e) {
+    log.warn({ err: e }, "Failed to read provider discovery cache");
+    return null;
+  }
+}
+
+function writeCache(result: DiscoveryResult): void {
+  try {
+    mkdirSync(CACHE_DIR, { recursive: true });
+    const cache: DiscoveryCache = { timestamp: Date.now(), result };
+    writeFileSync(CACHE_FILE, JSON.stringify(cache), "utf-8");
+  } catch (e) {
+    log.warn({ err: e }, "Failed to write provider discovery cache");
+  }
+}
+
+export async function discoverLocalModels(
+  config: ProviderConfig,
+): Promise<DiscoveryResult> {
+  const cached = readCache();
+  if (cached) return cached;
+  // Build probe tasks — one per enabled provider
+  const probes: Array<{ provider: string; promise: Promise<ModelEntry[]> }> =
+    [];
+
+  if (config.ollama.enabled && config.ollama.autoDiscover) {
+    probes.push({
+      provider: "ollama",
+      promise: discoverOllamaModels(config.ollama.baseUrl),
+    });
+  }
+  if (config.lmstudio.enabled && config.lmstudio.autoDiscover) {
+    probes.push({
+      provider: "lmstudio",
+      promise: discoverOpenAICompatModels("lmstudio", config.lmstudio.baseUrl),
+    });
+  }
+  if (config.llamacpp.enabled && config.llamacpp.autoDiscover) {
+    probes.push({
+      provider: "llamacpp",
+      promise: discoverOpenAICompatModels("llamacpp", config.llamacpp.baseUrl),
+    });
+  }
+  for (const [name, custom] of Object.entries(config.custom ?? {})) {
+    if (!custom.enabled || !custom.autoDiscover) continue;
+    const key = resolveCustomProviderKey(custom);
+    probes.push({
+      provider: name,
+      promise: discoverOpenAICompatModels(
+        name,
+        custom.baseUrl,
+        key ? { Authorization: `Bearer ${key}` } : undefined,
+      ),
+    });
+  }
+
+  // Run all probes in parallel — one failure doesn't block others
+  const settled = await Promise.allSettled(probes.map((p) => p.promise));
+
+  const models: ModelEntry[] = [];
+  const errors: Array<{ provider: string; error: string }> = [];
+
+  for (let i = 0; i < settled.length; i++) {
+    const outcome = settled[i];
+    if (outcome.status === "fulfilled") {
+      models.push(...outcome.value);
+    } else {
+      errors.push({
+        provider: probes[i].provider,
+        error: String(outcome.reason),
+      });
+    }
+  }
+
+  const result = { models, errors };
+  if (models.length > 0) writeCache(result);
+  return result;
+}
+
+codex
+[{"file":"packages/core/src/agent/loop.ts","line":898,"severity":"P1","finding":"The full maxOutputTokens limit is sent without reserving space for the prompt. Compaction permits input up to 80% of the context window, while inferred output limits can consume 25% or more, so otherwise valid long sessions can be rejected because prompt tokens plus max output exceed the model context window.","suggested_fix":"Compute the request budget from the remaining context, including system/tool overhead, or lower the compaction threshold to reserve maxOutputTokens; add a near-context-limit test."},{"file":"packages/providers/src/local/openai-compat.ts","line":120,"severity":"P1","finding":"The broad /gemma/i heuristic assigns a 131072-token context to every Gemma model, including older and small checkpoints with much smaller windows. This suppresses required compaction and eventually sends over-context requests. The generic Qwen heuristic has the same risk for older checkpoints.","suggested_fix":"Use version/checkpoint-specific heuristics only where the minimum context is known; otherwise retain the conservative default and require server metadata or a model override. Add tests for older/small Gemma and Qwen IDs."},{"file":"packages/providers/src/registry.ts","line":228,"severity":"P2","finding":"Model overrides are applied only during initial registry construction. refresh() replaces all local models with newly discovered entries without reapplying config.models, so the new authoritative contextWindow, maxOutputTokens, and reasoning corrections silently disappear after a refresh.","suggested_fix":"Extract override application into a helper and invoke it after both initial discovery and refresh; add a refresh test for a custom local model override."},{"file":"packages/providers/src/local/openai-compat.ts","line":188,"severity":"P2","finding":"Embedding models are recognized as non-chat models but are still registered as available with conversation/simple-edit affinities. The router filters toolCalling=false only for tool-requiring tasks, so a simple conversation can select an embedding model and send it to streamText with a one-token output budget.","suggested_fix":"Exclude embedding-only entries from the chat model registry, or add an explicit chat-generation capability that routing enforces; test discovery/routing when an endpoint lists both chat and embedding models."}]
+tokens used
+48,810

@@ -1,0 +1,21 @@
+{
+  "seed": "e193a01e",
+  "mandatory": {
+    "seat": "codex",
+    "axis": "correctness"
+  },
+  "drawn": [
+    {
+      "seat": "qwen3-coder",
+      "role": "code-reviewer",
+      "model": "acronis:mac/qwen/qwen3-coder-next",
+      "axis": "security"
+    },
+    {
+      "seat": "gpt-oss-120b",
+      "role": "security-reviewer",
+      "model": "acronis:h200/gpt-oss-120b",
+      "axis": "architecture"
+    }
+  ]
+}

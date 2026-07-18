@@ -109,6 +109,12 @@ const modelOverrideSchema = z.object({
   qualityTier: z.number().min(1).max(5).optional(),
   speedTier: z.number().min(1).max(5).optional(),
   bestFor: z.array(z.string()).optional(),
+  // Limit corrections — authoritative when discovery guesses wrong (custom
+  // OpenAI-compatible endpoints often expose no limit metadata). Applied to
+  // both capabilities.contextWindow and limits.* in the registry.
+  contextWindow: z.number().int().positive().optional(),
+  maxOutputTokens: z.number().int().positive().optional(),
+  reasoning: z.boolean().optional(),
 });
 
 // ── General Config ───────────────────────────────────────────────────

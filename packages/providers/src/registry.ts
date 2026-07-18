@@ -55,6 +55,34 @@ export interface ProviderRegistryOptions {
   brCatalogFetch?: typeof globalThis.fetch;
 }
 
+/**
+ * Apply `[[models]]` config overrides in place. `!== undefined` (not
+ * truthiness) so explicit falsy values like `reasoning = false` are honored.
+ */
+function applyModelOverrides(
+  models: ModelEntry[],
+  overrides: BrainstormConfig["models"],
+): void {
+  for (const override of overrides) {
+    const existing = models.find((m) => m.id === override.id);
+    if (!existing) continue;
+    if (override.qualityTier !== undefined)
+      existing.capabilities.qualityTier = override.qualityTier as any;
+    if (override.speedTier !== undefined)
+      existing.capabilities.speedTier = override.speedTier as any;
+    if (override.bestFor !== undefined)
+      existing.capabilities.bestFor = override.bestFor as any;
+    if (override.contextWindow !== undefined) {
+      existing.capabilities.contextWindow = override.contextWindow;
+      existing.limits.contextWindow = override.contextWindow;
+    }
+    if (override.maxOutputTokens !== undefined)
+      existing.limits.maxOutputTokens = override.maxOutputTokens;
+    if (override.reasoning !== undefined)
+      existing.capabilities.reasoning = override.reasoning;
+  }
+}
+
 export async function createProviderRegistry(
   config: BrainstormConfig,
   resolvedKeys?: ResolvedKeys,
@@ -223,18 +251,10 @@ export async function createProviderRegistry(
   const { models: localModels } = await discoverLocalModels(config.providers);
   allModels.push(...localModels);
 
-  // Apply model overrides from config
-  for (const override of config.models) {
-    const existing = allModels.find((m) => m.id === override.id);
-    if (existing) {
-      if (override.qualityTier)
-        existing.capabilities.qualityTier = override.qualityTier as any;
-      if (override.speedTier)
-        existing.capabilities.speedTier = override.speedTier as any;
-      if (override.bestFor)
-        existing.capabilities.bestFor = override.bestFor as any;
-    }
-  }
+  // Apply model overrides from config. Also invoked from refresh(), which
+  // rebuilds local entries from re-discovery and would otherwise silently
+  // drop the corrections.
+  applyModelOverrides(allModels, config.models);
 
   // Overlay eval-derived capability scores (from `brainstorm eval`) and mark
   // them as measured. Models without eval data keep their static assumed
@@ -309,6 +329,9 @@ export async function createProviderRegistry(
       );
       const cloudAndSaas = allModels.filter((m) => !m.isLocal);
       allModels = [...cloudAndSaas, ...refreshedLocal];
+      // Re-apply config overrides — refreshed local entries are rebuilt from
+      // discovery and would otherwise lose contextWindow/limit corrections.
+      applyModelOverrides(allModels, config.models);
       // Re-apply eval capability scores (may have been updated by brainstorm eval)
       const freshScores = loadEvalCapabilityScores();
       for (const [modelId, entry] of Object.entries(freshScores)) {

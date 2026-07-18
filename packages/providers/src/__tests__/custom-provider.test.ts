@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   resolveCustomProviderKey,
   discoverOpenAICompatModels,
+  inferModelLimits,
 } from "../local/openai-compat.js";
 
 describe("resolveCustomProviderKey", () => {
@@ -51,6 +52,88 @@ describe("resolveCustomProviderKey", () => {
   });
 });
 
+describe("inferModelLimits", () => {
+  it("recognizes model families by id substring", () => {
+    expect(inferModelLimits({ id: "h200/gpt-oss-120b" })).toEqual({
+      limits: {
+        contextWindow: 131072,
+        maxOutputTokens: 32768,
+        reasoning: true,
+        toolCalling: true,
+      },
+      source: "heuristic",
+    });
+    expect(
+      inferModelLimits({ id: "mac/qwen/qwen3-coder-next" }).limits
+        .contextWindow,
+    ).toBe(262144);
+    expect(
+      inferModelLimits({ id: "mac/text-embedding-qwen3-embedding-4b" }).limits
+        .toolCalling,
+    ).toBe(false);
+  });
+
+  it("prefers server-reported context length over the family heuristic", () => {
+    const { limits, source } = inferModelLimits({
+      id: "h200/gpt-oss-120b",
+      max_model_len: 65536,
+    });
+    expect(source).toBe("server");
+    expect(limits.contextWindow).toBe(65536);
+    expect(limits.reasoning).toBe(true);
+    // Output budget never exceeds the server-reported window.
+    expect(limits.maxOutputTokens).toBeLessThanOrEqual(65536);
+  });
+
+  it("falls back to conservative defaults for unknown families", () => {
+    const { limits, source } = inferModelLimits({ id: "mystery-model-7b" });
+    expect(source).toBe("default");
+    expect(limits).toEqual({
+      contextWindow: 8192,
+      maxOutputTokens: 4096,
+      reasoning: false,
+      toolCalling: true,
+    });
+  });
+
+  it("does not overclaim windows for older generations of known families", () => {
+    // gemma-2 and qwen1.5 have far smaller real windows than current
+    // generations — they must fall to the conservative default, not 128k.
+    for (const id of ["gemma-2-9b-it", "qwen1.5-7b-chat", "qwen-72b"]) {
+      const { limits, source } = inferModelLimits({ id });
+      expect(source, id).toBe("default");
+      expect(limits.contextWindow, id).toBe(8192);
+    }
+    // Current generations still match.
+    expect(inferModelLimits({ id: "gemma-4-31b" }).limits.contextWindow).toBe(
+      131072,
+    );
+    expect(
+      inferModelLimits({ id: "qwen2.5-coder-32b" }).limits.contextWindow,
+    ).toBe(131072);
+  });
+
+  it("caps small checkpoints of current generations at 32k", () => {
+    // qwen2.5-coder-0.5b / gemma-3-1b match current-generation families but
+    // ship with far smaller windows than the full-size checkpoints.
+    for (const id of ["qwen2.5-coder-0.5b", "gemma-3-1b-it"]) {
+      const { limits } = inferModelLimits({ id });
+      expect(limits.contextWindow, id).toBe(32768);
+      expect(limits.maxOutputTokens, id).toBeLessThanOrEqual(32768);
+    }
+    // Size suffixes >= 7B keep the family window; A3B active-param suffixes
+    // after the real size don't shadow it.
+    expect(
+      inferModelLimits({ id: "mac/qwen/qwen3.5-35b-a3b-8bit" }).limits
+        .contextWindow,
+    ).toBe(131072);
+    expect(
+      inferModelLimits({ id: "h200/Qwen/Qwen3-Next-80B-A3B-Instruct-FP8" })
+        .limits.contextWindow,
+    ).toBe(262144);
+  });
+});
+
 describe("discoverOpenAICompatModels with custom providers", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -82,6 +165,27 @@ describe("discoverOpenAICompatModels with custom providers", () => {
       "acme:mac/qwen3.6-27b",
     ]);
     expect(models.every((m) => m.provider === "acme" && m.isLocal)).toBe(true);
+  });
+
+  it("excludes embedding-only models from the discovered registry", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        data: [
+          { id: "mac/text-embedding-qwen3-embedding-4b" },
+          { id: "mac/qwen/qwen3-coder-next" },
+        ],
+      }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const models = await discoverOpenAICompatModels(
+      "acme",
+      "http://llm.acme.internal",
+    );
+
+    // The embedding model must not be routable as a chat model.
+    expect(models.map((m) => m.name)).toEqual(["mac/qwen/qwen3-coder-next"]);
   });
 
   it("omits the headers key entirely when no auth is configured", async () => {

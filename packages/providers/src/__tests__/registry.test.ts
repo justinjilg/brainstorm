@@ -137,6 +137,83 @@ describe("createProviderRegistry", () => {
     );
   });
 
+  it("re-applies [[models]] overrides after refresh() rebuilds local entries", async () => {
+    const { discoverLocalModels } = await import("../local/discovery.js");
+    const localModel = () => ({
+      id: "acronis:test/model",
+      provider: "acronis",
+      name: "test/model",
+      capabilities: {
+        toolCalling: true,
+        streaming: true,
+        vision: false,
+        reasoning: false,
+        contextWindow: 8192,
+        qualityTier: 3,
+        speedTier: 2,
+        bestFor: ["conversation"],
+      },
+      pricing: { inputPer1MTokens: 0, outputPer1MTokens: 0 },
+      limits: { contextWindow: 8192, maxOutputTokens: 4096 },
+      status: "available",
+      isLocal: true,
+      lastHealthCheck: 0,
+    });
+    vi.mocked(discoverLocalModels).mockResolvedValue({
+      models: [localModel()],
+    } as any);
+
+    const config = createConfig() as any;
+    config.models = [{ id: "acronis:test/model", contextWindow: 262144 }];
+
+    try {
+      const registry = await createProviderRegistry(
+        config,
+        createResolvedKeys({}),
+      );
+      expect(registry.getModel("acronis:test/model")!.limits.contextWindow).toBe(
+        262144,
+      );
+
+      // refresh() rebuilds local entries from discovery — the override must
+      // survive, not revert to the discovered 8192.
+      vi.mocked(discoverLocalModels).mockResolvedValue({
+        models: [localModel()],
+      } as any);
+      await registry.refresh();
+      expect(registry.getModel("acronis:test/model")!.limits.contextWindow).toBe(
+        262144,
+      );
+    } finally {
+      vi.mocked(discoverLocalModels).mockResolvedValue({ models: [] } as any);
+    }
+  });
+
+  it("applies limit overrides from [[models]], honoring explicit falsy values", async () => {
+    const config = createConfig() as any;
+    const target = CLOUD_MODELS.find((m) => m.provider === "anthropic")!;
+    config.models = [
+      {
+        id: target.id,
+        contextWindow: 999_000,
+        maxOutputTokens: 12_345,
+        reasoning: false,
+      },
+    ];
+
+    const registry = await createProviderRegistry(
+      config,
+      createResolvedKeys({ ANTHROPIC_API_KEY: "test-key" }),
+    );
+
+    const model = registry.getModel(target.id)!;
+    expect(model.capabilities.contextWindow).toBe(999_000);
+    expect(model.limits.contextWindow).toBe(999_000);
+    expect(model.limits.maxOutputTokens).toBe(12_345);
+    // reasoning: false must stick — the old truthiness pattern would drop it.
+    expect(model.capabilities.reasoning).toBe(false);
+  });
+
   it("registers custom OpenAI-compatible providers and resolves their model ids", async () => {
     const config = createConfig() as any;
     config.providers.custom = {

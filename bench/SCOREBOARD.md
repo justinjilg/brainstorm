@@ -8,3 +8,4 @@ results never count as passes.
 | iter | date | items | full eval (q3-next / gpt-oss / q3-coder) | SWE-bench (mode) | open P0/P1 | notes |
 |---|---|---|---|---|---|---|
 | 0 | 2026-07-18 | baseline (custom provider + 2 workspace fixes) | 52% / 28% / 33% | not run | 0 | Eval run from repo root, read-only probe tools. q3-next: 100% code-correctness, 36% multi-step. Weakest dims everywhere: tool-selection, multi-step — consistent with 8192-ctx assumption + missing maxOutputTokens (iter 1 targets). |
+| 1 | 2026-07-18 | A B C D (+4 codex-found fixes) | dims: q3-next ts 36%= ms 36%= / q3-coder ts 27%= ms 21%+7 | not run | 0 | Codex anchor 4/4 precision; qwen3-coder reviewer 0/4; gpt-oss seat crashed -> iter-002 NEW-1 (tool-call id). Dip proved flake by re-run. |

@@ -116,4 +116,16 @@ describe("Compaction triggers", () => {
     const percent = getContextPercent(messages, tokens * 2);
     expect(percent).toBe(50);
   });
+
+  it("does not compact a realistic coding session under a 128k window", () => {
+    // ~30 turns of tool-heavy coding traffic (~2000 chars each ≈ 15k tokens).
+    // With the old hardcoded 8192-token assumption for custom-endpoint models
+    // this compacted constantly; a real 131072 window must not.
+    const messages = Array.from({ length: 30 }, (_, i) => ({
+      role: (i % 2 === 0 ? "user" : "assistant") as "user" | "assistant",
+      content: "const x = 42; // ".repeat(120),
+    }));
+    expect(needsCompaction(messages, 131072)).toBe(false);
+    expect(needsCompaction(messages, 8192)).toBe(true);
+  });
 });

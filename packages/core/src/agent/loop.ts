@@ -66,8 +66,59 @@ function getLLMCircuit(modelId: string) {
 import {
   enterToolExecution,
   exitToolExecution,
+  estimateTokenCount,
 } from "../session/compaction.js";
 import type { SystemPromptSegment } from "./context.js";
+
+/**
+ * Request-level output budget: the model's advertised maxOutputTokens,
+ * clamped to what its context window can still hold after the prompt.
+ * System prompt and tool schemas aren't in the message estimate, so a
+ * fixed overhead is reserved; a small floor keeps the request valid even
+ * when the estimate is pessimistic (the server clamps further if needed).
+ * Returns a spreadable object so callers can omit the option entirely for
+ * models that advertise no output limit.
+ */
+export function computeOutputBudget(
+  model: {
+    limits?: { contextWindow?: number; maxOutputTokens?: number };
+  },
+  messages: Array<{ role: string; content: unknown }>,
+  systemPrompt?: unknown,
+): { maxOutputTokens: number } | Record<string, never> {
+  const advertised = model.limits?.maxOutputTokens;
+  if (!advertised) return {};
+  const window = model.limits?.contextWindow;
+  if (!window) return { maxOutputTokens: advertised };
+  // Tool schemas aren't measured (they're functions + zod shapes); reserve a
+  // fixed allowance. The system prompt IS measured — brainstorm's runs multi-k
+  // tokens, far beyond any fixed guess.
+  const TOOL_SCHEMA_OVERHEAD_TOKENS = 1024;
+  const MIN_OUTPUT_TOKENS = 256;
+  const systemText =
+    typeof systemPrompt === "string"
+      ? systemPrompt
+      : Array.isArray(systemPrompt)
+        ? systemPrompt
+            .map((s: any) => (typeof s?.content === "string" ? s.content : ""))
+            .join("")
+        : "";
+  const promptEstimate =
+    estimateTokenCount(messages as any) +
+    Math.ceil(systemText.length / 4) +
+    TOOL_SCHEMA_OVERHEAD_TOKENS;
+  const remaining = window - promptEstimate;
+  if (remaining >= MIN_OUTPUT_TOKENS) {
+    return { maxOutputTokens: Math.min(advertised, remaining) };
+  }
+  // Near-exhausted window: requesting the floor would overflow — request
+  // exactly what's left. Fully exhausted (remaining <= 0): the prompt alone
+  // exceeds the window and no max_tokens value can save the request; keep it
+  // well-formed with the floor and let compaction/fallback handle the error.
+  return {
+    maxOutputTokens: remaining > 0 ? remaining : MIN_OUTPUT_TOKENS,
+  };
+}
 import { segmentsToSystemArray } from "./context.js";
 import { predictTaskCost } from "./cost-predictor.js";
 import { detectTone, toneGuidance } from "./sentiment.js";
@@ -889,6 +940,20 @@ export async function* runAgentLoop(
       ...(metadataHeader
         ? { headers: { "x-br-metadata": metadataHeader } }
         : {}),
+      // Give the model its full advertised output budget. The AI SDK does not
+      // infer per-model output limits for OpenAI-compatible providers, and the
+      // server default can be far below the model's real limit — reasoning
+      // models (gpt-oss) then burn the whole budget on reasoning tokens and
+      // finish with `length` + empty text, triggering wasteful fallback
+      // retries. Clamped to the context still remaining after the prompt:
+      // compaction admits input up to 80% of the window, so prompt + full
+      // advertised output can exceed the window and the server rejects the
+      // request outright.
+      ...computeOutputBudget(
+        decision.model,
+        messagesForApi as any,
+        systemForApiNormalized,
+      ),
       abortSignal: effectiveStreamSignal,
       // Retry on 429/503 with exponential backoff (1s, 2s, 4s).
       // Without this, rate limits during long KAIROS runs crash the daemon.

@@ -1,0 +1,2564 @@
+Reading additional input from stdin...
+OpenAI Codex v0.144.4
+--------
+workdir: /Users/justin.jilg/Projects/brainstorm
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 019f73d9-bb52-7d90-a755-976bfd284f80
+--------
+user
+You previously reviewed a diff in this repo and reported 4 findings: (1) maxOutputTokens sent without reserving prompt space in packages/core/src/agent/loop.ts; (2) overly broad /gemma/i and /qwen/i heuristics in packages/providers/src/local/openai-compat.ts; (3) registry refresh() dropping [[models]] overrides in packages/providers/src/registry.ts; (4) embedding models registered as routable chat models. The updated full diff is at bench/iterations/001/reviews/iter-fixed.diff. Verify whether each finding is now correctly addressed, and flag any NEW P0/P1 issues introduced by the fixes. Output ONLY JSON: {"resolved": [{"finding": 1|2|3|4, "status": "resolved"|"not-resolved", "note": string}], "new_findings": [{"file": string, "line": number, "severity": "P0"|"P1"|"P2", "finding": string}]}
+codex
+I’ll inspect the updated diff and the affected implementations, then return only the requested JSON verdict.
+exec
+/bin/zsh -lc "sed -n '1,260p' bench/iterations/001/reviews/iter-fixed.diff" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+diff --git a/bench/.gitignore b/bench/.gitignore
+new file mode 100644
+index 0000000..4c67d34
+--- /dev/null
++++ b/bench/.gitignore
+@@ -0,0 +1 @@
++iterations/*/runs/
+diff --git a/bench/SCOREBOARD.md b/bench/SCOREBOARD.md
+new file mode 100644
+index 0000000..6ebd6b5
+--- /dev/null
++++ b/bench/SCOREBOARD.md
+@@ -0,0 +1,10 @@
++# Brainstorm Self-Improvement Scoreboard
++
++Program: iterative harness hardening with local Acronis models + stochastic review (Codex CLI anchor).
++Full protocol: see the approved plan (plan → implement → smoke → stochastic review → fix → measure/gate/commit).
++Full 75-probe eval and SWE-bench run at milestones (every 3rd iteration). Heuristic (no-Docker) SWE-bench
++results never count as passes.
++
++| iter | date | items | full eval (q3-next / gpt-oss / q3-coder) | SWE-bench (mode) | open P0/P1 | notes |
++|---|---|---|---|---|---|---|
++| 0 | 2026-07-18 | baseline (custom provider + 2 workspace fixes) | 52% / 28% / 33% | not run | 0 | Eval run from repo root, read-only probe tools. q3-next: 100% code-correctness, 36% multi-step. Weakest dims everywhere: tool-selection, multi-step — consistent with 8192-ctx assumption + missing maxOutputTokens (iter 1 targets). |
+diff --git a/bench/eval-subset.json b/bench/eval-subset.json
+new file mode 100644
+index 0000000..b0f3fd8
+--- /dev/null
++++ b/bench/eval-subset.json
+@@ -0,0 +1,37 @@
++{
++  "note": "Frozen stratified subset (first 2 probes per dimension, chosen 2026-07-18, never tuned against). brainstorm eval lacks a per-probe filter; until one exists, per-iteration gates run the 2-3 most relevant --capability dimensions in full and compare dimension scores.",
++  "probes": {
++    "code-correctness": [
++      "code-correct-01",
++      "code-correct-02"
++    ],
++    "context-utilization": [
++      "context-01",
++      "context-02"
++    ],
++    "instruction-adherence": [
++      "instruct-01",
++      "instruct-02"
++    ],
++    "multi-model-workflow": [
++      "e2e-decompose-01",
++      "e2e-decompose-02"
++    ],
++    "multi-step": [
++      "multi-step-01",
++      "multi-step-02"
++    ],
++    "self-correction": [
++      "self-correct-01",
++      "self-correct-02"
++    ],
++    "tool-selection": [
++      "tool-select-01",
++      "tool-select-02"
++    ],
++    "tool-sequencing": [
++      "tool-seq-01",
++      "tool-seq-02"
++    ]
++  }
++}
+\ No newline at end of file
+diff --git a/bench/iterations/001/plan.md b/bench/iterations/001/plan.md
+new file mode 100644
+index 0000000..49fefbe
+--- /dev/null
++++ b/bench/iterations/001/plan.md
+@@ -0,0 +1,22 @@
++# Iteration 001 — model metadata + output tokens
++
++Seed: `ITER=001` → SEED=`$(printf 001 | shasum | cut -c1-8)` = computed at review stage.
++
++## Hypothesis
++The dominant harness-side cap on local-model coding capability is wrong model metadata:
++every custom-endpoint model gets contextWindow 8192 / maxOutputTokens 4096 / reasoning:false,
++and the agent loop never passes an output-token budget to streamText. Fixing A–D should lift
++multi-step and tool-sequencing scores (currently the weakest dimensions for all three models)
++and eliminate gpt-oss-120b's empty-response fallback retries.
++
++## Items
++- **A** — discovery heuristics + honor `context_length`/`max_model_len` from /v1/models (packages/providers/src/local/openai-compat.ts)
++- **B** — `[[models]]` overrides for contextWindow/maxOutputTokens/reasoning (packages/config schema + registry apply)
++- **C** — pass routed model's maxOutputTokens into streamText (packages/core/src/agent/loop.ts)
++- **D** — compaction correctness test with a realistic window
++
++## Gate
++- Unit/typecheck green on providers, config, core.
++- Smoke probes green (registry metadata correct; multi-step coding session with no compaction; gpt-oss long generation without empty-length retry).
++- Stochastic review: verified P0/P1 all resolved; ≥2 of 3 reviewers clean on re-review.
++- Tool-sequencing + multi-step `--capability` eval dims on q3-next and q3-coder ≥ baseline.
+diff --git a/packages/config/src/schema.ts b/packages/config/src/schema.ts
+index 0e75845..76e20d8 100644
+--- a/packages/config/src/schema.ts
++++ b/packages/config/src/schema.ts
+@@ -109,6 +109,12 @@ const modelOverrideSchema = z.object({
+   qualityTier: z.number().min(1).max(5).optional(),
+   speedTier: z.number().min(1).max(5).optional(),
+   bestFor: z.array(z.string()).optional(),
++  // Limit corrections — authoritative when discovery guesses wrong (custom
++  // OpenAI-compatible endpoints often expose no limit metadata). Applied to
++  // both capabilities.contextWindow and limits.* in the registry.
++  contextWindow: z.number().int().positive().optional(),
++  maxOutputTokens: z.number().int().positive().optional(),
++  reasoning: z.boolean().optional(),
+ });
+ 
+ // ── General Config ───────────────────────────────────────────────────
+diff --git a/packages/core/src/__tests__/loop.integration.test.ts b/packages/core/src/__tests__/loop.integration.test.ts
+index 7aed83a..0c44ab2 100644
+--- a/packages/core/src/__tests__/loop.integration.test.ts
++++ b/packages/core/src/__tests__/loop.integration.test.ts
+@@ -116,4 +116,16 @@ describe("Compaction triggers", () => {
+     const percent = getContextPercent(messages, tokens * 2);
+     expect(percent).toBe(50);
+   });
++
++  it("does not compact a realistic coding session under a 128k window", () => {
++    // ~30 turns of tool-heavy coding traffic (~2000 chars each ≈ 15k tokens).
++    // With the old hardcoded 8192-token assumption for custom-endpoint models
++    // this compacted constantly; a real 131072 window must not.
++    const messages = Array.from({ length: 30 }, (_, i) => ({
++      role: (i % 2 === 0 ? "user" : "assistant") as "user" | "assistant",
++      content: "const x = 42; // ".repeat(120),
++    }));
++    expect(needsCompaction(messages, 131072)).toBe(false);
++    expect(needsCompaction(messages, 8192)).toBe(true);
++  });
+ });
+diff --git a/packages/core/src/agent/loop.ts b/packages/core/src/agent/loop.ts
+index 6917248..9588a6f 100644
+--- a/packages/core/src/agent/loop.ts
++++ b/packages/core/src/agent/loop.ts
+@@ -66,8 +66,37 @@ function getLLMCircuit(modelId: string) {
+ import {
+   enterToolExecution,
+   exitToolExecution,
++  estimateTokenCount,
+ } from "../session/compaction.js";
+ import type { SystemPromptSegment } from "./context.js";
++
++/**
++ * Request-level output budget: the model's advertised maxOutputTokens,
++ * clamped to what its context window can still hold after the prompt.
++ * System prompt and tool schemas aren't in the message estimate, so a
++ * fixed overhead is reserved; a small floor keeps the request valid even
++ * when the estimate is pessimistic (the server clamps further if needed).
++ * Returns a spreadable object so callers can omit the option entirely for
++ * models that advertise no output limit.
++ */
++export function computeOutputBudget(
++  model: {
++    limits?: { contextWindow?: number; maxOutputTokens?: number };
++  },
++  messages: Array<{ role: string; content: unknown }>,
++): { maxOutputTokens: number } | Record<string, never> {
++  const advertised = model.limits?.maxOutputTokens;
++  if (!advertised) return {};
++  const window = model.limits?.contextWindow;
++  if (!window) return { maxOutputTokens: advertised };
++  const PROMPT_OVERHEAD_TOKENS = 1024;
++  const MIN_OUTPUT_TOKENS = 256;
++  const promptEstimate = estimateTokenCount(messages as any);
++  const remaining = window - promptEstimate - PROMPT_OVERHEAD_TOKENS;
++  return {
++    maxOutputTokens: Math.max(MIN_OUTPUT_TOKENS, Math.min(advertised, remaining)),
++  };
++}
+ import { segmentsToSystemArray } from "./context.js";
+ import { predictTaskCost } from "./cost-predictor.js";
+ import { detectTone, toneGuidance } from "./sentiment.js";
+@@ -889,6 +918,16 @@ export async function* runAgentLoop(
+       ...(metadataHeader
+         ? { headers: { "x-br-metadata": metadataHeader } }
+         : {}),
++      // Give the model its full advertised output budget. The AI SDK does not
++      // infer per-model output limits for OpenAI-compatible providers, and the
++      // server default can be far below the model's real limit — reasoning
++      // models (gpt-oss) then burn the whole budget on reasoning tokens and
++      // finish with `length` + empty text, triggering wasteful fallback
++      // retries. Clamped to the context still remaining after the prompt:
++      // compaction admits input up to 80% of the window, so prompt + full
++      // advertised output can exceed the window and the server rejects the
++      // request outright.
++      ...computeOutputBudget(decision.model, messagesForApi as any),
+       abortSignal: effectiveStreamSignal,
+       // Retry on 429/503 with exponential backoff (1s, 2s, 4s).
+       // Without this, rate limits during long KAIROS runs crash the daemon.
+diff --git a/packages/providers/src/__tests__/custom-provider.test.ts b/packages/providers/src/__tests__/custom-provider.test.ts
+index 076feb7..461a62e 100644
+--- a/packages/providers/src/__tests__/custom-provider.test.ts
++++ b/packages/providers/src/__tests__/custom-provider.test.ts
+@@ -5,6 +5,7 @@ import { join } from "node:path";
+ import {
+   resolveCustomProviderKey,
+   discoverOpenAICompatModels,
++  inferModelLimits,
+ } from "../local/openai-compat.js";
+ 
+ describe("resolveCustomProviderKey", () => {
+@@ -51,6 +52,68 @@ describe("resolveCustomProviderKey", () => {
+   });
+ });
+ 
++describe("inferModelLimits", () => {
++  it("recognizes model families by id substring", () => {
++    expect(inferModelLimits({ id: "h200/gpt-oss-120b" })).toEqual({
++      limits: {
++        contextWindow: 131072,
++        maxOutputTokens: 32768,
++        reasoning: true,
++        toolCalling: true,
++      },
++      source: "heuristic",
++    });
++    expect(
++      inferModelLimits({ id: "mac/qwen/qwen3-coder-next" }).limits
++        .contextWindow,
++    ).toBe(262144);
++    expect(
++      inferModelLimits({ id: "mac/text-embedding-qwen3-embedding-4b" }).limits
++        .toolCalling,
++    ).toBe(false);
++  });
++
++  it("prefers server-reported context length over the family heuristic", () => {
++    const { limits, source } = inferModelLimits({
++      id: "h200/gpt-oss-120b",
++      max_model_len: 65536,
++    });
++    expect(source).toBe("server");
++    expect(limits.contextWindow).toBe(65536);
++    expect(limits.reasoning).toBe(true);
++    // Output budget never exceeds the server-reported window.
++    expect(limits.maxOutputTokens).toBeLessThanOrEqual(65536);
++  });
++
++  it("falls back to conservative defaults for unknown families", () => {
++    const { limits, source } = inferModelLimits({ id: "mystery-model-7b" });
++    expect(source).toBe("default");
++    expect(limits).toEqual({
++      contextWindow: 8192,
++      maxOutputTokens: 4096,
++      reasoning: false,
++      toolCalling: true,
++    });
++  });
++
++  it("does not overclaim windows for older generations of known families", () => {
++    // gemma-2 and qwen1.5 have far smaller real windows than current
++    // generations — they must fall to the conservative default, not 128k.
++    for (const id of ["gemma-2-9b-it", "qwen1.5-7b-chat", "qwen-72b"]) {
++      const { limits, source } = inferModelLimits({ id });
++      expect(source, id).toBe("default");
++      expect(limits.contextWindow, id).toBe(8192);
++    }
+
+exec
+/bin/zsh -lc "sed -n '261,620p' bench/iterations/001/reviews/iter-fixed.diff" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
++    // Current generations still match.
++    expect(inferModelLimits({ id: "gemma-4-31b" }).limits.contextWindow).toBe(
++      131072,
++    );
++    expect(
++      inferModelLimits({ id: "qwen2.5-coder-32b" }).limits.contextWindow,
++    ).toBe(131072);
++  });
++});
++
+ describe("discoverOpenAICompatModels with custom providers", () => {
+   afterEach(() => {
+     vi.unstubAllGlobals();
+@@ -84,6 +147,27 @@ describe("discoverOpenAICompatModels with custom providers", () => {
+     expect(models.every((m) => m.provider === "acme" && m.isLocal)).toBe(true);
+   });
+ 
++  it("excludes embedding-only models from the discovered registry", async () => {
++    const fetchMock = vi.fn(async () => ({
++      ok: true,
++      json: async () => ({
++        data: [
++          { id: "mac/text-embedding-qwen3-embedding-4b" },
++          { id: "mac/qwen/qwen3-coder-next" },
++        ],
++      }),
++    }));
++    vi.stubGlobal("fetch", fetchMock);
++
++    const models = await discoverOpenAICompatModels(
++      "acme",
++      "http://llm.acme.internal",
++    );
++
++    // The embedding model must not be routable as a chat model.
++    expect(models.map((m) => m.name)).toEqual(["mac/qwen/qwen3-coder-next"]);
++  });
++
+   it("omits the headers key entirely when no auth is configured", async () => {
+     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({
+       ok: true,
+diff --git a/packages/providers/src/__tests__/registry.test.ts b/packages/providers/src/__tests__/registry.test.ts
+index 91c917d..8d55197 100644
+--- a/packages/providers/src/__tests__/registry.test.ts
++++ b/packages/providers/src/__tests__/registry.test.ts
+@@ -137,6 +137,83 @@ describe("createProviderRegistry", () => {
+     );
+   });
+ 
++  it("re-applies [[models]] overrides after refresh() rebuilds local entries", async () => {
++    const { discoverLocalModels } = await import("../local/discovery.js");
++    const localModel = () => ({
++      id: "acronis:test/model",
++      provider: "acronis",
++      name: "test/model",
++      capabilities: {
++        toolCalling: true,
++        streaming: true,
++        vision: false,
++        reasoning: false,
++        contextWindow: 8192,
++        qualityTier: 3,
++        speedTier: 2,
++        bestFor: ["conversation"],
++      },
++      pricing: { inputPer1MTokens: 0, outputPer1MTokens: 0 },
++      limits: { contextWindow: 8192, maxOutputTokens: 4096 },
++      status: "available",
++      isLocal: true,
++      lastHealthCheck: 0,
++    });
++    vi.mocked(discoverLocalModels).mockResolvedValue({
++      models: [localModel()],
++    } as any);
++
++    const config = createConfig() as any;
++    config.models = [{ id: "acronis:test/model", contextWindow: 262144 }];
++
++    try {
++      const registry = await createProviderRegistry(
++        config,
++        createResolvedKeys({}),
++      );
++      expect(registry.getModel("acronis:test/model")!.limits.contextWindow).toBe(
++        262144,
++      );
++
++      // refresh() rebuilds local entries from discovery — the override must
++      // survive, not revert to the discovered 8192.
++      vi.mocked(discoverLocalModels).mockResolvedValue({
++        models: [localModel()],
++      } as any);
++      await registry.refresh();
++      expect(registry.getModel("acronis:test/model")!.limits.contextWindow).toBe(
++        262144,
++      );
++    } finally {
++      vi.mocked(discoverLocalModels).mockResolvedValue({ models: [] } as any);
++    }
++  });
++
++  it("applies limit overrides from [[models]], honoring explicit falsy values", async () => {
++    const config = createConfig() as any;
++    const target = CLOUD_MODELS.find((m) => m.provider === "anthropic")!;
++    config.models = [
++      {
++        id: target.id,
++        contextWindow: 999_000,
++        maxOutputTokens: 12_345,
++        reasoning: false,
++      },
++    ];
++
++    const registry = await createProviderRegistry(
++      config,
++      createResolvedKeys({ ANTHROPIC_API_KEY: "test-key" }),
++    );
++
++    const model = registry.getModel(target.id)!;
++    expect(model.capabilities.contextWindow).toBe(999_000);
++    expect(model.limits.contextWindow).toBe(999_000);
++    expect(model.limits.maxOutputTokens).toBe(12_345);
++    // reasoning: false must stick — the old truthiness pattern would drop it.
++    expect(model.capabilities.reasoning).toBe(false);
++  });
++
+   it("registers custom OpenAI-compatible providers and resolves their model ids", async () => {
+     const config = createConfig() as any;
+     config.providers.custom = {
+diff --git a/packages/providers/src/local/openai-compat.ts b/packages/providers/src/local/openai-compat.ts
+index 27beb38..8873173 100644
+--- a/packages/providers/src/local/openai-compat.ts
++++ b/packages/providers/src/local/openai-compat.ts
+@@ -1,8 +1,11 @@
+ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+ import type { ModelEntry } from "@brainst0rm/shared";
++import { createLogger } from "@brainst0rm/shared";
+ import { readFileSync } from "node:fs";
+ import { homedir } from "node:os";
+ 
++const log = createLogger("openai-compat");
++
+ // LM Studio and llama.cpp both expose OpenAI-compatible APIs
+ 
+ export function createLMStudioProvider(baseUrl = "http://localhost:1234") {
+@@ -61,6 +64,118 @@ export function resolveCustomProviderKey(
+   return null;
+ }
+ 
++interface InferredModelLimits {
++  contextWindow: number;
++  maxOutputTokens: number;
++  reasoning: boolean;
++  toolCalling: boolean;
++}
++
++// Family heuristics for endpoints whose /v1/models response carries no limit
++// metadata. Ordered — first match wins. These are conservative floors for the
++// family, not per-checkpoint truth; `[[models]]` config overrides remain the
++// authoritative correction when a deployment differs.
++const MODEL_FAMILY_LIMITS: Array<{
++  match: RegExp;
++  limits: InferredModelLimits;
++}> = [
++  {
++    // Embedding models: not chat-capable at all.
++    match: /embed/i,
++    limits: {
++      contextWindow: 8192,
++      maxOutputTokens: 1,
++      reasoning: false,
++      toolCalling: false,
++    },
++  },
++  {
++    match: /gpt-oss/i,
++    limits: {
++      contextWindow: 131072,
++      maxOutputTokens: 32768,
++      reasoning: true,
++      toolCalling: true,
++    },
++  },
++  {
++    match: /qwen3[-.]?(coder|next)/i,
++    limits: {
++      contextWindow: 262144,
++      maxOutputTokens: 32768,
++      reasoning: false,
++      toolCalling: true,
++    },
++  },
++  {
++    // Generation-scoped on purpose: a bare /qwen/ or /gemma/ would claim a
++    // 128k window for older checkpoints (qwen1.5, gemma-2) whose real
++    // windows are far smaller, suppressing required compaction and sending
++    // over-context requests. Unknown generations fall to the conservative
++    // default + warn instead.
++    match: /qwen(2\.5|[3-9])/i,
++    limits: {
++      contextWindow: 131072,
++      maxOutputTokens: 32768,
++      reasoning: false,
++      toolCalling: true,
++    },
++  },
++  {
++    match: /gemma[-_.]?[3-9]/i,
++    limits: {
++      contextWindow: 131072,
++      maxOutputTokens: 8192,
++      reasoning: false,
++      toolCalling: true,
++    },
++  },
++];
++
++const DEFAULT_INFERRED_LIMITS: InferredModelLimits = {
++  contextWindow: 8192,
++  maxOutputTokens: 4096,
++  reasoning: false,
++  toolCalling: true,
++};
++
++/** Raw /v1/models entry — servers vary in what limit metadata they expose. */
++interface RawModelEntry {
++  id: string;
++  /** LM Studio / OpenRouter convention. */
++  context_length?: number;
++  /** vLLM convention. */
++  max_model_len?: number;
++}
++
++export function inferModelLimits(raw: RawModelEntry): {
++  limits: InferredModelLimits;
++  source: "server" | "heuristic" | "default";
++} {
++  const family =
++    MODEL_FAMILY_LIMITS.find((f) => f.match.test(raw.id))?.limits ?? null;
++  const serverContext =
++    typeof raw.context_length === "number"
++      ? raw.context_length
++      : typeof raw.max_model_len === "number"
++        ? raw.max_model_len
++        : null;
++
++  // Server-reported context wins; family heuristic fills the rest.
++  const base = family ?? DEFAULT_INFERRED_LIMITS;
++  if (serverContext && serverContext > 0) {
++    return {
++      limits: {
++        ...base,
++        contextWindow: serverContext,
++        maxOutputTokens: Math.min(base.maxOutputTokens, serverContext),
++      },
++      source: "server",
++    };
++  }
++  return { limits: base, source: family ? "heuristic" : "default" };
++}
++
+ export async function discoverOpenAICompatModels(
+   name: string,
+   baseUrl: string,
+@@ -72,29 +187,53 @@ export async function discoverOpenAICompatModels(
+       ...(headers ? { headers } : {}),
+     });
+     if (!response.ok) return [];
+-    const data = (await response.json()) as { data?: Array<{ id: string }> };
++    const data = (await response.json()) as { data?: RawModelEntry[] };
+     if (!data.data) return [];
+ 
+-    return data.data.map((m) => ({
+-      id: `${name}:${m.id}`,
+-      provider: name,
+-      name: m.id,
+-      capabilities: {
+-        toolCalling: true,
+-        streaming: true,
+-        vision: false,
+-        reasoning: false,
+-        contextWindow: 8192,
+-        qualityTier: 3 as const,
+-        speedTier: 2 as const,
+-        bestFor: ["conversation" as const, "simple-edit" as const],
+-      },
+-      pricing: { inputPer1MTokens: 0, outputPer1MTokens: 0 },
+-      limits: { contextWindow: 8192, maxOutputTokens: 4096 },
+-      status: "available" as const,
+-      isLocal: true,
+-      lastHealthCheck: Date.now(),
+-    }));
++    const entries: ModelEntry[] = [];
++    for (const m of data.data) {
++      const { limits, source } = inferModelLimits(m);
++      // Embedding-only models are not chat models: registering them would
++      // let the router select one for conversation tasks and hand streamText
++      // a 1-token output budget.
++      if (!limits.toolCalling && limits.maxOutputTokens <= 1) {
++        log.debug(
++          { provider: name, model: m.id },
++          "Skipping non-chat (embedding) model",
++        );
++        continue;
++      }
++      if (source === "default") {
++        log.warn(
++          { provider: name, model: m.id },
++          "No limit metadata from server and no family heuristic matched — assuming 8192-token context. Correct via [[models]] overrides if wrong.",
++        );
++      }
++      entries.push({
++        id: `${name}:${m.id}`,
++        provider: name,
++        name: m.id,
++        capabilities: {
++          toolCalling: limits.toolCalling,
++          streaming: true,
++          vision: false,
++          reasoning: limits.reasoning,
++          contextWindow: limits.contextWindow,
++          qualityTier: 3 as const,
++          speedTier: 2 as const,
++          bestFor: ["conversation" as const, "simple-edit" as const],
++        },
++        pricing: { inputPer1MTokens: 0, outputPer1MTokens: 0 },
++        limits: {
++          contextWindow: limits.contextWindow,
++          maxOutputTokens: limits.maxOutputTokens,
++        },
++        status: "available" as const,
++        isLocal: true,
++        lastHealthCheck: Date.now(),
++      });
++    }
++    return entries;
+   } catch {
+     return [];
+   }
+diff --git a/packages/providers/src/registry.ts b/packages/providers/src/registry.ts
+index 6e67eb5..263f339 100644
+--- a/packages/providers/src/registry.ts
++++ b/packages/providers/src/registry.ts
+@@ -55,6 +55,34 @@ export interface ProviderRegistryOptions {
+   brCatalogFetch?: typeof globalThis.fetch;
+ }
+ 
++/**
++ * Apply `[[models]]` config overrides in place. `!== undefined` (not
++ * truthiness) so explicit falsy values like `reasoning = false` are honored.
++ */
++function applyModelOverrides(
++  models: ModelEntry[],
++  overrides: BrainstormConfig["models"],
++): void {
++  for (const override of overrides) {
++    const existing = models.find((m) => m.id === override.id);
++    if (!existing) continue;
++    if (override.qualityTier !== undefined)
++      existing.capabilities.qualityTier = override.qualityTier as any;
+
+exec
+/bin/zsh -lc "sed -n '621,980p' bench/iterations/001/reviews/iter-fixed.diff" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 298ms:
++    if (override.speedTier !== undefined)
++      existing.capabilities.speedTier = override.speedTier as any;
++    if (override.bestFor !== undefined)
++      existing.capabilities.bestFor = override.bestFor as any;
++    if (override.contextWindow !== undefined) {
++      existing.capabilities.contextWindow = override.contextWindow;
++      existing.limits.contextWindow = override.contextWindow;
++    }
++    if (override.maxOutputTokens !== undefined)
++      existing.limits.maxOutputTokens = override.maxOutputTokens;
++    if (override.reasoning !== undefined)
++      existing.capabilities.reasoning = override.reasoning;
++  }
++}
++
+ export async function createProviderRegistry(
+   config: BrainstormConfig,
+   resolvedKeys?: ResolvedKeys,
+@@ -223,18 +251,10 @@ export async function createProviderRegistry(
+   const { models: localModels } = await discoverLocalModels(config.providers);
+   allModels.push(...localModels);
+ 
+-  // Apply model overrides from config
+-  for (const override of config.models) {
+-    const existing = allModels.find((m) => m.id === override.id);
+-    if (existing) {
+-      if (override.qualityTier)
+-        existing.capabilities.qualityTier = override.qualityTier as any;
+-      if (override.speedTier)
+-        existing.capabilities.speedTier = override.speedTier as any;
+-      if (override.bestFor)
+-        existing.capabilities.bestFor = override.bestFor as any;
+-    }
+-  }
++  // Apply model overrides from config. Also invoked from refresh(), which
++  // rebuilds local entries from re-discovery and would otherwise silently
++  // drop the corrections.
++  applyModelOverrides(allModels, config.models);
+ 
+   // Overlay eval-derived capability scores (from `brainstorm eval`) and mark
+   // them as measured. Models without eval data keep their static assumed
+@@ -309,6 +329,9 @@ export async function createProviderRegistry(
+       );
+       const cloudAndSaas = allModels.filter((m) => !m.isLocal);
+       allModels = [...cloudAndSaas, ...refreshedLocal];
++      // Re-apply config overrides — refreshed local entries are rebuilt from
++      // discovery and would otherwise lose contextWindow/limit corrections.
++      applyModelOverrides(allModels, config.models);
+       // Re-apply eval capability scores (may have been updated by brainstorm eval)
+       const freshScores = loadEvalCapabilityScores();
+       for (const [modelId, entry] of Object.entries(freshScores)) {
+
+exec
+/bin/zsh -lc "rg -n \"function estimateTokenCount|export function estimateTokenCount|function needsCompaction|messagesForApi|streamText\\(\" packages/core/src packages/providers/src packages/config/src && sed -n '1,180p' packages/core/src/session/compaction.ts && sed -n '840,950p' packages/core/src/agent/loop.ts && sed -n '1,380p' packages/providers/src/registry.ts" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 110ms:
+            durationMs,
+          });
+          // Flush trust window back to per-session metadata after taint recording
+          flushTrustWindow(mwMetadata, mwCall.id);
+          return result;
+        };
+      }
+    }
+  }
+
+  // Per-model tool name adaptation: rename tools to match what each provider's
+  // models were trained on (e.g., bash → shell_command for OpenAI). We adapt
+  // the OUTBOUND tool list so the model sees provider-native names. The
+  // AI SDK then dispatches a tool call to the executor keyed under that same
+  // adapted name — but every downstream consumer in the stream loop compares
+  // against CANONICAL names (file_read/file_write/file_edit/shell/subagent)
+  // for turn-context tracking, build-state capture, loop detection, and TUI
+  // events. The INBOUND rename (reverseToolName below) maps each observed
+  // tool-call name back to canonical at the point the loop resolves it, so a
+  // model that emits a renamed name (apply_patch, replace, read_file, …) is
+  // tracked and surfaced under its canonical identity rather than silently
+  // missing every comparison.
+  let finalTools = aiTools;
+  if (aiTools && decision) {
+    const adapted = adaptToolsForModel(aiTools, decision.model);
+    finalTools = adapted.adaptedTools;
+  }
+
+  // Serialize task context for gateway telemetry (x-br-metadata header)
+  const metadataHeader = serializeRoutingMetadata(task, decision);
+
+  const turnStartMs = Date.now();
+  const sessionCostBefore = costTracker.getSessionCost();
+  try {
+    // Use segmented system prompt for prompt caching when available.
+    // AI SDK v6 accepts system as string | SystemModelMessage | Array<SystemModelMessage>.
+    // Segments with cacheable=true get Anthropic cache_control hints; ignored by other providers.
+    const systemForAPI = options.systemSegments
+      ? segmentsToSystemArray(options.systemSegments)
+      : systemPrompt;
+
+    // Provider-safety normalization: extract any system-role messages from the
+    // history and fold them into the system field. Compaction injects 4-5
+    // system-role messages mid-stream (preserved-context block, summary,
+    // scratchpad, etc.). Anthropic + OpenAI tolerate this; Gemini's provider
+    // throws AI_UnsupportedFunctionalityError because Google's API only
+    // accepts system messages at the start of the conversation.
+    //
+    // We append extracted system content to the system field as additional
+    // segments so the model still sees it, just routed through the right
+    // channel. The remaining messages array contains only user/assistant
+    // turns — what every provider expects.
+    const { systemForApiNormalized, messagesForApi } =
+      normalizeSystemMessagesForProvider(systemForAPI, messages);
+
+    // Stream-stall watchdog: a provider may open the SSE connection but
+    // never send any event (silent proxy drop, network stall, provider
+    // hang). The for-await-of below only checks the staleness timer when
+    // a part arrives, so without this watchdog a truly-hung stream would
+    // block the loop forever. Link the watchdog's signal with any parent
+    // signal so both sources terminate the stream.
+    const streamAbort = new AbortController();
+    const effectiveStreamSignal = linkSignals(
+      streamAbort.signal,
+      options.signal,
+    );
+    const result = streamText({
+      model: modelId,
+      system: systemForApiNormalized as any,
+      messages: messagesForApi as any,
+      ...(finalTools ? { tools: finalTools } : {}),
+      // Phase 7: on a narration-nudge corrective retry ONLY, force a real tool
+      // call so the model cannot narrate-and-stop again. Scoped to this single
+      // re-entry via options._forceToolChoice; never permanent (that would stop
+      // the model ever finishing). Only meaningful when tools are present.
+      ...(finalTools && options._forceToolChoice
+        ? { toolChoice: "required" as const }
+        : {}),
+      ...(metadataHeader
+        ? { headers: { "x-br-metadata": metadataHeader } }
+        : {}),
+      // Give the model its full advertised output budget. The AI SDK does not
+      // infer per-model output limits for OpenAI-compatible providers, and the
+      // server default can be far below the model's real limit — reasoning
+      // models (gpt-oss) then burn the whole budget on reasoning tokens and
+      // finish with `length` + empty text, triggering wasteful fallback
+      // retries. Clamped to the context still remaining after the prompt:
+      // compaction admits input up to 80% of the window, so prompt + full
+      // advertised output can exceed the window and the server rejects the
+      // request outright.
+      ...computeOutputBudget(decision.model, messagesForApi as any),
+      abortSignal: effectiveStreamSignal,
+      // Retry on 429/503 with exponential backoff (1s, 2s, 4s).
+      // Without this, rate limits during long KAIROS runs crash the daemon.
+      maxRetries: 3,
+      stopWhen: stepCountIs(
+        shouldUseTools ? (options.maxSteps ?? config.general.maxSteps) : 1,
+      ),
+      onStepFinish: async ({ usage }: any) => {
+        if (usage) {
+          const inputTokens = usage.inputTokens ?? 0;
+          const outputTokens = usage.outputTokens ?? 0;
+          // AI SDK v6 exposes cache-read tokens on the usage object. These
+          // are a subset of inputTokens and are billed at a reduced rate.
+          const cachedTokens = usage.cachedInputTokens ?? 0;
+          try {
+            costTracker.record({
+              sessionId,
+              modelId: decision.model.id,
+              provider: decision.model.provider,
+              inputTokens,
+import type { BrainstormConfig } from "@brainst0rm/config";
+import type { ModelEntry, CapabilityScores } from "@brainst0rm/shared";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
+import { createOllamaProvider } from "./local/ollama.js";
+import {
+  createLMStudioProvider,
+  createLlamaCppProvider,
+  createCustomProvider,
+  resolveCustomProviderKey,
+} from "./local/openai-compat.js";
+import { discoverLocalModels } from "./local/discovery.js";
+import { CLOUD_MODELS } from "./cloud/models.js";
+import {
+  createBrainstormSaaSProvider,
+  fetchBrModelCatalog,
+} from "./cloud/brainstorm-saas.js";
+import type { BrEnvelopeListener } from "./cloud/br-envelope.js";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+
+export interface ProviderRegistry {
+  models: ModelEntry[];
+  getModel(id: string): ModelEntry | undefined;
+  getProvider(modelId: string): any;
+  hasBrainstormSaaS: boolean;
+  refresh(): Promise<void>;
+}
+
+/**
+ * Optional pre-resolved API keys from the vault/1Password/env chain.
+ * When provided, these take priority over process.env for provider setup.
+ */
+export interface ResolvedKeys {
+  get(name: string): string | null;
+}
+
+/**
+ * Optional callbacks/wires applied during registry construction.
+ * Kept as an open-shape object so we can grow it without re-threading
+ * 9 call sites in the CLI every time a new hook is added.
+ */
+export interface ProviderRegistryOptions {
+  /** Fired per BR response with the parsed envelope. Wired to the
+   *  routing_audit writer by the CLI bootstrap (P2b). The fetch path
+   *  in brainstorm-saas.ts invokes this fire-and-forget; rejections are
+   *  caught at the call site. */
+  onEnvelope?: BrEnvelopeListener;
+
+  /** Injectable fetch for the BR model-catalog import (tests stub this).
+   *  Passed through to fetchBrModelCatalog; production uses globalThis.fetch. */
+  brCatalogFetch?: typeof globalThis.fetch;
+}
+
+/**
+ * Apply `[[models]]` config overrides in place. `!== undefined` (not
+ * truthiness) so explicit falsy values like `reasoning = false` are honored.
+ */
+function applyModelOverrides(
+  models: ModelEntry[],
+  overrides: BrainstormConfig["models"],
+): void {
+  for (const override of overrides) {
+    const existing = models.find((m) => m.id === override.id);
+    if (!existing) continue;
+    if (override.qualityTier !== undefined)
+      existing.capabilities.qualityTier = override.qualityTier as any;
+    if (override.speedTier !== undefined)
+      existing.capabilities.speedTier = override.speedTier as any;
+    if (override.bestFor !== undefined)
+      existing.capabilities.bestFor = override.bestFor as any;
+    if (override.contextWindow !== undefined) {
+      existing.capabilities.contextWindow = override.contextWindow;
+      existing.limits.contextWindow = override.contextWindow;
+    }
+    if (override.maxOutputTokens !== undefined)
+      existing.limits.maxOutputTokens = override.maxOutputTokens;
+    if (override.reasoning !== undefined)
+      existing.capabilities.reasoning = override.reasoning;
+  }
+}
+
+export async function createProviderRegistry(
+  config: BrainstormConfig,
+  resolvedKeys?: ResolvedKeys,
+  options: ProviderRegistryOptions = {},
+): Promise<ProviderRegistry> {
+  /** Resolve a key: check resolvedKeys first, then fall back to process.env. */
+  const getKey = (name: string): string | null =>
+    resolvedKeys?.get(name) ?? process.env[name] ?? null;
+
+  const providers: Record<string, any> = {};
+
+  // Local providers
+  if (config.providers.ollama.enabled) {
+    providers.ollama = createOllamaProvider(config.providers.ollama.baseUrl);
+  }
+  if (config.providers.lmstudio.enabled) {
+    providers.lmstudio = createLMStudioProvider(
+      config.providers.lmstudio.baseUrl,
+    );
+  }
+  if (config.providers.llamacpp.enabled) {
+    providers.llamacpp = createLlamaCppProvider(
+      config.providers.llamacpp.baseUrl,
+    );
+  }
+  // Custom OpenAI-compatible endpoints. Registered before the cloud SDKs so a
+  // name collision with a built-in provider is overwritten by the built-in
+  // rather than silently hijacking it.
+  for (const [name, custom] of Object.entries(
+    config.providers.custom ?? {},
+  )) {
+    if (!custom.enabled) continue;
+    const key = resolveCustomProviderKey(custom, getKey);
+    providers[name] = createCustomProvider(
+      name,
+      custom.baseUrl,
+      key ?? undefined,
+    );
+  }
+
+  // BrainstormRouter SaaS — only enabled with an explicit API key.
+  // The embedded community key is NOT used implicitly to prevent sending
+  // prompts/code to a remote service without explicit opt-in.
+  //
+  // (Prior code had a second branch that tried
+  // `getBrainstormApiKey()` when `explicitBrKey` was null but
+  // process.env.BRAINSTORM_API_KEY was set — unreachable, because
+  // getKey() ALREADY falls through to process.env, so
+  // explicitBrKey is never null when env is set. Removed to make
+  // the "explicit opt-in" invariant non-fragile: a future
+  // refactor can't accidentally revive the implicit community-key
+  // path by changing getKey's fallthrough order.)
+  const brApiKey = getKey("BRAINSTORM_API_KEY");
+  const hasBrainstormSaaS = !!brApiKey;
+  if (brApiKey) {
+    providers.brainstormrouter = createBrainstormSaaSProvider(brApiKey, {
+      onEnvelope: options.onEnvelope,
+    });
+  }
+
+  // Direct provider SDKs (fallback when no BR SaaS, or for direct API key usage)
+  const anthropicKey = getKey("ANTHROPIC_API_KEY");
+  if (anthropicKey) {
+    providers.anthropic = createAnthropic({ apiKey: anthropicKey });
+  }
+  const openaiKey = getKey("OPENAI_API_KEY");
+  if (openaiKey) {
+    providers.openai = createOpenAI({ apiKey: openaiKey });
+  }
+  // Accept either GOOGLE_GENERATIVE_AI_API_KEY (AI SDK convention) or
+  // GEMINI_API_KEY (Google's own convention, commonly already set in shells).
+  const googleKey =
+    getKey("GOOGLE_GENERATIVE_AI_API_KEY") ?? getKey("GEMINI_API_KEY");
+  if (googleKey) {
+    providers.google = createGoogleGenerativeAI({ apiKey: googleKey });
+  }
+
+  // Only include cloud models for providers we have credentials for
+  const availableCloudProviders = new Set<string>();
+  if (brApiKey) availableCloudProviders.add("brainstormrouter"); // SaaS can route to any model
+  if (anthropicKey) availableCloudProviders.add("anthropic");
+  if (openaiKey) availableCloudProviders.add("openai");
+  if (googleKey) availableCloudProviders.add("google");
+  const deepseekKey = getKey("DEEPSEEK_API_KEY");
+  if (deepseekKey) {
+    availableCloudProviders.add("deepseek");
+    providers.deepseek = createOpenAICompatible({
+      name: "deepseek",
+      baseURL: "https://api.deepseek.com/v1",
+      headers: { Authorization: `Bearer ${deepseekKey}` },
+      includeUsage: true,
+    });
+  }
+  const moonshotKey = getKey("MOONSHOT_API_KEY");
+  if (moonshotKey) {
+    availableCloudProviders.add("moonshot");
+    providers.moonshot = createOpenAICompatible({
+      name: "moonshot",
+      baseURL: "https://api.moonshot.ai/v1",
+      headers: { Authorization: `Bearer ${moonshotKey}` },
+      includeUsage: true,
+    });
+  }
+
+  // Include all cloud models reachable via SaaS or direct keys.
+  // Models with direct provider keys are marked preferred for routing.
+  const hasDirectKeys =
+    availableCloudProviders.size > (hasBrainstormSaaS ? 1 : 0);
+  const reachableCloudModels = hasBrainstormSaaS
+    ? CLOUD_MODELS
+    : CLOUD_MODELS.filter((m) => availableCloudProviders.has(m.provider));
+
+  let allModels = [...reachableCloudModels];
+
+  // If BR SaaS is available, add "auto" model (intelligent SaaS routing)
+  if (hasBrainstormSaaS) {
+    allModels.unshift({
+      id: "brainstormrouter/auto",
+      provider: "brainstormrouter",
+      name: "BrainstormRouter Auto",
+      capabilities: {
+        toolCalling: true,
+        streaming: true,
+        vision: true,
+        reasoning: true,
+        contextWindow: 200000,
+        qualityTier: 1,
+        speedTier: 1,
+        bestFor: [
+          "code-generation",
+          "debugging",
+          "refactoring",
+          "analysis",
+          "multi-file-edit",
+          "explanation",
+          "conversation",
+        ],
+      },
+      pricing: { inputPer1MTokens: 0, outputPer1MTokens: 0 }, // SaaS handles pricing
+      limits: { contextWindow: 200000, maxOutputTokens: 16384 },
+      status: "available",
+      isLocal: false,
+      lastHealthCheck: Date.now(),
+    });
+  }
+
+  // Import BR's live model catalog (opt-in: only when a BR key is configured).
+  // This lets the router see & select ANY tool-capable model BR serves, not
+  // just the statically curated CLOUD_MODELS. Static entries WIN on id
+  // collision (curated capability/pricing data beats synthesized placeholders).
+  // fetchBrModelCatalog is resilient by contract — it never throws — so a
+  // network failure/timeout/absent key silently keeps the static catalog.
+  if (brApiKey) {
+    const brCatalog = await fetchBrModelCatalog(brApiKey, {
+      fetchImpl: options.brCatalogFetch,
+    });
+    const existingIds = new Set(allModels.map((m) => m.id));
+    for (const model of brCatalog) {
+      if (existingIds.has(model.id)) continue; // static wins
+      existingIds.add(model.id);
+      allModels.push(model);
+    }
+  }
+
+  // Discover local models
+  const { models: localModels } = await discoverLocalModels(config.providers);
+  allModels.push(...localModels);
+
+  // Apply model overrides from config. Also invoked from refresh(), which
+  // rebuilds local entries from re-discovery and would otherwise silently
+  // drop the corrections.
+  applyModelOverrides(allModels, config.models);
+
+  // Overlay eval-derived capability scores (from `brainstorm eval`) and mark
+  // them as measured. Models without eval data keep their static assumed
+  // scores but are flagged as unmeasured — the capability strategy prefers
+  // measured scores over assumed ones to avoid rewarding guesses.
+  const evalScores = loadEvalCapabilityScores();
+  for (const [modelId, entry] of Object.entries(evalScores)) {
+    const model = allModels.find((m) => m.id === modelId);
+    if (model) {
+      model.capabilities.capabilityScores = entry.scores;
+      (model.capabilities as any).scoresAreMeasured = true;
+    }
+  }
+
+  // Persist model list to cache for faster subsequent startups
+  saveProviderCache(allModels);
+
+  const registry: ProviderRegistry = {
+    models: allModels,
+    hasBrainstormSaaS,
+
+    getModel(id: string) {
+      return allModels.find((m) => m.id === id);
+    },
+
+    getProvider(modelId: string) {
+      // BrainstormRouter SaaS: route through SaaS provider
+      if (
+        modelId.startsWith("brainstormrouter/") &&
+        providers.brainstormrouter
+      ) {
+        const model = modelId.split("/")[1]; // "auto" or specific model
+        return providers.brainstormrouter(model);
+      }
+
+      // Local models (ollama:xxx, lmstudio:xxx, llamacpp:xxx)
+      const [providerName] = modelId.split(":");
+      if (providerName && providers[providerName]) {
+        const modelName = modelId.slice(providerName.length + 1);
+        return providers[providerName](modelName);
+      }
+
+      // Cloud models ("provider/model" format) — resolve through direct SDK providers
+      const [cloudProvider, ...modelParts] = modelId.split("/");
+      const cloudModelName = modelParts.join("/");
+      if (cloudProvider && providers[cloudProvider]) {
+        return providers[cloudProvider](cloudModelName);
+      }
+
+      // No direct provider SDK available — route through BrainstormRouter if available.
+      // This handles the common case where the router picks "openai/gpt-4.1" but the
+      // user only has a BR key (no OPENAI_API_KEY). BR can route to any model.
+      if (providers.brainstormrouter) {
+        return providers.brainstormrouter(modelId);
+      }
+
+      // No provider could resolve this id. Returning the bare string here used
+      // to hand an unresolvable model to streamText, which fails deep in the
+      // AI SDK with an opaque error. Fail loudly and diagnosably instead.
+      throw new Error(
+        `Cannot resolve a provider for model "${modelId}". No matching direct ` +
+          `provider SDK is configured (checked: ${Object.keys(providers).join(", ") || "none"}) ` +
+          `and BrainstormRouter is not enabled. Configure the model's provider key ` +
+          `(e.g. ANTHROPIC_API_KEY/OPENAI_API_KEY/GOOGLE_GENERATIVE_AI_API_KEY) or set ` +
+          `BRAINSTORM_API_KEY to route "${modelId}" through BrainstormRouter.`,
+      );
+    },
+
+    async refresh() {
+      const { models: refreshedLocal } = await discoverLocalModels(
+        config.providers,
+      );
+      const cloudAndSaas = allModels.filter((m) => !m.isLocal);
+      allModels = [...cloudAndSaas, ...refreshedLocal];
+      // Re-apply config overrides — refreshed local entries are rebuilt from
+      // discovery and would otherwise lose contextWindow/limit corrections.
+      applyModelOverrides(allModels, config.models);
+      // Re-apply eval capability scores (may have been updated by brainstorm eval)
+      const freshScores = loadEvalCapabilityScores();
+      for (const [modelId, entry] of Object.entries(freshScores)) {
+        const model = allModels.find((m) => m.id === modelId);
+        if (model) {
+          model.capabilities.capabilityScores = entry.scores;
+        }
+      }
+      registry.models = allModels;
+    },
+  };
+
+  return registry;
+}
+
+/**
+ * Load eval-derived capability scores from ~/.brainstorm/eval/capability-scores.json.
+ * These are written by `brainstorm eval` via @brainst0rm/eval's exportCapabilityScores().
+ * Reading directly avoids a circular dependency (eval → providers → eval).
+ */
+const CACHE_PATH = join(homedir(), ".brainstorm", ".providers.cache.json");
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+interface ProviderCache {
+  timestamp: number;
+  modelIds: string[];
+}
+
+function loadProviderCache(): ProviderCache | null {
+  try {
+    if (!existsSync(CACHE_PATH)) return null;
+    const raw = readFileSync(CACHE_PATH, "utf-8");
+    // Guard against corrupt/oversized cache files (max 1MB)
+    if (raw.length > 1_000_000) return null;
+    const data = JSON.parse(raw);
+    // Validate required fields exist
+    if (typeof data?.timestamp !== "number" || !Array.isArray(data?.modelIds))
+      return null;
+    if (Date.now() - data.timestamp > CACHE_TTL_MS) return null;
+    return data as ProviderCache;
+  } catch {
+    return null;
+  }
+}
+
+function saveProviderCache(models: ModelEntry[]): void {
+
+exec
+/bin/zsh -lc "ls -la bench/iterations/001/reviews && rg -n \"maxOutputTokens|gemma|qwen|embedding|refresh\\(\\)|finding\" bench/iterations/001/reviews -g '*.md' -g '*.json' -g '*.txt' -g '*.diff'" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+total 504
+drwxr-xr-x  12 justin.jilg  staff     384 Jul 18 02:11 .
+drwxr-xr-x   5 justin.jilg  staff     160 Jul 18 01:57 ..
+-rw-r--r--   1 justin.jilg  staff   48123 Jul 18 02:11 codex-rereview.err
+-rw-r--r--   1 justin.jilg  staff       0 Jul 18 02:11 codex-rereview.out
+-rw-r--r--   1 justin.jilg  staff  132311 Jul 18 02:07 codex.err
+-rw-r--r--   1 justin.jilg  staff    2403 Jul 18 02:07 codex.out
+-rw-r--r--   1 justin.jilg  staff    1461 Jul 18 02:04 gpt-oss.out
+-rw-r--r--   1 justin.jilg  staff   25707 Jul 18 02:11 iter-fixed.diff
+-rw-r--r--   1 justin.jilg  staff   17947 Jul 18 02:03 iter.diff
+-rw-r--r--   1 justin.jilg  staff     412 Jul 18 02:03 panel.json
+-rw-r--r--   1 justin.jilg  staff    4374 Jul 18 02:05 qwen3-coder.out
+-rw-r--r--   1 justin.jilg  staff    1461 Jul 18 02:06 verdicts.json
+bench/iterations/001/reviews/iter-fixed.diff:23:+| 0 | 2026-07-18 | baseline (custom provider + 2 workspace fixes) | 52% / 28% / 33% | not run | 0 | Eval run from repo root, read-only probe tools. q3-next: 100% code-correctness, 36% multi-step. Weakest dims everywhere: tool-selection, multi-step — consistent with 8192-ctx assumption + missing maxOutputTokens (iter 1 targets). |
+bench/iterations/001/reviews/iter-fixed.diff:80:+every custom-endpoint model gets contextWindow 8192 / maxOutputTokens 4096 / reasoning:false,
+bench/iterations/001/reviews/iter-fixed.diff:87:+- **B** — `[[models]]` overrides for contextWindow/maxOutputTokens/reasoning (packages/config schema + registry apply)
+bench/iterations/001/reviews/iter-fixed.diff:88:+- **C** — pass routed model's maxOutputTokens into streamText (packages/core/src/agent/loop.ts)
+bench/iterations/001/reviews/iter-fixed.diff:108:+  maxOutputTokens: z.number().int().positive().optional(),
+bench/iterations/001/reviews/iter-fixed.diff:147:+ * Request-level output budget: the model's advertised maxOutputTokens,
+bench/iterations/001/reviews/iter-fixed.diff:157:+    limits?: { contextWindow?: number; maxOutputTokens?: number };
+bench/iterations/001/reviews/iter-fixed.diff:160:+): { maxOutputTokens: number } | Record<string, never> {
+bench/iterations/001/reviews/iter-fixed.diff:161:+  const advertised = model.limits?.maxOutputTokens;
+bench/iterations/001/reviews/iter-fixed.diff:164:+  if (!window) return { maxOutputTokens: advertised };
+bench/iterations/001/reviews/iter-fixed.diff:170:+    maxOutputTokens: Math.max(MIN_OUTPUT_TOKENS, Math.min(advertised, remaining)),
+bench/iterations/001/reviews/iter-fixed.diff:214:+        maxOutputTokens: 32768,
+bench/iterations/001/reviews/iter-fixed.diff:221:+      inferModelLimits({ id: "mac/qwen/qwen3-coder-next" }).limits
+bench/iterations/001/reviews/iter-fixed.diff:225:+      inferModelLimits({ id: "mac/text-embedding-qwen3-embedding-4b" }).limits
+bench/iterations/001/reviews/iter-fixed.diff:239:+    expect(limits.maxOutputTokens).toBeLessThanOrEqual(65536);
+bench/iterations/001/reviews/iter-fixed.diff:247:+      maxOutputTokens: 4096,
+bench/iterations/001/reviews/iter-fixed.diff:254:+    // gemma-2 and qwen1.5 have far smaller real windows than current
+bench/iterations/001/reviews/iter-fixed.diff:256:+    for (const id of ["gemma-2-9b-it", "qwen1.5-7b-chat", "qwen-72b"]) {
+bench/iterations/001/reviews/iter-fixed.diff:262:+    expect(inferModelLimits({ id: "gemma-4-31b" }).limits.contextWindow).toBe(
+bench/iterations/001/reviews/iter-fixed.diff:266:+      inferModelLimits({ id: "qwen2.5-coder-32b" }).limits.contextWindow,
+bench/iterations/001/reviews/iter-fixed.diff:278:+  it("excludes embedding-only models from the discovered registry", async () => {
+bench/iterations/001/reviews/iter-fixed.diff:283:+          { id: "mac/text-embedding-qwen3-embedding-4b" },
+bench/iterations/001/reviews/iter-fixed.diff:284:+          { id: "mac/qwen/qwen3-coder-next" },
+bench/iterations/001/reviews/iter-fixed.diff:295:+    // The embedding model must not be routable as a chat model.
+bench/iterations/001/reviews/iter-fixed.diff:296:+    expect(models.map((m) => m.name)).toEqual(["mac/qwen/qwen3-coder-next"]);
+bench/iterations/001/reviews/iter-fixed.diff:310:+  it("re-applies [[models]] overrides after refresh() rebuilds local entries", async () => {
+bench/iterations/001/reviews/iter-fixed.diff:327:+      limits: { contextWindow: 8192, maxOutputTokens: 4096 },
+bench/iterations/001/reviews/iter-fixed.diff:348:+      // refresh() rebuilds local entries from discovery — the override must
+bench/iterations/001/reviews/iter-fixed.diff:353:+      await registry.refresh();
+bench/iterations/001/reviews/iter-fixed.diff:369:+        maxOutputTokens: 12_345,
+bench/iterations/001/reviews/iter-fixed.diff:382:+    expect(model.limits.maxOutputTokens).toBe(12_345);
+bench/iterations/001/reviews/iter-fixed.diff:412:+  maxOutputTokens: number;
+bench/iterations/001/reviews/iter-fixed.diff:430:+      maxOutputTokens: 1,
+bench/iterations/001/reviews/iter-fixed.diff:439:+      maxOutputTokens: 32768,
+bench/iterations/001/reviews/iter-fixed.diff:445:+    match: /qwen3[-.]?(coder|next)/i,
+bench/iterations/001/reviews/iter-fixed.diff:448:+      maxOutputTokens: 32768,
+bench/iterations/001/reviews/iter-fixed.diff:454:+    // Generation-scoped on purpose: a bare /qwen/ or /gemma/ would claim a
+bench/iterations/001/reviews/iter-fixed.diff:455:+    // 128k window for older checkpoints (qwen1.5, gemma-2) whose real
+bench/iterations/001/reviews/iter-fixed.diff:459:+    match: /qwen(2\.5|[3-9])/i,
+bench/iterations/001/reviews/iter-fixed.diff:462:+      maxOutputTokens: 32768,
+bench/iterations/001/reviews/iter-fixed.diff:468:+    match: /gemma[-_.]?[3-9]/i,
+bench/iterations/001/reviews/iter-fixed.diff:471:+      maxOutputTokens: 8192,
+bench/iterations/001/reviews/iter-fixed.diff:480:+  maxOutputTokens: 4096,
+bench/iterations/001/reviews/iter-fixed.diff:514:+        maxOutputTokens: Math.min(base.maxOutputTokens, serverContext),
+bench/iterations/001/reviews/iter-fixed.diff:548:-      limits: { contextWindow: 8192, maxOutputTokens: 4096 },
+bench/iterations/001/reviews/iter-fixed.diff:559:+      if (!limits.toolCalling && limits.maxOutputTokens <= 1) {
+bench/iterations/001/reviews/iter-fixed.diff:562:+          "Skipping non-chat (embedding) model",
+bench/iterations/001/reviews/iter-fixed.diff:589:+          maxOutputTokens: limits.maxOutputTokens,
+bench/iterations/001/reviews/iter-fixed.diff:629:+    if (override.maxOutputTokens !== undefined)
+bench/iterations/001/reviews/iter-fixed.diff:630:+      existing.limits.maxOutputTokens = override.maxOutputTokens;
+bench/iterations/001/reviews/iter-fixed.diff:655:+  // Apply model overrides from config. Also invoked from refresh(), which
+bench/iterations/001/reviews/iter.diff:23:+| 0 | 2026-07-18 | baseline (custom provider + 2 workspace fixes) | 52% / 28% / 33% | not run | 0 | Eval run from repo root, read-only probe tools. q3-next: 100% code-correctness, 36% multi-step. Weakest dims everywhere: tool-selection, multi-step — consistent with 8192-ctx assumption + missing maxOutputTokens (iter 1 targets). |
+bench/iterations/001/reviews/iter.diff:80:+every custom-endpoint model gets contextWindow 8192 / maxOutputTokens 4096 / reasoning:false,
+bench/iterations/001/reviews/iter.diff:87:+- **B** — `[[models]]` overrides for contextWindow/maxOutputTokens/reasoning (packages/config schema + registry apply)
+bench/iterations/001/reviews/iter.diff:88:+- **C** — pass routed model's maxOutputTokens into streamText (packages/core/src/agent/loop.ts)
+bench/iterations/001/reviews/iter.diff:108:+  maxOutputTokens: z.number().int().positive().optional(),
+bench/iterations/001/reviews/iter.diff:148:+      ...(decision.model.limits?.maxOutputTokens
+bench/iterations/001/reviews/iter.diff:149:+        ? { maxOutputTokens: decision.model.limits.maxOutputTokens }
+bench/iterations/001/reviews/iter.diff:175:+        maxOutputTokens: 32768,
+bench/iterations/001/reviews/iter.diff:182:+      inferModelLimits({ id: "mac/qwen/qwen3-coder-next" }).limits
+bench/iterations/001/reviews/iter.diff:186:+      inferModelLimits({ id: "mac/text-embedding-qwen3-embedding-4b" }).limits
+bench/iterations/001/reviews/iter.diff:200:+    expect(limits.maxOutputTokens).toBeLessThanOrEqual(65536);
+bench/iterations/001/reviews/iter.diff:208:+      maxOutputTokens: 4096,
+bench/iterations/001/reviews/iter.diff:233:+        maxOutputTokens: 12_345,
+bench/iterations/001/reviews/iter.diff:246:+    expect(model.limits.maxOutputTokens).toBe(12_345);
+bench/iterations/001/reviews/iter.diff:276:+  maxOutputTokens: number;
+bench/iterations/001/reviews/iter.diff:294:+      maxOutputTokens: 1,
+bench/iterations/001/reviews/iter.diff:303:+      maxOutputTokens: 32768,
+bench/iterations/001/reviews/iter.diff:309:+    match: /qwen3[-.]?(coder|next)/i,
+bench/iterations/001/reviews/iter.diff:312:+      maxOutputTokens: 32768,
+bench/iterations/001/reviews/iter.diff:318:+    match: /qwen/i,
+bench/iterations/001/reviews/iter.diff:321:+      maxOutputTokens: 32768,
+bench/iterations/001/reviews/iter.diff:327:+    match: /gemma/i,
+bench/iterations/001/reviews/iter.diff:330:+      maxOutputTokens: 8192,
+bench/iterations/001/reviews/iter.diff:339:+  maxOutputTokens: 4096,
+bench/iterations/001/reviews/iter.diff:373:+        maxOutputTokens: Math.min(base.maxOutputTokens, serverContext),
+bench/iterations/001/reviews/iter.diff:407:-      limits: { contextWindow: 8192, maxOutputTokens: 4096 },
+bench/iterations/001/reviews/iter.diff:437:+          maxOutputTokens: limits.maxOutputTokens,
+bench/iterations/001/reviews/iter.diff:474:+      if (override.maxOutputTokens !== undefined)
+bench/iterations/001/reviews/iter.diff:475:+        existing.limits.maxOutputTokens = override.maxOutputTokens;
+bench/iterations/001/reviews/panel.json:9:      "seat": "qwen3-coder",
+bench/iterations/001/reviews/panel.json:11:      "model": "acronis:mac/qwen/qwen3-coder-next",
+bench/iterations/001/reviews/verdicts.json:5:    "qwen3-coder": {
+bench/iterations/001/reviews/verdicts.json:7:      "findings": 4,
+bench/iterations/001/reviews/verdicts.json:10:        { "sev": "P1", "loc": "openai-compat.ts:166 min(maxOut, serverCtx)", "verdict": "rebutted — min() only lowers the budget when the server window is smaller; strictly conservative. Family table already provides the separate output ceiling the finding requests." },
+bench/iterations/001/reviews/verdicts.json:12:        { "sev": "P2", "loc": "registry.ts:241", "verdict": "factually wrong — capabilities has no maxOutputTokens field; contextWindow (the shared field) is kept in sync." },
+bench/iterations/001/reviews/verdicts.json:20:      "harness_finding": "NEW BUG (iter-002 backlog): tool-calling via @ai-sdk/openai-compatible fails schema validation on gpt-oss/vLLM tool-call chunks (id not a string). Plain generation works; --tools crashes the session."
+
+exec
+/bin/zsh -lc "sed -n '1,220p' bench/iterations/001/reviews/codex.out && sed -n '1,180p' bench/iterations/001/reviews/gpt-oss.out && sed -n '1,220p' bench/iterations/001/reviews/qwen3-coder.out && cat bench/iterations/001/reviews/verdicts.json" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+[{"file":"packages/core/src/agent/loop.ts","line":898,"severity":"P1","finding":"The full maxOutputTokens limit is sent without reserving space for the prompt. Compaction permits input up to 80% of the context window, while inferred output limits can consume 25% or more, so otherwise valid long sessions can be rejected because prompt tokens plus max output exceed the model context window.","suggested_fix":"Compute the request budget from the remaining context, including system/tool overhead, or lower the compaction threshold to reserve maxOutputTokens; add a near-context-limit test."},{"file":"packages/providers/src/local/openai-compat.ts","line":120,"severity":"P1","finding":"The broad /gemma/i heuristic assigns a 131072-token context to every Gemma model, including older and small checkpoints with much smaller windows. This suppresses required compaction and eventually sends over-context requests. The generic Qwen heuristic has the same risk for older checkpoints.","suggested_fix":"Use version/checkpoint-specific heuristics only where the minimum context is known; otherwise retain the conservative default and require server metadata or a model override. Add tests for older/small Gemma and Qwen IDs."},{"file":"packages/providers/src/registry.ts","line":228,"severity":"P2","finding":"Model overrides are applied only during initial registry construction. refresh() replaces all local models with newly discovered entries without reapplying config.models, so the new authoritative contextWindow, maxOutputTokens, and reasoning corrections silently disappear after a refresh.","suggested_fix":"Extract override application into a helper and invoke it after both initial discovery and refresh; add a refresh test for a custom local model override."},{"file":"packages/providers/src/local/openai-compat.ts","line":188,"severity":"P2","finding":"Embedding models are recognized as non-chat models but are still registered as available with conversation/simple-edit affinities. The router filters toolCalling=false only for tool-requiring tasks, so a simple conversation can select an embedding model and send it to streamText with a one-token output budget.","suggested_fix":"Exclude embedding-only entries from the chat model registry, or add an explicit chat-generation capability that routing enforces; test discovery/routing when an endpoint lists both chat and embedding models."}]
+{"level":40,"time":1784354640189,"pid":71111,"hostname":"FVFGP251Q05N","name":"brainstorm","module":"storm","dropped":["deploy","entry_points"],"kept":["version","name","type","language","framework","runtime","build_command","test_command","routing"],"msg":"Partial STORM.md frontmatter — kept valid fields, dropped invalid ones"}
+[godmode] Msp: tools endpoint unavailable — No API key for Msp (BRAINSTORM_MSP_API_KEY)
+
+⠧ Classifying task...⠧ Selecting model...[capability] → h200/gpt-oss-120b
+⠧ Connecting...{"level":30,"time":1784354640695,"pid":71111,"hostname":"FVFGP251Q05N","name":"brainstorm","module":"router","entries":3,"totalSamples":3,"msg":"Loaded historical routing outcomes for Thompson sampling"}
+{"level":30,"time":1784354642593,"pid":71111,"hostname":"FVFGP251Q05N","name":"brainstorm","module":"circuit-breaker","name":"llm:acronis:h200/gpt-oss-120b","msg":"Returning existing circuit breaker — options from first registration apply"}
+
+Error: [acronis:h200/gpt-oss-120b] Expected 'id' to be a string.
+{"level":30,"time":1784354642691,"pid":71111,"hostname":"FVFGP251Q05N","name":"brainstorm","module":"trajectory-analyzer","sessionCount":407,"filesScanned":407,"msg":"Analyzed trajectories"}
+{"level":30,"time":1784354642693,"pid":71111,"hostname":"FVFGP251Q05N","name":"brainstorm","module":"trajectory-analyzer","outputPath":"/Users/justin.jilg/.brainstorm/routing-intelligence.json","msg":"Routing intelligence updated"}
+{"level":40,"time":1784354637192,"pid":71079,"hostname":"FVFGP251Q05N","name":"brainstorm","module":"storm","dropped":["deploy","entry_points"],"kept":["version","name","type","language","framework","runtime","build_command","test_command","routing"],"msg":"Partial STORM.md frontmatter — kept valid fields, dropped invalid ones"}
+[godmode] Msp: tools endpoint unavailable — No API key for Msp (BRAINSTORM_MSP_API_KEY)
+
+⠼ Classifying task...⠼ Selecting model...[capability] → mac/qwen/qwen3-coder-next
+⠼ Connecting...{"level":30,"time":1784354637393,"pid":71079,"hostname":"FVFGP251Q05N","name":"brainstorm","module":"router","entries":3,"totalSamples":3,"msg":"Loaded historical routing outcomes for Thompson sampling"}
+
+[tool: file_read]
+[done]
+
+[tool: glob]
+[done]
+
+[tool: file_read]
+[done]
+
+[tool: file_read]
+[done]
+
+[tool: shell]
+[done]
+
+[tool: shell]
+[done]
+
+[tool: file_read]
+[done]
+
+[tool: file_read]
+[done]
+
+[tool: file_read]
+[done]
+
+[tool: file_read]
+[done]
+
+[tool: file_read]
+[done]
+
+[tool: build_verify]
+[done]
+
+[tool: shell]
+[done]
+
+[tool: code_callers]
+[done]
+{"level":30,"time":1784354740008,"pid":71079,"hostname":"FVFGP251Q05N","name":"brainstorm","module":"circuit-breaker","name":"llm:acronis:mac/qwen/qwen3-coder-next","msg":"Returning existing circuit breaker — options from first registration apply"}
+Now I'll read the changed source files to understand the context better:
+
+
+Now let me run the build to verify there are no compilation errors:
+
+Build passed. Now let me run the tests to ensure everything is working:
+
+All tests passed. Now I'll conduct the security-focused code review:
+
+Based on my security-focused review of the code changes, here are my findings:
+
+
+[2m ─── json ───[22m
+[2m  1[22m │ [2m[[22m
+[2m  2[22m │ [2m  {[22m
+[2m  3[22m │ [2m    "file": "packages/providers/src/local/openai-compat.ts",[22m
+[2m  4[22m │ [2m    "line": 166,[22m
+[2m  5[22m │ [2m    "severity": "P1",[22m
+[2m  6[22m │ [2m    "finding": "maxOutputTokens calculation uses Math.min(base.maxOutputTokens, serverContext) which incorrectly caps output tokens against the context window. Output tokens should have a separate ceiling (e.g., 32768 max for known families) not tied to context window size. A model can have 128k context but only 8k output capacity."[22m
+[2m  7[22m │ [2m  },[22m
+[2m  8[22m │ [2m  {[22m
+[2m  9[22m │ [2m    "file": "packages/providers/src/local/openai-compat.ts",[22m
+[2m 10[22m │ [2m    "line": 169,[22m
+[2m 11[22m │ [2m    "severity": "P2",[22m
+[2m 12[22m │ [2m    "finding": "When serverContext is explicitly set but smaller than the family's maxOutputTokens, the heuristic-derived output budget is silently reduced. This may cause gpt-oss to receive insufficient output tokens if a server misreports its context length."[22m
+[2m 13[22m │ [2m  },[22m
+[2m 14[22m │ [2m  {[22m
+[2m 15[22m │ [2m    "file": "packages/providers/src/registry.ts",[22m
+[2m 16[22m │ [2m    "line": 241,[22m
+[2m 17[22m │ [2m    "severity": "P2",[22m
+[2m 18[22m │ [2m    "finding": "The override for maxOutputTokens only updates limits.maxOutputTokens but not capabilities contextWindow when user specifies a lower maxOutputTokens than current. This creates inconsistency between capabilities and limits that could confuse downstream logic."[22m
+[2m 19[22m │ [2m  },[22m
+[2m 20[22m │ [2m  {[22m
+[2m 21[22m │ [2m    "file": "packages/providers/src/local/openai-compat.ts",[22m
+[2m 22[22m │ [2m    "line": 190,[22m
+[2m 23[22m │ [2m    "severity": "P2",[22m
+[2m 24[22m │ [2m    "finding": "The warning message for 'default' heuristic source may not be sufficiently visible during CI/CD runs where warn-level logs are suppressed, potentially hiding incorrect model metadata assumptions."[22m
+[2m 25[22m │ [2m  }[22m
+[2m 26[22m │ [2m][22m
+
+
+[cost: $0.0000]
+{"level":30,"time":1784354740126,"pid":71079,"hostname":"FVFGP251Q05N","name":"brainstorm","module":"trajectory-analyzer","sessionCount":407,"filesScanned":407,"msg":"Analyzed trajectories"}
+{"level":30,"time":1784354740128,"pid":71079,"hostname":"FVFGP251Q05N","name":"brainstorm","module":"trajectory-analyzer","outputPath":"/Users/justin.jilg/.brainstorm/routing-intelligence.json","msg":"Routing intelligence updated"}
+{
+  "seed": "e193a01e",
+  "seats": {
+    "codex": { "status": "pending" },
+    "qwen3-coder": {
+      "status": "completed",
+      "findings": 4,
+      "verified_blocking": 0,
+      "triage": [
+        { "sev": "P1", "loc": "openai-compat.ts:166 min(maxOut, serverCtx)", "verdict": "rebutted — min() only lowers the budget when the server window is smaller; strictly conservative. Family table already provides the separate output ceiling the finding requests." },
+        { "sev": "P2", "loc": "openai-compat.ts:169", "verdict": "intended — server-reported window is ground truth; [[models]] override is the correction path." },
+        { "sev": "P2", "loc": "registry.ts:241", "verdict": "factually wrong — capabilities has no maxOutputTokens field; contextWindow (the shared field) is kept in sync." },
+        { "sev": "P2", "loc": "openai-compat.ts:190 warn visibility", "verdict": "logged, non-gating nit." }
+      ],
+      "precision_note": "0/4 verified — but the P1 was a plausible, well-articulated wrong claim; seat completed cleanly through the harness (dogfood pass)."
+    },
+    "gpt-oss-120b": {
+      "status": "crashed",
+      "error": "[acronis:h200/gpt-oss-120b] Expected 'id' to be a string.",
+      "harness_finding": "NEW BUG (iter-002 backlog): tool-calling via @ai-sdk/openai-compatible fails schema validation on gpt-oss/vLLM tool-call chunks (id not a string). Plain generation works; --tools crashes the session."
+    }
+  }
+}
+
+exec
+/bin/zsh -lc "rg -n \"export interface ConversationMessage|interface ConversationMessage|type ConversationMessage|content:\" packages/core/src/session/manager.ts packages/core/src/agent/loop.ts | head -100 && sed -n '1,130p' packages/core/src/session/manager.ts && sed -n '250,350p' packages/core/src/agent/loop.ts && rg -n \"role: ['\\\"]tool|tool-result|toolResult|content: \\[\" packages/core/src/agent packages/core/src/session | head -160" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+packages/core/src/session/manager.ts:16:export interface ConversationMessage {
+packages/core/src/session/manager.ts:18:  content: string;
+packages/core/src/session/manager.ts:59:        content: m.content,
+packages/core/src/session/manager.ts:106:        content: m.content,
+packages/core/src/session/manager.ts:117:  addUserMessage(content: string): void {
+packages/core/src/session/manager.ts:131:  addAssistantMessage(content: string, modelId?: string): void {
+packages/core/src/session/manager.ts:151:    this.conversationHistory.push({ role: "system", content: summary });
+packages/core/src/session/manager.ts:156:  private addTokenDelta(content: string): void {
+packages/core/src/session/manager.ts:298:        content: m.content,
+packages/core/src/agent/loop.ts:86:  messages: Array<{ role: string; content: unknown }>,
+packages/core/src/agent/loop.ts:276:        content: string;
+packages/core/src/agent/loop.ts:279:  messages: Array<{ role: string; content: string | unknown }>,
+packages/core/src/agent/loop.ts:285:        content: string;
+packages/core/src/agent/loop.ts:288:  messagesForApi: Array<{ role: string; content: string | unknown }>;
+packages/core/src/agent/loop.ts:298:  const filtered: Array<{ role: string; content: string | unknown }> = [];
+packages/core/src/agent/loop.ts:321:        content: string;
+packages/core/src/agent/loop.ts:327:      { role: "system" as const, content: systemForAPI },
+packages/core/src/agent/loop.ts:510:      messages: messages.map((m) => ({ role: m.role, content: m.content })),
+packages/core/src/agent/loop.ts:1589:        messages.push({ role: "user", content: buildToolUseCorrection() });
+packages/core/src/agent/loop.ts:1665:            content: formatVerifyDiagnostic(
+import {
+  SessionRepository,
+  MessageRepository,
+  CompactionCommitRepository,
+} from "@brainst0rm/db";
+import type { Session, TurnContext } from "@brainst0rm/shared";
+import { createLogger, formatTurnContext } from "@brainst0rm/shared";
+import {
+  estimateTokenCount,
+  needsCompaction,
+  compactContext,
+} from "./compaction.js";
+
+const log = createLogger("session-manager");
+
+export interface ConversationMessage {
+  role: "user" | "assistant" | "system";
+  content: string;
+}
+
+export class SessionManager {
+  private sessions: SessionRepository;
+  private messages: MessageRepository;
+  private currentSession: Session | null = null;
+  private conversationHistory: ConversationMessage[] = [];
+  private turnCount = 0;
+  private sessionStartTime = Date.now();
+  /** Cached token estimate — updated incrementally on addMessage, invalidated on compact. */
+  private cachedTokenCount: number | null = null;
+  /** Pending async writes (assistant messages, tool results). Flushed at end of turn. */
+  private pendingWrites: Array<() => void> = [];
+  /** Repository for reversible compaction commits. */
+  private compactionRepo: CompactionCommitRepository;
+
+  constructor(private db: any) {
+    this.sessions = new SessionRepository(db);
+    this.messages = new MessageRepository(db);
+    this.compactionRepo = new CompactionCommitRepository(db);
+  }
+
+  start(projectPath: string): Session {
+    this.currentSession = this.sessions.create(projectPath);
+    this.conversationHistory = [];
+    this.cachedTokenCount = 0;
+    return this.currentSession;
+  }
+
+  resume(sessionId: string): Session | null {
+    const session = this.sessions.get(sessionId);
+    if (!session) return null;
+
+    this.currentSession = session;
+    // Lazy load: only keep last 50 messages in memory (older available on demand via DB)
+    const msgs = this.messages.listBySessionRecent(sessionId, 50);
+    this.conversationHistory = msgs
+      .filter((m) => m.role !== "tool")
+      .map((m) => ({
+        role: m.role as "user" | "assistant" | "system",
+        content: m.content,
+      }));
+    this.cachedTokenCount = null; // Force recount after resume
+
+    return session;
+  }
+
+  /** Resume the most recent session for the given project path. */
+  resumeLatest(projectPath?: string): Session | null {
+    // Pre-fix the listRecent(1) + find-by-project filter would return
+    // null whenever the user's MOST-recent session was in a different
+    // project — even if a relevant session existed deeper in the
+    // history. A user who opened brainstorm in project B to do one
+    // thing and then came back to project A would not find their
+    // project-A session. Fixed by going to a project-scoped query.
+    const target = projectPath
+      ? this.sessions.listRecentByProject(projectPath, 1)[0]
+      : this.sessions.listRecent(1)[0];
+    if (!target) return null;
+    return this.resume(target.id);
+  }
+
+  /** Fork a session: create a new session with a copy of the conversation history. */
+  fork(sessionId: string): Session | null {
+    const original = this.sessions.get(sessionId);
+    if (!original) return null;
+
+    const forked = this.sessions.create(original.projectPath);
+    const msgs = this.messages.listBySession(sessionId);
+
+    // Copy all messages to the new session
+    for (const m of msgs) {
+      this.messages.create(
+        forked.id,
+        m.role,
+        m.content,
+        m.modelId,
+        m.tokenCount,
+      );
+    }
+
+    // Set as current session
+    this.currentSession = forked;
+    this.conversationHistory = msgs
+      .filter((m) => m.role !== "tool")
+      .map((m) => ({
+        role: m.role as "user" | "assistant" | "system",
+        content: m.content,
+      }));
+
+    return forked;
+  }
+
+  /**
+   * Add user message — SYNCHRONOUS write to DB.
+   * Critical for crash recovery: --resume needs the user message to exist
+   * even if the process dies before the assistant responds.
+   */
+  addUserMessage(content: string): void {
+    if (!this.currentSession) throw new Error("No active session");
+    this.messages.create(this.currentSession.id, "user", content);
+    this.sessions.incrementMessages(this.currentSession.id);
+    this.conversationHistory.push({ role: "user", content });
+    this.addTokenDelta(content);
+  }
+
+  /**
+   * Add assistant message — ASYNC write to DB (fire-and-forget).
+   * Assistant responses can be regenerated on crash recovery, so we
+   * don't block the event loop waiting for the DB write. The in-memory
+   * history is updated immediately for conversation continuity.
+   */
+/** Extract tool result output from a stream part (AI SDK v6: .output or legacy .result). */
+function getPartOutput(part: Record<string, unknown>): unknown {
+  return part.output ?? part.result;
+}
+
+/**
+ * Provider-safety normalization for system-role messages.
+ *
+ * The conversation history can contain system-role messages — compaction
+ * injects 4-5 of them per cycle (preserved-context block, summary, scratchpad,
+ * compaction summary). The AI SDK passes these straight through to the
+ * provider. Anthropic and OpenAI tolerate mid-stream system messages, but
+ * Google's Gemini provider throws AI_UnsupportedFunctionalityError because
+ * Google's API only accepts system messages at the start of the conversation.
+ *
+ * This helper extracts every system-role message from the history and folds
+ * its content into the system field as additional segments. The model still
+ * sees the content; it just arrives via the system channel that every
+ * provider supports. The returned messages array contains only user/assistant
+ * turns.
+ */
+export function normalizeSystemMessagesForProvider(
+  systemForAPI:
+    | string
+    | Array<{
+        role: "system";
+        content: string;
+        providerOptions?: Record<string, any>;
+      }>,
+  messages: Array<{ role: string; content: string | unknown }>,
+): {
+  systemForApiNormalized:
+    | string
+    | Array<{
+        role: "system";
+        content: string;
+        providerOptions?: Record<string, any>;
+      }>;
+  messagesForApi: Array<{ role: string; content: string | unknown }>;
+} {
+  // Fast path: no system-role messages in history → no work needed.
+  const hasSystemInHistory = messages.some((m) => m.role === "system");
+  if (!hasSystemInHistory) {
+    return { systemForApiNormalized: systemForAPI, messagesForApi: messages };
+  }
+
+  // Slow path: extract system messages from the history and fold them in.
+  const extractedSystem: string[] = [];
+  const filtered: Array<{ role: string; content: string | unknown }> = [];
+  for (const msg of messages) {
+    if (msg.role === "system") {
+      const content =
+        typeof msg.content === "string" ? msg.content : String(msg.content);
+      extractedSystem.push(content);
+    } else {
+      filtered.push(msg);
+    }
+  }
+
+  // Append extracted system content as additional non-cacheable segments.
+  // We don't merge them into the existing cached prefix because that would
+  // bust the prompt cache; non-cacheable segments don't.
+  const additionalSegments = extractedSystem.map((content) => ({
+    role: "system" as const,
+    content,
+  }));
+
+  let systemForApiNormalized:
+    | string
+    | Array<{
+        role: "system";
+        content: string;
+        providerOptions?: Record<string, any>;
+      }>;
+
+  if (typeof systemForAPI === "string") {
+    systemForApiNormalized = [
+      { role: "system" as const, content: systemForAPI },
+      ...additionalSegments,
+    ];
+  } else if (Array.isArray(systemForAPI)) {
+    systemForApiNormalized = [...systemForAPI, ...additionalSegments];
+  } else {
+    systemForApiNormalized = additionalSegments;
+  }
+
+  return { systemForApiNormalized, messagesForApi: filtered };
+}
+
+export interface CompactionCallbacks {
+  /** Current estimated token count of conversation history. */
+  getTokenEstimate: () => number;
+  /** Run compaction on the conversation. Returns compaction result. */
+  compact: (options: {
+    contextWindow: number;
+    keepRecent?: number;
+    summarizeModel?: any;
+  }) => Promise<{
+    compacted: boolean;
+    removed: number;
+    tokensBefore: number;
+packages/core/src/session/trajectory.ts:25:  | "tool-result"
+packages/core/src/session/trajectory.ts:115:    this.record("tool-result", data as unknown as Record<string, unknown>);
+packages/core/src/session/trajectory-analyzer.ts:283:        case "tool-result":
+packages/core/src/agent/loop.ts:832:          // Record tool-result event to trajectory
+packages/core/src/agent/loop.ts:1023:    // or the consumer aborts between a tool-call and its tool-result, the
+packages/core/src/agent/loop.ts:1106:        } else if (part.type === "tool-result") {
+packages/core/src/agent/loop.ts:1111:          const toolResult = getPartOutput(
+packages/core/src/agent/loop.ts:1116:            toolResult &&
+packages/core/src/agent/loop.ts:1117:            typeof toolResult === "object" &&
+packages/core/src/agent/loop.ts:1118:            (toolResult.error || toolResult.ok === false)
+packages/core/src/agent/loop.ts:1140:            toolResult &&
+packages/core/src/agent/loop.ts:1141:            typeof toolResult === "object"
+packages/core/src/agent/loop.ts:1148:              toolResult.exitCode ?? 0,
+packages/core/src/agent/loop.ts:1149:              toolResult.stderr ?? "",
+packages/core/src/agent/loop.ts:1155:            result: toolResult,
+packages/core/src/agent/loop.ts:1170:            toolResult &&
+packages/core/src/agent/loop.ts:1171:            typeof toolResult === "object"
+packages/core/src/agent/loop.ts:1173:            if (toolResult.mode === "single") {
+packages/core/src/agent/loop.ts:1176:                subagentType: toolResult.type,
+packages/core/src/agent/loop.ts:1177:                model: toolResult.model,
+packages/core/src/agent/loop.ts:1178:                cost: toolResult.cost,
+packages/core/src/agent/loop.ts:1179:                toolCalls: toolResult.toolCalls,
+packages/core/src/agent/loop.ts:1182:              toolResult.mode === "parallel" &&
+packages/core/src/agent/loop.ts:1183:              Array.isArray(toolResult.results)
+packages/core/src/agent/loop.ts:1185:              for (const r of toolResult.results) {
+packages/core/src/agent/loop.ts:1235:      // Unwind any tool gate entries that didn't see a matching tool-result
+
+exec
+/bin/zsh -lc "rg -n \"computeOutputBudget\" packages bench/iterations/001/reviews/iter-fixed.diff && nl -ba packages/core/src/agent/loop.ts | sed -n '65,110p;900,940p' && nl -ba packages/providers/src/local/openai-compat.ts | sed -n '65,240p' && nl -ba packages/providers/src/registry.ts | sed -n '50,95p;315,350p'" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 117ms:
+    65	}
+    66	
+    67	interface InferredModelLimits {
+    68	  contextWindow: number;
+    69	  maxOutputTokens: number;
+    70	  reasoning: boolean;
+    71	  toolCalling: boolean;
+    72	}
+    73	
+    74	// Family heuristics for endpoints whose /v1/models response carries no limit
+    75	// metadata. Ordered — first match wins. These are conservative floors for the
+    76	// family, not per-checkpoint truth; `[[models]]` config overrides remain the
+    77	// authoritative correction when a deployment differs.
+    78	const MODEL_FAMILY_LIMITS: Array<{
+    79	  match: RegExp;
+    80	  limits: InferredModelLimits;
+    81	}> = [
+    82	  {
+    83	    // Embedding models: not chat-capable at all.
+    84	    match: /embed/i,
+    85	    limits: {
+    86	      contextWindow: 8192,
+    87	      maxOutputTokens: 1,
+    88	      reasoning: false,
+    89	      toolCalling: false,
+    90	    },
+    91	  },
+    92	  {
+    93	    match: /gpt-oss/i,
+    94	    limits: {
+    95	      contextWindow: 131072,
+    96	      maxOutputTokens: 32768,
+    97	      reasoning: true,
+    98	      toolCalling: true,
+    99	    },
+   100	  },
+   101	  {
+   102	    match: /qwen3[-.]?(coder|next)/i,
+   103	    limits: {
+   104	      contextWindow: 262144,
+   105	      maxOutputTokens: 32768,
+   106	      reasoning: false,
+   107	      toolCalling: true,
+   108	    },
+   109	  },
+   110	  {
+   111	    // Generation-scoped on purpose: a bare /qwen/ or /gemma/ would claim a
+   112	    // 128k window for older checkpoints (qwen1.5, gemma-2) whose real
+   113	    // windows are far smaller, suppressing required compaction and sending
+   114	    // over-context requests. Unknown generations fall to the conservative
+   115	    // default + warn instead.
+   116	    match: /qwen(2\.5|[3-9])/i,
+   117	    limits: {
+   118	      contextWindow: 131072,
+   119	      maxOutputTokens: 32768,
+   120	      reasoning: false,
+   121	      toolCalling: true,
+   122	    },
+   123	  },
+   124	  {
+   125	    match: /gemma[-_.]?[3-9]/i,
+   126	    limits: {
+   127	      contextWindow: 131072,
+   128	      maxOutputTokens: 8192,
+   129	      reasoning: false,
+   130	      toolCalling: true,
+   131	    },
+   132	  },
+   133	];
+   134	
+   135	const DEFAULT_INFERRED_LIMITS: InferredModelLimits = {
+   136	  contextWindow: 8192,
+   137	  maxOutputTokens: 4096,
+   138	  reasoning: false,
+   139	  toolCalling: true,
+   140	};
+   141	
+   142	/** Raw /v1/models entry — servers vary in what limit metadata they expose. */
+   143	interface RawModelEntry {
+   144	  id: string;
+   145	  /** LM Studio / OpenRouter convention. */
+   146	  context_length?: number;
+   147	  /** vLLM convention. */
+   148	  max_model_len?: number;
+   149	}
+   150	
+   151	export function inferModelLimits(raw: RawModelEntry): {
+   152	  limits: InferredModelLimits;
+   153	  source: "server" | "heuristic" | "default";
+   154	} {
+   155	  const family =
+   156	    MODEL_FAMILY_LIMITS.find((f) => f.match.test(raw.id))?.limits ?? null;
+   157	  const serverContext =
+   158	    typeof raw.context_length === "number"
+   159	      ? raw.context_length
+   160	      : typeof raw.max_model_len === "number"
+   161	        ? raw.max_model_len
+   162	        : null;
+   163	
+   164	  // Server-reported context wins; family heuristic fills the rest.
+   165	  const base = family ?? DEFAULT_INFERRED_LIMITS;
+   166	  if (serverContext && serverContext > 0) {
+   167	    return {
+   168	      limits: {
+   169	        ...base,
+   170	        contextWindow: serverContext,
+   171	        maxOutputTokens: Math.min(base.maxOutputTokens, serverContext),
+   172	      },
+   173	      source: "server",
+   174	    };
+   175	  }
+   176	  return { limits: base, source: family ? "heuristic" : "default" };
+   177	}
+   178	
+   179	export async function discoverOpenAICompatModels(
+   180	  name: string,
+   181	  baseUrl: string,
+   182	  headers?: Record<string, string>,
+   183	): Promise<ModelEntry[]> {
+   184	  try {
+   185	    const response = await fetch(`${baseUrl}/v1/models`, {
+   186	      signal: AbortSignal.timeout(3000),
+   187	      ...(headers ? { headers } : {}),
+   188	    });
+   189	    if (!response.ok) return [];
+   190	    const data = (await response.json()) as { data?: RawModelEntry[] };
+   191	    if (!data.data) return [];
+   192	
+   193	    const entries: ModelEntry[] = [];
+   194	    for (const m of data.data) {
+   195	      const { limits, source } = inferModelLimits(m);
+   196	      // Embedding-only models are not chat models: registering them would
+   197	      // let the router select one for conversation tasks and hand streamText
+   198	      // a 1-token output budget.
+   199	      if (!limits.toolCalling && limits.maxOutputTokens <= 1) {
+   200	        log.debug(
+   201	          { provider: name, model: m.id },
+   202	          "Skipping non-chat (embedding) model",
+   203	        );
+   204	        continue;
+   205	      }
+   206	      if (source === "default") {
+   207	        log.warn(
+   208	          { provider: name, model: m.id },
+   209	          "No limit metadata from server and no family heuristic matched — assuming 8192-token context. Correct via [[models]] overrides if wrong.",
+   210	        );
+   211	      }
+   212	      entries.push({
+   213	        id: `${name}:${m.id}`,
+   214	        provider: name,
+   215	        name: m.id,
+   216	        capabilities: {
+   217	          toolCalling: limits.toolCalling,
+   218	          streaming: true,
+   219	          vision: false,
+   220	          reasoning: limits.reasoning,
+   221	          contextWindow: limits.contextWindow,
+   222	          qualityTier: 3 as const,
+   223	          speedTier: 2 as const,
+   224	          bestFor: ["conversation" as const, "simple-edit" as const],
+   225	        },
+   226	        pricing: { inputPer1MTokens: 0, outputPer1MTokens: 0 },
+   227	        limits: {
+   228	          contextWindow: limits.contextWindow,
+   229	          maxOutputTokens: limits.maxOutputTokens,
+   230	        },
+   231	        status: "available" as const,
+   232	        isLocal: true,
+   233	        lastHealthCheck: Date.now(),
+   234	      });
+   235	    }
+   236	    return entries;
+   237	  } catch {
+   238	    return [];
+   239	  }
+   240	}
+    50	   *  caught at the call site. */
+    51	  onEnvelope?: BrEnvelopeListener;
+    52	
+    53	  /** Injectable fetch for the BR model-catalog import (tests stub this).
+    54	   *  Passed through to fetchBrModelCatalog; production uses globalThis.fetch. */
+    55	  brCatalogFetch?: typeof globalThis.fetch;
+    56	}
+    57	
+    58	/**
+    59	 * Apply `[[models]]` config overrides in place. `!== undefined` (not
+    60	 * truthiness) so explicit falsy values like `reasoning = false` are honored.
+    61	 */
+    62	function applyModelOverrides(
+    63	  models: ModelEntry[],
+    64	  overrides: BrainstormConfig["models"],
+    65	): void {
+    66	  for (const override of overrides) {
+    67	    const existing = models.find((m) => m.id === override.id);
+    68	    if (!existing) continue;
+    69	    if (override.qualityTier !== undefined)
+    70	      existing.capabilities.qualityTier = override.qualityTier as any;
+    71	    if (override.speedTier !== undefined)
+    72	      existing.capabilities.speedTier = override.speedTier as any;
+    73	    if (override.bestFor !== undefined)
+    74	      existing.capabilities.bestFor = override.bestFor as any;
+    75	    if (override.contextWindow !== undefined) {
+    76	      existing.capabilities.contextWindow = override.contextWindow;
+    77	      existing.limits.contextWindow = override.contextWindow;
+    78	    }
+    79	    if (override.maxOutputTokens !== undefined)
+    80	      existing.limits.maxOutputTokens = override.maxOutputTokens;
+    81	    if (override.reasoning !== undefined)
+    82	      existing.capabilities.reasoning = override.reasoning;
+    83	  }
+    84	}
+    85	
+    86	export async function createProviderRegistry(
+    87	  config: BrainstormConfig,
+    88	  resolvedKeys?: ResolvedKeys,
+    89	  options: ProviderRegistryOptions = {},
+    90	): Promise<ProviderRegistry> {
+    91	  /** Resolve a key: check resolvedKeys first, then fall back to process.env. */
+    92	  const getKey = (name: string): string | null =>
+    93	    resolvedKeys?.get(name) ?? process.env[name] ?? null;
+    94	
+    95	  const providers: Record<string, any> = {};
+   315	      // to hand an unresolvable model to streamText, which fails deep in the
+   316	      // AI SDK with an opaque error. Fail loudly and diagnosably instead.
+   317	      throw new Error(
+   318	        `Cannot resolve a provider for model "${modelId}". No matching direct ` +
+   319	          `provider SDK is configured (checked: ${Object.keys(providers).join(", ") || "none"}) ` +
+   320	          `and BrainstormRouter is not enabled. Configure the model's provider key ` +
+   321	          `(e.g. ANTHROPIC_API_KEY/OPENAI_API_KEY/GOOGLE_GENERATIVE_AI_API_KEY) or set ` +
+   322	          `BRAINSTORM_API_KEY to route "${modelId}" through BrainstormRouter.`,
+   323	      );
+   324	    },
+   325	
+   326	    async refresh() {
+   327	      const { models: refreshedLocal } = await discoverLocalModels(
+   328	        config.providers,
+   329	      );
+   330	      const cloudAndSaas = allModels.filter((m) => !m.isLocal);
+   331	      allModels = [...cloudAndSaas, ...refreshedLocal];
+   332	      // Re-apply config overrides — refreshed local entries are rebuilt from
+   333	      // discovery and would otherwise lose contextWindow/limit corrections.
+   334	      applyModelOverrides(allModels, config.models);
+   335	      // Re-apply eval capability scores (may have been updated by brainstorm eval)
+   336	      const freshScores = loadEvalCapabilityScores();
+   337	      for (const [modelId, entry] of Object.entries(freshScores)) {
+   338	        const model = allModels.find((m) => m.id === modelId);
+   339	        if (model) {
+   340	          model.capabilities.capabilityScores = entry.scores;
+   341	        }
+   342	      }
+   343	      registry.models = allModels;
+   344	    },
+   345	  };
+   346	
+   347	  return registry;
+   348	}
+   349	
+   350	/**
+
+exec
+/bin/zsh -lc "git status --short && git diff -- packages/core/src/__tests__/loop-max-output-tokens.test.ts packages/core/src/agent/loop.ts packages/providers/src/local/openai-compat.ts packages/providers/src/registry.ts && sed -n '130,205p' packages/core/src/__tests__/loop-max-output-tokens.test.ts" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 6658ms:
+2026-07-18 02:12:29.462 xcodebuild[82984:9460626]  DVTFilePathFSEvents: Failed to start fs event stream.
+2026-07-18 02:12:29.783 xcodebuild[82984:9460625] [MT] DVTDeveloperPaths: Failed to get length of DARWIN_USER_CACHE_DIR from confstr(3), error = Error Domain=NSPOSIXErrorDomain Code=5 "Input/output error". Using NSCachesDirectory instead.
+git: warning: confstr() failed with code 5: couldn't get path of DARWIN_USER_TEMP_DIR; using /tmp instead
+git: error: couldn't create cache file '/tmp/xcrun_db-aNWnn81d' (errno=Operation not permitted)
+2026-07-18 02:12:30.633 xcodebuild[83003:9460672]  DVTFilePathFSEvents: Failed to start fs event stream.
+2026-07-18 02:12:30.896 xcodebuild[83003:9460671] [MT] DVTDeveloperPaths: Failed to get length of DARWIN_USER_CACHE_DIR from confstr(3), error = Error Domain=NSPOSIXErrorDomain Code=5 "Input/output error". Using NSCachesDirectory instead.
+ M packages/config/src/schema.ts
+ M packages/core/src/__tests__/loop.integration.test.ts
+ M packages/core/src/agent/loop.ts
+ M packages/providers/src/__tests__/custom-provider.test.ts
+ M packages/providers/src/__tests__/registry.test.ts
+ M packages/providers/src/local/openai-compat.ts
+ M packages/providers/src/registry.ts
+?? bench/iterations/001/reviews/
+?? packages/core/src/__tests__/loop-max-output-tokens.test.ts
+?? packages/eval/gate-eval.mjs
+git: warning: confstr() failed with code 5: couldn't get path of DARWIN_USER_TEMP_DIR; using /tmp instead
+git: error: couldn't create cache file '/tmp/xcrun_db-q09OtQEq' (errno=Operation not permitted)
+2026-07-18 02:12:32.691 xcodebuild[83010:9460761]  DVTFilePathFSEvents: Failed to start fs event stream.
+2026-07-18 02:12:32.953 xcodebuild[83010:9460760] [MT] DVTDeveloperPaths: Failed to get length of DARWIN_USER_CACHE_DIR from confstr(3), error = Error Domain=NSPOSIXErrorDomain Code=5 "Input/output error". Using NSCachesDirectory instead.
+git: warning: confstr() failed with code 5: couldn't get path of DARWIN_USER_TEMP_DIR; using /tmp instead
+git: error: couldn't create cache file '/tmp/xcrun_db-Kgh7um4A' (errno=Operation not permitted)
+2026-07-18 02:12:33.669 xcodebuild[83013:9460783]  DVTFilePathFSEvents: Failed to start fs event stream.
+2026-07-18 02:12:33.931 xcodebuild[83013:9460782] [MT] DVTDeveloperPaths: Failed to get length of DARWIN_USER_CACHE_DIR from confstr(3), error = Error Domain=NSPOSIXErrorDomain Code=5 "Input/output error". Using NSCachesDirectory instead.
+diff --git a/packages/core/src/agent/loop.ts b/packages/core/src/agent/loop.ts
+index 6917248..9588a6f 100644
+--- a/packages/core/src/agent/loop.ts
++++ b/packages/core/src/agent/loop.ts
+@@ -66,8 +66,37 @@ function getLLMCircuit(modelId: string) {
+ import {
+   enterToolExecution,
+   exitToolExecution,
++  estimateTokenCount,
+ } from "../session/compaction.js";
+ import type { SystemPromptSegment } from "./context.js";
++
++/**
++ * Request-level output budget: the model's advertised maxOutputTokens,
++ * clamped to what its context window can still hold after the prompt.
++ * System prompt and tool schemas aren't in the message estimate, so a
++ * fixed overhead is reserved; a small floor keeps the request valid even
++ * when the estimate is pessimistic (the server clamps further if needed).
++ * Returns a spreadable object so callers can omit the option entirely for
++ * models that advertise no output limit.
++ */
++export function computeOutputBudget(
++  model: {
++    limits?: { contextWindow?: number; maxOutputTokens?: number };
++  },
++  messages: Array<{ role: string; content: unknown }>,
++): { maxOutputTokens: number } | Record<string, never> {
++  const advertised = model.limits?.maxOutputTokens;
++  if (!advertised) return {};
++  const window = model.limits?.contextWindow;
++  if (!window) return { maxOutputTokens: advertised };
++  const PROMPT_OVERHEAD_TOKENS = 1024;
++  const MIN_OUTPUT_TOKENS = 256;
++  const promptEstimate = estimateTokenCount(messages as any);
++  const remaining = window - promptEstimate - PROMPT_OVERHEAD_TOKENS;
++  return {
++    maxOutputTokens: Math.max(MIN_OUTPUT_TOKENS, Math.min(advertised, remaining)),
++  };
++}
+ import { segmentsToSystemArray } from "./context.js";
+ import { predictTaskCost } from "./cost-predictor.js";
+ import { detectTone, toneGuidance } from "./sentiment.js";
+@@ -889,6 +918,16 @@ export async function* runAgentLoop(
+       ...(metadataHeader
+         ? { headers: { "x-br-metadata": metadataHeader } }
+         : {}),
++      // Give the model its full advertised output budget. The AI SDK does not
++      // infer per-model output limits for OpenAI-compatible providers, and the
++      // server default can be far below the model's real limit — reasoning
++      // models (gpt-oss) then burn the whole budget on reasoning tokens and
++      // finish with `length` + empty text, triggering wasteful fallback
++      // retries. Clamped to the context still remaining after the prompt:
++      // compaction admits input up to 80% of the window, so prompt + full
++      // advertised output can exceed the window and the server rejects the
++      // request outright.
++      ...computeOutputBudget(decision.model, messagesForApi as any),
+       abortSignal: effectiveStreamSignal,
+       // Retry on 429/503 with exponential backoff (1s, 2s, 4s).
+       // Without this, rate limits during long KAIROS runs crash the daemon.
+diff --git a/packages/providers/src/local/openai-compat.ts b/packages/providers/src/local/openai-compat.ts
+index 27beb38..8873173 100644
+--- a/packages/providers/src/local/openai-compat.ts
++++ b/packages/providers/src/local/openai-compat.ts
+@@ -1,8 +1,11 @@
+ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+ import type { ModelEntry } from "@brainst0rm/shared";
++import { createLogger } from "@brainst0rm/shared";
+ import { readFileSync } from "node:fs";
+ import { homedir } from "node:os";
+ 
++const log = createLogger("openai-compat");
++
+ // LM Studio and llama.cpp both expose OpenAI-compatible APIs
+ 
+ export function createLMStudioProvider(baseUrl = "http://localhost:1234") {
+@@ -61,6 +64,118 @@ export function resolveCustomProviderKey(
+   return null;
+ }
+ 
++interface InferredModelLimits {
++  contextWindow: number;
++  maxOutputTokens: number;
++  reasoning: boolean;
++  toolCalling: boolean;
++}
++
++// Family heuristics for endpoints whose /v1/models response carries no limit
++// metadata. Ordered — first match wins. These are conservative floors for the
++// family, not per-checkpoint truth; `[[models]]` config overrides remain the
++// authoritative correction when a deployment differs.
++const MODEL_FAMILY_LIMITS: Array<{
++  match: RegExp;
++  limits: InferredModelLimits;
++}> = [
++  {
++    // Embedding models: not chat-capable at all.
++    match: /embed/i,
++    limits: {
++      contextWindow: 8192,
++      maxOutputTokens: 1,
++      reasoning: false,
++      toolCalling: false,
++    },
++  },
++  {
++    match: /gpt-oss/i,
++    limits: {
++      contextWindow: 131072,
++      maxOutputTokens: 32768,
++      reasoning: true,
++      toolCalling: true,
++    },
++  },
++  {
++    match: /qwen3[-.]?(coder|next)/i,
++    limits: {
++      contextWindow: 262144,
++      maxOutputTokens: 32768,
++      reasoning: false,
++      toolCalling: true,
++    },
++  },
++  {
++    // Generation-scoped on purpose: a bare /qwen/ or /gemma/ would claim a
++    // 128k window for older checkpoints (qwen1.5, gemma-2) whose real
++    // windows are far smaller, suppressing required compaction and sending
++    // over-context requests. Unknown generations fall to the conservative
++    // default + warn instead.
++    match: /qwen(2\.5|[3-9])/i,
++    limits: {
++      contextWindow: 131072,
++      maxOutputTokens: 32768,
++      reasoning: false,
++      toolCalling: true,
++    },
++  },
++  {
++    match: /gemma[-_.]?[3-9]/i,
++    limits: {
++      contextWindow: 131072,
++      maxOutputTokens: 8192,
++      reasoning: false,
++      toolCalling: true,
++    },
++  },
++];
++
++const DEFAULT_INFERRED_LIMITS: InferredModelLimits = {
++  contextWindow: 8192,
++  maxOutputTokens: 4096,
++  reasoning: false,
++  toolCalling: true,
++};
++
++/** Raw /v1/models entry — servers vary in what limit metadata they expose. */
++interface RawModelEntry {
++  id: string;
++  /** LM Studio / OpenRouter convention. */
++  context_length?: number;
++  /** vLLM convention. */
++  max_model_len?: number;
++}
++
++export function inferModelLimits(raw: RawModelEntry): {
++  limits: InferredModelLimits;
++  source: "server" | "heuristic" | "default";
++} {
++  const family =
++    MODEL_FAMILY_LIMITS.find((f) => f.match.test(raw.id))?.limits ?? null;
++  const serverContext =
++    typeof raw.context_length === "number"
++      ? raw.context_length
++      : typeof raw.max_model_len === "number"
++        ? raw.max_model_len
++        : null;
++
++  // Server-reported context wins; family heuristic fills the rest.
++  const base = family ?? DEFAULT_INFERRED_LIMITS;
++  if (serverContext && serverContext > 0) {
++    return {
++      limits: {
++        ...base,
++        contextWindow: serverContext,
++        maxOutputTokens: Math.min(base.maxOutputTokens, serverContext),
++      },
++      source: "server",
++    };
++  }
++  return { limits: base, source: family ? "heuristic" : "default" };
++}
++
+ export async function discoverOpenAICompatModels(
+   name: string,
+   baseUrl: string,
+@@ -72,29 +187,53 @@ export async function discoverOpenAICompatModels(
+       ...(headers ? { headers } : {}),
+     });
+     if (!response.ok) return [];
+-    const data = (await response.json()) as { data?: Array<{ id: string }> };
++    const data = (await response.json()) as { data?: RawModelEntry[] };
+     if (!data.data) return [];
+ 
+-    return data.data.map((m) => ({
+-      id: `${name}:${m.id}`,
+-      provider: name,
+-      name: m.id,
+-      capabilities: {
+-        toolCalling: true,
+-        streaming: true,
+-        vision: false,
+-        reasoning: false,
+-        contextWindow: 8192,
+-        qualityTier: 3 as const,
+-        speedTier: 2 as const,
+-        bestFor: ["conversation" as const, "simple-edit" as const],
+-      },
+-      pricing: { inputPer1MTokens: 0, outputPer1MTokens: 0 },
+-      limits: { contextWindow: 8192, maxOutputTokens: 4096 },
+-      status: "available" as const,
+-      isLocal: true,
+-      lastHealthCheck: Date.now(),
+-    }));
++    const entries: ModelEntry[] = [];
++    for (const m of data.data) {
++      const { limits, source } = inferModelLimits(m);
++      // Embedding-only models are not chat models: registering them would
++      // let the router select one for conversation tasks and hand streamText
++      // a 1-token output budget.
++      if (!limits.toolCalling && limits.maxOutputTokens <= 1) {
++        log.debug(
++          { provider: name, model: m.id },
++          "Skipping non-chat (embedding) model",
++        );
++        continue;
++      }
++      if (source === "default") {
++        log.warn(
++          { provider: name, model: m.id },
++          "No limit metadata from server and no family heuristic matched — assuming 8192-token context. Correct via [[models]] overrides if wrong.",
++        );
++      }
++      entries.push({
++        id: `${name}:${m.id}`,
++        provider: name,
++        name: m.id,
++        capabilities: {
++          toolCalling: limits.toolCalling,
++          streaming: true,
++          vision: false,
++          reasoning: limits.reasoning,
++          contextWindow: limits.contextWindow,
++          qualityTier: 3 as const,
++          speedTier: 2 as const,
++          bestFor: ["conversation" as const, "simple-edit" as const],
++        },
++        pricing: { inputPer1MTokens: 0, outputPer1MTokens: 0 },
++        limits: {
++          contextWindow: limits.contextWindow,
++          maxOutputTokens: limits.maxOutputTokens,
++        },
++        status: "available" as const,
++        isLocal: true,
++        lastHealthCheck: Date.now(),
++      });
++    }
++    return entries;
+   } catch {
+     return [];
+   }
+diff --git a/packages/providers/src/registry.ts b/packages/providers/src/registry.ts
+index 6e67eb5..263f339 100644
+--- a/packages/providers/src/registry.ts
++++ b/packages/providers/src/registry.ts
+@@ -55,6 +55,34 @@ export interface ProviderRegistryOptions {
+   brCatalogFetch?: typeof globalThis.fetch;
+ }
+ 
++/**
++ * Apply `[[models]]` config overrides in place. `!== undefined` (not
++ * truthiness) so explicit falsy values like `reasoning = false` are honored.
++ */
++function applyModelOverrides(
++  models: ModelEntry[],
++  overrides: BrainstormConfig["models"],
++): void {
++  for (const override of overrides) {
++    const existing = models.find((m) => m.id === override.id);
++    if (!existing) continue;
++    if (override.qualityTier !== undefined)
++      existing.capabilities.qualityTier = override.qualityTier as any;
++    if (override.speedTier !== undefined)
++      existing.capabilities.speedTier = override.speedTier as any;
++    if (override.bestFor !== undefined)
++      existing.capabilities.bestFor = override.bestFor as any;
++    if (override.contextWindow !== undefined) {
++      existing.capabilities.contextWindow = override.contextWindow;
++      existing.limits.contextWindow = override.contextWindow;
++    }
++    if (override.maxOutputTokens !== undefined)
++      existing.limits.maxOutputTokens = override.maxOutputTokens;
++    if (override.reasoning !== undefined)
++      existing.capabilities.reasoning = override.reasoning;
++  }
++}
++
+ export async function createProviderRegistry(
+   config: BrainstormConfig,
+   resolvedKeys?: ResolvedKeys,
+@@ -223,18 +251,10 @@ export async function createProviderRegistry(
+   const { models: localModels } = await discoverLocalModels(config.providers);
+   allModels.push(...localModels);
+ 
+-  // Apply model overrides from config
+-  for (const override of config.models) {
+-    const existing = allModels.find((m) => m.id === override.id);
+-    if (existing) {
+-      if (override.qualityTier)
+-        existing.capabilities.qualityTier = override.qualityTier as any;
+-      if (override.speedTier)
+-        existing.capabilities.speedTier = override.speedTier as any;
+-      if (override.bestFor)
+-        existing.capabilities.bestFor = override.bestFor as any;
+-    }
+-  }
++  // Apply model overrides from config. Also invoked from refresh(), which
++  // rebuilds local entries from re-discovery and would otherwise silently
++  // drop the corrections.
++  applyModelOverrides(allModels, config.models);
+ 
+   // Overlay eval-derived capability scores (from `brainstorm eval`) and mark
+   // them as measured. Models without eval data keep their static assumed
+@@ -309,6 +329,9 @@ export async function createProviderRegistry(
+       );
+       const cloudAndSaas = allModels.filter((m) => !m.isLocal);
+       allModels = [...cloudAndSaas, ...refreshedLocal];
++      // Re-apply config overrides — refreshed local entries are rebuilt from
++      // discovery and would otherwise lose contextWindow/limit corrections.
++      applyModelOverrides(allModels, config.models);
+       // Re-apply eval capability scores (may have been updated by brainstorm eval)
+       const freshScores = loadEvalCapabilityScores();
+       for (const [modelId, entry] of Object.entries(freshScores)) {
+        sessionId,
+        projectPath: tmpProjectPath,
+        systemPrompt: "You are a test agent.",
+        preferredModelId: model.id,
+        disableTools: true,
+        trajectoryEnabled: false,
+      } as any);
+      const events: any[] = [];
+      for await (const ev of gen) {
+        events.push(ev);
+        if (events.length > 50) break;
+      }
+      return events;
+    },
+  };
+}
+
+describe("computeOutputBudget", () => {
+  const model = (contextWindow?: number, maxOutputTokens?: number) => ({
+    limits: { contextWindow, maxOutputTokens },
+  });
+
+  it("returns the advertised budget when the prompt is small", () => {
+    const msgs = [{ role: "user", content: "hi" }];
+    expect(computeOutputBudget(model(131072, 32768), msgs)).toEqual({
+      maxOutputTokens: 32768,
+    });
+  });
+
+  it("clamps the budget to remaining context near the window limit", () => {
+    // ~100k-token prompt in a 128k window: 32k output would overflow.
+    const msgs = [{ role: "user", content: "A".repeat(400_000) }];
+    const { maxOutputTokens } = computeOutputBudget(
+      model(131072, 32768),
+      msgs,
+    ) as { maxOutputTokens: number };
+    expect(maxOutputTokens).toBeLessThan(32768);
+    expect(maxOutputTokens).toBeGreaterThanOrEqual(256);
+  });
+
+  it("never returns less than the floor even when the window is exhausted", () => {
+    const msgs = [{ role: "user", content: "A".repeat(600_000) }];
+    expect(computeOutputBudget(model(131072, 32768), msgs)).toEqual({
+      maxOutputTokens: 256,
+    });
+  });
+
+  it("omits the option when the model advertises no output limit", () => {
+    expect(
+      computeOutputBudget(model(131072, undefined), [
+        { role: "user", content: "hi" },
+      ]),
+    ).toEqual({});
+  });
+});
+
+describe("agent loop — maxOutputTokens forwarding", () => {
+  beforeEach(() => {
+    _streamTextCalls = [];
+  });
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("forwards the routed model's maxOutputTokens to streamText", async () => {
+    const ctx = buildContext(buildModel(32768));
+    try {
+      await ctx.run();
+      expect(_streamTextCalls.length).toBeGreaterThan(0);
+      expect(_streamTextCalls[0].maxOutputTokens).toBe(32768);
+    } finally {
+      ctx.cleanup();
+    }
+  });
+
+  it("omits maxOutputTokens when the model advertises no limit", async () => {
+
+web search: 
+web search: site:ai.google.dev/gemma/docs core model Gemma 3 context length 1B 32K 4B 128K ...
+exec
+/bin/zsh -lc 'tail -n 120 bench/iterations/001/reviews/codex-rereview.err && rg -n "not-resolved|new_findings|computeOutputBudget|MIN_OUTPUT|Gemma 3|Qwen2.5" bench/iterations/001/reviews/codex-rereview.err | tail -80' in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
++    if (override.reasoning !== undefined)
++      existing.capabilities.reasoning = override.reasoning;
++  }
++}
++
+ export async function createProviderRegistry(
+   config: BrainstormConfig,
+   resolvedKeys?: ResolvedKeys,
+@@ -223,18 +251,10 @@ export async function createProviderRegistry(
+   const { models: localModels } = await discoverLocalModels(config.providers);
+   allModels.push(...localModels);
+ 
+-  // Apply model overrides from config
+-  for (const override of config.models) {
+-    const existing = allModels.find((m) => m.id === override.id);
+-    if (existing) {
+-      if (override.qualityTier)
+-        existing.capabilities.qualityTier = override.qualityTier as any;
+-      if (override.speedTier)
+-        existing.capabilities.speedTier = override.speedTier as any;
+-      if (override.bestFor)
+-        existing.capabilities.bestFor = override.bestFor as any;
+-    }
+-  }
++  // Apply model overrides from config. Also invoked from refresh(), which
++  // rebuilds local entries from re-discovery and would otherwise silently
++  // drop the corrections.
++  applyModelOverrides(allModels, config.models);
+ 
+   // Overlay eval-derived capability scores (from `brainstorm eval`) and mark
+   // them as measured. Models without eval data keep their static assumed
+@@ -309,6 +329,9 @@ export async function createProviderRegistry(
+       );
+       const cloudAndSaas = allModels.filter((m) => !m.isLocal);
+       allModels = [...cloudAndSaas, ...refreshedLocal];
++      // Re-apply config overrides — refreshed local entries are rebuilt from
++      // discovery and would otherwise lose contextWindow/limit corrections.
++      applyModelOverrides(allModels, config.models);
+       // Re-apply eval capability scores (may have been updated by brainstorm eval)
+       const freshScores = loadEvalCapabilityScores();
+       for (const [modelId, entry] of Object.entries(freshScores)) {
+        sessionId,
+        projectPath: tmpProjectPath,
+        systemPrompt: "You are a test agent.",
+        preferredModelId: model.id,
+        disableTools: true,
+        trajectoryEnabled: false,
+      } as any);
+      const events: any[] = [];
+      for await (const ev of gen) {
+        events.push(ev);
+        if (events.length > 50) break;
+      }
+      return events;
+    },
+  };
+}
+
+describe("computeOutputBudget", () => {
+  const model = (contextWindow?: number, maxOutputTokens?: number) => ({
+    limits: { contextWindow, maxOutputTokens },
+  });
+
+  it("returns the advertised budget when the prompt is small", () => {
+    const msgs = [{ role: "user", content: "hi" }];
+    expect(computeOutputBudget(model(131072, 32768), msgs)).toEqual({
+      maxOutputTokens: 32768,
+    });
+  });
+
+  it("clamps the budget to remaining context near the window limit", () => {
+    // ~100k-token prompt in a 128k window: 32k output would overflow.
+    const msgs = [{ role: "user", content: "A".repeat(400_000) }];
+    const { maxOutputTokens } = computeOutputBudget(
+      model(131072, 32768),
+      msgs,
+    ) as { maxOutputTokens: number };
+    expect(maxOutputTokens).toBeLessThan(32768);
+    expect(maxOutputTokens).toBeGreaterThanOrEqual(256);
+  });
+
+  it("never returns less than the floor even when the window is exhausted", () => {
+    const msgs = [{ role: "user", content: "A".repeat(600_000) }];
+    expect(computeOutputBudget(model(131072, 32768), msgs)).toEqual({
+      maxOutputTokens: 256,
+    });
+  });
+
+  it("omits the option when the model advertises no output limit", () => {
+    expect(
+      computeOutputBudget(model(131072, undefined), [
+        { role: "user", content: "hi" },
+      ]),
+    ).toEqual({});
+  });
+});
+
+describe("agent loop — maxOutputTokens forwarding", () => {
+  beforeEach(() => {
+    _streamTextCalls = [];
+  });
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("forwards the routed model's maxOutputTokens to streamText", async () => {
+    const ctx = buildContext(buildModel(32768));
+    try {
+      await ctx.run();
+      expect(_streamTextCalls.length).toBeGreaterThan(0);
+      expect(_streamTextCalls[0].maxOutputTokens).toBe(32768);
+    } finally {
+      ctx.cleanup();
+    }
+  });
+
+  it("omits maxOutputTokens when the model advertises no limit", async () => {
+
+web search: 
+web search: site:ai.google.dev/gemma/docs core model Gemma 3 context length 1B 32K 4B 128K ...
+14:You previously reviewed a diff in this repo and reported 4 findings: (1) maxOutputTokens sent without reserving prompt space in packages/core/src/agent/loop.ts; (2) overly broad /gemma/i and /qwen/i heuristics in packages/providers/src/local/openai-compat.ts; (3) registry refresh() dropping [[models]] overrides in packages/providers/src/registry.ts; (4) embedding models registered as routable chat models. The updated full diff is at bench/iterations/001/reviews/iter-fixed.diff. Verify whether each finding is now correctly addressed, and flag any NEW P0/P1 issues introduced by the fixes. Output ONLY JSON: {"resolved": [{"finding": 1|2|3|4, "status": "resolved"|"not-resolved", "note": string}], "new_findings": [{"file": string, "line": number, "severity": "P0"|"P1"|"P2", "finding": string}]}
+174:+export function computeOutputBudget(
+185:+  const MIN_OUTPUT_TOKENS = 256;
+189:+    maxOutputTokens: Math.max(MIN_OUTPUT_TOKENS, Math.min(advertised, remaining)),
+208:+      ...computeOutputBudget(decision.model, messagesForApi as any),
+793:      ...computeOutputBudget(decision.model, messagesForApi as any),
+1221:bench/iterations/001/reviews/iter-fixed.diff:170:+    maxOutputTokens: Math.max(MIN_OUTPUT_TOKENS, Math.min(advertised, remaining)),
+1711:/bin/zsh -lc "rg -n \"computeOutputBudget\" packages bench/iterations/001/reviews/iter-fixed.diff && nl -ba packages/core/src/agent/loop.ts | sed -n '65,110p;900,940p' && nl -ba packages/providers/src/local/openai-compat.ts | sed -n '65,240p' && nl -ba packages/providers/src/registry.ts | sed -n '50,95p;315,350p'" in /Users/justin.jilg/Projects/brainstorm
+2020:+export function computeOutputBudget(
+2031:+  const MIN_OUTPUT_TOKENS = 256;
+2035:+    maxOutputTokens: Math.max(MIN_OUTPUT_TOKENS, Math.min(advertised, remaining)),
+2054:+      ...computeOutputBudget(decision.model, messagesForApi as any),
+2357:describe("computeOutputBudget", () => {
+2364:    expect(computeOutputBudget(model(131072, 32768), msgs)).toEqual({
+2372:    const { maxOutputTokens } = computeOutputBudget(
+2382:    expect(computeOutputBudget(model(131072, 32768), msgs)).toEqual({
+2389:      computeOutputBudget(model(131072, undefined), [
+2418:web search: site:ai.google.dev/gemma/docs core model Gemma 3 context length 1B 32K 4B 128K ...
+
+codex
+{"resolved":[{"finding":1,"status":"not-resolved","note":"The message history is clamped, but the actual system prompt and tool schemas are not measured; a fixed 1024-token allowance can still under-reserve prompt space and cause context-limit rejection."},{"finding":2,"status":"not-resolved","note":"The regexes are generation-scoped but still overclaim smaller checkpoints: qwen2.5-coder-0.5b and gemma-3-1b match and receive 131072-token windows despite supporting 32768."},{"finding":3,"status":"resolved","note":"Overrides are extracted into applyModelOverrides() and reapplied after refresh() rebuilds the local model entries."},{"finding":4,"status":"resolved","note":"Models classified as embedding-only are skipped during discovery before they can enter the routable chat registry."}],"new_findings":[{"file":"packages/core/src/agent/loop.ts","line":97,"severity":"P1","finding":"computeOutputBudget forces a 256-token minimum even when fewer than 256 tokens remain. For exhausted contexts or small context-window overrides, this guarantees prompt plus requested output exceeds the window and can deterministically reject the request."}]}
+tokens used
+69,913

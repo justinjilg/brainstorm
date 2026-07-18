@@ -1,0 +1,1480 @@
+Reading additional input from stdin...
+OpenAI Codex v0.144.4
+--------
+workdir: /Users/justin.jilg/Projects/brainstorm
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 019f7411-a935-7e81-b9c6-46e9f0bf7a82
+--------
+user
+Verify three fixes in the diff at bench/iterations/001/reviews/iter-fixed2.diff of this repo: (1) computeOutputBudget in packages/core/src/agent/loop.ts now measures system prompt text + reserves tool-schema allowance; (2) small checkpoints (<7B suffix) capped at 32k context in packages/providers/src/local/openai-compat.ts; (3) output budget shrinks to exact remainder when 0<remaining<256. Output ONLY JSON: {"verdicts":[{"item":1|2|3,"status":"resolved"|"not-resolved","note":string}],"new_P0_P1":[]}
+exec
+/bin/zsh -lc "sed -n '1,240p' bench/iterations/001/reviews/iter-fixed2.diff && rg -n \"computeOutputBudget|context|32.?k|256|7B\" packages/core/src/agent/loop.ts packages/providers/src/local/openai-compat.ts" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+diff --git a/bench/.gitignore b/bench/.gitignore
+new file mode 100644
+index 0000000..4c67d34
+--- /dev/null
++++ b/bench/.gitignore
+@@ -0,0 +1 @@
++iterations/*/runs/
+diff --git a/bench/SCOREBOARD.md b/bench/SCOREBOARD.md
+new file mode 100644
+index 0000000..6ebd6b5
+--- /dev/null
++++ b/bench/SCOREBOARD.md
+@@ -0,0 +1,10 @@
++# Brainstorm Self-Improvement Scoreboard
++
++Program: iterative harness hardening with local Acronis models + stochastic review (Codex CLI anchor).
++Full protocol: see the approved plan (plan → implement → smoke → stochastic review → fix → measure/gate/commit).
++Full 75-probe eval and SWE-bench run at milestones (every 3rd iteration). Heuristic (no-Docker) SWE-bench
++results never count as passes.
++
++| iter | date | items | full eval (q3-next / gpt-oss / q3-coder) | SWE-bench (mode) | open P0/P1 | notes |
++|---|---|---|---|---|---|---|
++| 0 | 2026-07-18 | baseline (custom provider + 2 workspace fixes) | 52% / 28% / 33% | not run | 0 | Eval run from repo root, read-only probe tools. q3-next: 100% code-correctness, 36% multi-step. Weakest dims everywhere: tool-selection, multi-step — consistent with 8192-ctx assumption + missing maxOutputTokens (iter 1 targets). |
+diff --git a/bench/eval-subset.json b/bench/eval-subset.json
+new file mode 100644
+index 0000000..b0f3fd8
+--- /dev/null
++++ b/bench/eval-subset.json
+@@ -0,0 +1,37 @@
++{
++  "note": "Frozen stratified subset (first 2 probes per dimension, chosen 2026-07-18, never tuned against). brainstorm eval lacks a per-probe filter; until one exists, per-iteration gates run the 2-3 most relevant --capability dimensions in full and compare dimension scores.",
++  "probes": {
++    "code-correctness": [
++      "code-correct-01",
++      "code-correct-02"
++    ],
++    "context-utilization": [
++      "context-01",
++      "context-02"
++    ],
++    "instruction-adherence": [
++      "instruct-01",
++      "instruct-02"
++    ],
++    "multi-model-workflow": [
++      "e2e-decompose-01",
++      "e2e-decompose-02"
++    ],
++    "multi-step": [
++      "multi-step-01",
++      "multi-step-02"
++    ],
++    "self-correction": [
++      "self-correct-01",
++      "self-correct-02"
++    ],
++    "tool-selection": [
++      "tool-select-01",
++      "tool-select-02"
++    ],
++    "tool-sequencing": [
++      "tool-seq-01",
++      "tool-seq-02"
++    ]
++  }
++}
+\ No newline at end of file
+diff --git a/bench/iterations/001/plan.md b/bench/iterations/001/plan.md
+new file mode 100644
+index 0000000..49fefbe
+--- /dev/null
++++ b/bench/iterations/001/plan.md
+@@ -0,0 +1,22 @@
++# Iteration 001 — model metadata + output tokens
++
++Seed: `ITER=001` → SEED=`$(printf 001 | shasum | cut -c1-8)` = computed at review stage.
++
++## Hypothesis
++The dominant harness-side cap on local-model coding capability is wrong model metadata:
++every custom-endpoint model gets contextWindow 8192 / maxOutputTokens 4096 / reasoning:false,
++and the agent loop never passes an output-token budget to streamText. Fixing A–D should lift
++multi-step and tool-sequencing scores (currently the weakest dimensions for all three models)
++and eliminate gpt-oss-120b's empty-response fallback retries.
++
++## Items
++- **A** — discovery heuristics + honor `context_length`/`max_model_len` from /v1/models (packages/providers/src/local/openai-compat.ts)
++- **B** — `[[models]]` overrides for contextWindow/maxOutputTokens/reasoning (packages/config schema + registry apply)
++- **C** — pass routed model's maxOutputTokens into streamText (packages/core/src/agent/loop.ts)
++- **D** — compaction correctness test with a realistic window
++
++## Gate
++- Unit/typecheck green on providers, config, core.
++- Smoke probes green (registry metadata correct; multi-step coding session with no compaction; gpt-oss long generation without empty-length retry).
++- Stochastic review: verified P0/P1 all resolved; ≥2 of 3 reviewers clean on re-review.
++- Tool-sequencing + multi-step `--capability` eval dims on q3-next and q3-coder ≥ baseline.
+diff --git a/packages/config/src/schema.ts b/packages/config/src/schema.ts
+index 0e75845..76e20d8 100644
+--- a/packages/config/src/schema.ts
++++ b/packages/config/src/schema.ts
+@@ -109,6 +109,12 @@ const modelOverrideSchema = z.object({
+   qualityTier: z.number().min(1).max(5).optional(),
+   speedTier: z.number().min(1).max(5).optional(),
+   bestFor: z.array(z.string()).optional(),
++  // Limit corrections — authoritative when discovery guesses wrong (custom
++  // OpenAI-compatible endpoints often expose no limit metadata). Applied to
++  // both capabilities.contextWindow and limits.* in the registry.
++  contextWindow: z.number().int().positive().optional(),
++  maxOutputTokens: z.number().int().positive().optional(),
++  reasoning: z.boolean().optional(),
+ });
+ 
+ // ── General Config ───────────────────────────────────────────────────
+diff --git a/packages/core/src/__tests__/loop.integration.test.ts b/packages/core/src/__tests__/loop.integration.test.ts
+index 7aed83a..0c44ab2 100644
+--- a/packages/core/src/__tests__/loop.integration.test.ts
++++ b/packages/core/src/__tests__/loop.integration.test.ts
+@@ -116,4 +116,16 @@ describe("Compaction triggers", () => {
+     const percent = getContextPercent(messages, tokens * 2);
+     expect(percent).toBe(50);
+   });
++
++  it("does not compact a realistic coding session under a 128k window", () => {
++    // ~30 turns of tool-heavy coding traffic (~2000 chars each ≈ 15k tokens).
++    // With the old hardcoded 8192-token assumption for custom-endpoint models
++    // this compacted constantly; a real 131072 window must not.
++    const messages = Array.from({ length: 30 }, (_, i) => ({
++      role: (i % 2 === 0 ? "user" : "assistant") as "user" | "assistant",
++      content: "const x = 42; // ".repeat(120),
++    }));
++    expect(needsCompaction(messages, 131072)).toBe(false);
++    expect(needsCompaction(messages, 8192)).toBe(true);
++  });
+ });
+diff --git a/packages/core/src/agent/loop.ts b/packages/core/src/agent/loop.ts
+index 6917248..3a5bb01 100644
+--- a/packages/core/src/agent/loop.ts
++++ b/packages/core/src/agent/loop.ts
+@@ -66,8 +66,59 @@ function getLLMCircuit(modelId: string) {
+ import {
+   enterToolExecution,
+   exitToolExecution,
++  estimateTokenCount,
+ } from "../session/compaction.js";
+ import type { SystemPromptSegment } from "./context.js";
++
++/**
++ * Request-level output budget: the model's advertised maxOutputTokens,
++ * clamped to what its context window can still hold after the prompt.
++ * System prompt and tool schemas aren't in the message estimate, so a
++ * fixed overhead is reserved; a small floor keeps the request valid even
++ * when the estimate is pessimistic (the server clamps further if needed).
++ * Returns a spreadable object so callers can omit the option entirely for
++ * models that advertise no output limit.
++ */
++export function computeOutputBudget(
++  model: {
++    limits?: { contextWindow?: number; maxOutputTokens?: number };
++  },
++  messages: Array<{ role: string; content: unknown }>,
++  systemPrompt?: unknown,
++): { maxOutputTokens: number } | Record<string, never> {
++  const advertised = model.limits?.maxOutputTokens;
++  if (!advertised) return {};
++  const window = model.limits?.contextWindow;
++  if (!window) return { maxOutputTokens: advertised };
++  // Tool schemas aren't measured (they're functions + zod shapes); reserve a
++  // fixed allowance. The system prompt IS measured — brainstorm's runs multi-k
++  // tokens, far beyond any fixed guess.
++  const TOOL_SCHEMA_OVERHEAD_TOKENS = 1024;
++  const MIN_OUTPUT_TOKENS = 256;
++  const systemText =
++    typeof systemPrompt === "string"
++      ? systemPrompt
++      : Array.isArray(systemPrompt)
++        ? systemPrompt
++            .map((s: any) => (typeof s?.content === "string" ? s.content : ""))
++            .join("")
++        : "";
++  const promptEstimate =
++    estimateTokenCount(messages as any) +
++    Math.ceil(systemText.length / 4) +
++    TOOL_SCHEMA_OVERHEAD_TOKENS;
++  const remaining = window - promptEstimate;
++  if (remaining >= MIN_OUTPUT_TOKENS) {
++    return { maxOutputTokens: Math.min(advertised, remaining) };
++  }
++  // Near-exhausted window: requesting the floor would overflow — request
++  // exactly what's left. Fully exhausted (remaining <= 0): the prompt alone
++  // exceeds the window and no max_tokens value can save the request; keep it
++  // well-formed with the floor and let compaction/fallback handle the error.
++  return {
++    maxOutputTokens: remaining > 0 ? remaining : MIN_OUTPUT_TOKENS,
++  };
++}
+ import { segmentsToSystemArray } from "./context.js";
+ import { predictTaskCost } from "./cost-predictor.js";
+ import { detectTone, toneGuidance } from "./sentiment.js";
+@@ -889,6 +940,20 @@ export async function* runAgentLoop(
+       ...(metadataHeader
+         ? { headers: { "x-br-metadata": metadataHeader } }
+         : {}),
++      // Give the model its full advertised output budget. The AI SDK does not
++      // infer per-model output limits for OpenAI-compatible providers, and the
++      // server default can be far below the model's real limit — reasoning
++      // models (gpt-oss) then burn the whole budget on reasoning tokens and
++      // finish with `length` + empty text, triggering wasteful fallback
++      // retries. Clamped to the context still remaining after the prompt:
++      // compaction admits input up to 80% of the window, so prompt + full
++      // advertised output can exceed the window and the server rejects the
++      // request outright.
++      ...computeOutputBudget(
++        decision.model,
++        messagesForApi as any,
++        systemForApiNormalized,
++      ),
+       abortSignal: effectiveStreamSignal,
+       // Retry on 429/503 with exponential backoff (1s, 2s, 4s).
+       // Without this, rate limits during long KAIROS runs crash the daemon.
+diff --git a/packages/providers/src/__tests__/custom-provider.test.ts b/packages/providers/src/__tests__/custom-provider.test.ts
+index 076feb7..8fae298 100644
+--- a/packages/providers/src/__tests__/custom-provider.test.ts
++++ b/packages/providers/src/__tests__/custom-provider.test.ts
+@@ -5,6 +5,7 @@ import { join } from "node:path";
+ import {
+   resolveCustomProviderKey,
+   discoverOpenAICompatModels,
++  inferModelLimits,
+ } from "../local/openai-compat.js";
+ 
+ describe("resolveCustomProviderKey", () => {
+@@ -51,6 +52,88 @@ describe("resolveCustomProviderKey", () => {
+   });
+ });
+ 
++describe("inferModelLimits", () => {
++  it("recognizes model families by id substring", () => {
++    expect(inferModelLimits({ id: "h200/gpt-oss-120b" })).toEqual({
++      limits: {
++        contextWindow: 131072,
++        maxOutputTokens: 32768,
+packages/providers/src/local/openai-compat.ts:68:  contextWindow: number;
+packages/providers/src/local/openai-compat.ts:86:      contextWindow: 8192,
+packages/providers/src/local/openai-compat.ts:95:      contextWindow: 131072,
+packages/providers/src/local/openai-compat.ts:104:      contextWindow: 262144,
+packages/providers/src/local/openai-compat.ts:114:    // over-context requests. Unknown generations fall to the conservative
+packages/providers/src/local/openai-compat.ts:118:      contextWindow: 131072,
+packages/providers/src/local/openai-compat.ts:127:      contextWindow: 131072,
+packages/providers/src/local/openai-compat.ts:136:  contextWindow: 8192,
+packages/providers/src/local/openai-compat.ts:146:  context_length?: number;
+packages/providers/src/local/openai-compat.ts:152:// (< 7B params by id suffix, e.g. "qwen2.5-coder-0.5b", "gemma-3-1b") ship
+packages/providers/src/local/openai-compat.ts:172:  if (family && sizeCap && family.contextWindow > sizeCap) {
+packages/providers/src/local/openai-compat.ts:175:      contextWindow: sizeCap,
+packages/providers/src/local/openai-compat.ts:180:    typeof raw.context_length === "number"
+packages/providers/src/local/openai-compat.ts:181:      ? raw.context_length
+packages/providers/src/local/openai-compat.ts:186:  // Server-reported context wins; family heuristic fills the rest.
+packages/providers/src/local/openai-compat.ts:192:        contextWindow: serverContext,
+packages/providers/src/local/openai-compat.ts:231:          "No limit metadata from server and no family heuristic matched — assuming 8192-token context. Correct via [[models]] overrides if wrong.",
+packages/providers/src/local/openai-compat.ts:243:          contextWindow: limits.contextWindow,
+packages/providers/src/local/openai-compat.ts:250:          contextWindow: limits.contextWindow,
+packages/core/src/agent/loop.ts:71:import type { SystemPromptSegment } from "./context.js";
+packages/core/src/agent/loop.ts:75: * clamped to what its context window can still hold after the prompt.
+packages/core/src/agent/loop.ts:82:export function computeOutputBudget(
+packages/core/src/agent/loop.ts:84:    limits?: { contextWindow?: number; maxOutputTokens?: number };
+packages/core/src/agent/loop.ts:91:  const window = model.limits?.contextWindow;
+packages/core/src/agent/loop.ts:97:  const MIN_OUTPUT_TOKENS = 256;
+packages/core/src/agent/loop.ts:122:import { segmentsToSystemArray } from "./context.js";
+packages/core/src/agent/loop.ts:229:  // Last resort: add model context
+packages/core/src/agent/loop.ts:281: * injects 4-5 of them per cycle (preserved-context block, summary, scratchpad,
+packages/core/src/agent/loop.ts:366:    contextWindow: number;
+packages/core/src/agent/loop.ts:400:  /** Callback to inject turn context after each completion. */
+packages/core/src/agent/loop.ts:461:  // Establish the workspace context for this agent session. Tools like
+packages/core/src/agent/loop.ts:659:  // Check if context compaction is needed before the LLM call
+packages/core/src/agent/loop.ts:661:    const contextWindow = decision.model.limits.contextWindow || 128_000;
+packages/core/src/agent/loop.ts:665:    if (tokenEstimate > contextWindow * threshold) {
+packages/core/src/agent/loop.ts:682:              contextWindow,
+packages/core/src/agent/loop.ts:878:  // for turn-context tracking, build-state capture, loop detection, and TUI
+packages/core/src/agent/loop.ts:890:  // Serialize task context for gateway telemetry (x-br-metadata header)
+packages/core/src/agent/loop.ts:905:    // system-role messages mid-stream (preserved-context block, summary,
+packages/core/src/agent/loop.ts:948:      // retries. Clamped to the context still remaining after the prompt:
+packages/core/src/agent/loop.ts:952:      ...computeOutputBudget(
+packages/core/src/agent/loop.ts:1140:          // Track tool call success/failure for turn context
+packages/core/src/agent/loop.ts:1147:          // Track file access for turn context
+packages/core/src/agent/loop.ts:1735:    // Inject turn context for next turn's self-awareness
+
+exec
+/bin/zsh -lc "sed -n '240,520p' bench/iterations/001/reviews/iter-fixed2.diff && sed -n '60,210p' packages/providers/src/local/openai-compat.ts && sed -n '70,125p' packages/core/src/agent/loop.ts && rg -n \"computeOutputBudget|inferModelLimits|small|256|remaining\" packages/core/src/__tests__ packages/providers/src/__tests__" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
++        maxOutputTokens: 32768,
++        reasoning: true,
++        toolCalling: true,
++      },
++      source: "heuristic",
++    });
++    expect(
++      inferModelLimits({ id: "mac/qwen/qwen3-coder-next" }).limits
++        .contextWindow,
++    ).toBe(262144);
++    expect(
++      inferModelLimits({ id: "mac/text-embedding-qwen3-embedding-4b" }).limits
++        .toolCalling,
++    ).toBe(false);
++  });
++
++  it("prefers server-reported context length over the family heuristic", () => {
++    const { limits, source } = inferModelLimits({
++      id: "h200/gpt-oss-120b",
++      max_model_len: 65536,
++    });
++    expect(source).toBe("server");
++    expect(limits.contextWindow).toBe(65536);
++    expect(limits.reasoning).toBe(true);
++    // Output budget never exceeds the server-reported window.
++    expect(limits.maxOutputTokens).toBeLessThanOrEqual(65536);
++  });
++
++  it("falls back to conservative defaults for unknown families", () => {
++    const { limits, source } = inferModelLimits({ id: "mystery-model-7b" });
++    expect(source).toBe("default");
++    expect(limits).toEqual({
++      contextWindow: 8192,
++      maxOutputTokens: 4096,
++      reasoning: false,
++      toolCalling: true,
++    });
++  });
++
++  it("does not overclaim windows for older generations of known families", () => {
++    // gemma-2 and qwen1.5 have far smaller real windows than current
++    // generations — they must fall to the conservative default, not 128k.
++    for (const id of ["gemma-2-9b-it", "qwen1.5-7b-chat", "qwen-72b"]) {
++      const { limits, source } = inferModelLimits({ id });
++      expect(source, id).toBe("default");
++      expect(limits.contextWindow, id).toBe(8192);
++    }
++    // Current generations still match.
++    expect(inferModelLimits({ id: "gemma-4-31b" }).limits.contextWindow).toBe(
++      131072,
++    );
++    expect(
++      inferModelLimits({ id: "qwen2.5-coder-32b" }).limits.contextWindow,
++    ).toBe(131072);
++  });
++
++  it("caps small checkpoints of current generations at 32k", () => {
++    // qwen2.5-coder-0.5b / gemma-3-1b match current-generation families but
++    // ship with far smaller windows than the full-size checkpoints.
++    for (const id of ["qwen2.5-coder-0.5b", "gemma-3-1b-it"]) {
++      const { limits } = inferModelLimits({ id });
++      expect(limits.contextWindow, id).toBe(32768);
++      expect(limits.maxOutputTokens, id).toBeLessThanOrEqual(32768);
++    }
++    // Size suffixes >= 7B keep the family window; A3B active-param suffixes
++    // after the real size don't shadow it.
++    expect(
++      inferModelLimits({ id: "mac/qwen/qwen3.5-35b-a3b-8bit" }).limits
++        .contextWindow,
++    ).toBe(131072);
++    expect(
++      inferModelLimits({ id: "h200/Qwen/Qwen3-Next-80B-A3B-Instruct-FP8" })
++        .limits.contextWindow,
++    ).toBe(262144);
++  });
++});
++
+ describe("discoverOpenAICompatModels with custom providers", () => {
+   afterEach(() => {
+     vi.unstubAllGlobals();
+@@ -84,6 +167,27 @@ describe("discoverOpenAICompatModels with custom providers", () => {
+     expect(models.every((m) => m.provider === "acme" && m.isLocal)).toBe(true);
+   });
+ 
++  it("excludes embedding-only models from the discovered registry", async () => {
++    const fetchMock = vi.fn(async () => ({
++      ok: true,
++      json: async () => ({
++        data: [
++          { id: "mac/text-embedding-qwen3-embedding-4b" },
++          { id: "mac/qwen/qwen3-coder-next" },
++        ],
++      }),
++    }));
++    vi.stubGlobal("fetch", fetchMock);
++
++    const models = await discoverOpenAICompatModels(
++      "acme",
++      "http://llm.acme.internal",
++    );
++
++    // The embedding model must not be routable as a chat model.
++    expect(models.map((m) => m.name)).toEqual(["mac/qwen/qwen3-coder-next"]);
++  });
++
+   it("omits the headers key entirely when no auth is configured", async () => {
+     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({
+       ok: true,
+diff --git a/packages/providers/src/__tests__/registry.test.ts b/packages/providers/src/__tests__/registry.test.ts
+index 91c917d..8d55197 100644
+--- a/packages/providers/src/__tests__/registry.test.ts
++++ b/packages/providers/src/__tests__/registry.test.ts
+@@ -137,6 +137,83 @@ describe("createProviderRegistry", () => {
+     );
+   });
+ 
++  it("re-applies [[models]] overrides after refresh() rebuilds local entries", async () => {
++    const { discoverLocalModels } = await import("../local/discovery.js");
++    const localModel = () => ({
++      id: "acronis:test/model",
++      provider: "acronis",
++      name: "test/model",
++      capabilities: {
++        toolCalling: true,
++        streaming: true,
++        vision: false,
++        reasoning: false,
++        contextWindow: 8192,
++        qualityTier: 3,
++        speedTier: 2,
++        bestFor: ["conversation"],
++      },
++      pricing: { inputPer1MTokens: 0, outputPer1MTokens: 0 },
++      limits: { contextWindow: 8192, maxOutputTokens: 4096 },
++      status: "available",
++      isLocal: true,
++      lastHealthCheck: 0,
++    });
++    vi.mocked(discoverLocalModels).mockResolvedValue({
++      models: [localModel()],
++    } as any);
++
++    const config = createConfig() as any;
++    config.models = [{ id: "acronis:test/model", contextWindow: 262144 }];
++
++    try {
++      const registry = await createProviderRegistry(
++        config,
++        createResolvedKeys({}),
++      );
++      expect(registry.getModel("acronis:test/model")!.limits.contextWindow).toBe(
++        262144,
++      );
++
++      // refresh() rebuilds local entries from discovery — the override must
++      // survive, not revert to the discovered 8192.
++      vi.mocked(discoverLocalModels).mockResolvedValue({
++        models: [localModel()],
++      } as any);
++      await registry.refresh();
++      expect(registry.getModel("acronis:test/model")!.limits.contextWindow).toBe(
++        262144,
++      );
++    } finally {
++      vi.mocked(discoverLocalModels).mockResolvedValue({ models: [] } as any);
++    }
++  });
++
++  it("applies limit overrides from [[models]], honoring explicit falsy values", async () => {
++    const config = createConfig() as any;
++    const target = CLOUD_MODELS.find((m) => m.provider === "anthropic")!;
++    config.models = [
++      {
++        id: target.id,
++        contextWindow: 999_000,
++        maxOutputTokens: 12_345,
++        reasoning: false,
++      },
++    ];
++
++    const registry = await createProviderRegistry(
++      config,
++      createResolvedKeys({ ANTHROPIC_API_KEY: "test-key" }),
++    );
++
++    const model = registry.getModel(target.id)!;
++    expect(model.capabilities.contextWindow).toBe(999_000);
++    expect(model.limits.contextWindow).toBe(999_000);
++    expect(model.limits.maxOutputTokens).toBe(12_345);
++    // reasoning: false must stick — the old truthiness pattern would drop it.
++    expect(model.capabilities.reasoning).toBe(false);
++  });
++
+   it("registers custom OpenAI-compatible providers and resolves their model ids", async () => {
+     const config = createConfig() as any;
+     config.providers.custom = {
+diff --git a/packages/providers/src/local/openai-compat.ts b/packages/providers/src/local/openai-compat.ts
+index 27beb38..dff3f4d 100644
+--- a/packages/providers/src/local/openai-compat.ts
++++ b/packages/providers/src/local/openai-compat.ts
+@@ -1,8 +1,11 @@
+ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+ import type { ModelEntry } from "@brainst0rm/shared";
++import { createLogger } from "@brainst0rm/shared";
+ import { readFileSync } from "node:fs";
+ import { homedir } from "node:os";
+ 
++const log = createLogger("openai-compat");
++
+ // LM Studio and llama.cpp both expose OpenAI-compatible APIs
+ 
+ export function createLMStudioProvider(baseUrl = "http://localhost:1234") {
+@@ -61,6 +64,140 @@ export function resolveCustomProviderKey(
+   return null;
+ }
+ 
++interface InferredModelLimits {
++  contextWindow: number;
++  maxOutputTokens: number;
++  reasoning: boolean;
++  toolCalling: boolean;
++}
++
++// Family heuristics for endpoints whose /v1/models response carries no limit
++// metadata. Ordered — first match wins. These are conservative floors for the
++// family, not per-checkpoint truth; `[[models]]` config overrides remain the
++// authoritative correction when a deployment differs.
++const MODEL_FAMILY_LIMITS: Array<{
++  match: RegExp;
++  limits: InferredModelLimits;
++}> = [
++  {
++    // Embedding models: not chat-capable at all.
++    match: /embed/i,
++    limits: {
++      contextWindow: 8192,
++      maxOutputTokens: 1,
++      reasoning: false,
++      toolCalling: false,
++    },
++  },
++  {
++    match: /gpt-oss/i,
++    limits: {
++      contextWindow: 131072,
++      maxOutputTokens: 32768,
++      reasoning: true,
++      toolCalling: true,
++    },
++  },
++  {
++    match: /qwen3[-.]?(coder|next)/i,
++    limits: {
++      contextWindow: 262144,
++      maxOutputTokens: 32768,
++      reasoning: false,
++      toolCalling: true,
++    },
++  },
++  {
++    // Generation-scoped on purpose: a bare /qwen/ or /gemma/ would claim a
++    // 128k window for older checkpoints (qwen1.5, gemma-2) whose real
++    // windows are far smaller, suppressing required compaction and sending
++    // over-context requests. Unknown generations fall to the conservative
++    // default + warn instead.
++    match: /qwen(2\.5|[3-9])/i,
++    limits: {
++      contextWindow: 131072,
++      maxOutputTokens: 32768,
++      reasoning: false,
++      toolCalling: true,
++    },
++  },
++  {
++    match: /gemma[-_.]?[3-9]/i,
++    limits: {
++      contextWindow: 131072,
++      maxOutputTokens: 8192,
++      reasoning: false,
++      toolCalling: true,
++    },
+    } catch {
+      // unreadable key file → treat as no key; the endpoint may be open
+    }
+  }
+  return null;
+}
+
+interface InferredModelLimits {
+  contextWindow: number;
+  maxOutputTokens: number;
+  reasoning: boolean;
+  toolCalling: boolean;
+}
+
+// Family heuristics for endpoints whose /v1/models response carries no limit
+// metadata. Ordered — first match wins. These are conservative floors for the
+// family, not per-checkpoint truth; `[[models]]` config overrides remain the
+// authoritative correction when a deployment differs.
+const MODEL_FAMILY_LIMITS: Array<{
+  match: RegExp;
+  limits: InferredModelLimits;
+}> = [
+  {
+    // Embedding models: not chat-capable at all.
+    match: /embed/i,
+    limits: {
+      contextWindow: 8192,
+      maxOutputTokens: 1,
+      reasoning: false,
+      toolCalling: false,
+    },
+  },
+  {
+    match: /gpt-oss/i,
+    limits: {
+      contextWindow: 131072,
+      maxOutputTokens: 32768,
+      reasoning: true,
+      toolCalling: true,
+    },
+  },
+  {
+    match: /qwen3[-.]?(coder|next)/i,
+    limits: {
+      contextWindow: 262144,
+      maxOutputTokens: 32768,
+      reasoning: false,
+      toolCalling: true,
+    },
+  },
+  {
+    // Generation-scoped on purpose: a bare /qwen/ or /gemma/ would claim a
+    // 128k window for older checkpoints (qwen1.5, gemma-2) whose real
+    // windows are far smaller, suppressing required compaction and sending
+    // over-context requests. Unknown generations fall to the conservative
+    // default + warn instead.
+    match: /qwen(2\.5|[3-9])/i,
+    limits: {
+      contextWindow: 131072,
+      maxOutputTokens: 32768,
+      reasoning: false,
+      toolCalling: true,
+    },
+  },
+  {
+    match: /gemma[-_.]?[3-9]/i,
+    limits: {
+      contextWindow: 131072,
+      maxOutputTokens: 8192,
+      reasoning: false,
+      toolCalling: true,
+    },
+  },
+];
+
+const DEFAULT_INFERRED_LIMITS: InferredModelLimits = {
+  contextWindow: 8192,
+  maxOutputTokens: 4096,
+  reasoning: false,
+  toolCalling: true,
+};
+
+/** Raw /v1/models entry — servers vary in what limit metadata they expose. */
+interface RawModelEntry {
+  id: string;
+  /** LM Studio / OpenRouter convention. */
+  context_length?: number;
+  /** vLLM convention. */
+  max_model_len?: number;
+}
+
+// Family windows describe current full-size checkpoints. Small checkpoints
+// (< 7B params by id suffix, e.g. "qwen2.5-coder-0.5b", "gemma-3-1b") ship
+// with much smaller windows — cap them rather than overclaim 128k.
+const SMALL_CHECKPOINT_CONTEXT_CAP = 32768;
+const SMALL_CHECKPOINT_PARAMS_B = 7;
+
+function smallCheckpointCap(id: string): number | null {
+  const match = id.match(/(\d+(?:\.\d+)?)b\b/i);
+  if (!match) return null;
+  return parseFloat(match[1]) < SMALL_CHECKPOINT_PARAMS_B
+    ? SMALL_CHECKPOINT_CONTEXT_CAP
+    : null;
+}
+
+export function inferModelLimits(raw: RawModelEntry): {
+  limits: InferredModelLimits;
+  source: "server" | "heuristic" | "default";
+} {
+  let family =
+    MODEL_FAMILY_LIMITS.find((f) => f.match.test(raw.id))?.limits ?? null;
+  const sizeCap = family ? smallCheckpointCap(raw.id) : null;
+  if (family && sizeCap && family.contextWindow > sizeCap) {
+    family = {
+      ...family,
+      contextWindow: sizeCap,
+      maxOutputTokens: Math.min(family.maxOutputTokens, sizeCap),
+    };
+  }
+  const serverContext =
+    typeof raw.context_length === "number"
+      ? raw.context_length
+      : typeof raw.max_model_len === "number"
+        ? raw.max_model_len
+        : null;
+
+  // Server-reported context wins; family heuristic fills the rest.
+  const base = family ?? DEFAULT_INFERRED_LIMITS;
+  if (serverContext && serverContext > 0) {
+    return {
+      limits: {
+        ...base,
+        contextWindow: serverContext,
+        maxOutputTokens: Math.min(base.maxOutputTokens, serverContext),
+      },
+      source: "server",
+    };
+  }
+  return { limits: base, source: family ? "heuristic" : "default" };
+}
+
+export async function discoverOpenAICompatModels(
+  name: string,
+  baseUrl: string,
+  headers?: Record<string, string>,
+): Promise<ModelEntry[]> {
+  try {
+    const response = await fetch(`${baseUrl}/v1/models`, {
+      signal: AbortSignal.timeout(3000),
+      ...(headers ? { headers } : {}),
+    });
+} from "../session/compaction.js";
+import type { SystemPromptSegment } from "./context.js";
+
+/**
+ * Request-level output budget: the model's advertised maxOutputTokens,
+ * clamped to what its context window can still hold after the prompt.
+ * System prompt and tool schemas aren't in the message estimate, so a
+ * fixed overhead is reserved; a small floor keeps the request valid even
+ * when the estimate is pessimistic (the server clamps further if needed).
+ * Returns a spreadable object so callers can omit the option entirely for
+ * models that advertise no output limit.
+ */
+export function computeOutputBudget(
+  model: {
+    limits?: { contextWindow?: number; maxOutputTokens?: number };
+  },
+  messages: Array<{ role: string; content: unknown }>,
+  systemPrompt?: unknown,
+): { maxOutputTokens: number } | Record<string, never> {
+  const advertised = model.limits?.maxOutputTokens;
+  if (!advertised) return {};
+  const window = model.limits?.contextWindow;
+  if (!window) return { maxOutputTokens: advertised };
+  // Tool schemas aren't measured (they're functions + zod shapes); reserve a
+  // fixed allowance. The system prompt IS measured — brainstorm's runs multi-k
+  // tokens, far beyond any fixed guess.
+  const TOOL_SCHEMA_OVERHEAD_TOKENS = 1024;
+  const MIN_OUTPUT_TOKENS = 256;
+  const systemText =
+    typeof systemPrompt === "string"
+      ? systemPrompt
+      : Array.isArray(systemPrompt)
+        ? systemPrompt
+            .map((s: any) => (typeof s?.content === "string" ? s.content : ""))
+            .join("")
+        : "";
+  const promptEstimate =
+    estimateTokenCount(messages as any) +
+    Math.ceil(systemText.length / 4) +
+    TOOL_SCHEMA_OVERHEAD_TOKENS;
+  const remaining = window - promptEstimate;
+  if (remaining >= MIN_OUTPUT_TOKENS) {
+    return { maxOutputTokens: Math.min(advertised, remaining) };
+  }
+  // Near-exhausted window: requesting the floor would overflow — request
+  // exactly what's left. Fully exhausted (remaining <= 0): the prompt alone
+  // exceeds the window and no max_tokens value can save the request; keep it
+  // well-formed with the floor and let compaction/fallback handle the error.
+  return {
+    maxOutputTokens: remaining > 0 ? remaining : MIN_OUTPUT_TOKENS,
+  };
+}
+import { segmentsToSystemArray } from "./context.js";
+import { predictTaskCost } from "./cost-predictor.js";
+import { detectTone, toneGuidance } from "./sentiment.js";
+import { shouldUseEnsemble } from "./ensemble.js";
+packages/providers/src/__tests__/br-envelope.test.ts:39:  "x-br-budget-remaining": "1.95",
+packages/providers/src/__tests__/br-envelope.test.ts:44:    '{"model":"deepseek/deepseek-chat","why":"explicit","cost":0.00003654,"budget_remaining":1.95,"cache":"miss","memory_facts":0}',
+packages/providers/src/__tests__/br-envelope.test.ts:63:  "x-br-requests-remaining": "99",
+packages/providers/src/__tests__/br-envelope.test.ts:74:  "x-br-tokens-remaining": "100000",
+packages/providers/src/__tests__/br-envelope.test.ts:266:    synth["x-br-budget-remaining"] = "100";
+packages/providers/src/__tests__/br-envelope.test.ts:267:    synth["x-br-tokens-remaining"] = "1000";
+packages/providers/src/__tests__/br-envelope.test.ts:268:    synth["x-br-requests-remaining"] = "99";
+packages/core/src/__tests__/findings.test.ts:27:  const hash = createHash("sha256")
+packages/providers/src/__tests__/custom-provider.test.ts:8:  inferModelLimits,
+packages/providers/src/__tests__/custom-provider.test.ts:55:describe("inferModelLimits", () => {
+packages/providers/src/__tests__/custom-provider.test.ts:57:    expect(inferModelLimits({ id: "h200/gpt-oss-120b" })).toEqual({
+packages/providers/src/__tests__/custom-provider.test.ts:67:      inferModelLimits({ id: "mac/qwen/qwen3-coder-next" }).limits
+packages/providers/src/__tests__/custom-provider.test.ts:71:      inferModelLimits({ id: "mac/text-embedding-qwen3-embedding-4b" }).limits
+packages/providers/src/__tests__/custom-provider.test.ts:77:    const { limits, source } = inferModelLimits({
+packages/providers/src/__tests__/custom-provider.test.ts:89:    const { limits, source } = inferModelLimits({ id: "mystery-model-7b" });
+packages/providers/src/__tests__/custom-provider.test.ts:100:    // gemma-2 and qwen1.5 have far smaller real windows than current
+packages/providers/src/__tests__/custom-provider.test.ts:103:      const { limits, source } = inferModelLimits({ id });
+packages/providers/src/__tests__/custom-provider.test.ts:108:    expect(inferModelLimits({ id: "gemma-4-31b" }).limits.contextWindow).toBe(
+packages/providers/src/__tests__/custom-provider.test.ts:112:      inferModelLimits({ id: "qwen2.5-coder-32b" }).limits.contextWindow,
+packages/providers/src/__tests__/custom-provider.test.ts:116:  it("caps small checkpoints of current generations at 32k", () => {
+packages/providers/src/__tests__/custom-provider.test.ts:118:    // ship with far smaller windows than the full-size checkpoints.
+packages/providers/src/__tests__/custom-provider.test.ts:120:      const { limits } = inferModelLimits({ id });
+packages/providers/src/__tests__/custom-provider.test.ts:127:      inferModelLimits({ id: "mac/qwen/qwen3.5-35b-a3b-8bit" }).limits
+packages/providers/src/__tests__/custom-provider.test.ts:131:      inferModelLimits({ id: "h200/Qwen/Qwen3-Next-80B-A3B-Instruct-FP8" })
+packages/core/src/__tests__/response-filter.test.ts:137:    it('buffers multiple small deltas until threshold', () => {
+packages/core/src/__tests__/loop-max-output-tokens.test.ts:39:import { runAgentLoop, computeOutputBudget } from "../agent/loop.js";
+packages/core/src/__tests__/loop-max-output-tokens.test.ts:147:describe("computeOutputBudget", () => {
+packages/core/src/__tests__/loop-max-output-tokens.test.ts:152:  it("returns the advertised budget when the prompt is small", () => {
+packages/core/src/__tests__/loop-max-output-tokens.test.ts:154:    expect(computeOutputBudget(model(131072, 32768), msgs)).toEqual({
+packages/core/src/__tests__/loop-max-output-tokens.test.ts:159:  it("clamps the budget to remaining context near the window limit", () => {
+packages/core/src/__tests__/loop-max-output-tokens.test.ts:162:    const { maxOutputTokens } = computeOutputBudget(
+packages/core/src/__tests__/loop-max-output-tokens.test.ts:167:    expect(maxOutputTokens).toBeGreaterThanOrEqual(256);
+packages/core/src/__tests__/loop-max-output-tokens.test.ts:171:    // Requesting the 256 floor here would overflow the window — the budget
+packages/core/src/__tests__/loop-max-output-tokens.test.ts:176:    const { maxOutputTokens } = computeOutputBudget(
+packages/core/src/__tests__/loop-max-output-tokens.test.ts:182:    expect(maxOutputTokens).toBeLessThan(256);
+packages/core/src/__tests__/loop-max-output-tokens.test.ts:187:    expect(computeOutputBudget(model(131072, 32768), msgs)).toEqual({
+packages/core/src/__tests__/loop-max-output-tokens.test.ts:188:      maxOutputTokens: 256,
+packages/core/src/__tests__/loop-max-output-tokens.test.ts:194:    const smallBudget = computeOutputBudget(
+packages/core/src/__tests__/loop-max-output-tokens.test.ts:199:    expect(smallBudget.maxOutputTokens).toBeLessThan(32768);
+packages/core/src/__tests__/loop-max-output-tokens.test.ts:204:      computeOutputBudget(model(131072, undefined), [
+packages/core/src/__tests__/loop.integration.test.ts:95:  it("does not need compaction for small history", () => {
+packages/core/src/__tests__/kairos-integration.test.ts:37:  const hash = createHash("sha256")
+packages/core/src/__tests__/property-tests.test.ts:17:  const hash = createHash("sha256")
+packages/core/src/__tests__/property-tests.test.ts:123:          const hash1 = createHash("sha256")
+packages/core/src/__tests__/property-tests.test.ts:127:          const hash2 = createHash("sha256")
+packages/core/src/__tests__/property-tests.test.ts:141:          const hash = createHash("sha256")
+packages/core/src/__tests__/memory-manager.test.ts:28:  const hash = createHash("sha256")
+packages/core/src/__tests__/extract-runner.test.ts:49:  const hash = createHash("sha256")
+packages/core/src/__tests__/retrieval-depth.test.ts:19:// ── Fixture project: two small files with distinct topics ────────────
+
+exec
+/bin/zsh -lc 'find bench/iterations/001/reviews -maxdepth 1 -type f -print | sort && for f in bench/iterations/001/reviews/*; do echo "$f"; rg -n -C 3 "computeOutputBudget|system prompt|tool.schema|small checkpoint|7B|32k|remainder|remaining|256" "$f" || true; done' in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+bench/iterations/001/reviews/codex-final.err
+bench/iterations/001/reviews/codex-final.out
+bench/iterations/001/reviews/codex-rereview.err
+bench/iterations/001/reviews/codex-rereview.out
+bench/iterations/001/reviews/codex.err
+bench/iterations/001/reviews/codex.out
+bench/iterations/001/reviews/gpt-oss.out
+bench/iterations/001/reviews/iter-fixed.diff
+bench/iterations/001/reviews/iter-fixed2.diff
+bench/iterations/001/reviews/iter.diff
+bench/iterations/001/reviews/panel.json
+bench/iterations/001/reviews/qwen3-coder.out
+bench/iterations/001/reviews/verdicts.json
+bench/iterations/001/reviews/codex-final.err
+11-session id: 019f7411-a935-7e81-b9c6-46e9f0bf7a82
+12---------
+13-user
+14:Verify three fixes in the diff at bench/iterations/001/reviews/iter-fixed2.diff of this repo: (1) computeOutputBudget in packages/core/src/agent/loop.ts now measures system prompt text + reserves tool-schema allowance; (2) small checkpoints (<7B suffix) capped at 32k context in packages/providers/src/local/openai-compat.ts; (3) output budget shrinks to exact remainder when 0<remaining<256. Output ONLY JSON: {"verdicts":[{"item":1|2|3,"status":"resolved"|"not-resolved","note":string}],"new_P0_P1":[]}
+15-exec
+16:/bin/zsh -lc "sed -n '1,240p' bench/iterations/001/reviews/iter-fixed2.diff && rg -n \"computeOutputBudget|context|32.?k|256|7B\" packages/core/src/agent/loop.ts packages/providers/src/local/openai-compat.ts" in /Users/justin.jilg/Projects/brainstorm
+17- succeeded in 0ms:
+18-diff --git a/bench/.gitignore b/bench/.gitignore
+19-new file mode 100644
+--
+163-+/**
+164-+ * Request-level output budget: the model's advertised maxOutputTokens,
+165-+ * clamped to what its context window can still hold after the prompt.
+166:+ * System prompt and tool schemas aren't in the message estimate, so a
+167-+ * fixed overhead is reserved; a small floor keeps the request valid even
+168-+ * when the estimate is pessimistic (the server clamps further if needed).
+169-+ * Returns a spreadable object so callers can omit the option entirely for
+170-+ * models that advertise no output limit.
+171-+ */
+172:+export function computeOutputBudget(
+173-+  model: {
+174-+    limits?: { contextWindow?: number; maxOutputTokens?: number };
+175-+  },
+--
+181-+  const window = model.limits?.contextWindow;
+182-+  if (!window) return { maxOutputTokens: advertised };
+183-+  // Tool schemas aren't measured (they're functions + zod shapes); reserve a
+184:+  // fixed allowance. The system prompt IS measured — brainstorm's runs multi-k
+185-+  // tokens, far beyond any fixed guess.
+186-+  const TOOL_SCHEMA_OVERHEAD_TOKENS = 1024;
+187:+  const MIN_OUTPUT_TOKENS = 256;
+188-+  const systemText =
+189-+    typeof systemPrompt === "string"
+190-+      ? systemPrompt
+--
+197-+    estimateTokenCount(messages as any) +
+198-+    Math.ceil(systemText.length / 4) +
+199-+    TOOL_SCHEMA_OVERHEAD_TOKENS;
+200:+  const remaining = window - promptEstimate;
+201:+  if (remaining >= MIN_OUTPUT_TOKENS) {
+202:+    return { maxOutputTokens: Math.min(advertised, remaining) };
+203-+  }
+204-+  // Near-exhausted window: requesting the floor would overflow — request
+205:+  // exactly what's left. Fully exhausted (remaining <= 0): the prompt alone
+206-+  // exceeds the window and no max_tokens value can save the request; keep it
+207-+  // well-formed with the floor and let compaction/fallback handle the error.
+208-+  return {
+209:+    maxOutputTokens: remaining > 0 ? remaining : MIN_OUTPUT_TOKENS,
+210-+  };
+211-+}
+212- import { segmentsToSystemArray } from "./context.js";
+--
+221-+      // server default can be far below the model's real limit — reasoning
+222-+      // models (gpt-oss) then burn the whole budget on reasoning tokens and
+223-+      // finish with `length` + empty text, triggering wasteful fallback
+224:+      // retries. Clamped to the context still remaining after the prompt:
+225-+      // compaction admits input up to 80% of the window, so prompt + full
+226-+      // advertised output can exceed the window and the server rejects the
+227-+      // request outright.
+228:+      ...computeOutputBudget(
+229-+        decision.model,
+230-+        messagesForApi as any,
+231-+        systemForApiNormalized,
+--
+264-packages/providers/src/local/openai-compat.ts:127:      contextWindow: 131072,
+265-packages/providers/src/local/openai-compat.ts:136:  contextWindow: 8192,
+266-packages/providers/src/local/openai-compat.ts:146:  context_length?: number;
+267:packages/providers/src/local/openai-compat.ts:152:// (< 7B params by id suffix, e.g. "qwen2.5-coder-0.5b", "gemma-3-1b") ship
+268-packages/providers/src/local/openai-compat.ts:172:  if (family && sizeCap && family.contextWindow > sizeCap) {
+269-packages/providers/src/local/openai-compat.ts:175:      contextWindow: sizeCap,
+270-packages/providers/src/local/openai-compat.ts:180:    typeof raw.context_length === "number"
+--
+276-packages/providers/src/local/openai-compat.ts:250:          contextWindow: limits.contextWindow,
+277-packages/core/src/agent/loop.ts:71:import type { SystemPromptSegment } from "./context.js";
+278-packages/core/src/agent/loop.ts:75: * clamped to what its context window can still hold after the prompt.
+279:packages/core/src/agent/loop.ts:82:export function computeOutputBudget(
+280-packages/core/src/agent/loop.ts:84:    limits?: { contextWindow?: number; maxOutputTokens?: number };
+281-packages/core/src/agent/loop.ts:91:  const window = model.limits?.contextWindow;
+282:packages/core/src/agent/loop.ts:97:  const MIN_OUTPUT_TOKENS = 256;
+283-packages/core/src/agent/loop.ts:122:import { segmentsToSystemArray } from "./context.js";
+284-packages/core/src/agent/loop.ts:229:  // Last resort: add model context
+285-packages/core/src/agent/loop.ts:281: * injects 4-5 of them per cycle (preserved-context block, summary, scratchpad,
+--
+293-packages/core/src/agent/loop.ts:878:  // for turn-context tracking, build-state capture, loop detection, and TUI
+294-packages/core/src/agent/loop.ts:890:  // Serialize task context for gateway telemetry (x-br-metadata header)
+295-packages/core/src/agent/loop.ts:905:    // system-role messages mid-stream (preserved-context block, summary,
+296:packages/core/src/agent/loop.ts:948:      // retries. Clamped to the context still remaining after the prompt:
+297:packages/core/src/agent/loop.ts:952:      ...computeOutputBudget(
+298-packages/core/src/agent/loop.ts:1140:          // Track tool call success/failure for turn context
+299-packages/core/src/agent/loop.ts:1147:          // Track file access for turn context
+300-packages/core/src/agent/loop.ts:1735:    // Inject turn context for next turn's self-awareness
+301-
+302-exec
+303:/bin/zsh -lc "sed -n '240,520p' bench/iterations/001/reviews/iter-fixed2.diff && sed -n '60,210p' packages/providers/src/local/openai-compat.ts && sed -n '70,125p' packages/core/src/agent/loop.ts && rg -n \"computeOutputBudget|inferModelLimits|small|256|remaining\" packages/core/src/__tests__ packages/providers/src/__tests__" in /Users/justin.jilg/Projects/brainstorm
+304- succeeded in 0ms:
+305-+        maxOutputTokens: 32768,
+306-+        reasoning: true,
+--
+358-+    ).toBe(131072);
+359-+  });
+360-+
+361:+  it("caps small checkpoints of current generations at 32k", () => {
+362-+    // qwen2.5-coder-0.5b / gemma-3-1b match current-generation families but
+363-+    // ship with far smaller windows than the full-size checkpoints.
+364-+    for (const id of ["qwen2.5-coder-0.5b", "gemma-3-1b-it"]) {
+--
+366-+      expect(limits.contextWindow, id).toBe(32768);
+367-+      expect(limits.maxOutputTokens, id).toBeLessThanOrEqual(32768);
+368-+    }
+369:+    // Size suffixes >= 7B keep the family window; A3B active-param suffixes
+370-+    // after the real size don't shadow it.
+371-+    expect(
+372-+      inferModelLimits({ id: "mac/qwen/qwen3.5-35b-a3b-8bit" }).limits
+--
+675-}
+676-
+677-// Family windows describe current full-size checkpoints. Small checkpoints
+678:// (< 7B params by id suffix, e.g. "qwen2.5-coder-0.5b", "gemma-3-1b") ship
+679-// with much smaller windows — cap them rather than overclaim 128k.
+680-const SMALL_CHECKPOINT_CONTEXT_CAP = 32768;
+681-const SMALL_CHECKPOINT_PARAMS_B = 7;
+--
+740-/**
+741- * Request-level output budget: the model's advertised maxOutputTokens,
+742- * clamped to what its context window can still hold after the prompt.
+743: * System prompt and tool schemas aren't in the message estimate, so a
+744- * fixed overhead is reserved; a small floor keeps the request valid even
+745- * when the estimate is pessimistic (the server clamps further if needed).
+746- * Returns a spreadable object so callers can omit the option entirely for
+747- * models that advertise no output limit.
+748- */
+749:export function computeOutputBudget(
+750-  model: {
+751-    limits?: { contextWindow?: number; maxOutputTokens?: number };
+752-  },
+--
+758-  const window = model.limits?.contextWindow;
+759-  if (!window) return { maxOutputTokens: advertised };
+760-  // Tool schemas aren't measured (they're functions + zod shapes); reserve a
+761:  // fixed allowance. The system prompt IS measured — brainstorm's runs multi-k
+762-  // tokens, far beyond any fixed guess.
+763-  const TOOL_SCHEMA_OVERHEAD_TOKENS = 1024;
+764:  const MIN_OUTPUT_TOKENS = 256;
+765-  const systemText =
+766-    typeof systemPrompt === "string"
+767-      ? systemPrompt
+--
+774-    estimateTokenCount(messages as any) +
+775-    Math.ceil(systemText.length / 4) +
+776-    TOOL_SCHEMA_OVERHEAD_TOKENS;
+777:  const remaining = window - promptEstimate;
+778:  if (remaining >= MIN_OUTPUT_TOKENS) {
+779:    return { maxOutputTokens: Math.min(advertised, remaining) };
+780-  }
+781-  // Near-exhausted window: requesting the floor would overflow — request
+782:  // exactly what's left. Fully exhausted (remaining <= 0): the prompt alone
+783-  // exceeds the window and no max_tokens value can save the request; keep it
+784-  // well-formed with the floor and let compaction/fallback handle the error.
+785-  return {
+786:    maxOutputTokens: remaining > 0 ? remaining : MIN_OUTPUT_TOKENS,
+787-  };
+788-}
+789-import { segmentsToSystemArray } from "./context.js";
+790-import { predictTaskCost } from "./cost-predictor.js";
+791-import { detectTone, toneGuidance } from "./sentiment.js";
+792-import { shouldUseEnsemble } from "./ensemble.js";
+793:packages/providers/src/__tests__/br-envelope.test.ts:39:  "x-br-budget-remaining": "1.95",
+794:packages/providers/src/__tests__/br-envelope.test.ts:44:    '{"model":"deepseek/deepseek-chat","why":"explicit","cost":0.00003654,"budget_remaining":1.95,"cache":"miss","memory_facts":0}',
+795:packages/providers/src/__tests__/br-envelope.test.ts:63:  "x-br-requests-remaining": "99",
+796:packages/providers/src/__tests__/br-envelope.test.ts:74:  "x-br-tokens-remaining": "100000",
+797:packages/providers/src/__tests__/br-envelope.test.ts:266:    synth["x-br-budget-remaining"] = "100";
+798:packages/providers/src/__tests__/br-envelope.test.ts:267:    synth["x-br-tokens-remaining"] = "1000";
+799:packages/providers/src/__tests__/br-envelope.test.ts:268:    synth["x-br-requests-remaining"] = "99";
+800:packages/core/src/__tests__/findings.test.ts:27:  const hash = createHash("sha256")
+801-packages/providers/src/__tests__/custom-provider.test.ts:8:  inferModelLimits,
+802-packages/providers/src/__tests__/custom-provider.test.ts:55:describe("inferModelLimits", () => {
+803-packages/providers/src/__tests__/custom-provider.test.ts:57:    expect(inferModelLimits({ id: "h200/gpt-oss-120b" })).toEqual({
+--
+809-packages/providers/src/__tests__/custom-provider.test.ts:103:      const { limits, source } = inferModelLimits({ id });
+810-packages/providers/src/__tests__/custom-provider.test.ts:108:    expect(inferModelLimits({ id: "gemma-4-31b" }).limits.contextWindow).toBe(
+811-packages/providers/src/__tests__/custom-provider.test.ts:112:      inferModelLimits({ id: "qwen2.5-coder-32b" }).limits.contextWindow,
+812:packages/providers/src/__tests__/custom-provider.test.ts:116:  it("caps small checkpoints of current generations at 32k", () => {
+813-packages/providers/src/__tests__/custom-provider.test.ts:118:    // ship with far smaller windows than the full-size checkpoints.
+814-packages/providers/src/__tests__/custom-provider.test.ts:120:      const { limits } = inferModelLimits({ id });
+815-packages/providers/src/__tests__/custom-provider.test.ts:127:      inferModelLimits({ id: "mac/qwen/qwen3.5-35b-a3b-8bit" }).limits
+816-packages/providers/src/__tests__/custom-provider.test.ts:131:      inferModelLimits({ id: "h200/Qwen/Qwen3-Next-80B-A3B-Instruct-FP8" })
+817-packages/core/src/__tests__/response-filter.test.ts:137:    it('buffers multiple small deltas until threshold', () => {
+818:packages/core/src/__tests__/loop-max-output-tokens.test.ts:39:import { runAgentLoop, computeOutputBudget } from "../agent/loop.js";
+819:packages/core/src/__tests__/loop-max-output-tokens.test.ts:147:describe("computeOutputBudget", () => {
+820-packages/core/src/__tests__/loop-max-output-tokens.test.ts:152:  it("returns the advertised budget when the prompt is small", () => {
+821:packages/core/src/__tests__/loop-max-output-tokens.test.ts:154:    expect(computeOutputBudget(model(131072, 32768), msgs)).toEqual({
+822:packages/core/src/__tests__/loop-max-output-tokens.test.ts:159:  it("clamps the budget to remaining context near the window limit", () => {
+823:packages/core/src/__tests__/loop-max-output-tokens.test.ts:162:    const { maxOutputTokens } = computeOutputBudget(
+824:packages/core/src/__tests__/loop-max-output-tokens.test.ts:167:    expect(maxOutputTokens).toBeGreaterThanOrEqual(256);
+825:packages/core/src/__tests__/loop-max-output-tokens.test.ts:171:    // Requesting the 256 floor here would overflow the window — the budget
+826:packages/core/src/__tests__/loop-max-output-tokens.test.ts:176:    const { maxOutputTokens } = computeOutputBudget(
+827:packages/core/src/__tests__/loop-max-output-tokens.test.ts:182:    expect(maxOutputTokens).toBeLessThan(256);
+828:packages/core/src/__tests__/loop-max-output-tokens.test.ts:187:    expect(computeOutputBudget(model(131072, 32768), msgs)).toEqual({
+829:packages/core/src/__tests__/loop-max-output-tokens.test.ts:188:      maxOutputTokens: 256,
+830:packages/core/src/__tests__/loop-max-output-tokens.test.ts:194:    const smallBudget = computeOutputBudget(
+831-packages/core/src/__tests__/loop-max-output-tokens.test.ts:199:    expect(smallBudget.maxOutputTokens).toBeLessThan(32768);
+832:packages/core/src/__tests__/loop-max-output-tokens.test.ts:204:      computeOutputBudget(model(131072, undefined), [
+833-packages/core/src/__tests__/loop.integration.test.ts:95:  it("does not need compaction for small history", () => {
+834:packages/core/src/__tests__/kairos-integration.test.ts:37:  const hash = createHash("sha256")
+835:packages/core/src/__tests__/property-tests.test.ts:17:  const hash = createHash("sha256")
+836:packages/core/src/__tests__/property-tests.test.ts:123:          const hash1 = createHash("sha256")
+837:packages/core/src/__tests__/property-tests.test.ts:127:          const hash2 = createHash("sha256")
+838:packages/core/src/__tests__/property-tests.test.ts:141:          const hash = createHash("sha256")
+839:packages/core/src/__tests__/memory-manager.test.ts:28:  const hash = createHash("sha256")
+840:packages/core/src/__tests__/extract-runner.test.ts:49:  const hash = createHash("sha256")
+841-packages/core/src/__tests__/retrieval-depth.test.ts:19:// ── Fixture project: two small files with distinct topics ────────────
+842-
+bench/iterations/001/reviews/codex-final.out
+bench/iterations/001/reviews/codex-rereview.err
+165-+/**
+166-+ * Request-level output budget: the model's advertised maxOutputTokens,
+167-+ * clamped to what its context window can still hold after the prompt.
+168:+ * System prompt and tool schemas aren't in the message estimate, so a
+169-+ * fixed overhead is reserved; a small floor keeps the request valid even
+170-+ * when the estimate is pessimistic (the server clamps further if needed).
+171-+ * Returns a spreadable object so callers can omit the option entirely for
+172-+ * models that advertise no output limit.
+173-+ */
+174:+export function computeOutputBudget(
+175-+  model: {
+176-+    limits?: { contextWindow?: number; maxOutputTokens?: number };
+177-+  },
+--
+182-+  const window = model.limits?.contextWindow;
+183-+  if (!window) return { maxOutputTokens: advertised };
+184-+  const PROMPT_OVERHEAD_TOKENS = 1024;
+185:+  const MIN_OUTPUT_TOKENS = 256;
+186-+  const promptEstimate = estimateTokenCount(messages as any);
+187:+  const remaining = window - promptEstimate - PROMPT_OVERHEAD_TOKENS;
+188-+  return {
+189:+    maxOutputTokens: Math.max(MIN_OUTPUT_TOKENS, Math.min(advertised, remaining)),
+190-+  };
+191-+}
+192- import { segmentsToSystemArray } from "./context.js";
+--
+201-+      // server default can be far below the model's real limit — reasoning
+202-+      // models (gpt-oss) then burn the whole budget on reasoning tokens and
+203-+      // finish with `length` + empty text, triggering wasteful fallback
+204:+      // retries. Clamped to the context still remaining after the prompt:
+205-+      // compaction admits input up to 80% of the window, so prompt + full
+206-+      // advertised output can exceed the window and the server rejects the
+207-+      // request outright.
+208:+      ...computeOutputBudget(decision.model, messagesForApi as any),
+209-       abortSignal: effectiveStreamSignal,
+210-       // Retry on 429/503 with exponential backoff (1s, 2s, 4s).
+211-       // Without this, rate limits during long KAIROS runs crash the daemon.
+--
+734-  const turnStartMs = Date.now();
+735-  const sessionCostBefore = costTracker.getSessionCost();
+736-  try {
+737:    // Use segmented system prompt for prompt caching when available.
+738-    // AI SDK v6 accepts system as string | SystemModelMessage | Array<SystemModelMessage>.
+739-    // Segments with cacheable=true get Anthropic cache_control hints; ignored by other providers.
+740-    const systemForAPI = options.systemSegments
+--
+750-    //
+751-    // We append extracted system content to the system field as additional
+752-    // segments so the model still sees it, just routed through the right
+753:    // channel. The remaining messages array contains only user/assistant
+754-    // turns — what every provider expects.
+755-    const { systemForApiNormalized, messagesForApi } =
+756-      normalizeSystemMessagesForProvider(systemForAPI, messages);
+--
+786-      // server default can be far below the model's real limit — reasoning
+787-      // models (gpt-oss) then burn the whole budget on reasoning tokens and
+788-      // finish with `length` + empty text, triggering wasteful fallback
+789:      // retries. Clamped to the context still remaining after the prompt:
+790-      // compaction admits input up to 80% of the window, so prompt + full
+791-      // advertised output can exceed the window and the server rejects the
+792-      // request outright.
+793:      ...computeOutputBudget(decision.model, messagesForApi as any),
+794-      abortSignal: effectiveStreamSignal,
+795-      // Retry on 429/503 with exponential backoff (1s, 2s, 4s).
+796-      // Without this, rate limits during long KAIROS runs crash the daemon.
+--
+1218-bench/iterations/001/reviews/iter-fixed.diff:160:+): { maxOutputTokens: number } | Record<string, never> {
+1219-bench/iterations/001/reviews/iter-fixed.diff:161:+  const advertised = model.limits?.maxOutputTokens;
+1220-bench/iterations/001/reviews/iter-fixed.diff:164:+  if (!window) return { maxOutputTokens: advertised };
+1221:bench/iterations/001/reviews/iter-fixed.diff:170:+    maxOutputTokens: Math.max(MIN_OUTPUT_TOKENS, Math.min(advertised, remaining)),
+1222-bench/iterations/001/reviews/iter-fixed.diff:214:+        maxOutputTokens: 32768,
+1223-bench/iterations/001/reviews/iter-fixed.diff:221:+      inferModelLimits({ id: "mac/qwen/qwen3-coder-next" }).limits
+1224-bench/iterations/001/reviews/iter-fixed.diff:225:+      inferModelLimits({ id: "mac/text-embedding-qwen3-embedding-4b" }).limits
+1225-bench/iterations/001/reviews/iter-fixed.diff:239:+    expect(limits.maxOutputTokens).toBeLessThanOrEqual(65536);
+1226-bench/iterations/001/reviews/iter-fixed.diff:247:+      maxOutputTokens: 4096,
+1227-bench/iterations/001/reviews/iter-fixed.diff:254:+    // gemma-2 and qwen1.5 have far smaller real windows than current
+1228:bench/iterations/001/reviews/iter-fixed.diff:256:+    for (const id of ["gemma-2-9b-it", "qwen1.5-7b-chat", "qwen-72b"]) {
+1229-bench/iterations/001/reviews/iter-fixed.diff:262:+    expect(inferModelLimits({ id: "gemma-4-31b" }).limits.contextWindow).toBe(
+1230-bench/iterations/001/reviews/iter-fixed.diff:266:+      inferModelLimits({ id: "qwen2.5-coder-32b" }).limits.contextWindow,
+1231-bench/iterations/001/reviews/iter-fixed.diff:278:+  it("excludes embedding-only models from the discovered registry", async () => {
+--
+1299-exec
+1300-/bin/zsh -lc "sed -n '1,220p' bench/iterations/001/reviews/codex.out && sed -n '1,180p' bench/iterations/001/reviews/gpt-oss.out && sed -n '1,220p' bench/iterations/001/reviews/qwen3-coder.out && cat bench/iterations/001/reviews/verdicts.json" in /Users/justin.jilg/Projects/brainstorm
+1301- succeeded in 0ms:
+1302:[{"file":"packages/core/src/agent/loop.ts","line":898,"severity":"P1","finding":"The full maxOutputTokens limit is sent without reserving space for the prompt. Compaction permits input up to 80% of the context window, while inferred output limits can consume 25% or more, so otherwise valid long sessions can be rejected because prompt tokens plus max output exceed the model context window.","suggested_fix":"Compute the request budget from the remaining context, including system/tool overhead, or lower the compaction threshold to reserve maxOutputTokens; add a near-context-limit test."},{"file":"packages/providers/src/local/openai-compat.ts","line":120,"severity":"P1","finding":"The broad /gemma/i heuristic assigns a 131072-token context to every Gemma model, including older and small checkpoints with much smaller windows. This suppresses required compaction and eventually sends over-context requests. The generic Qwen heuristic has the same risk for older checkpoints.","suggested_fix":"Use version/checkpoint-specific heuristics only where the minimum context is known; otherwise retain the conservative default and require server metadata or a model override. Add tests for older/small Gemma and Qwen IDs."},{"file":"packages/providers/src/registry.ts","line":228,"severity":"P2","finding":"Model overrides are applied only during initial registry construction. refresh() replaces all local models with newly discovered entries without reapplying config.models, so the new authoritative contextWindow, maxOutputTokens, and reasoning corrections silently disappear after a refresh.","suggested_fix":"Extract override application into a helper and invoke it after both initial discovery and refresh; add a refresh test for a custom local model override."},{"file":"packages/providers/src/local/openai-compat.ts","line":188,"severity":"P2","finding":"Embedding models are recognized as non-chat models but are still registered as available with conversation/simple-edit affinities. The router filters toolCalling=false only for tool-requiring tasks, so a simple conversation can select an embedding model and send it to streamText with a one-token output budget.","suggested_fix":"Exclude embedding-only entries from the chat model registry, or add an explicit chat-generation capability that routing enforces; test discovery/routing when an endpoint lists both chat and embedding models."}]
+1303-{"level":40,"time":1784354640189,"pid":71111,"hostname":"FVFGP251Q05N","name":"brainstorm","module":"storm","dropped":["deploy","entry_points"],"kept":["version","name","type","language","framework","runtime","build_command","test_command","routing"],"msg":"Partial STORM.md frontmatter — kept valid fields, dropped invalid ones"}
+1304-[godmode] Msp: tools endpoint unavailable — No API key for Msp (BRAINSTORM_MSP_API_KEY)
+1305-
+--
+1708-packages/core/src/agent/loop.ts:1235:      // Unwind any tool gate entries that didn't see a matching tool-result
+1709-
+1710-exec
+1711:/bin/zsh -lc "rg -n \"computeOutputBudget\" packages bench/iterations/001/reviews/iter-fixed.diff && nl -ba packages/core/src/agent/loop.ts | sed -n '65,110p;900,940p' && nl -ba packages/providers/src/local/openai-compat.ts | sed -n '65,240p' && nl -ba packages/providers/src/registry.ts | sed -n '50,95p;315,350p'" in /Users/justin.jilg/Projects/brainstorm
+1712- succeeded in 117ms:
+1713-    65	}
+1714-    66	
+--
+2011-+/**
+2012-+ * Request-level output budget: the model's advertised maxOutputTokens,
+2013-+ * clamped to what its context window can still hold after the prompt.
+2014:+ * System prompt and tool schemas aren't in the message estimate, so a
+2015-+ * fixed overhead is reserved; a small floor keeps the request valid even
+2016-+ * when the estimate is pessimistic (the server clamps further if needed).
+2017-+ * Returns a spreadable object so callers can omit the option entirely for
+2018-+ * models that advertise no output limit.
+2019-+ */
+2020:+export function computeOutputBudget(
+2021-+  model: {
+2022-+    limits?: { contextWindow?: number; maxOutputTokens?: number };
+2023-+  },
+--
+2028-+  const window = model.limits?.contextWindow;
+2029-+  if (!window) return { maxOutputTokens: advertised };
+2030-+  const PROMPT_OVERHEAD_TOKENS = 1024;
+2031:+  const MIN_OUTPUT_TOKENS = 256;
+2032-+  const promptEstimate = estimateTokenCount(messages as any);
+2033:+  const remaining = window - promptEstimate - PROMPT_OVERHEAD_TOKENS;
+2034-+  return {
+2035:+    maxOutputTokens: Math.max(MIN_OUTPUT_TOKENS, Math.min(advertised, remaining)),
+2036-+  };
+2037-+}
+2038- import { segmentsToSystemArray } from "./context.js";
+--
+2047-+      // server default can be far below the model's real limit — reasoning
+2048-+      // models (gpt-oss) then burn the whole budget on reasoning tokens and
+2049-+      // finish with `length` + empty text, triggering wasteful fallback
+2050:+      // retries. Clamped to the context still remaining after the prompt:
+2051-+      // compaction admits input up to 80% of the window, so prompt + full
+2052-+      // advertised output can exceed the window and the server rejects the
+2053-+      // request outright.
+2054:+      ...computeOutputBudget(decision.model, messagesForApi as any),
+2055-       abortSignal: effectiveStreamSignal,
+2056-       // Retry on 429/503 with exponential backoff (1s, 2s, 4s).
+2057-       // Without this, rate limits during long KAIROS runs crash the daemon.
+--
+2354-  };
+2355-}
+2356-
+2357:describe("computeOutputBudget", () => {
+2358-  const model = (contextWindow?: number, maxOutputTokens?: number) => ({
+2359-    limits: { contextWindow, maxOutputTokens },
+2360-  });
+2361-
+2362-  it("returns the advertised budget when the prompt is small", () => {
+2363-    const msgs = [{ role: "user", content: "hi" }];
+2364:    expect(computeOutputBudget(model(131072, 32768), msgs)).toEqual({
+2365-      maxOutputTokens: 32768,
+2366-    });
+2367-  });
+2368-
+2369:  it("clamps the budget to remaining context near the window limit", () => {
+2370:    // ~100k-token prompt in a 128k window: 32k output would overflow.
+2371-    const msgs = [{ role: "user", content: "A".repeat(400_000) }];
+2372:    const { maxOutputTokens } = computeOutputBudget(
+2373-      model(131072, 32768),
+2374-      msgs,
+2375-    ) as { maxOutputTokens: number };
+2376-    expect(maxOutputTokens).toBeLessThan(32768);
+2377:    expect(maxOutputTokens).toBeGreaterThanOrEqual(256);
+2378-  });
+2379-
+2380-  it("never returns less than the floor even when the window is exhausted", () => {
+2381-    const msgs = [{ role: "user", content: "A".repeat(600_000) }];
+2382:    expect(computeOutputBudget(model(131072, 32768), msgs)).toEqual({
+2383:      maxOutputTokens: 256,
+2384-    });
+2385-  });
+2386-
+2387-  it("omits the option when the model advertises no output limit", () => {
+2388-    expect(
+2389:      computeOutputBudget(model(131072, undefined), [
+2390-        { role: "user", content: "hi" },
+2391-      ]),
+2392-    ).toEqual({});
+--
+2417-web search: 
+2418-web search: site:ai.google.dev/gemma/docs core model Gemma 3 context length 1B 32K 4B 128K ...
+2419-exec
+2420:/bin/zsh -lc 'tail -n 120 bench/iterations/001/reviews/codex-rereview.err && rg -n "not-resolved|new_findings|computeOutputBudget|MIN_OUTPUT|Gemma 3|Qwen2.5" bench/iterations/001/reviews/codex-rereview.err | tail -80' in /Users/justin.jilg/Projects/brainstorm
+2421- succeeded in 0ms:
+2422-+    if (override.reasoning !== undefined)
+2423-+      existing.capabilities.reasoning = override.reasoning;
+--
+2477-  };
+2478-}
+2479-
+2480:describe("computeOutputBudget", () => {
+2481-  const model = (contextWindow?: number, maxOutputTokens?: number) => ({
+2482-    limits: { contextWindow, maxOutputTokens },
+2483-  });
+2484-
+2485-  it("returns the advertised budget when the prompt is small", () => {
+2486-    const msgs = [{ role: "user", content: "hi" }];
+2487:    expect(computeOutputBudget(model(131072, 32768), msgs)).toEqual({
+2488-      maxOutputTokens: 32768,
+2489-    });
+2490-  });
+2491-
+2492:  it("clamps the budget to remaining context near the window limit", () => {
+2493:    // ~100k-token prompt in a 128k window: 32k output would overflow.
+2494-    const msgs = [{ role: "user", content: "A".repeat(400_000) }];
+2495:    const { maxOutputTokens } = computeOutputBudget(
+2496-      model(131072, 32768),
+2497-      msgs,
+2498-    ) as { maxOutputTokens: number };
+2499-    expect(maxOutputTokens).toBeLessThan(32768);
+2500:    expect(maxOutputTokens).toBeGreaterThanOrEqual(256);
+2501-  });
+2502-
+2503-  it("never returns less than the floor even when the window is exhausted", () => {
+2504-    const msgs = [{ role: "user", content: "A".repeat(600_000) }];
+2505:    expect(computeOutputBudget(model(131072, 32768), msgs)).toEqual({
+2506:      maxOutputTokens: 256,
+2507-    });
+2508-  });
+2509-
+2510-  it("omits the option when the model advertises no output limit", () => {
+2511-    expect(
+2512:      computeOutputBudget(model(131072, undefined), [
+2513-        { role: "user", content: "hi" },
+2514-      ]),
+2515-    ).toEqual({});
+--
+2540-web search: 
+2541-web search: site:ai.google.dev/gemma/docs core model Gemma 3 context length 1B 32K 4B 128K ...
+2542-14:You previously reviewed a diff in this repo and reported 4 findings: (1) maxOutputTokens sent without reserving prompt space in packages/core/src/agent/loop.ts; (2) overly broad /gemma/i and /qwen/i heuristics in packages/providers/src/local/openai-compat.ts; (3) registry refresh() dropping [[models]] overrides in packages/providers/src/registry.ts; (4) embedding models registered as routable chat models. The updated full diff is at bench/iterations/001/reviews/iter-fixed.diff. Verify whether each finding is now correctly addressed, and flag any NEW P0/P1 issues introduced by the fixes. Output ONLY JSON: {"resolved": [{"finding": 1|2|3|4, "status": "resolved"|"not-resolved", "note": string}], "new_findings": [{"file": string, "line": number, "severity": "P0"|"P1"|"P2", "finding": string}]}
+2543:174:+export function computeOutputBudget(
+2544:185:+  const MIN_OUTPUT_TOKENS = 256;
+2545:189:+    maxOutputTokens: Math.max(MIN_OUTPUT_TOKENS, Math.min(advertised, remaining)),
+2546:208:+      ...computeOutputBudget(decision.model, messagesForApi as any),
+2547:793:      ...computeOutputBudget(decision.model, messagesForApi as any),
+2548:1221:bench/iterations/001/reviews/iter-fixed.diff:170:+    maxOutputTokens: Math.max(MIN_OUTPUT_TOKENS, Math.min(advertised, remaining)),
+2549:1711:/bin/zsh -lc "rg -n \"computeOutputBudget\" packages bench/iterations/001/reviews/iter-fixed.diff && nl -ba packages/core/src/agent/loop.ts | sed -n '65,110p;900,940p' && nl -ba packages/providers/src/local/openai-compat.ts | sed -n '65,240p' && nl -ba packages/providers/src/registry.ts | sed -n '50,95p;315,350p'" in /Users/justin.jilg/Projects/brainstorm
+2550:2020:+export function computeOutputBudget(
+2551:2031:+  const MIN_OUTPUT_TOKENS = 256;
+2552:2035:+    maxOutputTokens: Math.max(MIN_OUTPUT_TOKENS, Math.min(advertised, remaining)),
+2553:2054:+      ...computeOutputBudget(decision.model, messagesForApi as any),
+2554:2357:describe("computeOutputBudget", () => {
+2555:2364:    expect(computeOutputBudget(model(131072, 32768), msgs)).toEqual({
+2556:2372:    const { maxOutputTokens } = computeOutputBudget(
+2557:2382:    expect(computeOutputBudget(model(131072, 32768), msgs)).toEqual({
+2558:2389:      computeOutputBudget(model(131072, undefined), [
+2559-2418:web search: site:ai.google.dev/gemma/docs core model Gemma 3 context length 1B 32K 4B 128K ...
+2560-
+2561-codex
+2562:{"resolved":[{"finding":1,"status":"not-resolved","note":"The message history is clamped, but the actual system prompt and tool schemas are not measured; a fixed 1024-token allowance can still under-reserve prompt space and cause context-limit rejection."},{"finding":2,"status":"not-resolved","note":"The regexes are generation-scoped but still overclaim smaller checkpoints: qwen2.5-coder-0.5b and gemma-3-1b match and receive 131072-token windows despite supporting 32768."},{"finding":3,"status":"resolved","note":"Overrides are extracted into applyModelOverrides() and reapplied after refresh() rebuilds the local model entries."},{"finding":4,"status":"resolved","note":"Models classified as embedding-only are skipped during discovery before they can enter the routable chat registry."}],"new_findings":[{"file":"packages/core/src/agent/loop.ts","line":97,"severity":"P1","finding":"computeOutputBudget forces a 256-token minimum even when fewer than 256 tokens remain. For exhausted contexts or small context-window overrides, this guarantees prompt plus requested output exceeds the window and can deterministically reject the request."}]}
+2563-tokens used
+2564-69,913
+bench/iterations/001/reviews/codex-rereview.out
+1:{"resolved":[{"finding":1,"status":"not-resolved","note":"The message history is clamped, but the actual system prompt and tool schemas are not measured; a fixed 1024-token allowance can still under-reserve prompt space and cause context-limit rejection."},{"finding":2,"status":"not-resolved","note":"The regexes are generation-scoped but still overclaim smaller checkpoints: qwen2.5-coder-0.5b and gemma-3-1b match and receive 131072-token windows despite supporting 32768."},{"finding":3,"status":"resolved","note":"Overrides are extracted into applyModelOverrides() and reapplied after refresh() rebuilds the local model entries."},{"finding":4,"status":"resolved","note":"Models classified as embedding-only are skipped during discovery before they can enter the routable chat registry."}],"new_findings":[{"file":"packages/core/src/agent/loop.ts","line":97,"severity":"P1","finding":"computeOutputBudget forces a 256-token minimum even when fewer than 256 tokens remain. For exhausted contexts or small context-window overrides, this guarantees prompt plus requested output exceeds the window and can deterministically reject the request."}]}
+bench/iterations/001/reviews/codex.err
+608-  const turnStartMs = Date.now();
+609-  const sessionCostBefore = costTracker.getSessionCost();
+610-  try {
+611:    // Use segmented system prompt for prompt caching when available.
+612-    // AI SDK v6 accepts system as string | SystemModelMessage | Array<SystemModelMessage>.
+613-    // Segments with cacheable=true get Anthropic cache_control hints; ignored by other providers.
+614-    const systemForAPI = options.systemSegments
+--
+624-    //
+625-    // We append extracted system content to the system field as additional
+626-    // segments so the model still sees it, just routed through the right
+627:    // channel. The remaining messages array contains only user/assistant
+628-    // turns — what every provider expects.
+629-    const { systemForApiNormalized, messagesForApi } =
+630-      normalizeSystemMessagesForProvider(systemForAPI, messages);
+--
+1410-}
+1411-
+1412-function inferContextWindow(name: string): number {
+1413:  if (name.includes("gemma4")) return 262144; // Gemma 4: 256K native
+1414-  if (name.includes("128k")) return 131072;
+1415:  if (name.includes("32k")) return 32768;
+1416-  return 8192;
+1417-}
+1418-
+--
+3115-}
+3116-
+3117-codex
+3118:[{"file":"packages/core/src/agent/loop.ts","line":898,"severity":"P1","finding":"The full maxOutputTokens limit is sent without reserving space for the prompt. Compaction permits input up to 80% of the context window, while inferred output limits can consume 25% or more, so otherwise valid long sessions can be rejected because prompt tokens plus max output exceed the model context window.","suggested_fix":"Compute the request budget from the remaining context, including system/tool overhead, or lower the compaction threshold to reserve maxOutputTokens; add a near-context-limit test."},{"file":"packages/providers/src/local/openai-compat.ts","line":120,"severity":"P1","finding":"The broad /gemma/i heuristic assigns a 131072-token context to every Gemma model, including older and small checkpoints with much smaller windows. This suppresses required compaction and eventually sends over-context requests. The generic Qwen heuristic has the same risk for older checkpoints.","suggested_fix":"Use version/checkpoint-specific heuristics only where the minimum context is known; otherwise retain the conservative default and require server metadata or a model override. Add tests for older/small Gemma and Qwen IDs."},{"file":"packages/providers/src/registry.ts","line":228,"severity":"P2","finding":"Model overrides are applied only during initial registry construction. refresh() replaces all local models with newly discovered entries without reapplying config.models, so the new authoritative contextWindow, maxOutputTokens, and reasoning corrections silently disappear after a refresh.","suggested_fix":"Extract override application into a helper and invoke it after both initial discovery and refresh; add a refresh test for a custom local model override."},{"file":"packages/providers/src/local/openai-compat.ts","line":188,"severity":"P2","finding":"Embedding models are recognized as non-chat models but are still registered as available with conversation/simple-edit affinities. The router filters toolCalling=false only for tool-requiring tasks, so a simple conversation can select an embedding model and send it to streamText with a one-token output budget.","suggested_fix":"Exclude embedding-only entries from the chat model registry, or add an explicit chat-generation capability that routing enforces; test discovery/routing when an endpoint lists both chat and embedding models."}]
+3119-tokens used
+3120-48,810
+bench/iterations/001/reviews/codex.out
+1:[{"file":"packages/core/src/agent/loop.ts","line":898,"severity":"P1","finding":"The full maxOutputTokens limit is sent without reserving space for the prompt. Compaction permits input up to 80% of the context window, while inferred output limits can consume 25% or more, so otherwise valid long sessions can be rejected because prompt tokens plus max output exceed the model context window.","suggested_fix":"Compute the request budget from the remaining context, including system/tool overhead, or lower the compaction threshold to reserve maxOutputTokens; add a near-context-limit test."},{"file":"packages/providers/src/local/openai-compat.ts","line":120,"severity":"P1","finding":"The broad /gemma/i heuristic assigns a 131072-token context to every Gemma model, including older and small checkpoints with much smaller windows. This suppresses required compaction and eventually sends over-context requests. The generic Qwen heuristic has the same risk for older checkpoints.","suggested_fix":"Use version/checkpoint-specific heuristics only where the minimum context is known; otherwise retain the conservative default and require server metadata or a model override. Add tests for older/small Gemma and Qwen IDs."},{"file":"packages/providers/src/registry.ts","line":228,"severity":"P2","finding":"Model overrides are applied only during initial registry construction. refresh() replaces all local models with newly discovered entries without reapplying config.models, so the new authoritative contextWindow, maxOutputTokens, and reasoning corrections silently disappear after a refresh.","suggested_fix":"Extract override application into a helper and invoke it after both initial discovery and refresh; add a refresh test for a custom local model override."},{"file":"packages/providers/src/local/openai-compat.ts","line":188,"severity":"P2","finding":"Embedding models are recognized as non-chat models but are still registered as available with conversation/simple-edit affinities. The router filters toolCalling=false only for tool-requiring tasks, so a simple conversation can select an embedding model and send it to streamText with a one-token output budget.","suggested_fix":"Exclude embedding-only entries from the chat model registry, or add an explicit chat-generation capability that routing enforces; test discovery/routing when an endpoint lists both chat and embedding models."}]
+bench/iterations/001/reviews/gpt-oss.out
+bench/iterations/001/reviews/iter-fixed.diff
+146-+/**
+147-+ * Request-level output budget: the model's advertised maxOutputTokens,
+148-+ * clamped to what its context window can still hold after the prompt.
+149:+ * System prompt and tool schemas aren't in the message estimate, so a
+150-+ * fixed overhead is reserved; a small floor keeps the request valid even
+151-+ * when the estimate is pessimistic (the server clamps further if needed).
+152-+ * Returns a spreadable object so callers can omit the option entirely for
+153-+ * models that advertise no output limit.
+154-+ */
+155:+export function computeOutputBudget(
+156-+  model: {
+157-+    limits?: { contextWindow?: number; maxOutputTokens?: number };
+158-+  },
+--
+163-+  const window = model.limits?.contextWindow;
+164-+  if (!window) return { maxOutputTokens: advertised };
+165-+  const PROMPT_OVERHEAD_TOKENS = 1024;
+166:+  const MIN_OUTPUT_TOKENS = 256;
+167-+  const promptEstimate = estimateTokenCount(messages as any);
+168:+  const remaining = window - promptEstimate - PROMPT_OVERHEAD_TOKENS;
+169-+  return {
+170:+    maxOutputTokens: Math.max(MIN_OUTPUT_TOKENS, Math.min(advertised, remaining)),
+171-+  };
+172-+}
+173- import { segmentsToSystemArray } from "./context.js";
+--
+182-+      // server default can be far below the model's real limit — reasoning
+183-+      // models (gpt-oss) then burn the whole budget on reasoning tokens and
+184-+      // finish with `length` + empty text, triggering wasteful fallback
+185:+      // retries. Clamped to the context still remaining after the prompt:
+186-+      // compaction admits input up to 80% of the window, so prompt + full
+187-+      // advertised output can exceed the window and the server rejects the
+188-+      // request outright.
+189:+      ...computeOutputBudget(decision.model, messagesForApi as any),
+190-       abortSignal: effectiveStreamSignal,
+191-       // Retry on 429/503 with exponential backoff (1s, 2s, 4s).
+192-       // Without this, rate limits during long KAIROS runs crash the daemon.
+bench/iterations/001/reviews/iter-fixed2.diff
+146-+/**
+147-+ * Request-level output budget: the model's advertised maxOutputTokens,
+148-+ * clamped to what its context window can still hold after the prompt.
+149:+ * System prompt and tool schemas aren't in the message estimate, so a
+150-+ * fixed overhead is reserved; a small floor keeps the request valid even
+151-+ * when the estimate is pessimistic (the server clamps further if needed).
+152-+ * Returns a spreadable object so callers can omit the option entirely for
+153-+ * models that advertise no output limit.
+154-+ */
+155:+export function computeOutputBudget(
+156-+  model: {
+157-+    limits?: { contextWindow?: number; maxOutputTokens?: number };
+158-+  },
+--
+164-+  const window = model.limits?.contextWindow;
+165-+  if (!window) return { maxOutputTokens: advertised };
+166-+  // Tool schemas aren't measured (they're functions + zod shapes); reserve a
+167:+  // fixed allowance. The system prompt IS measured — brainstorm's runs multi-k
+168-+  // tokens, far beyond any fixed guess.
+169-+  const TOOL_SCHEMA_OVERHEAD_TOKENS = 1024;
+170:+  const MIN_OUTPUT_TOKENS = 256;
+171-+  const systemText =
+172-+    typeof systemPrompt === "string"
+173-+      ? systemPrompt
+--
+180-+    estimateTokenCount(messages as any) +
+181-+    Math.ceil(systemText.length / 4) +
+182-+    TOOL_SCHEMA_OVERHEAD_TOKENS;
+183:+  const remaining = window - promptEstimate;
+184:+  if (remaining >= MIN_OUTPUT_TOKENS) {
+185:+    return { maxOutputTokens: Math.min(advertised, remaining) };
+186-+  }
+187-+  // Near-exhausted window: requesting the floor would overflow — request
+188:+  // exactly what's left. Fully exhausted (remaining <= 0): the prompt alone
+189-+  // exceeds the window and no max_tokens value can save the request; keep it
+190-+  // well-formed with the floor and let compaction/fallback handle the error.
+191-+  return {
+192:+    maxOutputTokens: remaining > 0 ? remaining : MIN_OUTPUT_TOKENS,
+193-+  };
+194-+}
+195- import { segmentsToSystemArray } from "./context.js";
+--
+204-+      // server default can be far below the model's real limit — reasoning
+205-+      // models (gpt-oss) then burn the whole budget on reasoning tokens and
+206-+      // finish with `length` + empty text, triggering wasteful fallback
+207:+      // retries. Clamped to the context still remaining after the prompt:
+208-+      // compaction admits input up to 80% of the window, so prompt + full
+209-+      // advertised output can exceed the window and the server rejects the
+210-+      // request outright.
+211:+      ...computeOutputBudget(
+212-+        decision.model,
+213-+        messagesForApi as any,
+214-+        systemForApiNormalized,
+--
+293-+    ).toBe(131072);
+294-+  });
+295-+
+296:+  it("caps small checkpoints of current generations at 32k", () => {
+297-+    // qwen2.5-coder-0.5b / gemma-3-1b match current-generation families but
+298-+    // ship with far smaller windows than the full-size checkpoints.
+299-+    for (const id of ["qwen2.5-coder-0.5b", "gemma-3-1b-it"]) {
+--
+301-+      expect(limits.contextWindow, id).toBe(32768);
+302-+      expect(limits.maxOutputTokens, id).toBeLessThanOrEqual(32768);
+303-+    }
+304:+    // Size suffixes >= 7B keep the family window; A3B active-param suffixes
+305-+    // after the real size don't shadow it.
+306-+    expect(
+307-+      inferModelLimits({ id: "mac/qwen/qwen3.5-35b-a3b-8bit" }).limits
+--
+538-+}
+539-+
+540-+// Family windows describe current full-size checkpoints. Small checkpoints
+541:+// (< 7B params by id suffix, e.g. "qwen2.5-coder-0.5b", "gemma-3-1b") ship
+542-+// with much smaller windows — cap them rather than overclaim 128k.
+543-+const SMALL_CHECKPOINT_CONTEXT_CAP = 32768;
+544-+const SMALL_CHECKPOINT_PARAMS_B = 7;
+bench/iterations/001/reviews/iter.diff
+bench/iterations/001/reviews/panel.json
+bench/iterations/001/reviews/qwen3-coder.out
+bench/iterations/001/reviews/verdicts.json
+

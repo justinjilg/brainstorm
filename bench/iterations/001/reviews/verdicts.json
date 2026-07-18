@@ -1,0 +1,59 @@
+{
+  "seed": "e193a01e",
+  "seats": {
+    "codex": {
+      "status": "completed",
+      "findings": 4,
+      "verified_blocking": 4,
+      "precision": "4/4",
+      "rounds": [
+        "R1: 4 findings, all verified real (output-budget overflow, overclaiming heuristics, refresh() dropping overrides, embedding models routable)",
+        "R2: 2/4 resolved; 2 refinements + 1 new P1 (floor overflow near-exhausted window) \u2014 all fixed with dedicated unit tests",
+        "R3: first attempt hung on stdin (codex exec background quirk; use < /dev/null); clean re-run launched at close"
+      ]
+    },
+    "qwen3-coder": {
+      "status": "completed",
+      "findings": 4,
+      "verified_blocking": 0,
+      "triage": [
+        {
+          "sev": "P1",
+          "loc": "openai-compat.ts:166 min(maxOut, serverCtx)",
+          "verdict": "rebutted \u2014 min() only lowers the budget when the server window is smaller; strictly conservative. Family table already provides the separate output ceiling the finding requests."
+        },
+        {
+          "sev": "P2",
+          "loc": "openai-compat.ts:169",
+          "verdict": "intended \u2014 server-reported window is ground truth; [[models]] override is the correction path."
+        },
+        {
+          "sev": "P2",
+          "loc": "registry.ts:241",
+          "verdict": "factually wrong \u2014 capabilities has no maxOutputTokens field; contextWindow (the shared field) is kept in sync."
+        },
+        {
+          "sev": "P2",
+          "loc": "openai-compat.ts:190 warn visibility",
+          "verdict": "logged, non-gating nit."
+        }
+      ],
+      "precision_note": "0/4 verified \u2014 but the P1 was a plausible, well-articulated wrong claim; seat completed cleanly through the harness (dogfood pass)."
+    },
+    "gpt-oss-120b": {
+      "status": "crashed",
+      "error": "[acronis:h200/gpt-oss-120b] Expected 'id' to be a string.",
+      "harness_finding": "NEW BUG (iter-002 backlog): tool-calling via @ai-sdk/openai-compatible fails schema validation on gpt-oss/vLLM tool-call chunks (id not a string). Plain generation works; --tools crashes the session."
+    }
+  },
+  "gate": {
+    "tests": "providers 70 / config 56 / core 607 green",
+    "eval_dims_vs_baseline": {
+      "q3-next tool-seq": "36% = (dip proved flake by re-run)",
+      "q3-next multi-step": "36% =",
+      "q3-coder tool-seq": "27% =",
+      "q3-coder multi-step": "21% +7pts"
+    },
+    "decision": "GREEN"
+  }
+}

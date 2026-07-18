@@ -1,0 +1,10 @@
+{"level":40,"time":1784354640189,"pid":71111,"hostname":"FVFGP251Q05N","name":"brainstorm","module":"storm","dropped":["deploy","entry_points"],"kept":["version","name","type","language","framework","runtime","build_command","test_command","routing"],"msg":"Partial STORM.md frontmatter — kept valid fields, dropped invalid ones"}
+[godmode] Msp: tools endpoint unavailable — No API key for Msp (BRAINSTORM_MSP_API_KEY)
+
+⠧ Classifying task...⠧ Selecting model...[capability] → h200/gpt-oss-120b
+⠧ Connecting...{"level":30,"time":1784354640695,"pid":71111,"hostname":"FVFGP251Q05N","name":"brainstorm","module":"router","entries":3,"totalSamples":3,"msg":"Loaded historical routing outcomes for Thompson sampling"}
+{"level":30,"time":1784354642593,"pid":71111,"hostname":"FVFGP251Q05N","name":"brainstorm","module":"circuit-breaker","name":"llm:acronis:h200/gpt-oss-120b","msg":"Returning existing circuit breaker — options from first registration apply"}
+
+Error: [acronis:h200/gpt-oss-120b] Expected 'id' to be a string.
+{"level":30,"time":1784354642691,"pid":71111,"hostname":"FVFGP251Q05N","name":"brainstorm","module":"trajectory-analyzer","sessionCount":407,"filesScanned":407,"msg":"Analyzed trajectories"}
+{"level":30,"time":1784354642693,"pid":71111,"hostname":"FVFGP251Q05N","name":"brainstorm","module":"trajectory-analyzer","outputPath":"/Users/justin.jilg/.brainstorm/routing-intelligence.json","msg":"Routing intelligence updated"}

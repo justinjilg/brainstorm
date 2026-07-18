@@ -1,0 +1,739 @@
+diff --git a/bench/.gitignore b/bench/.gitignore
+new file mode 100644
+index 0000000..4c67d34
+--- /dev/null
++++ b/bench/.gitignore
+@@ -0,0 +1 @@
++iterations/*/runs/
+diff --git a/bench/SCOREBOARD.md b/bench/SCOREBOARD.md
+new file mode 100644
+index 0000000..6ebd6b5
+--- /dev/null
++++ b/bench/SCOREBOARD.md
+@@ -0,0 +1,10 @@
++# Brainstorm Self-Improvement Scoreboard
++
++Program: iterative harness hardening with local Acronis models + stochastic review (Codex CLI anchor).
++Full protocol: see the approved plan (plan → implement → smoke → stochastic review → fix → measure/gate/commit).
++Full 75-probe eval and SWE-bench run at milestones (every 3rd iteration). Heuristic (no-Docker) SWE-bench
++results never count as passes.
++
++| iter | date | items | full eval (q3-next / gpt-oss / q3-coder) | SWE-bench (mode) | open P0/P1 | notes |
++|---|---|---|---|---|---|---|
++| 0 | 2026-07-18 | baseline (custom provider + 2 workspace fixes) | 52% / 28% / 33% | not run | 0 | Eval run from repo root, read-only probe tools. q3-next: 100% code-correctness, 36% multi-step. Weakest dims everywhere: tool-selection, multi-step — consistent with 8192-ctx assumption + missing maxOutputTokens (iter 1 targets). |
+diff --git a/bench/eval-subset.json b/bench/eval-subset.json
+new file mode 100644
+index 0000000..b0f3fd8
+--- /dev/null
++++ b/bench/eval-subset.json
+@@ -0,0 +1,37 @@
++{
++  "note": "Frozen stratified subset (first 2 probes per dimension, chosen 2026-07-18, never tuned against). brainstorm eval lacks a per-probe filter; until one exists, per-iteration gates run the 2-3 most relevant --capability dimensions in full and compare dimension scores.",
++  "probes": {
++    "code-correctness": [
++      "code-correct-01",
++      "code-correct-02"
++    ],
++    "context-utilization": [
++      "context-01",
++      "context-02"
++    ],
++    "instruction-adherence": [
++      "instruct-01",
++      "instruct-02"
++    ],
++    "multi-model-workflow": [
++      "e2e-decompose-01",
++      "e2e-decompose-02"
++    ],
++    "multi-step": [
++      "multi-step-01",
++      "multi-step-02"
++    ],
++    "self-correction": [
++      "self-correct-01",
++      "self-correct-02"
++    ],
++    "tool-selection": [
++      "tool-select-01",
++      "tool-select-02"
++    ],
++    "tool-sequencing": [
++      "tool-seq-01",
++      "tool-seq-02"
++    ]
++  }
++}
+\ No newline at end of file
+diff --git a/bench/iterations/001/plan.md b/bench/iterations/001/plan.md
+new file mode 100644
+index 0000000..49fefbe
+--- /dev/null
++++ b/bench/iterations/001/plan.md
+@@ -0,0 +1,22 @@
++# Iteration 001 — model metadata + output tokens
++
++Seed: `ITER=001` → SEED=`$(printf 001 | shasum | cut -c1-8)` = computed at review stage.
++
++## Hypothesis
++The dominant harness-side cap on local-model coding capability is wrong model metadata:
++every custom-endpoint model gets contextWindow 8192 / maxOutputTokens 4096 / reasoning:false,
++and the agent loop never passes an output-token budget to streamText. Fixing A–D should lift
++multi-step and tool-sequencing scores (currently the weakest dimensions for all three models)
++and eliminate gpt-oss-120b's empty-response fallback retries.
++
++## Items
++- **A** — discovery heuristics + honor `context_length`/`max_model_len` from /v1/models (packages/providers/src/local/openai-compat.ts)
++- **B** — `[[models]]` overrides for contextWindow/maxOutputTokens/reasoning (packages/config schema + registry apply)
++- **C** — pass routed model's maxOutputTokens into streamText (packages/core/src/agent/loop.ts)
++- **D** — compaction correctness test with a realistic window
++
++## Gate
++- Unit/typecheck green on providers, config, core.
++- Smoke probes green (registry metadata correct; multi-step coding session with no compaction; gpt-oss long generation without empty-length retry).
++- Stochastic review: verified P0/P1 all resolved; ≥2 of 3 reviewers clean on re-review.
++- Tool-sequencing + multi-step `--capability` eval dims on q3-next and q3-coder ≥ baseline.
+diff --git a/packages/config/src/schema.ts b/packages/config/src/schema.ts
+index 0e75845..76e20d8 100644
+--- a/packages/config/src/schema.ts
++++ b/packages/config/src/schema.ts
+@@ -109,6 +109,12 @@ const modelOverrideSchema = z.object({
+   qualityTier: z.number().min(1).max(5).optional(),
+   speedTier: z.number().min(1).max(5).optional(),
+   bestFor: z.array(z.string()).optional(),
++  // Limit corrections — authoritative when discovery guesses wrong (custom
++  // OpenAI-compatible endpoints often expose no limit metadata). Applied to
++  // both capabilities.contextWindow and limits.* in the registry.
++  contextWindow: z.number().int().positive().optional(),
++  maxOutputTokens: z.number().int().positive().optional(),
++  reasoning: z.boolean().optional(),
+ });
+ 
+ // ── General Config ───────────────────────────────────────────────────
+diff --git a/packages/core/src/__tests__/loop.integration.test.ts b/packages/core/src/__tests__/loop.integration.test.ts
+index 7aed83a..0c44ab2 100644
+--- a/packages/core/src/__tests__/loop.integration.test.ts
++++ b/packages/core/src/__tests__/loop.integration.test.ts
+@@ -116,4 +116,16 @@ describe("Compaction triggers", () => {
+     const percent = getContextPercent(messages, tokens * 2);
+     expect(percent).toBe(50);
+   });
++
++  it("does not compact a realistic coding session under a 128k window", () => {
++    // ~30 turns of tool-heavy coding traffic (~2000 chars each ≈ 15k tokens).
++    // With the old hardcoded 8192-token assumption for custom-endpoint models
++    // this compacted constantly; a real 131072 window must not.
++    const messages = Array.from({ length: 30 }, (_, i) => ({
++      role: (i % 2 === 0 ? "user" : "assistant") as "user" | "assistant",
++      content: "const x = 42; // ".repeat(120),
++    }));
++    expect(needsCompaction(messages, 131072)).toBe(false);
++    expect(needsCompaction(messages, 8192)).toBe(true);
++  });
+ });
+diff --git a/packages/core/src/agent/loop.ts b/packages/core/src/agent/loop.ts
+index 6917248..3a5bb01 100644
+--- a/packages/core/src/agent/loop.ts
++++ b/packages/core/src/agent/loop.ts
+@@ -66,8 +66,59 @@ function getLLMCircuit(modelId: string) {
+ import {
+   enterToolExecution,
+   exitToolExecution,
++  estimateTokenCount,
+ } from "../session/compaction.js";
+ import type { SystemPromptSegment } from "./context.js";
++
++/**
++ * Request-level output budget: the model's advertised maxOutputTokens,
++ * clamped to what its context window can still hold after the prompt.
++ * System prompt and tool schemas aren't in the message estimate, so a
++ * fixed overhead is reserved; a small floor keeps the request valid even
++ * when the estimate is pessimistic (the server clamps further if needed).
++ * Returns a spreadable object so callers can omit the option entirely for
++ * models that advertise no output limit.
++ */
++export function computeOutputBudget(
++  model: {
++    limits?: { contextWindow?: number; maxOutputTokens?: number };
++  },
++  messages: Array<{ role: string; content: unknown }>,
++  systemPrompt?: unknown,
++): { maxOutputTokens: number } | Record<string, never> {
++  const advertised = model.limits?.maxOutputTokens;
++  if (!advertised) return {};
++  const window = model.limits?.contextWindow;
++  if (!window) return { maxOutputTokens: advertised };
++  // Tool schemas aren't measured (they're functions + zod shapes); reserve a
++  // fixed allowance. The system prompt IS measured — brainstorm's runs multi-k
++  // tokens, far beyond any fixed guess.
++  const TOOL_SCHEMA_OVERHEAD_TOKENS = 1024;
++  const MIN_OUTPUT_TOKENS = 256;
++  const systemText =
++    typeof systemPrompt === "string"
++      ? systemPrompt
++      : Array.isArray(systemPrompt)
++        ? systemPrompt
++            .map((s: any) => (typeof s?.content === "string" ? s.content : ""))
++            .join("")
++        : "";
++  const promptEstimate =
++    estimateTokenCount(messages as any) +
++    Math.ceil(systemText.length / 4) +
++    TOOL_SCHEMA_OVERHEAD_TOKENS;
++  const remaining = window - promptEstimate;
++  if (remaining >= MIN_OUTPUT_TOKENS) {
++    return { maxOutputTokens: Math.min(advertised, remaining) };
++  }
++  // Near-exhausted window: requesting the floor would overflow — request
++  // exactly what's left. Fully exhausted (remaining <= 0): the prompt alone
++  // exceeds the window and no max_tokens value can save the request; keep it
++  // well-formed with the floor and let compaction/fallback handle the error.
++  return {
++    maxOutputTokens: remaining > 0 ? remaining : MIN_OUTPUT_TOKENS,
++  };
++}
+ import { segmentsToSystemArray } from "./context.js";
+ import { predictTaskCost } from "./cost-predictor.js";
+ import { detectTone, toneGuidance } from "./sentiment.js";
+@@ -889,6 +940,20 @@ export async function* runAgentLoop(
+       ...(metadataHeader
+         ? { headers: { "x-br-metadata": metadataHeader } }
+         : {}),
++      // Give the model its full advertised output budget. The AI SDK does not
++      // infer per-model output limits for OpenAI-compatible providers, and the
++      // server default can be far below the model's real limit — reasoning
++      // models (gpt-oss) then burn the whole budget on reasoning tokens and
++      // finish with `length` + empty text, triggering wasteful fallback
++      // retries. Clamped to the context still remaining after the prompt:
++      // compaction admits input up to 80% of the window, so prompt + full
++      // advertised output can exceed the window and the server rejects the
++      // request outright.
++      ...computeOutputBudget(
++        decision.model,
++        messagesForApi as any,
++        systemForApiNormalized,
++      ),
+       abortSignal: effectiveStreamSignal,
+       // Retry on 429/503 with exponential backoff (1s, 2s, 4s).
+       // Without this, rate limits during long KAIROS runs crash the daemon.
+diff --git a/packages/providers/src/__tests__/custom-provider.test.ts b/packages/providers/src/__tests__/custom-provider.test.ts
+index 076feb7..8fae298 100644
+--- a/packages/providers/src/__tests__/custom-provider.test.ts
++++ b/packages/providers/src/__tests__/custom-provider.test.ts
+@@ -5,6 +5,7 @@ import { join } from "node:path";
+ import {
+   resolveCustomProviderKey,
+   discoverOpenAICompatModels,
++  inferModelLimits,
+ } from "../local/openai-compat.js";
+ 
+ describe("resolveCustomProviderKey", () => {
+@@ -51,6 +52,88 @@ describe("resolveCustomProviderKey", () => {
+   });
+ });
+ 
++describe("inferModelLimits", () => {
++  it("recognizes model families by id substring", () => {
++    expect(inferModelLimits({ id: "h200/gpt-oss-120b" })).toEqual({
++      limits: {
++        contextWindow: 131072,
++        maxOutputTokens: 32768,
++        reasoning: true,
++        toolCalling: true,
++      },
++      source: "heuristic",
++    });
++    expect(
++      inferModelLimits({ id: "mac/qwen/qwen3-coder-next" }).limits
++        .contextWindow,
++    ).toBe(262144);
++    expect(
++      inferModelLimits({ id: "mac/text-embedding-qwen3-embedding-4b" }).limits
++        .toolCalling,
++    ).toBe(false);
++  });
++
++  it("prefers server-reported context length over the family heuristic", () => {
++    const { limits, source } = inferModelLimits({
++      id: "h200/gpt-oss-120b",
++      max_model_len: 65536,
++    });
++    expect(source).toBe("server");
++    expect(limits.contextWindow).toBe(65536);
++    expect(limits.reasoning).toBe(true);
++    // Output budget never exceeds the server-reported window.
++    expect(limits.maxOutputTokens).toBeLessThanOrEqual(65536);
++  });
++
++  it("falls back to conservative defaults for unknown families", () => {
++    const { limits, source } = inferModelLimits({ id: "mystery-model-7b" });
++    expect(source).toBe("default");
++    expect(limits).toEqual({
++      contextWindow: 8192,
++      maxOutputTokens: 4096,
++      reasoning: false,
++      toolCalling: true,
++    });
++  });
++
++  it("does not overclaim windows for older generations of known families", () => {
++    // gemma-2 and qwen1.5 have far smaller real windows than current
++    // generations — they must fall to the conservative default, not 128k.
++    for (const id of ["gemma-2-9b-it", "qwen1.5-7b-chat", "qwen-72b"]) {
++      const { limits, source } = inferModelLimits({ id });
++      expect(source, id).toBe("default");
++      expect(limits.contextWindow, id).toBe(8192);
++    }
++    // Current generations still match.
++    expect(inferModelLimits({ id: "gemma-4-31b" }).limits.contextWindow).toBe(
++      131072,
++    );
++    expect(
++      inferModelLimits({ id: "qwen2.5-coder-32b" }).limits.contextWindow,
++    ).toBe(131072);
++  });
++
++  it("caps small checkpoints of current generations at 32k", () => {
++    // qwen2.5-coder-0.5b / gemma-3-1b match current-generation families but
++    // ship with far smaller windows than the full-size checkpoints.
++    for (const id of ["qwen2.5-coder-0.5b", "gemma-3-1b-it"]) {
++      const { limits } = inferModelLimits({ id });
++      expect(limits.contextWindow, id).toBe(32768);
++      expect(limits.maxOutputTokens, id).toBeLessThanOrEqual(32768);
++    }
++    // Size suffixes >= 7B keep the family window; A3B active-param suffixes
++    // after the real size don't shadow it.
++    expect(
++      inferModelLimits({ id: "mac/qwen/qwen3.5-35b-a3b-8bit" }).limits
++        .contextWindow,
++    ).toBe(131072);
++    expect(
++      inferModelLimits({ id: "h200/Qwen/Qwen3-Next-80B-A3B-Instruct-FP8" })
++        .limits.contextWindow,
++    ).toBe(262144);
++  });
++});
++
+ describe("discoverOpenAICompatModels with custom providers", () => {
+   afterEach(() => {
+     vi.unstubAllGlobals();
+@@ -84,6 +167,27 @@ describe("discoverOpenAICompatModels with custom providers", () => {
+     expect(models.every((m) => m.provider === "acme" && m.isLocal)).toBe(true);
+   });
+ 
++  it("excludes embedding-only models from the discovered registry", async () => {
++    const fetchMock = vi.fn(async () => ({
++      ok: true,
++      json: async () => ({
++        data: [
++          { id: "mac/text-embedding-qwen3-embedding-4b" },
++          { id: "mac/qwen/qwen3-coder-next" },
++        ],
++      }),
++    }));
++    vi.stubGlobal("fetch", fetchMock);
++
++    const models = await discoverOpenAICompatModels(
++      "acme",
++      "http://llm.acme.internal",
++    );
++
++    // The embedding model must not be routable as a chat model.
++    expect(models.map((m) => m.name)).toEqual(["mac/qwen/qwen3-coder-next"]);
++  });
++
+   it("omits the headers key entirely when no auth is configured", async () => {
+     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({
+       ok: true,
+diff --git a/packages/providers/src/__tests__/registry.test.ts b/packages/providers/src/__tests__/registry.test.ts
+index 91c917d..8d55197 100644
+--- a/packages/providers/src/__tests__/registry.test.ts
++++ b/packages/providers/src/__tests__/registry.test.ts
+@@ -137,6 +137,83 @@ describe("createProviderRegistry", () => {
+     );
+   });
+ 
++  it("re-applies [[models]] overrides after refresh() rebuilds local entries", async () => {
++    const { discoverLocalModels } = await import("../local/discovery.js");
++    const localModel = () => ({
++      id: "acronis:test/model",
++      provider: "acronis",
++      name: "test/model",
++      capabilities: {
++        toolCalling: true,
++        streaming: true,
++        vision: false,
++        reasoning: false,
++        contextWindow: 8192,
++        qualityTier: 3,
++        speedTier: 2,
++        bestFor: ["conversation"],
++      },
++      pricing: { inputPer1MTokens: 0, outputPer1MTokens: 0 },
++      limits: { contextWindow: 8192, maxOutputTokens: 4096 },
++      status: "available",
++      isLocal: true,
++      lastHealthCheck: 0,
++    });
++    vi.mocked(discoverLocalModels).mockResolvedValue({
++      models: [localModel()],
++    } as any);
++
++    const config = createConfig() as any;
++    config.models = [{ id: "acronis:test/model", contextWindow: 262144 }];
++
++    try {
++      const registry = await createProviderRegistry(
++        config,
++        createResolvedKeys({}),
++      );
++      expect(registry.getModel("acronis:test/model")!.limits.contextWindow).toBe(
++        262144,
++      );
++
++      // refresh() rebuilds local entries from discovery — the override must
++      // survive, not revert to the discovered 8192.
++      vi.mocked(discoverLocalModels).mockResolvedValue({
++        models: [localModel()],
++      } as any);
++      await registry.refresh();
++      expect(registry.getModel("acronis:test/model")!.limits.contextWindow).toBe(
++        262144,
++      );
++    } finally {
++      vi.mocked(discoverLocalModels).mockResolvedValue({ models: [] } as any);
++    }
++  });
++
++  it("applies limit overrides from [[models]], honoring explicit falsy values", async () => {
++    const config = createConfig() as any;
++    const target = CLOUD_MODELS.find((m) => m.provider === "anthropic")!;
++    config.models = [
++      {
++        id: target.id,
++        contextWindow: 999_000,
++        maxOutputTokens: 12_345,
++        reasoning: false,
++      },
++    ];
++
++    const registry = await createProviderRegistry(
++      config,
++      createResolvedKeys({ ANTHROPIC_API_KEY: "test-key" }),
++    );
++
++    const model = registry.getModel(target.id)!;
++    expect(model.capabilities.contextWindow).toBe(999_000);
++    expect(model.limits.contextWindow).toBe(999_000);
++    expect(model.limits.maxOutputTokens).toBe(12_345);
++    // reasoning: false must stick — the old truthiness pattern would drop it.
++    expect(model.capabilities.reasoning).toBe(false);
++  });
++
+   it("registers custom OpenAI-compatible providers and resolves their model ids", async () => {
+     const config = createConfig() as any;
+     config.providers.custom = {
+diff --git a/packages/providers/src/local/openai-compat.ts b/packages/providers/src/local/openai-compat.ts
+index 27beb38..dff3f4d 100644
+--- a/packages/providers/src/local/openai-compat.ts
++++ b/packages/providers/src/local/openai-compat.ts
+@@ -1,8 +1,11 @@
+ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+ import type { ModelEntry } from "@brainst0rm/shared";
++import { createLogger } from "@brainst0rm/shared";
+ import { readFileSync } from "node:fs";
+ import { homedir } from "node:os";
+ 
++const log = createLogger("openai-compat");
++
+ // LM Studio and llama.cpp both expose OpenAI-compatible APIs
+ 
+ export function createLMStudioProvider(baseUrl = "http://localhost:1234") {
+@@ -61,6 +64,140 @@ export function resolveCustomProviderKey(
+   return null;
+ }
+ 
++interface InferredModelLimits {
++  contextWindow: number;
++  maxOutputTokens: number;
++  reasoning: boolean;
++  toolCalling: boolean;
++}
++
++// Family heuristics for endpoints whose /v1/models response carries no limit
++// metadata. Ordered — first match wins. These are conservative floors for the
++// family, not per-checkpoint truth; `[[models]]` config overrides remain the
++// authoritative correction when a deployment differs.
++const MODEL_FAMILY_LIMITS: Array<{
++  match: RegExp;
++  limits: InferredModelLimits;
++}> = [
++  {
++    // Embedding models: not chat-capable at all.
++    match: /embed/i,
++    limits: {
++      contextWindow: 8192,
++      maxOutputTokens: 1,
++      reasoning: false,
++      toolCalling: false,
++    },
++  },
++  {
++    match: /gpt-oss/i,
++    limits: {
++      contextWindow: 131072,
++      maxOutputTokens: 32768,
++      reasoning: true,
++      toolCalling: true,
++    },
++  },
++  {
++    match: /qwen3[-.]?(coder|next)/i,
++    limits: {
++      contextWindow: 262144,
++      maxOutputTokens: 32768,
++      reasoning: false,
++      toolCalling: true,
++    },
++  },
++  {
++    // Generation-scoped on purpose: a bare /qwen/ or /gemma/ would claim a
++    // 128k window for older checkpoints (qwen1.5, gemma-2) whose real
++    // windows are far smaller, suppressing required compaction and sending
++    // over-context requests. Unknown generations fall to the conservative
++    // default + warn instead.
++    match: /qwen(2\.5|[3-9])/i,
++    limits: {
++      contextWindow: 131072,
++      maxOutputTokens: 32768,
++      reasoning: false,
++      toolCalling: true,
++    },
++  },
++  {
++    match: /gemma[-_.]?[3-9]/i,
++    limits: {
++      contextWindow: 131072,
++      maxOutputTokens: 8192,
++      reasoning: false,
++      toolCalling: true,
++    },
++  },
++];
++
++const DEFAULT_INFERRED_LIMITS: InferredModelLimits = {
++  contextWindow: 8192,
++  maxOutputTokens: 4096,
++  reasoning: false,
++  toolCalling: true,
++};
++
++/** Raw /v1/models entry — servers vary in what limit metadata they expose. */
++interface RawModelEntry {
++  id: string;
++  /** LM Studio / OpenRouter convention. */
++  context_length?: number;
++  /** vLLM convention. */
++  max_model_len?: number;
++}
++
++// Family windows describe current full-size checkpoints. Small checkpoints
++// (< 7B params by id suffix, e.g. "qwen2.5-coder-0.5b", "gemma-3-1b") ship
++// with much smaller windows — cap them rather than overclaim 128k.
++const SMALL_CHECKPOINT_CONTEXT_CAP = 32768;
++const SMALL_CHECKPOINT_PARAMS_B = 7;
++
++function smallCheckpointCap(id: string): number | null {
++  const match = id.match(/(\d+(?:\.\d+)?)b\b/i);
++  if (!match) return null;
++  return parseFloat(match[1]) < SMALL_CHECKPOINT_PARAMS_B
++    ? SMALL_CHECKPOINT_CONTEXT_CAP
++    : null;
++}
++
++export function inferModelLimits(raw: RawModelEntry): {
++  limits: InferredModelLimits;
++  source: "server" | "heuristic" | "default";
++} {
++  let family =
++    MODEL_FAMILY_LIMITS.find((f) => f.match.test(raw.id))?.limits ?? null;
++  const sizeCap = family ? smallCheckpointCap(raw.id) : null;
++  if (family && sizeCap && family.contextWindow > sizeCap) {
++    family = {
++      ...family,
++      contextWindow: sizeCap,
++      maxOutputTokens: Math.min(family.maxOutputTokens, sizeCap),
++    };
++  }
++  const serverContext =
++    typeof raw.context_length === "number"
++      ? raw.context_length
++      : typeof raw.max_model_len === "number"
++        ? raw.max_model_len
++        : null;
++
++  // Server-reported context wins; family heuristic fills the rest.
++  const base = family ?? DEFAULT_INFERRED_LIMITS;
++  if (serverContext && serverContext > 0) {
++    return {
++      limits: {
++        ...base,
++        contextWindow: serverContext,
++        maxOutputTokens: Math.min(base.maxOutputTokens, serverContext),
++      },
++      source: "server",
++    };
++  }
++  return { limits: base, source: family ? "heuristic" : "default" };
++}
++
+ export async function discoverOpenAICompatModels(
+   name: string,
+   baseUrl: string,
+@@ -72,29 +209,53 @@ export async function discoverOpenAICompatModels(
+       ...(headers ? { headers } : {}),
+     });
+     if (!response.ok) return [];
+-    const data = (await response.json()) as { data?: Array<{ id: string }> };
++    const data = (await response.json()) as { data?: RawModelEntry[] };
+     if (!data.data) return [];
+ 
+-    return data.data.map((m) => ({
+-      id: `${name}:${m.id}`,
+-      provider: name,
+-      name: m.id,
+-      capabilities: {
+-        toolCalling: true,
+-        streaming: true,
+-        vision: false,
+-        reasoning: false,
+-        contextWindow: 8192,
+-        qualityTier: 3 as const,
+-        speedTier: 2 as const,
+-        bestFor: ["conversation" as const, "simple-edit" as const],
+-      },
+-      pricing: { inputPer1MTokens: 0, outputPer1MTokens: 0 },
+-      limits: { contextWindow: 8192, maxOutputTokens: 4096 },
+-      status: "available" as const,
+-      isLocal: true,
+-      lastHealthCheck: Date.now(),
+-    }));
++    const entries: ModelEntry[] = [];
++    for (const m of data.data) {
++      const { limits, source } = inferModelLimits(m);
++      // Embedding-only models are not chat models: registering them would
++      // let the router select one for conversation tasks and hand streamText
++      // a 1-token output budget.
++      if (!limits.toolCalling && limits.maxOutputTokens <= 1) {
++        log.debug(
++          { provider: name, model: m.id },
++          "Skipping non-chat (embedding) model",
++        );
++        continue;
++      }
++      if (source === "default") {
++        log.warn(
++          { provider: name, model: m.id },
++          "No limit metadata from server and no family heuristic matched — assuming 8192-token context. Correct via [[models]] overrides if wrong.",
++        );
++      }
++      entries.push({
++        id: `${name}:${m.id}`,
++        provider: name,
++        name: m.id,
++        capabilities: {
++          toolCalling: limits.toolCalling,
++          streaming: true,
++          vision: false,
++          reasoning: limits.reasoning,
++          contextWindow: limits.contextWindow,
++          qualityTier: 3 as const,
++          speedTier: 2 as const,
++          bestFor: ["conversation" as const, "simple-edit" as const],
++        },
++        pricing: { inputPer1MTokens: 0, outputPer1MTokens: 0 },
++        limits: {
++          contextWindow: limits.contextWindow,
++          maxOutputTokens: limits.maxOutputTokens,
++        },
++        status: "available" as const,
++        isLocal: true,
++        lastHealthCheck: Date.now(),
++      });
++    }
++    return entries;
+   } catch {
+     return [];
+   }
+diff --git a/packages/providers/src/registry.ts b/packages/providers/src/registry.ts
+index 6e67eb5..263f339 100644
+--- a/packages/providers/src/registry.ts
++++ b/packages/providers/src/registry.ts
+@@ -55,6 +55,34 @@ export interface ProviderRegistryOptions {
+   brCatalogFetch?: typeof globalThis.fetch;
+ }
+ 
++/**
++ * Apply `[[models]]` config overrides in place. `!== undefined` (not
++ * truthiness) so explicit falsy values like `reasoning = false` are honored.
++ */
++function applyModelOverrides(
++  models: ModelEntry[],
++  overrides: BrainstormConfig["models"],
++): void {
++  for (const override of overrides) {
++    const existing = models.find((m) => m.id === override.id);
++    if (!existing) continue;
++    if (override.qualityTier !== undefined)
++      existing.capabilities.qualityTier = override.qualityTier as any;
++    if (override.speedTier !== undefined)
++      existing.capabilities.speedTier = override.speedTier as any;
++    if (override.bestFor !== undefined)
++      existing.capabilities.bestFor = override.bestFor as any;
++    if (override.contextWindow !== undefined) {
++      existing.capabilities.contextWindow = override.contextWindow;
++      existing.limits.contextWindow = override.contextWindow;
++    }
++    if (override.maxOutputTokens !== undefined)
++      existing.limits.maxOutputTokens = override.maxOutputTokens;
++    if (override.reasoning !== undefined)
++      existing.capabilities.reasoning = override.reasoning;
++  }
++}
++
+ export async function createProviderRegistry(
+   config: BrainstormConfig,
+   resolvedKeys?: ResolvedKeys,
+@@ -223,18 +251,10 @@ export async function createProviderRegistry(
+   const { models: localModels } = await discoverLocalModels(config.providers);
+   allModels.push(...localModels);
+ 
+-  // Apply model overrides from config
+-  for (const override of config.models) {
+-    const existing = allModels.find((m) => m.id === override.id);
+-    if (existing) {
+-      if (override.qualityTier)
+-        existing.capabilities.qualityTier = override.qualityTier as any;
+-      if (override.speedTier)
+-        existing.capabilities.speedTier = override.speedTier as any;
+-      if (override.bestFor)
+-        existing.capabilities.bestFor = override.bestFor as any;
+-    }
+-  }
++  // Apply model overrides from config. Also invoked from refresh(), which
++  // rebuilds local entries from re-discovery and would otherwise silently
++  // drop the corrections.
++  applyModelOverrides(allModels, config.models);
+ 
+   // Overlay eval-derived capability scores (from `brainstorm eval`) and mark
+   // them as measured. Models without eval data keep their static assumed
+@@ -309,6 +329,9 @@ export async function createProviderRegistry(
+       );
+       const cloudAndSaas = allModels.filter((m) => !m.isLocal);
+       allModels = [...cloudAndSaas, ...refreshedLocal];
++      // Re-apply config overrides — refreshed local entries are rebuilt from
++      // discovery and would otherwise lose contextWindow/limit corrections.
++      applyModelOverrides(allModels, config.models);
+       // Re-apply eval capability scores (may have been updated by brainstorm eval)
+       const freshScores = loadEvalCapabilityScores();
+       for (const [modelId, entry] of Object.entries(freshScores)) {
