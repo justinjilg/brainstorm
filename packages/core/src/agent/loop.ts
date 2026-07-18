@@ -192,6 +192,51 @@ export function computeOutputBudget(
     maxOutputTokens: remaining > 0 ? remaining : MIN_OUTPUT_TOKENS,
   };
 }
+
+/**
+ * Smallest shared model-call seam (first TurnController strangler seam; the
+ * full extraction is iteration 006). Assembles the streamText config that is
+ * common to every attempt — model, system, messages, output budget, abort,
+ * retries, headers — in ONE place, so the normal attempt and the forced-
+ * synthesis attempt can't drift. Callers pass only what differs: the normal
+ * attempt supplies tools + onStepFinish + a multi-step budget; synthesis
+ * supplies neither and a single step.
+ */
+type StreamTextArgs = Parameters<typeof streamText>[0];
+
+function invokeModelAttempt(params: {
+  /** Provider-resolved model (registry.getProvider(...)). */
+  providerModel: unknown;
+  /** Catalog entry — for output budgeting. */
+  modelEntry: { limits?: { contextWindow?: number; maxOutputTokens?: number } };
+  system: unknown;
+  messages: Array<{ role: string; content: unknown }>;
+  abortSignal: AbortSignal;
+  maxSteps: number;
+  metadataHeader?: string;
+  tools?: StreamTextArgs["tools"];
+  forceToolChoice?: boolean;
+  onStepFinish?: StreamTextArgs["onStepFinish"];
+}) {
+  return streamText({
+    model: params.providerModel as StreamTextArgs["model"],
+    system: params.system as any,
+    messages: params.messages as any,
+    ...(params.tools ? { tools: params.tools } : {}),
+    ...(params.tools && params.forceToolChoice
+      ? { toolChoice: "required" as const }
+      : {}),
+    ...(params.metadataHeader
+      ? { headers: { "x-br-metadata": params.metadataHeader } }
+      : {}),
+    ...computeOutputBudget(params.modelEntry, params.messages, params.system),
+    abortSignal: params.abortSignal,
+    maxRetries: 3,
+    stopWhen: stepCountIs(params.maxSteps),
+    ...(params.onStepFinish ? { onStepFinish: params.onStepFinish } : {}),
+  });
+}
+
 import { segmentsToSystemArray } from "./context.js";
 import { predictTaskCost } from "./cost-predictor.js";
 import { detectTone, toneGuidance } from "./sentiment.js";
@@ -503,6 +548,20 @@ export interface AgentLoopOptions {
    * other recursion site resets it so the model can still finish normally.
    */
   _forceToolChoice?: boolean;
+  /**
+   * Internal: set on a fallback re-entry to signal that a forced-synthesis
+   * turn already ran upstream, so a re-entered loop doesn't synthesize again.
+   * (Forced synthesis itself is a direct call, not a recursion, but fallback
+   * retries DO recurse — this keeps synthesis strictly once per logical run.)
+   */
+  _synthesized?: boolean;
+  /**
+   * Internal: failed model-attempt outcomes accumulated by upstream fallback
+   * levels, so the terminal (successful) level can emit ONE aggregate
+   * RunOutcome carrying every attempt. Each fallback re-entry appends the
+   * attempt it just gave up on.
+   */
+  _attemptsSoFar?: ModelAttemptOutcome[];
   /** Optional middleware pipeline for composable agent interceptors. */
   middleware?: MiddlewarePipeline;
   /** Repository for persisting routing outcomes (Thompson sampling). */
@@ -1014,40 +1073,22 @@ export async function* runAgentLoop(
       : 1;
     let stepsCompleted = 0;
     let lastStepFinishReason: string | undefined;
-    const result = streamText({
-      model: modelId,
-      system: systemForApiNormalized as any,
-      messages: messagesForApi as any,
-      ...(finalTools ? { tools: finalTools } : {}),
-      // Phase 7: on a narration-nudge corrective retry ONLY, force a real tool
-      // call so the model cannot narrate-and-stop again. Scoped to this single
-      // re-entry via options._forceToolChoice; never permanent (that would stop
-      // the model ever finishing). Only meaningful when tools are present.
-      ...(finalTools && options._forceToolChoice
-        ? { toolChoice: "required" as const }
-        : {}),
-      ...(metadataHeader
-        ? { headers: { "x-br-metadata": metadataHeader } }
-        : {}),
-      // Give the model its full advertised output budget. The AI SDK does not
-      // infer per-model output limits for OpenAI-compatible providers, and the
-      // server default can be far below the model's real limit — reasoning
-      // models (gpt-oss) then burn the whole budget on reasoning tokens and
-      // finish with `length` + empty text, triggering wasteful fallback
-      // retries. Clamped to the context still remaining after the prompt:
-      // compaction admits input up to 80% of the window, so prompt + full
-      // advertised output can exceed the window and the server rejects the
-      // request outright.
-      ...computeOutputBudget(
-        decision.model,
-        messagesForApi,
-        systemForApiNormalized,
-      ),
+    // Phase 7: on a narration-nudge corrective retry ONLY, force a real tool
+    // call so the model cannot narrate-and-stop again. Scoped to this single
+    // re-entry via options._forceToolChoice; never permanent. The seam applies
+    // the output budget (full advertised max, clamped to remaining context —
+    // reasoning models otherwise burn their whole budget on reasoning tokens
+    // and finish empty) shared with the forced-synthesis attempt below.
+    const result = invokeModelAttempt({
+      providerModel: modelId,
+      modelEntry: decision.model,
+      system: systemForApiNormalized,
+      messages: messagesForApi,
       abortSignal: effectiveStreamSignal,
-      // Retry on 429/503 with exponential backoff (1s, 2s, 4s).
-      // Without this, rate limits during long KAIROS runs crash the daemon.
-      maxRetries: 3,
-      stopWhen: stepCountIs(maxStepsForRun),
+      maxSteps: maxStepsForRun,
+      metadataHeader,
+      tools: finalTools ?? undefined,
+      forceToolChoice: options._forceToolChoice,
       onStepFinish: async ({ usage, finishReason: stepFinish }: any) => {
         stepsCompleted++;
         if (typeof stepFinish === "string") lastStepFinishReason = stepFinish;
@@ -1436,10 +1477,90 @@ export async function* runAgentLoop(
       };
     }
 
+    // ── Forced synthesis: step-cap reached with no final response ──
+    // A model (often a coder) can spend its whole step budget making tool
+    // calls and hit the cap WITHOUT ever writing a final answer. That turn is
+    // not `isEmpty` (it made tool calls) yet has no usable response — it would
+    // otherwise record as a silent success with empty text, breaking the two
+    // dead reviewer seats + gpt-oss eval step-cap failures + empty workflow
+    // artifacts this iteration targets. Trigger on step_cap_reached &&
+    // !hasFinalResponse (NOT producedArtifacts — edits ARE an artifact). Run
+    // exactly ONE tools-disabled synthesis turn through the shared seam;
+    // preserve the fact that the run hit its cap via `recovery`.
+    let hasFinalResponse = accumulatedText.trim().length > 0;
+    let recovery: RunOutcome["recovery"] | undefined;
+    const initialStopCause = classifyStopCause({
+      isEmpty,
+      toolCallTruncated,
+      stepsCompleted,
+      maxSteps: maxStepsForRun,
+      lastStepFinishReason,
+      providerFinishReason: finishReason,
+    });
+    if (
+      initialStopCause === "step_cap_reached" &&
+      !hasFinalResponse &&
+      !options._synthesized
+    ) {
+      try {
+        yield {
+          type: "loop-warning" as const,
+          message: `${decision.model.id} hit its step cap (${maxStepsForRun}) without a final answer — running one tools-disabled synthesis turn.`,
+        };
+        const synthResult = invokeModelAttempt({
+          providerModel: modelId,
+          modelEntry: decision.model,
+          system: systemForApiNormalized,
+          messages: [
+            ...messagesForApi,
+            {
+              role: "user",
+              content:
+                "You have reached your tool-use budget. Do NOT call any more tools. " +
+                "Using only the work you have already done, write your final answer/result now.",
+            },
+          ],
+          abortSignal: effectiveStreamSignal,
+          maxSteps: 1,
+          metadataHeader,
+        });
+        const synthText = (await synthResult.text)?.trim() ?? "";
+        if (synthText) {
+          accumulatedText += (accumulatedText ? "\n\n" : "") + synthText;
+          hasFinalResponse = true;
+          recovery = "forced_synthesis";
+          yield { type: "text-delta", delta: normalizeInsightMarkers(synthText) };
+          // Record the synthesis attempt's cost against the session.
+          try {
+            const u = await synthResult.usage;
+            costTracker.record({
+              sessionId,
+              modelId: decision.model.id,
+              provider: decision.model.provider,
+              inputTokens: u?.inputTokens ?? 0,
+              outputTokens: u?.outputTokens ?? 0,
+              cachedTokens: 0,
+              taskType: task.type,
+              projectPath: options.projectPath,
+              pricing: decision.model.pricing,
+            });
+          } catch {
+            /* usage/cost best-effort */
+          }
+        }
+      } catch (synthErr) {
+        log.warn(
+          { err: synthErr, model: decision.model.id },
+          "Forced synthesis turn failed — falling through to normal handling",
+        );
+      }
+    }
+
     // A turn needs a retry when the model gave us nothing (empty) OR when it
     // tried to act but the tool-call was truncated. Both are model-side
-    // failures that a fallback may recover.
-    const shouldRetry = isEmpty || toolCallTruncated;
+    // failures that a fallback may recover. Forced synthesis that produced a
+    // final response clears the empty condition.
+    const shouldRetry = (isEmpty && !hasFinalResponse) || toolCallTruncated;
 
     // Record circuit breaker outcome for this model.
     // Empty response / truncated tool-call = failure (nothing usable).
@@ -1484,6 +1605,17 @@ export async function* runAgentLoop(
       // Record failure for Thompson sampling on fallback path
       const fallbackLatencyMs = Date.now() - turnStartMs;
       recordOutcome(task.type, decision.model.id, false, fallbackLatencyMs, 0);
+      // This failed attempt's per-model outcome — carried into the fallback
+      // so the eventual successful level emits it in the aggregate.
+      const failedAttempt: ModelAttemptOutcome = {
+        modelId: decision.model.id,
+        taskType: task.type,
+        status: "failed",
+        stopCause: initialStopCause,
+        providerFinishReason: finishReason,
+        latencyMs: fallbackLatencyMs,
+        costUsd: costTracker.getSessionCost() - sessionCostBefore,
+      };
       if (options.routingOutcomeRepo) {
         try {
           options.routingOutcomeRepo.record(
@@ -1518,6 +1650,10 @@ export async function* runAgentLoop(
           // A forced tool-call is scoped to a single nudge retry; never carry
           // it into an unrelated fallback turn.
           _forceToolChoice: false,
+          // Carry this failed attempt forward so the successful fallback level
+          // emits the full attempt chain in its aggregate RunOutcome; mark
+          // recovery=fallback there.
+          _attemptsSoFar: [...(options._attemptsSoFar ?? []), failedAttempt],
         } as any);
         return;
       }
@@ -1601,6 +1737,19 @@ export async function* runAgentLoop(
     const turnLatencyMs = Date.now() - turnStartMs;
     const turnSuccess = !shouldRetry;
     const turnCost = costTracker.getSessionCost() - sessionCostBefore;
+
+    // This attempt's per-model outcome (feeds routing learning). The aggregate
+    // RunOutcome below stitches it onto any upstream failed attempts.
+    const thisAttempt: ModelAttemptOutcome = {
+      modelId: decision.model.id,
+      taskType: task.type,
+      status: turnSuccess ? "succeeded" : "failed",
+      // A synthesized run's initial stop was still the cap — preserve it.
+      stopCause: turnSuccess ? initialStopCause : "empty_output",
+      providerFinishReason: finishReason,
+      latencyMs: turnLatencyMs,
+      costUsd: turnCost,
+    };
 
     // Momentum records ONLY a genuinely successful final attempt, WITH task
     // type. Previously recordSuccess fired unconditionally, before turnSuccess
@@ -1881,10 +2030,39 @@ export async function* runAgentLoop(
       });
     }
 
+    // Aggregate outcome: this attempt stitched onto any upstream failed
+    // fallback attempts. initialStopCause is the FIRST attempt's cause (the
+    // upstream one if this is a fallback re-entry), so a recovered run doesn't
+    // masquerade as a clean first stop. verification/security/judge are left
+    // not_run here; wiring their live results into the outcome is a follow-on
+    // (the contract + termination/recovery/cost are established this iteration).
+    const allAttempts = [...(options._attemptsSoFar ?? []), thisAttempt];
+    // If earlier attempts failed and this one succeeded, the run recovered via
+    // fallback (unless it already recovered via forced synthesis this turn).
+    const aggregateRecovery: RunOutcome["recovery"] =
+      recovery ??
+      (turnSuccess && (options._attemptsSoFar?.length ?? 0) > 0
+        ? "fallback"
+        : undefined);
+    const runOutcome: RunOutcome = {
+      status: turnSuccess ? "succeeded" : "failed",
+      attempts: allAttempts,
+      finalModelId: turnSuccess ? decision.model.id : undefined,
+      initialStopCause: allAttempts[0]?.stopCause ?? initialStopCause,
+      recovery: aggregateRecovery,
+      hasFinalResponse,
+      madeChanges: filesWritten.length > 0,
+      verification: "not_run",
+      security: "not_run",
+      judge: "not_run",
+      costUsd: costTracker.getSessionCost(),
+    };
+
     yield {
       type: "done",
       totalCost: costTracker.getSessionCost(),
       totalTokens: costTracker.getSessionTokens(),
+      outcome: runOutcome,
     };
   } catch (error: any) {
     // ── Error Classification ────────────────────────────────────
