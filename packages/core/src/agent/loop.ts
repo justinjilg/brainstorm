@@ -17,6 +17,7 @@ import {
   setTaskEventHandler,
   clearTasks,
   setBackgroundEventHandler,
+  requeueBackgroundEvents,
   getToolHealthTracker,
   setToolOutputHandler,
   getTierForComplexity,
@@ -2327,6 +2328,31 @@ export async function* runAgentLoop(
     setTaskEventHandler(null);
     setToolOutputHandler(null);
     setBackgroundEventHandler(null);
+
+    // Hand off background completions that arrived after our last queue drain
+    // (line ~1371) — e.g. a job that finished during forced synthesis. They
+    // were delivered to the still-registered handler and sit in taskEventQueue,
+    // which dies with this generator; without this they'd be lost (not shown
+    // this turn, not replayed next turn). Requeue them to the session's pending
+    // buffer so the NEXT turn in this session replays them. Runs AFTER the
+    // null above, which clears that buffer. Task-created/updated events are
+    // turn-local UI and are intentionally not carried over.
+    const undeliveredBg = taskEventQueue.filter(
+      (e): e is Extract<AgentEvent, { type: "background-complete" }> =>
+        e.type === "background-complete",
+    );
+    if (undeliveredBg.length > 0) {
+      requeueBackgroundEvents(
+        undeliveredBg.map((e) => ({
+          taskId: e.taskId,
+          command: e.command,
+          exitCode: e.exitCode,
+          stdout: e.stdout,
+          stderr: e.stderr,
+        })),
+        sessionId,
+      );
+    }
 
     // Submit trajectory + update routing intelligence (fire-and-forget)
     if (trajectory) {

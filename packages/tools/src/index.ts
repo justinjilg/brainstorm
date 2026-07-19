@@ -137,9 +137,11 @@ export {
   teardownDockerSandbox,
   setDockerSandbox,
   setBackgroundEventHandler,
+  requeueBackgroundEvents,
   getBackgroundTasks,
   setToolOutputHandler,
 } from "./builtin/shell.js";
+export type { BackgroundEvent } from "./builtin/shell.js";
 export { ghPrTool } from "./builtin/gh-pr.js";
 export { ghIssueTool } from "./builtin/gh-issue.js";
 export { ghReviewTool } from "./builtin/gh-review.js";

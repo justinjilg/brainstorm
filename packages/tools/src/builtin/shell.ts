@@ -263,7 +263,7 @@ const backgroundTasks = new Map<string, BackgroundTask>();
 const MAX_BACKGROUND_TASKS = 50;
 let nextTaskId = 0;
 
-type BackgroundEvent = {
+export type BackgroundEvent = {
   taskId: string;
   command: string;
   exitCode: number;
@@ -306,6 +306,39 @@ export function setBackgroundEventHandler(
   // Clear this session's pending events on every handler change (including
   // null) — orphaned events hold full stdout/stderr strings.
   pendingEventsBySession.delete(sessionId);
+}
+
+/**
+ * Hand background completions back to a session's pending queue for later
+ * replay to the NEXT handler registered for it.
+ *
+ * The agent loop wires background completions into a per-turn buffer it drains
+ * as it streams. A job that completes in the turn's tail — after the loop's
+ * last drain but before its `finally` nulls the handler (e.g. during forced
+ * synthesis, a multi-second model call) — lands in that buffer and would be
+ * dropped when the generator ends: it was delivered to the (still-registered)
+ * handler, so `emitCompletion` never queued it to `pendingEventsBySession`, and
+ * the buffer dies with the generator. The loop calls this at teardown with any
+ * such leftovers so the next turn in the same session replays them instead of
+ * losing them. Call AFTER `setBackgroundEventHandler(null)` (which clears the
+ * session's pending queue). Bounded like the direct-completion path.
+ */
+export function requeueBackgroundEvents(
+  events: BackgroundEvent[],
+  sessionId: string = getSessionId(),
+): void {
+  if (events.length === 0) return;
+  const pending =
+    pendingEventsBySession.get(sessionId) ??
+    (() => {
+      const q: BackgroundEvent[] = [];
+      boundedSet(pendingEventsBySession, sessionId, q);
+      return q;
+    })();
+  for (const event of events) {
+    if (pending.length >= MAX_PENDING_EVENTS) break;
+    pending.push(event);
+  }
 }
 
 // ── Tool Output Streaming ──────────────────────────────────────
