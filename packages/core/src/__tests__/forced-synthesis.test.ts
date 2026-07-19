@@ -199,7 +199,7 @@ describe("forced synthesis on step-cap with no final response", () => {
       const done = events.find((e) => e.type === "done");
       expect(done).toBeDefined();
       expect(done.outcome).toBeDefined();
-      expect(done.outcome.recovery).toBe("forced_synthesis");
+      expect(done.outcome.recovery).toEqual(["forced_synthesis"]);
       expect(done.outcome.initialStopCause).toBe("step_cap_reached");
       expect(done.outcome.status).toBe("succeeded");
       expect(done.outcome.hasFinalResponse).toBe(true);
@@ -228,7 +228,7 @@ describe("forced synthesis on step-cap with no final response", () => {
     try {
       const events = await ctx.run();
       const done = events.find((e) => e.type === "done");
-      expect(done.outcome.recovery).toBe("forced_synthesis");
+      expect(done.outcome.recovery).toEqual(["forced_synthesis"]);
       // Preserves that this was a natural early stop, not a cap.
       expect(done.outcome.initialStopCause).toBe("natural_stop");
       expect(done.outcome.hasFinalResponse).toBe(true);

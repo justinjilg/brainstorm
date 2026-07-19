@@ -257,12 +257,15 @@ export interface RunOutcome {
   /** How the FIRST attempt terminated — preserved even after recovery, so a
    *  step-capped-then-synthesized run doesn't masquerade as a clean stop. */
   initialStopCause: StopCause;
-  /** How the run recovered from a non-clean initial stop, if it did. */
-  recovery?:
-    | "fallback"
-    | "forced_synthesis"
-    | "tool_nudge"
-    | "verification_retry";
+  /**
+   * Ordered sequence of recovery actions the run took, in the order they
+   * happened. A single tag can't represent a run that both fell back AND then
+   * synthesized (e.g. A-empty → B-tool-only → synthesis) — that erased the
+   * fallback. Empty/absent = no recovery (clean run).
+   */
+  recovery?: Array<
+    "fallback" | "forced_synthesis" | "tool_nudge" | "verification_retry"
+  >;
   /** Did the run produce usable final text? (distinct from making changes) */
   hasFinalResponse: boolean;
   /** Artifact references produced (files written, etc.), if tracked. */

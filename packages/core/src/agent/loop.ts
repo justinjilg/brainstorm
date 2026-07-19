@@ -564,6 +564,12 @@ export interface AgentLoopOptions {
    */
   _attemptsSoFar?: ModelAttemptOutcome[];
   /**
+   * Internal: ordered recovery actions taken by upstream levels (fallback,
+   * tool_nudge, verification_retry), so the terminal level emits the full
+   * recovery SEQUENCE instead of a single tag that erases earlier recoveries.
+   */
+  _recoverySoFar?: NonNullable<RunOutcome["recovery"]>;
+  /**
    * Internal: session cost at the START of this logical run, captured once at
    * the root and propagated through recursion so RunOutcome.costUsd is the run
    * delta — not the CostTracker's cumulative session/process total (which a
@@ -1510,7 +1516,7 @@ export async function* runAgentLoop(
     // needing synthesis, over-firing; the sharper distinction is deferred to
     // the iter-006 TurnController, which models a turn's phases explicitly.)
     let hasFinalResponse = accumulatedText.trim().length > 0;
-    let recovery: RunOutcome["recovery"] | undefined;
+    let didSynthesize = false;
     let synthesisAttempted = options._synthesized ?? false;
     const initialStopCause = classifyStopCause({
       isEmpty,
@@ -1628,7 +1634,7 @@ export async function* runAgentLoop(
         if (synthText) {
           accumulatedText += (accumulatedText ? "\n\n" : "") + synthText;
           hasFinalResponse = true;
-          recovery = "forced_synthesis";
+          didSynthesize = true;
           yield {
             type: "text-delta",
             delta: normalizeInsightMarkers(synthText),
@@ -1762,6 +1768,7 @@ export async function* runAgentLoop(
           _synthesized: synthesisAttempted,
           // Preserve the run-cost baseline across the whole fallback chain.
           _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
+          _recoverySoFar: [...(options._recoverySoFar ?? []), "fallback" as const],
         } as any);
         return;
       }
@@ -1983,6 +1990,7 @@ export async function* runAgentLoop(
           // Carry this invocation into the aggregate so the terminal run
           // outcome includes the nudge-superseded attempt, not just the final.
           _attemptsSoFar: [...(options._attemptsSoFar ?? []), thisAttempt],
+          _recoverySoFar: [...(options._recoverySoFar ?? []), "tool_nudge" as const],
         });
         return;
       }
@@ -2088,6 +2096,10 @@ export async function* runAgentLoop(
             _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
             // Include this verify-superseded attempt in the aggregate chain.
             _attemptsSoFar: [...(options._attemptsSoFar ?? []), thisAttempt],
+            _recoverySoFar: [
+              ...(options._recoverySoFar ?? []),
+              "verification_retry" as const,
+            ],
           });
           return;
         }
@@ -2155,13 +2167,15 @@ export async function* runAgentLoop(
     // not_run here; wiring their live results into the outcome is a follow-on
     // (the contract + termination/recovery/cost are established this iteration).
     const allAttempts = [...(options._attemptsSoFar ?? []), thisAttempt];
-    // If earlier attempts failed and this one succeeded, the run recovered via
-    // fallback (unless it already recovered via forced synthesis this turn).
-    const aggregateRecovery: RunOutcome["recovery"] =
-      recovery ??
-      (turnSuccess && (options._attemptsSoFar?.length ?? 0) > 0
-        ? "fallback"
-        : undefined);
+    // Ordered recovery sequence: upstream actions (fallback / nudge / verify,
+    // appended as they happened) plus a forced_synthesis if THIS terminal turn
+    // synthesized. Preserves e.g. A-fallback → synthesis as ["fallback",
+    // "forced_synthesis"] instead of a single tag that erased the fallback.
+    const recoverySeq: NonNullable<RunOutcome["recovery"]> = [
+      ...(options._recoverySoFar ?? []),
+      ...(didSynthesize ? (["forced_synthesis"] as const) : []),
+    ];
+    const aggregateRecovery = recoverySeq.length > 0 ? recoverySeq : undefined;
     const runOutcome: RunOutcome = {
       status: turnSuccess ? "succeeded" : "failed",
       attempts: allAttempts,
