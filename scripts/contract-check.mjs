@@ -64,6 +64,7 @@ const CHECKS = [
   "./contract-checks/contract-snapshots.mjs",
   "./contract-checks/docs-drift.mjs",
   "./contract-checks/docs-field-drift.mjs",
+  "./contract-checks/docs-package-count.mjs",
   // Stage-3 surfaces.
   "./contract-checks/binary-registry.mjs",
   "./contract-checks/version-sync.mjs",

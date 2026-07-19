@@ -221,8 +221,10 @@ Every pipeline run generates new training data. Monthly re-training. Continuous 
 - [x] Orchestration pipeline (9 phases) — DONE
 - [x] 11 role agent definitions — DONE
 - [x] Plan executor — DONE
-- [ ] Trajectory capture in pipeline — **NEXT**
-- [ ] Pipeline wired to real `spawnSubagent()` (currently placeholder)
+- [x] Trajectory capture in pipeline — DONE (`packages/core/src/plan/trajectory-capture.ts`; the
+      pipeline records phase events + finalizes a trajectory)
+- [x] Pipeline wired to real `spawnSubagent()` — DONE (`packages/core/src/plan/pipeline-dispatcher.ts`
+      dispatches each phase to `spawnSubagent()`; the "placeholder" note is historical)
 - [ ] HuggingFace dataset push integration
 
 **BrainstormRouter**:

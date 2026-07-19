@@ -18,7 +18,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" /></a>&nbsp;
   <img src="https://img.shields.io/badge/products-5-d97706.svg" alt="Products" />&nbsp;
   <img src="https://img.shields.io/badge/tools-58+-d97706.svg" alt="Tools" />&nbsp;
-  <img src="https://img.shields.io/badge/packages-44-d97706.svg" alt="Packages" />
+  <img src="https://img.shields.io/badge/packages-46-d97706.svg" alt="Packages" />
 </p>
 
 <p align="center">
@@ -34,6 +34,15 @@
 ## What is Brainstorm?
 
 Brainstorm connects AI operators (Claude Code, Claude Desktop, or any MCP-compatible agent) to your infrastructure through a governed channel. Every action flows through safety controls, cost management, and tamper-evident audit trails.
+
+**The layered story.** Brainstorm's differentiated asset is a **governed execution kernel** — tool
+normalization, bounded runs, verification, routing feedback, cost control, and auditable outcomes — that
+turns a heterogeneous fleet of models (including weaker local ones) into dependable workers. Everything
+else is a layer over that kernel:
+
+- **Kernel** — the reliability/governance layer (the asset).
+- **Proving ground** — autonomous software engineering: the kernel is dogfooded on real coding work.
+- **Destination** — AI-managed infrastructure operations (MSP, VM, Shield, GTM), the high-stakes payoff.
 
 ```bash
 npm install -g @brainst0rm/cli
@@ -181,7 +190,7 @@ Restart Claude Code. The new product's tools appear automatically.
 
 ## Architecture
 
-44 TypeScript packages in a Turborepo monorepo (run `ls packages/` for the live list):
+46 TypeScript packages in a Turborepo monorepo (run `ls packages/` for the live list):
 
 ```
 cli ─────── core ─── router ─── providers ─── config ─── shared
@@ -285,7 +294,7 @@ storm intelligence
 ```bash
 git clone https://github.com/justinjilg/brainstorm.git
 cd brainstorm && npm install
-npx turbo run build          # Build all 44 packages
+npx turbo run build          # Build all 46 packages
 npx turbo run test           # Run tests (1,400+ tests across 30+ packages)
 node packages/cli/dist/brainstorm.js chat
 ```
