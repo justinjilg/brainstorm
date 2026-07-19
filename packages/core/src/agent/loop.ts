@@ -1861,15 +1861,14 @@ export async function* runAgentLoop(
       costUsd: turnCost,
     };
 
-    // Momentum records ONLY a genuinely successful final attempt, WITH task
-    // type. Previously recordSuccess fired unconditionally, before turnSuccess
-    // was known and without the task type — so momentum learned "the model
-    // said something" (and disagreed with the Thompson outcome below on
-    // exhausted-retry turns that reach here with turnSuccess=false).
-    if (turnSuccess) {
-      router.recordSuccess?.(decision.model.id, task.type);
-    }
-
+    // NOTE: momentum (router.recordSuccess) is deliberately NOT recorded here.
+    // This point is BEFORE the Phase-7 tool-nudge and Phase-3 verify blocks,
+    // which may `return` after recursing into a corrective re-run. Recording
+    // momentum here would credit a turn that then gets nudged or fails
+    // verification — and double-count with the recursive child's own momentum.
+    // It is recorded once, at the true terminal (just before `done`), only when
+    // no nudge/verify recursion took over. recordOutcome (Thompson, per-attempt)
+    // DOES belong here — each model attempt is its own routing datapoint.
     recordOutcome(
       task.type,
       decision.model.id,
@@ -2175,6 +2174,14 @@ export async function* runAgentLoop(
         costTracker.getSessionCost() -
         (options._runCostBaseline ?? sessionCostBefore),
     };
+
+    // Momentum: record ONLY here, at the true terminal. Reaching this point
+    // means no Phase-7 nudge / Phase-3 verify recursion took over (those
+    // `return` after recursing), so this attempt is the final accepted one —
+    // and only credit it if the run actually produced a usable result.
+    if (runOutcome.status === "succeeded") {
+      router.recordSuccess?.(decision.model.id, task.type);
+    }
 
     yield {
       type: "done",

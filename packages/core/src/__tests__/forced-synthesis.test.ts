@@ -129,6 +129,7 @@ function buildContext() {
     toAISDKToolsWithPermissions: () => ({}),
   };
   return {
+    router,
     cleanup: () => {
       rmSync(tmpProjectPath, { recursive: true, force: true });
       rmSync(fakeHome, { recursive: true, force: true });
@@ -274,6 +275,63 @@ describe("forced synthesis on step-cap with no final response", () => {
       expect(done.outcome.recovery).toBeUndefined();
       expect(done.outcome.initialStopCause).toBe("natural_stop");
       expect(_streamTextCalls).toHaveLength(1);
+    } finally {
+      ctx.cleanup();
+    }
+  });
+});
+
+describe("momentum recorded only at the terminal (iter-004 deferred #7)", () => {
+  beforeEach(() => {
+    _scripts = [];
+    _callIndex = 0;
+    _streamTextCalls.length = 0;
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  it("records momentum once, with task type, on a normal completed turn", async () => {
+    _scripts = [
+      {
+        parts: [{ type: "text-delta", text: "final answer" }],
+        text: "final answer",
+        finishReason: "stop",
+        steps: 1,
+      },
+    ];
+    const ctx = buildContext();
+    const spy = vi.spyOn(ctx.router, "recordSuccess");
+    try {
+      await ctx.run();
+      expect(spy).toHaveBeenCalledTimes(1);
+      // task type is passed (was omitted in the original bug).
+      expect(spy.mock.calls[0][1]).toBeTypeOf("string");
+    } finally {
+      ctx.cleanup();
+    }
+  });
+
+  it("does NOT record momentum when the turn produced no usable result", async () => {
+    // Tool work, no answer, synthesis also empty → failed run → no momentum.
+    const toolThenEmpty = {
+      parts: [
+        { type: "tool-input-start", id: "1", toolName: "file_read" },
+        { type: "tool-call", toolName: "file_read", input: { path: "/x" } },
+        { type: "tool-result", toolName: "file_read", output: "c" },
+        { type: "finish", finishReason: "stop" },
+      ],
+      text: "",
+      finishReason: "stop",
+      steps: 1,
+    };
+    _scripts = [
+      toolThenEmpty,
+      { parts: [], text: "", finishReason: "stop", steps: 1 }, // empty synthesis
+    ];
+    const ctx = buildContext();
+    const spy = vi.spyOn(ctx.router, "recordSuccess");
+    try {
+      await ctx.run();
+      expect(spy).not.toHaveBeenCalled();
     } finally {
       ctx.cleanup();
     }
