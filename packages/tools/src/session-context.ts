@@ -33,8 +33,15 @@ export function withSession<T>(
 
 /**
  * Enter a session scope WITHOUT a callback wrapper — for generators (the agent
- * loop) that can't wrap their yields in a callback. Nested scopes restore the
- * outer id when they exit.
+ * loop) that can't wrap their yields in a callback.
+ *
+ * CAUTION: `enterWith` sets the store for the current async execution and all
+ * nested continuations; it does NOT restore the previous id when this scope
+ * "exits" (there is no exit — it persists on the current async resource). A
+ * consumer that drives a generator via `enterSession` then continues doing
+ * other work in the SAME async context will keep this session id. When callers
+ * may share an async context across sessions, prefer `withSession(...)` (which
+ * scopes to a callback and restores) over `enterSession`.
  */
 export function enterSession(sessionId: string): void {
   sessionStorage.enterWith(sessionId);

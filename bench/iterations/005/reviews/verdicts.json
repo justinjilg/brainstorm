@@ -1,0 +1,23 @@
+{
+  "seat": "codex",
+  "axis": "concurrency-isolation",
+  "findings": 9,
+  "note": "Thorough review that both confirmed the scoping and found real remaining gaps. The scoping isolates DISTINCT concurrent sessions for task/tx/checkpoint/shell/routing, but Codex surfaced (a) two globals I missed entirely, (b) subagents not entering a session scope, (c) a deeper design question — the scope key is the persistent session id, not a per-RUN id, so concurrent turns on ONE session still collide, and (d) a rollback-safety regression from now-permitted concurrent transactions.",
+  "fixed": [
+    { "id": 3, "sev": "P1", "loc": "scratchpad.ts global Map → per-session", "note": "FIXED — was a real cross-session context leak (compaction could inject one session's notes into another's model context). Session-keyed + LRU bound." },
+    { "id": 4, "sev": "P1", "loc": "process-manage.ts global processes → session-keyed", "note": "FIXED — composite sessionId::name key; kill/list restricted to the current session; MAX cap kept as a process-wide resource limit." },
+    { "id": 7, "sev": "P2", "loc": "session-context enterWith comment wrong", "note": "FIXED — comment corrected; enterWith does NOT restore the outer scope, documented the withSession-vs-enterSession tradeoff." },
+    { "id": 9, "sev": "P2", "loc": "clearCheckpointManager not exported", "note": "PARTIAL — exported from tools index (the concrete gap). Wiring it into teardown belongs in the session-lifecycle owner (CLI serve / channels), NOT the recursive agent-loop finally (which runs per-recursion-level and would wipe state mid-run). LRU bound prevents growth meanwhile." }
+  ],
+  "deferred_to_005_6_concurrency_hardening": [
+    { "id": 1, "sev": "P1", "loc": "loop.ts scope key = persistent sessionId, not per-run id", "note": "REAL design finding. Two concurrent turns resuming the SAME logical session share a scope and clear each other's ephemeral state. Correct fix is a two-key model — a per-INVOCATION run id for ephemeral stores (tasks/tx/foreground handlers) + the logical session id only for background completion mailboxes that must span turns. This is a deliberate redesign, not a mechanical patch; ships as 005.6. Net today: distinct sessions ARE isolated (the common multi-tenant case); same-session concurrent turns are the remaining hole." },
+    { "id": 2, "sev": "P1", "loc": "subagent.ts enters workspace but not session scope", "note": "Parallel subagents share the parent/default session. 005.6: wrap subagent lifecycle in withSession(uuid) alongside withWorkspace (collision-resistant id, not Date.now())." },
+    { "id": 6, "sev": "P1", "loc": "transaction rollback unsafe across concurrent sessions", "note": "REGRESSION my change enabled: the old single global flag SERIALIZED transactions (only one process-wide); per-session state now permits concurrent same-workspace transactions, and rollback has no file lock/version check — A's rollback can clobber B's later committed edit. 005.6: record post-write hashes/generations and refuse rollback when the file no longer matches the transaction's last write." },
+    { "id": 5, "sev": "P1", "loc": "shell background completion delivery race", "note": "A job completing after the final stream part / during the suspended done-yield appends to taskEventQueue (already drained) and is discarded at teardown rather than entering pendingEventsBySession. 005.6: durable per-session mailbox acked after the yield, or detach the live handler before the final drain." },
+    { "id": 8, "sev": "P2", "loc": "transaction.ts txFor allocates for inactive sessions; FIFO can evict active", "note": "005.6: don't allocate on read/record paths, delete on commit/rollback, true-LRU refresh, never evict an ACTIVE transaction." }
+  ],
+  "gate": {
+    "tests": "tools session-scope 12 + scorer 10 + core 625 + router 118 green; as-any 295/295; typecheck clean",
+    "decision": "PARTIAL-GREEN — mechanical gaps closed; the deeper concurrency-semantics findings (run-id model, subagent scoping, tx rollback safety, background mailbox) are a genuine required follow-up (005.6), documented not rushed, per the iter-004 lesson that hurried complex concurrency work breeds edge-case holes."
+  }
+}

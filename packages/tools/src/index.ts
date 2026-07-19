@@ -46,6 +46,7 @@ export {
   CheckpointManager,
   initCheckpointManager,
   getCheckpointManager,
+  clearCheckpointManager,
 } from "./checkpoint.js";
 export { undoTool } from "./builtin/undo.js";
 export {

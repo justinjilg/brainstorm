@@ -4,15 +4,32 @@ import { promisify } from "node:util";
 import { defineTool } from "../base.js";
 import { checkSandbox } from "./sandbox.js";
 import { buildChildEnv } from "./shell.js";
+import { getSessionId } from "../session-context.js";
 
 const execFileAsync = promisify(execFile);
 
-// Track spawned background processes (capped to prevent memory leaks)
+// Track spawned background processes (capped to prevent memory leaks). Keyed by
+// `${sessionId}::${name}` and tagged with the spawning session so one session
+// can't enumerate (via error text), collide with, or KILL another session's
+// process. The MAX cap remains a process-wide resource limit.
 const MAX_MANAGED_PROCESSES = 100;
 const managedProcesses = new Map<
   string,
-  { pid: number; command: string; startedAt: number }
+  { pid: number; command: string; startedAt: number; sessionId: string }
 >();
+
+const procKey = (sessionId: string, name: string): string =>
+  `${sessionId}::${name}`;
+
+/** Names of the current session's managed processes (for error listings). */
+function sessionProcessNames(sessionId: string): string[] {
+  const prefix = `${sessionId}::`;
+  const names: string[] = [];
+  for (const key of managedProcesses.keys()) {
+    if (key.startsWith(prefix)) names.push(key.slice(prefix.length));
+  }
+  return names;
+}
 
 function cleanupStaleProcesses(): void {
   if (managedProcesses.size <= MAX_MANAGED_PROCESSES) return;
@@ -55,15 +72,18 @@ export const processSpawnTool = defineTool({
       return { error: `Blocked by sandbox: ${sandboxResult.reason}` };
     }
 
+    const sessionId = getSessionId();
+    const key = procKey(sessionId, name);
+
     if (managedProcesses.size >= MAX_MANAGED_PROCESSES) {
       return {
         error: `Too many background processes (max ${MAX_MANAGED_PROCESSES}). Kill some first.`,
       };
     }
 
-    if (managedProcesses.has(name)) {
+    if (managedProcesses.has(key)) {
       return {
-        error: `Process '${name}' is already running (pid: ${managedProcesses.get(name)!.pid})`,
+        error: `Process '${name}' is already running (pid: ${managedProcesses.get(key)!.pid})`,
       };
     }
 
@@ -76,10 +96,11 @@ export const processSpawnTool = defineTool({
     child.unref();
 
     if (child.pid) {
-      managedProcesses.set(name, {
+      managedProcesses.set(key, {
         pid: child.pid,
         command,
         startedAt: Date.now(),
+        sessionId,
       });
       cleanupStaleProcesses();
       return { success: true, name, pid: child.pid };
@@ -96,20 +117,23 @@ export const processKillTool = defineTool({
     name: z.string().describe("Process name to kill"),
   }),
   async execute({ name }) {
-    const proc = managedProcesses.get(name);
+    const sessionId = getSessionId();
+    const key = procKey(sessionId, name);
+    const proc = managedProcesses.get(key);
     if (!proc) {
+      // Only surface THIS session's processes — never another session's.
       return {
-        error: `No managed process named '${name}'. Active: ${Array.from(managedProcesses.keys()).join(", ") || "none"}`,
+        error: `No managed process named '${name}'. Active: ${sessionProcessNames(sessionId).join(", ") || "none"}`,
       };
     }
 
     try {
       // Group-kill — see cleanupStaleProcesses() for the Linux rationale.
       process.kill(-proc.pid, "SIGTERM");
-      managedProcesses.delete(name);
+      managedProcesses.delete(key);
       return { success: true, name, pid: proc.pid };
     } catch (err: any) {
-      managedProcesses.delete(name);
+      managedProcesses.delete(key);
       return { error: err.message, name };
     }
   },
