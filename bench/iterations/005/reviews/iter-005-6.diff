@@ -1,0 +1,235 @@
+diff --git a/packages/core/src/agent/subagent.ts b/packages/core/src/agent/subagent.ts
+index 62bb054..e2628bc 100644
+--- a/packages/core/src/agent/subagent.ts
++++ b/packages/core/src/agent/subagent.ts
+@@ -1,4 +1,5 @@
+ import { streamText, stepCountIs } from "ai";
++import { randomUUID } from "node:crypto";
+ import type { BrainstormConfig } from "@brainst0rm/config";
+ import type { ProviderRegistry } from "@brainst0rm/providers";
+ import {
+@@ -12,6 +13,7 @@ import {
+   setDockerSandbox,
+   DockerSandbox,
+   withWorkspace,
++  withSession,
+   getSandboxPool,
+ } from "@brainst0rm/tools";
+ import {
+@@ -779,7 +781,10 @@ async function runSubagentCore(
+     "Subagent capability manifest frozen",
+   );
+ 
+-  const subagentSessionId = `subagent-${type}-${Date.now()}`;
++  // Collision-resistant id: parallel subagents spawned in the same millisecond
++  // must NOT share a session (Date.now() alone collided → shared task/tx/
++  // scratchpad stores).
++  const subagentSessionId = `subagent-${type}-${randomUUID()}`;
+   const budgetLimit = options.budgetLimit ?? costTracker.getSubagentBudget();
+   const costBefore = costTracker.getSessionCost();
+ 
+@@ -904,7 +909,12 @@ async function runSubagentCore(
+       },
+     ];
+ 
+-    await withWorkspace(projectPath, async () => {
++    await withWorkspace(projectPath, async () =>
++      // Enter the subagent's OWN session scope so its session-scoped tool
++      // stores (tasks, transactions, scratchpad) are isolated from the parent
++      // and from sibling parallel subagents — not shared via the parent
++      // session or DEFAULT_SESSION_ID.
++      withSession(subagentSessionId, async () => {
+       // Bounded re-invocation loop = the single-streamText analogue of the
+       // loop's Phase 7 self-recursion. `nudge` is the nudgeDepth: iteration 0
+       // is the original run; each subsequent iteration is one corrective
+@@ -1047,7 +1057,7 @@ async function runSubagentCore(
+         messages.push({ role: "user", content: buildToolUseCorrection() });
+         forceToolChoice = nextNudge < teMaxNudges;
+       }
+-    });
++    })); // close inner-arrow body, withSession(), withWorkspace()
+   } catch (err: any) {
+     // AbortError from budget enforcement is expected — not an error
+     if (err.name !== "AbortError") throw err;
+diff --git a/packages/tools/src/builtin/transaction.ts b/packages/tools/src/builtin/transaction.ts
+index c685d7d..a3b222e 100644
+--- a/packages/tools/src/builtin/transaction.ts
++++ b/packages/tools/src/builtin/transaction.ts
+@@ -2,6 +2,8 @@ import { z } from "zod";
+ import { defineTool } from "../base.js";
+ import { readFileSync, existsSync } from "node:fs";
+ import { relative, resolve } from "node:path";
++import { createHash } from "node:crypto";
++import { getSessionId } from "../session-context.js";
+ 
+ /**
+  * Transaction Tool Calls — atomic multi-file edits.
+@@ -11,22 +13,70 @@ import { relative, resolve } from "node:path";
+  * On commit, changes are finalized (already written to disk by file tools).
+  *
+  * This uses the existing CheckpointManager for rollback capability.
++ *
++ * Per-session: a single module-global `transactionActive` flag meant two
++ * concurrent runs corrupted each other's transactions (one committing while
++ * the other tracked files). Keyed by the current session id instead.
+  */
+ 
+-let transactionActive = false;
+-let transactionFiles: string[] = [];
++interface TxState {
++  active: boolean;
++  /**
++   * Tracked files → the content hash at the transaction's last write. Rollback
++   * refuses to revert a file whose current content no longer matches, so a
++   * concurrent session that edited the same file afterward isn't silently
++   * clobbered (the safety gap that per-session — hence concurrent —
++   * transactions introduced over the old single-global-flag serialization).
++   */
++  files: Map<string, string>;
++}
++const MAX_TRACKED_SESSIONS = 256;
++const txStates = new Map<string, TxState>();
++
++function hashFile(path: string): string | null {
++  try {
++    return createHash("sha256").update(readFileSync(path)).digest("hex");
++  } catch {
++    return null; // unreadable/absent — recorded as "no hash"
++  }
++}
++
++/** Read-only peek: never allocates a state entry. */
++function peekTx(sessionId: string): TxState | undefined {
++  return txStates.get(sessionId);
++}
++
++/** Get-or-create for the ACTIVE (begin) path. Never evicts an active tx. */
++function beginTxState(sessionId: string): TxState {
++  let s = txStates.get(sessionId);
++  if (!s) {
++    if (txStates.size >= MAX_TRACKED_SESSIONS) {
++      for (const [id, st] of txStates) {
++        if (!st.active) {
++          txStates.delete(id);
++          break;
++        }
++      }
++    }
++    s = { active: false, files: new Map() };
++    txStates.set(sessionId, s);
++  }
++  return s;
++}
+ 
+ export function isTransactionActive(): boolean {
+-  return transactionActive;
++  return peekTx(getSessionId())?.active ?? false;
+ }
+ 
+ export function getTransactionFiles(): string[] {
+-  return [...transactionFiles];
++  return [...(peekTx(getSessionId())?.files.keys() ?? [])];
+ }
+ 
+ export function recordTransactionFile(path: string): void {
+-  if (transactionActive && !transactionFiles.includes(path)) {
+-    transactionFiles.push(path);
++  const s = peekTx(getSessionId());
++  if (s?.active) {
++    // Record the hash AS WRITTEN so rollback can detect later divergence.
++    s.files.set(path, hashFile(path) ?? "");
+   }
+ }
+ 
+@@ -39,11 +89,12 @@ export const beginTransactionTool = defineTool({
+     description: z.string().optional().describe("What this transaction is for"),
+   }),
+   async execute({ description }) {
+-    if (transactionActive) {
++    const s = beginTxState(getSessionId());
++    if (s.active) {
+       return { error: "Transaction already active. Commit or rollback first." };
+     }
+-    transactionActive = true;
+-    transactionFiles = [];
++    s.active = true;
++    s.files = new Map();
+     return {
+       success: true,
+       message: `Transaction started.${description ? ` Purpose: ${description}` : ""} All file writes are now tracked. Use commit_transaction to finalize or rollback_transaction to revert.`,
+@@ -58,12 +109,14 @@ export const commitTransactionTool = defineTool({
+   permission: "auto",
+   inputSchema: z.object({}),
+   async execute() {
+-    if (!transactionActive) {
++    const sessionId = getSessionId();
++    const s = peekTx(sessionId);
++    if (!s?.active) {
+       return { error: "No active transaction to commit." };
+     }
+-    const files = [...transactionFiles];
+-    transactionActive = false;
+-    transactionFiles = [];
++    const files = [...s.files.keys()];
++    // Release the state entirely on commit (no lingering inactive entry).
++    txStates.delete(sessionId);
+     return {
+       success: true,
+       filesCommitted: files,
+@@ -81,7 +134,9 @@ export const rollbackTransactionTool = defineTool({
+     reason: z.string().optional().describe("Why the rollback is needed"),
+   }),
+   async execute({ reason }) {
+-    if (!transactionActive) {
++    const sessionId = getSessionId();
++    const s = peekTx(sessionId);
++    if (!s?.active) {
+       return { error: "No active transaction to rollback." };
+     }
+ 
+@@ -92,11 +147,27 @@ export const rollbackTransactionTool = defineTool({
+     const failed: Array<{ file: string; error: string }> = [];
+ 
+     // Order files by dependencies: dependents first, then dependencies
+-    const ordered = orderByDependencies(transactionFiles);
++    const ordered = orderByDependencies([...s.files.keys()]);
+ 
+     if (cp) {
+       // Revert dependents before dependencies to maintain consistency
+       for (const file of ordered) {
++        // Safety: if the file diverged from what THIS transaction last wrote
++        // (a concurrent session edited it since), refuse to revert — reverting
++        // to our older snapshot would silently clobber the other session's
++        // work. "" recorded-hash means the file was unreadable at record time.
++        const recordedHash = s.files.get(file) ?? "";
++        if (recordedHash) {
++          const currentHash = hashFile(file);
++          if (currentHash !== null && currentHash !== recordedHash) {
++            failed.push({
++              file,
++              error:
++                "File changed since this transaction's last write (concurrent edit) — rollback refused to avoid clobbering it",
++            });
++            continue;
++          }
++        }
+         try {
+           const result = cp.revertLast(file);
+           if (result) {
+@@ -110,13 +181,13 @@ export const rollbackTransactionTool = defineTool({
+       }
+     } else {
+       // No checkpoint manager — all files fail
+-      for (const file of transactionFiles) {
++      for (const file of s.files.keys()) {
+         failed.push({ file, error: "CheckpointManager not initialized" });
+       }
+     }
+ 
+-    transactionActive = false;
+-    transactionFiles = [];
++    // Release the transaction state on rollback.
++    txStates.delete(sessionId);
+ 
+     const partialRollback = failed.length > 0 && reverted.length > 0;
+ 

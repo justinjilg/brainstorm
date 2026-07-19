@@ -1,0 +1,188 @@
+diff --git a/packages/core/src/agent/loop.ts b/packages/core/src/agent/loop.ts
+index f72d9b0..bb59c8d 100644
+--- a/packages/core/src/agent/loop.ts
++++ b/packages/core/src/agent/loop.ts
+@@ -563,6 +563,12 @@ export interface AgentLoopOptions {
+    * attempt it just gave up on.
+    */
+   _attemptsSoFar?: ModelAttemptOutcome[];
++  /**
++   * Internal: ordered recovery actions taken by upstream levels (fallback,
++   * tool_nudge, verification_retry), so the terminal level emits the full
++   * recovery SEQUENCE instead of a single tag that erases earlier recoveries.
++   */
++  _recoverySoFar?: NonNullable<RunOutcome["recovery"]>;
+   /**
+    * Internal: session cost at the START of this logical run, captured once at
+    * the root and propagated through recursion so RunOutcome.costUsd is the run
+@@ -1510,7 +1516,10 @@ export async function* runAgentLoop(
+     // needing synthesis, over-firing; the sharper distinction is deferred to
+     // the iter-006 TurnController, which models a turn's phases explicitly.)
+     let hasFinalResponse = accumulatedText.trim().length > 0;
+-    let recovery: RunOutcome["recovery"] | undefined;
++    let didSynthesize = false;
++    // The forced-synthesis model call is a DISTINCT invocation — recorded as
++    // its own attempt so the aggregate carries every model call (Codex #8).
++    let synthAttempt: ModelAttemptOutcome | null = null;
+     let synthesisAttempted = options._synthesized ?? false;
+     const initialStopCause = classifyStopCause({
+       isEmpty,
+@@ -1589,6 +1598,8 @@ export async function* runAgentLoop(
+           yield { type: "interrupted" };
+           return;
+         }
++        const synthStartMs = Date.now();
++        const synthCostBefore = costTracker.getSessionCost();
+         const synthResult = invokeModelAttempt({
+           providerModel: modelId,
+           modelEntry: decision.model,
+@@ -1628,7 +1639,15 @@ export async function* runAgentLoop(
+         if (synthText) {
+           accumulatedText += (accumulatedText ? "\n\n" : "") + synthText;
+           hasFinalResponse = true;
+-          recovery = "forced_synthesis";
++          didSynthesize = true;
++          synthAttempt = {
++            modelId: decision.model.id,
++            taskType: task.type,
++            status: "succeeded",
++            stopCause: "natural_stop",
++            latencyMs: Date.now() - synthStartMs,
++            costUsd: costTracker.getSessionCost() - synthCostBefore,
++          };
+           yield {
+             type: "text-delta",
+             delta: normalizeInsightMarkers(synthText),
+@@ -1762,6 +1781,7 @@ export async function* runAgentLoop(
+           _synthesized: synthesisAttempted,
+           // Preserve the run-cost baseline across the whole fallback chain.
+           _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
++          _recoverySoFar: [...(options._recoverySoFar ?? []), "fallback" as const],
+         } as any);
+         return;
+       }
+@@ -1861,15 +1881,14 @@ export async function* runAgentLoop(
+       costUsd: turnCost,
+     };
+ 
+-    // Momentum records ONLY a genuinely successful final attempt, WITH task
+-    // type. Previously recordSuccess fired unconditionally, before turnSuccess
+-    // was known and without the task type — so momentum learned "the model
+-    // said something" (and disagreed with the Thompson outcome below on
+-    // exhausted-retry turns that reach here with turnSuccess=false).
+-    if (turnSuccess) {
+-      router.recordSuccess?.(decision.model.id, task.type);
+-    }
+-
++    // NOTE: momentum (router.recordSuccess) is deliberately NOT recorded here.
++    // This point is BEFORE the Phase-7 tool-nudge and Phase-3 verify blocks,
++    // which may `return` after recursing into a corrective re-run. Recording
++    // momentum here would credit a turn that then gets nudged or fails
++    // verification — and double-count with the recursive child's own momentum.
++    // It is recorded once, at the true terminal (just before `done`), only when
++    // no nudge/verify recursion took over. recordOutcome (Thompson, per-attempt)
++    // DOES belong here — each model attempt is its own routing datapoint.
+     recordOutcome(
+       task.type,
+       decision.model.id,
+@@ -1981,6 +2000,14 @@ export async function* runAgentLoop(
+           _forceToolChoice: forceOnRetry,
+           _synthesized: synthesisAttempted,
+           _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
++          // Carry this invocation into the aggregate so the terminal run
++          // outcome includes the nudge-superseded attempt, not just the final.
++          _attemptsSoFar: [...(options._attemptsSoFar ?? []), thisAttempt],
++          _recoverySoFar: [
++            ...(options._recoverySoFar ?? []),
++            ...(didSynthesize ? (["forced_synthesis"] as const) : []),
++            "tool_nudge" as const,
++          ],
+         });
+         return;
+       }
+@@ -2084,6 +2111,13 @@ export async function* runAgentLoop(
+             _forceToolChoice: false,
+             _synthesized: synthesisAttempted,
+             _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
++            // Include this verify-superseded attempt in the aggregate chain.
++            _attemptsSoFar: [...(options._attemptsSoFar ?? []), thisAttempt],
++            _recoverySoFar: [
++              ...(options._recoverySoFar ?? []),
++              ...(didSynthesize ? (["forced_synthesis"] as const) : []),
++              "verification_retry" as const,
++            ],
+           });
+           return;
+         }
+@@ -2150,14 +2184,22 @@ export async function* runAgentLoop(
+     // masquerade as a clean first stop. verification/security/judge are left
+     // not_run here; wiring their live results into the outcome is a follow-on
+     // (the contract + termination/recovery/cost are established this iteration).
+-    const allAttempts = [...(options._attemptsSoFar ?? []), thisAttempt];
+-    // If earlier attempts failed and this one succeeded, the run recovered via
+-    // fallback (unless it already recovered via forced synthesis this turn).
+-    const aggregateRecovery: RunOutcome["recovery"] =
+-      recovery ??
+-      (turnSuccess && (options._attemptsSoFar?.length ?? 0) > 0
+-        ? "fallback"
+-        : undefined);
++    // Order: upstream attempts, this turn's main call, then the synthesis call
++    // (a distinct model invocation) if it ran — so attempts carries every call.
++    const allAttempts = [
++      ...(options._attemptsSoFar ?? []),
++      thisAttempt,
++      ...(synthAttempt ? [synthAttempt] : []),
++    ];
++    // Ordered recovery sequence: upstream actions (fallback / nudge / verify,
++    // appended as they happened) plus a forced_synthesis if THIS terminal turn
++    // synthesized. Preserves e.g. A-fallback → synthesis as ["fallback",
++    // "forced_synthesis"] instead of a single tag that erased the fallback.
++    const recoverySeq: NonNullable<RunOutcome["recovery"]> = [
++      ...(options._recoverySoFar ?? []),
++      ...(didSynthesize ? (["forced_synthesis"] as const) : []),
++    ];
++    const aggregateRecovery = recoverySeq.length > 0 ? recoverySeq : undefined;
+     const runOutcome: RunOutcome = {
+       status: turnSuccess ? "succeeded" : "failed",
+       attempts: allAttempts,
+@@ -2176,6 +2218,14 @@ export async function* runAgentLoop(
+         (options._runCostBaseline ?? sessionCostBefore),
+     };
+ 
++    // Momentum: record ONLY here, at the true terminal. Reaching this point
++    // means no Phase-7 nudge / Phase-3 verify recursion took over (those
++    // `return` after recursing), so this attempt is the final accepted one —
++    // and only credit it if the run actually produced a usable result.
++    if (runOutcome.status === "succeeded") {
++      router.recordSuccess?.(decision.model.id, task.type);
++    }
++
+     yield {
+       type: "done",
+       totalCost: costTracker.getSessionCost(),
+diff --git a/packages/shared/src/types.ts b/packages/shared/src/types.ts
+index c367562..3c01729 100644
+--- a/packages/shared/src/types.ts
++++ b/packages/shared/src/types.ts
+@@ -257,12 +257,15 @@ export interface RunOutcome {
+   /** How the FIRST attempt terminated — preserved even after recovery, so a
+    *  step-capped-then-synthesized run doesn't masquerade as a clean stop. */
+   initialStopCause: StopCause;
+-  /** How the run recovered from a non-clean initial stop, if it did. */
+-  recovery?:
+-    | "fallback"
+-    | "forced_synthesis"
+-    | "tool_nudge"
+-    | "verification_retry";
++  /**
++   * Ordered sequence of recovery actions the run took, in the order they
++   * happened. A single tag can't represent a run that both fell back AND then
++   * synthesized (e.g. A-empty → B-tool-only → synthesis) — that erased the
++   * fallback. Empty/absent = no recovery (clean run).
++   */
++  recovery?: Array<
++    "fallback" | "forced_synthesis" | "tool_nudge" | "verification_retry"
++  >;
+   /** Did the run produce usable final text? (distinct from making changes) */
+   hasFinalResponse: boolean;
+   /** Artifact references produced (files written, etc.), if tracked. */

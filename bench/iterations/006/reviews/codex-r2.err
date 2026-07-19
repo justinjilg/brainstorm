@@ -1,0 +1,1255 @@
+Reading additional input from stdin...
+OpenAI Codex v0.144.6
+--------
+workdir: /Users/justin.jilg/Projects/brainstorm
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 019f77da-8346-7302-b93f-3ff18326af30
+--------
+user
+Verify the round-2 fixes in bench/iterations/006/reviews/iter-006-fixed.diff. #8: forced synthesis now records its OWN ModelAttemptOutcome (status succeeded, own latency + cost delta via synthCostBefore) appended to allAttempts after thisAttempt, so attempts carries every model invocation. #9: this-turn's forced_synthesis is now threaded into _recoverySoFar at the nudge AND verify recursion sites (before the recursion action), so a synthesize-then-verify/nudge turn records the ordered sequence e.g. [forced_synthesis, verification_retry] instead of losing forced_synthesis. Confirm #8 and #9 are now resolved and no new P0/P1 (double-count, wrong order, cost-delta accuracy). Output ONLY JSON: {"fixes":[{"id":8|9,"status":"resolved"|"not-resolved","note":string}],"new_P0_P1":[]}
+exec
+/bin/zsh -lc "sed -n '1,260p' bench/iterations/006/reviews/iter-006-fixed.diff" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+diff --git a/packages/core/src/agent/loop.ts b/packages/core/src/agent/loop.ts
+index f72d9b0..bb59c8d 100644
+--- a/packages/core/src/agent/loop.ts
++++ b/packages/core/src/agent/loop.ts
+@@ -563,6 +563,12 @@ export interface AgentLoopOptions {
+    * attempt it just gave up on.
+    */
+   _attemptsSoFar?: ModelAttemptOutcome[];
++  /**
++   * Internal: ordered recovery actions taken by upstream levels (fallback,
++   * tool_nudge, verification_retry), so the terminal level emits the full
++   * recovery SEQUENCE instead of a single tag that erases earlier recoveries.
++   */
++  _recoverySoFar?: NonNullable<RunOutcome["recovery"]>;
+   /**
+    * Internal: session cost at the START of this logical run, captured once at
+    * the root and propagated through recursion so RunOutcome.costUsd is the run
+@@ -1510,7 +1516,10 @@ export async function* runAgentLoop(
+     // needing synthesis, over-firing; the sharper distinction is deferred to
+     // the iter-006 TurnController, which models a turn's phases explicitly.)
+     let hasFinalResponse = accumulatedText.trim().length > 0;
+-    let recovery: RunOutcome["recovery"] | undefined;
++    let didSynthesize = false;
++    // The forced-synthesis model call is a DISTINCT invocation — recorded as
++    // its own attempt so the aggregate carries every model call (Codex #8).
++    let synthAttempt: ModelAttemptOutcome | null = null;
+     let synthesisAttempted = options._synthesized ?? false;
+     const initialStopCause = classifyStopCause({
+       isEmpty,
+@@ -1589,6 +1598,8 @@ export async function* runAgentLoop(
+           yield { type: "interrupted" };
+           return;
+         }
++        const synthStartMs = Date.now();
++        const synthCostBefore = costTracker.getSessionCost();
+         const synthResult = invokeModelAttempt({
+           providerModel: modelId,
+           modelEntry: decision.model,
+@@ -1628,7 +1639,15 @@ export async function* runAgentLoop(
+         if (synthText) {
+           accumulatedText += (accumulatedText ? "\n\n" : "") + synthText;
+           hasFinalResponse = true;
+-          recovery = "forced_synthesis";
++          didSynthesize = true;
++          synthAttempt = {
++            modelId: decision.model.id,
++            taskType: task.type,
++            status: "succeeded",
++            stopCause: "natural_stop",
++            latencyMs: Date.now() - synthStartMs,
++            costUsd: costTracker.getSessionCost() - synthCostBefore,
++          };
+           yield {
+             type: "text-delta",
+             delta: normalizeInsightMarkers(synthText),
+@@ -1762,6 +1781,7 @@ export async function* runAgentLoop(
+           _synthesized: synthesisAttempted,
+           // Preserve the run-cost baseline across the whole fallback chain.
+           _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
++          _recoverySoFar: [...(options._recoverySoFar ?? []), "fallback" as const],
+         } as any);
+         return;
+       }
+@@ -1861,15 +1881,14 @@ export async function* runAgentLoop(
+       costUsd: turnCost,
+     };
+ 
+-    // Momentum records ONLY a genuinely successful final attempt, WITH task
+-    // type. Previously recordSuccess fired unconditionally, before turnSuccess
+-    // was known and without the task type — so momentum learned "the model
+-    // said something" (and disagreed with the Thompson outcome below on
+-    // exhausted-retry turns that reach here with turnSuccess=false).
+-    if (turnSuccess) {
+-      router.recordSuccess?.(decision.model.id, task.type);
+-    }
+-
++    // NOTE: momentum (router.recordSuccess) is deliberately NOT recorded here.
++    // This point is BEFORE the Phase-7 tool-nudge and Phase-3 verify blocks,
++    // which may `return` after recursing into a corrective re-run. Recording
++    // momentum here would credit a turn that then gets nudged or fails
++    // verification — and double-count with the recursive child's own momentum.
++    // It is recorded once, at the true terminal (just before `done`), only when
++    // no nudge/verify recursion took over. recordOutcome (Thompson, per-attempt)
++    // DOES belong here — each model attempt is its own routing datapoint.
+     recordOutcome(
+       task.type,
+       decision.model.id,
+@@ -1981,6 +2000,14 @@ export async function* runAgentLoop(
+           _forceToolChoice: forceOnRetry,
+           _synthesized: synthesisAttempted,
+           _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
++          // Carry this invocation into the aggregate so the terminal run
++          // outcome includes the nudge-superseded attempt, not just the final.
++          _attemptsSoFar: [...(options._attemptsSoFar ?? []), thisAttempt],
++          _recoverySoFar: [
++            ...(options._recoverySoFar ?? []),
++            ...(didSynthesize ? (["forced_synthesis"] as const) : []),
++            "tool_nudge" as const,
++          ],
+         });
+         return;
+       }
+@@ -2084,6 +2111,13 @@ export async function* runAgentLoop(
+             _forceToolChoice: false,
+             _synthesized: synthesisAttempted,
+             _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
++            // Include this verify-superseded attempt in the aggregate chain.
++            _attemptsSoFar: [...(options._attemptsSoFar ?? []), thisAttempt],
++            _recoverySoFar: [
++              ...(options._recoverySoFar ?? []),
++              ...(didSynthesize ? (["forced_synthesis"] as const) : []),
++              "verification_retry" as const,
++            ],
+           });
+           return;
+         }
+@@ -2150,14 +2184,22 @@ export async function* runAgentLoop(
+     // masquerade as a clean first stop. verification/security/judge are left
+     // not_run here; wiring their live results into the outcome is a follow-on
+     // (the contract + termination/recovery/cost are established this iteration).
+-    const allAttempts = [...(options._attemptsSoFar ?? []), thisAttempt];
+-    // If earlier attempts failed and this one succeeded, the run recovered via
+-    // fallback (unless it already recovered via forced synthesis this turn).
+-    const aggregateRecovery: RunOutcome["recovery"] =
+-      recovery ??
+-      (turnSuccess && (options._attemptsSoFar?.length ?? 0) > 0
+-        ? "fallback"
+-        : undefined);
++    // Order: upstream attempts, this turn's main call, then the synthesis call
++    // (a distinct model invocation) if it ran — so attempts carries every call.
++    const allAttempts = [
++      ...(options._attemptsSoFar ?? []),
++      thisAttempt,
++      ...(synthAttempt ? [synthAttempt] : []),
++    ];
++    // Ordered recovery sequence: upstream actions (fallback / nudge / verify,
++    // appended as they happened) plus a forced_synthesis if THIS terminal turn
++    // synthesized. Preserves e.g. A-fallback → synthesis as ["fallback",
++    // "forced_synthesis"] instead of a single tag that erased the fallback.
++    const recoverySeq: NonNullable<RunOutcome["recovery"]> = [
++      ...(options._recoverySoFar ?? []),
++      ...(didSynthesize ? (["forced_synthesis"] as const) : []),
++    ];
++    const aggregateRecovery = recoverySeq.length > 0 ? recoverySeq : undefined;
+     const runOutcome: RunOutcome = {
+       status: turnSuccess ? "succeeded" : "failed",
+       attempts: allAttempts,
+@@ -2176,6 +2218,14 @@ export async function* runAgentLoop(
+         (options._runCostBaseline ?? sessionCostBefore),
+     };
+ 
++    // Momentum: record ONLY here, at the true terminal. Reaching this point
++    // means no Phase-7 nudge / Phase-3 verify recursion took over (those
++    // `return` after recursing), so this attempt is the final accepted one —
++    // and only credit it if the run actually produced a usable result.
++    if (runOutcome.status === "succeeded") {
++      router.recordSuccess?.(decision.model.id, task.type);
++    }
++
+     yield {
+       type: "done",
+       totalCost: costTracker.getSessionCost(),
+diff --git a/packages/shared/src/types.ts b/packages/shared/src/types.ts
+index c367562..3c01729 100644
+--- a/packages/shared/src/types.ts
++++ b/packages/shared/src/types.ts
+@@ -257,12 +257,15 @@ export interface RunOutcome {
+   /** How the FIRST attempt terminated — preserved even after recovery, so a
+    *  step-capped-then-synthesized run doesn't masquerade as a clean stop. */
+   initialStopCause: StopCause;
+-  /** How the run recovered from a non-clean initial stop, if it did. */
+-  recovery?:
+-    | "fallback"
+-    | "forced_synthesis"
+-    | "tool_nudge"
+-    | "verification_retry";
++  /**
++   * Ordered sequence of recovery actions the run took, in the order they
++   * happened. A single tag can't represent a run that both fell back AND then
++   * synthesized (e.g. A-empty → B-tool-only → synthesis) — that erased the
++   * fallback. Empty/absent = no recovery (clean run).
++   */
++  recovery?: Array<
++    "fallback" | "forced_synthesis" | "tool_nudge" | "verification_retry"
++  >;
+   /** Did the run produce usable final text? (distinct from making changes) */
+   hasFinalResponse: boolean;
+   /** Artifact references produced (files written, etc.), if tracked. */
+
+exec
+/bin/zsh -lc "sed -n '1460,2205p' packages/core/src/agent/loop.ts" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+
+    // ── Truncated tool-call detection ──
+    // Distinct from an empty turn: here the model INTENDED to call a tool but
+    // the stream ended before a dispatchable tool-call materialized. Two
+    // signals, either of which is sufficient:
+    //   1. pendingToolInputs > 0 — a tool-input-start never resolved into a
+    //      tool-call (parser cut off mid-assembly).
+    //   2. finishReason === "tool-calls" but toolCallCount === 0 — the provider
+    //      reported it stopped to make tool calls, yet emitted none.
+    // A duplicate terminal finish (finishPartCount > 1), which BR has been seen
+    // to send, is the usual trigger for (1)/(2) — surfaced in the diagnostic.
+    // We must NOT let this record as a silent empty-success: it retries.
+    const toolCallTruncated =
+      pendingToolInputs > 0 ||
+      (finishReason === "tool-calls" && toolCallCount === 0);
+
+    if (toolCallTruncated) {
+      log.warn(
+        {
+          model: decision.model.id,
+          pendingToolInputs,
+          finishReason,
+          finishPartCount,
+          textDeltas: textDeltaCount,
+          toolCalls: toolCallCount,
+        },
+        "Stream truncated mid-tool-call — tool-call assembly incomplete",
+      );
+      trajectory?.recordError({
+        message: `Truncated tool-call assembly (pending=${pendingToolInputs}, finishReason=${finishReason ?? "none"}, finishParts=${finishPartCount})`,
+        model: decision.model.id,
+      });
+      yield {
+        type: "loop-warning" as const,
+        message: `Stream from ${decision.model.id} truncated mid-tool-call (finishReason=${finishReason ?? "none"}, ${pendingToolInputs} pending). Retrying.`,
+      };
+    }
+
+    // ── Forced synthesis: tool work done, but no final answer written ──
+    // A model (often a coder, or a reasoning model whose answer leaked into
+    // reasoning_content) can make tool calls and then STOP — whether by
+    // exhausting its step budget or by finishing early — WITHOUT ever writing
+    // a final answer. Such a turn is not `isEmpty` (it made tool calls) yet has
+    // no usable response; it would otherwise record as a silent success with
+    // empty text, which is exactly what dead-ended the reviewer seats + gpt-oss
+    // eval step-cap failures + empty workflow artifacts this iteration targets.
+    //
+    // Live dogfooding (gpt-oss, iter-004) showed the hard-cap case is only HALF
+    // of it — the model frequently stops EARLY after tool calls with no
+    // summary. So trigger on the general condition: made tool calls, has no
+    // final response, wasn't truncated. NOT producedArtifacts (edits ARE an
+    // artifact). Run exactly ONE tools-disabled synthesis turn through the
+    // shared seam; `initialStopCause` preserves how it actually stopped.
+    // hasFinalResponse: the turn produced usable text. (A stricter "text AFTER
+    // the last tool call" signal — Codex's finding #1 — would also flag
+    // narrate-then-act turns that legitimately conclude on the next turn as
+    // needing synthesis, over-firing; the sharper distinction is deferred to
+    // the iter-006 TurnController, which models a turn's phases explicitly.)
+    let hasFinalResponse = accumulatedText.trim().length > 0;
+    let didSynthesize = false;
+    // The forced-synthesis model call is a DISTINCT invocation — recorded as
+    // its own attempt so the aggregate carries every model call (Codex #8).
+    let synthAttempt: ModelAttemptOutcome | null = null;
+    let synthesisAttempted = options._synthesized ?? false;
+    const initialStopCause = classifyStopCause({
+      isEmpty,
+      toolCallTruncated,
+      stepsCompleted,
+      maxSteps: maxStepsForRun,
+      lastStepFinishReason,
+      providerFinishReason: finishReason,
+    });
+    // Budget guard: synthesis is a direct extra model call that bypasses the
+    // router — don't start it once the hard session budget is spent.
+    const synthesisBudgetOk = (() => {
+      const remaining = costTracker.getRemainingBudget();
+      return remaining === null || remaining > 0;
+    })();
+    const needsSynthesis =
+      shouldUseTools && // only a genuine tool-using session can lack a summary
+      !hasFinalResponse &&
+      toolCallCount > 0 &&
+      !toolCallTruncated &&
+      !synthesisAttempted &&
+      synthesisBudgetOk;
+    if (needsSynthesis) {
+      synthesisAttempted = true; // once per logical run, even on failure
+      // Own AbortController linked to the caller signal so a hung synthesis
+      // stream can't hang the run; distinct timeout vs caller-cancellation.
+      const SYNTH_TIMEOUT_MS = 60_000;
+      const synthTimeoutController = new AbortController();
+      const synthTimer = setTimeout(
+        () => synthTimeoutController.abort(),
+        SYNTH_TIMEOUT_MS,
+      );
+      const synthSignal = linkSignals(
+        synthTimeoutController.signal,
+        options.signal,
+      );
+      try {
+        yield {
+          type: "loop-warning" as const,
+          message: `${decision.model.id} made ${toolCallCount} tool call(s) but wrote no final answer (stop: ${initialStopCause}) — running one tools-disabled synthesis turn.`,
+        };
+        // Give synthesis the model's OWN work to summarize: the assistant
+        // tool-call + tool-result messages from the completed invocation, not
+        // just the input history it can't see its work in.
+        let synthContext = messagesForApi as Array<{
+          role: string;
+          content: unknown;
+        }>;
+        try {
+          // Bound the response-metadata await against the synthesis watchdog +
+          // caller signal — result.response can itself hang (a stalled/errored
+          // stream), and an unbounded await here would defeat the watchdog.
+          const resp = await Promise.race([
+            result.response,
+            new Promise<null>((resolve) => {
+              synthSignal.addEventListener("abort", () => resolve(null), {
+                once: true,
+              });
+            }),
+          ]);
+          const respMessages = (resp as { messages?: unknown[] } | null)
+            ?.messages;
+          if (Array.isArray(respMessages) && respMessages.length > 0) {
+            synthContext = [
+              ...synthContext,
+              ...(respMessages as Array<{ role: string; content: unknown }>),
+            ];
+          }
+        } catch {
+          /* response unavailable — fall back to input history */
+        }
+        // If the caller cancelled while we were fetching response metadata,
+        // stop before spending another model call.
+        if (options.signal?.aborted) {
+          clearTimeout(synthTimer);
+          yield { type: "interrupted" };
+          return;
+        }
+        const synthStartMs = Date.now();
+        const synthCostBefore = costTracker.getSessionCost();
+        const synthResult = invokeModelAttempt({
+          providerModel: modelId,
+          modelEntry: decision.model,
+          system: systemForApiNormalized,
+          messages: [
+            ...synthContext,
+            {
+              role: "user",
+              content:
+                "You have reached your tool-use budget. Do NOT call any more tools. " +
+                "Using only the work you have already done, write your final answer/result now.",
+            },
+          ],
+          abortSignal: synthSignal,
+          maxSteps: 1,
+          metadataHeader,
+        });
+        const synthText = (await synthResult.text)?.trim() ?? "";
+        // Record synthesis cost regardless of whether it produced text — an
+        // empty synthesis is still billable.
+        try {
+          const u = await synthResult.usage;
+          costTracker.record({
+            sessionId,
+            modelId: decision.model.id,
+            provider: decision.model.provider,
+            inputTokens: u?.inputTokens ?? 0,
+            outputTokens: u?.outputTokens ?? 0,
+            cachedTokens: 0,
+            taskType: task.type,
+            projectPath: options.projectPath,
+            pricing: decision.model.pricing,
+          });
+        } catch {
+          /* usage/cost best-effort */
+        }
+        if (synthText) {
+          accumulatedText += (accumulatedText ? "\n\n" : "") + synthText;
+          hasFinalResponse = true;
+          didSynthesize = true;
+          synthAttempt = {
+            modelId: decision.model.id,
+            taskType: task.type,
+            status: "succeeded",
+            stopCause: "natural_stop",
+            latencyMs: Date.now() - synthStartMs,
+            costUsd: costTracker.getSessionCost() - synthCostBefore,
+          };
+          yield {
+            type: "text-delta",
+            delta: normalizeInsightMarkers(synthText),
+          };
+        }
+      } catch (synthErr: any) {
+        // A caller cancellation must propagate as interrupted, not be
+        // swallowed into a recovered "done".
+        if (synthErr?.name === "AbortError" || options.signal?.aborted) {
+          clearTimeout(synthTimer);
+          if (options.signal?.aborted) {
+            yield { type: "interrupted" };
+            return;
+          }
+          // else: our own synthesis timeout fired — fall through as a failed
+          // synthesis (hasFinalResponse stays false → handled below).
+        }
+        log.warn(
+          { err: synthErr, model: decision.model.id },
+          "Forced synthesis turn failed — treating as no final response",
+        );
+      } finally {
+        clearTimeout(synthTimer);
+      }
+    }
+
+    // A turn needs a retry when a tool-call was truncated, OR a genuine
+    // tool-using turn made tool calls but produced no final response (whether
+    // synthesis ran-and-failed this turn OR was already spent upstream by a
+    // _synthesized descendant — either way a tool-only turn with no answer is
+    // not a success). Non-tool turns fall back to the classic empty signal.
+    const toolTurnWithoutAnswer =
+      shouldUseTools && toolCallCount > 0 && !hasFinalResponse;
+    const shouldRetry =
+      toolCallTruncated || toolTurnWithoutAnswer || isEmpty;
+
+    // Record circuit breaker outcome for this model.
+    // Empty response / truncated tool-call = failure (nothing usable).
+    // Non-empty & complete = success (closes half-open circuits, resets
+    // consecutive failures).
+    const breaker = getLLMCircuit(decision.model.id);
+    if (shouldRetry) {
+      breaker.recordFailure(
+        toolCallTruncated ? "truncated_tool_call" : "empty_response",
+      );
+    } else {
+      breaker.recordSuccess();
+    }
+    // Build fallback list: use decision.fallbacks, or generate from registry if empty
+    let fallbacks = decision.fallbacks;
+    if (fallbacks.length === 0 && shouldRetry) {
+      // Fallback models for empty responses — configurable via config.routing.fallbackModels
+      const RETRY_MODELS: string[] = (config as any).routing
+        ?.fallbackModels ?? [
+        "anthropic/claude-sonnet-4.6",
+        "openai/gpt-5.4",
+        "anthropic/claude-haiku-4.5",
+      ];
+      fallbacks = RETRY_MODELS.filter((id: string) => id !== decision.model.id)
+        .map((id: string) => options.registry.getModel(id))
+        .filter((m): m is ModelEntry => m != null && m.status === "available");
+    }
+
+    const MAX_FALLBACK_DEPTH = 2;
+    const retryDepth = options._retryDepth ?? 0;
+    const modelsTried = [...(options._modelsTried ?? []), decision.model.id];
+
+    if (
+      shouldRetry &&
+      fallbacks.length > 0 &&
+      retryDepth < MAX_FALLBACK_DEPTH
+    ) {
+      const reason = toolCallTruncated
+        ? "truncated_tool_call"
+        : "empty_response";
+      router.recordFailure(decision.model.id, reason);
+      // Record failure for Thompson sampling on fallback path
+      const fallbackLatencyMs = Date.now() - turnStartMs;
+      recordOutcome(task.type, decision.model.id, false, fallbackLatencyMs, 0);
+      // This failed attempt's per-model outcome — carried into the fallback
+      // so the eventual successful level emits it in the aggregate.
+      const failedAttempt: ModelAttemptOutcome = {
+        modelId: decision.model.id,
+        taskType: task.type,
+        status: "failed",
+        stopCause: initialStopCause,
+        providerFinishReason: finishReason,
+        latencyMs: fallbackLatencyMs,
+        costUsd: costTracker.getSessionCost() - sessionCostBefore,
+      };
+      if (options.routingOutcomeRepo) {
+        try {
+          options.routingOutcomeRepo.record(
+            decision.model.id,
+            task.type,
+            false,
+            fallbackLatencyMs,
+            0,
+          );
+        } catch (outcomeErr) {
+          log.warn({ err: outcomeErr }, "Failed to persist routing outcome");
+        }
+      }
+      // Pick next fallback that hasn't been tried yet
+      const fallbackModel = fallbacks.find(
+        (f: { id: string }) => !modelsTried.includes(f.id),
+      );
+      if (fallbackModel) {
+        yield {
+          type: "model-retry" as const,
+          fromModel: decision.model.id,
+          toModel: fallbackModel.id,
+          reason,
+        };
+
+        // Retry with fallback model — increment depth and track models tried
+        yield* runAgentLoop(messages, {
+          ...options,
+          preferredModelId: fallbackModel.id,
+          _retryDepth: retryDepth + 1,
+          _modelsTried: modelsTried,
+          // A forced tool-call is scoped to a single nudge retry; never carry
+          // it into an unrelated fallback turn.
+          _forceToolChoice: false,
+          // Carry this failed attempt forward so the successful fallback level
+          // emits the full attempt chain in its aggregate RunOutcome; mark
+          // recovery=fallback there.
+          _attemptsSoFar: [...(options._attemptsSoFar ?? []), failedAttempt],
+          // Synthesis is once per logical run — a fallback model must not
+          // synthesize again if this attempt already did.
+          _synthesized: synthesisAttempted,
+          // Preserve the run-cost baseline across the whole fallback chain.
+          _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
+          _recoverySoFar: [...(options._recoverySoFar ?? []), "fallback" as const],
+        } as any);
+        return;
+      }
+    }
+
+    // All retries exhausted — yield structured error so caller can surface it.
+    // Distinguish a genuinely empty turn from a truncated tool-call so the
+    // operator knows whether the model said nothing or was cut off mid-action.
+    if (shouldRetry) {
+      yield {
+        type: "fallback-exhausted" as const,
+        modelsTried,
+        reason: toolCallTruncated
+          ? "All fallback models truncated their tool-call streams"
+          : "All fallback models returned empty responses",
+      };
+    }
+
+    // Extract gateway response headers (X-BR-*) for cost reconciliation and telemetry.
+    // Use a timeout to prevent hanging if the response promise never resolves
+    // (happens when the stream errored on the guardian SSE event).
+    // Caller-owned timer so the abort listener is released once the race is
+    // decided — otherwise it fires 5s later (on every turn where headers
+    // resolved under 5s — i.e. almost every turn) and retains the closure.
+    const HEADERS_TIMEOUT_MS = 5000;
+    let headersTimedOut = false;
+    const headersTimeoutController = new AbortController();
+    const headersTimeoutTimer = setTimeout(
+      () => headersTimeoutController.abort(),
+      HEADERS_TIMEOUT_MS,
+    );
+    try {
+      let response: Awaited<typeof result.response> | null;
+      try {
+        response = await Promise.race([
+          result.response,
+          new Promise<null>((resolve) => {
+            headersTimeoutController.signal.addEventListener(
+              "abort",
+              () => {
+                headersTimedOut = true;
+                resolve(null);
+              },
+              { once: true },
+            );
+          }),
+        ]);
+      } finally {
+        clearTimeout(headersTimeoutTimer);
+      }
+      if (headersTimedOut) {
+        // Cost reconciliation is skipped for this turn — surface it instead of
+        // silently dropping the gateway feedback.
+        log.warn(
+          { model: decision.model.id, timeoutMs: HEADERS_TIMEOUT_MS },
+          "Gateway response headers timed out; cost reconciliation skipped",
+        );
+      } else if (response?.headers) {
+        const feedback = parseGatewayHeaders(response.headers);
+        if (Object.keys(feedback).length > 0) {
+          yield {
+            type: "gateway-feedback",
+            feedback: feedback as GatewayFeedbackData,
+          };
+
+          // Reconcile actual cost from gateway if available (PR #5)
+          if (feedback.actualCost !== undefined) {
+            costTracker.reconcile(sessionId, feedback.actualCost);
+          }
+        }
+      }
+    } catch (err) {
+      // Gateway headers not available (local models) — non-fatal, but log for triage.
+      log.debug(
+        { err, model: decision.model.id },
+        "Gateway headers unavailable",
+      );
+    }
+
+    // Record routing outcome for Thompson sampling (in-memory + DB persistence)
+    const turnLatencyMs = Date.now() - turnStartMs;
+    const turnSuccess = !shouldRetry;
+    const turnCost = costTracker.getSessionCost() - sessionCostBefore;
+
+    // This attempt's per-model outcome (feeds routing learning). The aggregate
+    // RunOutcome below stitches it onto any upstream failed attempts.
+    const thisAttempt: ModelAttemptOutcome = {
+      modelId: decision.model.id,
+      taskType: task.type,
+      status: turnSuccess ? "succeeded" : "failed",
+      // Always the classified cause — a failed attempt that truncated /
+      // hit output_limit / was capped keeps that evidence, not a blanket
+      // empty_output.
+      stopCause: initialStopCause,
+      providerFinishReason: finishReason,
+      latencyMs: turnLatencyMs,
+      costUsd: turnCost,
+    };
+
+    // NOTE: momentum (router.recordSuccess) is deliberately NOT recorded here.
+    // This point is BEFORE the Phase-7 tool-nudge and Phase-3 verify blocks,
+    // which may `return` after recursing into a corrective re-run. Recording
+    // momentum here would credit a turn that then gets nudged or fails
+    // verification — and double-count with the recursive child's own momentum.
+    // It is recorded once, at the true terminal (just before `done`), only when
+    // no nudge/verify recursion took over. recordOutcome (Thompson, per-attempt)
+    // DOES belong here — each model attempt is its own routing datapoint.
+    recordOutcome(
+      task.type,
+      decision.model.id,
+      turnSuccess,
+      turnLatencyMs,
+      turnCost,
+    );
+    if (options.routingOutcomeRepo) {
+      try {
+        options.routingOutcomeRepo.record(
+          decision.model.id,
+          task.type,
+          turnSuccess,
+          turnLatencyMs,
+          turnCost,
+        );
+      } catch (e) {
+        log.warn({ err: e }, "Failed to persist routing outcome to DB");
+      }
+    }
+
+    // ── Phase 7: tool-use enforcement (narration → forced tool call) ────
+    // A weak model may NARRATE a tool action ("Let me read config.ts") and
+    // then stop WITHOUT emitting the call. Such a turn is not empty and not a
+    // truncated tool-call, so it records as turnSuccess and would silently
+    // complete. When enabled, and only when the turn (a) stopped on its own
+    // (finishReason !== "tool-calls"), (b) made zero tool calls, (c) has tools
+    // available to call, and (d) its text reads as an un-acted tool intent, we
+    // push a corrective user-role nudge and RE-RUN with toolChoice="required"
+    // so a real call is forced. Guards (mirroring the verify block below):
+    //   - opt-in-safe: fires only on this failure state, DEFAULT enabled=true,
+    //     so well-behaved models never trigger it (set enabled:false for exact
+    //     legacy behavior),
+    //   - bounded by maxNudges to prevent infinite re-prompting,
+    //   - gated on remaining budget (same 20% threshold as verify/budget-warn),
+    //   - placed BEFORE verify: a narrated turn wrote no files, so verify would
+    //     skip it anyway — and only ONE recursion+return runs per turn, so the
+    //     two corrective mechanisms cannot compound into an unbounded loop.
+    const teEnabled =
+      options.toolEnforcement?.enabled ??
+      config.general?.toolEnforcement?.enabled ??
+      true;
+    const teMaxNudges =
+      options.toolEnforcement?.maxNudges ??
+      config.general?.toolEnforcement?.maxNudges ??
+      2;
+    const nudgeDepth = options._nudgeDepth ?? 0;
+
+    if (
+      teEnabled &&
+      turnSuccess &&
+      toolCallCount === 0 &&
+      finishReason !== "tool-calls" &&
+      !!finalTools &&
+      nudgeDepth < teMaxNudges &&
+      !options.signal?.aborted &&
+      detectNarratedToolIntent(accumulatedText)
+    ) {
+      // Budget guard — a nudge is a full extra model turn. Reuse the same
+      // 20%-remaining threshold verify/budget-warning use; skip rather than
+      // risk blowing config.budget.perSession.
+      const nudgeBudgetRemaining = costTracker.getRemainingBudget();
+      const nudgeSessionLimit = (config.budget as any)?.perSession;
+      const nudgeBudgetTooLow =
+        nudgeBudgetRemaining !== null &&
+        nudgeSessionLimit &&
+        nudgeBudgetRemaining <= nudgeSessionLimit * 0.2;
+
+      if (nudgeBudgetTooLow) {
+        log.warn(
+          {
+            remaining: nudgeBudgetRemaining,
+            sessionLimit: nudgeSessionLimit,
+          },
+          "tool-use nudge skipped — remaining budget below 20% threshold",
+        );
+      } else {
+        const nextNudge = nudgeDepth + 1;
+        log.info(
+          {
+            model: decision.model.id,
+            iteration: nextNudge,
+            maxNudges: teMaxNudges,
+          },
+          "Model narrated a tool action without calling it — nudging with forced tool call",
+        );
+        yield {
+          type: "tool-nudge" as const,
+          iteration: nextNudge,
+          maxNudges: teMaxNudges,
+        };
+        // Feed the correction back as a user-role turn and re-run, mirroring
+        // the verify self-recursion below. _forceToolChoice compels a real
+        // call on the retry; it is scoped to that single re-entry (the verify
+        // and fallback recursions explicitly clear it, so the model can still
+        // finish normally afterwards).
+        //
+        // Do NOT force on the TERMINAL retry: when `nextNudge === teMaxNudges`
+        // the re-entry can no longer nudge again (`nudgeDepth < teMaxNudges`
+        // fails there), so whatever it emits is ACCEPTED as the turn's finish.
+        // Forcing tools on that accepted turn would compel it into a tool call
+        // and rob the model of a clean text answer. Only force while a further
+        // corrective opportunity still remains.
+        const forceOnRetry = nextNudge < teMaxNudges;
+        messages.push({ role: "user", content: buildToolUseCorrection() });
+        yield* runAgentLoop(messages, {
+          ...options,
+          _nudgeDepth: nextNudge,
+          _forceToolChoice: forceOnRetry,
+          _synthesized: synthesisAttempted,
+          _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
+          // Carry this invocation into the aggregate so the terminal run
+          // outcome includes the nudge-superseded attempt, not just the final.
+          _attemptsSoFar: [...(options._attemptsSoFar ?? []), thisAttempt],
+          _recoverySoFar: [
+            ...(options._recoverySoFar ?? []),
+            ...(didSynthesize ? (["forced_synthesis"] as const) : []),
+            "tool_nudge" as const,
+          ],
+        });
+        return;
+      }
+    }
+
+    // ── Phase 3: in-loop verify / self-correction ──────────────────────
+    // After an edit-producing turn, verify the files the model just changed
+    // (typecheck always; affected tests in "full" mode). On failure, feed the
+    // diagnostics back as another turn so the model self-corrects WITHIN this
+    // agentic run (Cline/OpenHands pattern; the single-agent analogue of the
+    // Judge's verifyWorktree gate). Guards:
+    //   - only when the turn actually changed files (a no-op turn skips it),
+    //   - only when the model turn itself succeeded (never verify a failed turn),
+    //   - bounded by verify.maxIterations to prevent infinite oscillation,
+    //   - gated on remaining budget so self-correction can't blow perSession,
+    //   - a verify pass that errors degrades to a skip (never crashes the turn).
+    const verifyMode: VerifyMode =
+      options.verify?.mode ?? config.general?.verify?.mode ?? "off";
+    const verifyMaxIterations =
+      options.verify?.maxIterations ??
+      config.general?.verify?.maxIterations ??
+      2;
+    const verifyDepth = options._verifyDepth ?? 0;
+    const changedThisTurn = Array.from(new Set(filesWritten));
+
+    if (
+      verifyMode !== "off" &&
+      turnSuccess &&
+      changedThisTurn.length > 0 &&
+      verifyDepth < verifyMaxIterations &&
+      !options.signal?.aborted
+    ) {
+      // Budget guard — each verify-fix is a full extra model turn. Reuse the
+      // same 20%-remaining threshold the budget-warning uses above; if we're
+      // under it, skip verify rather than risk blowing config.budget.perSession.
+      const verifyBudgetRemaining = costTracker.getRemainingBudget();
+      const verifySessionLimit = (config.budget as any)?.perSession;
+      const budgetTooLow =
+        verifyBudgetRemaining !== null &&
+        verifySessionLimit &&
+        verifyBudgetRemaining <= verifySessionLimit * 0.2;
+
+      if (budgetTooLow) {
+        log.warn(
+          {
+            remaining: verifyBudgetRemaining,
+            sessionLimit: verifySessionLimit,
+          },
+          "verify skipped — remaining budget below 20% threshold",
+        );
+      } else {
+        const outcome = runVerifyPass(
+          changedThisTurn,
+          verifyMode,
+          { projectPath: options.projectPath, signal: options.signal },
+          options._verifyRunner,
+        );
+
+        if (outcome.ran && !outcome.ok) {
+          const nextIteration = verifyDepth + 1;
+          const isFinalAttempt = nextIteration >= verifyMaxIterations;
+          yield {
+            type: "verify-failed" as const,
+            iteration: nextIteration,
+            maxIterations: verifyMaxIterations,
+            diagnostics: outcome.diagnostics,
+          };
+          // Feed diagnostics back as a user-role correction turn and recurse,
+          // mirroring the fallback self-recursion at the top of this function.
+          messages.push({
+            role: "user",
+            content: formatVerifyDiagnostic(
+              outcome,
+              verifyMode,
+              isFinalAttempt,
+            ),
+          });
+          // Checkpoint THIS turn's edits before recursing. The outer invocation
+          // returns right after the recursive yield*, so without this the
+          // original turn's filesWritten are never persisted and crash-recovery/
+          // undo would under-report the edits (only the final correction's files
+          // would survive). Mirrors the checkpointer.saveIfNeeded below.
+          if (options.checkpointer) {
+            options.checkpointer.saveIfNeeded({
+              sessionId,
+              turnNumber: Math.floor(Date.now() / 1000),
+              conversationHistory: messages,
+              scratchpad: {},
+              filesRead,
+              filesWritten,
+              buildStatus: options.buildState?.getStatus() ?? "unknown",
+              totalCost: costTracker.getSessionCost(),
+              projectPath: options.projectPath,
+            });
+          }
+          yield* runAgentLoop(messages, {
+            ...options,
+            _verifyDepth: nextIteration,
+            // Forced tool-call is scoped to the nudge retry only — don't leak
+            // it into a verify self-correction turn.
+            _forceToolChoice: false,
+            _synthesized: synthesisAttempted,
+            _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
+            // Include this verify-superseded attempt in the aggregate chain.
+            _attemptsSoFar: [...(options._attemptsSoFar ?? []), thisAttempt],
+            _recoverySoFar: [
+              ...(options._recoverySoFar ?? []),
+              ...(didSynthesize ? (["forced_synthesis"] as const) : []),
+              "verification_retry" as const,
+            ],
+          });
+          return;
+        }
+
+        if (outcome.ran && outcome.ok) {
+          yield {
+            type: "verify-passed" as const,
+            iteration: verifyDepth,
+            mode: verifyMode === "full" ? "full" : "typecheck",
+          };
+        }
+      }
+    }
+
+    // Inject turn context for next turn's self-awareness
+    if (options.onTurnComplete) {
+      // turnCost (per-turn delta) is already computed above — don't shadow with session total
+      const budget = costTracker.getBudgetState();
+      const budgetRemaining = budget.dailyLimit
+        ? budget.dailyLimit - budget.dailyUsed
+        : 0;
+      const budgetPercent = budget.dailyLimit
+        ? Math.round((budgetRemaining / budget.dailyLimit) * 100)
+        : 100;
+      options.onTurnComplete({
+        turn: 0, // caller sets this
+        model: decision.model.name,
+        strategy: decision.strategy,
+        toolCalls: toolCallResults,
+        turnCost,
+        budgetRemaining,
+        budgetPercent,
+        filesRead,
+        filesWritten,
+        sessionMinutes: 0, // caller sets this
+        unhealthyTools: getToolHealthTracker().getUnhealthy(),
+        buildStatus: options.buildState?.getStatus() ?? "unknown",
+        buildWarning: options.buildState?.formatBuildWarning() ?? "",
+        costPerHour: 0, // caller sets this based on session duration
+      });
+    }
+
+    // Save checkpoint for crash recovery (if checkpointer provided)
+    if (options.checkpointer) {
+      // Force save on every turn by using current timestamp as turn number.
+      // The checkpointer interval check (turnNumber - lastSaveTurn < interval)
+      // will always pass with a monotonically increasing value.
+      options.checkpointer.saveIfNeeded({
+        sessionId,
+        turnNumber: Math.floor(Date.now() / 1000),
+        conversationHistory: messages,
+        scratchpad: {},
+        filesRead: filesRead,
+        filesWritten: filesWritten,
+        buildStatus: options.buildState?.getStatus() ?? "unknown",
+        totalCost: costTracker.getSessionCost(),
+        projectPath: options.projectPath,
+      });
+    }
+
+    // Aggregate outcome: this attempt stitched onto any upstream failed
+    // fallback attempts. initialStopCause is the FIRST attempt's cause (the
+    // upstream one if this is a fallback re-entry), so a recovered run doesn't
+    // masquerade as a clean first stop. verification/security/judge are left
+    // not_run here; wiring their live results into the outcome is a follow-on
+    // (the contract + termination/recovery/cost are established this iteration).
+    // Order: upstream attempts, this turn's main call, then the synthesis call
+    // (a distinct model invocation) if it ran — so attempts carries every call.
+    const allAttempts = [
+      ...(options._attemptsSoFar ?? []),
+      thisAttempt,
+      ...(synthAttempt ? [synthAttempt] : []),
+    ];
+    // Ordered recovery sequence: upstream actions (fallback / nudge / verify,
+    // appended as they happened) plus a forced_synthesis if THIS terminal turn
+    // synthesized. Preserves e.g. A-fallback → synthesis as ["fallback",
+    // "forced_synthesis"] instead of a single tag that erased the fallback.
+    const recoverySeq: NonNullable<RunOutcome["recovery"]> = [
+      ...(options._recoverySoFar ?? []),
+      ...(didSynthesize ? (["forced_synthesis"] as const) : []),
+    ];
+    const aggregateRecovery = recoverySeq.length > 0 ? recoverySeq : undefined;
+    const runOutcome: RunOutcome = {
+      status: turnSuccess ? "succeeded" : "failed",
+      attempts: allAttempts,
+
+exec
+/bin/zsh -lc "rg -n 'Codex #8|finding #8|\"id\"\\s*:\\s*8|synthCostBefore|new_P0_P1|round-2' bench/iterations/006 packages/core/src/agent -g '*.md' -g '*.json' -g '*.diff' -g '*.ts'" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+bench/iterations/006/reviews/iter-006-fixed.diff:25:+    // its own attempt so the aggregate carries every model call (Codex #8).
+bench/iterations/006/reviews/iter-006-fixed.diff:35:+        const synthCostBefore = costTracker.getSessionCost();
+bench/iterations/006/reviews/iter-006-fixed.diff:51:+            costUsd: costTracker.getSessionCost() - synthCostBefore,
+packages/core/src/agent/loop.ts:1521:    // its own attempt so the aggregate carries every model call (Codex #8).
+packages/core/src/agent/loop.ts:1602:        const synthCostBefore = costTracker.getSessionCost();
+packages/core/src/agent/loop.ts:1649:            costUsd: costTracker.getSessionCost() - synthCostBefore,
+
+exec
+/bin/zsh -lc "rg -n 'sessionCostBefore|costTracker\\.record|costTracker\\.reconcile' packages/core/src/agent/loop.ts | head -60 && sed -n '1120,1390p' packages/core/src/agent/loop.ts" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 124ms:
+1050:  const sessionCostBefore = costTracker.getSessionCost();
+1120:            costTracker.record({
+1625:          costTracker.record({
+1739:        costUsd: costTracker.getSessionCost() - sessionCostBefore,
+1783:          _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
+1852:            costTracker.reconcile(sessionId, feedback.actualCost);
+1867:    const turnCost = costTracker.getSessionCost() - sessionCostBefore;
+2002:          _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
+2113:            _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
+2218:        (options._runCostBaseline ?? sessionCostBefore),
+            costTracker.record({
+              sessionId,
+              modelId: decision.model.id,
+              provider: decision.model.provider,
+              inputTokens,
+              outputTokens,
+              cachedTokens,
+              taskType: task.type,
+              projectPath: options.projectPath,
+              pricing: decision.model.pricing,
+            });
+          } catch (dbErr) {
+            // SQLite write failure (disk full, locked, etc.) — log but don't crash the agent loop
+            log.error(
+              { err: dbErr },
+              "Cost tracking write failed — continuing without recording",
+            );
+          }
+          // Record LLM call to trajectory for learning loop. Apply the same
+          // cache-read discount as CostTracker so trajectory cost matches the
+          // billed cost: cached tokens bill at the cached rate (default 0.1×
+          // input), the remainder at the full input rate.
+          const cachedRate =
+            decision.model.pricing.cachedInputPer1MTokens ??
+            decision.model.pricing.inputPer1MTokens * 0.1;
+          const billableCached = Math.min(cachedTokens, inputTokens);
+          const stepCost =
+            ((inputTokens - billableCached) / 1_000_000) *
+              decision.model.pricing.inputPer1MTokens +
+            (billableCached / 1_000_000) * cachedRate +
+            (outputTokens / 1_000_000) *
+              decision.model.pricing.outputPer1MTokens;
+          trajectory?.recordLLMCall({
+            model: decision.model.id,
+            provider: decision.model.provider,
+            inputTokens,
+            outputTokens,
+            latencyMs: 0, // AI SDK doesn't expose per-step latency
+            cost: stepCost,
+            strategy: decision.strategy ?? "unknown",
+          });
+        }
+      },
+    });
+
+    // Apply response filter to strip LLM filler from the beginning of text output
+    const streamFilter = createStreamFilter();
+    let textDeltaCount = 0;
+    let toolCallCount = 0;
+    let accumulatedText = ""; // For afterModel middleware (stop-detection, etc.)
+    // ── Streamed tool-call assembly integrity tracking ──
+    // pendingToolInputs: incremented when the provider signals the start of a
+    // tool-call (tool-input-start) and decremented when that call materializes
+    // as a dispatchable tool-call part. A residual > 0 after the stream ends
+    // means a tool call began assembling but never completed — the classic
+    // symptom of a truncated/duplicate terminal finish (seen from BR) cutting
+    // the AI-SDK parser off mid-tool-call.
+    let pendingToolInputs = 0;
+    // finishReason from the terminal finish / finish-step parts. "tool-calls"
+    // means the model intended to act; if we then saw zero dispatchable
+    // tool-calls the assembly was truncated (not a genuine empty turn).
+    let finishReason: string | undefined;
+    let finishPartCount = 0;
+    let lastEventTime = Date.now();
+    const toolCallResults: Array<{ name: string; ok: boolean }> = [];
+    const filesRead: string[] = [];
+    const filesWritten: string[] = [];
+    const loopDetector = new LoopDetector();
+    // Stream-stall watchdog threshold. Configurable via
+    // config.agent.streamTimeoutMs; defaults to 60s. Extended-thinking
+    // models that emit long stretches of silent reasoning may need a
+    // higher value — raising this is cheap, lowering it is what
+    // catches genuine hangs faster.
+    const STREAM_TIMEOUT_MS = options.config.agent?.streamTimeoutMs ?? 60_000;
+
+    // Track how many times we've incremented the global tool-in-flight gate
+    // so we can unwind the count in a finally block — if the stream throws
+    // or the consumer aborts between a tool-call and its tool-result, the
+    // global counter would otherwise leak and permanently disable
+    // compaction for this session.
+    let localToolGateDepth = 0;
+
+    // Watchdog: if no event arrives for STREAM_TIMEOUT_MS the stream is
+    // dead. Aborting streamAbort terminates fullStream and the for-await
+    // exits cleanly. We unref() so the timer itself doesn't keep the
+    // process alive.
+    //
+    // `watchdogFired` distinguishes watchdog-origin aborts from user-origin
+    // aborts (options.signal). Watchdog-origin should fall through to the
+    // empty-response retry path with RETRY_MODELS, matching the old
+    // in-loop `break`-on-stall behaviour. User-origin stays "interrupted".
+    let watchdogFired = false;
+    const watchdog = setInterval(() => {
+      if (Date.now() - lastEventTime > STREAM_TIMEOUT_MS) {
+        const elapsed = Date.now() - sessionStartTime;
+        log.warn(
+          {
+            model: decision.model.id,
+            elapsedMs: elapsed,
+            lastEventAgo: Date.now() - lastEventTime,
+            textDeltas: textDeltaCount,
+            toolCalls: toolCallCount,
+          },
+          "Stream stall detected — aborting stream",
+        );
+        trajectory?.recordError({
+          message: `Stream timeout after ${elapsed}ms`,
+          model: decision.model.id,
+        });
+        watchdogFired = true;
+        streamAbort.abort();
+      }
+    }, 5_000);
+    watchdog.unref?.();
+
+    try {
+      for await (const part of result.fullStream) {
+        const now = Date.now();
+        lastEventTime = now;
+        if (part.type === "reasoning-delta") {
+          const content = getPartText(part as Record<string, unknown>);
+          if (content) yield { type: "reasoning" as const, content };
+        } else if (part.type === "text-delta") {
+          textDeltaCount++;
+          const raw = getPartText(part as Record<string, unknown>);
+          accumulatedText += raw;
+          const filtered = streamFilter.filter(raw);
+          if (filtered)
+            yield {
+              type: "text-delta" as const,
+              delta: normalizeInsightMarkers(filtered),
+            };
+        } else if (part.type === "tool-input-start") {
+          // A tool call began streaming. Track it so we can detect a stream
+          // that finishes before the call materializes into a tool-call part.
+          pendingToolInputs++;
+        } else if (part.type === "tool-call") {
+          toolCallCount++;
+          // Balance the tool-input-start we counted above (if the provider
+          // emitted one). Floor at 0 so providers that emit tool-call without
+          // a preceding tool-input-start don't drive the counter negative.
+          pendingToolInputs = Math.max(0, pendingToolInputs - 1);
+          // INBOUND rename: map the provider-native tool name back to canonical
+          // so downstream comparisons and TUI events see the canonical identity.
+          const canonicalName = reverseToolName(part.toolName, decision.model);
+          enterToolExecution(); // gate compaction while tools are in-flight
+          localToolGateDepth++;
+          yield {
+            type: "tool-call-start" as const,
+            toolName: canonicalName,
+            args: getPartInput(part as Record<string, unknown>),
+          };
+        } else if (part.type === "finish" || part.type === "finish-step") {
+          // Capture the terminal finish reason. A duplicate/malformed finish
+          // (BR sometimes sends more than one) is itself a truncation signal —
+          // count them so the diagnostic can report it.
+          finishPartCount++;
+          finishReason =
+            ((part as Record<string, unknown>).finishReason as string) ??
+            finishReason;
+        } else if (part.type === "tool-result") {
+          exitToolExecution(); // ungate compaction
+          localToolGateDepth--;
+          // INBOUND rename: canonical name for all comparisons/tracking below.
+          const canonicalName = reverseToolName(part.toolName, decision.model);
+          const toolResult = getPartOutput(
+            part as Record<string, unknown>,
+          ) as any;
+          // Track tool call success/failure for turn context
+          const toolOk = !(
+            toolResult &&
+            typeof toolResult === "object" &&
+            (toolResult.error || toolResult.ok === false)
+          );
+          toolCallResults.push({ name: canonicalName, ok: toolOk });
+          // Track file access for turn context
+          if (canonicalName === "file_read" && toolOk) {
+            const path = getPartInput(part as Record<string, unknown>)?.path as
+              | string
+              | undefined;
+            if (path) filesRead.push(path);
+          } else if (
+            (canonicalName === "file_write" || canonicalName === "file_edit") &&
+            toolOk
+          ) {
+            const path = getPartInput(part as Record<string, unknown>)?.path as
+              | string
+              | undefined;
+            if (path) filesWritten.push(path);
+          }
+          // Track build/test results for persistent build state warnings
+          if (
+            canonicalName === "shell" &&
+            options.buildState &&
+            toolResult &&
+            typeof toolResult === "object"
+          ) {
+            const cmd =
+              (getPartInput(part as Record<string, unknown>)
+                ?.command as string) ?? "";
+            options.buildState.recordShellResult(
+              cmd,
+              toolResult.exitCode ?? 0,
+              toolResult.stderr ?? "",
+            );
+          }
+          yield {
+            type: "tool-call-result",
+            toolName: canonicalName,
+            result: toolResult,
+          };
+          // Loop detection — warn about repetitive behavior
+          const toolPath = getPartInput(part as Record<string, unknown>)
+            ?.path as string | undefined;
+          const loopWarnings = loopDetector.recordToolCall(
+            canonicalName,
+            toolPath,
+          );
+          for (const w of loopWarnings) {
+            yield { type: "loop-warning" as const, message: w.message };
+          }
+          // Emit subagent-result events for TUI display
+          if (
+            canonicalName === "subagent" &&
+            toolResult &&
+            typeof toolResult === "object"
+          ) {
+            if (toolResult.mode === "single") {
+              yield {
+                type: "subagent-result",
+                subagentType: toolResult.type,
+                model: toolResult.model,
+                cost: toolResult.cost,
+                toolCalls: toolResult.toolCalls,
+              };
+            } else if (
+              toolResult.mode === "parallel" &&
+              Array.isArray(toolResult.results)
+            ) {
+              for (const r of toolResult.results) {
+                yield {
+                  type: "subagent-result",
+                  subagentType: r.type,
+                  model: r.model,
+                  cost: r.cost,
+                  toolCalls: r.toolCalls,
+                };
+              }
+            }
+          }
+          // Drain any task events queued by task_create/task_update tool executions
+          while (taskEventQueue.length > 0) {
+            yield taskEventQueue.shift()!;
+          }
+          // Check for abort between tool executions
+          if (options.signal?.aborted) {
+            yield { type: "interrupted" };
+            return;
+          }
+        }
+      }
+    } catch (streamErr: any) {
+      // BrainstormRouter sends a guardian SSE event after [DONE] that the AI SDK
+      // can't parse (TypeValidationError). This is non-fatal — all content and
+      // tool calls have already been yielded. Swallow validation errors silently.
+      const isTypeValidation =
+        streamErr.name === "AI_TypeValidationError" ||
+        streamErr.message?.includes("Type validation failed");
+      // Watchdog-origin abort: the stream stalled out. Swallow the AbortError
+      // here so control falls through to the empty-response retry below,
+      // which tries each model in RETRY_MODELS. Without this swallow, the
+
+codex
+{"fixes":[{"id":8,"status":"not-resolved","note":"synthAttempt is appended only at terminal aggregation; verify recursion carries thisAttempt but omits synthAttempt, losing that invocation. Also thisAttempt.costUsd uses turnCost, which already includes synthesis cost, so terminal attempts double-count synthesis cost."},{"id":9,"status":"resolved","note":"Both nudge and verify recursion append this turn's forced_synthesis before tool_nudge or verification_retry, preserving recovery order without duplication."}],"new_P0_P1":[{"severity":"P1","note":"Per-attempt cost accounting double-counts successful synthesis because thisAttempt.costUsd includes the synthesis delta and synthAttempt.costUsd records that delta again."}]}
+tokens used
+20,476

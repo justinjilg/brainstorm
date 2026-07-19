@@ -1,0 +1,65 @@
+[
+  {
+    "file": "packages/core/src/agent/subagent.ts",
+    "line": 907,
+    "severity": "P1",
+    "finding": "Subagent tool execution enters only a workspace scope. Parallel subagents invoked under a parent inherit the same parent session, while direct production callers such as CLI storm runs share DEFAULT_SESSION_ID, so their task and transaction stores still collide.",
+    "suggested_fix": "Wrap the entire subagent stream lifecycle in withSession(subagentSessionId) alongside withWorkspace, and generate subagentSessionId with a collision-resistant UUID rather than Date.now()."
+  },
+  {
+    "file": "packages/core/src/agent/loop.ts",
+    "line": 613,
+    "severity": "P1",
+    "finding": "The scope key is the persistent options.sessionId, not a run/turn identifier. Two concurrent requests resuming the same session therefore clear each other's tasks, replace each other's handlers, and let either finally block unregister the other run.",
+    "suggested_fix": "Serialize concurrent turns per logical session or use a unique invocation ID for ephemeral task, transaction, and foreground-handler state; keep a separate logical-session key only for background completion mailboxes that must span turns."
+  },
+  {
+    "file": "packages/tools/src/session-context.ts",
+    "line": 40,
+    "severity": "P2",
+    "finding": "AsyncLocalStorage.enterWith() does not restore the outer store when this scope exits, contrary to the function comment. Driving runAgentLoop leaves its session ID in the consumer's continuation, so later work outside an intended scope can silently use the completed session's stores.",
+    "suggested_fix": "Drive each generator through an adapter whose next/return/throw operations execute inside sessionStorage.run(), or wrap every complete for-await consumer in withSession(); avoid enterWith() for a scope that must restore."
+  },
+  {
+    "file": "packages/tools/src/builtin/shell.ts",
+    "line": 569,
+    "severity": "P1",
+    "finding": "Finding a handler is treated as durable delivery, but the loop handler only appends to taskEventQueue, which is drained while fullStream is being consumed. A background job completing after the final stream part or while the done yield is suspended is appended to a queue that is never drained and is then discarded during teardown instead of entering pendingEventsBySession.",
+    "suggested_fix": "Keep background completions in a durable per-session mailbox until the loop explicitly acknowledges them after yielding, or detach the live handler before a final drain and route every later completion to the pending mailbox."
+  },
+  {
+    "file": "packages/tools/src/builtin/transaction.ts",
+    "line": 125,
+    "severity": "P1",
+    "finding": "Per-session transaction metadata now permits concurrent transactions in the same workspace, but rollback has no file lock or version check. If session B edits a file after session A, A can restore its older checkpoint and silently overwrite B's committed work.",
+    "suggested_fix": "Add workspace/file-level transaction locking, or record post-write hashes/generations and refuse rollback when the current file no longer matches the transaction's last write."
+  },
+  {
+    "file": "packages/tools/src/builtin/transaction.ts",
+    "line": 31,
+    "severity": "P2",
+    "finding": "txFor creates permanent entries even for inactive sessions, and the FIFO bound may evict an active transaction once 256 other sessions have created state. Its next operation then recreates an inactive state and loses the ability to commit or roll back.",
+    "suggested_fix": "Avoid allocating state for inactive record/read paths, delete state after commit or rollback, refresh true LRU ordering on access, and never evict active transactions."
+  },
+  {
+    "file": "packages/tools/src/checkpoint.ts",
+    "line": 208,
+    "severity": "P2",
+    "finding": "The new checkpoint cleanup function is neither exported from the tools package nor called by any session teardown path. Managers therefore accumulate until FIFO eviction silently removes another session's undo/rollback capability.",
+    "suggested_fix": "Export clearCheckpointManager and invoke it from the authoritative session teardown lifecycle; if managers must survive turns, evict only explicitly ended sessions or inactive LRU entries."
+  },
+  {
+    "file": "packages/tools/src/builtin/scratchpad.ts",
+    "line": 7,
+    "severity": "P1",
+    "finding": "The session scratchpad remains a single process-global Map. Concurrent users can read or overwrite each other's notes, and compaction can inject one session's scratchpad content into another session's model context.",
+    "suggested_fix": "Key scratchpad storage and all read/format/clear operations by getSessionId(), with bounded storage and explicit session cleanup."
+  },
+  {
+    "file": "packages/tools/src/builtin/process-manage.ts",
+    "line": 12,
+    "severity": "P1",
+    "finding": "Managed background processes remain process-global and keyed only by model-provided name. One session can collide with, enumerate through error text, or kill another session's process, so background-process concurrency is still not isolated.",
+    "suggested_fix": "Key managed processes by session ID plus name, capture the originating session at spawn, and restrict lookup, kill, and error listings to that session while retaining a separate process-wide resource cap."
+  }
+]

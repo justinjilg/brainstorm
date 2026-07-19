@@ -1,0 +1,3403 @@
+Reading additional input from stdin...
+OpenAI Codex v0.144.6
+--------
+workdir: /Users/justin.jilg/Projects/brainstorm
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 019f77bc-a715-71d2-bf45-df10177f239f
+--------
+user
+Verify 3 concurrency-hardening fixes in bench/iterations/005/reviews/iter-005-6.diff. (a) TRANSACTION ROLLBACK SAFETY: recordTransactionFile now sha256-hashes each file as written into a per-session files Map<path,hash>; rollback computes the current hash and REFUSES to revert (pushes a 'concurrent edit' failure) when it diverged from the recorded hash, so a concurrent session's later edit isn't clobbered. (b) TRANSACTION CLEANUP: read/record use a non-allocating peekTx; commit/rollback delete the session's txState; LRU eviction skips active transactions. (c) SUBAGENT SCOPING: subagents wrap execution in withSession(subagent-TYPE-randomUUID) inside withWorkspace, replacing Date.now(). Verify each is correct and free of new races/bugs (e.g. hash-time-of-check vs revert, empty-hash handling, bracket nesting of the withSession wrapper). Output ONLY JSON: {"fixes":[{"id":"a"|"b"|"c","status":"resolved"|"not-resolved","note":string}],"new_P0_P1":[]}
+codex
+I’ll inspect the patch and surrounding transaction/subagent code, then validate the race-sensitive paths.
+exec
+/bin/zsh -lc "sed -n '1,260p' bench/iterations/005/reviews/iter-005-6.diff" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+diff --git a/packages/core/src/agent/subagent.ts b/packages/core/src/agent/subagent.ts
+index 62bb054..e2628bc 100644
+--- a/packages/core/src/agent/subagent.ts
++++ b/packages/core/src/agent/subagent.ts
+@@ -1,4 +1,5 @@
+ import { streamText, stepCountIs } from "ai";
++import { randomUUID } from "node:crypto";
+ import type { BrainstormConfig } from "@brainst0rm/config";
+ import type { ProviderRegistry } from "@brainst0rm/providers";
+ import {
+@@ -12,6 +13,7 @@ import {
+   setDockerSandbox,
+   DockerSandbox,
+   withWorkspace,
++  withSession,
+   getSandboxPool,
+ } from "@brainst0rm/tools";
+ import {
+@@ -779,7 +781,10 @@ async function runSubagentCore(
+     "Subagent capability manifest frozen",
+   );
+ 
+-  const subagentSessionId = `subagent-${type}-${Date.now()}`;
++  // Collision-resistant id: parallel subagents spawned in the same millisecond
++  // must NOT share a session (Date.now() alone collided → shared task/tx/
++  // scratchpad stores).
++  const subagentSessionId = `subagent-${type}-${randomUUID()}`;
+   const budgetLimit = options.budgetLimit ?? costTracker.getSubagentBudget();
+   const costBefore = costTracker.getSessionCost();
+ 
+@@ -904,7 +909,12 @@ async function runSubagentCore(
+       },
+     ];
+ 
+-    await withWorkspace(projectPath, async () => {
++    await withWorkspace(projectPath, async () =>
++      // Enter the subagent's OWN session scope so its session-scoped tool
++      // stores (tasks, transactions, scratchpad) are isolated from the parent
++      // and from sibling parallel subagents — not shared via the parent
++      // session or DEFAULT_SESSION_ID.
++      withSession(subagentSessionId, async () => {
+       // Bounded re-invocation loop = the single-streamText analogue of the
+       // loop's Phase 7 self-recursion. `nudge` is the nudgeDepth: iteration 0
+       // is the original run; each subsequent iteration is one corrective
+@@ -1047,7 +1057,7 @@ async function runSubagentCore(
+         messages.push({ role: "user", content: buildToolUseCorrection() });
+         forceToolChoice = nextNudge < teMaxNudges;
+       }
+-    });
++    })); // close inner-arrow body, withSession(), withWorkspace()
+   } catch (err: any) {
+     // AbortError from budget enforcement is expected — not an error
+     if (err.name !== "AbortError") throw err;
+diff --git a/packages/tools/src/builtin/transaction.ts b/packages/tools/src/builtin/transaction.ts
+index c685d7d..a3b222e 100644
+--- a/packages/tools/src/builtin/transaction.ts
++++ b/packages/tools/src/builtin/transaction.ts
+@@ -2,6 +2,8 @@ import { z } from "zod";
+ import { defineTool } from "../base.js";
+ import { readFileSync, existsSync } from "node:fs";
+ import { relative, resolve } from "node:path";
++import { createHash } from "node:crypto";
++import { getSessionId } from "../session-context.js";
+ 
+ /**
+  * Transaction Tool Calls — atomic multi-file edits.
+@@ -11,22 +13,70 @@ import { relative, resolve } from "node:path";
+  * On commit, changes are finalized (already written to disk by file tools).
+  *
+  * This uses the existing CheckpointManager for rollback capability.
++ *
++ * Per-session: a single module-global `transactionActive` flag meant two
++ * concurrent runs corrupted each other's transactions (one committing while
++ * the other tracked files). Keyed by the current session id instead.
+  */
+ 
+-let transactionActive = false;
+-let transactionFiles: string[] = [];
++interface TxState {
++  active: boolean;
++  /**
++   * Tracked files → the content hash at the transaction's last write. Rollback
++   * refuses to revert a file whose current content no longer matches, so a
++   * concurrent session that edited the same file afterward isn't silently
++   * clobbered (the safety gap that per-session — hence concurrent —
++   * transactions introduced over the old single-global-flag serialization).
++   */
++  files: Map<string, string>;
++}
++const MAX_TRACKED_SESSIONS = 256;
++const txStates = new Map<string, TxState>();
++
++function hashFile(path: string): string | null {
++  try {
++    return createHash("sha256").update(readFileSync(path)).digest("hex");
++  } catch {
++    return null; // unreadable/absent — recorded as "no hash"
++  }
++}
++
++/** Read-only peek: never allocates a state entry. */
++function peekTx(sessionId: string): TxState | undefined {
++  return txStates.get(sessionId);
++}
++
++/** Get-or-create for the ACTIVE (begin) path. Never evicts an active tx. */
++function beginTxState(sessionId: string): TxState {
++  let s = txStates.get(sessionId);
++  if (!s) {
++    if (txStates.size >= MAX_TRACKED_SESSIONS) {
++      for (const [id, st] of txStates) {
++        if (!st.active) {
++          txStates.delete(id);
++          break;
++        }
++      }
++    }
++    s = { active: false, files: new Map() };
++    txStates.set(sessionId, s);
++  }
++  return s;
++}
+ 
+ export function isTransactionActive(): boolean {
+-  return transactionActive;
++  return peekTx(getSessionId())?.active ?? false;
+ }
+ 
+ export function getTransactionFiles(): string[] {
+-  return [...transactionFiles];
++  return [...(peekTx(getSessionId())?.files.keys() ?? [])];
+ }
+ 
+ export function recordTransactionFile(path: string): void {
+-  if (transactionActive && !transactionFiles.includes(path)) {
+-    transactionFiles.push(path);
++  const s = peekTx(getSessionId());
++  if (s?.active) {
++    // Record the hash AS WRITTEN so rollback can detect later divergence.
++    s.files.set(path, hashFile(path) ?? "");
+   }
+ }
+ 
+@@ -39,11 +89,12 @@ export const beginTransactionTool = defineTool({
+     description: z.string().optional().describe("What this transaction is for"),
+   }),
+   async execute({ description }) {
+-    if (transactionActive) {
++    const s = beginTxState(getSessionId());
++    if (s.active) {
+       return { error: "Transaction already active. Commit or rollback first." };
+     }
+-    transactionActive = true;
+-    transactionFiles = [];
++    s.active = true;
++    s.files = new Map();
+     return {
+       success: true,
+       message: `Transaction started.${description ? ` Purpose: ${description}` : ""} All file writes are now tracked. Use commit_transaction to finalize or rollback_transaction to revert.`,
+@@ -58,12 +109,14 @@ export const commitTransactionTool = defineTool({
+   permission: "auto",
+   inputSchema: z.object({}),
+   async execute() {
+-    if (!transactionActive) {
++    const sessionId = getSessionId();
++    const s = peekTx(sessionId);
++    if (!s?.active) {
+       return { error: "No active transaction to commit." };
+     }
+-    const files = [...transactionFiles];
+-    transactionActive = false;
+-    transactionFiles = [];
++    const files = [...s.files.keys()];
++    // Release the state entirely on commit (no lingering inactive entry).
++    txStates.delete(sessionId);
+     return {
+       success: true,
+       filesCommitted: files,
+@@ -81,7 +134,9 @@ export const rollbackTransactionTool = defineTool({
+     reason: z.string().optional().describe("Why the rollback is needed"),
+   }),
+   async execute({ reason }) {
+-    if (!transactionActive) {
++    const sessionId = getSessionId();
++    const s = peekTx(sessionId);
++    if (!s?.active) {
+       return { error: "No active transaction to rollback." };
+     }
+ 
+@@ -92,11 +147,27 @@ export const rollbackTransactionTool = defineTool({
+     const failed: Array<{ file: string; error: string }> = [];
+ 
+     // Order files by dependencies: dependents first, then dependencies
+-    const ordered = orderByDependencies(transactionFiles);
++    const ordered = orderByDependencies([...s.files.keys()]);
+ 
+     if (cp) {
+       // Revert dependents before dependencies to maintain consistency
+       for (const file of ordered) {
++        // Safety: if the file diverged from what THIS transaction last wrote
++        // (a concurrent session edited it since), refuse to revert — reverting
++        // to our older snapshot would silently clobber the other session's
++        // work. "" recorded-hash means the file was unreadable at record time.
++        const recordedHash = s.files.get(file) ?? "";
++        if (recordedHash) {
++          const currentHash = hashFile(file);
++          if (currentHash !== null && currentHash !== recordedHash) {
++            failed.push({
++              file,
++              error:
++                "File changed since this transaction's last write (concurrent edit) — rollback refused to avoid clobbering it",
++            });
++            continue;
++          }
++        }
+         try {
+           const result = cp.revertLast(file);
+           if (result) {
+@@ -110,13 +181,13 @@ export const rollbackTransactionTool = defineTool({
+       }
+     } else {
+       // No checkpoint manager — all files fail
+-      for (const file of transactionFiles) {
++      for (const file of s.files.keys()) {
+         failed.push({ file, error: "CheckpointManager not initialized" });
+       }
+     }
+ 
+-    transactionActive = false;
+-    transactionFiles = [];
++    // Release the transaction state on rollback.
++    txStates.delete(sessionId);
+ 
+     const partialRollback = failed.length > 0 && reverted.length > 0;
+ 
+
+exec
+/bin/zsh -lc "sed -n '261,520p' bench/iterations/005/reviews/iter-005-6.diff && rg -n \"recordTransactionFile|revertLast|withWorkspace\\(|withSession\\(|txStates|CheckpointManager\" packages/tools packages/core/src/agent/subagent.ts -g '*.ts'" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+packages/core/src/agent/subagent.ts:912:    await withWorkspace(projectPath, async () =>
+packages/core/src/agent/subagent.ts:917:      withSession(subagentSessionId, async () => {
+packages/core/src/agent/subagent.ts:1060:    })); // close inner-arrow body, withSession(), withWorkspace()
+packages/tools/src/builtin/multi-edit.ts:89:      const { getCheckpointManager } = await import("../checkpoint.js");
+packages/tools/src/builtin/multi-edit.ts:90:      const cp = getCheckpointManager();
+packages/tools/src/index.ts:46:  CheckpointManager,
+packages/tools/src/index.ts:47:  initCheckpointManager,
+packages/tools/src/index.ts:48:  getCheckpointManager,
+packages/tools/src/index.ts:49:  clearCheckpointManager,
+packages/tools/src/index.ts:109:  recordTransactionFile,
+packages/tools/src/builtin/undo.ts:3:import { getCheckpointManager } from '../checkpoint.js';
+packages/tools/src/builtin/undo.ts:13:    const cp = getCheckpointManager();
+packages/tools/src/builtin/undo.ts:18:    const reverted = cp.revertLast(path);
+packages/tools/src/session-context.ts:43: * may share an async context across sessions, prefer `withSession(...)` (which
+packages/tools/src/checkpoint.ts:20: * NEXT session startup. CheckpointManager.cleanup() is exposed as
+packages/tools/src/checkpoint.ts:54: * CheckpointManager — snapshots files before modification.
+packages/tools/src/checkpoint.ts:57:export class CheckpointManager {
+packages/tools/src/checkpoint.ts:118:  revertLast(filePath?: string): string | null {
+packages/tools/src/checkpoint.ts:180: * concurrent runs calling initCheckpointManager() would overwrite each other's
+packages/tools/src/checkpoint.ts:181: * reference — the first run's later getCheckpointManager() returned the second
+packages/tools/src/checkpoint.ts:186:const checkpointManagers = new Map<string, CheckpointManager>();
+packages/tools/src/checkpoint.ts:188:export function initCheckpointManager(sessionId: string): CheckpointManager {
+packages/tools/src/checkpoint.ts:196:  const manager = new CheckpointManager(sessionId);
+packages/tools/src/checkpoint.ts:201:export function getCheckpointManager(
+packages/tools/src/checkpoint.ts:203:): CheckpointManager | null {
+packages/tools/src/checkpoint.ts:208:export function clearCheckpointManager(
+packages/tools/src/builtin/file-write.ts:93:    const { getCheckpointManager } = await import("../checkpoint.js");
+packages/tools/src/builtin/file-write.ts:94:    const cp = getCheckpointManager();
+packages/tools/src/builtin/file-write.ts:127:    const { recordTransactionFile } = await import("./transaction.js");
+packages/tools/src/builtin/file-write.ts:128:    recordTransactionFile(safePath);
+packages/tools/src/builtin/batch-edit.ts:106:        const { getCheckpointManager } = await import("../checkpoint.js");
+packages/tools/src/builtin/batch-edit.ts:107:        const cp = getCheckpointManager();
+packages/tools/src/builtin/transaction.ts:15: * This uses the existing CheckpointManager for rollback capability.
+packages/tools/src/builtin/transaction.ts:34:const txStates = new Map<string, TxState>();
+packages/tools/src/builtin/transaction.ts:46:  return txStates.get(sessionId);
+packages/tools/src/builtin/transaction.ts:51:  let s = txStates.get(sessionId);
+packages/tools/src/builtin/transaction.ts:53:    if (txStates.size >= MAX_TRACKED_SESSIONS) {
+packages/tools/src/builtin/transaction.ts:54:      for (const [id, st] of txStates) {
+packages/tools/src/builtin/transaction.ts:56:          txStates.delete(id);
+packages/tools/src/builtin/transaction.ts:62:    txStates.set(sessionId, s);
+packages/tools/src/builtin/transaction.ts:75:export function recordTransactionFile(path: string): void {
+packages/tools/src/builtin/transaction.ts:119:    txStates.delete(sessionId);
+packages/tools/src/builtin/transaction.ts:143:    const { getCheckpointManager } = await import("../checkpoint.js");
+packages/tools/src/builtin/transaction.ts:144:    const cp = getCheckpointManager();
+packages/tools/src/builtin/transaction.ts:172:          const result = cp.revertLast(file);
+packages/tools/src/builtin/transaction.ts:185:        failed.push({ file, error: "CheckpointManager not initialized" });
+packages/tools/src/builtin/transaction.ts:190:    txStates.delete(sessionId);
+packages/tools/src/builtin/file-edit.ts:245:    const { getCheckpointManager } = await import("../checkpoint.js");
+packages/tools/src/builtin/file-edit.ts:246:    const cp = getCheckpointManager();
+packages/tools/src/workspace-context.ts:13: * Fix: subagent.ts wraps its streamText execution in withWorkspace(projectPath,
+packages/tools/src/__tests__/shell-session-scope.test.ts:21:    await withSession("sh-A", () =>
+packages/tools/src/__tests__/shell-session-scope.test.ts:41:    await withSession("sh-C", () =>
+packages/tools/src/__tests__/task-manage.test.ts:104:    const a1 = await withSession("session-A", () =>
+packages/tools/src/__tests__/task-manage.test.ts:107:    const b1 = await withSession("session-B", () =>
+packages/tools/src/__tests__/task-manage.test.ts:110:    const a2 = await withSession("session-A", () =>
+packages/tools/src/__tests__/task-manage.test.ts:120:    const aList = await withSession("session-A", () => taskListTool.execute({}));
+packages/tools/src/__tests__/task-manage.test.ts:121:    const bList = await withSession("session-B", () => taskListTool.execute({}));
+packages/tools/src/__tests__/task-manage.test.ts:132:    await withSession("session-A", async () => setTaskEventHandler(aHandler));
+packages/tools/src/__tests__/task-manage.test.ts:133:    await withSession("session-B", async () => setTaskEventHandler(bHandler));
+packages/tools/src/__tests__/task-manage.test.ts:135:    await withSession("session-A", () =>
+packages/tools/src/__tests__/task-manage.test.ts:145:    await withSession("session-A", () =>
+packages/tools/src/__tests__/task-manage.test.ts:148:    await withSession("session-B", () =>
+packages/tools/src/__tests__/task-manage.test.ts:153:    const aList = await withSession("session-A", () => taskListTool.execute({}));
+packages/tools/src/__tests__/task-manage.test.ts:154:    const bList = await withSession("session-B", () => taskListTool.execute({}));
+packages/tools/src/__tests__/transaction-session-scope.test.ts:10:  recordTransactionFile,
+packages/tools/src/__tests__/transaction-session-scope.test.ts:18:    await withSession("tx-A", () => beginTransactionTool.execute({}));
+packages/tools/src/__tests__/transaction-session-scope.test.ts:20:    const bActiveWhileAOpen = await withSession("tx-B", () =>
+packages/tools/src/__tests__/transaction-session-scope.test.ts:23:    const aActive = await withSession("tx-A", () => isTransactionActive());
+packages/tools/src/__tests__/transaction-session-scope.test.ts:28:    const bBegin = await withSession("tx-B", () =>
+packages/tools/src/__tests__/transaction-session-scope.test.ts:35:    await withSession("tx-C", () => beginTransactionTool.execute({}));
+packages/tools/src/__tests__/transaction-session-scope.test.ts:36:    await withSession("tx-D", () => beginTransactionTool.execute({}));
+packages/tools/src/__tests__/transaction-session-scope.test.ts:38:    await withSession("tx-C", () => recordTransactionFile("/c/only.ts"));
+packages/tools/src/__tests__/transaction-session-scope.test.ts:40:    const cFiles = await withSession("tx-C", () => getTransactionFiles());
+packages/tools/src/__tests__/transaction-session-scope.test.ts:41:    const dFiles = await withSession("tx-D", () => getTransactionFiles());
+packages/tools/src/__tests__/transaction-session-scope.test.ts:47:    await withSession("tx-E", () => beginTransactionTool.execute({}));
+packages/tools/src/__tests__/transaction-session-scope.test.ts:48:    await withSession("tx-F", () => beginTransactionTool.execute({}));
+packages/tools/src/__tests__/transaction-session-scope.test.ts:49:    await withSession("tx-F", () => recordTransactionFile("/f/x.ts"));
+packages/tools/src/__tests__/transaction-session-scope.test.ts:52:    await withSession("tx-E", () => commitTransactionTool.execute({}));
+packages/tools/src/__tests__/transaction-session-scope.test.ts:54:    const eActive = await withSession("tx-E", () => isTransactionActive());
+packages/tools/src/__tests__/transaction-session-scope.test.ts:55:    const fActive = await withSession("tx-F", () => isTransactionActive());
+packages/tools/src/__tests__/transaction-session-scope.test.ts:56:    const fFiles = await withSession("tx-F", () => getTransactionFiles());
+packages/tools/src/__tests__/transaction-session-scope.test.ts:65:    await withSession("tx-G", () => beginTransactionTool.execute({}));
+packages/tools/src/__tests__/transaction-session-scope.test.ts:66:    expect(await withSession("tx-G", () => isTransactionActive())).toBe(true);
+packages/tools/src/__tests__/transaction-session-scope.test.ts:68:    await withSession("tx-G", () => commitTransactionTool.execute({}));
+packages/tools/src/__tests__/transaction-session-scope.test.ts:70:    expect(await withSession("tx-G", () => isTransactionActive())).toBe(false);
+packages/tools/src/__tests__/transaction-session-scope.test.ts:71:    const reBegin = await withSession("tx-G", () =>
+packages/tools/src/__tests__/transaction-session-scope.test.ts:75:    await withSession("tx-G", () => commitTransactionTool.execute({}));
+packages/tools/src/__tests__/transaction-session-scope.test.ts:79:    const { initCheckpointManager } = await import("../checkpoint.js");
+packages/tools/src/__tests__/transaction-session-scope.test.ts:85:      initCheckpointManager("tx-H");
+packages/tools/src/__tests__/transaction-session-scope.test.ts:86:      const { getCheckpointManager } = await import("../checkpoint.js");
+packages/tools/src/__tests__/transaction-session-scope.test.ts:89:      getCheckpointManager()!.snapshot(file);
+packages/tools/src/__tests__/transaction-session-scope.test.ts:92:      recordTransactionFile(file); // records hash of "transaction-version"
+
+exec
+/bin/zsh -lc "sed -n '1,260p' packages/tools/src/builtin/transaction.ts
+sed -n '1,260p' packages/tools/src/checkpoint.ts
+sed -n '1,180p' packages/tools/src/builtin/file-write.ts
+sed -n '210,290p' packages/tools/src/builtin/file-edit.ts
+sed -n '1,180p' packages/tools/src/__tests__/transaction-session-scope.test.ts
+sed -n '860,1080p' packages/core/src/agent/subagent.ts
+sed -n '1,120p' packages/tools/src/session-context.ts
+sed -n '1,100p' packages/tools/src/workspace-context.ts" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+import { z } from "zod";
+import { defineTool } from "../base.js";
+import { readFileSync, existsSync } from "node:fs";
+import { relative, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { getSessionId } from "../session-context.js";
+
+/**
+ * Transaction Tool Calls — atomic multi-file edits.
+ *
+ * Between begin and commit, all file writes are tracked.
+ * On rollback, all changes are reverted using checkpoint snapshots.
+ * On commit, changes are finalized (already written to disk by file tools).
+ *
+ * This uses the existing CheckpointManager for rollback capability.
+ *
+ * Per-session: a single module-global `transactionActive` flag meant two
+ * concurrent runs corrupted each other's transactions (one committing while
+ * the other tracked files). Keyed by the current session id instead.
+ */
+
+interface TxState {
+  active: boolean;
+  /**
+   * Tracked files → the content hash at the transaction's last write. Rollback
+   * refuses to revert a file whose current content no longer matches, so a
+   * concurrent session that edited the same file afterward isn't silently
+   * clobbered (the safety gap that per-session — hence concurrent —
+   * transactions introduced over the old single-global-flag serialization).
+   */
+  files: Map<string, string>;
+}
+const MAX_TRACKED_SESSIONS = 256;
+const txStates = new Map<string, TxState>();
+
+function hashFile(path: string): string | null {
+  try {
+    return createHash("sha256").update(readFileSync(path)).digest("hex");
+  } catch {
+    return null; // unreadable/absent — recorded as "no hash"
+  }
+}
+
+/** Read-only peek: never allocates a state entry. */
+function peekTx(sessionId: string): TxState | undefined {
+  return txStates.get(sessionId);
+}
+
+/** Get-or-create for the ACTIVE (begin) path. Never evicts an active tx. */
+function beginTxState(sessionId: string): TxState {
+  let s = txStates.get(sessionId);
+  if (!s) {
+    if (txStates.size >= MAX_TRACKED_SESSIONS) {
+      for (const [id, st] of txStates) {
+        if (!st.active) {
+          txStates.delete(id);
+          break;
+        }
+      }
+    }
+    s = { active: false, files: new Map() };
+    txStates.set(sessionId, s);
+  }
+  return s;
+}
+
+export function isTransactionActive(): boolean {
+  return peekTx(getSessionId())?.active ?? false;
+}
+
+export function getTransactionFiles(): string[] {
+  return [...(peekTx(getSessionId())?.files.keys() ?? [])];
+}
+
+export function recordTransactionFile(path: string): void {
+  const s = peekTx(getSessionId());
+  if (s?.active) {
+    // Record the hash AS WRITTEN so rollback can detect later divergence.
+    s.files.set(path, hashFile(path) ?? "");
+  }
+}
+
+export const beginTransactionTool = defineTool({
+  name: "begin_transaction",
+  description:
+    "Start an atomic transaction for multi-file edits. All file writes between begin and commit/rollback are tracked. On rollback, all changes revert. Use for coordinated multi-file changes where partial application would break the build.",
+  permission: "auto",
+  inputSchema: z.object({
+    description: z.string().optional().describe("What this transaction is for"),
+  }),
+  async execute({ description }) {
+    const s = beginTxState(getSessionId());
+    if (s.active) {
+      return { error: "Transaction already active. Commit or rollback first." };
+    }
+    s.active = true;
+    s.files = new Map();
+    return {
+      success: true,
+      message: `Transaction started.${description ? ` Purpose: ${description}` : ""} All file writes are now tracked. Use commit_transaction to finalize or rollback_transaction to revert.`,
+    };
+  },
+});
+
+export const commitTransactionTool = defineTool({
+  name: "commit_transaction",
+  description:
+    "Finalize a transaction. All file writes since begin_transaction are kept. Returns the list of files modified.",
+  permission: "auto",
+  inputSchema: z.object({}),
+  async execute() {
+    const sessionId = getSessionId();
+    const s = peekTx(sessionId);
+    if (!s?.active) {
+      return { error: "No active transaction to commit." };
+    }
+    const files = [...s.files.keys()];
+    // Release the state entirely on commit (no lingering inactive entry).
+    txStates.delete(sessionId);
+    return {
+      success: true,
+      filesCommitted: files,
+      count: files.length,
+    };
+  },
+});
+
+export const rollbackTransactionTool = defineTool({
+  name: "rollback_transaction",
+  description:
+    "Rollback a transaction. All file writes since begin_transaction are reverted using checkpoint snapshots. Returns the list of files reverted.",
+  permission: "confirm",
+  inputSchema: z.object({
+    reason: z.string().optional().describe("Why the rollback is needed"),
+  }),
+  async execute({ reason }) {
+    const sessionId = getSessionId();
+    const s = peekTx(sessionId);
+    if (!s?.active) {
+      return { error: "No active transaction to rollback." };
+    }
+
+    const { getCheckpointManager } = await import("../checkpoint.js");
+    const cp = getCheckpointManager();
+    const reverted: string[] = [];
+
+    const failed: Array<{ file: string; error: string }> = [];
+
+    // Order files by dependencies: dependents first, then dependencies
+    const ordered = orderByDependencies([...s.files.keys()]);
+
+    if (cp) {
+      // Revert dependents before dependencies to maintain consistency
+      for (const file of ordered) {
+        // Safety: if the file diverged from what THIS transaction last wrote
+        // (a concurrent session edited it since), refuse to revert — reverting
+        // to our older snapshot would silently clobber the other session's
+        // work. "" recorded-hash means the file was unreadable at record time.
+        const recordedHash = s.files.get(file) ?? "";
+        if (recordedHash) {
+          const currentHash = hashFile(file);
+          if (currentHash !== null && currentHash !== recordedHash) {
+            failed.push({
+              file,
+              error:
+                "File changed since this transaction's last write (concurrent edit) — rollback refused to avoid clobbering it",
+            });
+            continue;
+          }
+        }
+        try {
+          const result = cp.revertLast(file);
+          if (result) {
+            reverted.push(result);
+          } else {
+            failed.push({ file, error: "No checkpoint snapshot available" });
+          }
+        } catch (e: any) {
+          failed.push({ file, error: e.message ?? String(e) });
+        }
+      }
+    } else {
+      // No checkpoint manager — all files fail
+      for (const file of s.files.keys()) {
+        failed.push({ file, error: "CheckpointManager not initialized" });
+      }
+    }
+
+    // Release the transaction state on rollback.
+    txStates.delete(sessionId);
+
+    const partialRollback = failed.length > 0 && reverted.length > 0;
+
+    return {
+      success: failed.length === 0,
+      filesReverted: reverted,
+      filesFailed: failed,
+      count: reverted.length,
+      total: reverted.length + failed.length,
+      partialRollback,
+      reason,
+    };
+  },
+});
+
+/**
+ * Order files so dependents come before dependencies.
+ * Parses import statements to build a dependency graph
+ * among the transaction files, then topologically sorts (dependents first).
+ */
+function orderByDependencies(files: string[]): string[] {
+  if (files.length <= 1) return [...files];
+
+  const fileSet = new Set(files.map((f) => resolve(f)));
+  const imports = new Map<string, Set<string>>();
+
+  for (const file of fileSet) {
+    const deps = new Set<string>();
+    try {
+      if (existsSync(file)) {
+        const content = readFileSync(file, "utf-8");
+        const importPattern = /(?:from|import)\s+['"](\.[^'"]+)['"]/g;
+        let match;
+        while ((match = importPattern.exec(content)) !== null) {
+          const importPath = match[1];
+          const dir = file.replace(/[/\\][^/\\]+$/, "");
+          for (const ext of ["", ".ts", ".js", ".tsx", ".jsx"]) {
+            const resolved = resolve(dir, importPath + ext);
+            if (fileSet.has(resolved)) {
+              deps.add(resolved);
+              break;
+            }
+          }
+        }
+      }
+    } catch {
+      // Can't read file — skip dependency analysis
+    }
+    imports.set(file, deps);
+  }
+
+  // Topological sort: dependents first (reverse post-order)
+  const visited = new Set<string>();
+  const result: string[] = [];
+
+  function visit(file: string): void {
+    if (visited.has(file)) return;
+    visited.add(file);
+    const deps = imports.get(file);
+    if (deps) {
+      for (const dep of deps) visit(dep);
+    }
+    result.push(file);
+  }
+
+  for (const file of fileSet) visit(file);
+  result.reverse();
+
+  const resolvedToOriginal = new Map<string, string>();
+  for (const f of files) resolvedToOriginal.set(resolve(f), f);
+import {
+  mkdirSync,
+  existsSync,
+  copyFileSync,
+  readdirSync,
+  unlinkSync,
+  lstatSync,
+  rmSync,
+  statSync,
+} from "node:fs";
+import { join, dirname, basename, relative } from "node:path";
+import { homedir } from "node:os";
+import { randomUUID } from "node:crypto";
+import { getSessionId } from "./session-context.js";
+
+const CHECKPOINT_DIR = join(homedir(), ".brainstorm", "checkpoints");
+
+/**
+ * Age after which a session's checkpoint directory is GC'd on the
+ * NEXT session startup. CheckpointManager.cleanup() is exposed as
+ * an explicit API but has no callers — so without a startup sweep
+ * every session's snapshots accrued in ~/.brainstorm/checkpoints/
+ * indefinitely, keeping snapshots of every file the agent ever
+ * touched for the life of the installation.
+ */
+const CHECKPOINT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+function sweepOldSessions(): void {
+  if (!existsSync(CHECKPOINT_DIR)) return;
+  const cutoff = Date.now() - CHECKPOINT_RETENTION_MS;
+  try {
+    const sessions = readdirSync(CHECKPOINT_DIR);
+    for (const session of sessions) {
+      const sessionDir = join(CHECKPOINT_DIR, session);
+      try {
+        const stat = statSync(sessionDir);
+        if (!stat.isDirectory()) continue;
+        // mtimeMs — updated whenever files are added/removed inside.
+        // A session that was last used more than 7 days ago is
+        // dead and safe to drop.
+        if (stat.mtimeMs < cutoff) {
+          rmSync(sessionDir, { recursive: true, force: true });
+        }
+      } catch {
+        // Can't stat or remove this entry — skip, move on.
+      }
+    }
+  } catch {
+    // Checkpoint dir gone or unreadable — nothing to sweep.
+  }
+}
+
+/**
+ * CheckpointManager — snapshots files before modification.
+ * Enables revert to any previous state within a session.
+ */
+export class CheckpointManager {
+  private sessionId: string;
+  private sessionDir: string;
+  private history: Array<{
+    timestamp: number;
+    filePath: string;
+    checkpointPath: string;
+  }> = [];
+
+  constructor(sessionId: string) {
+    this.sessionId = sessionId;
+    this.sessionDir = join(CHECKPOINT_DIR, sessionId);
+    mkdirSync(this.sessionDir, { recursive: true, mode: 0o700 });
+    // Best-effort sweep of stale session directories on every
+    // startup. Cheap (stat-only) for young dirs; only deletes
+    // entries older than the retention window.
+    sweepOldSessions();
+  }
+
+  /**
+   * Snapshot a file before it's modified.
+   * Returns the checkpoint path, or null if the file doesn't exist yet (new file).
+   */
+  snapshot(filePath: string): string | null {
+    if (!existsSync(filePath)) return null; // New file, nothing to snapshot
+
+    // Refuse to snapshot symlinks. copyFileSync follows them, so a symlink
+    // placed inside the workspace (e.g. ~/.ssh/id_rsa) would let a
+    // later revert overwrite the link target and would copy its contents
+    // into the plaintext checkpoint store.
+    try {
+      const stat = lstatSync(filePath);
+      if (stat.isSymbolicLink()) return null;
+    } catch {
+      return null;
+    }
+
+    const timestamp = Date.now();
+    const safeName = relative(process.cwd(), filePath).replace(/[/\\]/g, "__");
+    const uid = randomUUID().slice(0, 8);
+    const checkpointPath = join(
+      this.sessionDir,
+      `${timestamp}-${uid}-${safeName}`,
+    );
+
+    try {
+      copyFileSync(filePath, checkpointPath);
+    } catch (e: any) {
+      // Handle locked/busy files gracefully
+      if (e.code === "EBUSY" || e.code === "EPERM") return null;
+      throw e;
+    }
+
+    this.history.push({ timestamp, filePath, checkpointPath });
+    return checkpointPath;
+  }
+
+  /**
+   * Revert the most recent change to a file, or the most recent change overall.
+   * Returns the file path that was reverted, or null if nothing to revert.
+   */
+  revertLast(filePath?: string): string | null {
+    if (this.history.length === 0) return null;
+
+    let entry;
+    if (filePath) {
+      // Find most recent checkpoint for this specific file
+      let idx = -1;
+      for (let i = this.history.length - 1; i >= 0; i--) {
+        if (this.history[i].filePath === filePath) {
+          idx = i;
+          break;
+        }
+      }
+      if (idx === -1) return null;
+      entry = this.history[idx];
+      this.history.splice(idx, 1);
+    } else {
+      // Revert most recent change overall
+      entry = this.history.pop()!;
+    }
+
+    if (existsSync(entry.checkpointPath)) {
+      mkdirSync(dirname(entry.filePath), { recursive: true });
+      copyFileSync(entry.checkpointPath, entry.filePath);
+      return entry.filePath;
+    }
+
+    return null;
+  }
+
+  /**
+   * List all checkpoints in this session.
+   */
+  list(): Array<{ filePath: string; timestamp: number }> {
+    return this.history.map((e) => ({
+      filePath: e.filePath,
+      timestamp: e.timestamp,
+    }));
+  }
+
+  /**
+   * Get the number of checkpoints in this session.
+   */
+  count(): number {
+    return this.history.length;
+  }
+
+  /**
+   * Clean up checkpoint files for this session.
+   */
+  cleanup(): void {
+    if (existsSync(this.sessionDir)) {
+      const files = readdirSync(this.sessionDir);
+      for (const f of files) {
+        unlinkSync(join(this.sessionDir, f));
+      }
+    }
+  }
+}
+
+/**
+ * Per-session checkpoint managers. A single module-global singleton meant two
+ * concurrent runs calling initCheckpointManager() would overwrite each other's
+ * reference — the first run's later getCheckpointManager() returned the second
+ * run's manager, so its rollbacks reverted the wrong session's files. Keyed by
+ * session id (falls back to the current session scope on read).
+ */
+const MAX_TRACKED_SESSIONS = 256;
+const checkpointManagers = new Map<string, CheckpointManager>();
+
+export function initCheckpointManager(sessionId: string): CheckpointManager {
+  if (
+    !checkpointManagers.has(sessionId) &&
+    checkpointManagers.size >= MAX_TRACKED_SESSIONS
+  ) {
+    const oldest = checkpointManagers.keys().next().value;
+    if (oldest !== undefined) checkpointManagers.delete(oldest);
+  }
+  const manager = new CheckpointManager(sessionId);
+  checkpointManagers.set(sessionId, manager);
+  return manager;
+}
+
+export function getCheckpointManager(
+  sessionId: string = getSessionId(),
+): CheckpointManager | null {
+  return checkpointManagers.get(sessionId) ?? null;
+}
+
+/** Release a session's checkpoint manager (teardown). */
+export function clearCheckpointManager(
+  sessionId: string = getSessionId(),
+): void {
+  checkpointManagers.delete(sessionId);
+}
+import { z } from "zod";
+import { writeFileSync, mkdirSync, renameSync, unlinkSync } from "node:fs";
+import { dirname, resolve, relative } from "node:path";
+import { randomUUID } from "node:crypto";
+import { defineTool } from "../base.js";
+import { getWorkspace } from "../workspace-context.js";
+import { assertNotSensitivePathIncludingRealpath } from "./sensitive-paths.js";
+
+import { homedir } from "node:os";
+
+function ensureSafePath(filePath: string): string {
+  // Use the subagent's workspace context if set, else fall back to cwd.
+  // This fixes SWE-bench / orchestration runs where the agent should write
+  // into a cloned repo, not the parent CLI's working directory.
+  const cwd = getWorkspace();
+  const resolved = resolve(cwd, filePath);
+  const home = homedir();
+
+  // Block credential files (e.g. overwriting ~/.ssh/id_rsa via file_write
+  // would be just as bad as reading it). See sensitive-paths.ts.
+  const safetyPath = assertNotSensitivePathIncludingRealpath(resolved);
+
+  // Block system paths.
+  // Note: /var is NOT blocked because macOS tmpdir lives at /var/folders/...
+  // (symlinked from /private/var/folders). We explicitly allow /var/folders
+  // and /private/var/folders as temp workspaces; other /var/* stays blocked.
+  const BLOCKED_PREFIXES = [
+    "/etc",
+    "/usr",
+    "/proc",
+    "/sys",
+    "/dev",
+    "/sbin",
+    "/boot",
+  ];
+  // Extra /var handling: block unless inside /var/folders (macOS tmp)
+  // or /var/tmp (Linux-ish tmp).
+  const isSafeTmpPath = (path: string) =>
+    path.startsWith("/var/folders/") ||
+    path.startsWith("/private/var/folders/") ||
+    path.startsWith("/var/tmp/") ||
+    path.startsWith("/private/var/tmp/") ||
+    // Linux tmpdir — see file-read.ts.
+    path === "/tmp" ||
+    path.startsWith("/tmp/");
+  const pathsToCheck = Array.from(new Set([resolved, safetyPath]));
+  if (
+    pathsToCheck.some((path) => !isSafeTmpPath(path) && path.startsWith("/var"))
+  ) {
+    throw new Error(`Path blocked: "${filePath}" is a protected system path`);
+  }
+  if (
+    pathsToCheck.some((path) =>
+      BLOCKED_PREFIXES.some((p) => path.startsWith(p)),
+    )
+  ) {
+    throw new Error(`Path blocked: "${filePath}" is a protected system path`);
+  }
+
+  // Allow within home dir, within cwd, or within a tmp workspace.
+  // macOS symlinks /var/folders → /private/var/folders, so resolve() may
+  // return either form depending on the OS resolver. Check both.
+  const isInHome = safetyPath.startsWith(home);
+  const isInCwd = !relative(cwd, resolved).startsWith("..");
+  const isInTmp = isSafeTmpPath(safetyPath); // tmp workspaces are allowed too
+  if (!isInHome && !isInCwd && !isInTmp) {
+    throw new Error(
+      `Path blocked: "${filePath}" is outside home directory and workspace`,
+    );
+  }
+
+  return resolved;
+}
+
+export const fileWriteTool = defineTool({
+  name: "file_write",
+  description:
+    "Write content to a file, creating it if it does not exist. Creates parent directories as needed. Supports absolute paths within home directory. Returns { success, path, bytesWritten } on success, { error } on failure.",
+  permission: "confirm",
+  inputSchema: z.object({
+    path: z.string().describe("Path to the file to write"),
+    content: z.string().describe("The content to write to the file"),
+  }),
+  async execute({ path, content }) {
+    let safePath: string;
+    try {
+      safePath = ensureSafePath(path);
+    } catch (e: any) {
+      return { error: e.message };
+    }
+
+    // Snapshot before overwriting (if file exists)
+    const { getCheckpointManager } = await import("../checkpoint.js");
+    const cp = getCheckpointManager();
+    if (cp) cp.snapshot(safePath);
+
+    // Pre-validate content before writing (non-blocking)
+    const { preValidate } = await import("../pre-validate.js");
+    const validation = preValidate(safePath, content);
+
+    mkdirSync(dirname(safePath), { recursive: true });
+
+    // Atomic write: write to temp file, then rename to target.
+    // Prevents partial writes on crash/interrupt.
+    const tmpPath = `${safePath}.${randomUUID().slice(0, 8)}.tmp`;
+    try {
+      writeFileSync(tmpPath, content, "utf-8");
+      renameSync(tmpPath, safePath);
+    } catch (e) {
+      try {
+        unlinkSync(tmpPath);
+      } catch {
+        /* best-effort cleanup of temp file */
+      }
+      throw e;
+    }
+
+    // Invalidate read cache for this file
+    const { getFileReadCache } = await import("../file-cache.js");
+    getFileReadCache().invalidate(safePath);
+
+    // Track file access
+    const { getFileTracker } = await import("../file-tracker.js");
+    getFileTracker().recordWrite(safePath);
+
+    // Track in active transaction
+    const { recordTransactionFile } = await import("./transaction.js");
+    recordTransactionFile(safePath);
+
+    // Diff preview (non-blocking)
+    const { getDiffSummary } = await import("../diff-preview.js");
+    const diff = getDiffSummary(safePath);
+
+    return {
+      success: true,
+      path,
+      bytesWritten: Buffer.byteLength(content),
+      ...(validation.warnings.length > 0
+        ? { preValidation: validation.warnings }
+        : {}),
+      ...(diff ? { diff: diff.preview } : {}),
+    };
+  },
+});
+    try {
+      safePath = ensureSafePath(path);
+    } catch (e: any) {
+      return { error: e.message };
+    }
+
+    if (!existsSync(safePath)) {
+      return { error: `File not found: ${path}` };
+    }
+    const content = readFileSync(safePath, "utf-8");
+
+    // Route through the Aider-style fuzzy cascade in edit-common. This
+    // handles the exact-unique path (fastest) plus whitespace-flexible,
+    // ellipsis-elided and similarity-fallback matches — always $-safe and
+    // never applying a low-confidence match. multi_edit/batch_edit share
+    // the same applyEdit, so the whole edit surface benefits.
+    const editResult = applyEdit(content, old_string, new_string);
+    if (!editResult.applied || editResult.content === undefined) {
+      if (editResult.occurrences && editResult.occurrences > 1) {
+        return {
+          error: `old_string found ${editResult.occurrences} times — must be unique. Provide more surrounding context.`,
+        };
+      }
+      // Not found (below-confidence / ambiguous fuzzy) — offer a hint.
+      const suggestion = findClosestMatch(content, old_string);
+      if (suggestion) {
+        return {
+          error: "old_string not found in file",
+          suggestion: `Closest match found:\n${suggestion}`,
+        };
+      }
+      return { error: "old_string not found in file" };
+    }
+
+    // Snapshot before editing
+    const { getCheckpointManager } = await import("../checkpoint.js");
+    const cp = getCheckpointManager();
+    if (cp) cp.snapshot(safePath);
+
+    const updated = editResult.content;
+
+    // Pre-validate content before writing (non-blocking)
+    const { preValidate } = await import("../pre-validate.js");
+    const validation = preValidate(safePath, updated);
+
+    // Atomic replace — see atomicReplaceFile docstring. Closes v16
+    // Chaos Monkey gap: partial-write on ENOSPC/SIGKILL no longer
+    // possible.
+    atomicReplaceFile(safePath, updated);
+
+    // Invalidate read cache for this file
+    const { getFileReadCache } = await import("../file-cache.js");
+    getFileReadCache().invalidate(safePath);
+
+    // Diff preview (non-blocking)
+    const { getDiffSummary } = await import("../diff-preview.js");
+    const diff = getDiffSummary(safePath);
+
+    return {
+      success: true,
+      path,
+      matchTier: editResult.matchTier,
+      ...(validation.warnings.length > 0
+        ? { preValidation: validation.warnings }
+        : {}),
+      ...(diff ? { diff: diff.preview } : {}),
+    };
+  },
+});
+import { describe, it, expect } from "vitest";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  beginTransactionTool,
+  commitTransactionTool,
+  rollbackTransactionTool,
+  isTransactionActive,
+  recordTransactionFile,
+  getTransactionFiles,
+} from "../builtin/transaction.js";
+import { withSession } from "../session-context.js";
+
+describe("transaction state — concurrent session isolation", () => {
+  it("keeps two sessions' transactions independent", async () => {
+    // Session A opens a transaction; session B must see NO active transaction.
+    await withSession("tx-A", () => beginTransactionTool.execute({}));
+
+    const bActiveWhileAOpen = await withSession("tx-B", () =>
+      isTransactionActive(),
+    );
+    const aActive = await withSession("tx-A", () => isTransactionActive());
+    expect(aActive).toBe(true);
+    expect(bActiveWhileAOpen).toBe(false);
+
+    // B can open its OWN transaction (not blocked by A's global flag).
+    const bBegin = await withSession("tx-B", () =>
+      beginTransactionTool.execute({}),
+    );
+    expect(bBegin).toMatchObject({ success: true });
+  });
+
+  it("tracks files against the recording session only", async () => {
+    await withSession("tx-C", () => beginTransactionTool.execute({}));
+    await withSession("tx-D", () => beginTransactionTool.execute({}));
+
+    await withSession("tx-C", () => recordTransactionFile("/c/only.ts"));
+
+    const cFiles = await withSession("tx-C", () => getTransactionFiles());
+    const dFiles = await withSession("tx-D", () => getTransactionFiles());
+    expect(cFiles).toEqual(["/c/only.ts"]);
+    expect(dFiles).toEqual([]);
+  });
+
+  it("committing one session does not disturb another's open transaction", async () => {
+    await withSession("tx-E", () => beginTransactionTool.execute({}));
+    await withSession("tx-F", () => beginTransactionTool.execute({}));
+    await withSession("tx-F", () => recordTransactionFile("/f/x.ts"));
+
+    // E commits (empty); F's transaction must remain active with its file.
+    await withSession("tx-E", () => commitTransactionTool.execute({}));
+
+    const eActive = await withSession("tx-E", () => isTransactionActive());
+    const fActive = await withSession("tx-F", () => isTransactionActive());
+    const fFiles = await withSession("tx-F", () => getTransactionFiles());
+    expect(eActive).toBe(false);
+    expect(fActive).toBe(true);
+    expect(fFiles).toEqual(["/f/x.ts"]);
+  });
+});
+
+describe("transaction — cleanup + rollback safety (005.6 hardening)", () => {
+  it("releases state on commit (read paths don't resurrect an active tx)", async () => {
+    await withSession("tx-G", () => beginTransactionTool.execute({}));
+    expect(await withSession("tx-G", () => isTransactionActive())).toBe(true);
+
+    await withSession("tx-G", () => commitTransactionTool.execute({}));
+    // After commit: not active, and a fresh begin works (state was released).
+    expect(await withSession("tx-G", () => isTransactionActive())).toBe(false);
+    const reBegin = await withSession("tx-G", () =>
+      beginTransactionTool.execute({}),
+    );
+    expect(reBegin).toMatchObject({ success: true });
+    await withSession("tx-G", () => commitTransactionTool.execute({}));
+  });
+
+  it("refuses to roll back a file a concurrent edit changed since the last write", async () => {
+    const { initCheckpointManager } = await import("../checkpoint.js");
+    const { withSession: ws } = await import("../session-context.js");
+    const dir = mkdtempSync(join(tmpdir(), "tx-rollback-"));
+    const file = join(dir, "shared.ts");
+
+    await ws("tx-H", async () => {
+      initCheckpointManager("tx-H");
+      const { getCheckpointManager } = await import("../checkpoint.js");
+      writeFileSync(file, "original\n");
+      // Snapshot (as file-write would), then write the transaction's version.
+      getCheckpointManager()!.snapshot(file);
+      await beginTransactionTool.execute({});
+      writeFileSync(file, "transaction-version\n");
+      recordTransactionFile(file); // records hash of "transaction-version"
+
+      // A concurrent session edits the same file AFTER our write.
+      writeFileSync(file, "someone-elses-committed-work\n");
+
+      const result = await rollbackTransactionTool.execute({});
+      // The divergence must be refused, not silently clobbered.
+      expect((result as any).filesFailed.length).toBe(1);
+      expect((result as any).filesFailed[0].error).toContain("concurrent edit");
+      // The other session's work survives.
+      expect(readFileSync(file, "utf-8")).toBe("someone-elses-committed-work\n");
+    });
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+            ...options.parentSegments.filter((s) => s.cacheable),
+            // Subagent's own behavioral instructions (dynamic, not cached)
+            {
+              text: `\n## Subagent Instructions\n\n${systemPrompt}`,
+              cacheable: false,
+            },
+          ])
+        : systemPrompt;
+
+  // Wrap BOTH the streamText call AND stream consumption in withWorkspace.
+  //
+  // Subtle: AsyncLocalStorage context propagates to async work STARTED inside
+  // the run() callback. If we call streamText() outside the callback, the
+  // internal async chains the AI SDK sets up (tool execution, provider calls,
+  // etc.) are created before the context is active, so they don't inherit it.
+  // Tool calls then resolve paths via process.cwd() → wrong directory.
+  //
+  // Discovered the hard way: the previous version wrapped only the for-await
+  // loop, which seemed sufficient but wasn't — sphinx/ and sympy/ directories
+  // ended up written into the brainstorm repo root instead of the cloned
+  // target repos during parallel SWE-bench runs.
+  try {
+    if (needsContainer) {
+      releaseContainerLock = await acquireContainerLock();
+      ownSandbox = getSandboxPool().acquire({
+        hostWorkspace: projectPath,
+      }) as DockerSandbox;
+      prevSandbox = setDockerSandbox(ownSandbox);
+    }
+
+    // Fire SubagentStart hook
+    if (options.onHook) {
+      await options.onHook("SubagentStart", {
+        subagentType: type,
+        prompt: task,
+        budget: budgetLimit,
+        toolAllowlist: typeAllowed,
+        promptAppend: options.promptAppend,
+        maxSteps,
+        budgetLimit,
+      });
+    }
+
+    // Conversation for the run. Mutable so the enforcement loop can append
+    // the model's narration + a corrective user turn between re-invocations.
+    const messages: any[] = [
+      {
+        role: "user" as const,
+        content: `[Project: ${projectPath}]\n\n${task}`,
+      },
+    ];
+
+    await withWorkspace(projectPath, async () =>
+      // Enter the subagent's OWN session scope so its session-scoped tool
+      // stores (tasks, transactions, scratchpad) are isolated from the parent
+      // and from sibling parallel subagents — not shared via the parent
+      // session or DEFAULT_SESSION_ID.
+      withSession(subagentSessionId, async () => {
+      // Bounded re-invocation loop = the single-streamText analogue of the
+      // loop's Phase 7 self-recursion. `nudge` is the nudgeDepth: iteration 0
+      // is the original run; each subsequent iteration is one corrective
+      // re-run. It ALL lives inside this one withWorkspace callback so every
+      // streamText + its internal async tool chain inherits the AsyncLocalStorage
+      // workspace context (see the block comment above — hoisting streamText
+      // out breaks path resolution for tool calls).
+      let forceToolChoice = false;
+      for (let nudge = 0; ; nudge++) {
+        // Per-iteration accumulators (mirror the loop's per-turn state). The
+        // module-scope fullText/toolCallNames accumulate ACROSS retries for the
+        // returned result; these locals hold only THIS run's output so the gate
+        // judges the just-finished turn (like the loop's fresh recursion).
+        let iterText = "";
+        let iterToolCalls = 0;
+        let finishReason: string | undefined;
+
+        const result = streamText({
+          model: modelId,
+          system: systemForAPI as any,
+          messages,
+          tools: filteredTools,
+          // Phase 7: force a real tool call ONLY on a corrective retry, and
+          // never on the terminal retry (see forceToolChoice below), so the
+          // model can still finish with a clean text answer. Only meaningful
+          // when tools are present.
+          ...(hasTools && forceToolChoice
+            ? { toolChoice: "required" as const }
+            : {}),
+          ...(metadataHeader
+            ? { headers: { "x-br-metadata": metadataHeader } }
+            : {}),
+          abortSignal: effectiveAbort,
+          stopWhen: stepCountIs(maxSteps),
+          onStepFinish: async ({ usage }: any) => {
+            if (usage) {
+              const inputTokens = usage.inputTokens ?? 0;
+              const outputTokens = usage.outputTokens ?? 0;
+              const stepCost =
+                (inputTokens / 1_000_000) *
+                  decision.model.pricing.inputPer1MTokens +
+                (outputTokens / 1_000_000) *
+                  decision.model.pricing.outputPer1MTokens;
+              subagentCostAccum += stepCost;
+              costTracker.record({
+                sessionId: subagentSessionId,
+                modelId: decision.model.id,
+                provider: decision.model.provider,
+                inputTokens,
+                outputTokens,
+                taskType: taskProfile.type,
+                projectPath,
+                pricing: decision.model.pricing,
+              });
+            }
+            if (subagentCostAccum >= budgetLimit) {
+              budgetExceeded = true;
+              budgetAbort.abort();
+            }
+          },
+        });
+
+        for await (const part of result.fullStream) {
+          if (part.type === "text-delta") {
+            const delta = (part as any).delta ?? (part as any).text ?? "";
+            iterText += delta;
+            fullText += delta;
+          } else if (part.type === "tool-call") {
+            // INBOUND rename: record the canonical tool name so the subagent's
+            // reported toolCalls match the parent's canonical vocabulary
+            // regardless of which provider renamed them outbound.
+            iterToolCalls++;
+            toolCallNames.push(reverseToolName(part.toolName, decision.model));
+          } else if (part.type === "finish" || part.type === "finish-step") {
+            // Capture finishReason so the gate can require a self-stop
+            // (finishReason !== "tool-calls") — absent from the original
+            // subagent drain, this is the loop's missing precondition.
+            finishReason = (part as any).finishReason ?? finishReason;
+          }
+        }
+        // Remember the terminal reason of the final run for the result.
+        lastFinishReason = finishReason;
+
+        // ── Enforcement gate (mirrors loop.ts Phase 7 preconditions) ──
+        // Break (accept the run as-is) unless ALL hold: enforcement enabled,
+        // the run wasn't budget-killed / aborted, it made zero tool calls,
+        // stopped on its own, tools are available, we have nudges left, and
+        // the text reads as an un-acted tool intent.
+        const shouldNudge =
+          teEnabled &&
+          !budgetExceeded &&
+          !effectiveAbort.aborted &&
+          iterToolCalls === 0 &&
+          finishReason !== "tool-calls" &&
+          hasTools &&
+          nudge < teMaxNudges &&
+          detectNarratedToolIntent(iterText);
+
+        if (!shouldNudge) break;
+
+        // Budget guard — a nudge is a full extra model run (with its own fresh
+        // stepCountIs budget). Reuse the loop's 20%-remaining threshold and
+        // also honor the subagent's own budgetLimit; skip rather than risk
+        // blowing the session budget.
+        const nudgeBudgetRemaining = costTracker.getRemainingBudget();
+        const nudgeSessionLimit = (config.budget as any)?.perSession;
+        const nudgeBudgetTooLow =
+          nudgeBudgetRemaining !== null &&
+          nudgeSessionLimit &&
+          nudgeBudgetRemaining <= nudgeSessionLimit * 0.2;
+        if (nudgeBudgetTooLow || subagentCostAccum >= budgetLimit) {
+          log.warn(
+            {
+              remaining: nudgeBudgetRemaining,
+              sessionLimit: nudgeSessionLimit,
+              subagentCost: subagentCostAccum,
+              budgetLimit,
+            },
+            "Subagent tool-use nudge skipped — budget too low",
+          );
+          break;
+        }
+
+        const nextNudge = nudge + 1;
+        log.info(
+          {
+            type,
+            model: decision.model.id,
+            iteration: nextNudge,
+            maxNudges: teMaxNudges,
+          },
+          "Subagent narrated a tool action without calling it — nudging with forced tool call",
+        );
+        // Feed the model's narration back as an assistant turn plus the
+        // corrective user turn, so the retry has context for what it claimed
+        // to do. Do NOT force tools on the TERMINAL retry (nextNudge ===
+        // teMaxNudges): that re-entry can no longer nudge again, so its output
+        // is ACCEPTED — forcing would rob the model of a clean text answer.
+        messages.push({ role: "assistant", content: iterText });
+        messages.push({ role: "user", content: buildToolUseCorrection() });
+        forceToolChoice = nextNudge < teMaxNudges;
+      }
+    })); // close inner-arrow body, withSession(), withWorkspace()
+  } catch (err: any) {
+    // AbortError from budget enforcement is expected — not an error
+    if (err.name !== "AbortError") throw err;
+  } finally {
+    // Clean up subagent's Docker sandbox and restore parent's. Safe to
+    // do unconditionally here: acquireContainerLock() guarantees no
+    // other container-isolated subagent touches the module-level
+    // singleton between our acquire and this release, so prevSandbox is
+    // still exactly what we displaced.
+    if (ownSandbox) {
+      getSandboxPool().release(ownSandbox);
+      setDockerSandbox(prevSandbox);
+    }
+    releaseContainerLock?.();
+  }
+
+  if (budgetExceeded) {
+    fullText += `\n\n[Subagent terminated: budget limit of $${budgetLimit.toFixed(4)} exceeded ($${subagentCostAccum.toFixed(4)} used)]`;
+  }
+
+/**
+ * Session context — AsyncLocalStorage-backed "current session id" for
+ * session-scoped tool state (tasks, transactions, checkpoints).
+ *
+ * Why this exists: several tool stores were module-global (one `tasks` Map, one
+ * `transactionActive` flag, one `activeCheckpoint`). Two concurrent runs — a
+ * server request and a Slack message, or two subagents — would collide on IDs,
+ * clear each other's tasks, and cross-wire event handlers. Keying that state by
+ * the current session id isolates concurrent runs.
+ *
+ * Mirrors workspace-context.ts. Tool execution runs inside a session scope
+ * entered by the agent loop; stores call getSessionId() to pick their slice.
+ * A default id keeps standalone/test usage working without ceremony.
+ */
+
+import { AsyncLocalStorage } from "node:async_hooks";
+
+/** Session id used when no session context is active (standalone/tests). */
+export const DEFAULT_SESSION_ID = "__default__";
+
+const sessionStorage = new AsyncLocalStorage<string>();
+
+/**
+ * Run a function within a session scope. Tool calls inside the callback
+ * (including nested async work) resolve getSessionId() to this id.
+ */
+export function withSession<T>(
+  sessionId: string,
+  fn: () => Promise<T> | T,
+): Promise<T> | T {
+  return sessionStorage.run(sessionId, fn);
+}
+
+/**
+ * Enter a session scope WITHOUT a callback wrapper — for generators (the agent
+ * loop) that can't wrap their yields in a callback.
+ *
+ * CAUTION: `enterWith` sets the store for the current async execution and all
+ * nested continuations; it does NOT restore the previous id when this scope
+ * "exits" (there is no exit — it persists on the current async resource). A
+ * consumer that drives a generator via `enterSession` then continues doing
+ * other work in the SAME async context will keep this session id. When callers
+ * may share an async context across sessions, prefer `withSession(...)` (which
+ * scopes to a callback and restores) over `enterSession`.
+ */
+export function enterSession(sessionId: string): void {
+  sessionStorage.enterWith(sessionId);
+}
+
+/** Current session id, or the default when no session context is active. */
+export function getSessionId(): string {
+  return sessionStorage.getStore() ?? DEFAULT_SESSION_ID;
+}
+/**
+ * Workspace context — AsyncLocalStorage-backed "current project root" for tool
+ * path resolution.
+ *
+ * Why this exists: file_write, file_edit, and similar path-based tools used to
+ * resolve relative paths via `process.cwd()`. That meant when a subagent was
+ * spawned with a different `projectPath` (e.g., a cloned repo at /tmp/xxx),
+ * tool calls would write to the parent CLI's cwd instead of the subagent's
+ * project. SWE-bench runs surfaced this: the agent thought it was editing
+ * `astropy/modeling/separable.py` in the cloned repo, but the write landed in
+ * the brainstorm repo's root.
+ *
+ * Fix: subagent.ts wraps its streamText execution in withWorkspace(projectPath,
+ * async () => { ... }). Path-based tools call getWorkspace() to get the
+ * effective root and fall back to process.cwd() when no context is set.
+ */
+
+import { AsyncLocalStorage } from "node:async_hooks";
+
+const workspaceStorage = new AsyncLocalStorage<string>();
+
+/**
+ * Run a function with a specific workspace root. Tools called inside the
+ * callback (including nested async work) can retrieve this via getWorkspace().
+ */
+export function withWorkspace<T>(
+  workspace: string,
+  fn: () => Promise<T> | T,
+): Promise<T> | T {
+  return workspaceStorage.run(workspace, fn);
+}
+
+/**
+ * Enter a workspace context WITHOUT a callback wrapper. Sets the store for
+ * the current async execution and all nested async work — no unset until
+ * the async context exits. Use this inside generators where you can't wrap
+ * yield statements in a callback.
+ *
+ * Calls to enterWorkspace in nested async contexts will override for that
+ * scope only, restoring the outer workspace when the inner scope exits.
+ */
+export function enterWorkspace(workspace: string): void {
+  workspaceStorage.enterWith(workspace);
+}
+
+/**
+ * Get the current workspace root. Returns process.cwd() when no context is
+ * active — preserving the old behavior for direct CLI usage.
+ */
+export function getWorkspace(): string {
+  return workspaceStorage.getStore() ?? process.cwd();
+}
+
+exec
+/bin/zsh -lc "rg -n -C 8 \"recordTransactionFile|atomicReplaceFile|writeFileSync|renameSync\" packages/tools/src/builtin/{file-edit,file-write,multi-edit,batch-edit}.ts
+rg -n \"beginTransactionTool|rollbackTransactionTool|transaction\" packages/tools/src/__tests__ packages/core/src -g '*test.ts'
+rg -n \"runSubagentCore|subagentSessionId|initCheckpointManager|clearCheckpointManager|withSession\" packages/core/src/agent/subagent.ts packages/core/src/agent -g '*.ts'" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+packages/tools/src/builtin/multi-edit.ts-1-import { z } from "zod";
+packages/tools/src/builtin/multi-edit.ts-2-import {
+packages/tools/src/builtin/multi-edit.ts-3-  readFileSync,
+packages/tools/src/builtin/multi-edit.ts:4:  writeFileSync,
+packages/tools/src/builtin/multi-edit.ts:5:  renameSync,
+packages/tools/src/builtin/multi-edit.ts-6-  existsSync,
+packages/tools/src/builtin/multi-edit.ts-7-  unlinkSync,
+packages/tools/src/builtin/multi-edit.ts-8-} from "node:fs";
+packages/tools/src/builtin/multi-edit.ts-9-import { resolve, relative } from "node:path";
+packages/tools/src/builtin/multi-edit.ts-10-import { homedir } from "node:os";
+packages/tools/src/builtin/multi-edit.ts-11-import { randomUUID } from "node:crypto";
+packages/tools/src/builtin/multi-edit.ts-12-import { defineTool } from "../base.js";
+packages/tools/src/builtin/multi-edit.ts-13-import { applyEdits } from "./edit-common.js";
+--
+packages/tools/src/builtin/multi-edit.ts-89-      const { getCheckpointManager } = await import("../checkpoint.js");
+packages/tools/src/builtin/multi-edit.ts-90-      const cp = getCheckpointManager();
+packages/tools/src/builtin/multi-edit.ts-91-      if (cp) cp.snapshot(safePath);
+packages/tools/src/builtin/multi-edit.ts-92-      // Atomic write: tmp file then rename. Clean up the tmp file on failure
+packages/tools/src/builtin/multi-edit.ts-93-      // so retries don't leave stale ".tmp" files in the user's directories
+packages/tools/src/builtin/multi-edit.ts-94-      // (matches file-write.ts's pattern).
+packages/tools/src/builtin/multi-edit.ts-95-      const tmpPath = `${safePath}.${randomUUID().slice(0, 8)}.tmp`;
+packages/tools/src/builtin/multi-edit.ts-96-      try {
+packages/tools/src/builtin/multi-edit.ts:97:        writeFileSync(tmpPath, content, "utf-8");
+packages/tools/src/builtin/multi-edit.ts:98:        renameSync(tmpPath, safePath);
+packages/tools/src/builtin/multi-edit.ts-99-      } catch (e) {
+packages/tools/src/builtin/multi-edit.ts-100-        try {
+packages/tools/src/builtin/multi-edit.ts-101-          unlinkSync(tmpPath);
+packages/tools/src/builtin/multi-edit.ts-102-        } catch {
+packages/tools/src/builtin/multi-edit.ts-103-          /* best-effort cleanup of temp file */
+packages/tools/src/builtin/multi-edit.ts-104-        }
+packages/tools/src/builtin/multi-edit.ts-105-        throw e;
+packages/tools/src/builtin/multi-edit.ts-106-      }
+--
+packages/tools/src/builtin/batch-edit.ts-1-import { z } from "zod";
+packages/tools/src/builtin/batch-edit.ts:2:import { readFileSync, writeFileSync, existsSync } from "node:fs";
+packages/tools/src/builtin/batch-edit.ts-3-import { resolve, relative } from "node:path";
+packages/tools/src/builtin/batch-edit.ts-4-import { defineTool } from "../base.js";
+packages/tools/src/builtin/batch-edit.ts-5-import { getWorkspace } from "../workspace-context.js";
+packages/tools/src/builtin/batch-edit.ts-6-
+packages/tools/src/builtin/batch-edit.ts-7-function ensureSafePath(filePath: string): string {
+packages/tools/src/builtin/batch-edit.ts-8-  const cwd = getWorkspace();
+packages/tools/src/builtin/batch-edit.ts-9-  const resolved = resolve(cwd, filePath);
+packages/tools/src/builtin/batch-edit.ts-10-  const rel = relative(cwd, resolved);
+--
+packages/tools/src/builtin/batch-edit.ts-101-        fileResult.applied++;
+packages/tools/src/builtin/batch-edit.ts-102-      }
+packages/tools/src/builtin/batch-edit.ts-103-
+packages/tools/src/builtin/batch-edit.ts-104-      // Write if any edits succeeded
+packages/tools/src/builtin/batch-edit.ts-105-      if (fileResult.applied > 0) {
+packages/tools/src/builtin/batch-edit.ts-106-        const { getCheckpointManager } = await import("../checkpoint.js");
+packages/tools/src/builtin/batch-edit.ts-107-        const cp = getCheckpointManager();
+packages/tools/src/builtin/batch-edit.ts-108-        if (cp) cp.snapshot(safePath);
+packages/tools/src/builtin/batch-edit.ts:109:        writeFileSync(safePath, content, "utf-8");
+packages/tools/src/builtin/batch-edit.ts-110-      }
+packages/tools/src/builtin/batch-edit.ts-111-
+packages/tools/src/builtin/batch-edit.ts-112-      results.push(fileResult);
+packages/tools/src/builtin/batch-edit.ts-113-    }
+packages/tools/src/builtin/batch-edit.ts-114-
+packages/tools/src/builtin/batch-edit.ts-115-    const filesModified = results.filter((r) => r.applied > 0).length;
+packages/tools/src/builtin/batch-edit.ts-116-    const totalEditsApplied = results.reduce((sum, r) => sum + r.applied, 0);
+packages/tools/src/builtin/batch-edit.ts-117-    const totalEdits = results.reduce((sum, r) => sum + r.total, 0);
+--
+packages/tools/src/builtin/file-write.ts-1-import { z } from "zod";
+packages/tools/src/builtin/file-write.ts:2:import { writeFileSync, mkdirSync, renameSync, unlinkSync } from "node:fs";
+packages/tools/src/builtin/file-write.ts-3-import { dirname, resolve, relative } from "node:path";
+packages/tools/src/builtin/file-write.ts-4-import { randomUUID } from "node:crypto";
+packages/tools/src/builtin/file-write.ts-5-import { defineTool } from "../base.js";
+packages/tools/src/builtin/file-write.ts-6-import { getWorkspace } from "../workspace-context.js";
+packages/tools/src/builtin/file-write.ts-7-import { assertNotSensitivePathIncludingRealpath } from "./sensitive-paths.js";
+packages/tools/src/builtin/file-write.ts-8-
+packages/tools/src/builtin/file-write.ts-9-import { homedir } from "node:os";
+packages/tools/src/builtin/file-write.ts-10-
+--
+packages/tools/src/builtin/file-write.ts-99-    const validation = preValidate(safePath, content);
+packages/tools/src/builtin/file-write.ts-100-
+packages/tools/src/builtin/file-write.ts-101-    mkdirSync(dirname(safePath), { recursive: true });
+packages/tools/src/builtin/file-write.ts-102-
+packages/tools/src/builtin/file-write.ts-103-    // Atomic write: write to temp file, then rename to target.
+packages/tools/src/builtin/file-write.ts-104-    // Prevents partial writes on crash/interrupt.
+packages/tools/src/builtin/file-write.ts-105-    const tmpPath = `${safePath}.${randomUUID().slice(0, 8)}.tmp`;
+packages/tools/src/builtin/file-write.ts-106-    try {
+packages/tools/src/builtin/file-write.ts:107:      writeFileSync(tmpPath, content, "utf-8");
+packages/tools/src/builtin/file-write.ts:108:      renameSync(tmpPath, safePath);
+packages/tools/src/builtin/file-write.ts-109-    } catch (e) {
+packages/tools/src/builtin/file-write.ts-110-      try {
+packages/tools/src/builtin/file-write.ts-111-        unlinkSync(tmpPath);
+packages/tools/src/builtin/file-write.ts-112-      } catch {
+packages/tools/src/builtin/file-write.ts-113-        /* best-effort cleanup of temp file */
+packages/tools/src/builtin/file-write.ts-114-      }
+packages/tools/src/builtin/file-write.ts-115-      throw e;
+packages/tools/src/builtin/file-write.ts-116-    }
+--
+packages/tools/src/builtin/file-write.ts-119-    const { getFileReadCache } = await import("../file-cache.js");
+packages/tools/src/builtin/file-write.ts-120-    getFileReadCache().invalidate(safePath);
+packages/tools/src/builtin/file-write.ts-121-
+packages/tools/src/builtin/file-write.ts-122-    // Track file access
+packages/tools/src/builtin/file-write.ts-123-    const { getFileTracker } = await import("../file-tracker.js");
+packages/tools/src/builtin/file-write.ts-124-    getFileTracker().recordWrite(safePath);
+packages/tools/src/builtin/file-write.ts-125-
+packages/tools/src/builtin/file-write.ts-126-    // Track in active transaction
+packages/tools/src/builtin/file-write.ts:127:    const { recordTransactionFile } = await import("./transaction.js");
+packages/tools/src/builtin/file-write.ts:128:    recordTransactionFile(safePath);
+packages/tools/src/builtin/file-write.ts-129-
+packages/tools/src/builtin/file-write.ts-130-    // Diff preview (non-blocking)
+packages/tools/src/builtin/file-write.ts-131-    const { getDiffSummary } = await import("../diff-preview.js");
+packages/tools/src/builtin/file-write.ts-132-    const diff = getDiffSummary(safePath);
+packages/tools/src/builtin/file-write.ts-133-
+packages/tools/src/builtin/file-write.ts-134-    return {
+packages/tools/src/builtin/file-write.ts-135-      success: true,
+packages/tools/src/builtin/file-write.ts-136-      path,
+--
+packages/tools/src/builtin/file-edit.ts-1-import { z } from "zod";
+packages/tools/src/builtin/file-edit.ts-2-import {
+packages/tools/src/builtin/file-edit.ts-3-  readFileSync,
+packages/tools/src/builtin/file-edit.ts:4:  writeFileSync,
+packages/tools/src/builtin/file-edit.ts-5-  existsSync,
+packages/tools/src/builtin/file-edit.ts:6:  renameSync,
+packages/tools/src/builtin/file-edit.ts-7-  unlinkSync,
+packages/tools/src/builtin/file-edit.ts-8-  openSync,
+packages/tools/src/builtin/file-edit.ts-9-  fsyncSync,
+packages/tools/src/builtin/file-edit.ts-10-  closeSync,
+packages/tools/src/builtin/file-edit.ts-11-  statSync,
+packages/tools/src/builtin/file-edit.ts-12-  chmodSync,
+packages/tools/src/builtin/file-edit.ts-13-} from "node:fs";
+packages/tools/src/builtin/file-edit.ts-14-import { randomBytes } from "node:crypto";
+--
+packages/tools/src/builtin/file-edit.ts-20-import { applyEdit } from "./edit-common.js";
+packages/tools/src/builtin/file-edit.ts-21-
+packages/tools/src/builtin/file-edit.ts-22-/**
+packages/tools/src/builtin/file-edit.ts-23- * Atomic file replace: write content to `<path>.tmp.<rand>`, fsync, then
+packages/tools/src/builtin/file-edit.ts-24- * rename over the target. Rename on POSIX is atomic within the same
+packages/tools/src/builtin/file-edit.ts-25- * filesystem, so a crash mid-write leaves either the OLD content or the
+packages/tools/src/builtin/file-edit.ts-26- * NEW content — never a partial write.
+packages/tools/src/builtin/file-edit.ts-27- *
+packages/tools/src/builtin/file-edit.ts:28: * v16 Chaos Monkey flagged that `writeFileSync(path, content)` is NOT
+packages/tools/src/builtin/file-edit.ts-29- * crash-safe: an ENOSPC mid-write or SIGKILL between open() and close()
+packages/tools/src/builtin/file-edit.ts-30- * truncates the file to a partial state. For an agent that edits its
+packages/tools/src/builtin/file-edit.ts-31- * own configuration / lockfile / migration file, that's data loss.
+packages/tools/src/builtin/file-edit.ts-32- *
+packages/tools/src/builtin/file-edit.ts-33- * The temp file is unlinked on any error in the write path, so we don't
+packages/tools/src/builtin/file-edit.ts-34- * leave debris on a full disk.
+packages/tools/src/builtin/file-edit.ts-35- */
+packages/tools/src/builtin/file-edit.ts:36:function atomicReplaceFile(path: string, content: string): void {
+packages/tools/src/builtin/file-edit.ts-37-  const tmp = `${path}.tmp.${randomBytes(6).toString("hex")}`;
+packages/tools/src/builtin/file-edit.ts-38-  let fd: number | null = null;
+packages/tools/src/builtin/file-edit.ts-39-
+packages/tools/src/builtin/file-edit.ts:40:  // v17 Attacker — atomicReplaceFile must preserve the target's
+packages/tools/src/builtin/file-edit.ts-41-  // permission bits. Without this, editing a 0600 secret file
+packages/tools/src/builtin/file-edit.ts:42:  // silently widens it to 0644 (Node's default writeFileSync mode)
+packages/tools/src/builtin/file-edit.ts:43:  // because renameSync discards the target's pre-existing mode.
+packages/tools/src/builtin/file-edit.ts-44-  // Capture the target's mode BEFORE writing tmp so we restore it
+packages/tools/src/builtin/file-edit.ts-45-  // after the rename succeeds.
+packages/tools/src/builtin/file-edit.ts-46-  let originalMode: number | undefined;
+packages/tools/src/builtin/file-edit.ts-47-  try {
+packages/tools/src/builtin/file-edit.ts-48-    if (existsSync(path)) {
+packages/tools/src/builtin/file-edit.ts-49-      originalMode = statSync(path).mode & 0o777;
+packages/tools/src/builtin/file-edit.ts-50-    }
+packages/tools/src/builtin/file-edit.ts-51-  } catch {
+packages/tools/src/builtin/file-edit.ts-52-    // If we can't stat the target, fall back to writing with default
+packages/tools/src/builtin/file-edit.ts-53-    // mode — better than failing the edit. The downstream chmod will
+packages/tools/src/builtin/file-edit.ts-54-    // be a no-op.
+packages/tools/src/builtin/file-edit.ts-55-  }
+packages/tools/src/builtin/file-edit.ts-56-
+packages/tools/src/builtin/file-edit.ts-57-  try {
+packages/tools/src/builtin/file-edit.ts:58:    writeFileSync(tmp, content, {
+packages/tools/src/builtin/file-edit.ts-59-      encoding: "utf-8",
+packages/tools/src/builtin/file-edit.ts-60-      // If we captured the target's mode, create tmp with the same
+packages/tools/src/builtin/file-edit.ts-61-      // mode so the file is never visible (between rename and chmod)
+packages/tools/src/builtin/file-edit.ts-62-      // at a more-permissive mode than the original.
+packages/tools/src/builtin/file-edit.ts-63-      ...(originalMode !== undefined ? { mode: originalMode } : {}),
+packages/tools/src/builtin/file-edit.ts-64-    });
+packages/tools/src/builtin/file-edit.ts-65-    // fsync the file so the bytes are durably on disk before we rename;
+packages/tools/src/builtin/file-edit.ts-66-    // otherwise a crash AFTER rename can still produce a zero-byte file
+packages/tools/src/builtin/file-edit.ts-67-    // on some filesystems.
+packages/tools/src/builtin/file-edit.ts-68-    fd = openSync(tmp, "r");
+packages/tools/src/builtin/file-edit.ts-69-    fsyncSync(fd);
+packages/tools/src/builtin/file-edit.ts-70-    closeSync(fd);
+packages/tools/src/builtin/file-edit.ts-71-    fd = null;
+packages/tools/src/builtin/file-edit.ts:72:    renameSync(tmp, path);
+packages/tools/src/builtin/file-edit.ts-73-    // Belt-and-braces: rename keeps the SOURCE inode's perms, which we
+packages/tools/src/builtin/file-edit.ts:74:    // already set via writeFileSync mode above. chmod is idempotent and
+packages/tools/src/builtin/file-edit.ts-75-    // covers the case where filesystem umask masked the create-mode.
+packages/tools/src/builtin/file-edit.ts-76-    if (originalMode !== undefined) {
+packages/tools/src/builtin/file-edit.ts-77-      chmodSync(path, originalMode);
+packages/tools/src/builtin/file-edit.ts-78-    }
+packages/tools/src/builtin/file-edit.ts-79-  } catch (err) {
+packages/tools/src/builtin/file-edit.ts-80-    // Cleanup: try to remove temp file and (if open) close the fd.
+packages/tools/src/builtin/file-edit.ts-81-    if (fd !== null) {
+packages/tools/src/builtin/file-edit.ts-82-      try {
+--
+packages/tools/src/builtin/file-edit.ts-247-    if (cp) cp.snapshot(safePath);
+packages/tools/src/builtin/file-edit.ts-248-
+packages/tools/src/builtin/file-edit.ts-249-    const updated = editResult.content;
+packages/tools/src/builtin/file-edit.ts-250-
+packages/tools/src/builtin/file-edit.ts-251-    // Pre-validate content before writing (non-blocking)
+packages/tools/src/builtin/file-edit.ts-252-    const { preValidate } = await import("../pre-validate.js");
+packages/tools/src/builtin/file-edit.ts-253-    const validation = preValidate(safePath, updated);
+packages/tools/src/builtin/file-edit.ts-254-
+packages/tools/src/builtin/file-edit.ts:255:    // Atomic replace — see atomicReplaceFile docstring. Closes v16
+packages/tools/src/builtin/file-edit.ts-256-    // Chaos Monkey gap: partial-write on ENOSPC/SIGKILL no longer
+packages/tools/src/builtin/file-edit.ts-257-    // possible.
+packages/tools/src/builtin/file-edit.ts:258:    atomicReplaceFile(safePath, updated);
+packages/tools/src/builtin/file-edit.ts-259-
+packages/tools/src/builtin/file-edit.ts-260-    // Invalidate read cache for this file
+packages/tools/src/builtin/file-edit.ts-261-    const { getFileReadCache } = await import("../file-cache.js");
+packages/tools/src/builtin/file-edit.ts-262-    getFileReadCache().invalidate(safePath);
+packages/tools/src/builtin/file-edit.ts-263-
+packages/tools/src/builtin/file-edit.ts-264-    // Diff preview (non-blocking)
+packages/tools/src/builtin/file-edit.ts-265-    const { getDiffSummary } = await import("../diff-preview.js");
+packages/tools/src/builtin/file-edit.ts-266-    const diff = getDiffSummary(safePath);
+packages/tools/src/__tests__/transaction-session-scope.test.ts:6:  beginTransactionTool,
+packages/tools/src/__tests__/transaction-session-scope.test.ts:8:  rollbackTransactionTool,
+packages/tools/src/__tests__/transaction-session-scope.test.ts:12:} from "../builtin/transaction.js";
+packages/tools/src/__tests__/transaction-session-scope.test.ts:15:describe("transaction state — concurrent session isolation", () => {
+packages/tools/src/__tests__/transaction-session-scope.test.ts:16:  it("keeps two sessions' transactions independent", async () => {
+packages/tools/src/__tests__/transaction-session-scope.test.ts:17:    // Session A opens a transaction; session B must see NO active transaction.
+packages/tools/src/__tests__/transaction-session-scope.test.ts:18:    await withSession("tx-A", () => beginTransactionTool.execute({}));
+packages/tools/src/__tests__/transaction-session-scope.test.ts:27:    // B can open its OWN transaction (not blocked by A's global flag).
+packages/tools/src/__tests__/transaction-session-scope.test.ts:29:      beginTransactionTool.execute({}),
+packages/tools/src/__tests__/transaction-session-scope.test.ts:35:    await withSession("tx-C", () => beginTransactionTool.execute({}));
+packages/tools/src/__tests__/transaction-session-scope.test.ts:36:    await withSession("tx-D", () => beginTransactionTool.execute({}));
+packages/tools/src/__tests__/transaction-session-scope.test.ts:46:  it("committing one session does not disturb another's open transaction", async () => {
+packages/tools/src/__tests__/transaction-session-scope.test.ts:47:    await withSession("tx-E", () => beginTransactionTool.execute({}));
+packages/tools/src/__tests__/transaction-session-scope.test.ts:48:    await withSession("tx-F", () => beginTransactionTool.execute({}));
+packages/tools/src/__tests__/transaction-session-scope.test.ts:51:    // E commits (empty); F's transaction must remain active with its file.
+packages/tools/src/__tests__/transaction-session-scope.test.ts:63:describe("transaction — cleanup + rollback safety (005.6 hardening)", () => {
+packages/tools/src/__tests__/transaction-session-scope.test.ts:65:    await withSession("tx-G", () => beginTransactionTool.execute({}));
+packages/tools/src/__tests__/transaction-session-scope.test.ts:72:      beginTransactionTool.execute({}),
+packages/tools/src/__tests__/transaction-session-scope.test.ts:88:      // Snapshot (as file-write would), then write the transaction's version.
+packages/tools/src/__tests__/transaction-session-scope.test.ts:90:      await beginTransactionTool.execute({});
+packages/tools/src/__tests__/transaction-session-scope.test.ts:91:      writeFileSync(file, "transaction-version\n");
+packages/tools/src/__tests__/transaction-session-scope.test.ts:92:      recordTransactionFile(file); // records hash of "transaction-version"
+packages/tools/src/__tests__/transaction-session-scope.test.ts:97:      const result = await rollbackTransactionTool.execute({});
+packages/core/src/agent/subagent.ts:16:  withSession,
+packages/core/src/agent/subagent.ts:521:    return runSubagentCore(task, options);
+packages/core/src/agent/subagent.ts:575:  const first = await runSubagentCore(renderedTask, coreOptions);
+packages/core/src/agent/subagent.ts:608:  const repaired = await runSubagentCore(renderedTask, {
+packages/core/src/agent/subagent.ts:631:async function runSubagentCore(
+packages/core/src/agent/subagent.ts:787:  const subagentSessionId = `subagent-${type}-${randomUUID()}`;
+packages/core/src/agent/subagent.ts:917:      withSession(subagentSessionId, async () => {
+packages/core/src/agent/subagent.ts:963:                sessionId: subagentSessionId,
+packages/core/src/agent/subagent.ts:1060:    })); // close inner-arrow body, withSession(), withWorkspace()
+packages/core/src/agent/subagent.ts:16:  withSession,
+packages/core/src/agent/subagent.ts:521:    return runSubagentCore(task, options);
+packages/core/src/agent/subagent.ts:575:  const first = await runSubagentCore(renderedTask, coreOptions);
+packages/core/src/agent/subagent.ts:608:  const repaired = await runSubagentCore(renderedTask, {
+packages/core/src/agent/subagent.ts:631:async function runSubagentCore(
+packages/core/src/agent/subagent.ts:787:  const subagentSessionId = `subagent-${type}-${randomUUID()}`;
+packages/core/src/agent/subagent.ts:917:      withSession(subagentSessionId, async () => {
+packages/core/src/agent/subagent.ts:963:                sessionId: subagentSessionId,
+packages/core/src/agent/subagent.ts:1060:    })); // close inner-arrow body, withSession(), withWorkspace()
+
+exec
+/bin/zsh -lc 'ls -la bench/iterations/005/reviews && for f in bench/iterations/005/reviews/iter-005-{1,2,3,4,5}.diff; do test -f "$f" && { echo "$f"; rg -n "transaction|subagent|P0|P1|rollback|session" "$f" | head -80; }; done' in /Users/justin.jilg/Projects/brainstorm
+ exited 1 in 0ms:
+total 832
+drwxr-xr-x  9 justin.jilg  staff     288 Jul 18 20:17 .
+drwxr-xr-x  6 justin.jilg  staff     192 Jul 18 19:56 ..
+-rw-r--r--  1 justin.jilg  staff   83929 Jul 18 20:18 codex-005-6.err
+-rw-r--r--  1 justin.jilg  staff       0 Jul 18 20:17 codex-005-6.out
+-rw-r--r--  1 justin.jilg  staff  228180 Jul 18 20:02 codex.err
+-rw-r--r--  1 justin.jilg  staff    5397 Jul 18 20:02 codex.out
+-rw-r--r--  1 justin.jilg  staff    9075 Jul 18 20:17 iter-005-6.diff
+-rw-r--r--  1 justin.jilg  staff   35770 Jul 18 19:56 iter.diff
+-rw-r--r--  1 justin.jilg  staff    3965 Jul 18 20:17 verdicts.json
+
+exec
+/bin/zsh -lc "cat bench/iterations/005/reviews/verdicts.json
+cat bench/iterations/005/reviews/codex.out
+sed -n '1,260p' bench/iterations/005/reviews/iter-005-6.diff" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+{
+  "seat": "codex",
+  "axis": "concurrency-isolation",
+  "findings": 9,
+  "note": "Thorough review that both confirmed the scoping and found real remaining gaps. The scoping isolates DISTINCT concurrent sessions for task/tx/checkpoint/shell/routing, but Codex surfaced (a) two globals I missed entirely, (b) subagents not entering a session scope, (c) a deeper design question — the scope key is the persistent session id, not a per-RUN id, so concurrent turns on ONE session still collide, and (d) a rollback-safety regression from now-permitted concurrent transactions.",
+  "fixed": [
+    { "id": 3, "sev": "P1", "loc": "scratchpad.ts global Map → per-session", "note": "FIXED — was a real cross-session context leak (compaction could inject one session's notes into another's model context). Session-keyed + LRU bound." },
+    { "id": 4, "sev": "P1", "loc": "process-manage.ts global processes → session-keyed", "note": "FIXED — composite sessionId::name key; kill/list restricted to the current session; MAX cap kept as a process-wide resource limit." },
+    { "id": 7, "sev": "P2", "loc": "session-context enterWith comment wrong", "note": "FIXED — comment corrected; enterWith does NOT restore the outer scope, documented the withSession-vs-enterSession tradeoff." },
+    { "id": 9, "sev": "P2", "loc": "clearCheckpointManager not exported", "note": "PARTIAL — exported from tools index (the concrete gap). Wiring it into teardown belongs in the session-lifecycle owner (CLI serve / channels), NOT the recursive agent-loop finally (which runs per-recursion-level and would wipe state mid-run). LRU bound prevents growth meanwhile." }
+  ],
+  "fixed_in_005_6": [
+    { "id": 2, "sev": "P1", "loc": "subagent session scoping", "note": "FIXED — subagents enter their own withSession(randomUUID) alongside withWorkspace; Date.now() (which collided for parallel same-ms spawns) replaced with a UUID. Task/tx/scratchpad stores isolated from parent + siblings." },
+    { "id": 6, "sev": "P1", "loc": "transaction rollback safety regression", "note": "FIXED — recordTransactionFile hashes each file as written; rollback refuses to revert a file that diverged since (concurrent edit), so it can't clobber another session's committed work. Real-file test proves the refusal + survival." },
+    { "id": 8, "sev": "P2", "loc": "transaction allocation/eviction", "note": "FIXED — read/record paths don't allocate (peekTx); commit/rollback release the entry; LRU eviction skips ACTIVE transactions." }
+  ],
+  "remaining_005_6": [
+    { "id": 1, "sev": "P1", "loc": "scope key = persistent sessionId, not per-run id", "note": "The two-key redesign (per-run id for ephemeral tasks/tx/scratchpad/foreground-handlers + logical session id for background mailboxes). PRACTICAL IMPACT limited to CONCURRENT TURNS on the SAME session — which most harnesses serialize (distinct sessions are already isolated). Getting the run-vs-session split wrong could break legitimate multi-turn state (undo/tasks across turns), so it's deliberate design work, not a rushed pass. Genuinely open." },
+    { "id": 5, "sev": "P1", "loc": "background completion delivery race", "note": "Coupled with #1's mailbox design — a job completing after the final stream part / during the suspended done-yield can hit an already-drained queue. Needs a durable per-session mailbox acked after the yield. Deferred with #1 (same design)." }
+  ],
+  "gate": {
+    "tests": "tools session-scope 14 + scorer 10 + core 625 + router 118 green; as-any 295/295; typecheck clean",
+    "decision": "GREEN for the shipped scope — 7 of 9 findings fixed with tests (all mechanical gaps + the rollback-safety regression + subagent scoping + cleanup). The 2 remaining (per-run scope-key redesign + coupled background mailbox) are genuinely open design work whose practical impact is same-session concurrent turns (serialized by most harnesses); documented not rushed, per the iter-004 lesson."
+  }
+}
+[
+  {
+    "file": "packages/core/src/agent/subagent.ts",
+    "line": 907,
+    "severity": "P1",
+    "finding": "Subagent tool execution enters only a workspace scope. Parallel subagents invoked under a parent inherit the same parent session, while direct production callers such as CLI storm runs share DEFAULT_SESSION_ID, so their task and transaction stores still collide.",
+    "suggested_fix": "Wrap the entire subagent stream lifecycle in withSession(subagentSessionId) alongside withWorkspace, and generate subagentSessionId with a collision-resistant UUID rather than Date.now()."
+  },
+  {
+    "file": "packages/core/src/agent/loop.ts",
+    "line": 613,
+    "severity": "P1",
+    "finding": "The scope key is the persistent options.sessionId, not a run/turn identifier. Two concurrent requests resuming the same session therefore clear each other's tasks, replace each other's handlers, and let either finally block unregister the other run.",
+    "suggested_fix": "Serialize concurrent turns per logical session or use a unique invocation ID for ephemeral task, transaction, and foreground-handler state; keep a separate logical-session key only for background completion mailboxes that must span turns."
+  },
+  {
+    "file": "packages/tools/src/session-context.ts",
+    "line": 40,
+    "severity": "P2",
+    "finding": "AsyncLocalStorage.enterWith() does not restore the outer store when this scope exits, contrary to the function comment. Driving runAgentLoop leaves its session ID in the consumer's continuation, so later work outside an intended scope can silently use the completed session's stores.",
+    "suggested_fix": "Drive each generator through an adapter whose next/return/throw operations execute inside sessionStorage.run(), or wrap every complete for-await consumer in withSession(); avoid enterWith() for a scope that must restore."
+  },
+  {
+    "file": "packages/tools/src/builtin/shell.ts",
+    "line": 569,
+    "severity": "P1",
+    "finding": "Finding a handler is treated as durable delivery, but the loop handler only appends to taskEventQueue, which is drained while fullStream is being consumed. A background job completing after the final stream part or while the done yield is suspended is appended to a queue that is never drained and is then discarded during teardown instead of entering pendingEventsBySession.",
+    "suggested_fix": "Keep background completions in a durable per-session mailbox until the loop explicitly acknowledges them after yielding, or detach the live handler before a final drain and route every later completion to the pending mailbox."
+  },
+  {
+    "file": "packages/tools/src/builtin/transaction.ts",
+    "line": 125,
+    "severity": "P1",
+    "finding": "Per-session transaction metadata now permits concurrent transactions in the same workspace, but rollback has no file lock or version check. If session B edits a file after session A, A can restore its older checkpoint and silently overwrite B's committed work.",
+    "suggested_fix": "Add workspace/file-level transaction locking, or record post-write hashes/generations and refuse rollback when the current file no longer matches the transaction's last write."
+  },
+  {
+    "file": "packages/tools/src/builtin/transaction.ts",
+    "line": 31,
+    "severity": "P2",
+    "finding": "txFor creates permanent entries even for inactive sessions, and the FIFO bound may evict an active transaction once 256 other sessions have created state. Its next operation then recreates an inactive state and loses the ability to commit or roll back.",
+    "suggested_fix": "Avoid allocating state for inactive record/read paths, delete state after commit or rollback, refresh true LRU ordering on access, and never evict active transactions."
+  },
+  {
+    "file": "packages/tools/src/checkpoint.ts",
+    "line": 208,
+    "severity": "P2",
+    "finding": "The new checkpoint cleanup function is neither exported from the tools package nor called by any session teardown path. Managers therefore accumulate until FIFO eviction silently removes another session's undo/rollback capability.",
+    "suggested_fix": "Export clearCheckpointManager and invoke it from the authoritative session teardown lifecycle; if managers must survive turns, evict only explicitly ended sessions or inactive LRU entries."
+  },
+  {
+    "file": "packages/tools/src/builtin/scratchpad.ts",
+    "line": 7,
+    "severity": "P1",
+    "finding": "The session scratchpad remains a single process-global Map. Concurrent users can read or overwrite each other's notes, and compaction can inject one session's scratchpad content into another session's model context.",
+    "suggested_fix": "Key scratchpad storage and all read/format/clear operations by getSessionId(), with bounded storage and explicit session cleanup."
+  },
+  {
+    "file": "packages/tools/src/builtin/process-manage.ts",
+    "line": 12,
+    "severity": "P1",
+    "finding": "Managed background processes remain process-global and keyed only by model-provided name. One session can collide with, enumerate through error text, or kill another session's process, so background-process concurrency is still not isolated.",
+    "suggested_fix": "Key managed processes by session ID plus name, capture the originating session at spawn, and restrict lookup, kill, and error listings to that session while retaining a separate process-wide resource cap."
+  }
+]
+diff --git a/packages/core/src/agent/subagent.ts b/packages/core/src/agent/subagent.ts
+index 62bb054..e2628bc 100644
+--- a/packages/core/src/agent/subagent.ts
++++ b/packages/core/src/agent/subagent.ts
+@@ -1,4 +1,5 @@
+ import { streamText, stepCountIs } from "ai";
++import { randomUUID } from "node:crypto";
+ import type { BrainstormConfig } from "@brainst0rm/config";
+ import type { ProviderRegistry } from "@brainst0rm/providers";
+ import {
+@@ -12,6 +13,7 @@ import {
+   setDockerSandbox,
+   DockerSandbox,
+   withWorkspace,
++  withSession,
+   getSandboxPool,
+ } from "@brainst0rm/tools";
+ import {
+@@ -779,7 +781,10 @@ async function runSubagentCore(
+     "Subagent capability manifest frozen",
+   );
+ 
+-  const subagentSessionId = `subagent-${type}-${Date.now()}`;
++  // Collision-resistant id: parallel subagents spawned in the same millisecond
++  // must NOT share a session (Date.now() alone collided → shared task/tx/
++  // scratchpad stores).
++  const subagentSessionId = `subagent-${type}-${randomUUID()}`;
+   const budgetLimit = options.budgetLimit ?? costTracker.getSubagentBudget();
+   const costBefore = costTracker.getSessionCost();
+ 
+@@ -904,7 +909,12 @@ async function runSubagentCore(
+       },
+     ];
+ 
+-    await withWorkspace(projectPath, async () => {
++    await withWorkspace(projectPath, async () =>
++      // Enter the subagent's OWN session scope so its session-scoped tool
++      // stores (tasks, transactions, scratchpad) are isolated from the parent
++      // and from sibling parallel subagents — not shared via the parent
++      // session or DEFAULT_SESSION_ID.
++      withSession(subagentSessionId, async () => {
+       // Bounded re-invocation loop = the single-streamText analogue of the
+       // loop's Phase 7 self-recursion. `nudge` is the nudgeDepth: iteration 0
+       // is the original run; each subsequent iteration is one corrective
+@@ -1047,7 +1057,7 @@ async function runSubagentCore(
+         messages.push({ role: "user", content: buildToolUseCorrection() });
+         forceToolChoice = nextNudge < teMaxNudges;
+       }
+-    });
++    })); // close inner-arrow body, withSession(), withWorkspace()
+   } catch (err: any) {
+     // AbortError from budget enforcement is expected — not an error
+     if (err.name !== "AbortError") throw err;
+diff --git a/packages/tools/src/builtin/transaction.ts b/packages/tools/src/builtin/transaction.ts
+index c685d7d..a3b222e 100644
+--- a/packages/tools/src/builtin/transaction.ts
++++ b/packages/tools/src/builtin/transaction.ts
+@@ -2,6 +2,8 @@ import { z } from "zod";
+ import { defineTool } from "../base.js";
+ import { readFileSync, existsSync } from "node:fs";
+ import { relative, resolve } from "node:path";
++import { createHash } from "node:crypto";
++import { getSessionId } from "../session-context.js";
+ 
+ /**
+  * Transaction Tool Calls — atomic multi-file edits.
+@@ -11,22 +13,70 @@ import { relative, resolve } from "node:path";
+  * On commit, changes are finalized (already written to disk by file tools).
+  *
+  * This uses the existing CheckpointManager for rollback capability.
++ *
++ * Per-session: a single module-global `transactionActive` flag meant two
++ * concurrent runs corrupted each other's transactions (one committing while
++ * the other tracked files). Keyed by the current session id instead.
+  */
+ 
+-let transactionActive = false;
+-let transactionFiles: string[] = [];
++interface TxState {
++  active: boolean;
++  /**
++   * Tracked files → the content hash at the transaction's last write. Rollback
++   * refuses to revert a file whose current content no longer matches, so a
++   * concurrent session that edited the same file afterward isn't silently
++   * clobbered (the safety gap that per-session — hence concurrent —
++   * transactions introduced over the old single-global-flag serialization).
++   */
++  files: Map<string, string>;
++}
++const MAX_TRACKED_SESSIONS = 256;
++const txStates = new Map<string, TxState>();
++
++function hashFile(path: string): string | null {
++  try {
++    return createHash("sha256").update(readFileSync(path)).digest("hex");
++  } catch {
++    return null; // unreadable/absent — recorded as "no hash"
++  }
++}
++
++/** Read-only peek: never allocates a state entry. */
++function peekTx(sessionId: string): TxState | undefined {
++  return txStates.get(sessionId);
++}
++
++/** Get-or-create for the ACTIVE (begin) path. Never evicts an active tx. */
++function beginTxState(sessionId: string): TxState {
++  let s = txStates.get(sessionId);
++  if (!s) {
++    if (txStates.size >= MAX_TRACKED_SESSIONS) {
++      for (const [id, st] of txStates) {
++        if (!st.active) {
++          txStates.delete(id);
++          break;
++        }
++      }
++    }
++    s = { active: false, files: new Map() };
++    txStates.set(sessionId, s);
++  }
++  return s;
++}
+ 
+ export function isTransactionActive(): boolean {
+-  return transactionActive;
++  return peekTx(getSessionId())?.active ?? false;
+ }
+ 
+ export function getTransactionFiles(): string[] {
+-  return [...transactionFiles];
++  return [...(peekTx(getSessionId())?.files.keys() ?? [])];
+ }
+ 
+ export function recordTransactionFile(path: string): void {
+-  if (transactionActive && !transactionFiles.includes(path)) {
+-    transactionFiles.push(path);
++  const s = peekTx(getSessionId());
++  if (s?.active) {
++    // Record the hash AS WRITTEN so rollback can detect later divergence.
++    s.files.set(path, hashFile(path) ?? "");
+   }
+ }
+ 
+@@ -39,11 +89,12 @@ export const beginTransactionTool = defineTool({
+     description: z.string().optional().describe("What this transaction is for"),
+   }),
+   async execute({ description }) {
+-    if (transactionActive) {
++    const s = beginTxState(getSessionId());
++    if (s.active) {
+       return { error: "Transaction already active. Commit or rollback first." };
+     }
+-    transactionActive = true;
+-    transactionFiles = [];
++    s.active = true;
++    s.files = new Map();
+     return {
+       success: true,
+       message: `Transaction started.${description ? ` Purpose: ${description}` : ""} All file writes are now tracked. Use commit_transaction to finalize or rollback_transaction to revert.`,
+@@ -58,12 +109,14 @@ export const commitTransactionTool = defineTool({
+   permission: "auto",
+   inputSchema: z.object({}),
+   async execute() {
+-    if (!transactionActive) {
++    const sessionId = getSessionId();
++    const s = peekTx(sessionId);
++    if (!s?.active) {
+       return { error: "No active transaction to commit." };
+     }
+-    const files = [...transactionFiles];
+-    transactionActive = false;
+-    transactionFiles = [];
++    const files = [...s.files.keys()];
++    // Release the state entirely on commit (no lingering inactive entry).
++    txStates.delete(sessionId);
+     return {
+       success: true,
+       filesCommitted: files,
+@@ -81,7 +134,9 @@ export const rollbackTransactionTool = defineTool({
+     reason: z.string().optional().describe("Why the rollback is needed"),
+   }),
+   async execute({ reason }) {
+-    if (!transactionActive) {
++    const sessionId = getSessionId();
++    const s = peekTx(sessionId);
++    if (!s?.active) {
+       return { error: "No active transaction to rollback." };
+     }
+ 
+@@ -92,11 +147,27 @@ export const rollbackTransactionTool = defineTool({
+     const failed: Array<{ file: string; error: string }> = [];
+ 
+     // Order files by dependencies: dependents first, then dependencies
+-    const ordered = orderByDependencies(transactionFiles);
++    const ordered = orderByDependencies([...s.files.keys()]);
+ 
+     if (cp) {
+       // Revert dependents before dependencies to maintain consistency
+       for (const file of ordered) {
++        // Safety: if the file diverged from what THIS transaction last wrote
++        // (a concurrent session edited it since), refuse to revert — reverting
++        // to our older snapshot would silently clobber the other session's
++        // work. "" recorded-hash means the file was unreadable at record time.
++        const recordedHash = s.files.get(file) ?? "";
++        if (recordedHash) {
++          const currentHash = hashFile(file);
++          if (currentHash !== null && currentHash !== recordedHash) {
++            failed.push({
++              file,
++              error:
++                "File changed since this transaction's last write (concurrent edit) — rollback refused to avoid clobbering it",
++            });
++            continue;
++          }
++        }
+         try {
+           const result = cp.revertLast(file);
+           if (result) {
+@@ -110,13 +181,13 @@ export const rollbackTransactionTool = defineTool({
+       }
+     } else {
+       // No checkpoint manager — all files fail
+-      for (const file of transactionFiles) {
++      for (const file of s.files.keys()) {
+         failed.push({ file, error: "CheckpointManager not initialized" });
+       }
+     }
+ 
+-    transactionActive = false;
+-    transactionFiles = [];
++    // Release the transaction state on rollback.
++    txStates.delete(sessionId);
+ 
+     const partialRollback = failed.length > 0 && reverted.length > 0;
+ 
+
+exec
+/bin/zsh -lc "rg -n -C 3 \"session-context|withSession\" packages/tools/src/index.ts packages/tools/package.json packages/core/tsconfig.json
+sed -n '1,140p' packages/tools/src/index.ts
+sed -n '620,820p' packages/core/src/agent/subagent.ts
+rg -n '\"typecheck\"|\"test\"' package.json packages/core/package.json packages/tools/package.json pnpm-workspace.yaml" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+packages/tools/src/index.ts-21-  enterWorkspace,
+packages/tools/src/index.ts-22-} from "./workspace-context.js";
+packages/tools/src/index.ts-23-export {
+packages/tools/src/index.ts:24:  withSession,
+packages/tools/src/index.ts-25-  enterSession,
+packages/tools/src/index.ts-26-  getSessionId,
+packages/tools/src/index.ts-27-  DEFAULT_SESSION_ID,
+packages/tools/src/index.ts:28:} from "./session-context.js";
+packages/tools/src/index.ts-29-export {
+packages/tools/src/index.ts-30-  FileReadCache,
+packages/tools/src/index.ts-31-  getFileReadCache,
+export { createTimeoutController } from "./timeout.js";
+export {
+  defineTool,
+  type BrainstormToolDef,
+  type ToolMetadata,
+} from "./base.js";
+export {
+  BUILTIN_TOOL_METADATA,
+  BUILTIN_TOOL_NAMES,
+  resolveToolMetadata,
+  type MetadataConflict,
+} from "./builtin/_metadata.js";
+export {
+  toMCPTool,
+  MCPSchemaUnsupportedError,
+  type MCPToolRegistration,
+} from "./mcp-generator.js";
+export {
+  withWorkspace,
+  getWorkspace,
+  enterWorkspace,
+} from "./workspace-context.js";
+export {
+  withSession,
+  enterSession,
+  getSessionId,
+  DEFAULT_SESSION_ID,
+} from "./session-context.js";
+export {
+  FileReadCache,
+  getFileReadCache,
+  resetFileReadCache,
+} from "./file-cache.js";
+export {
+  SessionFileTracker,
+  getFileTracker,
+  resetFileTracker,
+} from "./file-tracker.js";
+export {
+  ToolHealthTracker,
+  getToolHealthTracker,
+  resetToolHealthTracker,
+  type ToolHealthEntry,
+} from "./tool-health.js";
+export {
+  CheckpointManager,
+  initCheckpointManager,
+  getCheckpointManager,
+  clearCheckpointManager,
+} from "./checkpoint.js";
+export { undoTool } from "./builtin/undo.js";
+export {
+  scratchpadWriteTool,
+  scratchpadReadTool,
+  getScratchpadEntries,
+  clearScratchpad,
+  formatScratchpadContext,
+} from "./builtin/scratchpad.js";
+export {
+  askUserTool,
+  resolveAskUser,
+  hasPendingQuestion,
+} from "./builtin/ask-user.js";
+export {
+  routingHintTool,
+  getRoutingHint,
+  consumeRoutingHint,
+  resetRoutingHint,
+  type RoutingPreference,
+} from "./builtin/routing-hint.js";
+export { costEstimateTool } from "./builtin/cost-estimate.js";
+export { createToolSearchTool } from "./builtin/tool-search.js";
+export {
+  isParallelSafe,
+  classifyToolBatch,
+  executeWithParallelism,
+  setToolRegistryForParallel,
+} from "./parallel.js";
+export {
+  getTierForComplexity,
+  getToolsForTier,
+  isToolInTier,
+  escalateTier,
+  getTierForTool,
+  estimateTokenSavings,
+  type ToolTier,
+} from "./progressive.js";
+export {
+  DockerSandbox,
+  isSafeCommand,
+  translatePath,
+  type SandboxConfig,
+  type SandboxExecResult,
+} from "./sandbox/docker-sandbox.js";
+export {
+  DockerSandboxPool,
+  getSandboxPool,
+  configureSandboxPool,
+  type SandboxPoolConfig,
+  type SandboxLike,
+  type AcquireOpts,
+} from "./sandbox/sandbox-pool.js";
+export { planPreviewTool } from "./builtin/plan-preview.js";
+export {
+  beginTransactionTool,
+  commitTransactionTool,
+  rollbackTransactionTool,
+  isTransactionActive,
+  recordTransactionFile,
+} from "./builtin/transaction.js";
+export {
+  ToolRegistry,
+  ToolRateLimiter,
+  getToolRateLimiter,
+  type PermissionCheckFn,
+} from "./registry.js";
+export { fileReadTool } from "./builtin/file-read.js";
+export { fileWriteTool } from "./builtin/file-write.js";
+export { fileEditTool } from "./builtin/file-edit.js";
+export { shellTool } from "./builtin/shell.js";
+export { globTool } from "./builtin/glob.js";
+export { grepTool } from "./builtin/grep.js";
+export { gitStatusTool } from "./builtin/git-status.js";
+export { gitDiffTool } from "./builtin/git-diff.js";
+export { gitLogTool } from "./builtin/git-log.js";
+export { gitCommitTool } from "./builtin/git-commit.js";
+export {
+  checkGitSafety,
+  formatViolations,
+  hasHardBlock,
+  type GitSafetyViolation,
+} from "./builtin/git-safety.js";
+export { checkSandbox, type SandboxLevel } from "./builtin/sandbox.js";
+export {
+  configureSandbox,
+  stopDockerSandbox,
+  teardownDockerSandbox,
+  setDockerSandbox,
+  setBackgroundEventHandler,
+  getBackgroundTasks,
+    // Fold both attempts' cost so the handoff reports its true price.
+    cost: first.cost + repaired.cost,
+    contractOutcome: {
+      valid: validation.ok,
+      parsed: validation.parsed,
+      errors: validation.ok ? undefined : validation.errors,
+      repairAttempted: true,
+    },
+  };
+}
+
+async function runSubagentCore(
+  task: string,
+  options: SubagentOptions,
+): Promise<SubagentResult> {
+  const { router, costTracker, tools, config, registry, projectPath } = options;
+  const type = options.type ?? "general";
+  const typeConfig = SUBAGENT_TYPES[type];
+
+  // Budget guard: reserve 20% of remaining budget for parent.
+  // Fail early rather than spawning a subagent that will immediately be killed.
+  const PARENT_RESERVE_RATIO = 0.2;
+  const remainingBudget = costTracker.getRemainingBudget();
+  const subagentBudget = options.budgetLimit ?? costTracker.getSubagentBudget();
+  if (remainingBudget !== null && remainingBudget > 0) {
+    const reserved = remainingBudget * PARENT_RESERVE_RATIO;
+    const available = remainingBudget - reserved;
+    if (available <= 0) {
+      return {
+        text: `[Subagent not spawned: insufficient budget. $${remainingBudget.toFixed(4)} remaining, $${reserved.toFixed(4)} reserved for parent.]`,
+        cost: 0,
+        modelUsed: "none",
+        toolCalls: [],
+        type,
+        budgetExceeded: true,
+      };
+    }
+  }
+
+  const taskProfile = router.classify(task);
+
+  // Cost-aware routing: budget pressure overrides static model hint
+  const remaining = costTracker.getRemainingBudget();
+  const budgetPressure =
+    remaining !== null && remaining > 0
+      ? 1 - remaining / (costTracker.getSubagentBudget() * 4 || 1)
+      : 0;
+  // >60% budget used → prefer cheap, regardless of type hint
+  const preferCheap = typeConfig.modelHint === "cheap" || budgetPressure > 0.6;
+
+  // If parent explicitly pinned a model, honor it and skip the subagent's
+  // internal routing. Without this, --model flags passed to commands like
+  // eval-swe-bench get ignored at the subagent level because the subagent
+  // re-routes from scratch via capability strategy.
+  let decision;
+  if (options.preferredModelId) {
+    const pinnedModel = registry.getModel(options.preferredModelId);
+    if (pinnedModel) {
+      decision = {
+        ...router.route(taskProfile, { preferCheap }),
+        model: pinnedModel,
+        reason: `Model pin (from parent): ${options.preferredModelId}`,
+      };
+    } else {
+      log.warn(
+        { requested: options.preferredModelId },
+        "Parent pinned model not found in registry — falling back to router",
+      );
+      decision = router.route(taskProfile, { preferCheap });
+    }
+  } else {
+    decision = router.route(taskProfile, { preferCheap });
+  }
+
+  const modelId = registry.getProvider(decision.model.id);
+  const systemPrompt = composeSystemPrompt(
+    options.systemPrompt ?? typeConfig.systemPrompt,
+    options.promptAppend,
+  );
+  const maxSteps = options.maxSteps ?? typeConfig.defaultMaxSteps;
+
+  // ── Privilege Reduction: subagent tools are the INTERSECTION of the ──
+  // ── type ceiling, the per-spawn allowlist, and the parent's tools.  ──
+  // ── Each stage can only NARROW — a subagent can NEVER have more     ──
+  // ── tools than its parent, nor more than its type permits.          ──
+
+  // Steps 1–2: type ceiling → per-spawn allowlist → parent ceiling.
+  // (See resolveToolScope for the narrowing intersection chain.)
+  let typeAllowed = resolveToolScope(
+    typeConfig.allowedTools,
+    options.toolAllowlist,
+    options.parentToolNames,
+  );
+
+  // Step 3: Mutating subagent types (code, general) REQUIRE permissionCheck.
+  // Without it, they're downgraded to read-only to prevent privilege escalation.
+  const MUTATING_TYPES = new Set<SubagentType>(["code", "general"]);
+  const READ_ONLY_TOOLS = [
+    "file_read",
+    "glob",
+    "grep",
+    "list_dir",
+    "git_status",
+    "git_diff",
+    "git_log",
+  ];
+
+  if (MUTATING_TYPES.has(type) && !options.permissionCheck) {
+    log.warn(
+      { type },
+      "Mutating subagent spawned without permissionCheck — restricting to read-only",
+    );
+    // Intersect (never replace): the downgrade can only NARROW. Overwriting
+    // would widen past an already-narrower per-spawn toolAllowlist / parent
+    // ceiling, re-granting tools the caller deliberately excluded.
+    typeAllowed = applyReadOnlyDowngrade(typeAllowed, READ_ONLY_TOOLS);
+  }
+
+  // Step 3a2: an explicit read-only request (e.g. mapped from a contract's
+  // authority.readOnly) narrows to the read-only tool set. Narrowing-only —
+  // intersects with whatever the chain above already produced.
+  if (options.readOnly) {
+    typeAllowed = applyReadOnlyDowngrade(typeAllowed, READ_ONLY_TOOLS);
+  }
+
+  // Step 3b: noTools forces an empty set — the most restrictive scope,
+  // overriding everything above. An empty allowlist flows through the build
+  // below as zero tools on both the permissioned and filtered paths.
+  if (options.noTools) {
+    typeAllowed = [];
+  }
+
+  // Step 4: Build the filtered tool set
+  const baseTools = options.permissionCheck
+    ? tools.toAISDKToolsWithPermissions(options.permissionCheck, typeAllowed)
+    : typeAllowed
+      ? tools.toAISDKToolsFiltered(typeAllowed)
+      : tools.toAISDKTools();
+  // Per-model tool name adaptation (mirrors the parent loop): rename tools to
+  // the provider-native names each model was trained on so non-Anthropic
+  // subagent models see e.g. apply_patch/read_file/replace rather than the
+  // canonical Anthropic names only. Without this, a non-Anthropic subagent
+  // model calling its native tool name would miss the executor entirely. The
+  // INBOUND reverseToolName (below, in the stream loop) maps observed calls
+  // back to canonical for toolCallNames tracking.
+  const { adaptedTools: filteredTools } = adaptToolsForModel(
+    baseTools,
+    decision.model,
+  );
+
+  // Log the effective capability manifest (frozen at spawn time)
+  log.info(
+    {
+      type,
+      effectiveTools: typeAllowed ?? "all",
+      parentToolCount: options.parentToolNames?.length ?? "unrestricted",
+      hasAllowlist: !!(
+        options.toolAllowlist && options.toolAllowlist.length > 0
+      ),
+      hasPermissionCheck: !!options.permissionCheck,
+    },
+    "Subagent capability manifest frozen",
+  );
+
+  // Collision-resistant id: parallel subagents spawned in the same millisecond
+  // must NOT share a session (Date.now() alone collided → shared task/tx/
+  // scratchpad stores).
+  const subagentSessionId = `subagent-${type}-${randomUUID()}`;
+  const budgetLimit = options.budgetLimit ?? costTracker.getSubagentBudget();
+  const costBefore = costTracker.getSessionCost();
+
+  // Docker isolation: code subagents get their own container. Set up
+  // inside the try below (not here) so a throwing onHook or any error
+  // between acquire and the streamText call is still caught by the
+  // finally that releases/restores — see acquireContainerLock() doc for
+  // why this whole window is also serialized across parallel subagents.
+  let ownSandbox: DockerSandbox | null = null;
+  let prevSandbox: DockerSandbox | null = null;
+  let releaseContainerLock: (() => void) | null = null;
+  const needsContainer =
+    !!options.containerIsolation &&
+    type === "code" &&
+    DockerSandbox.isAvailable();
+
+  const toolCallNames: string[] = [];
+  let fullText = "";
+  let budgetExceeded = false;
+  let subagentCostAccum = 0; // Track cost internally to avoid parallel race
+  // Last streamText finishReason across nudge retries — surfaced on the result
+  // so callers (e.g. the SWE-bench eval) can distinguish a genuine empty answer
+  // from a provider-terminated one (content-filter / length / error) instead of
+  // reporting a silent "no changes".
+  let lastFinishReason: string | undefined;
+
+  // ── Phase 7: tool-use enforcement (narration → forced tool call) ────
+  // Mirror runAgentLoop's Phase 7 gate for subagents (and thus the
+  // SWE-bench eval, which runs through spawnSubagent). A weak subagent
+  // model may NARRATE a tool action ("Let me read config.ts") and then
+  // stop WITHOUT emitting the call. When enabled, and only when the run
+  // (a) stopped on its own (finishReason !== "tool-calls"), (b) made zero
+  // tool calls, (c) has tools available, and (d) its text reads as an
+packages/tools/package.json:14:    "typecheck": "tsc --noEmit",
+packages/tools/package.json:15:    "test": "vitest run",
+package.json:39:    "test": "turbo run test",
+package.json:43:    "typecheck": "turbo run typecheck",
+packages/core/package.json:15:    "typecheck": "tsc --noEmit",
+packages/core/package.json:16:    "test": "vitest run"
+
+exec
+/bin/zsh -lc "rg -n -C 5 \"initCheckpointManager\\(\" . -g '*.ts' -g '"'!node_modules'"'
+rg -n -C 3 \"clearCheckpointManager\\(\" . -g '*.ts' -g '"'!node_modules'"'
+rg -n \"begin_transaction|rollback_transaction|file_write|file_edit\" packages/core/src/agent/subagent.ts | head -80" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 103ms:
+212:    allowedTools: ["file_read", "file_write", "glob"],
+
+exec
+/bin/zsh -lc "rg -n \"CheckpointManager|checkpoint manager|checkpointManager\" packages apps -g '*.{ts,tsx,js,mjs,cjs}' | head -200
+sed -n '180,230p' packages/core/src/agent/subagent.ts
+rg -n \"initCheckpoint\" . -g '"'!node_modules'"' -g '"'!bench/**'"'" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 117ms:
+exec
+/bin/zsh -lc "sed -n '1040,1140p' packages/core/src/agent/subagent.ts
+rg -n \"withSession|subagent\" packages/core/src/__tests__ packages/core/src/agent/__tests__ -g '*test.ts' | head -200
+rg -n \"getSessionId\\(\\)\" packages/tools/src | sort" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+
+        const nextNudge = nudge + 1;
+        log.info(
+          {
+            type,
+            model: decision.model.id,
+            iteration: nextNudge,
+            maxNudges: teMaxNudges,
+          },
+          "Subagent narrated a tool action without calling it — nudging with forced tool call",
+        );
+        // Feed the model's narration back as an assistant turn plus the
+        // corrective user turn, so the retry has context for what it claimed
+        // to do. Do NOT force tools on the TERMINAL retry (nextNudge ===
+        // teMaxNudges): that re-entry can no longer nudge again, so its output
+        // is ACCEPTED — forcing would rob the model of a clean text answer.
+        messages.push({ role: "assistant", content: iterText });
+        messages.push({ role: "user", content: buildToolUseCorrection() });
+        forceToolChoice = nextNudge < teMaxNudges;
+      }
+    })); // close inner-arrow body, withSession(), withWorkspace()
+  } catch (err: any) {
+    // AbortError from budget enforcement is expected — not an error
+    if (err.name !== "AbortError") throw err;
+  } finally {
+    // Clean up subagent's Docker sandbox and restore parent's. Safe to
+    // do unconditionally here: acquireContainerLock() guarantees no
+    // other container-isolated subagent touches the module-level
+    // singleton between our acquire and this release, so prevSandbox is
+    // still exactly what we displaced.
+    if (ownSandbox) {
+      getSandboxPool().release(ownSandbox);
+      setDockerSandbox(prevSandbox);
+    }
+    releaseContainerLock?.();
+  }
+
+  if (budgetExceeded) {
+    fullText += `\n\n[Subagent terminated: budget limit of $${budgetLimit.toFixed(4)} exceeded ($${subagentCostAccum.toFixed(4)} used)]`;
+  }
+
+  // Fire SubagentStop hook
+  if (options.onHook) {
+    await options.onHook("SubagentStop", {
+      subagentType: type,
+      result: fullText.slice(0, 500),
+      cost: subagentCostAccum,
+      toolCalls: toolCallNames.length,
+      model: decision.model.name,
+    });
+  }
+
+  return {
+    text: fullText,
+    cost: subagentCostAccum,
+    modelUsed: decision.model.name,
+    toolCalls: toolCallNames,
+    type,
+    budgetExceeded,
+    partialOutput: budgetExceeded ? fullText : undefined,
+    finishReason: lastFinishReason,
+  };
+}
+
+/**
+ * Spawn multiple subagents in parallel.
+ * Uses Promise.allSettled so one failure doesn't kill all results.
+ */
+export async function spawnParallel(
+  specs: Array<{
+    task: string;
+    type?: SubagentType;
+    toolAllowlist?: string[];
+    promptAppend?: string;
+    maxSteps?: number;
+    budgetLimit?: number;
+  }>,
+  options: SubagentOptions,
+): Promise<SubagentResult[]> {
+  const settled = await Promise.allSettled(
+    specs.map((spec) =>
+      spawnSubagent(spec.task, {
+        ...options,
+        type: spec.type,
+        // Per-spec overrides take precedence over the shared options.
+        toolAllowlist: spec.toolAllowlist ?? options.toolAllowlist,
+        promptAppend: spec.promptAppend ?? options.promptAppend,
+        maxSteps: spec.maxSteps ?? options.maxSteps,
+        budgetLimit: spec.budgetLimit ?? options.budgetLimit,
+      }),
+    ),
+  );
+  return settled.map((result, i) => {
+    if (result.status === "fulfilled") return result.value;
+    // Return error result for failed subagents instead of throwing
+    return {
+      text: `[Subagent failed: ${result.reason?.message ?? "unknown error"}]`,
+      cost: 0,
+      modelUsed: "unknown",
+      toolCalls: [],
+      type: specs[i].type ?? "general",
+rg: packages/core/src/agent/__tests__: No such file or directory (os error 2)
+packages/core/src/__tests__/multi-agent-judge.test.ts:20:    subagentType: "code",
+packages/core/src/__tests__/multi-agent-judge.test.ts:80:        subagentType: "code",
+packages/core/src/__tests__/loop-tool-enforcement.test.ts:96:      subagentIsolation: "none",
+packages/core/src/__tests__/subagent-scope.test.ts:6:} from "../agent/subagent";
+packages/core/src/__tests__/subagent-scope.test.ts:9:// mutating subagent types spawned without a permissionCheck.
+packages/core/src/__tests__/subagent-scope.test.ts:20:// These tests exercise the security-critical narrowing semantics of subagent
+packages/core/src/__tests__/subagent-scope.test.ts:128:    // Caller excludes file_read to keep the subagent away from sensitive
+packages/core/src/__tests__/subagent-scope.test.ts:171:    const base = "You are an exploration subagent. Read-only tools only.";
+packages/core/src/__tests__/subagent-tool-adapt.test.ts:6: *     subagent's model was trained on (file_read → read_file for OpenAI),
+packages/core/src/__tests__/subagent-tool-adapt.test.ts:7: *     so a non-Anthropic subagent model can actually call its tools.
+packages/core/src/__tests__/subagent-tool-adapt.test.ts:9: *     subagent's reported toolCalls use the parent's canonical vocabulary.
+packages/core/src/__tests__/subagent-tool-adapt.test.ts:26:      // record against the subagent's dynamic session id, which isn't in the
+packages/core/src/__tests__/subagent-tool-adapt.test.ts:44:import { spawnSubagent } from "../agent/subagent.js";
+packages/core/src/__tests__/subagent-tool-adapt.test.ts:52:  const tmpProjectPath = mkdtempSync(join(tmpdir(), "brainstorm-subagent-"));
+packages/core/src/__tests__/subagent-tool-adapt.test.ts:128:describe("subagent — per-model tool-name adaptation", () => {
+packages/core/src/__tests__/subagent-tool-adapt.test.ts:137:  it("adapts OUTBOUND tool names for the subagent's provider", async () => {
+packages/core/src/__tests__/subagent-tool-adapt.test.ts:175:    // The model called "read_file"; the subagent must report canonical name.
+packages/core/src/__tests__/forced-synthesis.test.ts:99:      subagentIsolation: "none",
+packages/core/src/__tests__/finish-reason.test.ts:8:import { describeFinishReason } from "../agent/subagent.js";
+packages/core/src/__tests__/loop-verify.test.ts:91:      subagentIsolation: "none",
+packages/core/src/__tests__/extract-runner.test.ts:21:vi.mock("../agent/subagent.js", () => ({
+packages/core/src/__tests__/extract-runner.test.ts:86:      subagentOptions: baseSubagentOptions,
+packages/core/src/__tests__/extract-runner.test.ts:110:      subagentOptions: baseSubagentOptions,
+packages/core/src/__tests__/extract-runner.test.ts:128:      subagentOptions: baseSubagentOptions,
+packages/core/src/__tests__/extract-runner.test.ts:154:      subagentOptions: baseSubagentOptions,
+packages/core/src/__tests__/extract-runner.test.ts:197:      subagentOptions: baseSubagentOptions,
+packages/core/src/__tests__/extract-runner.test.ts:228:      subagentOptions: baseSubagentOptions,
+packages/core/src/__tests__/extract-runner.test.ts:273:        subagentOptions: baseSubagentOptions,
+packages/core/src/__tests__/e2e-pipeline.test.ts:107:        subagentIsolation: "none",
+packages/core/src/__tests__/contract-handoff.test.ts:6:} from "../agent/subagent.js";
+packages/core/src/__tests__/contract-handoff.test.ts:211:      subagentOptions: {} as any,
+packages/core/src/__tests__/contract-handoff.test.ts:236:      subagentOptions: {} as any,
+packages/core/src/__tests__/contract-handoff.test.ts:262:      subagentOptions: {} as any,
+packages/core/src/__tests__/contract-handoff.test.ts:286:      subagentOptions: {} as any,
+packages/core/src/__tests__/contract-handoff.test.ts:316:      subagentOptions: {} as any,
+packages/core/src/__tests__/contract-handoff.test.ts:339:      subagentOptions: {} as any,
+packages/core/src/__tests__/contract-handoff.test.ts:359:      subagentOptions: {} as any,
+packages/core/src/__tests__/contract-handoff.test.ts:382:      subagentOptions: {} as any,
+packages/core/src/__tests__/subagent-tool-scope.test.ts:3:// Mock the subagent engine but keep the real type registry helpers
+packages/core/src/__tests__/subagent-tool-scope.test.ts:6:vi.mock("../agent/subagent.js", async (importActual) => {
+packages/core/src/__tests__/subagent-tool-scope.test.ts:7:  const actual = await importActual<typeof import("../agent/subagent.js")>();
+packages/core/src/__tests__/subagent-tool-scope.test.ts:31:import { createSubagentTool } from "../agent/subagent-tool.js";
+packages/core/src/__tests__/subagent-tool-scope.test.ts:37:} from "../agent/subagent.js";
+packages/core/src/__tests__/subagent-tool-scope.test.ts:67:describe("subagent tool — scope narrowing & clamping", () => {
+packages/core/src/__tests__/loop-tool-calling.test.ts:10: *      (file_read/file_write/shell/subagent) and the executor lookup miss.
+packages/core/src/__tests__/loop-tool-calling.test.ts:93:      subagentIsolation: "none",
+packages/core/src/__tests__/subagent-tool-enforcement.test.ts:5: * stopWhen. When a weak subagent model NARRATES a tool action ("Let me read
+packages/core/src/__tests__/subagent-tool-enforcement.test.ts:48:import { spawnSubagent } from "../agent/subagent.js";
+packages/core/src/__tests__/subagent-tool-enforcement.test.ts:56:  const tmpProjectPath = mkdtempSync(join(tmpdir(), "brainstorm-subagent-te-"));
+packages/core/src/__tests__/subagent-tool-enforcement.test.ts:155:describe("subagent — Phase 7 tool-use enforcement", () => {
+packages/core/src/__tests__/loop-chaos.test.ts:141:      subagentIsolation: "none",
+packages/core/src/__tests__/curator-runner.test.ts:17:vi.mock("../agent/subagent.js", () => ({
+packages/core/src/__tests__/curator-runner.test.ts:66:      subagentOptions: baseSubagentOptions,
+packages/core/src/__tests__/curator-runner.test.ts:87:      subagentOptions: baseSubagentOptions,
+packages/core/src/__tests__/curator-runner.test.ts:103:      subagentOptions: baseSubagentOptions,
+packages/core/src/__tests__/curator-runner.test.ts:117:      subagentOptions: baseSubagentOptions,
+packages/core/src/__tests__/curator-runner.test.ts:137:      subagentOptions: baseSubagentOptions,
+packages/core/src/__tests__/curator-runner.test.ts:151:      subagentOptions: baseSubagentOptions,
+packages/core/src/__tests__/revise-loop.test.ts:86:    subagentType: "code",
+packages/core/src/__tests__/revise-loop.test.ts:256:    subagentOptions: {} as any,
+packages/core/src/__tests__/revise-loop.test.ts:675:      subagentType: "code",
+packages/core/src/__tests__/codebase-audit.test.ts:4: * needs live subagents and gets exercised by a live dogfood run rather
+packages/core/src/__tests__/loop-max-output-tokens.test.ts:83:      subagentIsolation: "none",
+packages/tools/src/builtin/process-manage.ts:120:    const sessionId = getSessionId();
+packages/tools/src/builtin/process-manage.ts:75:    const sessionId = getSessionId();
+packages/tools/src/builtin/scratchpad.ts:11: * session scope, so getSessionId() resolves correctly.
+packages/tools/src/builtin/scratchpad.ts:30:  return entriesFor(getSessionId());
+packages/tools/src/builtin/scratchpad.ts:33:export function clearScratchpad(sessionId: string = getSessionId()): void {
+packages/tools/src/builtin/scratchpad.ts:38:  const entries = entriesFor(getSessionId());
+packages/tools/src/builtin/scratchpad.ts:53:    const entries = entriesFor(getSessionId());
+packages/tools/src/builtin/scratchpad.ts:67:    const entries = entriesFor(getSessionId());
+packages/tools/src/builtin/shell.ts:297:  sessionId: string = getSessionId(),
+packages/tools/src/builtin/shell.ts:316:  sessionId: string = getSessionId(),
+packages/tools/src/builtin/shell.ts:489:      const bgSessionId = getSessionId();
+packages/tools/src/builtin/shell.ts:617:    const fgSessionId = getSessionId();
+packages/tools/src/builtin/task-manage.ts:114:    const store = storeFor(getSessionId());
+packages/tools/src/builtin/task-manage.ts:49:  sessionId: string = getSessionId(),
+packages/tools/src/builtin/task-manage.ts:55:export function clearTasks(sessionId: string = getSessionId()): void {
+packages/tools/src/builtin/task-manage.ts:70:    const store = storeFor(getSessionId());
+packages/tools/src/builtin/task-manage.ts:98:    const store = storeFor(getSessionId());
+packages/tools/src/builtin/transaction.ts:112:    const sessionId = getSessionId();
+packages/tools/src/builtin/transaction.ts:137:    const sessionId = getSessionId();
+packages/tools/src/builtin/transaction.ts:68:  return peekTx(getSessionId())?.active ?? false;
+packages/tools/src/builtin/transaction.ts:72:  return [...(peekTx(getSessionId())?.files.keys() ?? [])];
+packages/tools/src/builtin/transaction.ts:76:  const s = peekTx(getSessionId());
+packages/tools/src/builtin/transaction.ts:92:    const s = beginTxState(getSessionId());
+packages/tools/src/checkpoint.ts:202:  sessionId: string = getSessionId(),
+packages/tools/src/checkpoint.ts:209:  sessionId: string = getSessionId(),
+packages/tools/src/session-context.ts:12: * entered by the agent loop; stores call getSessionId() to pick their slice.
+packages/tools/src/session-context.ts:25: * (including nested async work) resolve getSessionId() to this id.
+packages/tools/src/session-context.ts:51:export function getSessionId(): string {
+
+exec
+/bin/zsh -lc "sed -n '1,110p' packages/core/src/__tests__/subagent-tool-adapt.test.ts
+rg -n -C 5 \"getSessionId|session\" packages/core/src/__tests__/subagent-tool-adapt.test.ts packages/core/src/__tests__/subagent-tool-enforcement.test.ts" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+/**
+ * Subagent tool-name adaptation.
+ *
+ * spawnSubagent must mirror the parent loop's per-model tool-name handling:
+ *   - OUTBOUND: rename canonical tools to the provider-native names the
+ *     subagent's model was trained on (file_read → read_file for OpenAI),
+ *     so a non-Anthropic subagent model can actually call its tools.
+ *   - INBOUND: reverse-map observed tool-call names back to canonical so the
+ *     subagent's reported toolCalls use the parent's canonical vocabulary.
+ */
+
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { vi } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+let _streamParts: any[] = [];
+
+vi.mock("ai", async (importOriginal) => {
+  const actual: any = await importOriginal();
+  return {
+    ...actual,
+    streamText: vi.fn((_opts: any) => {
+      // Intentionally do NOT invoke onStepFinish: it would drive a cost
+      // record against the subagent's dynamic session id, which isn't in the
+      // sessions table (FK). Tool-name adaptation doesn't depend on it.
+      async function* fullStream() {
+        for (const ev of _streamParts) yield ev;
+      }
+      return {
+        fullStream: fullStream(),
+        textStream: (async function* () {})(),
+        text: Promise.resolve(""),
+        usage: Promise.resolve({ inputTokens: 5, outputTokens: 2 }),
+        finishReason: Promise.resolve("stop"),
+        response: Promise.resolve({ headers: new Map() }),
+      };
+    }),
+  };
+});
+
+import { streamText } from "ai";
+import { spawnSubagent } from "../agent/subagent.js";
+import { BrainstormRouter, CostTracker } from "@brainst0rm/router";
+import { getTestDb } from "@brainst0rm/db";
+import type { BrainstormConfig } from "@brainst0rm/config";
+import type { ProviderRegistry } from "@brainst0rm/providers";
+import type { ModelEntry } from "@brainst0rm/shared";
+
+function buildCtx() {
+  const tmpProjectPath = mkdtempSync(join(tmpdir(), "brainstorm-subagent-"));
+  const originalHome = process.env.HOME;
+  const fakeHome = mkdtempSync(join(tmpdir(), "brainstorm-home-"));
+  process.env.HOME = fakeHome;
+
+  const config: Partial<BrainstormConfig> = {
+    general: { maxSteps: 3 } as any,
+    budget: { hardLimit: false } as any,
+    routing: { rules: [] } as any,
+    shell: { defaultTimeout: 60000, maxOutputBytes: 50000 } as any,
+  };
+
+  const openaiModel: ModelEntry = {
+    id: "openai/gpt-5.4",
+    provider: "openai",
+    name: "GPT-5.4",
+    capabilities: {
+      toolCalling: true,
+      streaming: true,
+      vision: false,
+      reasoning: false,
+      contextWindow: 128000,
+      qualityTier: 3,
+      speedTier: 2,
+      bestFor: ["code-generation"],
+    },
+    pricing: { inputPer1MTokens: 1, outputPer1MTokens: 3 },
+    limits: { contextWindow: 128000, maxOutputTokens: 4000 },
+    status: "available",
+    isLocal: false,
+    lastHealthCheck: 0,
+  };
+
+  const registry: Partial<ProviderRegistry> = {
+    models: [openaiModel],
+    getModel: (id: string) => (id === openaiModel.id ? openaiModel : undefined),
+    getProvider: () => ({}) as any,
+  };
+
+  const db = getTestDb();
+  const costTracker = new CostTracker(db, config.budget as any);
+  const router = new BrainstormRouter(
+    config as any,
+    registry as any,
+    costTracker,
+  );
+
+  // Canonical-keyed tools; the adapter renames these for OpenAI.
+  const canonicalTools = {
+    file_read: { execute: async () => "content", description: "Read a file" },
+    glob: { execute: async () => [], description: "Find files" },
+    grep: { execute: async () => [], description: "Search content" },
+  };
+  const tools: any = {
+    toAISDKToolsFiltered: (_names: string[]) => ({ ...canonicalTools }),
+    toAISDKToolsWithPermissions: (_check: any, _names: string[]) => ({
+      ...canonicalTools,
+    }),
+    toAISDKTools: () => ({ ...canonicalTools }),
+packages/core/src/__tests__/subagent-tool-adapt.test.ts-21-  const actual: any = await importOriginal();
+packages/core/src/__tests__/subagent-tool-adapt.test.ts-22-  return {
+packages/core/src/__tests__/subagent-tool-adapt.test.ts-23-    ...actual,
+packages/core/src/__tests__/subagent-tool-adapt.test.ts-24-    streamText: vi.fn((_opts: any) => {
+packages/core/src/__tests__/subagent-tool-adapt.test.ts-25-      // Intentionally do NOT invoke onStepFinish: it would drive a cost
+packages/core/src/__tests__/subagent-tool-adapt.test.ts:26:      // record against the subagent's dynamic session id, which isn't in the
+packages/core/src/__tests__/subagent-tool-adapt.test.ts:27:      // sessions table (FK). Tool-name adaptation doesn't depend on it.
+packages/core/src/__tests__/subagent-tool-adapt.test.ts-28-      async function* fullStream() {
+packages/core/src/__tests__/subagent-tool-adapt.test.ts-29-        for (const ev of _streamParts) yield ev;
+packages/core/src/__tests__/subagent-tool-adapt.test.ts-30-      }
+packages/core/src/__tests__/subagent-tool-adapt.test.ts-31-      return {
+packages/core/src/__tests__/subagent-tool-adapt.test.ts-32-        fullStream: fullStream(),
+
+exec
+/bin/zsh -lc "sed -n '80,190p' packages/core/src/agent/subagent.ts
+sed -n '1,145p' packages/tools/src/builtin/task-manage.ts
+sed -n '1,100p' packages/tools/src/builtin/scratchpad.ts
+sed -n '260,340p' packages/tools/src/builtin/shell.ts
+sed -n '470,530p' packages/tools/src/builtin/shell.ts" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+  systemPrompt: string;
+  /** Default max steps (keep focused subagents short) */
+  defaultMaxSteps: number;
+  /** Model complexity hint: 'cheap' routes to cost-first, 'capable' to quality-first */
+  modelHint: "cheap" | "capable";
+}
+
+const SUBAGENT_TYPES: Record<SubagentType, SubagentTypeConfig> = {
+  explore: {
+    allowedTools: [
+      "file_read",
+      "glob",
+      "grep",
+      "list_dir",
+      "git_status",
+      "git_diff",
+      "git_log",
+      "web_fetch",
+      "web_search",
+    ],
+    systemPrompt:
+      "You are an exploration subagent. Your job is to find information in the codebase or online docs quickly and return what you found. You have read-only tools — you cannot modify files. Return results as a structured list of findings with file paths and line numbers where applicable.",
+    defaultMaxSteps: 5,
+    modelHint: "cheap",
+  },
+  plan: {
+    allowedTools: [
+      "file_read",
+      "glob",
+      "grep",
+      "list_dir",
+      "git_status",
+      "git_diff",
+      "git_log",
+      "task_create",
+      "task_update",
+      "task_list",
+      "memory",
+    ],
+    systemPrompt:
+      "You are a planning subagent. Analyze the codebase and design an implementation approach. Create tasks to track the plan. You have read-only file tools plus task management. Return a structured plan.",
+    defaultMaxSteps: 8,
+    modelHint: "capable",
+  },
+  code: {
+    allowedTools: "all",
+    systemPrompt:
+      "You are a coding subagent. Implement the requested changes, verify they compile, and return a summary of what you changed. Follow existing patterns in the codebase.",
+    defaultMaxSteps: 10,
+    modelHint: "capable",
+  },
+  review: {
+    allowedTools: [
+      "file_read",
+      "glob",
+      "grep",
+      "list_dir",
+      "git_status",
+      "git_diff",
+      "git_log",
+    ],
+    systemPrompt:
+      "You are a code review subagent. Review the changes for bugs, style issues, and correctness. Be specific — cite file paths and line numbers. Focus on real issues, not nitpicks. You have read-only access — you cannot modify files or commit.",
+    defaultMaxSteps: 5,
+    modelHint: "capable",
+  },
+  general: {
+    allowedTools: [
+      "file_read",
+      "glob",
+      "grep",
+      "list_dir",
+      "git_status",
+      "git_diff",
+      "git_log",
+      "web_fetch",
+      "web_search",
+      "shell",
+      "task_create",
+      "task_update",
+      "task_list",
+      "memory",
+    ],
+    systemPrompt:
+      "You are a focused subagent. Complete the given task concisely and return the result. Do not ask questions — make your best judgment. You cannot create or edit files directly — use shell commands if you need to modify files.",
+    defaultMaxSteps: 5,
+    modelHint: "cheap",
+  },
+  decompose: {
+    allowedTools: [
+      "file_read",
+      "glob",
+      "grep",
+      "list_dir",
+      "git_status",
+      "git_diff",
+      "git_log",
+    ],
+    systemPrompt:
+      "You are a task decomposition agent. Break down the given task into discrete implementation steps. " +
+      "For each step, specify: title, subagent type (explore/plan/code/review), dependencies on other steps, " +
+      "and estimated relative cost (low/medium/high). Return a structured JSON array of steps. " +
+      "Read the codebase to understand the architecture before decomposing.",
+    defaultMaxSteps: 5,
+    modelHint: "capable",
+  },
+  research: {
+    allowedTools: [
+      "file_read",
+      "glob",
+      "grep",
+import { z } from "zod";
+import { defineTool } from "../base.js";
+import type { AgentTask, TaskStatus } from "@brainst0rm/shared";
+import { getSessionId } from "../session-context.js";
+
+type TaskEventHandler = (
+  type: "task-created" | "task-updated",
+  task: AgentTask,
+) => void;
+
+/**
+ * Per-session task store. Previously a single module-global Map + counter +
+ * handler, which two concurrent runs (server request + Slack message, or two
+ * subagents) would corrupt — colliding IDs, clearing each other's tasks,
+ * cross-wiring the event handler. Keyed by the current session id instead.
+ * Tasks are ephemeral — they live only for the session's duration.
+ */
+interface SessionTaskStore {
+  tasks: Map<string, AgentTask>;
+  nextId: number;
+  onTaskEvent: TaskEventHandler | null;
+}
+
+// Cardinality bound so a missed clearTasks() (crash, forgotten teardown) can't
+// leak stores forever; oldest-inserted is evicted (mirrors the iter-003
+// quarantine bound).
+const MAX_TRACKED_SESSIONS = 256;
+const sessionStores = new Map<string, SessionTaskStore>();
+
+function storeFor(sessionId: string): SessionTaskStore {
+  let store = sessionStores.get(sessionId);
+  if (!store) {
+    if (sessionStores.size >= MAX_TRACKED_SESSIONS) {
+      const oldest = sessionStores.keys().next().value;
+      if (oldest !== undefined) sessionStores.delete(oldest);
+    }
+    store = { tasks: new Map(), nextId: 1, onTaskEvent: null };
+    sessionStores.set(sessionId, store);
+  }
+  return store;
+}
+
+/**
+ * Register the TUI task-event handler for a session. Defaults to the current
+ * session scope; pass an explicit id from outside a session context.
+ */
+export function setTaskEventHandler(
+  handler: TaskEventHandler | null,
+  sessionId: string = getSessionId(),
+): void {
+  storeFor(sessionId).onTaskEvent = handler;
+}
+
+/** Clear a session's tasks and release its store. */
+export function clearTasks(sessionId: string = getSessionId()): void {
+  sessionStores.delete(sessionId);
+}
+
+export const taskCreateTool = defineTool({
+  name: "task_create",
+  description:
+    "Create a task to track progress on multi-step work. Use this to show the user what you are working on.",
+  permission: "auto",
+  inputSchema: z.object({
+    description: z
+      .string()
+      .describe("Short description of the task (1 sentence)"),
+  }),
+  async execute({ description }) {
+    const store = storeFor(getSessionId());
+    const id = `task-${store.nextId++}`;
+    const now = Date.now();
+    const task: AgentTask = {
+      id,
+      description,
+      status: "in_progress",
+      createdAt: now,
+      updatedAt: now,
+    };
+    store.tasks.set(id, task);
+    store.onTaskEvent?.("task-created", task);
+    return { id, status: task.status };
+  },
+});
+
+export const taskUpdateTool = defineTool({
+  name: "task_update",
+  description:
+    "Update the status of an existing task. Mark tasks as completed when done, or failed if they cannot be completed.",
+  permission: "auto",
+  inputSchema: z.object({
+    id: z.string().describe("Task ID returned by task_create"),
+    status: z
+      .enum(["pending", "in_progress", "completed", "failed"])
+      .describe("New status"),
+  }),
+  async execute({ id, status }) {
+    const store = storeFor(getSessionId());
+    const task = store.tasks.get(id);
+    if (!task) return { error: `Task ${id} not found` };
+    task.status = status as TaskStatus;
+    task.updatedAt = Date.now();
+    store.onTaskEvent?.("task-updated", task);
+    return { id, status: task.status };
+  },
+});
+
+export const taskListTool = defineTool({
+  name: "task_list",
+  description: "List all tasks in the current session with their status.",
+  permission: "auto",
+  inputSchema: z.object({}),
+  async execute() {
+    const store = storeFor(getSessionId());
+    const all = Array.from(store.tasks.values()).map((t) => ({
+      id: t.id,
+      description: t.description,
+      status: t.status,
+    }));
+    return { tasks: all, total: all.length };
+  },
+});
+import { z } from 'zod';
+import { defineTool } from '../base.js';
+import { getSessionId } from '../session-context.js';
+
+/**
+ * Per-session scratchpad — compaction-resistant notes. Previously a single
+ * process-global Map: concurrent sessions read/overwrote each other's notes,
+ * and compaction (which reads this) could inject one session's scratchpad into
+ * ANOTHER session's model context. Keyed by session id, with an LRU bound.
+ * Core reads via getScratchpadEntries()/formatScratchpadContext() during the
+ * session scope, so getSessionId() resolves correctly.
+ */
+const MAX_TRACKED_SESSIONS = 256;
+const scratchpads = new Map<string, Map<string, string>>();
+
+function entriesFor(sessionId: string): Map<string, string> {
+  let e = scratchpads.get(sessionId);
+  if (!e) {
+    if (scratchpads.size >= MAX_TRACKED_SESSIONS) {
+      const oldest = scratchpads.keys().next().value;
+      if (oldest !== undefined) scratchpads.delete(oldest);
+    }
+    e = new Map();
+    scratchpads.set(sessionId, e);
+  }
+  return e;
+}
+
+export function getScratchpadEntries(): Map<string, string> {
+  return entriesFor(getSessionId());
+}
+
+export function clearScratchpad(sessionId: string = getSessionId()): void {
+  scratchpads.delete(sessionId);
+}
+
+export function formatScratchpadContext(): string {
+  const entries = entriesFor(getSessionId());
+  if (entries.size === 0) return '';
+  const items = [...entries].map(([k, v]) => `- ${k}: ${v}`).join('\n');
+  return `[Scratchpad — preserved through compaction]\n${items}`;
+}
+
+export const scratchpadWriteTool = defineTool({
+  name: 'scratchpad_write',
+  description: 'Save a note that survives context compaction. Use for: key decisions, current task state, important constraints. Not for code — for context you must remember.',
+  permission: 'auto',
+  inputSchema: z.object({
+    key: z.string().describe('Note identifier (e.g., "current_task", "decision_drizzle_over_prisma")'),
+    value: z.string().describe('The note content'),
+  }),
+  async execute({ key, value }) {
+    const entries = entriesFor(getSessionId());
+    entries.set(key, value);
+    return { success: true, key, totalNotes: entries.size };
+  },
+});
+
+export const scratchpadReadTool = defineTool({
+  name: 'scratchpad_read',
+  description: 'Read scratchpad notes. Omit key to read all notes.',
+  permission: 'auto',
+  inputSchema: z.object({
+    key: z.string().optional().describe('Specific note to read (optional — omit to read all)'),
+  }),
+  async execute({ key }) {
+    const entries = entriesFor(getSessionId());
+    if (key) {
+      const val = entries.get(key);
+      if (!val) return { error: `Note "${key}" not found.` };
+      return { key, value: val };
+    }
+    return { notes: Object.fromEntries(entries) };
+  },
+});
+}
+
+const backgroundTasks = new Map<string, BackgroundTask>();
+const MAX_BACKGROUND_TASKS = 50;
+let nextTaskId = 0;
+
+type BackgroundEvent = {
+  taskId: string;
+  command: string;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+};
+
+// Per-session handlers + pending queues: a single module-global handler meant
+// two concurrent runs cross-wired their shell output (one run's background
+// completion / streamed chunk fired the other's handler). Keyed by session id;
+// bounded so a missed teardown can't leak.
+type BackgroundEventHandler = (event: BackgroundEvent) => void;
+type ToolOutputHandler = (event: { toolName: string; chunk: string }) => void;
+const MAX_PENDING_EVENTS = 100;
+const MAX_TRACKED_SESSIONS = 256;
+const backgroundEventHandlers = new Map<string, BackgroundEventHandler>();
+const pendingEventsBySession = new Map<string, BackgroundEvent[]>();
+const toolOutputHandlers = new Map<string, ToolOutputHandler>();
+
+function boundedSet<V>(map: Map<string, V>, key: string, value: V): void {
+  if (!map.has(key) && map.size >= MAX_TRACKED_SESSIONS) {
+    const oldest = map.keys().next().value;
+    if (oldest !== undefined) map.delete(oldest);
+  }
+  map.set(key, value);
+}
+
+/** Set a callback for background task completion events. Replays any queued events. */
+export function setBackgroundEventHandler(
+  handler: BackgroundEventHandler | null,
+  sessionId: string = getSessionId(),
+): void {
+  if (handler) {
+    boundedSet(backgroundEventHandlers, sessionId, handler);
+    const pending = pendingEventsBySession.get(sessionId);
+    if (pending) for (const event of pending) handler(event);
+  } else {
+    backgroundEventHandlers.delete(sessionId);
+  }
+  // Clear this session's pending events on every handler change (including
+  // null) — orphaned events hold full stdout/stderr strings.
+  pendingEventsBySession.delete(sessionId);
+}
+
+// ── Tool Output Streaming ──────────────────────────────────────
+
+/** Set a callback for streaming tool output chunks during foreground execution. */
+export function setToolOutputHandler(
+  handler: ToolOutputHandler | null,
+  sessionId: string = getSessionId(),
+): void {
+  if (handler) boundedSet(toolOutputHandlers, sessionId, handler);
+  else toolOutputHandlers.delete(sessionId);
+}
+
+/** Get list of currently running background tasks. */
+export function getBackgroundTasks(): BackgroundTask[] {
+  return Array.from(backgroundTasks.values());
+}
+
+/**
+ * Collect output with head+tail truncation.
+ * Keeps the first HEAD_BYTES and last TAIL_BYTES of output,
+ * so both the start (config/setup) and end (errors/summary) are visible.
+ *
+ * Tail uses a fixed-size circular line buffer to avoid repeated large
+ * string allocations from concatenation + slicing.
+ */
+class OutputCollector {
+  private head = "";
+  private totalBytes = 0;
+  private readonly maxHead: number;
+  private readonly maxTail: number;
+  private headFull = false;
+        }
+        dockerSandbox = getSandboxPool().acquire({
+          hostWorkspace: currentProjectPath,
+          image: dockerConfig.image,
+          timeout: dockerConfig.timeout,
+        }) as DockerSandbox;
+      }
+
+      const result = dockerSandbox.exec(command);
+      return {
+        stdout: result.output,
+        stderr: "",
+        exitCode: result.exitCode,
+      };
+    }
+
+    // Background mode: spawn and return immediately, notify on completion
+    if (background) {
+      const taskId = `bg-${nextTaskId++}`;
+      const bgSessionId = getSessionId();
+      const timeoutMs = timeout ?? BACKGROUND_TIMEOUT;
+      const child = spawn("/bin/sh", ["-c", command], {
+        cwd: cwd ?? getWorkspace(),
+        stdio: ["ignore", "pipe", "pipe"],
+        env: buildChildEnv(currentSandboxLevel),
+        // Put the shell + everything it spawns into its own process
+        // group so we can kill the whole group on abort/timeout. See
+        // killProcessGroup() for the CI-Linux rationale.
+        detached: true,
+      });
+
+      // Detach the child's handle from the parent's event loop. Without
+      // this, a long-running background task (sleep 100, a dev server,
+      // etc.) would keep Node alive after the user quit the CLI, because
+      // the ChildProcess handle counts as a live reference. The 'close'
+      // listener below still fires when the child exits, so completion
+      // notification is unaffected.
+      child.unref();
+
+      backgroundTasks.set(taskId, {
+        id: taskId,
+        command,
+        startedAt: Date.now(),
+        sessionId: bgSessionId,
+      });
+
+      const bgStdout = new OutputCollector();
+      const bgStderr = new OutputCollector();
+      child.stdout.setEncoding("utf-8");
+      child.stderr.setEncoding("utf-8");
+      child.stdout.on("data", (chunk: string) => bgStdout.append(chunk));
+      child.stderr.on("data", (chunk: string) => bgStderr.append(chunk));
+
+      // Timeout: SIGTERM then SIGKILL, same pattern as foreground.
+      // Group kill (via -pid) ensures we catch shell grandchildren on
+      // Linux where SIGTERM to dash doesn't forward.
+      const bgTimer = setTimeout(() => {
+        killProcessGroup(child.pid, "SIGTERM");
+        setTimeout(() => {
+          if (child.exitCode === null) killProcessGroup(child.pid, "SIGKILL");
+        }, 5000);
+
+exec
+/bin/zsh -lc "rg -n -C 8 \"initCheckpointManager|clearCheckpointManager|withSession\\(subagent|checkpoint\" bench/iterations/005/reviews/iter.diff | head -240
+rg -n -C 4 \"clearTasks|clearScratchpad|setTaskEventHandler\" packages/core/src/agent/loop.ts" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+778--    const ordered = orderByDependencies(transactionFiles);
+779-+    const ordered = orderByDependencies(s.files);
+780- 
+781-     if (cp) {
+782-       // Revert dependents before dependencies to maintain consistency
+783-@@ -110,13 +136,13 @@ export const rollbackTransactionTool = defineTool({
+784-       }
+785-     } else {
+786:       // No checkpoint manager — all files fail
+787--      for (const file of transactionFiles) {
+788-+      for (const file of s.files) {
+789-         failed.push({ file, error: "CheckpointManager not initialized" });
+790-       }
+791-     }
+792- 
+793--    transactionActive = false;
+794--    transactionFiles = [];
+795-+    s.active = false;
+796-+    s.files = [];
+797- 
+798-     const partialRollback = failed.length > 0 && reverted.length > 0;
+799- 
+800:diff --git a/packages/tools/src/checkpoint.ts b/packages/tools/src/checkpoint.ts
+801-index de11afd..2dc83cf 100644
+802:--- a/packages/tools/src/checkpoint.ts
+803:+++ b/packages/tools/src/checkpoint.ts
+804-@@ -11,6 +11,7 @@ import {
+805- import { join, dirname, basename, relative } from "node:path";
+806- import { homedir } from "node:os";
+807- import { randomUUID } from "node:crypto";
+808-+import { getSessionId } from "./session-context.js";
+809- 
+810: const CHECKPOINT_DIR = join(homedir(), ".brainstorm", "checkpoints");
+811- 
+812-@@ -174,14 +175,38 @@ export class CheckpointManager {
+813-   }
+814- }
+815- 
+816:-/** Global checkpoint manager singleton — set during session init. */
+817--let activeCheckpoint: CheckpointManager | null = null;
+818-+/**
+819:+ * Per-session checkpoint managers. A single module-global singleton meant two
+820:+ * concurrent runs calling initCheckpointManager() would overwrite each other's
+821-+ * reference — the first run's later getCheckpointManager() returned the second
+822-+ * run's manager, so its rollbacks reverted the wrong session's files. Keyed by
+823-+ * session id (falls back to the current session scope on read).
+824-+ */
+825-+const MAX_TRACKED_SESSIONS = 256;
+826:+const checkpointManagers = new Map<string, CheckpointManager>();
+827- 
+828: export function initCheckpointManager(sessionId: string): CheckpointManager {
+829--  activeCheckpoint = new CheckpointManager(sessionId);
+830--  return activeCheckpoint;
+831-+  if (
+832:+    !checkpointManagers.has(sessionId) &&
+833:+    checkpointManagers.size >= MAX_TRACKED_SESSIONS
+834-+  ) {
+835:+    const oldest = checkpointManagers.keys().next().value;
+836:+    if (oldest !== undefined) checkpointManagers.delete(oldest);
+837-+  }
+838-+  const manager = new CheckpointManager(sessionId);
+839:+  checkpointManagers.set(sessionId, manager);
+840-+  return manager;
+841-+}
+842-+
+843-+export function getCheckpointManager(
+844-+  sessionId: string = getSessionId(),
+845-+): CheckpointManager | null {
+846:+  return checkpointManagers.get(sessionId) ?? null;
+847- }
+848- 
+849--export function getCheckpointManager(): CheckpointManager | null {
+850--  return activeCheckpoint;
+851:+/** Release a session's checkpoint manager (teardown). */
+852:+export function clearCheckpointManager(
+853-+  sessionId: string = getSessionId(),
+854-+): void {
+855:+  checkpointManagers.delete(sessionId);
+856- }
+857-diff --git a/packages/tools/src/index.ts b/packages/tools/src/index.ts
+858-index 3fc5c95..58a5471 100644
+859---- a/packages/tools/src/index.ts
+860-+++ b/packages/tools/src/index.ts
+861-@@ -20,6 +20,12 @@ export {
+862-   getWorkspace,
+863-   enterWorkspace,
+--
+874-diff --git a/packages/tools/src/session-context.ts b/packages/tools/src/session-context.ts
+875-new file mode 100644
+876-index 0000000..4af22c4
+877---- /dev/null
+878-+++ b/packages/tools/src/session-context.ts
+879-@@ -0,0 +1,46 @@
+880-+/**
+881-+ * Session context — AsyncLocalStorage-backed "current session id" for
+882:+ * session-scoped tool state (tasks, transactions, checkpoints).
+883-+ *
+884-+ * Why this exists: several tool stores were module-global (one `tasks` Map, one
+885-+ * `transactionActive` flag, one `activeCheckpoint`). Two concurrent runs — a
+886-+ * server request and a Slack message, or two subagents — would collide on IDs,
+887-+ * clear each other's tasks, and cross-wire event handlers. Keying that state by
+888-+ * the current session id isolates concurrent runs.
+889-+ *
+890-+ * Mirrors workspace-context.ts. Tool execution runs inside a session scope
+13-} from "@brainst0rm/router";
+14-import type { RoutingOutcomeRepository } from "@brainst0rm/db";
+15-import type { ToolRegistry, PermissionCheckFn } from "@brainst0rm/tools";
+16-import {
+17:  setTaskEventHandler,
+18:  clearTasks,
+19-  setBackgroundEventHandler,
+20-  getToolHealthTracker,
+21-  setToolOutputHandler,
+22-  getTierForComplexity,
+--
+624-    systemPrompt: systemPrompt.slice(0, 200),
+625-  });
+626-
+627-  // Reset task state and wire event handlers for this invocation
+628:  clearTasks();
+629-  const taskEventQueue: AgentEvent[] = [];
+630-  const TASK_QUEUE_CAP = 1000; // Prevent OOM from unbounded push — Forge R06
+631:  setTaskEventHandler((type, task) => {
+632-    if (taskEventQueue.length < TASK_QUEUE_CAP) {
+633-      taskEventQueue.push({ type, task } as AgentEvent);
+634-    }
+635-  });
+--
+2256-      const enriched = enrichError(error, decision.model.id);
+2257-      yield { type: "error", error: enriched, category: "unknown" };
+2258-    }
+2259-  } finally {
+2260:    setTaskEventHandler(null);
+2261-    setToolOutputHandler(null);
+2262-    setBackgroundEventHandler(null);
+2263-
+2264-    // Submit trajectory + update routing intelligence (fire-and-forget)
+
+codex
+The wrapper structure is syntactically sound; I’m checking the two affected packages for type-level regressions before finalizing the race assessment.
+exec
+/bin/zsh -lc 'pnpm --filter @brainst0rm/tools typecheck && pnpm --filter @brainst0rm/core typecheck' in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 4037ms:
+
+> @brainst0rm/tools@0.15.0 typecheck /Users/justin.jilg/Projects/brainstorm/packages/tools
+> tsc --noEmit
+
+
+> @brainst0rm/core@0.14.5 typecheck /Users/justin.jilg/Projects/brainstorm/packages/core
+> tsc --noEmit
+
+
+codex
+{"fixes":[{"id":"a","status":"not-resolved","note":"The hash is not atomically tied to the session's write. file_write awaits other imports before recordTransactionFile re-reads the path, so another session can write first; the original session then records the later session's hash and rollback may accept it and clobber that edit. Rollback also has a check-to-revert TOCTOU window, and null/empty hashes or an unreadable/deleted current file bypass divergence protection entirely."},{"id":"b","status":"resolved","note":"Read/record paths use peekTx without allocating; successful commit and rollback delete only the current session's state; eviction scans for an inactive entry and never removes an active transaction. The cap intentionally becomes soft when all entries are active."},{"id":"c","status":"resolved","note":"randomUUID removes same-millisecond collisions. withSession is correctly nested inside withWorkspace and covers streamText creation, stream consumption, retries, and tool execution; the closing parentheses correctly unwind the inner session callback and outer workspace callback."}],"new_P0_P1":[]}
+tokens used
+66,783

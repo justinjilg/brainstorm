@@ -1,0 +1,1984 @@
+Reading additional input from stdin...
+OpenAI Codex v0.144.6
+--------
+workdir: /Users/justin.jilg/Projects/brainstorm
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 019f77d3-b8a8-7612-9a10-ece82a31b420
+--------
+user
+Review the diff at bench/iterations/006/reviews/iter-006-outcome.diff — three incremental fixes to the agent loop's RunOutcome aggregation (the outcome-accuracy findings deferred from iter-004, done WITHOUT a full TurnController extraction). (#7) router.recordSuccess (momentum) moved from the success block (which runs BEFORE Phase-7 tool-nudge and Phase-3 verify recursion) to the true terminal just before the done yield, guarded by runOutcome.status===succeeded, so a nudged/verify-failed turn no longer credits momentum and doesn't double-count with the recursive child. (#8) thisAttempt (the current ModelAttemptOutcome) is now threaded into _attemptsSoFar for the nudge and verify recursions too (previously only fallback), so the terminal aggregate carries every invocation. (#9) RunOutcome.recovery changed from a single enum to an ordered array; each recursion appends its action (fallback/tool_nudge/verification_retry) into _recoverySoFar and the terminal appends forced_synthesis, so fallback-then-synthesis records both in order instead of erasing the fallback. Verify each is correct: no double-counting, no lost/duplicated attempts, recovery order accurate, no new races. Output ONLY JSON: {"fixes":[{"id":7|8|9,"status":"resolved"|"not-resolved","note":string}],"new_P0_P1":[]}
+codex
+I’m inspecting the diff and surrounding control-flow paths, then I’ll return only the requested JSON verdict.
+exec
+/bin/zsh -lc "sed -n '1,260p' bench/iterations/006/reviews/iter-006-outcome.diff && rg -n \"recordSuccess|_attemptsSoFar|_recoverySoFar|forced_synthesis|verification_retry|tool_nudge|RunOutcome|ModelAttemptOutcome\" . --glob '"'!bench/iterations/006/reviews/iter-006-outcome.diff'"'" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+diff --git a/packages/core/src/agent/loop.ts b/packages/core/src/agent/loop.ts
+index f72d9b0..923f492 100644
+--- a/packages/core/src/agent/loop.ts
++++ b/packages/core/src/agent/loop.ts
+@@ -563,6 +563,12 @@ export interface AgentLoopOptions {
+    * attempt it just gave up on.
+    */
+   _attemptsSoFar?: ModelAttemptOutcome[];
++  /**
++   * Internal: ordered recovery actions taken by upstream levels (fallback,
++   * tool_nudge, verification_retry), so the terminal level emits the full
++   * recovery SEQUENCE instead of a single tag that erases earlier recoveries.
++   */
++  _recoverySoFar?: NonNullable<RunOutcome["recovery"]>;
+   /**
+    * Internal: session cost at the START of this logical run, captured once at
+    * the root and propagated through recursion so RunOutcome.costUsd is the run
+@@ -1510,7 +1516,7 @@ export async function* runAgentLoop(
+     // needing synthesis, over-firing; the sharper distinction is deferred to
+     // the iter-006 TurnController, which models a turn's phases explicitly.)
+     let hasFinalResponse = accumulatedText.trim().length > 0;
+-    let recovery: RunOutcome["recovery"] | undefined;
++    let didSynthesize = false;
+     let synthesisAttempted = options._synthesized ?? false;
+     const initialStopCause = classifyStopCause({
+       isEmpty,
+@@ -1628,7 +1634,7 @@ export async function* runAgentLoop(
+         if (synthText) {
+           accumulatedText += (accumulatedText ? "\n\n" : "") + synthText;
+           hasFinalResponse = true;
+-          recovery = "forced_synthesis";
++          didSynthesize = true;
+           yield {
+             type: "text-delta",
+             delta: normalizeInsightMarkers(synthText),
+@@ -1762,6 +1768,7 @@ export async function* runAgentLoop(
+           _synthesized: synthesisAttempted,
+           // Preserve the run-cost baseline across the whole fallback chain.
+           _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
++          _recoverySoFar: [...(options._recoverySoFar ?? []), "fallback" as const],
+         } as any);
+         return;
+       }
+@@ -1861,15 +1868,14 @@ export async function* runAgentLoop(
+       costUsd: turnCost,
+     };
+ 
+-    // Momentum records ONLY a genuinely successful final attempt, WITH task
+-    // type. Previously recordSuccess fired unconditionally, before turnSuccess
+-    // was known and without the task type — so momentum learned "the model
+-    // said something" (and disagreed with the Thompson outcome below on
+-    // exhausted-retry turns that reach here with turnSuccess=false).
+-    if (turnSuccess) {
+-      router.recordSuccess?.(decision.model.id, task.type);
+-    }
+-
++    // NOTE: momentum (router.recordSuccess) is deliberately NOT recorded here.
++    // This point is BEFORE the Phase-7 tool-nudge and Phase-3 verify blocks,
++    // which may `return` after recursing into a corrective re-run. Recording
++    // momentum here would credit a turn that then gets nudged or fails
++    // verification — and double-count with the recursive child's own momentum.
++    // It is recorded once, at the true terminal (just before `done`), only when
++    // no nudge/verify recursion took over. recordOutcome (Thompson, per-attempt)
++    // DOES belong here — each model attempt is its own routing datapoint.
+     recordOutcome(
+       task.type,
+       decision.model.id,
+@@ -1981,6 +1987,10 @@ export async function* runAgentLoop(
+           _forceToolChoice: forceOnRetry,
+           _synthesized: synthesisAttempted,
+           _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
++          // Carry this invocation into the aggregate so the terminal run
++          // outcome includes the nudge-superseded attempt, not just the final.
++          _attemptsSoFar: [...(options._attemptsSoFar ?? []), thisAttempt],
++          _recoverySoFar: [...(options._recoverySoFar ?? []), "tool_nudge" as const],
+         });
+         return;
+       }
+@@ -2084,6 +2094,12 @@ export async function* runAgentLoop(
+             _forceToolChoice: false,
+             _synthesized: synthesisAttempted,
+             _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
++            // Include this verify-superseded attempt in the aggregate chain.
++            _attemptsSoFar: [...(options._attemptsSoFar ?? []), thisAttempt],
++            _recoverySoFar: [
++              ...(options._recoverySoFar ?? []),
++              "verification_retry" as const,
++            ],
+           });
+           return;
+         }
+@@ -2151,13 +2167,15 @@ export async function* runAgentLoop(
+     // not_run here; wiring their live results into the outcome is a follow-on
+     // (the contract + termination/recovery/cost are established this iteration).
+     const allAttempts = [...(options._attemptsSoFar ?? []), thisAttempt];
+-    // If earlier attempts failed and this one succeeded, the run recovered via
+-    // fallback (unless it already recovered via forced synthesis this turn).
+-    const aggregateRecovery: RunOutcome["recovery"] =
+-      recovery ??
+-      (turnSuccess && (options._attemptsSoFar?.length ?? 0) > 0
+-        ? "fallback"
+-        : undefined);
++    // Ordered recovery sequence: upstream actions (fallback / nudge / verify,
++    // appended as they happened) plus a forced_synthesis if THIS terminal turn
++    // synthesized. Preserves e.g. A-fallback → synthesis as ["fallback",
++    // "forced_synthesis"] instead of a single tag that erased the fallback.
++    const recoverySeq: NonNullable<RunOutcome["recovery"]> = [
++      ...(options._recoverySoFar ?? []),
++      ...(didSynthesize ? (["forced_synthesis"] as const) : []),
++    ];
++    const aggregateRecovery = recoverySeq.length > 0 ? recoverySeq : undefined;
+     const runOutcome: RunOutcome = {
+       status: turnSuccess ? "succeeded" : "failed",
+       attempts: allAttempts,
+@@ -2176,6 +2194,14 @@ export async function* runAgentLoop(
+         (options._runCostBaseline ?? sessionCostBefore),
+     };
+ 
++    // Momentum: record ONLY here, at the true terminal. Reaching this point
++    // means no Phase-7 nudge / Phase-3 verify recursion took over (those
++    // `return` after recursing), so this attempt is the final accepted one —
++    // and only credit it if the run actually produced a usable result.
++    if (runOutcome.status === "succeeded") {
++      router.recordSuccess?.(decision.model.id, task.type);
++    }
++
+     yield {
+       type: "done",
+       totalCost: costTracker.getSessionCost(),
+diff --git a/packages/shared/src/types.ts b/packages/shared/src/types.ts
+index c367562..3c01729 100644
+--- a/packages/shared/src/types.ts
++++ b/packages/shared/src/types.ts
+@@ -257,12 +257,15 @@ export interface RunOutcome {
+   /** How the FIRST attempt terminated — preserved even after recovery, so a
+    *  step-capped-then-synthesized run doesn't masquerade as a clean stop. */
+   initialStopCause: StopCause;
+-  /** How the run recovered from a non-clean initial stop, if it did. */
+-  recovery?:
+-    | "fallback"
+-    | "forced_synthesis"
+-    | "tool_nudge"
+-    | "verification_retry";
++  /**
++   * Ordered sequence of recovery actions the run took, in the order they
++   * happened. A single tag can't represent a run that both fell back AND then
++   * synthesized (e.g. A-empty → B-tool-only → synthesis) — that erased the
++   * fallback. Empty/absent = no recovery (clean run).
++   */
++  recovery?: Array<
++    "fallback" | "forced_synthesis" | "tool_nudge" | "verification_retry"
++  >;
+   /** Did the run produce usable final text? (distinct from making changes) */
+   hasFinalResponse: boolean;
+   /** Artifact references produced (files written, etc.), if tracked. */
+./bench/iterations/005/reviews/codex.err:1425:          // emits the full attempt chain in its aggregate RunOutcome; mark
+./bench/iterations/005/reviews/codex.err:1427:          _attemptsSoFar: [...(options._attemptsSoFar ?? []), failedAttempt],
+./bench/iterations/005/reviews/codex.err:1682:    let recovery: RunOutcome["recovery"] | undefined;
+./bench/iterations/005/reviews/codex.err:4691:  recordSuccess(toolName: string): void {
+./bench/iterations/005/reviews/codex.err:4783:packages/tools/src/registry.ts:245:              getToolHealthTracker().recordSuccess(name);
+./packages/router/src/router.ts:233:  recordSuccess(modelId: string, taskType?: string): void {
+./bench/iterations/004/reviews/codex.err:14:Anchor review of this repo's diff at bench/iterations/004/reviews/iter.diff. This is a kernel-consolidation iteration establishing a two-level execution outcome contract. Key changes: (1) shared StopCause/CheckStatus/ModelAttemptOutcome/RunOutcome types + additive done.outcome; (2) loop.ts classifyStopCause() step-cap detection, P0 learning-signal fix (momentum records only successful final attempt WITH taskType, was unconditional/before turnSuccess), invokeModelAttempt() shared seam, forced-synthesis terminal state (triggers on !hasFinalResponse && toolCallCount>0 && !truncated — run one tools-disabled turn, recovery=forced_synthesis), aggregate RunOutcome threaded through fallback recursion via _attemptsSoFar and emitted through done; (3) orchestration-pipeline exactly-one-terminal-event + one-finalize (completed|failed|paused), empty-phase validation. Focus: correctness of the outcome aggregation (attempt vs run levels, initialStopCause preservation, recovery attribution), the synthesis trigger edge cases (infinite-loop safety, cost accounting, abort propagation), and any regression in the fallback recursion. Output ONLY a JSON array: [{"file":string,"line":number,"severity":"P0"|"P1"|"P2","finding":string,"suggested_fix":string}]. Empty array if none.
+./bench/iterations/004/reviews/codex.err:79:+> One aggregate **RunOutcome**, composed of one or more **ModelAttemptOutcome**s, with explicit
+./bench/iterations/004/reviews/codex.err:95:+(passed|failed|not_run|unknown), `ModelAttemptOutcome`, `RunOutcome` (attempts[], initialStopCause,
+./bench/iterations/004/reviews/codex.err:101:+Record each attempt as `ModelAttemptOutcome` → Thompson/quarantine (the fallback record at `:1400`
+./bench/iterations/004/reviews/codex.err:102:+becomes attempt N). Delete unconditional `router.recordSuccess?.()` at `:1518`; momentum records only
+./bench/iterations/004/reviews/codex.err:112:+`recovery:forced_synthesis`.
+./bench/iterations/004/reviews/codex.err:115:+`AgentEvent.done` gains `outcome: RunOutcome` additively (keep old fields). `orchestration-pipeline.ts`:
+./bench/iterations/004/reviews/codex.err:127:+previously ended empty returns a synthesized answer with `recovery:forced_synthesis`. Codex anchor +
+./bench/iterations/004/reviews/codex.err:312:+  type RunOutcome,
+./bench/iterations/004/reviews/codex.err:313:+  type ModelAttemptOutcome,
+./bench/iterations/004/reviews/codex.err:486:+   * RunOutcome carrying every attempt. Each fallback re-entry appends the
+./bench/iterations/004/reviews/codex.err:489:+  _attemptsSoFar?: ModelAttemptOutcome[];
+./bench/iterations/004/reviews/codex.err:580:+    let recovery: RunOutcome["recovery"] | undefined;
+./bench/iterations/004/reviews/codex.err:620:+          recovery = "forced_synthesis";
+./bench/iterations/004/reviews/codex.err:664:+      const failedAttempt: ModelAttemptOutcome = {
+./bench/iterations/004/reviews/codex.err:681:+          // emits the full attempt chain in its aggregate RunOutcome; mark
+./bench/iterations/004/reviews/codex.err:683:+          _attemptsSoFar: [...(options._attemptsSoFar ?? []), failedAttempt],
+./bench/iterations/004/reviews/codex.err:692:-    router.recordSuccess?.(decision.model.id);
+./bench/iterations/004/reviews/codex.err:700:+    // RunOutcome below stitches it onto any upstream failed attempts.
+./bench/iterations/004/reviews/codex.err:701:+    const thisAttempt: ModelAttemptOutcome = {
+./bench/iterations/004/reviews/codex.err:713:+    // type. Previously recordSuccess fired unconditionally, before turnSuccess
+./bench/iterations/004/reviews/codex.err:718:+      router.recordSuccess?.(decision.model.id, task.type);
+./bench/iterations/004/reviews/codex.err:734:+    const allAttempts = [...(options._attemptsSoFar ?? []), thisAttempt];
+./bench/iterations/004/reviews/codex.err:737:+    const aggregateRecovery: RunOutcome["recovery"] =
+./bench/iterations/004/reviews/codex.err:739:+      (turnSuccess && (options._attemptsSoFar?.length ?? 0) > 0
+./bench/iterations/004/reviews/codex.err:742:+    const runOutcome: RunOutcome = {
+./bench/iterations/004/reviews/codex.err:946:+// One aggregate RunOutcome composed of one or more ModelAttemptOutcomes, with
+./bench/iterations/004/reviews/codex.err:992:+// One aggregate RunOutcome composed of one or more ModelAttemptOutcomes, with
+./bench/iterations/004/reviews/codex.err:1022:+export interface ModelAttemptOutcome {
+./bench/iterations/004/reviews/codex.err:1034:+export interface RunOutcome {
+./bench/iterations/004/reviews/codex.err:1037:+  attempts: ModelAttemptOutcome[];
+./bench/iterations/004/reviews/codex.err:1046:+    | "forced_synthesis"
+./bench/iterations/004/reviews/codex.err:1047:+    | "tool_nudge"
+./bench/iterations/004/reviews/codex.err:1048:+    | "verification_retry";
+./bench/iterations/004/reviews/codex.err:1140:  1496	    let recovery: RunOutcome["recovery"] | undefined;
+./bench/iterations/004/reviews/codex.err:1181:  1537	          recovery = "forced_synthesis";
+./bench/iterations/004/reviews/codex.err:1225:  1581	      breaker.recordSuccess();
+./bench/iterations/004/reviews/codex.err:1260:  1616	      const failedAttempt: ModelAttemptOutcome = {
+./bench/iterations/004/reviews/codex.err:1304:  1660	          // emits the full attempt chain in its aggregate RunOutcome; mark
+./bench/iterations/004/reviews/codex.err:1306:  1662	          _attemptsSoFar: [...(options._attemptsSoFar ?? []), failedAttempt],
+./bench/iterations/004/reviews/codex.err:1392:  1748	    // RunOutcome below stitches it onto any upstream failed attempts.
+./bench/iterations/004/reviews/codex.err:1393:  1749	    const thisAttempt: ModelAttemptOutcome = {
+./bench/iterations/004/reviews/codex.err:1405:  1761	    // type. Previously recordSuccess fired unconditionally, before turnSuccess
+./bench/iterations/004/reviews/codex.err:1410:  1766	      router.recordSuccess?.(decision.model.id, task.type);
+./bench/iterations/004/reviews/codex.err:1714:  2045	    const allAttempts = [...(options._attemptsSoFar ?? []), thisAttempt];
+./bench/iterations/004/reviews/codex.err:1717:  2048	    const aggregateRecovery: RunOutcome["recovery"] =
+./bench/iterations/004/reviews/codex.err:1719:  2050	      (turnSuccess && (options._attemptsSoFar?.length ?? 0) > 0
+./bench/iterations/004/reviews/codex.err:1722:  2053	    const runOutcome: RunOutcome = {
+./bench/iterations/004/reviews/codex.err:2255:   561	   * RunOutcome carrying every attempt. Each fallback re-entry appends the
+./bench/iterations/004/reviews/codex.err:2258:   564	  _attemptsSoFar?: ModelAttemptOutcome[];
+./bench/iterations/004/reviews/codex.err:3074:   199	      expect(done.outcome.recovery).toBe("forced_synthesis");
+./bench/iterations/004/reviews/codex.err:3103:   228	      expect(done.outcome.recovery).toBe("forced_synthesis");
+./bench/iterations/004/reviews/codex.err:3687:   358	      outcome?: RunOutcome;
+./bench/iterations/004/reviews/codex.err:4544:/bin/zsh -lc "rg -n 'recordSuccess\\(' packages/router/src packages --glob '*.ts' | head -60; nl -ba packages/router/src/router.ts | sed -n '430,490p'; rg -n 'recordSuccess' packages/router/src/router.ts" in /Users/justin.jilg/Projects/brainstorm
+./bench/iterations/004/reviews/codex.err:4546:packages/router/src/router.ts:233:  recordSuccess(modelId: string, taskType?: string): void {
+./bench/iterations/004/reviews/codex.err:4547:packages/router/src/router.ts:233:  recordSuccess(modelId: string, taskType?: string): void {
+./bench/iterations/004/reviews/codex.err:4548:packages/tools/src/tool-health.ts:17:  recordSuccess(toolName: string): void {
+./bench/iterations/004/reviews/codex.err:4549:packages/tools/src/registry.ts:245:              getToolHealthTracker().recordSuccess(name);
+./bench/iterations/004/reviews/codex.err:4550:packages/core/src/agent/loop.ts:1581:      breaker.recordSuccess();
+./bench/iterations/004/reviews/codex.err:4551:packages/core/src/security/circuit-breaker.ts:88:  recordSuccess(): void {
+./bench/iterations/004/reviews/codex.err:4552:233:  recordSuccess(modelId: string, taskType?: string): void {
+./bench/iterations/004/reviews/codex.err:4570:   233	  recordSuccess(modelId: string, taskType?: string): void {
+./bench/iterations/004/reviews/codex.err:4657:  1496	    let recovery: RunOutcome["recovery"] | undefined;
+./bench/iterations/004/reviews/codex.err:4698:  1537	          recovery = "forced_synthesis";
+./bench/iterations/004/reviews/codex.err:4884:    "suggested_fix": "Move recordSuccess to the terminal path immediately before done, after all nudge and verification recursion decisions, and record only the final accepted attempt."
+./bench/iterations/004/reviews/codex.err:4897:    "finding": "recovery prefers the terminal attempt's forced_synthesis over fallback. For A-empty -> B-tool-only -> synthesis-success, initialStopCause describes A but recovery says forced_synthesis, incorrectly attributing recovery of A's failure to synthesis and erasing the fallback.",
+./bench/iterations/004/reviews/codex.err:4911:    "finding": "RunOutcome.costUsd uses the CostTracker's cumulative session/process total rather than the logical run delta. Long-lived callers reuse the tracker, so later RunOutcomes include unrelated earlier runs even though per-attempt costs are deltas.",
+./bench/iterations/004/reviews/codex.err:4912:    "suggested_fix": "Capture a root run-cost baseline once, propagate it through recursion, and set RunOutcome.costUsd to current cost minus that root baseline."
+./bench/iterations/004/reviews/codex.out:56:    "suggested_fix": "Move recordSuccess to the terminal path immediately before done, after all nudge and verification recursion decisions, and record only the final accepted attempt."
+./bench/iterations/004/reviews/codex.out:69:    "finding": "recovery prefers the terminal attempt's forced_synthesis over fallback. For A-empty -> B-tool-only -> synthesis-success, initialStopCause describes A but recovery says forced_synthesis, incorrectly attributing recovery of A's failure to synthesis and erasing the fallback.",
+./bench/iterations/004/reviews/codex.out:83:    "finding": "RunOutcome.costUsd uses the CostTracker's cumulative session/process total rather than the logical run delta. Long-lived callers reuse the tracker, so later RunOutcomes include unrelated earlier runs even though per-attempt costs are deltas.",
+./bench/iterations/004/reviews/codex.out:84:    "suggested_fix": "Capture a root run-cost baseline once, propagate it through recursion, and set RunOutcome.costUsd to current cost minus that root baseline."
+./bench/iterations/004/reviews/iter.diff:60:+> One aggregate **RunOutcome**, composed of one or more **ModelAttemptOutcome**s, with explicit
+./bench/iterations/004/reviews/iter.diff:76:+(passed|failed|not_run|unknown), `ModelAttemptOutcome`, `RunOutcome` (attempts[], initialStopCause,
+./bench/iterations/004/reviews/iter.diff:82:+Record each attempt as `ModelAttemptOutcome` → Thompson/quarantine (the fallback record at `:1400`
+./bench/iterations/004/reviews/iter.diff:83:+becomes attempt N). Delete unconditional `router.recordSuccess?.()` at `:1518`; momentum records only
+./bench/iterations/004/reviews/iter.diff:93:+`recovery:forced_synthesis`.
+./bench/iterations/004/reviews/iter.diff:96:+`AgentEvent.done` gains `outcome: RunOutcome` additively (keep old fields). `orchestration-pipeline.ts`:
+./bench/iterations/004/reviews/iter.diff:108:+previously ended empty returns a synthesized answer with `recovery:forced_synthesis`. Codex anchor +
+./bench/iterations/004/reviews/iter.diff:299:+  it("runs one tools-disabled synthesis turn and marks recovery=forced_synthesis", async () => {
+./bench/iterations/004/reviews/iter.diff:317:+      expect(done.outcome.recovery).toBe("forced_synthesis");
+./bench/iterations/004/reviews/iter.diff:644:+  type RunOutcome,
+./bench/iterations/004/reviews/iter.diff:645:+  type ModelAttemptOutcome,
+./bench/iterations/004/reviews/iter.diff:818:+   * RunOutcome carrying every attempt. Each fallback re-entry appends the
+./bench/iterations/004/reviews/iter.diff:821:+  _attemptsSoFar?: ModelAttemptOutcome[];
+./bench/iterations/004/reviews/iter.diff:912:+    let recovery: RunOutcome["recovery"] | undefined;
+./bench/iterations/004/reviews/iter.diff:952:+          recovery = "forced_synthesis";
+./bench/iterations/004/reviews/iter.diff:996:+      const failedAttempt: ModelAttemptOutcome = {
+./bench/iterations/004/reviews/iter.diff:1013:+          // emits the full attempt chain in its aggregate RunOutcome; mark
+./bench/iterations/004/reviews/iter.diff:1015:+          _attemptsSoFar: [...(options._attemptsSoFar ?? []), failedAttempt],
+./bench/iterations/004/reviews/iter.diff:1024:-    router.recordSuccess?.(decision.model.id);
+./bench/iterations/004/reviews/iter.diff:1032:+    // RunOutcome below stitches it onto any upstream failed attempts.
+./bench/iterations/004/reviews/iter.diff:1033:+    const thisAttempt: ModelAttemptOutcome = {
+./bench/iterations/004/reviews/iter.diff:1045:+    // type. Previously recordSuccess fired unconditionally, before turnSuccess
+./bench/iterations/004/reviews/iter.diff:1050:+      router.recordSuccess?.(decision.model.id, task.type);
+./bench/iterations/004/reviews/iter.diff:1066:+    const allAttempts = [...(options._attemptsSoFar ?? []), thisAttempt];
+./bench/iterations/004/reviews/iter.diff:1069:+    const aggregateRecovery: RunOutcome["recovery"] =
+./bench/iterations/004/reviews/iter.diff:1071:+      (turnSuccess && (options._attemptsSoFar?.length ?? 0) > 0
+./bench/iterations/004/reviews/iter.diff:1074:+    const runOutcome: RunOutcome = {
+./bench/iterations/004/reviews/iter.diff:1258:+// One aggregate RunOutcome composed of one or more ModelAttemptOutcomes, with
+./bench/iterations/004/reviews/iter.diff:1288:+export interface ModelAttemptOutcome {
+./bench/iterations/004/reviews/iter.diff:1300:+export interface RunOutcome {
+./bench/iterations/004/reviews/iter.diff:1303:+  attempts: ModelAttemptOutcome[];
+./bench/iterations/004/reviews/iter.diff:1312:+    | "forced_synthesis"
+./bench/iterations/004/reviews/iter.diff:1313:+    | "tool_nudge"
+./bench/iterations/004/reviews/iter.diff:1314:+    | "verification_retry";
+./bench/iterations/004/reviews/iter.diff:1337:+      outcome?: RunOutcome;
+./bench/iterations/004/reviews/verdicts.json:30:        { "id": 7, "sev": "P1", "loc": "momentum recorded before nudge/verify decide", "verdict": "DEFERRED iter-006 — moving recordSuccess past the recursion risks double-counting with the child call's own momentum; entangled with the recursion architecture the TurnController unifies." },
+./bench/iterations/004/reviews/verdicts.json:32:        { "id": 9, "sev": "P1", "loc": "recovery prefers synthesis over fallback in A->B->synth", "verdict": "DEFERRED iter-006 — aggregate recovery is a single tag (fallback|forced_synthesis); an ordered recovery sequence is a schema change best made with the unified accumulator." }
+./bench/iterations/004/reviews/iter-fixed.diff:60:+> One aggregate **RunOutcome**, composed of one or more **ModelAttemptOutcome**s, with explicit
+./bench/iterations/004/reviews/iter-fixed.diff:76:+(passed|failed|not_run|unknown), `ModelAttemptOutcome`, `RunOutcome` (attempts[], initialStopCause,
+./bench/iterations/004/reviews/iter-fixed.diff:82:+Record each attempt as `ModelAttemptOutcome` → Thompson/quarantine (the fallback record at `:1400`
+./bench/iterations/004/reviews/iter-fixed.diff:83:+becomes attempt N). Delete unconditional `router.recordSuccess?.()` at `:1518`; momentum records only
+./bench/iterations/004/reviews/iter-fixed.diff:93:+`recovery:forced_synthesis`.
+./bench/iterations/004/reviews/iter-fixed.diff:96:+`AgentEvent.done` gains `outcome: RunOutcome` additively (keep old fields). `orchestration-pipeline.ts`:
+./bench/iterations/004/reviews/iter-fixed.diff:108:+previously ended empty returns a synthesized answer with `recovery:forced_synthesis`. Codex anchor +
+./bench/iterations/004/reviews/iter-fixed.diff:331:+      expect(done.outcome.recovery).toBe("forced_synthesis");
+./bench/iterations/004/reviews/iter-fixed.diff:360:+      expect(done.outcome.recovery).toBe("forced_synthesis");
+./bench/iterations/004/reviews/iter-fixed.diff:705:+  type RunOutcome,
+./bench/iterations/004/reviews/iter-fixed.diff:706:+  type ModelAttemptOutcome,
+./bench/iterations/004/reviews/iter-fixed.diff:879:+   * RunOutcome carrying every attempt. Each fallback re-entry appends the
+./bench/iterations/004/reviews/iter-fixed.diff:882:+  _attemptsSoFar?: ModelAttemptOutcome[];
+./bench/iterations/004/reviews/iter-fixed.diff:885:+   * the root and propagated through recursion so RunOutcome.costUsd is the run
+./bench/iterations/004/reviews/iter-fixed.diff:994:+    let recovery: RunOutcome["recovery"] | undefined;
+./bench/iterations/004/reviews/iter-fixed.diff:1087:+          recovery = "forced_synthesis";
+./bench/iterations/004/reviews/iter-fixed.diff:1130:+      const failedAttempt: ModelAttemptOutcome = {
+./bench/iterations/004/reviews/iter-fixed.diff:1147:+          // emits the full attempt chain in its aggregate RunOutcome; mark
+./bench/iterations/004/reviews/iter-fixed.diff:1149:+          _attemptsSoFar: [...(options._attemptsSoFar ?? []), failedAttempt],
+./bench/iterations/004/reviews/iter-fixed.diff:1163:-    router.recordSuccess?.(decision.model.id);
+./bench/iterations/004/reviews/iter-fixed.diff:1171:+    // RunOutcome below stitches it onto any upstream failed attempts.
+./bench/iterations/004/reviews/iter-fixed.diff:1172:+    const thisAttempt: ModelAttemptOutcome = {
+./bench/iterations/004/reviews/iter-fixed.diff:1186:+    // type. Previously recordSuccess fired unconditionally, before turnSuccess
+./bench/iterations/004/reviews/iter-fixed.diff:1191:+      router.recordSuccess?.(decision.model.id, task.type);
+./bench/iterations/004/reviews/iter-fixed.diff:1225:+    const allAttempts = [...(options._attemptsSoFar ?? []), thisAttempt];
+./bench/iterations/004/reviews/iter-fixed.diff:1228:+    const aggregateRecovery: RunOutcome["recovery"] =
+./bench/iterations/004/reviews/iter-fixed.diff:1230:+      (turnSuccess && (options._attemptsSoFar?.length ?? 0) > 0
+./bench/iterations/004/reviews/iter-fixed.diff:1233:+    const runOutcome: RunOutcome = {
+./bench/iterations/004/reviews/iter-fixed.diff:1451:+// One aggregate RunOutcome composed of one or more ModelAttemptOutcomes, with
+./bench/iterations/004/reviews/iter-fixed.diff:1481:+export interface ModelAttemptOutcome {
+./bench/iterations/004/reviews/iter-fixed.diff:1493:+export interface RunOutcome {
+./bench/iterations/004/reviews/iter-fixed.diff:1496:+  attempts: ModelAttemptOutcome[];
+./bench/iterations/004/reviews/iter-fixed.diff:1505:+    | "forced_synthesis"
+./bench/iterations/004/reviews/iter-fixed.diff:1506:+    | "tool_nudge"
+./bench/iterations/004/reviews/iter-fixed.diff:1507:+    | "verification_retry";
+./bench/iterations/004/reviews/iter-fixed.diff:1530:+      outcome?: RunOutcome;
+./bench/iterations/004/reviews/codex-final.err:14:Verification round. Your prior anchor review of this repo raised 14 findings on the two-level outcome contract + forced synthesis. The fixes are in bench/iterations/004/reviews/iter-fixed.diff. FIXED: #2 synthesis now appends result.response.messages (its own tool calls/results); #3 own AbortController+60s watchdog; #4 caller-cancel propagates as interrupted; #5 empty synthesis no longer silent-success (shouldRetry keys on no-final-response when synthesis ran, scoped so normal tool turns untouched); #6 _synthesized threaded into fallback/nudge/verify; #10 costUsd via root-propagated baseline; #11 parallel-phase non-blank validation; #12 failed attempt keeps classified stopCause; #13 finalize-before-yield. DEFERRED to iter-006 TurnController with rationale: #1 (post-tool-text over-fires on narrate-then-act — chose conservative any-text, still fixes primary gpt-oss no-text case), #7 (momentum-past-recursion risks double-count), #8 (full attempt accumulator through nudge/verify), #9 (ordered recovery sequence). Verify the 9 fixes are correct, and confirm the 4 deferrals are acceptable (metadata precision in a not-yet-consumed RunOutcome, no live blast radius) vs genuinely blocking. Output ONLY JSON: {"fixes":[{"id":number,"status":"resolved"|"not-resolved","note":string}],"deferrals_acceptable":boolean,"new_P0_P1":[]}
+./bench/iterations/004/reviews/codex-final.err:86:+> One aggregate **RunOutcome**, composed of one or more **ModelAttemptOutcome**s, with explicit
+./bench/iterations/004/reviews/codex-final.err:102:+(passed|failed|not_run|unknown), `ModelAttemptOutcome`, `RunOutcome` (attempts[], initialStopCause,
+./bench/iterations/004/reviews/codex-final.err:108:+Record each attempt as `ModelAttemptOutcome` → Thompson/quarantine (the fallback record at `:1400`
+./bench/iterations/004/reviews/codex-final.err:109:+becomes attempt N). Delete unconditional `router.recordSuccess?.()` at `:1518`; momentum records only
+./bench/iterations/004/reviews/codex-final.err:119:+`recovery:forced_synthesis`.
+./bench/iterations/004/reviews/codex-final.err:122:+`AgentEvent.done` gains `outcome: RunOutcome` additively (keep old fields). `orchestration-pipeline.ts`:
+./bench/iterations/004/reviews/codex-final.err:134:+previously ended empty returns a synthesized answer with `recovery:forced_synthesis`. Codex anchor +
+./bench/iterations/004/reviews/codex-final.err:598:    let recovery: RunOutcome["recovery"] | undefined;
+./bench/iterations/004/reviews/codex-final.err:691:          recovery = "forced_synthesis";
+./bench/iterations/004/reviews/codex-final.err:736:      breaker.recordSuccess();
+./bench/iterations/004/reviews/codex-final.err:771:      const failedAttempt: ModelAttemptOutcome = {
+./bench/iterations/004/reviews/codex-final.err:815:          // emits the full attempt chain in its aggregate RunOutcome; mark
+./bench/iterations/004/reviews/codex-final.err:817:          _attemptsSoFar: [...(options._attemptsSoFar ?? []), failedAttempt],
+./bench/iterations/004/reviews/codex-final.err:908:    // RunOutcome below stitches it onto any upstream failed attempts.
+./bench/iterations/004/reviews/codex-final.err:909:    const thisAttempt: ModelAttemptOutcome = {
+./bench/iterations/004/reviews/codex-final.err:923:    // type. Previously recordSuccess fired unconditionally, before turnSuccess
+./bench/iterations/004/reviews/codex-final.err:928:      router.recordSuccess?.(decision.model.id, task.type);
+./bench/iterations/004/reviews/codex-final.err:992:    const allAttempts = [...(options._attemptsSoFar ?? []), thisAttempt];
+./bench/iterations/004/reviews/codex-final.err:995:    const aggregateRecovery: RunOutcome["recovery"] =
+./bench/iterations/004/reviews/codex-final.err:997:      (turnSuccess && (options._attemptsSoFar?.length ?? 0) > 0
+./bench/iterations/004/reviews/codex-final.err:1000:    const runOutcome: RunOutcome = {
+./bench/iterations/004/reviews/codex-final.err:1676:   209	// One aggregate RunOutcome composed of one or more ModelAttemptOutcomes, with
+./bench/iterations/004/reviews/codex-final.err:1706:   239	export interface ModelAttemptOutcome {
+./bench/iterations/004/reviews/codex-final.err:1718:   251	export interface RunOutcome {
+./bench/iterations/004/reviews/codex-final.err:1721:   254	  attempts: ModelAttemptOutcome[];
+./bench/iterations/004/reviews/codex-final.err:1730:   263	    | "forced_synthesis"
+./bench/iterations/004/reviews/codex-final.err:1731:   264	    | "tool_nudge"
+./bench/iterations/004/reviews/codex-final.err:1732:   265	    | "verification_retry";
+./bench/iterations/004/reviews/codex-final.err:1825:   358	      outcome?: RunOutcome;
+./bench/iterations/004/reviews/codex-final.err:1855:/bin/zsh -lc "rg -n '"'^#|Finding|P0|P1|''^1'"\\.|#1|post-tool|momentum|accumulator|ordered recovery|blast|RunOutcome' bench/iterations/004/reviews bench/iterations/004/result.md | sed -n '1,260p'" in /Users/justin.jilg/Projects/brainstorm
+./bench/iterations/004/reviews/codex-final.err:1859:bench/iterations/004/result.md:7:- **Types** (`packages/shared`): `StopCause`, `CheckStatus`, `ModelAttemptOutcome`, `RunOutcome`;
+./bench/iterations/004/reviews/codex-final.err:1861:bench/iterations/004/result.md:18:- **Aggregate RunOutcome**: per-attempt outcomes threaded through the fallback recursion, emitted via
+./bench/iterations/004/reviews/codex-final.err:1864:bench/iterations/004/result.md:34:outcome-metadata precision in a `RunOutcome` no surface consumes yet (verification/security/judge are
+./bench/iterations/004/reviews/codex-final.err:1869:bench/iterations/004/result.md:49:  accumulator, #9 ordered recovery). Make workflow/pipeline/revise-loop consume `RunOutcome`.
+./bench/iterations/004/reviews/codex-final.err:1870:bench/iterations/004/reviews/iter.diff:60:+> One aggregate **RunOutcome**, composed of one or more **ModelAttemptOutcome**s, with explicit
+./bench/iterations/004/reviews/codex-final.err:1871:bench/iterations/004/reviews/iter.diff:76:+(passed|failed|not_run|unknown), `ModelAttemptOutcome`, `RunOutcome` (attempts[], initialStopCause,
+./bench/iterations/004/reviews/codex-final.err:1872:bench/iterations/004/reviews/iter.diff:83:+becomes attempt N). Delete unconditional `router.recordSuccess?.()` at `:1518`; momentum records only
+./bench/iterations/004/reviews/codex-final.err:1873:bench/iterations/004/reviews/iter.diff:96:+`AgentEvent.done` gains `outcome: RunOutcome` additively (keep old fields). `orchestration-pipeline.ts`:
+./bench/iterations/004/reviews/codex-final.err:1876:bench/iterations/004/reviews/iter.diff:644:+  type RunOutcome,
+./bench/iterations/004/reviews/codex-final.err:1877:bench/iterations/004/reviews/iter.diff:818:+   * RunOutcome carrying every attempt. Each fallback re-entry appends the
+./bench/iterations/004/reviews/codex-final.err:1878:bench/iterations/004/reviews/iter.diff:912:+    let recovery: RunOutcome["recovery"] | undefined;
+./bench/iterations/004/reviews/codex-final.err:1879:bench/iterations/004/reviews/iter.diff:1013:+          // emits the full attempt chain in its aggregate RunOutcome; mark
+./bench/iterations/004/reviews/codex-final.err:1881:bench/iterations/004/reviews/iter.diff:1032:+    // RunOutcome below stitches it onto any upstream failed attempts.
+./bench/iterations/004/reviews/codex-final.err:1883:bench/iterations/004/reviews/iter.diff:1069:+    const aggregateRecovery: RunOutcome["recovery"] =
+./bench/iterations/004/reviews/codex-final.err:1884:bench/iterations/004/reviews/iter.diff:1074:+    const runOutcome: RunOutcome = {
+./bench/iterations/004/reviews/codex-final.err:1886:bench/iterations/004/reviews/iter.diff:1258:+// One aggregate RunOutcome composed of one or more ModelAttemptOutcomes, with
+./bench/iterations/004/reviews/codex-final.err:1888:bench/iterations/004/reviews/iter.diff:1300:+export interface RunOutcome {
+./bench/iterations/004/reviews/codex-final.err:1889:bench/iterations/004/reviews/iter.diff:1337:+      outcome?: RunOutcome;
+./bench/iterations/004/reviews/codex-final.err:1904:bench/iterations/004/reviews/codex.out:83:    "finding": "RunOutcome.costUsd uses the CostTracker's cumulative session/process total rather than the logical run delta. Long-lived callers reuse the tracker, so later RunOutcomes include unrelated earlier runs even though per-attempt costs are deltas.",
+./bench/iterations/004/reviews/codex-final.err:1905:bench/iterations/004/reviews/codex.out:84:    "suggested_fix": "Capture a root run-cost baseline once, propagate it through recursion, and set RunOutcome.costUsd to current cost minus that root baseline."
+./bench/iterations/004/reviews/codex-final.err:1907:bench/iterations/004/reviews/iter-fixed.diff:60:+> One aggregate **RunOutcome**, composed of one or more **ModelAttemptOutcome**s, with explicit
+./bench/iterations/004/reviews/codex-final.err:1908:bench/iterations/004/reviews/iter-fixed.diff:76:+(passed|failed|not_run|unknown), `ModelAttemptOutcome`, `RunOutcome` (attempts[], initialStopCause,
+./bench/iterations/004/reviews/codex-final.err:1909:bench/iterations/004/reviews/iter-fixed.diff:83:+becomes attempt N). Delete unconditional `router.recordSuccess?.()` at `:1518`; momentum records only
+./bench/iterations/004/reviews/codex-final.err:1910:bench/iterations/004/reviews/iter-fixed.diff:96:+`AgentEvent.done` gains `outcome: RunOutcome` additively (keep old fields). `orchestration-pipeline.ts`:
+./bench/iterations/004/reviews/codex-final.err:1913:bench/iterations/004/reviews/iter-fixed.diff:705:+  type RunOutcome,
+./bench/iterations/004/reviews/codex-final.err:1914:bench/iterations/004/reviews/iter-fixed.diff:879:+   * RunOutcome carrying every attempt. Each fallback re-entry appends the
+./bench/iterations/004/reviews/codex-final.err:1915:bench/iterations/004/reviews/iter-fixed.diff:885:+   * the root and propagated through recursion so RunOutcome.costUsd is the run
+./bench/iterations/004/reviews/codex-final.err:1917:bench/iterations/004/reviews/iter-fixed.diff:994:+    let recovery: RunOutcome["recovery"] | undefined;
+./bench/iterations/004/reviews/codex-final.err:1918:bench/iterations/004/reviews/iter-fixed.diff:1147:+          // emits the full attempt chain in its aggregate RunOutcome; mark
+./bench/iterations/004/reviews/codex-final.err:1920:bench/iterations/004/reviews/iter-fixed.diff:1171:+    // RunOutcome below stitches it onto any upstream failed attempts.
+./bench/iterations/004/reviews/codex-final.err:1922:bench/iterations/004/reviews/iter-fixed.diff:1228:+    const aggregateRecovery: RunOutcome["recovery"] =
+./bench/iterations/004/reviews/codex-final.err:1923:bench/iterations/004/reviews/iter-fixed.diff:1233:+    const runOutcome: RunOutcome = {
+./bench/iterations/004/reviews/codex-final.err:1925:bench/iterations/004/reviews/iter-fixed.diff:1451:+// One aggregate RunOutcome composed of one or more ModelAttemptOutcomes, with
+./bench/iterations/004/reviews/codex-final.err:1927:bench/iterations/004/reviews/iter-fixed.diff:1493:+export interface RunOutcome {
+./bench/iterations/004/reviews/codex-final.err:1928:bench/iterations/004/reviews/iter-fixed.diff:1530:+      outcome?: RunOutcome;
+./bench/iterations/004/reviews/codex-final.err:1937:bench/iterations/004/reviews/verdicts.json:25:        { "id": 7, "sev": "P1", "loc": "momentum recorded before nudge/verify decide", "verdict": "DEFERRED iter-006 — moving recordSuccess past the recursion risks double-counting with the child call's own momentum; entangled with the recursion architecture the TurnController unifies." },
+./bench/iterations/004/reviews/codex-final.err:1939:bench/iterations/004/reviews/verdicts.json:27:        { "id": 9, "sev": "P1", "loc": "recovery prefers synthesis over fallback in A->B->synth", "verdict": "DEFERRED iter-006 — aggregate recovery is a single tag (fallback|forced_synthesis); an ordered recovery sequence is a schema change best made with the unified accumulator." }
+./bench/iterations/004/reviews/codex-final.err:1940:bench/iterations/004/reviews/codex-final.err:14:Verification round. Your prior anchor review of this repo raised 14 findings on the two-level outcome contract + forced synthesis. The fixes are in bench/iterations/004/reviews/iter-fixed.diff. FIXED: #2 synthesis now appends result.response.messages (its own tool calls/results); #3 own AbortController+60s watchdog; #4 caller-cancel propagates as interrupted; #5 empty synthesis no longer silent-success (shouldRetry keys on no-final-response when synthesis ran, scoped so normal tool turns untouched); #6 _synthesized threaded into fallback/nudge/verify; #10 costUsd via root-propagated baseline; #11 parallel-phase non-blank validation; #12 failed attempt keeps classified stopCause; #13 finalize-before-yield. DEFERRED to iter-006 TurnController with rationale: #1 (post-tool-text over-fires on narrate-then-act — chose conservative any-text, still fixes primary gpt-oss no-text case), #7 (momentum-past-recursion risks double-count), #8 (full attempt accumulator through nudge/verify), #9 (ordered recovery sequence). Verify the 9 fixes are correct, and confirm the 4 deferrals are acceptable (metadata precision in a not-yet-consumed RunOutcome, no live blast radius) vs genuinely blocking. Output ONLY JSON: {"fixes":[{"id":number,"status":"resolved"|"not-resolved","note":string}],"deferrals_acceptable":boolean,"new_P0_P1":[]}
+./bench/iterations/004/reviews/codex-final.err:1941:bench/iterations/004/reviews/codex-final.err:86:+> One aggregate **RunOutcome**, composed of one or more **ModelAttemptOutcome**s, with explicit
+./bench/iterations/004/reviews/codex-final.err:1942:bench/iterations/004/reviews/codex-final.err:102:+(passed|failed|not_run|unknown), `ModelAttemptOutcome`, `RunOutcome` (attempts[], initialStopCause,
+./bench/iterations/004/reviews/codex-final.err:1943:bench/iterations/004/reviews/codex-final.err:109:+becomes attempt N). Delete unconditional `router.recordSuccess?.()` at `:1518`; momentum records only
+./bench/iterations/004/reviews/codex-final.err:1944:bench/iterations/004/reviews/codex-final.err:122:+`AgentEvent.done` gains `outcome: RunOutcome` additively (keep old fields). `orchestration-pipeline.ts`:
+./bench/iterations/004/reviews/codex-final.err:1948:bench/iterations/004/reviews/codex-final.err:598:    let recovery: RunOutcome["recovery"] | undefined;
+./bench/iterations/004/reviews/codex-final.err:1949:bench/iterations/004/reviews/codex-final.err:815:          // emits the full attempt chain in its aggregate RunOutcome; mark
+./bench/iterations/004/reviews/codex-final.err:1950:bench/iterations/004/reviews/codex-final.err:908:    // RunOutcome below stitches it onto any upstream failed attempts.
+./bench/iterations/004/reviews/codex-final.err:1952:bench/iterations/004/reviews/codex-final.err:995:    const aggregateRecovery: RunOutcome["recovery"] =
+./bench/iterations/004/reviews/codex-final.err:1953:bench/iterations/004/reviews/codex-final.err:1000:    const runOutcome: RunOutcome = {
+./bench/iterations/004/reviews/codex-final.err:1955:bench/iterations/004/reviews/codex-final.err:1676:   209	// One aggregate RunOutcome composed of one or more ModelAttemptOutcomes, with
+./bench/iterations/004/reviews/codex-final.err:1957:bench/iterations/004/reviews/codex-final.err:1718:   251	export interface RunOutcome {
+./bench/iterations/004/reviews/codex-final.err:1958:bench/iterations/004/reviews/codex-final.err:1825:   358	      outcome?: RunOutcome;
+./bench/iterations/004/reviews/codex-final.err:1959:bench/iterations/004/reviews/codex.err:14:Anchor review of this repo's diff at bench/iterations/004/reviews/iter.diff. This is a kernel-consolidation iteration establishing a two-level execution outcome contract. Key changes: (1) shared StopCause/CheckStatus/ModelAttemptOutcome/RunOutcome types + additive done.outcome; (2) loop.ts classifyStopCause() step-cap detection, P0 learning-signal fix (momentum records only successful final attempt WITH taskType, was unconditional/before turnSuccess), invokeModelAttempt() shared seam, forced-synthesis terminal state (triggers on !hasFinalResponse && toolCallCount>0 && !truncated — run one tools-disabled turn, recovery=forced_synthesis), aggregate RunOutcome threaded through fallback recursion via _attemptsSoFar and emitted through done; (3) orchestration-pipeline exactly-one-terminal-event + one-finalize (completed|failed|paused), empty-phase validation. Focus: correctness of the outcome aggregation (attempt vs run levels, initialStopCause preservation, recovery attribution), the synthesis trigger edge cases (infinite-loop safety, cost accounting, abort propagation), and any regression in the fallback recursion. Output ONLY a JSON array: [{"file":string,"line":number,"severity":"P0"|"P1"|"P2","finding":string,"suggested_fix":string}]. Empty array if none.
+./bench/iterations/004/reviews/codex-final.err:1960:bench/iterations/004/reviews/codex.err:79:+> One aggregate **RunOutcome**, composed of one or more **ModelAttemptOutcome**s, with explicit
+./bench/iterations/004/reviews/codex-final.err:1961:bench/iterations/004/reviews/codex.err:95:+(passed|failed|not_run|unknown), `ModelAttemptOutcome`, `RunOutcome` (attempts[], initialStopCause,
+./bench/iterations/004/reviews/codex-final.err:1962:bench/iterations/004/reviews/codex.err:102:+becomes attempt N). Delete unconditional `router.recordSuccess?.()` at `:1518`; momentum records only
+./bench/iterations/004/reviews/codex-final.err:1963:bench/iterations/004/reviews/codex.err:115:+`AgentEvent.done` gains `outcome: RunOutcome` additively (keep old fields). `orchestration-pipeline.ts`:
+./bench/iterations/004/reviews/codex-final.err:1966:bench/iterations/004/reviews/codex.err:312:+  type RunOutcome,
+./bench/iterations/004/reviews/codex-final.err:1967:bench/iterations/004/reviews/codex.err:486:+   * RunOutcome carrying every attempt. Each fallback re-entry appends the
+./bench/iterations/004/reviews/codex-final.err:1968:bench/iterations/004/reviews/codex.err:580:+    let recovery: RunOutcome["recovery"] | undefined;
+./bench/iterations/004/reviews/codex-final.err:1969:bench/iterations/004/reviews/codex.err:681:+          // emits the full attempt chain in its aggregate RunOutcome; mark
+./bench/iterations/004/reviews/codex-final.err:1971:bench/iterations/004/reviews/codex.err:700:+    // RunOutcome below stitches it onto any upstream failed attempts.
+./bench/iterations/004/reviews/codex-final.err:1973:bench/iterations/004/reviews/codex.err:737:+    const aggregateRecovery: RunOutcome["recovery"] =
+./bench/iterations/004/reviews/codex-final.err:1974:bench/iterations/004/reviews/codex.err:742:+    const runOutcome: RunOutcome = {
+./bench/iterations/004/reviews/codex-final.err:1976:bench/iterations/004/reviews/codex.err:946:+// One aggregate RunOutcome composed of one or more ModelAttemptOutcomes, with
+./bench/iterations/004/reviews/codex-final.err:1977:bench/iterations/004/reviews/codex.err:992:+// One aggregate RunOutcome composed of one or more ModelAttemptOutcomes, with
+./bench/iterations/004/reviews/codex-final.err:1979:bench/iterations/004/reviews/codex.err:1034:+export interface RunOutcome {
+./bench/iterations/004/reviews/codex-final.err:1980:bench/iterations/004/reviews/codex.err:1140:  1496	    let recovery: RunOutcome["recovery"] | undefined;
+./bench/iterations/004/reviews/codex-final.err:1981:bench/iterations/004/reviews/codex.err:1304:  1660	          // emits the full attempt chain in its aggregate RunOutcome; mark
+./bench/iterations/004/reviews/codex-final.err:1982:bench/iterations/004/reviews/codex.err:1392:  1748	    // RunOutcome below stitches it onto any upstream failed attempts.
+./bench/iterations/004/reviews/codex-final.err:1984:bench/iterations/004/reviews/codex.err:1717:  2048	    const aggregateRecovery: RunOutcome["recovery"] =
+./bench/iterations/004/reviews/codex-final.err:1985:bench/iterations/004/reviews/codex.err:1722:  2053	    const runOutcome: RunOutcome = {
+./bench/iterations/004/reviews/codex-final.err:1986:bench/iterations/004/reviews/codex.err:2255:   561	   * RunOutcome carrying every attempt. Each fallback re-entry appends the
+./bench/iterations/004/reviews/codex-final.err:1990:bench/iterations/004/reviews/codex.err:3687:   358	      outcome?: RunOutcome;
+./bench/iterations/004/reviews/codex-final.err:2006:bench/iterations/004/reviews/codex.err:4657:  1496	    let recovery: RunOutcome["recovery"] | undefined;
+./bench/iterations/004/reviews/codex-final.err:2021:bench/iterations/004/reviews/codex.err:4911:    "finding": "RunOutcome.costUsd uses the CostTracker's cumulative session/process total rather than the logical run delta. Long-lived callers reuse the tracker, so later RunOutcomes include unrelated earlier runs even though per-attempt costs are deltas.",
+./bench/iterations/004/reviews/codex-final.err:2022:bench/iterations/004/reviews/codex.err:4912:    "suggested_fix": "Capture a root run-cost baseline once, propagate it through recursion, and set RunOutcome.costUsd to current cost minus that root baseline."
+./bench/iterations/004/reviews/codex-final.err:2083:    "suggested_fix": "Move recordSuccess to the terminal path immediately before done, after all nudge and verification recursion decisions, and record only the final accepted attempt."
+./bench/iterations/004/reviews/codex-final.err:2096:    "finding": "recovery prefers the terminal attempt's forced_synthesis over fallback. For A-empty -> B-tool-only -> synthesis-success, initialStopCause describes A but recovery says forced_synthesis, incorrectly attributing recovery of A's failure to synthesis and erasing the fallback.",
+./bench/iterations/004/reviews/codex-final.err:2110:    "finding": "RunOutcome.costUsd uses the CostTracker's cumulative session/process total rather than the logical run delta. Long-lived callers reuse the tracker, so later RunOutcomes include unrelated earlier runs even though per-attempt costs are deltas.",
+./bench/iterations/004/reviews/codex-final.err:2111:    "suggested_fix": "Capture a root run-cost baseline once, propagate it through recursion, and set RunOutcome.costUsd to current cost minus that root baseline."
+./bench/iterations/004/reviews/codex-final.err:2134:- **Types** (`packages/shared`): `StopCause`, `CheckStatus`, `ModelAttemptOutcome`, `RunOutcome`;
+./bench/iterations/004/reviews/codex-final.err:2144:  synthesis turn (recovery=forced_synthesis). The dead-end that killed two reviewer seats in iter-003.
+./bench/iterations/004/reviews/codex-final.err:2145:- **Aggregate RunOutcome**: per-attempt outcomes threaded through the fallback recursion, emitted via
+./bench/iterations/004/reviews/codex-final.err:2161:outcome-metadata precision in a `RunOutcome` no surface consumes yet (verification/security/judge are
+./bench/iterations/004/reviews/codex-final.err:2176:  accumulator, #9 ordered recovery). Make workflow/pipeline/revise-loop consume `RunOutcome`.
+./bench/iterations/004/reviews/codex-final.err:2201:        { "id": 7, "sev": "P1", "loc": "momentum recorded before nudge/verify decide", "verdict": "DEFERRED iter-006 — moving recordSuccess past the recursion risks double-counting with the child call's own momentum; entangled with the recursion architecture the TurnController unifies." },
+./bench/iterations/004/reviews/codex-final.err:2203:        { "id": 9, "sev": "P1", "loc": "recovery prefers synthesis over fallback in A->B->synth", "verdict": "DEFERRED iter-006 — aggregate recovery is a single tag (fallback|forced_synthesis); an ordered recovery sequence is a schema change best made with the unified accumulator." }
+./bench/iterations/004/reviews/codex-final.err:2448:      expect(done.outcome.recovery).toBe("forced_synthesis");
+./bench/iterations/004/reviews/codex-final.err:2477:      expect(done.outcome.recovery).toBe("forced_synthesis");
+./bench/iterations/004/reviews/iter-fixed2.diff:60:+> One aggregate **RunOutcome**, composed of one or more **ModelAttemptOutcome**s, with explicit
+./bench/iterations/004/reviews/iter-fixed2.diff:76:+(passed|failed|not_run|unknown), `ModelAttemptOutcome`, `RunOutcome` (attempts[], initialStopCause,
+./bench/iterations/004/reviews/iter-fixed2.diff:82:+Record each attempt as `ModelAttemptOutcome` → Thompson/quarantine (the fallback record at `:1400`
+./bench/iterations/004/reviews/iter-fixed2.diff:83:+becomes attempt N). Delete unconditional `router.recordSuccess?.()` at `:1518`; momentum records only
+./bench/iterations/004/reviews/iter-fixed2.diff:93:+`recovery:forced_synthesis`.
+./bench/iterations/004/reviews/iter-fixed2.diff:96:+`AgentEvent.done` gains `outcome: RunOutcome` additively (keep old fields). `orchestration-pipeline.ts`:
+./bench/iterations/004/reviews/iter-fixed2.diff:108:+previously ended empty returns a synthesized answer with `recovery:forced_synthesis`. Codex anchor +
+./bench/iterations/004/reviews/iter-fixed2.diff:331:+      expect(done.outcome.recovery).toBe("forced_synthesis");
+./bench/iterations/004/reviews/iter-fixed2.diff:360:+      expect(done.outcome.recovery).toBe("forced_synthesis");
+./bench/iterations/004/reviews/iter-fixed2.diff:705:+  type RunOutcome,
+./bench/iterations/004/reviews/iter-fixed2.diff:706:+  type ModelAttemptOutcome,
+./bench/iterations/004/reviews/iter-fixed2.diff:879:+   * RunOutcome carrying every attempt. Each fallback re-entry appends the
+./bench/iterations/004/reviews/iter-fixed2.diff:882:+  _attemptsSoFar?: ModelAttemptOutcome[];
+./bench/iterations/004/reviews/iter-fixed2.diff:885:+   * the root and propagated through recursion so RunOutcome.costUsd is the run
+./bench/iterations/004/reviews/iter-fixed2.diff:994:+    let recovery: RunOutcome["recovery"] | undefined;
+./bench/iterations/004/reviews/iter-fixed2.diff:1112:+          recovery = "forced_synthesis";
+./bench/iterations/004/reviews/iter-fixed2.diff:1157:+      const failedAttempt: ModelAttemptOutcome = {
+./bench/iterations/004/reviews/iter-fixed2.diff:1174:+          // emits the full attempt chain in its aggregate RunOutcome; mark
+./bench/iterations/004/reviews/iter-fixed2.diff:1176:+          _attemptsSoFar: [...(options._attemptsSoFar ?? []), failedAttempt],
+./bench/iterations/004/reviews/iter-fixed2.diff:1190:-    router.recordSuccess?.(decision.model.id);
+./bench/iterations/004/reviews/iter-fixed2.diff:1198:+    // RunOutcome below stitches it onto any upstream failed attempts.
+./bench/iterations/004/reviews/iter-fixed2.diff:1199:+    const thisAttempt: ModelAttemptOutcome = {
+./bench/iterations/004/reviews/iter-fixed2.diff:1213:+    // type. Previously recordSuccess fired unconditionally, before turnSuccess
+./bench/iterations/004/reviews/iter-fixed2.diff:1218:+      router.recordSuccess?.(decision.model.id, task.type);
+./bench/iterations/004/reviews/iter-fixed2.diff:1252:+    const allAttempts = [...(options._attemptsSoFar ?? []), thisAttempt];
+./bench/iterations/004/reviews/iter-fixed2.diff:1255:+    const aggregateRecovery: RunOutcome["recovery"] =
+./bench/iterations/004/reviews/iter-fixed2.diff:1257:+      (turnSuccess && (options._attemptsSoFar?.length ?? 0) > 0
+./bench/iterations/004/reviews/iter-fixed2.diff:1260:+    const runOutcome: RunOutcome = {
+./bench/iterations/004/reviews/iter-fixed2.diff:1478:+// One aggregate RunOutcome composed of one or more ModelAttemptOutcomes, with
+./bench/iterations/004/reviews/iter-fixed2.diff:1508:+export interface ModelAttemptOutcome {
+./bench/iterations/004/reviews/iter-fixed2.diff:1520:+export interface RunOutcome {
+./bench/iterations/004/reviews/iter-fixed2.diff:1523:+  attempts: ModelAttemptOutcome[];
+./bench/iterations/004/reviews/iter-fixed2.diff:1532:+    | "forced_synthesis"
+./bench/iterations/004/reviews/iter-fixed2.diff:1533:+    | "tool_nudge"
+./bench/iterations/004/reviews/iter-fixed2.diff:1534:+    | "verification_retry";
+./bench/iterations/004/reviews/iter-fixed2.diff:1557:+      outcome?: RunOutcome;
+./bench/iterations/004/reviews/codex-final2.err:14:Final confirmation. Your re-review of this repo's iteration-004 raised 3 P1s, now fixed in bench/iterations/004/reviews/iter-fixed2.diff: (a) result.response await inside forced synthesis is now Promise.race'd against the synthesis watchdog + caller signal, with an interrupted bail if the caller cancelled during metadata fetch; (b) shouldRetry now = truncated || (tool-using turn made calls but no final response) || isEmpty — so a _synthesized descendant with tool-only output no longer silently succeeds; (c) synthesis is skipped when costTracker.getRemainingBudget() is spent. Verify each resolved and confirm no new P0/P1. The remaining deferrals (#1 post-tool-text over-fire, #7 momentum timing, #8 full attempt accumulator, #9 ordered recovery) are outcome-metadata precision in a RunOutcome no surface consumes yet (verification/security/judge=not_run) and are iter-006 TurnController scope. Output ONLY JSON: {"fixes":[{"id":"a"|"b"|"c","status":"resolved"|"not-resolved","note":string}],"new_P0_P1":[]}
+./bench/iterations/004/reviews/codex-final2.err:83:+> One aggregate **RunOutcome**, composed of one or more **ModelAttemptOutcome**s, with explicit
+./bench/iterations/004/reviews/codex-final2.err:99:+(passed|failed|not_run|unknown), `ModelAttemptOutcome`, `RunOutcome` (attempts[], initialStopCause,
+./bench/iterations/004/reviews/codex-final2.err:105:+Record each attempt as `ModelAttemptOutcome` → Thompson/quarantine (the fallback record at `:1400`
+./bench/iterations/004/reviews/codex-final2.err:106:+becomes attempt N). Delete unconditional `router.recordSuccess?.()` at `:1518`; momentum records only
+./bench/iterations/004/reviews/codex-final2.err:116:+`recovery:forced_synthesis`.
+./bench/iterations/004/reviews/codex-final2.err:119:+`AgentEvent.done` gains `outcome: RunOutcome` additively (keep old fields). `orchestration-pipeline.ts`:
+./bench/iterations/004/reviews/codex-final2.err:131:+previously ended empty returns a synthesized answer with `recovery:forced_synthesis`. Codex anchor +
+./bench/iterations/004/reviews/codex-final2.err:286:/bin/zsh -lc "rg -n \"result\\.response|shouldRetry|RemainingBudget|forced synthesis|forced_synthesis|synthesis|Promise\\.race|caller\" bench/iterations/004/reviews/iter-fixed2.diff | sed -n '1,240p'" in /Users/justin.jilg/Projects/brainstorm
+./bench/iterations/004/reviews/codex-final2.err:296:93:+`recovery:forced_synthesis`.
+./bench/iterations/004/reviews/codex-final2.err:297:108:+previously ended empty returns a synthesized answer with `recovery:forced_synthesis`. Codex anchor +
+./bench/iterations/004/reviews/codex-final2.err:306:331:+      expect(done.outcome.recovery).toBe("forced_synthesis");
+./bench/iterations/004/reviews/codex-final2.err:309:360:+      expect(done.outcome.recovery).toBe("forced_synthesis");
+./bench/iterations/004/reviews/codex-final2.err:342:1112:+          recovery = "forced_synthesis";
+./bench/iterations/004/reviews/codex-final2.err:355:1532:+    | "forced_synthesis"
+./bench/iterations/004/reviews/codex-final2.err:412:+      expect(done.outcome.recovery).toBe("forced_synthesis");
+./bench/iterations/004/reviews/codex-final2.err:441:+      expect(done.outcome.recovery).toBe("forced_synthesis");
+./bench/iterations/004/reviews/codex-final2.err:631:+   * RunOutcome carrying every attempt. Each fallback re-entry appends the
+./bench/iterations/004/reviews/codex-final2.err:634:+  _attemptsSoFar?: ModelAttemptOutcome[];
+./bench/iterations/004/reviews/codex-final2.err:637:+   * the root and propagated through recursion so RunOutcome.costUsd is the run
+./bench/iterations/004/reviews/codex-final2.err:746:+    let recovery: RunOutcome["recovery"] | undefined;
+./bench/iterations/004/reviews/codex-final2.err:864:+          recovery = "forced_synthesis";
+./bench/iterations/004/reviews/codex-final2.err:909:+      const failedAttempt: ModelAttemptOutcome = {
+./bench/iterations/004/reviews/codex-final2.err:926:+          // emits the full attempt chain in its aggregate RunOutcome; mark
+./bench/iterations/004/reviews/codex-final2.err:928:+          _attemptsSoFar: [...(options._attemptsSoFar ?? []), failedAttempt],
+./bench/iterations/004/reviews/codex-final2.err:942:-    router.recordSuccess?.(decision.model.id);
+./bench/iterations/004/reviews/codex-final2.err:950:+    // RunOutcome below stitches it onto any upstream failed attempts.
+./bench/iterations/004/reviews/codex-final2.err:951:+    const thisAttempt: ModelAttemptOutcome = {
+./bench/iterations/004/reviews/codex-final2.err:970:+    // type. Previously recordSuccess fired unconditionally, before turnSuccess
+./bench/iterations/004/reviews/codex-final2.err:975:+      router.recordSuccess?.(decision.model.id, task.type);
+./bench/iterations/004/reviews/codex-final2.err:1009:+    const allAttempts = [...(options._attemptsSoFar ?? []), thisAttempt];
+./bench/iterations/004/reviews/codex-final2.err:1012:+    const aggregateRecovery: RunOutcome["recovery"] =
+./bench/iterations/004/reviews/codex-final2.err:1014:+      (turnSuccess && (options._attemptsSoFar?.length ?? 0) > 0
+./bench/iterations/004/reviews/codex-final2.err:1017:+    const runOutcome: RunOutcome = {
+./bench/iterations/004/reviews/codex-final2.err:1473:+  type RunOutcome,
+./bench/iterations/004/reviews/codex-final2.err:1474:+  type ModelAttemptOutcome,
+./bench/iterations/004/reviews/codex-final2.err:1982:    let recovery: RunOutcome["recovery"] | undefined;
+./bench/iterations/004/reviews/codex-final2.err:2101:          recovery = "forced_synthesis";
+./bench/iterations/004/reviews/codex-final2.err:2148:      breaker.recordSuccess();
+./bench/iterations/004/reviews/codex-final2.err:2259:  1673	      breaker.recordSuccess();
+./bench/iterations/004/reviews/codex-final2.err:2294:  1708	      const failedAttempt: ModelAttemptOutcome = {
+./bench/iterations/004/reviews/codex-final2.err:2338:  1752	          // emits the full attempt chain in its aggregate RunOutcome; mark
+./bench/iterations/004/reviews/codex-final2.err:2340:  1754	          _attemptsSoFar: [...(options._attemptsSoFar ?? []), failedAttempt],
+./bench/iterations/004/reviews/codex-final2.err:2432:  1845	    // RunOutcome below stitches it onto any upstream failed attempts.
+./bench/iterations/004/reviews/codex-final2.err:2433:  1846	    const thisAttempt: ModelAttemptOutcome = {
+./bench/iterations/004/reviews/codex-final2.err:2447:  1860	    // type. Previously recordSuccess fired unconditionally, before turnSuccess
+./bench/iterations/004/reviews/codex-final2.err:2452:  1865	      router.recordSuccess?.(decision.model.id, task.type);
+./bench/iterations/004/reviews/codex-final2.err:2735:  2148	    const allAttempts = [...(options._attemptsSoFar ?? []), thisAttempt];
+./bench/iterations/004/reviews/codex-final2.err:2738:  2151	    const aggregateRecovery: RunOutcome["recovery"] =
+./bench/iterations/004/reviews/codex-final2.err:2740:  2153	      (turnSuccess && (options._attemptsSoFar?.length ?? 0) > 0
+./bench/iterations/004/reviews/codex-final2.err:2743:  2156	    const runOutcome: RunOutcome = {
+./bench/iterations/004/reviews/codex-final2.err:2803:          recovery = "forced_synthesis";
+./bench/iterations/004/reviews/codex-final2.err:3085:201:      expect(done.outcome.recovery).toBe("forced_synthesis");
+./bench/iterations/004/reviews/codex-final2.err:3089:230:      expect(done.outcome.recovery).toBe("forced_synthesis");
+./bench/iterations/004/reviews/codex-final2.err:3118:bench/iterations/004/reviews/verdicts.json:30:        { "id": 7, "sev": "P1", "loc": "momentum recorded before nudge/verify decide", "verdict": "DEFERRED iter-006 — moving recordSuccess past the recursion risks double-counting with the child call's own momentum; entangled with the recursion architecture the TurnController unifies." },
+./bench/iterations/004/reviews/codex-final2.err:3120:bench/iterations/004/reviews/verdicts.json:32:        { "id": 9, "sev": "P1", "loc": "recovery prefers synthesis over fallback in A->B->synth", "verdict": "DEFERRED iter-006 — aggregate recovery is a single tag (fallback|forced_synthesis); an ordered recovery sequence is a schema change best made with the unified accumulator." }
+./bench/iterations/004/reviews/codex-final2.err:3139:Final confirmation. Your re-review of this repo's iteration-004 raised 3 P1s, now fixed in bench/iterations/004/reviews/iter-fixed2.diff: (a) result.response await inside forced synthesis is now Promise.race'd against the synthesis watchdog + caller signal, with an interrupted bail if the caller cancelled during metadata fetch; (b) shouldRetry now = truncated || (tool-using turn made calls but no final response) || isEmpty — so a _synthesized descendant with tool-only output no longer silently succeeds; (c) synthesis is skipped when costTracker.getRemainingBudget() is spent. Verify each resolved and confirm no new P0/P1. The remaining deferrals (#1 post-tool-text over-fire, #7 momentum timing, #8 full attempt accumulator, #9 ordered recovery) are outcome-metadata precision in a RunOutcome no surface consumes yet (verification/security/judge=not_run) and are iter-006 TurnController scope. Output ONLY JSON: {"fixes":[{"id":"a"|"b"|"c","status":"resolved"|"not-resolved","note":string}],"new_P0_P1":[]}
+./bench/iterations/004/reviews/codex-final2.err:3208:+> One aggregate **RunOutcome**, composed of one or more **ModelAttemptOutcome**s, with explicit
+./bench/iterations/004/reviews/codex-final2.err:3224:+(passed|failed|not_run|unknown), `ModelAttemptOutcome`, `RunOutcome` (attempts[], initialStopCause,
+./bench/iterations/004/reviews/codex-final2.err:3230:+Record each attempt as `ModelAttemptOutcome` → Thompson/quarantine (the fallback record at `:1400`
+./bench/iterations/004/reviews/codex-final2.err:3231:+becomes attempt N). Delete unconditional `router.recordSuccess?.()` at `:1518`; momentum records only
+./bench/iterations/004/reviews/codex-final2.err:3241:+`recovery:forced_synthesis`.
+./bench/iterations/004/reviews/codex-final2.err:3244:+`AgentEvent.done` gains `outcome: RunOutcome` additively (keep old fields). `orchestration-pipeline.ts`:
+./bench/iterations/004/reviews/codex-final2.err:3256:+previously ended empty returns a synthesized answer with `recovery:forced_synthesis`. Codex anchor +
+./bench/iterations/004/plan.md:8:> One aggregate **RunOutcome**, composed of one or more **ModelAttemptOutcome**s, with explicit
+./bench/iterations/004/plan.md:24:(passed|failed|not_run|unknown), `ModelAttemptOutcome`, `RunOutcome` (attempts[], initialStopCause,
+./bench/iterations/004/plan.md:30:Record each attempt as `ModelAttemptOutcome` → Thompson/quarantine (the fallback record at `:1400`
+./bench/iterations/004/plan.md:31:becomes attempt N). Delete unconditional `router.recordSuccess?.()` at `:1518`; momentum records only
+./bench/iterations/004/plan.md:41:`recovery:forced_synthesis`.
+./bench/iterations/004/plan.md:44:`AgentEvent.done` gains `outcome: RunOutcome` additively (keep old fields). `orchestration-pipeline.ts`:
+./bench/iterations/004/plan.md:52:previously ended empty returns a synthesized answer with `recovery:forced_synthesis`. Codex anchor +
+./bench/iterations/004/result.md:7:- **Types** (`packages/shared`): `StopCause`, `CheckStatus`, `ModelAttemptOutcome`, `RunOutcome`;
+./bench/iterations/004/result.md:17:  synthesis turn (recovery=forced_synthesis). The dead-end that killed two reviewer seats in iter-003.
+./bench/iterations/004/result.md:18:- **Aggregate RunOutcome**: per-attempt outcomes threaded through the fallback recursion, emitted via
+./bench/iterations/004/result.md:34:outcome-metadata precision in a `RunOutcome` no surface consumes yet (verification/security/judge are
+./bench/iterations/004/result.md:49:  accumulator, #9 ordered recovery). Make workflow/pipeline/revise-loop consume `RunOutcome`.
+./bench/iterations/003/reviews/codex.err:2393:  recordSuccess(modelId: string, taskType?: string): void {
+./bench/iterations/003/reviews/codex.err:2556:1505:    router.recordSuccess?.(decision.model.id);
+./bench/iterations/003/reviews/codex.err:2600:      breaker.recordSuccess();
+./bench/iterations/003/reviews/codex.err:2728:    router.recordSuccess?.(decision.model.id);
+./bench/iterations/003/reviews/codex.err:2826:      breaker.recordSuccess();
+./bench/iterations/003/reviews/codex-final.err:1849:      breaker.recordSuccess();
+./bench/iterations/003/reviews/codex-final.err:1996:    router.recordSuccess?.(decision.model.id);
+./bench/iterations/003/reviews/codex-final.err:2118:/bin/zsh -lc "rg -n 'recordSuccess|recordFailure' packages/router/src/router.ts packages/router/src -g '*.ts' | head -80 && sed -n '245,315p' packages/router/src/router.ts && rg -n 'loop.*whitespace|whitespace.*loop|empty response' packages/core/src/__tests__ -g '*.test.ts'" in /Users/justin.jilg/Projects/brainstorm
+./bench/iterations/003/reviews/codex-final.err:2121:packages/router/src/router.ts:233:  recordSuccess(modelId: string, taskType?: string): void {
+./bench/iterations/003/reviews/codex-final.err:2123:packages/router/src/router.ts:233:  recordSuccess(modelId: string, taskType?: string): void {
+./bench/iterations/003/reviews/codex-final.err:2320:      breaker.recordSuccess();
+./bench/iterations/006/reviews/codex.err:14:Review the diff at bench/iterations/006/reviews/iter-006-outcome.diff — three incremental fixes to the agent loop's RunOutcome aggregation (the outcome-accuracy findings deferred from iter-004, done WITHOUT a full TurnController extraction). (#7) router.recordSuccess (momentum) moved from the success block (which runs BEFORE Phase-7 tool-nudge and Phase-3 verify recursion) to the true terminal just before the done yield, guarded by runOutcome.status===succeeded, so a nudged/verify-failed turn no longer credits momentum and doesn't double-count with the recursive child. (#8) thisAttempt (the current ModelAttemptOutcome) is now threaded into _attemptsSoFar for the nudge and verify recursions too (previously only fallback), so the terminal aggregate carries every invocation. (#9) RunOutcome.recovery changed from a single enum to an ordered array; each recursion appends its action (fallback/tool_nudge/verification_retry) into _recoverySoFar and the terminal appends forced_synthesis, so fallback-then-synthesis records both in order instead of erasing the fallback. Verify each is correct: no double-counting, no lost/duplicated attempts, recovery order accurate, no new races. Output ONLY JSON: {"fixes":[{"id":7|8|9,"status":"resolved"|"not-resolved","note":string}],"new_P0_P1":[]}
+./bench/iterations/001/reviews/codex.err:2328:  recordSuccess(modelId: string, taskType?: string): void {
+./bench/SCOREBOARD.md:14:| 4 | 2026-07-18 | CONSOLIDATION ARC begins. Two-level outcome contract (RunOutcome ← ModelAttemptOutcome), P0 learning-signal fix, invokeModelAttempt seam, forced synthesis, pipeline one-terminal-event | not run (kernel iteration; eval is not a gate this arc — see result) | not run | 0 | LIVE PROOF: step-capped gpt-oss that returned text:'' in iter-3 now synthesizes a real answer — and the proof drove broadening the trigger. Codex anchor: 14 findings over 3 rounds, 12 fixed w/ tests, 4 deferred to iter-006 (TurnController). core 625 green; as-any 295/295; contract-check green. |
+./bench/SCOREBOARD.md:17:| 7 | 2026-07-18 | iter-006(partial): resolved 3 of 4 iter-004 deferred findings WITHOUT full TurnController — #7 momentum recorded only at true terminal (not before nudge/verify recursion), #8 attempts accumulator threaded through nudge/verify (not just fallback), #9 recovery is now an ordered SEQUENCE (fallback→synthesis no longer erases the fallback) | not run | 0 new | #1 (post-tool-text) kept conservative by choice. RunOutcome not yet consumed by surfaces, so type change safe. core 627 green; as-any 295/295. Remaining arc: full TurnController extraction, 005.6 #1/#5 two-key redesign. |
+./packages/tools/src/tool-health.ts:17:  recordSuccess(toolName: string): void {
+./packages/tools/src/registry.ts:245:              getToolHealthTracker().recordSuccess(name);
+./packages/core/src/__tests__/forced-synthesis.test.ts:202:      expect(done.outcome.recovery).toEqual(["forced_synthesis"]);
+./packages/core/src/__tests__/forced-synthesis.test.ts:231:      expect(done.outcome.recovery).toEqual(["forced_synthesis"]);
+./packages/core/src/__tests__/forced-synthesis.test.ts:302:    const spy = vi.spyOn(ctx.router, "recordSuccess");
+./packages/core/src/__tests__/forced-synthesis.test.ts:331:    const spy = vi.spyOn(ctx.router, "recordSuccess");
+./packages/core/src/agent/loop.ts:34:  type RunOutcome,
+./packages/core/src/agent/loop.ts:35:  type ModelAttemptOutcome,
+./packages/core/src/agent/loop.ts:562:   * RunOutcome carrying every attempt. Each fallback re-entry appends the
+./packages/core/src/agent/loop.ts:565:  _attemptsSoFar?: ModelAttemptOutcome[];
+./packages/core/src/agent/loop.ts:568:   * tool_nudge, verification_retry), so the terminal level emits the full
+./packages/core/src/agent/loop.ts:571:  _recoverySoFar?: NonNullable<RunOutcome["recovery"]>;
+./packages/core/src/agent/loop.ts:574:   * the root and propagated through recursion so RunOutcome.costUsd is the run
+./packages/core/src/agent/loop.ts:1684:      breaker.recordSuccess();
+./packages/core/src/agent/loop.ts:1719:      const failedAttempt: ModelAttemptOutcome = {
+./packages/core/src/agent/loop.ts:1763:          // emits the full attempt chain in its aggregate RunOutcome; mark
+./packages/core/src/agent/loop.ts:1765:          _attemptsSoFar: [...(options._attemptsSoFar ?? []), failedAttempt],
+./packages/core/src/agent/loop.ts:1771:          _recoverySoFar: [...(options._recoverySoFar ?? []), "fallback" as const],
+./packages/core/src/agent/loop.ts:1857:    // RunOutcome below stitches it onto any upstream failed attempts.
+./packages/core/src/agent/loop.ts:1858:    const thisAttempt: ModelAttemptOutcome = {
+./packages/core/src/agent/loop.ts:1871:    // NOTE: momentum (router.recordSuccess) is deliberately NOT recorded here.
+./packages/core/src/agent/loop.ts:1992:          _attemptsSoFar: [...(options._attemptsSoFar ?? []), thisAttempt],
+./packages/core/src/agent/loop.ts:1993:          _recoverySoFar: [...(options._recoverySoFar ?? []), "tool_nudge" as const],
+./packages/core/src/agent/loop.ts:2098:            _attemptsSoFar: [...(options._attemptsSoFar ?? []), thisAttempt],
+./packages/core/src/agent/loop.ts:2099:            _recoverySoFar: [
+./packages/core/src/agent/loop.ts:2100:              ...(options._recoverySoFar ?? []),
+./packages/core/src/agent/loop.ts:2101:              "verification_retry" as const,
+./packages/core/src/agent/loop.ts:2169:    const allAttempts = [...(options._attemptsSoFar ?? []), thisAttempt];
+./packages/core/src/agent/loop.ts:2171:    // appended as they happened) plus a forced_synthesis if THIS terminal turn
+./packages/core/src/agent/loop.ts:2173:    // "forced_synthesis"] instead of a single tag that erased the fallback.
+./packages/core/src/agent/loop.ts:2174:    const recoverySeq: NonNullable<RunOutcome["recovery"]> = [
+./packages/core/src/agent/loop.ts:2175:      ...(options._recoverySoFar ?? []),
+./packages/core/src/agent/loop.ts:2176:      ...(didSynthesize ? (["forced_synthesis"] as const) : []),
+./packages/core/src/agent/loop.ts:2179:    const runOutcome: RunOutcome = {
+./packages/core/src/agent/loop.ts:2202:      router.recordSuccess?.(decision.model.id, task.type);
+./packages/shared/src/types.ts:209:// One aggregate RunOutcome composed of one or more ModelAttemptOutcomes, with
+./packages/shared/src/types.ts:239:export interface ModelAttemptOutcome {
+./packages/shared/src/types.ts:251:export interface RunOutcome {
+./packages/shared/src/types.ts:254:  attempts: ModelAttemptOutcome[];
+./packages/shared/src/types.ts:267:    "fallback" | "forced_synthesis" | "tool_nudge" | "verification_retry"
+./packages/shared/src/types.ts:361:      outcome?: RunOutcome;
+./packages/core/src/security/circuit-breaker.ts:88:  recordSuccess(): void {
+
+exec
+/bin/zsh -lc "sed -n '261,620p' bench/iterations/006/reviews/iter-006-outcome.diff" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+exec
+/bin/zsh -lc "nl -ba packages/core/src/agent/loop.ts | sed -n '1450,2235p'
+nl -ba packages/router/src/router.ts | sed -n '185,255p'
+nl -ba packages/shared/src/types.ts | sed -n '235,280p'" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+  1450	
+  1451	    // ── Empty/blocked response detection + retry with fallback model ──
+  1452	    // Whitespace-only text counts as empty: models occasionally stream a
+  1453	    // bare newline (or reasoning-only turns leak a blank content delta),
+  1454	    // which previously classified the turn as successful — routing recorded
+  1455	    // a success and downstream consumers (workflow artifact validation)
+  1456	    // failed on an "empty" artifact the loop had called good.
+  1457	    const isEmpty =
+  1458	      (textDeltaCount === 0 || accumulatedText.trim().length === 0) &&
+  1459	      toolCallCount === 0;
+  1460	
+  1461	    // ── Truncated tool-call detection ──
+  1462	    // Distinct from an empty turn: here the model INTENDED to call a tool but
+  1463	    // the stream ended before a dispatchable tool-call materialized. Two
+  1464	    // signals, either of which is sufficient:
+  1465	    //   1. pendingToolInputs > 0 — a tool-input-start never resolved into a
+  1466	    //      tool-call (parser cut off mid-assembly).
+  1467	    //   2. finishReason === "tool-calls" but toolCallCount === 0 — the provider
+  1468	    //      reported it stopped to make tool calls, yet emitted none.
+  1469	    // A duplicate terminal finish (finishPartCount > 1), which BR has been seen
+  1470	    // to send, is the usual trigger for (1)/(2) — surfaced in the diagnostic.
+  1471	    // We must NOT let this record as a silent empty-success: it retries.
+  1472	    const toolCallTruncated =
+  1473	      pendingToolInputs > 0 ||
+  1474	      (finishReason === "tool-calls" && toolCallCount === 0);
+  1475	
+  1476	    if (toolCallTruncated) {
+  1477	      log.warn(
+  1478	        {
+  1479	          model: decision.model.id,
+  1480	          pendingToolInputs,
+  1481	          finishReason,
+  1482	          finishPartCount,
+  1483	          textDeltas: textDeltaCount,
+  1484	          toolCalls: toolCallCount,
+  1485	        },
+  1486	        "Stream truncated mid-tool-call — tool-call assembly incomplete",
+  1487	      );
+  1488	      trajectory?.recordError({
+  1489	        message: `Truncated tool-call assembly (pending=${pendingToolInputs}, finishReason=${finishReason ?? "none"}, finishParts=${finishPartCount})`,
+  1490	        model: decision.model.id,
+  1491	      });
+  1492	      yield {
+  1493	        type: "loop-warning" as const,
+  1494	        message: `Stream from ${decision.model.id} truncated mid-tool-call (finishReason=${finishReason ?? "none"}, ${pendingToolInputs} pending). Retrying.`,
+  1495	      };
+  1496	    }
+  1497	
+  1498	    // ── Forced synthesis: tool work done, but no final answer written ──
+  1499	    // A model (often a coder, or a reasoning model whose answer leaked into
+  1500	    // reasoning_content) can make tool calls and then STOP — whether by
+  1501	    // exhausting its step budget or by finishing early — WITHOUT ever writing
+  1502	    // a final answer. Such a turn is not `isEmpty` (it made tool calls) yet has
+  1503	    // no usable response; it would otherwise record as a silent success with
+  1504	    // empty text, which is exactly what dead-ended the reviewer seats + gpt-oss
+  1505	    // eval step-cap failures + empty workflow artifacts this iteration targets.
+  1506	    //
+  1507	    // Live dogfooding (gpt-oss, iter-004) showed the hard-cap case is only HALF
+  1508	    // of it — the model frequently stops EARLY after tool calls with no
+  1509	    // summary. So trigger on the general condition: made tool calls, has no
+  1510	    // final response, wasn't truncated. NOT producedArtifacts (edits ARE an
+  1511	    // artifact). Run exactly ONE tools-disabled synthesis turn through the
+  1512	    // shared seam; `initialStopCause` preserves how it actually stopped.
+  1513	    // hasFinalResponse: the turn produced usable text. (A stricter "text AFTER
+  1514	    // the last tool call" signal — Codex's finding #1 — would also flag
+  1515	    // narrate-then-act turns that legitimately conclude on the next turn as
+  1516	    // needing synthesis, over-firing; the sharper distinction is deferred to
+  1517	    // the iter-006 TurnController, which models a turn's phases explicitly.)
+  1518	    let hasFinalResponse = accumulatedText.trim().length > 0;
+  1519	    let didSynthesize = false;
+  1520	    let synthesisAttempted = options._synthesized ?? false;
+  1521	    const initialStopCause = classifyStopCause({
+  1522	      isEmpty,
+  1523	      toolCallTruncated,
+  1524	      stepsCompleted,
+  1525	      maxSteps: maxStepsForRun,
+  1526	      lastStepFinishReason,
+  1527	      providerFinishReason: finishReason,
+  1528	    });
+  1529	    // Budget guard: synthesis is a direct extra model call that bypasses the
+  1530	    // router — don't start it once the hard session budget is spent.
+  1531	    const synthesisBudgetOk = (() => {
+  1532	      const remaining = costTracker.getRemainingBudget();
+  1533	      return remaining === null || remaining > 0;
+  1534	    })();
+  1535	    const needsSynthesis =
+  1536	      shouldUseTools && // only a genuine tool-using session can lack a summary
+  1537	      !hasFinalResponse &&
+  1538	      toolCallCount > 0 &&
+  1539	      !toolCallTruncated &&
+  1540	      !synthesisAttempted &&
+  1541	      synthesisBudgetOk;
+  1542	    if (needsSynthesis) {
+  1543	      synthesisAttempted = true; // once per logical run, even on failure
+  1544	      // Own AbortController linked to the caller signal so a hung synthesis
+  1545	      // stream can't hang the run; distinct timeout vs caller-cancellation.
+  1546	      const SYNTH_TIMEOUT_MS = 60_000;
+  1547	      const synthTimeoutController = new AbortController();
+  1548	      const synthTimer = setTimeout(
+  1549	        () => synthTimeoutController.abort(),
+  1550	        SYNTH_TIMEOUT_MS,
+  1551	      );
+  1552	      const synthSignal = linkSignals(
+  1553	        synthTimeoutController.signal,
+  1554	        options.signal,
+  1555	      );
+  1556	      try {
+  1557	        yield {
+  1558	          type: "loop-warning" as const,
+  1559	          message: `${decision.model.id} made ${toolCallCount} tool call(s) but wrote no final answer (stop: ${initialStopCause}) — running one tools-disabled synthesis turn.`,
+  1560	        };
+  1561	        // Give synthesis the model's OWN work to summarize: the assistant
+  1562	        // tool-call + tool-result messages from the completed invocation, not
+  1563	        // just the input history it can't see its work in.
+  1564	        let synthContext = messagesForApi as Array<{
+  1565	          role: string;
+  1566	          content: unknown;
+  1567	        }>;
+  1568	        try {
+  1569	          // Bound the response-metadata await against the synthesis watchdog +
+  1570	          // caller signal — result.response can itself hang (a stalled/errored
+  1571	          // stream), and an unbounded await here would defeat the watchdog.
+  1572	          const resp = await Promise.race([
+  1573	            result.response,
+  1574	            new Promise<null>((resolve) => {
+  1575	              synthSignal.addEventListener("abort", () => resolve(null), {
+  1576	                once: true,
+  1577	              });
+  1578	            }),
+  1579	          ]);
+  1580	          const respMessages = (resp as { messages?: unknown[] } | null)
+  1581	            ?.messages;
+  1582	          if (Array.isArray(respMessages) && respMessages.length > 0) {
+  1583	            synthContext = [
+  1584	              ...synthContext,
+  1585	              ...(respMessages as Array<{ role: string; content: unknown }>),
+  1586	            ];
+  1587	          }
+  1588	        } catch {
+  1589	          /* response unavailable — fall back to input history */
+  1590	        }
+  1591	        // If the caller cancelled while we were fetching response metadata,
+  1592	        // stop before spending another model call.
+  1593	        if (options.signal?.aborted) {
+  1594	          clearTimeout(synthTimer);
+  1595	          yield { type: "interrupted" };
+  1596	          return;
+  1597	        }
+  1598	        const synthResult = invokeModelAttempt({
+  1599	          providerModel: modelId,
+  1600	          modelEntry: decision.model,
+  1601	          system: systemForApiNormalized,
+  1602	          messages: [
+  1603	            ...synthContext,
+  1604	            {
+  1605	              role: "user",
+  1606	              content:
+  1607	                "You have reached your tool-use budget. Do NOT call any more tools. " +
+  1608	                "Using only the work you have already done, write your final answer/result now.",
+  1609	            },
+  1610	          ],
+  1611	          abortSignal: synthSignal,
+  1612	          maxSteps: 1,
+  1613	          metadataHeader,
+  1614	        });
+  1615	        const synthText = (await synthResult.text)?.trim() ?? "";
+  1616	        // Record synthesis cost regardless of whether it produced text — an
+  1617	        // empty synthesis is still billable.
+  1618	        try {
+  1619	          const u = await synthResult.usage;
+  1620	          costTracker.record({
+  1621	            sessionId,
+  1622	            modelId: decision.model.id,
+  1623	            provider: decision.model.provider,
+  1624	            inputTokens: u?.inputTokens ?? 0,
+  1625	            outputTokens: u?.outputTokens ?? 0,
+  1626	            cachedTokens: 0,
+  1627	            taskType: task.type,
+  1628	            projectPath: options.projectPath,
+  1629	            pricing: decision.model.pricing,
+  1630	          });
+  1631	        } catch {
+  1632	          /* usage/cost best-effort */
+  1633	        }
+  1634	        if (synthText) {
+  1635	          accumulatedText += (accumulatedText ? "\n\n" : "") + synthText;
+  1636	          hasFinalResponse = true;
+  1637	          didSynthesize = true;
+  1638	          yield {
+  1639	            type: "text-delta",
+  1640	            delta: normalizeInsightMarkers(synthText),
+  1641	          };
+  1642	        }
+  1643	      } catch (synthErr: any) {
+  1644	        // A caller cancellation must propagate as interrupted, not be
+  1645	        // swallowed into a recovered "done".
+  1646	        if (synthErr?.name === "AbortError" || options.signal?.aborted) {
+  1647	          clearTimeout(synthTimer);
+  1648	          if (options.signal?.aborted) {
+  1649	            yield { type: "interrupted" };
+  1650	            return;
+  1651	          }
+  1652	          // else: our own synthesis timeout fired — fall through as a failed
+  1653	          // synthesis (hasFinalResponse stays false → handled below).
+  1654	        }
+  1655	        log.warn(
+  1656	          { err: synthErr, model: decision.model.id },
+  1657	          "Forced synthesis turn failed — treating as no final response",
+  1658	        );
+  1659	      } finally {
+  1660	        clearTimeout(synthTimer);
+  1661	      }
+  1662	    }
+  1663	
+  1664	    // A turn needs a retry when a tool-call was truncated, OR a genuine
+  1665	    // tool-using turn made tool calls but produced no final response (whether
+  1666	    // synthesis ran-and-failed this turn OR was already spent upstream by a
+  1667	    // _synthesized descendant — either way a tool-only turn with no answer is
+  1668	    // not a success). Non-tool turns fall back to the classic empty signal.
+  1669	    const toolTurnWithoutAnswer =
+  1670	      shouldUseTools && toolCallCount > 0 && !hasFinalResponse;
+  1671	    const shouldRetry =
+  1672	      toolCallTruncated || toolTurnWithoutAnswer || isEmpty;
+  1673	
+  1674	    // Record circuit breaker outcome for this model.
+  1675	    // Empty response / truncated tool-call = failure (nothing usable).
+  1676	    // Non-empty & complete = success (closes half-open circuits, resets
+  1677	    // consecutive failures).
+  1678	    const breaker = getLLMCircuit(decision.model.id);
+  1679	    if (shouldRetry) {
+  1680	      breaker.recordFailure(
+  1681	        toolCallTruncated ? "truncated_tool_call" : "empty_response",
+  1682	      );
+  1683	    } else {
+  1684	      breaker.recordSuccess();
+  1685	    }
+  1686	    // Build fallback list: use decision.fallbacks, or generate from registry if empty
+  1687	    let fallbacks = decision.fallbacks;
+  1688	    if (fallbacks.length === 0 && shouldRetry) {
+  1689	      // Fallback models for empty responses — configurable via config.routing.fallbackModels
+  1690	      const RETRY_MODELS: string[] = (config as any).routing
+  1691	        ?.fallbackModels ?? [
+  1692	        "anthropic/claude-sonnet-4.6",
+  1693	        "openai/gpt-5.4",
+  1694	        "anthropic/claude-haiku-4.5",
+  1695	      ];
+  1696	      fallbacks = RETRY_MODELS.filter((id: string) => id !== decision.model.id)
+  1697	        .map((id: string) => options.registry.getModel(id))
+  1698	        .filter((m): m is ModelEntry => m != null && m.status === "available");
+  1699	    }
+  1700	
+  1701	    const MAX_FALLBACK_DEPTH = 2;
+  1702	    const retryDepth = options._retryDepth ?? 0;
+  1703	    const modelsTried = [...(options._modelsTried ?? []), decision.model.id];
+  1704	
+  1705	    if (
+  1706	      shouldRetry &&
+  1707	      fallbacks.length > 0 &&
+  1708	      retryDepth < MAX_FALLBACK_DEPTH
+  1709	    ) {
+  1710	      const reason = toolCallTruncated
+  1711	        ? "truncated_tool_call"
+  1712	        : "empty_response";
+  1713	      router.recordFailure(decision.model.id, reason);
+  1714	      // Record failure for Thompson sampling on fallback path
+  1715	      const fallbackLatencyMs = Date.now() - turnStartMs;
+  1716	      recordOutcome(task.type, decision.model.id, false, fallbackLatencyMs, 0);
+  1717	      // This failed attempt's per-model outcome — carried into the fallback
+  1718	      // so the eventual successful level emits it in the aggregate.
+  1719	      const failedAttempt: ModelAttemptOutcome = {
+  1720	        modelId: decision.model.id,
+  1721	        taskType: task.type,
+  1722	        status: "failed",
+  1723	        stopCause: initialStopCause,
+  1724	        providerFinishReason: finishReason,
+  1725	        latencyMs: fallbackLatencyMs,
+  1726	        costUsd: costTracker.getSessionCost() - sessionCostBefore,
+  1727	      };
+  1728	      if (options.routingOutcomeRepo) {
+  1729	        try {
+  1730	          options.routingOutcomeRepo.record(
+  1731	            decision.model.id,
+  1732	            task.type,
+  1733	            false,
+  1734	            fallbackLatencyMs,
+  1735	            0,
+  1736	          );
+  1737	        } catch (outcomeErr) {
+  1738	          log.warn({ err: outcomeErr }, "Failed to persist routing outcome");
+  1739	        }
+  1740	      }
+  1741	      // Pick next fallback that hasn't been tried yet
+  1742	      const fallbackModel = fallbacks.find(
+  1743	        (f: { id: string }) => !modelsTried.includes(f.id),
+  1744	      );
+  1745	      if (fallbackModel) {
+  1746	        yield {
+  1747	          type: "model-retry" as const,
+  1748	          fromModel: decision.model.id,
+  1749	          toModel: fallbackModel.id,
+  1750	          reason,
+  1751	        };
+  1752	
+  1753	        // Retry with fallback model — increment depth and track models tried
+  1754	        yield* runAgentLoop(messages, {
+  1755	          ...options,
+  1756	          preferredModelId: fallbackModel.id,
+  1757	          _retryDepth: retryDepth + 1,
+  1758	          _modelsTried: modelsTried,
+  1759	          // A forced tool-call is scoped to a single nudge retry; never carry
+  1760	          // it into an unrelated fallback turn.
+  1761	          _forceToolChoice: false,
+  1762	          // Carry this failed attempt forward so the successful fallback level
+  1763	          // emits the full attempt chain in its aggregate RunOutcome; mark
+  1764	          // recovery=fallback there.
+  1765	          _attemptsSoFar: [...(options._attemptsSoFar ?? []), failedAttempt],
+  1766	          // Synthesis is once per logical run — a fallback model must not
+  1767	          // synthesize again if this attempt already did.
+  1768	          _synthesized: synthesisAttempted,
+  1769	          // Preserve the run-cost baseline across the whole fallback chain.
+  1770	          _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
+  1771	          _recoverySoFar: [...(options._recoverySoFar ?? []), "fallback" as const],
+  1772	        } as any);
+  1773	        return;
+  1774	      }
+  1775	    }
+  1776	
+  1777	    // All retries exhausted — yield structured error so caller can surface it.
+  1778	    // Distinguish a genuinely empty turn from a truncated tool-call so the
+  1779	    // operator knows whether the model said nothing or was cut off mid-action.
+  1780	    if (shouldRetry) {
+  1781	      yield {
+  1782	        type: "fallback-exhausted" as const,
+  1783	        modelsTried,
+  1784	        reason: toolCallTruncated
+  1785	          ? "All fallback models truncated their tool-call streams"
+  1786	          : "All fallback models returned empty responses",
+  1787	      };
+  1788	    }
+  1789	
+  1790	    // Extract gateway response headers (X-BR-*) for cost reconciliation and telemetry.
+  1791	    // Use a timeout to prevent hanging if the response promise never resolves
+  1792	    // (happens when the stream errored on the guardian SSE event).
+  1793	    // Caller-owned timer so the abort listener is released once the race is
+  1794	    // decided — otherwise it fires 5s later (on every turn where headers
+  1795	    // resolved under 5s — i.e. almost every turn) and retains the closure.
+  1796	    const HEADERS_TIMEOUT_MS = 5000;
+  1797	    let headersTimedOut = false;
+  1798	    const headersTimeoutController = new AbortController();
+  1799	    const headersTimeoutTimer = setTimeout(
+  1800	      () => headersTimeoutController.abort(),
+  1801	      HEADERS_TIMEOUT_MS,
+  1802	    );
+  1803	    try {
+  1804	      let response: Awaited<typeof result.response> | null;
+  1805	      try {
+  1806	        response = await Promise.race([
+  1807	          result.response,
+  1808	          new Promise<null>((resolve) => {
+  1809	            headersTimeoutController.signal.addEventListener(
+  1810	              "abort",
+  1811	              () => {
+  1812	                headersTimedOut = true;
+  1813	                resolve(null);
+  1814	              },
+  1815	              { once: true },
+  1816	            );
+  1817	          }),
+  1818	        ]);
+  1819	      } finally {
+  1820	        clearTimeout(headersTimeoutTimer);
+  1821	      }
+  1822	      if (headersTimedOut) {
+  1823	        // Cost reconciliation is skipped for this turn — surface it instead of
+  1824	        // silently dropping the gateway feedback.
+  1825	        log.warn(
+  1826	          { model: decision.model.id, timeoutMs: HEADERS_TIMEOUT_MS },
+  1827	          "Gateway response headers timed out; cost reconciliation skipped",
+  1828	        );
+  1829	      } else if (response?.headers) {
+  1830	        const feedback = parseGatewayHeaders(response.headers);
+  1831	        if (Object.keys(feedback).length > 0) {
+  1832	          yield {
+  1833	            type: "gateway-feedback",
+  1834	            feedback: feedback as GatewayFeedbackData,
+  1835	          };
+  1836	
+  1837	          // Reconcile actual cost from gateway if available (PR #5)
+  1838	          if (feedback.actualCost !== undefined) {
+  1839	            costTracker.reconcile(sessionId, feedback.actualCost);
+  1840	          }
+  1841	        }
+  1842	      }
+  1843	    } catch (err) {
+  1844	      // Gateway headers not available (local models) — non-fatal, but log for triage.
+  1845	      log.debug(
+  1846	        { err, model: decision.model.id },
+  1847	        "Gateway headers unavailable",
+  1848	      );
+  1849	    }
+  1850	
+  1851	    // Record routing outcome for Thompson sampling (in-memory + DB persistence)
+  1852	    const turnLatencyMs = Date.now() - turnStartMs;
+  1853	    const turnSuccess = !shouldRetry;
+  1854	    const turnCost = costTracker.getSessionCost() - sessionCostBefore;
+  1855	
+  1856	    // This attempt's per-model outcome (feeds routing learning). The aggregate
+  1857	    // RunOutcome below stitches it onto any upstream failed attempts.
+  1858	    const thisAttempt: ModelAttemptOutcome = {
+  1859	      modelId: decision.model.id,
+  1860	      taskType: task.type,
+  1861	      status: turnSuccess ? "succeeded" : "failed",
+  1862	      // Always the classified cause — a failed attempt that truncated /
+  1863	      // hit output_limit / was capped keeps that evidence, not a blanket
+  1864	      // empty_output.
+  1865	      stopCause: initialStopCause,
+  1866	      providerFinishReason: finishReason,
+  1867	      latencyMs: turnLatencyMs,
+  1868	      costUsd: turnCost,
+  1869	    };
+  1870	
+  1871	    // NOTE: momentum (router.recordSuccess) is deliberately NOT recorded here.
+  1872	    // This point is BEFORE the Phase-7 tool-nudge and Phase-3 verify blocks,
+  1873	    // which may `return` after recursing into a corrective re-run. Recording
+  1874	    // momentum here would credit a turn that then gets nudged or fails
+  1875	    // verification — and double-count with the recursive child's own momentum.
+  1876	    // It is recorded once, at the true terminal (just before `done`), only when
+  1877	    // no nudge/verify recursion took over. recordOutcome (Thompson, per-attempt)
+  1878	    // DOES belong here — each model attempt is its own routing datapoint.
+  1879	    recordOutcome(
+  1880	      task.type,
+  1881	      decision.model.id,
+  1882	      turnSuccess,
+  1883	      turnLatencyMs,
+  1884	      turnCost,
+  1885	    );
+  1886	    if (options.routingOutcomeRepo) {
+  1887	      try {
+  1888	        options.routingOutcomeRepo.record(
+  1889	          decision.model.id,
+  1890	          task.type,
+  1891	          turnSuccess,
+  1892	          turnLatencyMs,
+  1893	          turnCost,
+  1894	        );
+  1895	      } catch (e) {
+  1896	        log.warn({ err: e }, "Failed to persist routing outcome to DB");
+  1897	      }
+  1898	    }
+  1899	
+  1900	    // ── Phase 7: tool-use enforcement (narration → forced tool call) ────
+  1901	    // A weak model may NARRATE a tool action ("Let me read config.ts") and
+  1902	    // then stop WITHOUT emitting the call. Such a turn is not empty and not a
+  1903	    // truncated tool-call, so it records as turnSuccess and would silently
+  1904	    // complete. When enabled, and only when the turn (a) stopped on its own
+  1905	    // (finishReason !== "tool-calls"), (b) made zero tool calls, (c) has tools
+  1906	    // available to call, and (d) its text reads as an un-acted tool intent, we
+  1907	    // push a corrective user-role nudge and RE-RUN with toolChoice="required"
+  1908	    // so a real call is forced. Guards (mirroring the verify block below):
+  1909	    //   - opt-in-safe: fires only on this failure state, DEFAULT enabled=true,
+  1910	    //     so well-behaved models never trigger it (set enabled:false for exact
+  1911	    //     legacy behavior),
+  1912	    //   - bounded by maxNudges to prevent infinite re-prompting,
+  1913	    //   - gated on remaining budget (same 20% threshold as verify/budget-warn),
+  1914	    //   - placed BEFORE verify: a narrated turn wrote no files, so verify would
+  1915	    //     skip it anyway — and only ONE recursion+return runs per turn, so the
+  1916	    //     two corrective mechanisms cannot compound into an unbounded loop.
+  1917	    const teEnabled =
+  1918	      options.toolEnforcement?.enabled ??
+  1919	      config.general?.toolEnforcement?.enabled ??
+  1920	      true;
+  1921	    const teMaxNudges =
+  1922	      options.toolEnforcement?.maxNudges ??
+  1923	      config.general?.toolEnforcement?.maxNudges ??
+  1924	      2;
+  1925	    const nudgeDepth = options._nudgeDepth ?? 0;
+  1926	
+  1927	    if (
+  1928	      teEnabled &&
+  1929	      turnSuccess &&
+  1930	      toolCallCount === 0 &&
+  1931	      finishReason !== "tool-calls" &&
+  1932	      !!finalTools &&
+  1933	      nudgeDepth < teMaxNudges &&
+  1934	      !options.signal?.aborted &&
+  1935	      detectNarratedToolIntent(accumulatedText)
+  1936	    ) {
+  1937	      // Budget guard — a nudge is a full extra model turn. Reuse the same
+  1938	      // 20%-remaining threshold verify/budget-warning use; skip rather than
+  1939	      // risk blowing config.budget.perSession.
+  1940	      const nudgeBudgetRemaining = costTracker.getRemainingBudget();
+  1941	      const nudgeSessionLimit = (config.budget as any)?.perSession;
+  1942	      const nudgeBudgetTooLow =
+  1943	        nudgeBudgetRemaining !== null &&
+  1944	        nudgeSessionLimit &&
+  1945	        nudgeBudgetRemaining <= nudgeSessionLimit * 0.2;
+  1946	
+  1947	      if (nudgeBudgetTooLow) {
+  1948	        log.warn(
+  1949	          {
+  1950	            remaining: nudgeBudgetRemaining,
+  1951	            sessionLimit: nudgeSessionLimit,
+  1952	          },
+  1953	          "tool-use nudge skipped — remaining budget below 20% threshold",
+  1954	        );
+  1955	      } else {
+  1956	        const nextNudge = nudgeDepth + 1;
+  1957	        log.info(
+  1958	          {
+  1959	            model: decision.model.id,
+  1960	            iteration: nextNudge,
+  1961	            maxNudges: teMaxNudges,
+  1962	          },
+  1963	          "Model narrated a tool action without calling it — nudging with forced tool call",
+  1964	        );
+  1965	        yield {
+  1966	          type: "tool-nudge" as const,
+  1967	          iteration: nextNudge,
+  1968	          maxNudges: teMaxNudges,
+  1969	        };
+  1970	        // Feed the correction back as a user-role turn and re-run, mirroring
+  1971	        // the verify self-recursion below. _forceToolChoice compels a real
+  1972	        // call on the retry; it is scoped to that single re-entry (the verify
+  1973	        // and fallback recursions explicitly clear it, so the model can still
+  1974	        // finish normally afterwards).
+  1975	        //
+  1976	        // Do NOT force on the TERMINAL retry: when `nextNudge === teMaxNudges`
+  1977	        // the re-entry can no longer nudge again (`nudgeDepth < teMaxNudges`
+  1978	        // fails there), so whatever it emits is ACCEPTED as the turn's finish.
+  1979	        // Forcing tools on that accepted turn would compel it into a tool call
+  1980	        // and rob the model of a clean text answer. Only force while a further
+  1981	        // corrective opportunity still remains.
+  1982	        const forceOnRetry = nextNudge < teMaxNudges;
+  1983	        messages.push({ role: "user", content: buildToolUseCorrection() });
+  1984	        yield* runAgentLoop(messages, {
+  1985	          ...options,
+  1986	          _nudgeDepth: nextNudge,
+  1987	          _forceToolChoice: forceOnRetry,
+  1988	          _synthesized: synthesisAttempted,
+  1989	          _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
+  1990	          // Carry this invocation into the aggregate so the terminal run
+  1991	          // outcome includes the nudge-superseded attempt, not just the final.
+  1992	          _attemptsSoFar: [...(options._attemptsSoFar ?? []), thisAttempt],
+  1993	          _recoverySoFar: [...(options._recoverySoFar ?? []), "tool_nudge" as const],
+  1994	        });
+  1995	        return;
+  1996	      }
+  1997	    }
+  1998	
+  1999	    // ── Phase 3: in-loop verify / self-correction ──────────────────────
+  2000	    // After an edit-producing turn, verify the files the model just changed
+  2001	    // (typecheck always; affected tests in "full" mode). On failure, feed the
+  2002	    // diagnostics back as another turn so the model self-corrects WITHIN this
+  2003	    // agentic run (Cline/OpenHands pattern; the single-agent analogue of the
+  2004	    // Judge's verifyWorktree gate). Guards:
+  2005	    //   - only when the turn actually changed files (a no-op turn skips it),
+  2006	    //   - only when the model turn itself succeeded (never verify a failed turn),
+  2007	    //   - bounded by verify.maxIterations to prevent infinite oscillation,
+  2008	    //   - gated on remaining budget so self-correction can't blow perSession,
+  2009	    //   - a verify pass that errors degrades to a skip (never crashes the turn).
+  2010	    const verifyMode: VerifyMode =
+  2011	      options.verify?.mode ?? config.general?.verify?.mode ?? "off";
+  2012	    const verifyMaxIterations =
+  2013	      options.verify?.maxIterations ??
+  2014	      config.general?.verify?.maxIterations ??
+  2015	      2;
+  2016	    const verifyDepth = options._verifyDepth ?? 0;
+  2017	    const changedThisTurn = Array.from(new Set(filesWritten));
+  2018	
+  2019	    if (
+  2020	      verifyMode !== "off" &&
+  2021	      turnSuccess &&
+  2022	      changedThisTurn.length > 0 &&
+  2023	      verifyDepth < verifyMaxIterations &&
+  2024	      !options.signal?.aborted
+  2025	    ) {
+  2026	      // Budget guard — each verify-fix is a full extra model turn. Reuse the
+  2027	      // same 20%-remaining threshold the budget-warning uses above; if we're
+  2028	      // under it, skip verify rather than risk blowing config.budget.perSession.
+  2029	      const verifyBudgetRemaining = costTracker.getRemainingBudget();
+  2030	      const verifySessionLimit = (config.budget as any)?.perSession;
+  2031	      const budgetTooLow =
+  2032	        verifyBudgetRemaining !== null &&
+  2033	        verifySessionLimit &&
+  2034	        verifyBudgetRemaining <= verifySessionLimit * 0.2;
+  2035	
+  2036	      if (budgetTooLow) {
+  2037	        log.warn(
+  2038	          {
+  2039	            remaining: verifyBudgetRemaining,
+  2040	            sessionLimit: verifySessionLimit,
+  2041	          },
+  2042	          "verify skipped — remaining budget below 20% threshold",
+  2043	        );
+  2044	      } else {
+  2045	        const outcome = runVerifyPass(
+  2046	          changedThisTurn,
+  2047	          verifyMode,
+  2048	          { projectPath: options.projectPath, signal: options.signal },
+  2049	          options._verifyRunner,
+  2050	        );
+  2051	
+  2052	        if (outcome.ran && !outcome.ok) {
+  2053	          const nextIteration = verifyDepth + 1;
+  2054	          const isFinalAttempt = nextIteration >= verifyMaxIterations;
+  2055	          yield {
+  2056	            type: "verify-failed" as const,
+  2057	            iteration: nextIteration,
+  2058	            maxIterations: verifyMaxIterations,
+  2059	            diagnostics: outcome.diagnostics,
+  2060	          };
+  2061	          // Feed diagnostics back as a user-role correction turn and recurse,
+  2062	          // mirroring the fallback self-recursion at the top of this function.
+  2063	          messages.push({
+  2064	            role: "user",
+  2065	            content: formatVerifyDiagnostic(
+  2066	              outcome,
+  2067	              verifyMode,
+  2068	              isFinalAttempt,
+  2069	            ),
+  2070	          });
+  2071	          // Checkpoint THIS turn's edits before recursing. The outer invocation
+  2072	          // returns right after the recursive yield*, so without this the
+  2073	          // original turn's filesWritten are never persisted and crash-recovery/
+  2074	          // undo would under-report the edits (only the final correction's files
+  2075	          // would survive). Mirrors the checkpointer.saveIfNeeded below.
+  2076	          if (options.checkpointer) {
+  2077	            options.checkpointer.saveIfNeeded({
+  2078	              sessionId,
+  2079	              turnNumber: Math.floor(Date.now() / 1000),
+  2080	              conversationHistory: messages,
+  2081	              scratchpad: {},
+  2082	              filesRead,
+  2083	              filesWritten,
+  2084	              buildStatus: options.buildState?.getStatus() ?? "unknown",
+  2085	              totalCost: costTracker.getSessionCost(),
+  2086	              projectPath: options.projectPath,
+  2087	            });
+  2088	          }
+  2089	          yield* runAgentLoop(messages, {
+  2090	            ...options,
+  2091	            _verifyDepth: nextIteration,
+  2092	            // Forced tool-call is scoped to the nudge retry only — don't leak
+  2093	            // it into a verify self-correction turn.
+  2094	            _forceToolChoice: false,
+  2095	            _synthesized: synthesisAttempted,
+  2096	            _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
+  2097	            // Include this verify-superseded attempt in the aggregate chain.
+  2098	            _attemptsSoFar: [...(options._attemptsSoFar ?? []), thisAttempt],
+  2099	            _recoverySoFar: [
+  2100	              ...(options._recoverySoFar ?? []),
+  2101	              "verification_retry" as const,
+  2102	            ],
+  2103	          });
+  2104	          return;
+  2105	        }
+  2106	
+  2107	        if (outcome.ran && outcome.ok) {
+  2108	          yield {
+  2109	            type: "verify-passed" as const,
+  2110	            iteration: verifyDepth,
+  2111	            mode: verifyMode === "full" ? "full" : "typecheck",
+  2112	          };
+  2113	        }
+  2114	      }
+  2115	    }
+  2116	
+  2117	    // Inject turn context for next turn's self-awareness
+  2118	    if (options.onTurnComplete) {
+  2119	      // turnCost (per-turn delta) is already computed above — don't shadow with session total
+  2120	      const budget = costTracker.getBudgetState();
+  2121	      const budgetRemaining = budget.dailyLimit
+  2122	        ? budget.dailyLimit - budget.dailyUsed
+  2123	        : 0;
+  2124	      const budgetPercent = budget.dailyLimit
+  2125	        ? Math.round((budgetRemaining / budget.dailyLimit) * 100)
+  2126	        : 100;
+  2127	      options.onTurnComplete({
+  2128	        turn: 0, // caller sets this
+  2129	        model: decision.model.name,
+  2130	        strategy: decision.strategy,
+  2131	        toolCalls: toolCallResults,
+  2132	        turnCost,
+  2133	        budgetRemaining,
+  2134	        budgetPercent,
+  2135	        filesRead,
+  2136	        filesWritten,
+  2137	        sessionMinutes: 0, // caller sets this
+  2138	        unhealthyTools: getToolHealthTracker().getUnhealthy(),
+  2139	        buildStatus: options.buildState?.getStatus() ?? "unknown",
+  2140	        buildWarning: options.buildState?.formatBuildWarning() ?? "",
+  2141	        costPerHour: 0, // caller sets this based on session duration
+  2142	      });
+  2143	    }
+  2144	
+  2145	    // Save checkpoint for crash recovery (if checkpointer provided)
+  2146	    if (options.checkpointer) {
+  2147	      // Force save on every turn by using current timestamp as turn number.
+  2148	      // The checkpointer interval check (turnNumber - lastSaveTurn < interval)
+  2149	      // will always pass with a monotonically increasing value.
+  2150	      options.checkpointer.saveIfNeeded({
+  2151	        sessionId,
+  2152	        turnNumber: Math.floor(Date.now() / 1000),
+  2153	        conversationHistory: messages,
+  2154	        scratchpad: {},
+  2155	        filesRead: filesRead,
+  2156	        filesWritten: filesWritten,
+  2157	        buildStatus: options.buildState?.getStatus() ?? "unknown",
+  2158	        totalCost: costTracker.getSessionCost(),
+  2159	        projectPath: options.projectPath,
+  2160	      });
+  2161	    }
+  2162	
+  2163	    // Aggregate outcome: this attempt stitched onto any upstream failed
+  2164	    // fallback attempts. initialStopCause is the FIRST attempt's cause (the
+  2165	    // upstream one if this is a fallback re-entry), so a recovered run doesn't
+  2166	    // masquerade as a clean first stop. verification/security/judge are left
+  2167	    // not_run here; wiring their live results into the outcome is a follow-on
+  2168	    // (the contract + termination/recovery/cost are established this iteration).
+  2169	    const allAttempts = [...(options._attemptsSoFar ?? []), thisAttempt];
+  2170	    // Ordered recovery sequence: upstream actions (fallback / nudge / verify,
+  2171	    // appended as they happened) plus a forced_synthesis if THIS terminal turn
+  2172	    // synthesized. Preserves e.g. A-fallback → synthesis as ["fallback",
+  2173	    // "forced_synthesis"] instead of a single tag that erased the fallback.
+  2174	    const recoverySeq: NonNullable<RunOutcome["recovery"]> = [
+  2175	      ...(options._recoverySoFar ?? []),
+  2176	      ...(didSynthesize ? (["forced_synthesis"] as const) : []),
+  2177	    ];
+  2178	    const aggregateRecovery = recoverySeq.length > 0 ? recoverySeq : undefined;
+  2179	    const runOutcome: RunOutcome = {
+  2180	      status: turnSuccess ? "succeeded" : "failed",
+  2181	      attempts: allAttempts,
+  2182	      finalModelId: turnSuccess ? decision.model.id : undefined,
+  2183	      initialStopCause: allAttempts[0]?.stopCause ?? initialStopCause,
+  2184	      recovery: aggregateRecovery,
+  2185	      hasFinalResponse,
+  2186	      madeChanges: filesWritten.length > 0,
+  2187	      verification: "not_run",
+  2188	      security: "not_run",
+  2189	      judge: "not_run",
+  2190	      // Run delta, not the cumulative session total (a long-lived caller
+  2191	      // reuses the tracker across runs). Baseline captured at the root.
+  2192	      costUsd:
+  2193	        costTracker.getSessionCost() -
+  2194	        (options._runCostBaseline ?? sessionCostBefore),
+  2195	    };
+  2196	
+  2197	    // Momentum: record ONLY here, at the true terminal. Reaching this point
+  2198	    // means no Phase-7 nudge / Phase-3 verify recursion took over (those
+  2199	    // `return` after recursing), so this attempt is the final accepted one —
+  2200	    // and only credit it if the run actually produced a usable result.
+  2201	    if (runOutcome.status === "succeeded") {
+  2202	      router.recordSuccess?.(decision.model.id, task.type);
+  2203	    }
+  2204	
+  2205	    yield {
+  2206	      type: "done",
+  2207	      totalCost: costTracker.getSessionCost(),
+  2208	      totalTokens: costTracker.getSessionTokens(),
+  2209	      outcome: runOutcome,
+  2210	    };
+  2211	  } catch (error: any) {
+  2212	    // ── Error Classification ────────────────────────────────────
+  2213	    // Differentiate error types so callers can make informed retry decisions.
+  2214	
+  2215	    // 1. User abort — not an error
+  2216	    if (error.name === "AbortError" || options.signal?.aborted) {
+  2217	      yield { type: "interrupted" };
+  2218	
+  2219	      // 2. Model API error (rate limit, auth, network) — record failure for routing
+  2220	    } else if (isModelApiError(error)) {
+  2221	      router.recordFailure(decision.model.id, error.message);
+  2222	      const failLatencyMs = Date.now() - turnStartMs;
+  2223	      recordOutcome(task.type, decision.model.id, false, failLatencyMs, 0);
+  2224	      if (options.routingOutcomeRepo) {
+  2225	        try {
+  2226	          options.routingOutcomeRepo.record(
+  2227	            decision.model.id,
+  2228	            task.type,
+  2229	            false,
+  2230	            failLatencyMs,
+  2231	            0,
+  2232	          );
+  2233	        } catch (outcomeErr) {
+  2234	          log.warn({ err: outcomeErr }, "Failed to persist routing outcome");
+  2235	        }
+   185	    // Last resort: pick any available model
+   186	    const anyModel = candidates.find((m) => m.status === "available");
+   187	    if (!anyModel) {
+   188	      throw new Error(
+   189	        "No models available. Check provider connections and configuration.",
+   190	      );
+   191	    }
+   192	
+   193	    return {
+   194	      model: anyModel,
+   195	      fallbacks: candidates
+   196	        .filter((m) => m.id !== anyModel.id && m.status === "available")
+   197	        .slice(0, 3),
+   198	      reason: `Fallback: only available model is ${anyModel.name}`,
+   199	      estimatedCost: 0,
+   200	      strategy: this.activeStrategy,
+   201	    };
+   202	  }
+   203	
+   204	  /** Inject agent-profile fallback chain into a routing decision. */
+   205	  applyAgentFallbacks(
+   206	    decision: RoutingDecision,
+   207	    fallbackChain: string[],
+   208	  ): RoutingDecision {
+   209	    if (fallbackChain.length === 0) return decision;
+   210	    const agentFallbacks = fallbackChain
+   211	      .map((id) => this.registry.getModel(id))
+   212	      .filter(
+   213	        (m): m is ModelEntry => m !== undefined && m.status === "available",
+   214	      );
+   215	    if (agentFallbacks.length === 0) return decision;
+   216	    return {
+   217	      ...decision,
+   218	      fallbacks: [...agentFallbacks, ...decision.fallbacks],
+   219	    };
+   220	  }
+   221	
+   222	  recordFailure(modelId: string, error: string): void {
+   223	    this.recentFailures.push({ modelId, timestamp: Date.now(), error });
+   224	    // Keep only last 10 failures
+   225	    if (this.recentFailures.length > 10) this.recentFailures.shift();
+   226	    // Break momentum on failure
+   227	    if (this.momentum?.modelId === modelId) {
+   228	      this.momentum = null;
+   229	    }
+   230	  }
+   231	
+   232	  /** Record a successful completion — builds model momentum (scoped by task type). */
+   233	  recordSuccess(modelId: string, taskType?: string): void {
+   234	    if (this.momentum?.modelId === modelId) {
+   235	      this.momentum.successCount++;
+   236	      this.momentum.lastSuccess = Date.now();
+   237	      if (taskType) this.momentum.taskType = taskType;
+   238	    } else {
+   239	      this.momentum = {
+   240	        modelId,
+   241	        successCount: 1,
+   242	        lastSuccess: Date.now(),
+   243	        taskType: taskType ?? "unknown",
+   244	      };
+   245	    }
+   246	  }
+   247	
+   248	  /** Get current model momentum for daemon intelligence. */
+   249	  getMomentum(): {
+   250	    modelId: string;
+   251	    successCount: number;
+   252	    lastSuccess: number;
+   253	    taskType: string;
+   254	  } | null {
+   255	    return this.momentum ? { ...this.momentum } : null;
+   235	 */
+   236	export type CheckStatus = "passed" | "failed" | "not_run" | "unknown";
+   237	
+   238	/** Outcome of one model attempt within a run. Feeds routing learning. */
+   239	export interface ModelAttemptOutcome {
+   240	  modelId: string;
+   241	  taskType: TaskType;
+   242	  status: "succeeded" | "failed" | "aborted";
+   243	  stopCause: StopCause;
+   244	  /** Raw provider finish_reason, when available (diagnostics). */
+   245	  providerFinishReason?: string;
+   246	  latencyMs: number;
+   247	  costUsd: number;
+   248	}
+   249	
+   250	/** Aggregate outcome of a logical run. Feeds surfaces + momentum + trajectory. */
+   251	export interface RunOutcome {
+   252	  status: "succeeded" | "failed" | "partial" | "aborted";
+   253	  /** Every model attempt this run made, in order. At least one. */
+   254	  attempts: ModelAttemptOutcome[];
+   255	  /** The model whose output the run ultimately used (if it succeeded). */
+   256	  finalModelId?: string;
+   257	  /** How the FIRST attempt terminated — preserved even after recovery, so a
+   258	   *  step-capped-then-synthesized run doesn't masquerade as a clean stop. */
+   259	  initialStopCause: StopCause;
+   260	  /**
+   261	   * Ordered sequence of recovery actions the run took, in the order they
+   262	   * happened. A single tag can't represent a run that both fell back AND then
+   263	   * synthesized (e.g. A-empty → B-tool-only → synthesis) — that erased the
+   264	   * fallback. Empty/absent = no recovery (clean run).
+   265	   */
+   266	  recovery?: Array<
+   267	    "fallback" | "forced_synthesis" | "tool_nudge" | "verification_retry"
+   268	  >;
+   269	  /** Did the run produce usable final text? (distinct from making changes) */
+   270	  hasFinalResponse: boolean;
+   271	  /** Artifact references produced (files written, etc.), if tracked. */
+   272	  producedArtifacts?: string[];
+   273	  /** Did the run mutate the workspace? (a coder can edit files yet emit no
+   274	   *  final text — it made changes but still needs synthesis) */
+   275	  madeChanges?: boolean;
+   276	  verification: CheckStatus;
+   277	  security: CheckStatus;
+   278	  judge: CheckStatus;
+   279	  costUsd: number;
+   280	}
+
+exec
+/bin/zsh -lc "nl -ba packages/core/src/agent/loop.ts | sed -n '1845,2010p'
+rg -n \"outcome\\.recovery|recovery\\)\\.to|recovery:\" packages --glob '*.ts'" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+  1845	      log.debug(
+  1846	        { err, model: decision.model.id },
+  1847	        "Gateway headers unavailable",
+  1848	      );
+  1849	    }
+  1850	
+  1851	    // Record routing outcome for Thompson sampling (in-memory + DB persistence)
+  1852	    const turnLatencyMs = Date.now() - turnStartMs;
+  1853	    const turnSuccess = !shouldRetry;
+  1854	    const turnCost = costTracker.getSessionCost() - sessionCostBefore;
+  1855	
+  1856	    // This attempt's per-model outcome (feeds routing learning). The aggregate
+  1857	    // RunOutcome below stitches it onto any upstream failed attempts.
+  1858	    const thisAttempt: ModelAttemptOutcome = {
+  1859	      modelId: decision.model.id,
+  1860	      taskType: task.type,
+  1861	      status: turnSuccess ? "succeeded" : "failed",
+  1862	      // Always the classified cause — a failed attempt that truncated /
+  1863	      // hit output_limit / was capped keeps that evidence, not a blanket
+  1864	      // empty_output.
+  1865	      stopCause: initialStopCause,
+  1866	      providerFinishReason: finishReason,
+  1867	      latencyMs: turnLatencyMs,
+  1868	      costUsd: turnCost,
+  1869	    };
+  1870	
+  1871	    // NOTE: momentum (router.recordSuccess) is deliberately NOT recorded here.
+  1872	    // This point is BEFORE the Phase-7 tool-nudge and Phase-3 verify blocks,
+  1873	    // which may `return` after recursing into a corrective re-run. Recording
+  1874	    // momentum here would credit a turn that then gets nudged or fails
+  1875	    // verification — and double-count with the recursive child's own momentum.
+  1876	    // It is recorded once, at the true terminal (just before `done`), only when
+  1877	    // no nudge/verify recursion took over. recordOutcome (Thompson, per-attempt)
+  1878	    // DOES belong here — each model attempt is its own routing datapoint.
+  1879	    recordOutcome(
+  1880	      task.type,
+  1881	      decision.model.id,
+  1882	      turnSuccess,
+  1883	      turnLatencyMs,
+  1884	      turnCost,
+  1885	    );
+  1886	    if (options.routingOutcomeRepo) {
+  1887	      try {
+  1888	        options.routingOutcomeRepo.record(
+  1889	          decision.model.id,
+  1890	          task.type,
+  1891	          turnSuccess,
+  1892	          turnLatencyMs,
+  1893	          turnCost,
+  1894	        );
+  1895	      } catch (e) {
+  1896	        log.warn({ err: e }, "Failed to persist routing outcome to DB");
+  1897	      }
+  1898	    }
+  1899	
+  1900	    // ── Phase 7: tool-use enforcement (narration → forced tool call) ────
+  1901	    // A weak model may NARRATE a tool action ("Let me read config.ts") and
+  1902	    // then stop WITHOUT emitting the call. Such a turn is not empty and not a
+  1903	    // truncated tool-call, so it records as turnSuccess and would silently
+  1904	    // complete. When enabled, and only when the turn (a) stopped on its own
+  1905	    // (finishReason !== "tool-calls"), (b) made zero tool calls, (c) has tools
+  1906	    // available to call, and (d) its text reads as an un-acted tool intent, we
+  1907	    // push a corrective user-role nudge and RE-RUN with toolChoice="required"
+  1908	    // so a real call is forced. Guards (mirroring the verify block below):
+  1909	    //   - opt-in-safe: fires only on this failure state, DEFAULT enabled=true,
+  1910	    //     so well-behaved models never trigger it (set enabled:false for exact
+  1911	    //     legacy behavior),
+  1912	    //   - bounded by maxNudges to prevent infinite re-prompting,
+  1913	    //   - gated on remaining budget (same 20% threshold as verify/budget-warn),
+  1914	    //   - placed BEFORE verify: a narrated turn wrote no files, so verify would
+  1915	    //     skip it anyway — and only ONE recursion+return runs per turn, so the
+  1916	    //     two corrective mechanisms cannot compound into an unbounded loop.
+  1917	    const teEnabled =
+  1918	      options.toolEnforcement?.enabled ??
+  1919	      config.general?.toolEnforcement?.enabled ??
+  1920	      true;
+  1921	    const teMaxNudges =
+  1922	      options.toolEnforcement?.maxNudges ??
+  1923	      config.general?.toolEnforcement?.maxNudges ??
+  1924	      2;
+  1925	    const nudgeDepth = options._nudgeDepth ?? 0;
+  1926	
+  1927	    if (
+  1928	      teEnabled &&
+  1929	      turnSuccess &&
+  1930	      toolCallCount === 0 &&
+  1931	      finishReason !== "tool-calls" &&
+  1932	      !!finalTools &&
+  1933	      nudgeDepth < teMaxNudges &&
+  1934	      !options.signal?.aborted &&
+  1935	      detectNarratedToolIntent(accumulatedText)
+  1936	    ) {
+  1937	      // Budget guard — a nudge is a full extra model turn. Reuse the same
+  1938	      // 20%-remaining threshold verify/budget-warning use; skip rather than
+  1939	      // risk blowing config.budget.perSession.
+  1940	      const nudgeBudgetRemaining = costTracker.getRemainingBudget();
+  1941	      const nudgeSessionLimit = (config.budget as any)?.perSession;
+  1942	      const nudgeBudgetTooLow =
+  1943	        nudgeBudgetRemaining !== null &&
+  1944	        nudgeSessionLimit &&
+  1945	        nudgeBudgetRemaining <= nudgeSessionLimit * 0.2;
+  1946	
+  1947	      if (nudgeBudgetTooLow) {
+  1948	        log.warn(
+  1949	          {
+  1950	            remaining: nudgeBudgetRemaining,
+  1951	            sessionLimit: nudgeSessionLimit,
+  1952	          },
+  1953	          "tool-use nudge skipped — remaining budget below 20% threshold",
+  1954	        );
+  1955	      } else {
+  1956	        const nextNudge = nudgeDepth + 1;
+  1957	        log.info(
+  1958	          {
+  1959	            model: decision.model.id,
+  1960	            iteration: nextNudge,
+  1961	            maxNudges: teMaxNudges,
+  1962	          },
+  1963	          "Model narrated a tool action without calling it — nudging with forced tool call",
+  1964	        );
+  1965	        yield {
+  1966	          type: "tool-nudge" as const,
+  1967	          iteration: nextNudge,
+  1968	          maxNudges: teMaxNudges,
+  1969	        };
+  1970	        // Feed the correction back as a user-role turn and re-run, mirroring
+  1971	        // the verify self-recursion below. _forceToolChoice compels a real
+  1972	        // call on the retry; it is scoped to that single re-entry (the verify
+  1973	        // and fallback recursions explicitly clear it, so the model can still
+  1974	        // finish normally afterwards).
+  1975	        //
+  1976	        // Do NOT force on the TERMINAL retry: when `nextNudge === teMaxNudges`
+  1977	        // the re-entry can no longer nudge again (`nudgeDepth < teMaxNudges`
+  1978	        // fails there), so whatever it emits is ACCEPTED as the turn's finish.
+  1979	        // Forcing tools on that accepted turn would compel it into a tool call
+  1980	        // and rob the model of a clean text answer. Only force while a further
+  1981	        // corrective opportunity still remains.
+  1982	        const forceOnRetry = nextNudge < teMaxNudges;
+  1983	        messages.push({ role: "user", content: buildToolUseCorrection() });
+  1984	        yield* runAgentLoop(messages, {
+  1985	          ...options,
+  1986	          _nudgeDepth: nextNudge,
+  1987	          _forceToolChoice: forceOnRetry,
+  1988	          _synthesized: synthesisAttempted,
+  1989	          _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
+  1990	          // Carry this invocation into the aggregate so the terminal run
+  1991	          // outcome includes the nudge-superseded attempt, not just the final.
+  1992	          _attemptsSoFar: [...(options._attemptsSoFar ?? []), thisAttempt],
+  1993	          _recoverySoFar: [...(options._recoverySoFar ?? []), "tool_nudge" as const],
+  1994	        });
+  1995	        return;
+  1996	      }
+  1997	    }
+  1998	
+  1999	    // ── Phase 3: in-loop verify / self-correction ──────────────────────
+  2000	    // After an edit-producing turn, verify the files the model just changed
+  2001	    // (typecheck always; affected tests in "full" mode). On failure, feed the
+  2002	    // diagnostics back as another turn so the model self-corrects WITHIN this
+  2003	    // agentic run (Cline/OpenHands pattern; the single-agent analogue of the
+  2004	    // Judge's verifyWorktree gate). Guards:
+  2005	    //   - only when the turn actually changed files (a no-op turn skips it),
+  2006	    //   - only when the model turn itself succeeded (never verify a failed turn),
+  2007	    //   - bounded by verify.maxIterations to prevent infinite oscillation,
+  2008	    //   - gated on remaining budget so self-correction can't blow perSession,
+  2009	    //   - a verify pass that errors degrades to a skip (never crashes the turn).
+  2010	    const verifyMode: VerifyMode =
+packages/harness-fs/src/write-through.ts:20: * Crash recovery: on startup, replay WAL pending ids. The file may already
+packages/core/src/session/manager.ts:114:   * Critical for crash recovery: --resume needs the user message to exist
+packages/gateway/src/__tests__/agent-identity.test.ts:7: *   - Corrupt-file recovery: regenerates rather than refuses
+packages/core/src/__tests__/forced-synthesis.test.ts:202:      expect(done.outcome.recovery).toEqual(["forced_synthesis"]);
+packages/core/src/__tests__/forced-synthesis.test.ts:231:      expect(done.outcome.recovery).toEqual(["forced_synthesis"]);
+packages/core/src/__tests__/forced-synthesis.test.ts:255:      expect(done.outcome.recovery).toBeUndefined();
+packages/core/src/__tests__/forced-synthesis.test.ts:275:      expect(done.outcome.recovery).toBeUndefined();
+packages/core/src/agent/loop.ts:305:  // BR sends: { error: {...}, recovery: { action, message, endpoint, wait_ms } }
+packages/core/src/agent/loop.ts:2184:      recovery: aggregateRecovery,
+
+exec
+/bin/zsh -lc "sed -n '1,90p' bench/iterations/004/reviews/verdicts.json
+rg -n 'full attempt|attempt accumulator|nudge|verify.*attempt|every invocation|#8|id.?8' bench/iterations/004/reviews/*.out bench/iterations/004/reviews/*.err bench/iterations/004/result.md | tail -100" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 0ms:
+{
+  "seed": "c63528a5",
+  "seats": {
+    "codex": {
+      "status": "completed",
+      "axis": "correctness/aggregation",
+      "findings": 14,
+      "p1": 12,
+      "p2": 2,
+      "verified_real": 14,
+      "fixed": 12,
+      "deferred": 4,
+      "rounds": [
+        "R1: 14 findings, all verified real.",
+        "R2: 7/9 confirmed resolved; 3 new/still-open P1s found in the fixes (unbounded result.response await; _synthesized descendant tool-only silent success; synthesis bypasses budget check).",
+        "R3: those 3 fixed (bounded response await + interrupted bail; shouldRetry requires final response for any tool turn; budget guard before synthesis)."
+      ],
+      "note": "Exceptionally thorough — three rounds. The happy path worked (live proof passed) but the synthesis + aggregate had a dozen real edge-case holes across cancellation, hangs, missing context, empty-as-success, once-per-run, cost, budget, parallel-phase, finalize timing. All 12 fixed with tests; 4 metadata-precision items deferred to iter-006 TurnController.",
+      "triage": [
+        { "id": 2, "sev": "P1", "loc": "synthesis context missing tool results", "verdict": "FIXED — append result.response.messages" },
+        { "id": 3, "sev": "P1", "loc": "no synthesis watchdog", "verdict": "FIXED — own AbortController + 60s timeout" },
+        { "id": 4, "sev": "P1", "loc": "synthesis swallows AbortError", "verdict": "FIXED — propagate caller cancel as interrupted" },
+        { "id": 5, "sev": "P1", "loc": "empty synthesis records silent success", "verdict": "FIXED — shouldRetry keys on no-final-response when synthesis ran" },
+        { "id": 6, "sev": "P1", "loc": "_synthesized never set", "verdict": "FIXED — threaded into fallback/nudge/verify recursion" },
+        { "id": 10, "sev": "P1", "loc": "costUsd cumulative not run-delta", "verdict": "FIXED — root-propagated cost baseline" },
+        { "id": 11, "sev": "P1", "loc": "parallel phase empty not validated", "verdict": "FIXED — require a non-blank agent result" },
+        { "id": 12, "sev": "P2", "loc": "failed attempt blanket empty_output", "verdict": "FIXED — keep classified stopCause" },
+        { "id": 13, "sev": "P2", "loc": "finalize after yield", "verdict": "FIXED — finalize before yielding terminal" },
+        { "id": 1, "sev": "P1", "loc": "hasFinalResponse counts pre-tool narration", "verdict": "DEFERRED iter-006 — the post-tool-text signal over-fires on legitimate narrate-then-act turns (broke 3 tests representing normal tool turns); the sharper distinction needs the TurnController's explicit turn-phase model. Conservative any-text signal still fixes the primary gpt-oss no-text case (live-proven)." },
+        { "id": 7, "sev": "P1", "loc": "momentum recorded before nudge/verify decide", "verdict": "DEFERRED iter-006 — moving recordSuccess past the recursion risks double-counting with the child call's own momentum; entangled with the recursion architecture the TurnController unifies." },
+        { "id": 8, "sev": "P1", "loc": "attempts accumulator omits nudge/verify invocations", "verdict": "PARTIAL/DEFERRED iter-006 — cost baseline + _synthesized now thread through all paths; the full attempt array + artifacts through nudge/verify is the root-owned run accumulator the TurnController introduces." },
+        { "id": 9, "sev": "P1", "loc": "recovery prefers synthesis over fallback in A->B->synth", "verdict": "DEFERRED iter-006 — aggregate recovery is a single tag (fallback|forced_synthesis); an ordered recovery sequence is a schema change best made with the unified accumulator." }
+      ]
+    }
+  },
+  "live_proof": "PASS — same step-capped gpt-oss session that returned text:'' in iter-003 now returns a coherent synthesized answer (bench/iterations/004/runs/gptoss-synthesis-proof.out). The proof itself drove broadening the trigger from cap-only to any-tool-work.",
+  "gate": {
+    "tests": "core 625 green; typecheck clean; as-any 295/295; contract-check green",
+    "verified_p0_p1": "all fixed or deferred-with-rationale (deferred items are iter-006 TurnController scope, not regressions)",
+    "decision": "GREEN"
+  }
+}
+bench/iterations/004/reviews/codex-final2.err:2518:  1931	      const nudgeBudgetTooLow =
+bench/iterations/004/reviews/codex-final2.err:2519:  1932	        nudgeBudgetRemaining !== null &&
+bench/iterations/004/reviews/codex-final2.err:2520:  1933	        nudgeSessionLimit &&
+bench/iterations/004/reviews/codex-final2.err:2521:  1934	        nudgeBudgetRemaining <= nudgeSessionLimit * 0.2;
+bench/iterations/004/reviews/codex-final2.err:2523:  1936	      if (nudgeBudgetTooLow) {
+bench/iterations/004/reviews/codex-final2.err:2526:  1939	            remaining: nudgeBudgetRemaining,
+bench/iterations/004/reviews/codex-final2.err:2527:  1940	            sessionLimit: nudgeSessionLimit,
+bench/iterations/004/reviews/codex-final2.err:2529:  1942	          "tool-use nudge skipped — remaining budget below 20% threshold",
+bench/iterations/004/reviews/codex-final2.err:2532:  1945	        const nextNudge = nudgeDepth + 1;
+bench/iterations/004/reviews/codex-final2.err:2542:  1955	          type: "tool-nudge" as const,
+bench/iterations/004/reviews/codex-final2.err:2553:  1966	        // the re-entry can no longer nudge again (`nudgeDepth < teMaxNudges`
+bench/iterations/004/reviews/codex-final2.err:2562:  1975	          _nudgeDepth: nextNudge,
+bench/iterations/004/reviews/codex-final2.err:2664:  2077	            // Forced tool-call is scoped to the nudge retry only — don't leak
+bench/iterations/004/reviews/codex-final2.err:3114:bench/iterations/004/reviews/verdicts.json:24:        { "id": 6, "sev": "P1", "loc": "_synthesized never set", "verdict": "FIXED — threaded into fallback/nudge/verify recursion" },
+bench/iterations/004/reviews/codex-final2.err:3118:bench/iterations/004/reviews/verdicts.json:30:        { "id": 7, "sev": "P1", "loc": "momentum recorded before nudge/verify decide", "verdict": "DEFERRED iter-006 — moving recordSuccess past the recursion risks double-counting with the child call's own momentum; entangled with the recursion architecture the TurnController unifies." },
+bench/iterations/004/reviews/codex-final2.err:3119:bench/iterations/004/reviews/verdicts.json:31:        { "id": 8, "sev": "P1", "loc": "attempts accumulator omits nudge/verify invocations", "verdict": "PARTIAL/DEFERRED iter-006 — cost baseline + _synthesized now thread through all paths; the full attempt array + artifacts through nudge/verify is the root-owned run accumulator the TurnController introduces." },
+bench/iterations/004/reviews/codex-final2.err:3125:{"fixes":[{"id":2,"status":"resolved","note":"Synthesis context appends the SDK response messages containing the attempt's assistant tool calls and tool results."},{"id":3,"status":"not-resolved","note":"The 60s timer bounds synthResult.text, but the preceding await result.response is unbounded; this same response promise is documented later as capable of hanging."},{"id":4,"status":"resolved","note":"Caller-originated cancellation during the synthesis model call now emits interrupted and returns."},{"id":5,"status":"not-resolved","note":"The immediate empty synthesis retries correctly, but a fallback/nudge/verify re-entry with _synthesized=true can produce tool-only output and be accepted because needsSynthesis and isEmpty are both false."},{"id":6,"status":"resolved","note":"The synthesis-attempted flag is propagated through fallback, tool-nudge, and verification recursion."},{"id":10,"status":"resolved","note":"A root run-cost baseline is propagated through all recursive paths and aggregate costUsd uses its delta."},{"id":11,"status":"resolved","note":"Parallel phases now require at least one nonblank agent result and otherwise fail."},{"id":12,"status":"resolved","note":"Failed attempt outcomes retain initialStopCause instead of being overwritten with empty_output."},{"id":13,"status":"resolved","note":"Paused, completed, and failed pipeline terminals are finalized before being yielded."}],"deferrals_acceptable":false,"new_P0_P1":[{"severity":"P1","file":"packages/core/src/agent/loop.ts","line":1551,"finding":"Forced-synthesis setup can still hang and ignore caller cancellation while awaiting result.response.","suggested_fix":"Race response metadata retrieval against the synthesis timeout and caller signal, or capture response messages during stream consumption."},{"severity":"P1","file":"packages/core/src/agent/loop.ts","line":1633,"finding":"Once _synthesized is inherited, a later tool-only/no-text invocation can silently succeed with hasFinalResponse=false.","suggested_fix":"Make success contingent on hasFinalResponse for tool-only descendants of a logical run that already attempted synthesis."},{"severity":"P1","file":"packages/core/src/agent/loop.ts","line":1562,"finding":"The original 14th finding is undisposed: synthesis usage is now recorded, but the direct model invocation still bypasses the router's hard-budget check.","suggested_fix":"Check the CostTracker budget immediately before invoking synthesis."}]}
+bench/iterations/004/reviews/codex-final2.err:3139:Final confirmation. Your re-review of this repo's iteration-004 raised 3 P1s, now fixed in bench/iterations/004/reviews/iter-fixed2.diff: (a) result.response await inside forced synthesis is now Promise.race'd against the synthesis watchdog + caller signal, with an interrupted bail if the caller cancelled during metadata fetch; (b) shouldRetry now = truncated || (tool-using turn made calls but no final response) || isEmpty — so a _synthesized descendant with tool-only output no longer silently succeeds; (c) synthesis is skipped when costTracker.getRemainingBudget() is spent. Verify each resolved and confirm no new P0/P1. The remaining deferrals (#1 post-tool-text over-fire, #7 momentum timing, #8 full attempt accumulator, #9 ordered recovery) are outcome-metadata precision in a RunOutcome no surface consumes yet (verification/security/judge=not_run) and are iter-006 TurnController scope. Output ONLY JSON: {"fixes":[{"id":"a"|"b"|"c","status":"resolved"|"not-resolved","note":string}],"new_P0_P1":[]}
+bench/iterations/004/reviews/codex.err:502:-      // Phase 7: on a narration-nudge corrective retry ONLY, force a real tool
+bench/iterations/004/reviews/codex.err:536:+    // Phase 7: on a narration-nudge corrective retry ONLY, force a real tool
+bench/iterations/004/reviews/codex.err:677:           // A forced tool-call is scoped to a single nudge retry; never carry
+bench/iterations/004/reviews/codex.err:681:+          // emits the full attempt chain in its aggregate RunOutcome; mark
+bench/iterations/004/reviews/codex.err:1047:+    | "tool_nudge"
+bench/iterations/004/reviews/codex.err:1300:  1656	          // A forced tool-call is scoped to a single nudge retry; never carry
+bench/iterations/004/reviews/codex.err:1304:  1660	          // emits the full attempt chain in its aggregate RunOutcome; mark
+bench/iterations/004/reviews/codex.err:1441:  1797	    // push a corrective user-role nudge and RE-RUN with toolChoice="required"
+bench/iterations/004/reviews/codex.err:1466:  1797	    // push a corrective user-role nudge and RE-RUN with toolChoice="required"
+bench/iterations/004/reviews/codex.err:1484:  1815	    const nudgeDepth = options._nudgeDepth ?? 0;
+bench/iterations/004/reviews/codex.err:1492:  1823	      nudgeDepth < teMaxNudges &&
+bench/iterations/004/reviews/codex.err:1496:  1827	      // Budget guard — a nudge is a full extra model turn. Reuse the same
+bench/iterations/004/reviews/codex.err:1499:  1830	      const nudgeBudgetRemaining = costTracker.getRemainingBudget();
+bench/iterations/004/reviews/codex.err:1500:  1831	      const nudgeSessionLimit = (config.budget as any)?.perSession;
+bench/iterations/004/reviews/codex.err:1501:  1832	      const nudgeBudgetTooLow =
+bench/iterations/004/reviews/codex.err:1502:  1833	        nudgeBudgetRemaining !== null &&
+bench/iterations/004/reviews/codex.err:1503:  1834	        nudgeSessionLimit &&
+bench/iterations/004/reviews/codex.err:1504:  1835	        nudgeBudgetRemaining <= nudgeSessionLimit * 0.2;
+bench/iterations/004/reviews/codex.err:1506:  1837	      if (nudgeBudgetTooLow) {
+bench/iterations/004/reviews/codex.err:1509:  1840	            remaining: nudgeBudgetRemaining,
+bench/iterations/004/reviews/codex.err:1510:  1841	            sessionLimit: nudgeSessionLimit,
+bench/iterations/004/reviews/codex.err:1512:  1843	          "tool-use nudge skipped — remaining budget below 20% threshold",
+bench/iterations/004/reviews/codex.err:1515:  1846	        const nextNudge = nudgeDepth + 1;
+bench/iterations/004/reviews/codex.err:1525:  1856	          type: "tool-nudge" as const,
+bench/iterations/004/reviews/codex.err:1536:  1867	        // the re-entry can no longer nudge again (`nudgeDepth < teMaxNudges`
+bench/iterations/004/reviews/codex.err:1545:  1876	          _nudgeDepth: nextNudge,
+bench/iterations/004/reviews/codex.err:1645:  1976	            // Forced tool-call is scoped to the nudge retry only — don't leak
+bench/iterations/004/reviews/codex.err:3662:   333	      type: "tool-nudge";
+bench/iterations/004/reviews/codex.err:3943:  1076	    // Phase 7: on a narration-nudge corrective retry ONLY, force a real tool
+bench/iterations/004/reviews/codex.err:4046:1831:      const nudgeSessionLimit = (config.budget as any)?.perSession;
+bench/iterations/004/reviews/codex.err:4047:1843:          "tool-use nudge skipped — remaining budget below 20% threshold",
+bench/iterations/004/reviews/codex.err:4869:    "finding": "_synthesized is checked but never set after synthesis. A subsequent verification or tool-nudge recursion can run another forced-synthesis turn, violating the once-per-logical-run guarantee.",
+bench/iterations/004/reviews/codex.err:4884:    "suggested_fix": "Move recordSuccess to the terminal path immediately before done, after all nudge and verification recursion decisions, and record only the final accepted attempt."
+bench/iterations/004/reviews/codex.err:4890:    "finding": "The attempts accumulator includes only fallback failures plus the terminal invocation. Forced synthesis, tool-nudge retries, and verification retries are model invocations but are omitted; prior edits and recovery attribution are also lost across the latter recursive paths.",
+bench/iterations/004/reviews/codex-final.err:14:Verification round. Your prior anchor review of this repo raised 14 findings on the two-level outcome contract + forced synthesis. The fixes are in bench/iterations/004/reviews/iter-fixed.diff. FIXED: #2 synthesis now appends result.response.messages (its own tool calls/results); #3 own AbortController+60s watchdog; #4 caller-cancel propagates as interrupted; #5 empty synthesis no longer silent-success (shouldRetry keys on no-final-response when synthesis ran, scoped so normal tool turns untouched); #6 _synthesized threaded into fallback/nudge/verify; #10 costUsd via root-propagated baseline; #11 parallel-phase non-blank validation; #12 failed attempt keeps classified stopCause; #13 finalize-before-yield. DEFERRED to iter-006 TurnController with rationale: #1 (post-tool-text over-fires on narrate-then-act — chose conservative any-text, still fixes primary gpt-oss no-text case), #7 (momentum-past-recursion risks double-count), #8 (full attempt accumulator through nudge/verify), #9 (ordered recovery sequence). Verify the 9 fixes are correct, and confirm the 4 deferrals are acceptable (metadata precision in a not-yet-consumed RunOutcome, no live blast radius) vs genuinely blocking. Output ONLY JSON: {"fixes":[{"id":number,"status":"resolved"|"not-resolved","note":string}],"deferrals_acceptable":boolean,"new_P0_P1":[]}
+bench/iterations/004/reviews/codex-final.err:811:          // A forced tool-call is scoped to a single nudge retry; never carry
+bench/iterations/004/reviews/codex-final.err:815:          // emits the full attempt chain in its aggregate RunOutcome; mark
+bench/iterations/004/reviews/codex-final.err:959:    // push a corrective user-role nudge and RE-RUN with toolChoice="required"
+bench/iterations/004/reviews/codex-final.err:1182:  1083	    // Phase 7: on a narration-nudge corrective retry ONLY, force a real tool
+bench/iterations/004/reviews/codex-final.err:1212:  1887	    const nudgeDepth = options._nudgeDepth ?? 0;
+bench/iterations/004/reviews/codex-final.err:1220:  1895	      nudgeDepth < teMaxNudges &&
+bench/iterations/004/reviews/codex-final.err:1224:  1899	      // Budget guard — a nudge is a full extra model turn. Reuse the same
+bench/iterations/004/reviews/codex-final.err:1227:  1902	      const nudgeBudgetRemaining = costTracker.getRemainingBudget();
+bench/iterations/004/reviews/codex-final.err:1228:  1903	      const nudgeSessionLimit = (config.budget as any)?.perSession;
+bench/iterations/004/reviews/codex-final.err:1229:  1904	      const nudgeBudgetTooLow =
+bench/iterations/004/reviews/codex-final.err:1230:  1905	        nudgeBudgetRemaining !== null &&
+bench/iterations/004/reviews/codex-final.err:1231:  1906	        nudgeSessionLimit &&
+bench/iterations/004/reviews/codex-final.err:1232:  1907	        nudgeBudgetRemaining <= nudgeSessionLimit * 0.2;
+bench/iterations/004/reviews/codex-final.err:1234:  1909	      if (nudgeBudgetTooLow) {
+bench/iterations/004/reviews/codex-final.err:1237:  1912	            remaining: nudgeBudgetRemaining,
+bench/iterations/004/reviews/codex-final.err:1238:  1913	            sessionLimit: nudgeSessionLimit,
+bench/iterations/004/reviews/codex-final.err:1240:  1915	          "tool-use nudge skipped — remaining budget below 20% threshold",
+bench/iterations/004/reviews/codex-final.err:1243:  1918	        const nextNudge = nudgeDepth + 1;
+bench/iterations/004/reviews/codex-final.err:1253:  1928	          type: "tool-nudge" as const,
+bench/iterations/004/reviews/codex-final.err:1264:  1939	        // the re-entry can no longer nudge again (`nudgeDepth < teMaxNudges`
+bench/iterations/004/reviews/codex-final.err:1273:  1948	          _nudgeDepth: nextNudge,
+bench/iterations/004/reviews/codex-final.err:1375:  2050	            // Forced tool-call is scoped to the nudge retry only — don't leak
+bench/iterations/004/reviews/codex-final.err:1731:   264	    | "tool_nudge"
+bench/iterations/004/reviews/codex-final.err:1800:   333	      type: "tool-nudge";
+bench/iterations/004/reviews/codex-final.err:1868:bench/iterations/004/result.md:48:  naturally resolves the 4 deferred findings (#1 post-tool-text, #7 momentum timing, #8 root attempt
+bench/iterations/004/reviews/codex-final.err:1879:bench/iterations/004/reviews/iter.diff:1013:+          // emits the full attempt chain in its aggregate RunOutcome; mark
+bench/iterations/004/reviews/codex-final.err:1900:bench/iterations/004/reviews/codex.out:62:    "finding": "The attempts accumulator includes only fallback failures plus the terminal invocation. Forced synthesis, tool-nudge retries, and verification retries are model invocations but are omitted; prior edits and recovery attribution are also lost across the latter recursive paths.",
+bench/iterations/004/reviews/codex-final.err:1918:bench/iterations/004/reviews/iter-fixed.diff:1147:+          // emits the full attempt chain in its aggregate RunOutcome; mark
+bench/iterations/004/reviews/codex-final.err:1933:bench/iterations/004/reviews/verdicts.json:19:        { "id": 6, "sev": "P1", "loc": "_synthesized never set", "verdict": "FIXED — threaded into fallback/nudge/verify recursion" },
+bench/iterations/004/reviews/codex-final.err:1937:bench/iterations/004/reviews/verdicts.json:25:        { "id": 7, "sev": "P1", "loc": "momentum recorded before nudge/verify decide", "verdict": "DEFERRED iter-006 — moving recordSuccess past the recursion risks double-counting with the child call's own momentum; entangled with the recursion architecture the TurnController unifies." },
+bench/iterations/004/reviews/codex-final.err:1938:bench/iterations/004/reviews/verdicts.json:26:        { "id": 8, "sev": "P1", "loc": "attempts accumulator omits nudge/verify invocations", "verdict": "PARTIAL/DEFERRED iter-006 — cost baseline + _synthesized now thread through all paths; the full attempt array + artifacts through nudge/verify is the root-owned run accumulator the TurnController introduces." },
+bench/iterations/004/reviews/codex-final.err:1940:bench/iterations/004/reviews/codex-final.err:14:Verification round. Your prior anchor review of this repo raised 14 findings on the two-level outcome contract + forced synthesis. The fixes are in bench/iterations/004/reviews/iter-fixed.diff. FIXED: #2 synthesis now appends result.response.messages (its own tool calls/results); #3 own AbortController+60s watchdog; #4 caller-cancel propagates as interrupted; #5 empty synthesis no longer silent-success (shouldRetry keys on no-final-response when synthesis ran, scoped so normal tool turns untouched); #6 _synthesized threaded into fallback/nudge/verify; #10 costUsd via root-propagated baseline; #11 parallel-phase non-blank validation; #12 failed attempt keeps classified stopCause; #13 finalize-before-yield. DEFERRED to iter-006 TurnController with rationale: #1 (post-tool-text over-fires on narrate-then-act — chose conservative any-text, still fixes primary gpt-oss no-text case), #7 (momentum-past-recursion risks double-count), #8 (full attempt accumulator through nudge/verify), #9 (ordered recovery sequence). Verify the 9 fixes are correct, and confirm the 4 deferrals are acceptable (metadata precision in a not-yet-consumed RunOutcome, no live blast radius) vs genuinely blocking. Output ONLY JSON: {"fixes":[{"id":number,"status":"resolved"|"not-resolved","note":string}],"deferrals_acceptable":boolean,"new_P0_P1":[]}
+bench/iterations/004/reviews/codex-final.err:1949:bench/iterations/004/reviews/codex-final.err:815:          // emits the full attempt chain in its aggregate RunOutcome; mark
+bench/iterations/004/reviews/codex-final.err:1969:bench/iterations/004/reviews/codex.err:681:+          // emits the full attempt chain in its aggregate RunOutcome; mark
+bench/iterations/004/reviews/codex-final.err:1981:bench/iterations/004/reviews/codex.err:1304:  1660	          // emits the full attempt chain in its aggregate RunOutcome; mark
+bench/iterations/004/reviews/codex-final.err:2017:bench/iterations/004/reviews/codex.err:4890:    "finding": "The attempts accumulator includes only fallback failures plus the terminal invocation. Forced synthesis, tool-nudge retries, and verification retries are model invocations but are omitted; prior edits and recovery attribution are also lost across the latter recursive paths.",
+bench/iterations/004/reviews/codex-final.err:2068:    "finding": "_synthesized is checked but never set after synthesis. A subsequent verification or tool-nudge recursion can run another forced-synthesis turn, violating the once-per-logical-run guarantee.",
+bench/iterations/004/reviews/codex-final.err:2083:    "suggested_fix": "Move recordSuccess to the terminal path immediately before done, after all nudge and verification recursion decisions, and record only the final accepted attempt."
+bench/iterations/004/reviews/codex-final.err:2089:    "finding": "The attempts accumulator includes only fallback failures plus the terminal invocation. Forced synthesis, tool-nudge retries, and verification retries are model invocations but are omitted; prior edits and recovery attribution are also lost across the latter recursive paths.",
+bench/iterations/004/reviews/codex-final.err:2175:  naturally resolves the 4 deferred findings (#1 post-tool-text, #7 momentum timing, #8 root attempt
+bench/iterations/004/reviews/codex-final.err:2195:        { "id": 6, "sev": "P1", "loc": "_synthesized never set", "verdict": "FIXED — threaded into fallback/nudge/verify recursion" },
+bench/iterations/004/reviews/codex-final.err:2201:        { "id": 7, "sev": "P1", "loc": "momentum recorded before nudge/verify decide", "verdict": "DEFERRED iter-006 — moving recordSuccess past the recursion risks double-counting with the child call's own momentum; entangled with the recursion architecture the TurnController unifies." },
+bench/iterations/004/reviews/codex-final.err:2202:        { "id": 8, "sev": "P1", "loc": "attempts accumulator omits nudge/verify invocations", "verdict": "PARTIAL/DEFERRED iter-006 — cost baseline + _synthesized now thread through all paths; the full attempt array + artifacts through nudge/verify is the root-owned run accumulator the TurnController introduces." },
+bench/iterations/004/reviews/codex-final.err:2235:packages/core/src/agent/loop.ts:1915:          "tool-use nudge skipped — remaining budget below 20% threshold",
+bench/iterations/004/reviews/codex-final.err:3375:packages/core/src/agent/subagent.ts:1012:        const nudgeBudgetRemaining = costTracker.getRemainingBudget();
+bench/iterations/004/reviews/codex-final.err:3379:packages/core/src/agent/loop.ts:1902:      const nudgeBudgetRemaining = costTracker.getRemainingBudget();
+bench/iterations/004/reviews/codex-final.err:4132:{"fixes":[{"id":2,"status":"resolved","note":"Synthesis context appends the SDK response messages containing the attempt's assistant tool calls and tool results."},{"id":3,"status":"not-resolved","note":"The 60s timer bounds synthResult.text, but the preceding await result.response is unbounded; this same response promise is documented later as capable of hanging."},{"id":4,"status":"resolved","note":"Caller-originated cancellation during the synthesis model call now emits interrupted and returns."},{"id":5,"status":"not-resolved","note":"The immediate empty synthesis retries correctly, but a fallback/nudge/verify re-entry with _synthesized=true can produce tool-only output and be accepted because needsSynthesis and isEmpty are both false."},{"id":6,"status":"resolved","note":"The synthesis-attempted flag is propagated through fallback, tool-nudge, and verification recursion."},{"id":10,"status":"resolved","note":"A root run-cost baseline is propagated through all recursive paths and aggregate costUsd uses its delta."},{"id":11,"status":"resolved","note":"Parallel phases now require at least one nonblank agent result and otherwise fail."},{"id":12,"status":"resolved","note":"Failed attempt outcomes retain initialStopCause instead of being overwritten with empty_output."},{"id":13,"status":"resolved","note":"Paused, completed, and failed pipeline terminals are finalized before being yielded."}],"deferrals_acceptable":false,"new_P0_P1":[{"severity":"P1","file":"packages/core/src/agent/loop.ts","line":1551,"finding":"Forced-synthesis setup can still hang and ignore caller cancellation while awaiting result.response.","suggested_fix":"Race response metadata retrieval against the synthesis timeout and caller signal, or capture response messages during stream consumption."},{"severity":"P1","file":"packages/core/src/agent/loop.ts","line":1633,"finding":"Once _synthesized is inherited, a later tool-only/no-text invocation can silently succeed with hasFinalResponse=false.","suggested_fix":"Make success contingent on hasFinalResponse for tool-only descendants of a logical run that already attempted synthesis."},{"severity":"P1","file":"packages/core/src/agent/loop.ts","line":1562,"finding":"The original 14th finding is undisposed: synthesis usage is now recorded, but the direct model invocation still bypasses the router's hard-budget check.","suggested_fix":"Check the CostTracker budget immediately before invoking synthesis."}]}
+
+exec
+/bin/zsh -lc "git status --short
+rg -n 'tool-nudge|verification_retry|tool_nudge|attempts.*length|recordSuccess' packages/core/src/__tests__ --glob '*.test.ts'
+cat packages/core/package.json" in /Users/justin.jilg/Projects/brainstorm
+ succeeded in 3550ms:
+2026-07-18 20:44:13.918 xcodebuild[88107:11597365]  DVTFilePathFSEvents: Failed to start fs event stream.
+2026-07-18 20:44:14.215 xcodebuild[88107:11597364] [MT] DVTDeveloperPaths: Failed to get length of DARWIN_USER_CACHE_DIR from confstr(3), error = Error Domain=NSPOSIXErrorDomain Code=5 "Input/output error". Using NSCachesDirectory instead.
+git: warning: confstr() failed with code 5: couldn't get path of DARWIN_USER_TEMP_DIR; using /tmp instead
+git: error: couldn't create cache file '/tmp/xcrun_db-LYYkGu5S' (errno=Operation not permitted)
+2026-07-18 20:44:14.960 xcodebuild[88109:11597379]  DVTFilePathFSEvents: Failed to start fs event stream.
+2026-07-18 20:44:15.191 xcodebuild[88109:11597378] [MT] DVTDeveloperPaths: Failed to get length of DARWIN_USER_CACHE_DIR from confstr(3), error = Error Domain=NSPOSIXErrorDomain Code=5 "Input/output error". Using NSCachesDirectory instead.
+?? bench/iterations/005/reviews/codex-005-6.err
+?? bench/iterations/005/reviews/codex-005-6.out
+?? bench/iterations/005/reviews/codex.err
+?? bench/iterations/005/reviews/codex.out
+?? bench/iterations/005/reviews/iter-005-6.diff
+?? bench/iterations/005/reviews/iter.diff
+?? bench/iterations/006/
+packages/core/src/__tests__/loop-tool-enforcement.test.ts:298:    const nudges = events.filter((e) => e.type === "tool-nudge");
+packages/core/src/__tests__/loop-tool-enforcement.test.ts:331:    expect(events.some((e) => e.type === "tool-nudge")).toBe(false);
+packages/core/src/__tests__/loop-tool-enforcement.test.ts:343:    expect(events.some((e) => e.type === "tool-nudge")).toBe(false);
+packages/core/src/__tests__/loop-tool-enforcement.test.ts:358:    expect(events.filter((e) => e.type === "tool-nudge")).toHaveLength(2);
+packages/core/src/__tests__/loop-tool-enforcement.test.ts:371:    expect(events.some((e) => e.type === "tool-nudge")).toBe(false);
+packages/core/src/__tests__/loop-tool-enforcement.test.ts:393:    expect(events.filter((e) => e.type === "tool-nudge")).toHaveLength(1);
+packages/core/src/__tests__/forced-synthesis.test.ts:302:    const spy = vi.spyOn(ctx.router, "recordSuccess");
+packages/core/src/__tests__/forced-synthesis.test.ts:331:    const spy = vi.spyOn(ctx.router, "recordSuccess");
+{
+  "name": "@brainst0rm/core",
+  "version": "0.14.5",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsup && node scripts/copy-skills.mjs",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@brainst0rm/agents": "workspace:*",
+    "@brainst0rm/code-graph": "workspace:*",
+    "@brainst0rm/config": "workspace:*",
+    "@brainst0rm/contracts": "workspace:*",
+    "@brainst0rm/db": "workspace:*",
+    "@brainst0rm/gateway": "workspace:*",
+    "@brainst0rm/orchestrator": "workspace:*",
+    "@brainst0rm/providers": "workspace:*",
+    "@brainst0rm/router": "workspace:*",
+    "@brainst0rm/shared": "workspace:*",
+    "@brainst0rm/tools": "workspace:*",
+    "ai": "^6",
+    "better-sqlite3": "^11",
+    "pdf-parse": "^2.4.5",
+    "zod": "^3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7",
+    "@types/node": "^22.0.0",
+    "@types/pdf-parse": "^1.1.5",
+    "fast-check": "^4.6.0",
+    "tsup": "^8",
+    "typescript": "^5.7"
+  },
+  "description": "Agent loop engine, session manager, middleware pipeline, and intelligence",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/justinjilg/brainstorm.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://brainstorm.co",
+  "keywords": [
+    "ai",
+    "coding-assistant",
+    "llm",
+    "multi-model",
+    "routing",
+    "agent",
+    "developer-tools",
+    "brainstorm"
+  ],
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "publishConfig": {
+    "access": "public"
+  }
+}
+
+codex
+The recursive paths are serial and accumulator copies are immutable; I’m checking the focused tests and type surface now, including whether the “every invocation” claim also covers direct forced synthesis.
+exec
+/bin/zsh -lc 'pnpm --filter @brainst0rm/core exec vitest run src/__tests__/forced-synthesis.test.ts src/__tests__/loop-tool-enforcement.test.ts src/__tests__/loop-verify.test.ts' in /Users/justin.jilg/Projects/brainstorm
+ exited 1 in 540ms:
+failed to load config from /Users/justin.jilg/Projects/brainstorm/packages/core/vitest.config.ts
+
+⎯⎯⎯⎯⎯⎯⎯ Startup Error ⎯⎯⎯⎯⎯⎯⎯⎯
+Error: EPERM: operation not permitted, open '/Users/justin.jilg/Projects/brainstorm/packages/core/node_modules/.vite-temp/vitest.config.ts.timestamp-1784421864351-8b8a2cfde73368.mjs'
+    at async open (node:internal/fs/promises:640:25)
+    at async Object.writeFile (node:internal/fs/promises:1257:14)
+    at async loadConfigFromBundledFile (file:///Users/justin.jilg/Projects/brainstorm/node_modules/.pnpm/vite@6.4.2_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/dep-Dq2t6Dq0.js:49483:5)
+    at async bundleAndLoadConfigFile (file:///Users/justin.jilg/Projects/brainstorm/node_modules/.pnpm/vite@6.4.2_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/dep-Dq2t6Dq0.js:49328:22)
+    at async loadConfigFromFile (file:///Users/justin.jilg/Projects/brainstorm/node_modules/.pnpm/vite@6.4.2_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/dep-Dq2t6Dq0.js:49291:44)
+    at async resolveConfig (file:///Users/justin.jilg/Projects/brainstorm/node_modules/.pnpm/vite@6.4.2_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/dep-Dq2t6Dq0.js:48786:24)
+    at async _createServer (file:///Users/justin.jilg/Projects/brainstorm/node_modules/.pnpm/vite@6.4.2_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/dep-Dq2t6Dq0.js:38373:66)
+    at async createViteServer (file:///Users/justin.jilg/Projects/brainstorm/node_modules/.pnpm/vitest@3.2.4_@types+debug@4.1.13_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vitest/dist/chunks/cli-api.BkDphVBG.js:6911:17)
+    at async createVitest (file:///Users/justin.jilg/Projects/brainstorm/node_modules/.pnpm/vitest@3.2.4_@types+debug@4.1.13_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vitest/dist/chunks/cli-api.BkDphVBG.js:10202:17)
+    at async prepareVitest (file:///Users/justin.jilg/Projects/brainstorm/node_modules/.pnpm/vitest@3.2.4_@types+debug@4.1.13_@types+node@22.19.19_jiti@2.7.0_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vitest/dist/chunks/cli-api.BkDphVBG.js:10541:14) {
+  errno: -1,
+  code: 'EPERM',
+  syscall: 'open',
+  path: '/Users/justin.jilg/Projects/brainstorm/packages/core/node_modules/.vite-temp/vitest.config.ts.timestamp-1784421864351-8b8a2cfde73368.mjs'
+}
+
+
+
+undefined
+/Users/justin.jilg/Projects/brainstorm/packages/core:
+ ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command failed with exit code 1: vitest run src/__tests__/forced-synthesis.test.ts src/__tests__/loop-tool-enforcement.test.ts src/__tests__/loop-verify.test.ts
+
+codex
+{"fixes":[{"id":7,"status":"resolved","note":"Momentum is credited exactly once by the terminal recursive invocation and only for a succeeded RunOutcome; superseded nudge/verification invocations return without credit. No new race is introduced."},{"id":8,"status":"not-resolved","note":"Nudge and verification recursion now preserve each runAgentLoop invocation exactly once, but the direct forced-synthesis model invocation is still folded into thisAttempt rather than represented as its own ModelAttemptOutcome, so attempts does not carry every model invocation."},{"id":9,"status":"not-resolved","note":"Fallback/nudge/verification actions are appended in order, and fallback-then-terminal-synthesis is correct. However forced_synthesis is appended only at the terminal; if synthesis succeeds and that turn then enters verification_retry, the recursive terminal emits only verification_retry, losing the earlier forced_synthesis action."}],"new_P0_P1":[]}
+tokens used
+46,224
