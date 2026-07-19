@@ -123,9 +123,13 @@ export const fileWriteTool = defineTool({
     const { getFileTracker } = await import("../file-tracker.js");
     getFileTracker().recordWrite(safePath);
 
-    // Track in active transaction
+    // Track in active transaction — pass the hash of the bytes we JUST wrote
+    // (not a re-read) so a concurrent session's write can't be recorded as ours
+    // (closes the record-time TOCTOU in transaction rollback safety).
     const { recordTransactionFile } = await import("./transaction.js");
-    recordTransactionFile(safePath);
+    const { createHash } = await import("node:crypto");
+    const writtenHash = createHash("sha256").update(content).digest("hex");
+    recordTransactionFile(safePath, writtenHash);
 
     // Diff preview (non-blocking)
     const { getDiffSummary } = await import("../diff-preview.js");

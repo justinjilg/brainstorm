@@ -105,3 +105,58 @@ describe("transaction — cleanup + rollback safety (005.6 hardening)", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 });
+
+describe("transaction rollback — atomic hash + unverifiable safety (Codex 005.6 a)", () => {
+  it("refuses rollback when the file is unverifiable (no recorded hash)", async () => {
+    const { initCheckpointManager } = await import("../checkpoint.js");
+    const { withSession: ws } = await import("../session-context.js");
+    const dir = mkdtempSync(join(tmpdir(), "tx-unverif-"));
+    const file = join(dir, "x.ts");
+
+    await ws("tx-U", async () => {
+      initCheckpointManager("tx-U");
+      const { getCheckpointManager } = await import("../checkpoint.js");
+      writeFileSync(file, "v1\n");
+      getCheckpointManager()!.snapshot(file);
+      await beginTransactionTool.execute({});
+      writeFileSync(file, "v2\n");
+      // Record with an EMPTY hash → unverifiable.
+      recordTransactionFile(file, "");
+
+      const result = await rollbackTransactionTool.execute({});
+      expect((result as any).filesFailed[0].error).toContain("unverifiable");
+      // File untouched (not reverted).
+      expect(readFileSync(file, "utf-8")).toBe("v2\n");
+    });
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("reverts cleanly when the recorded hash matches (no concurrent edit)", async () => {
+    const { createHash } = await import("node:crypto");
+    const { initCheckpointManager } = await import("../checkpoint.js");
+    const { withSession: ws } = await import("../session-context.js");
+    const dir = mkdtempSync(join(tmpdir(), "tx-clean-"));
+    const file = join(dir, "y.ts");
+
+    await ws("tx-V", async () => {
+      initCheckpointManager("tx-V");
+      const { getCheckpointManager } = await import("../checkpoint.js");
+      writeFileSync(file, "original\n");
+      getCheckpointManager()!.snapshot(file);
+      await beginTransactionTool.execute({});
+      const written = "changed\n";
+      writeFileSync(file, written);
+      // Atomic hash of the bytes we wrote (what file_write passes).
+      recordTransactionFile(
+        file,
+        createHash("sha256").update(written).digest("hex"),
+      );
+
+      const result = await rollbackTransactionTool.execute({});
+      expect((result as any).filesFailed).toHaveLength(0);
+      // Reverted to the snapshot.
+      expect(readFileSync(file, "utf-8")).toBe("original\n");
+    });
+    rmSync(dir, { recursive: true, force: true });
+  });
+});

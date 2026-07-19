@@ -72,11 +72,17 @@ export function getTransactionFiles(): string[] {
   return [...(peekTx(getSessionId())?.files.keys() ?? [])];
 }
 
-export function recordTransactionFile(path: string): void {
+/**
+ * Record a file touched by the active transaction. `contentHash` is the hash
+ * of the bytes the writer JUST wrote — pass it to close the record-time TOCTOU
+ * (re-reading the path here lets a concurrent session's write be recorded as
+ * ours). Falls back to a best-effort re-read only when the caller can't supply
+ * it; that fallback is marked unverifiable so rollback stays conservative.
+ */
+export function recordTransactionFile(path: string, contentHash?: string): void {
   const s = peekTx(getSessionId());
   if (s?.active) {
-    // Record the hash AS WRITTEN so rollback can detect later divergence.
-    s.files.set(path, hashFile(path) ?? "");
+    s.files.set(path, contentHash ?? hashFile(path) ?? "");
   }
 }
 
@@ -152,21 +158,32 @@ export const rollbackTransactionTool = defineTool({
     if (cp) {
       // Revert dependents before dependencies to maintain consistency
       for (const file of ordered) {
-        // Safety: if the file diverged from what THIS transaction last wrote
-        // (a concurrent session edited it since), refuse to revert — reverting
-        // to our older snapshot would silently clobber the other session's
-        // work. "" recorded-hash means the file was unreadable at record time.
+        // Safety: only revert when we can POSITIVELY verify the file still
+        // matches what THIS transaction last wrote. If it diverged (a
+        // concurrent session edited it) OR we can't verify (no recorded hash,
+        // or the current file is unreadable/deleted), refuse — reverting to our
+        // older snapshot would risk clobbering another session's work.
+        // NOTE: a check-to-revert TOCTOU window remains inherent without file
+        // locking; the writer passes its content hash to close the larger
+        // record-time window, and concurrent same-workspace transactions are a
+        // rare case (sessions are usually distinct workspaces).
         const recordedHash = s.files.get(file) ?? "";
-        if (recordedHash) {
-          const currentHash = hashFile(file);
-          if (currentHash !== null && currentHash !== recordedHash) {
-            failed.push({
-              file,
-              error:
-                "File changed since this transaction's last write (concurrent edit) — rollback refused to avoid clobbering it",
-            });
-            continue;
-          }
+        const currentHash = hashFile(file);
+        if (!recordedHash || currentHash === null) {
+          failed.push({
+            file,
+            error:
+              "Cannot verify the file matches this transaction's last write (unverifiable) — rollback refused to avoid clobbering concurrent work",
+          });
+          continue;
+        }
+        if (currentHash !== recordedHash) {
+          failed.push({
+            file,
+            error:
+              "File changed since this transaction's last write (concurrent edit) — rollback refused to avoid clobbering it",
+          });
+          continue;
         }
         try {
           const result = cp.revertLast(file);
