@@ -36,6 +36,7 @@ import {
   type ModelAttemptOutcome,
 } from "@brainst0rm/shared";
 import type { BuildStateTracker } from "./build-state.js";
+import { buildRunOutcome } from "./loop-outcome.js";
 import { LoopDetector } from "./loop-detector.js";
 import { serializeRoutingMetadata, linkSignals } from "@brainst0rm/shared";
 import { createStreamFilter } from "./response-filter.js";
@@ -2196,45 +2197,28 @@ export async function* runAgentLoop(
       });
     }
 
-    // Aggregate outcome: this attempt stitched onto any upstream failed
-    // fallback attempts. initialStopCause is the FIRST attempt's cause (the
-    // upstream one if this is a fallback re-entry), so a recovered run doesn't
-    // masquerade as a clean first stop. verification/security/judge are left
-    // not_run here; wiring their live results into the outcome is a follow-on
-    // (the contract + termination/recovery/cost are established this iteration).
-    // Order: upstream attempts, this turn's main call, then the synthesis call
-    // (a distinct model invocation) if it ran — so attempts carries every call.
-    const allAttempts = [
-      ...(options._attemptsSoFar ?? []),
+    // Aggregate outcome: built by the pure buildRunOutcome() seam (see
+    // loop-outcome.ts) — it stitches upstream attempts + this turn's call + any
+    // synthesis call into `attempts`, composes the ordered recovery sequence,
+    // and sources initialStopCause from the FIRST attempt so a recovered run
+    // doesn't masquerade as a clean stop. Cost is the run DELTA (not the
+    // cumulative session total — a long-lived caller reuses the tracker across
+    // runs; baseline captured at the root).
+    const runOutcome = buildRunOutcome({
+      upstreamAttempts: options._attemptsSoFar ?? [],
       thisAttempt,
-      ...(synthAttempt ? [synthAttempt] : []),
-    ];
-    // Ordered recovery sequence: upstream actions (fallback / nudge / verify,
-    // appended as they happened) plus a forced_synthesis if THIS terminal turn
-    // synthesized. Preserves e.g. A-fallback → synthesis as ["fallback",
-    // "forced_synthesis"] instead of a single tag that erased the fallback.
-    const recoverySeq: NonNullable<RunOutcome["recovery"]> = [
-      ...(options._recoverySoFar ?? []),
-      ...(didSynthesize ? (["forced_synthesis"] as const) : []),
-    ];
-    const aggregateRecovery = recoverySeq.length > 0 ? recoverySeq : undefined;
-    const runOutcome: RunOutcome = {
-      status: turnSuccess ? "succeeded" : "failed",
-      attempts: allAttempts,
-      finalModelId: turnSuccess ? decision.model.id : undefined,
-      initialStopCause: allAttempts[0]?.stopCause ?? initialStopCause,
-      recovery: aggregateRecovery,
+      synthAttempt,
+      upstreamRecovery: options._recoverySoFar ?? [],
+      didSynthesize,
+      turnSuccess,
+      finalModelId: decision.model.id,
+      initialStopCause,
       hasFinalResponse,
       madeChanges: filesWritten.length > 0,
-      verification: "not_run",
-      security: "not_run",
-      judge: "not_run",
-      // Run delta, not the cumulative session total (a long-lived caller
-      // reuses the tracker across runs). Baseline captured at the root.
       costUsd:
         costTracker.getSessionCost() -
         (options._runCostBaseline ?? sessionCostBefore),
-    };
+    });
 
     // Momentum: record ONLY here, at the true terminal. Reaching this point
     // means no Phase-7 nudge / Phase-3 verify recursion took over (those
