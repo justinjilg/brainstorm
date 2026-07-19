@@ -1980,6 +1980,9 @@ export async function* runAgentLoop(
           _forceToolChoice: forceOnRetry,
           _synthesized: synthesisAttempted,
           _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
+          // Carry this invocation into the aggregate so the terminal run
+          // outcome includes the nudge-superseded attempt, not just the final.
+          _attemptsSoFar: [...(options._attemptsSoFar ?? []), thisAttempt],
         });
         return;
       }
@@ -2083,6 +2086,8 @@ export async function* runAgentLoop(
             _forceToolChoice: false,
             _synthesized: synthesisAttempted,
             _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
+            // Include this verify-superseded attempt in the aggregate chain.
+            _attemptsSoFar: [...(options._attemptsSoFar ?? []), thisAttempt],
           });
           return;
         }
