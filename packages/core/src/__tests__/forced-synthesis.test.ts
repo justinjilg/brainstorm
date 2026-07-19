@@ -203,6 +203,10 @@ describe("forced synthesis on step-cap with no final response", () => {
       expect(done.outcome.initialStopCause).toBe("step_cap_reached");
       expect(done.outcome.status).toBe("succeeded");
       expect(done.outcome.hasFinalResponse).toBe(true);
+      // attempts carries BOTH model invocations: the tool-work call + the
+      // distinct synthesis call (Codex #8).
+      expect(done.outcome.attempts).toHaveLength(2);
+      expect(done.outcome.attempts[1].status).toBe("succeeded");
       // Exactly two model calls: the original attempt + one synthesis turn.
       expect(_streamTextCalls).toHaveLength(2);
       // The synthesis call had NO tools.

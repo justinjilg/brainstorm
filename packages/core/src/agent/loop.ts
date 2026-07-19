@@ -1517,6 +1517,9 @@ export async function* runAgentLoop(
     // the iter-006 TurnController, which models a turn's phases explicitly.)
     let hasFinalResponse = accumulatedText.trim().length > 0;
     let didSynthesize = false;
+    // The forced-synthesis model call is a DISTINCT invocation — recorded as
+    // its own attempt so the aggregate carries every model call (Codex #8).
+    let synthAttempt: ModelAttemptOutcome | null = null;
     let synthesisAttempted = options._synthesized ?? false;
     const initialStopCause = classifyStopCause({
       isEmpty,
@@ -1595,6 +1598,8 @@ export async function* runAgentLoop(
           yield { type: "interrupted" };
           return;
         }
+        const synthStartMs = Date.now();
+        const synthCostBefore = costTracker.getSessionCost();
         const synthResult = invokeModelAttempt({
           providerModel: modelId,
           modelEntry: decision.model,
@@ -1635,6 +1640,14 @@ export async function* runAgentLoop(
           accumulatedText += (accumulatedText ? "\n\n" : "") + synthText;
           hasFinalResponse = true;
           didSynthesize = true;
+          synthAttempt = {
+            modelId: decision.model.id,
+            taskType: task.type,
+            status: "succeeded",
+            stopCause: "natural_stop",
+            latencyMs: Date.now() - synthStartMs,
+            costUsd: costTracker.getSessionCost() - synthCostBefore,
+          };
           yield {
             type: "text-delta",
             delta: normalizeInsightMarkers(synthText),
@@ -1990,7 +2003,11 @@ export async function* runAgentLoop(
           // Carry this invocation into the aggregate so the terminal run
           // outcome includes the nudge-superseded attempt, not just the final.
           _attemptsSoFar: [...(options._attemptsSoFar ?? []), thisAttempt],
-          _recoverySoFar: [...(options._recoverySoFar ?? []), "tool_nudge" as const],
+          _recoverySoFar: [
+            ...(options._recoverySoFar ?? []),
+            ...(didSynthesize ? (["forced_synthesis"] as const) : []),
+            "tool_nudge" as const,
+          ],
         });
         return;
       }
@@ -2098,6 +2115,7 @@ export async function* runAgentLoop(
             _attemptsSoFar: [...(options._attemptsSoFar ?? []), thisAttempt],
             _recoverySoFar: [
               ...(options._recoverySoFar ?? []),
+              ...(didSynthesize ? (["forced_synthesis"] as const) : []),
               "verification_retry" as const,
             ],
           });
@@ -2166,7 +2184,13 @@ export async function* runAgentLoop(
     // masquerade as a clean first stop. verification/security/judge are left
     // not_run here; wiring their live results into the outcome is a follow-on
     // (the contract + termination/recovery/cost are established this iteration).
-    const allAttempts = [...(options._attemptsSoFar ?? []), thisAttempt];
+    // Order: upstream attempts, this turn's main call, then the synthesis call
+    // (a distinct model invocation) if it ran — so attempts carries every call.
+    const allAttempts = [
+      ...(options._attemptsSoFar ?? []),
+      thisAttempt,
+      ...(synthAttempt ? [synthAttempt] : []),
+    ];
     // Ordered recovery sequence: upstream actions (fallback / nudge / verify,
     // appended as they happened) plus a forced_synthesis if THIS terminal turn
     // synthesized. Preserves e.g. A-fallback → synthesis as ["fallback",
