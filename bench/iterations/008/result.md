@@ -37,6 +37,8 @@ matching the conversation-keyed session binding) and tails **self-evict once set
 | server chat / chat-stream | YES (HTTP) | `withSession` wrap |
 | sdk `.run()` | possible (embedder) | `withSession` wrap |
 | eval runner | sequential probes, but cheap + consistent | `withSession` inside `withWorkspace` |
+| subagent | YES (parallel subagents) | ALREADY wrapped — `withSession(subagentSessionId, …)` with its own distinct id |
+| revise-loop (`runGateWithRevise`) | n/a | NOT a direct `runAgentLoop` caller (goes through subagent/gate) |
 | workflow engine | NO (steps sequential per run; it's a generator that `yield`s, can't wrap a for-await+yield in a callback) | internal `enterSession` (correct) |
 | CLI interactive (`brainstorm.ts`) | NO (single-user, one loop at a time) | internal `enterSession` |
 | CLI IPC daemon tick / chat | NO (local single-user; daemon tick is a `yield*` generator) | internal `enterSession` |
@@ -46,8 +48,15 @@ matching the conversation-keyed session binding) and tails **self-evict once set
   conversations concurrently`** (both start before either ends) + **`routes each concurrent run's loop
   to its own session scope`** (`getSessionId()` inside each interleaved run resolves to ITS session —
   fails without the `withSession` wrapper). Same-conversation serialization test retained.
-- channels 83 + server 43 + sdk 17 + eval green; typecheck green; `as-any` 295/295.
-- Builds on the iter-008 tools-level guard proving ALS isolation survives interleaved awaits.
+- channels 83 + server 43 + sdk 17 + eval green; full monorepo typecheck 81/81;
+  contract-check gate 18/18; `as-any` 295/295.
+- Builds on the iter-008 tools-level guard proving ALS isolation survives interleaved awaits, plus a
+  new **`session-select-concurrency`** proof: two sessions interleaved, each doing what the REAL loop
+  does (`withSession(id)` wrapper + inner `enterSession(id)` + async tool work) — every
+  `getSessionId()` sees its own id and stores don't cross-wire; and a nested run (subagent pattern)
+  restores the outer scope. This closes the one claim the coordinator test (fake loop, no
+  `enterSession`) left unproven: `enterSession` inside `withSession` is redundant-but-harmless under
+  concurrency.
 
 ## Net
 Different conversations/requests now run concurrently and safely; only same-conversation messages
