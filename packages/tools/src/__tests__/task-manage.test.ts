@@ -6,7 +6,7 @@ import {
   clearTasks,
   setTaskEventHandler,
 } from "../builtin/task-manage.js";
-import { withSession } from "../session-context.js";
+import { withSession, getSessionId } from "../session-context.js";
 
 describe("task-manage tools", () => {
   beforeEach(() => {
@@ -139,6 +139,44 @@ describe("task-manage — concurrent session isolation", () => {
     // A's handler fired; B's did NOT (no cross-wiring).
     expect(aHandler).toHaveBeenCalledTimes(1);
     expect(bHandler).not.toHaveBeenCalled();
+  });
+
+  it("preserves per-session identity across interleaved awaits (true concurrency)", async () => {
+    // The other tests here await each withSession to completion before the next
+    // starts — sequential, not concurrent. This one runs two sessions with
+    // OVERLAPPING lifetimes that yield control (await) between every step, so
+    // their executions genuinely interleave on the event loop. It proves
+    // getSessionId() (AsyncLocalStorage) stays bound to the right session across
+    // await points under real concurrency — the exact property the channel
+    // coordinator relaxation (per-conversation instead of global serialization)
+    // depends on. See bench/iterations/006/concurrency-isolation-audit.md.
+    const tick = () => new Promise((r) => setTimeout(r, 0));
+    const runSession = (id: string, descs: string[]) =>
+      withSession(id, async () => {
+        const seen: string[] = [];
+        for (const d of descs) {
+          await tick(); // yield: the other session may run here
+          seen.push(getSessionId()); // must still be THIS session
+          await taskCreateTool.execute({ description: d });
+        }
+        const list = await taskListTool.execute({});
+        return { seen, tasks: list.tasks.map((t) => t.description) };
+      });
+
+    const [a, b] = await Promise.all([
+      runSession("iso-A", ["A1", "A2", "A3"]),
+      runSession("iso-B", ["B1", "B2"]),
+    ]);
+
+    // Neither session ever observed the other's id despite interleaving...
+    expect(a.seen).toEqual(["iso-A", "iso-A", "iso-A"]);
+    expect(b.seen).toEqual(["iso-B", "iso-B"]);
+    // ...and each store holds only its own tasks (no cross-write under overlap).
+    expect(a.tasks).toEqual(["A1", "A2", "A3"]);
+    expect(b.tasks).toEqual(["B1", "B2"]);
+
+    clearTasks("iso-A");
+    clearTasks("iso-B");
   });
 
   it("clearTasks releases only the named session's store", async () => {
