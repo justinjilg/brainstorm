@@ -39,14 +39,32 @@ export class SessionFileTracker {
   }
 }
 
-/** Global singleton for the current session. */
-let tracker: SessionFileTracker | null = null;
+/**
+ * Per-session trackers. A single global singleton meant concurrent sessions
+ * commingled their file-access history — one session's reads/writes leaked into
+ * ANOTHER session's system-prompt manifest. Keyed by the current session id
+ * with an LRU bound.
+ */
+import { getSessionId } from "./session-context.js";
+
+const MAX_TRACKED_SESSIONS = 256;
+const trackers = new Map<string, SessionFileTracker>();
 
 export function getFileTracker(): SessionFileTracker {
-  if (!tracker) tracker = new SessionFileTracker();
-  return tracker;
+  const sessionId = getSessionId();
+  let t = trackers.get(sessionId);
+  if (!t) {
+    if (trackers.size >= MAX_TRACKED_SESSIONS) {
+      const oldest = trackers.keys().next().value;
+      if (oldest !== undefined) trackers.delete(oldest);
+    }
+    t = new SessionFileTracker();
+    trackers.set(sessionId, t);
+  }
+  return t;
 }
 
-export function resetFileTracker(): void {
-  tracker = new SessionFileTracker();
+/** Reset (clear) the current session's tracker. */
+export function resetFileTracker(sessionId: string = getSessionId()): void {
+  trackers.delete(sessionId);
 }

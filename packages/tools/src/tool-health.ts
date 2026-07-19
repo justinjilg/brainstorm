@@ -65,14 +65,33 @@ export class ToolHealthTracker {
   }
 }
 
-/** Global singleton for the current session. */
-let tracker: ToolHealthTracker | null = null;
+/**
+ * Per-session trackers. A single global singleton meant concurrent sessions
+ * commingled tool success/failure stats (one session's failures skewed
+ * another's unhealthy-tool list). Keyed by session id with an LRU bound.
+ */
+import { getSessionId } from "./session-context.js";
+
+const MAX_TRACKED_SESSIONS = 256;
+const trackers = new Map<string, ToolHealthTracker>();
 
 export function getToolHealthTracker(): ToolHealthTracker {
-  if (!tracker) tracker = new ToolHealthTracker();
-  return tracker;
+  const sessionId = getSessionId();
+  let t = trackers.get(sessionId);
+  if (!t) {
+    if (trackers.size >= MAX_TRACKED_SESSIONS) {
+      const oldest = trackers.keys().next().value;
+      if (oldest !== undefined) trackers.delete(oldest);
+    }
+    t = new ToolHealthTracker();
+    trackers.set(sessionId, t);
+  }
+  return t;
 }
 
-export function resetToolHealthTracker(): void {
-  tracker = new ToolHealthTracker();
+/** Reset (clear) the current session's tracker. */
+export function resetToolHealthTracker(
+  sessionId: string = getSessionId(),
+): void {
+  trackers.delete(sessionId);
 }
