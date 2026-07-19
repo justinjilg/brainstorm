@@ -8,8 +8,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // dev machines; the existing 15s ceiling intermittently times out on CI for the
 // "returns a perfect score" case which does real FS+score work.
 vi.setConfig({ testTimeout: 30_000 });
-import { scoreProbe, type ProbeOutput } from "../scorer.js";
-import type { Probe } from "../types.js";
+import { scoreProbe, summarizeChecks, type ProbeOutput } from "../scorer.js";
+import type { Probe, CheckResult } from "../types.js";
 
 describe("scoreProbe", () => {
   const sandboxDirs: string[] = [];
@@ -103,6 +103,7 @@ describe("scoreProbe", () => {
         check: "min_steps: 2",
         passed: true,
         detail: undefined,
+        dimension: "efficiency",
       },
     ]);
     expect(checks.filter((check) => !check.passed)).toHaveLength(4);
@@ -188,5 +189,44 @@ describe("scoreProbe", () => {
     expect(checks[0].detail).toContain(
       "Type 'number' is not assignable to type 'string'",
     );
+  });
+});
+
+describe("summarizeChecks — correctness vs efficiency split", () => {
+  const c = (
+    check: string,
+    passed: boolean,
+    dimension?: "correctness" | "efficiency",
+  ): CheckResult => ({ check, passed, dimension });
+
+  it("a correct-but-over-budget run is correct, not efficient", () => {
+    // The iter-002/003 case: right artifact, over the step budget.
+    const summary = summarizeChecks([
+      c("code_compiles: x.ts", true, "correctness"),
+      c("answer_contains: isPrime", true, "correctness"),
+      c("max_steps: 6", false, "efficiency"),
+    ]);
+    expect(summary.correct).toBe(true);
+    expect(summary.efficient).toBe(false);
+  });
+
+  it("a wrong run is not correct regardless of efficiency", () => {
+    const summary = summarizeChecks([
+      c("code_compiles: x.ts", false, "correctness"),
+      c("max_steps: 6", true, "efficiency"),
+    ]);
+    expect(summary.correct).toBe(false);
+    expect(summary.efficient).toBe(true);
+  });
+
+  it("efficiency is null when the probe set no step budget", () => {
+    const summary = summarizeChecks([c("code_compiles: x.ts", true)]);
+    expect(summary.correct).toBe(true);
+    expect(summary.efficient).toBeNull();
+  });
+
+  it("treats an untagged check as correctness (default)", () => {
+    const summary = summarizeChecks([c("answer_contains: y", false)]);
+    expect(summary.correct).toBe(false);
   });
 });

@@ -68,12 +68,16 @@ export function scoreProbe(probe: Probe, result: ProbeOutput): CheckResult[] {
     }
   }
 
-  // Step count checks
+  // Step count checks — these measure EFFICIENCY, not correctness. A run that
+  // produces the right artifact but takes more steps than budgeted is
+  // inefficient, not wrong; tagging the dimension lets the scorecard report
+  // the two separately instead of failing a correct run outright.
   if (v.min_steps !== undefined) {
     checks.push({
       check: `min_steps: ${v.min_steps}`,
       passed: result.steps >= v.min_steps,
       detail: result.steps < v.min_steps ? `Only ${result.steps} steps, need at least ${v.min_steps}` : undefined,
+      dimension: "efficiency",
     });
   }
 
@@ -82,6 +86,7 @@ export function scoreProbe(probe: Probe, result: ProbeOutput): CheckResult[] {
       check: `max_steps: ${v.max_steps}`,
       passed: result.steps <= v.max_steps,
       detail: result.steps > v.max_steps ? `Used ${result.steps} steps, max allowed is ${v.max_steps}` : undefined,
+      dimension: "efficiency",
     });
   }
 
@@ -131,6 +136,27 @@ export function scoreProbe(probe: Probe, result: ProbeOutput): CheckResult[] {
   }
 
   return checks;
+}
+
+/**
+ * Split a probe's checks into a correctness/efficiency verdict. Correctness is
+ * the headline signal (did it produce the right artifact/answer?); efficiency
+ * (step budget) is reported alongside, not folded into pass/fail. A probe with
+ * no correctness checks is vacuously correct (its verify block only measured
+ * efficiency). `null` efficiency means the probe set no step budget.
+ */
+export function summarizeChecks(checks: CheckResult[]): {
+  correct: boolean;
+  efficient: boolean | null;
+} {
+  const correctness = checks.filter(
+    (c) => (c.dimension ?? "correctness") === "correctness",
+  );
+  const efficiency = checks.filter((c) => c.dimension === "efficiency");
+  return {
+    correct: correctness.every((c) => c.passed),
+    efficient: efficiency.length === 0 ? null : efficiency.every((c) => c.passed),
+  };
 }
 
 /** Recursively find .ts files in a directory. */

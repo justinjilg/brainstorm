@@ -61,8 +61,17 @@ export interface ProbeResult {
   probeId: string;
   /** Which capability was tested */
   capability: CapabilityDimension;
-  /** Whether all verification checks passed */
+  /**
+   * Whether the probe was CORRECT (all correctness-dimension checks passed).
+   * Efficiency (step budget) is reported separately in `efficient` so a
+   * right-but-slow run isn't scored as a failure — the eval-reliability fix.
+   */
   passed: boolean;
+  /**
+   * Whether the run also met its efficiency budget (step limits). `null` when
+   * the probe set no budget. Informational — does not gate `passed`.
+   */
+  efficient?: boolean | null;
   /** Individual check results */
   checks: CheckResult[];
   /** Model that was used */
@@ -85,6 +94,14 @@ export interface CheckResult {
   check: string;
   passed: boolean;
   detail?: string;
+  /**
+   * Which axis this check measures. Separating them stops an inefficient-but-
+   * correct run (right answer, over the step budget) from scoring the same as
+   * a wrong one — the eval-reliability fix from the iter-002/003 finding that
+   * code-correctness probes penalized agentic behavior. Defaults to
+   * "correctness"; only step-budget checks are "efficiency".
+   */
+  dimension?: "correctness" | "efficiency";
 }
 
 // ── Eval Run ─────────────────────────────────────────────────────────

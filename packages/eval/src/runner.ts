@@ -19,7 +19,7 @@ import {
 import { join, resolve, sep, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import type { Probe, ProbeResult } from "./types.js";
-import { scoreProbe } from "./scorer.js";
+import { scoreProbe, summarizeChecks } from "./scorer.js";
 
 const log = createLogger("eval");
 
@@ -215,13 +215,17 @@ export async function runProbe(
     const durationMs = Date.now() - startTime;
     const cost = costTracker.getSessionCost();
 
-    // Score the result
+    // Score the result. `passed` is CORRECTNESS-first (right artifact/answer);
+    // efficiency (step budget) is reported separately so a correct-but-slow run
+    // is no longer counted as a failure — the eval-reliability fix.
     const checks = scoreProbe(probe, { output, toolCalls, steps, sandboxDir });
+    const { correct, efficient } = summarizeChecks(checks);
 
     return {
       probeId: probe.id,
       capability: probe.capability,
-      passed: checks.every((c) => c.passed),
+      passed: correct,
+      efficient,
       checks,
       modelId: options.modelId ?? "default",
       cost,
