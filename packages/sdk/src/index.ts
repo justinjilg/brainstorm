@@ -27,7 +27,7 @@ import {
   SessionManager,
 } from "@brainst0rm/core";
 import type { AgentEvent } from "@brainst0rm/shared";
-import { createDefaultToolRegistry } from "@brainst0rm/tools";
+import { createDefaultToolRegistry, withSession } from "@brainst0rm/tools";
 import { analyzeProject, type ProjectAnalysis } from "@brainst0rm/ingest";
 import { generateAllDocs, type DocgenResult } from "@brainst0rm/docgen";
 
@@ -128,32 +128,38 @@ export class Brainstorm {
     let toolCallCount = 0;
     const events: AgentEvent[] = [];
 
-    for await (const event of runAgentLoop(sessionManager.getHistory(), {
-      config: this.config,
-      registry,
-      router,
-      costTracker,
-      tools,
-      sessionId: session.id,
-      projectPath: this.projectPath,
-      systemPrompt,
-      disableTools: this.opts.tools === false,
-      preferredModelId: this.opts.model,
-      maxSteps: this.opts.maxSteps ?? 10,
-    })) {
-      events.push(event);
-      switch (event.type) {
-        case "text-delta":
-          fullResponse += event.delta;
-          break;
-        case "routing":
-          modelUsed = event.decision.model.name;
-          break;
-        case "tool-call-start":
-          toolCallCount++;
-          break;
+    // Drive the loop inside the session's ALS scope so session-scoped tool
+    // state resolves to THIS session — an embedder may call chat() concurrently
+    // for different sessions on one SDK instance. withSession saves/restores;
+    // the loop's own enterSession is a bare-enterWith fallback.
+    await withSession(session.id, async () => {
+      for await (const event of runAgentLoop(sessionManager.getHistory(), {
+        config: this.config,
+        registry,
+        router,
+        costTracker,
+        tools,
+        sessionId: session.id,
+        projectPath: this.projectPath,
+        systemPrompt,
+        disableTools: this.opts.tools === false,
+        preferredModelId: this.opts.model,
+        maxSteps: this.opts.maxSteps ?? 10,
+      })) {
+        events.push(event);
+        switch (event.type) {
+          case "text-delta":
+            fullResponse += event.delta;
+            break;
+          case "routing":
+            modelUsed = event.decision.model.name;
+            break;
+          case "tool-call-start":
+            toolCallCount++;
+            break;
+        }
       }
-    }
+    });
 
     const cost = costTracker.getSessionCost();
     closeDb();

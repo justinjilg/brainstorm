@@ -2,7 +2,11 @@ import { loadConfig } from "@brainst0rm/config";
 import { getDb } from "@brainst0rm/db";
 import { createProviderRegistry } from "@brainst0rm/providers";
 import { BrainstormRouter, CostTracker } from "@brainst0rm/router";
-import { createDefaultToolRegistry, withWorkspace } from "@brainst0rm/tools";
+import {
+  createDefaultToolRegistry,
+  withWorkspace,
+  withSession,
+} from "@brainst0rm/tools";
 import {
   runAgentLoop,
   buildSystemPrompt,
@@ -152,41 +156,43 @@ export async function runProbe(
     // paths relative to agentWorkspace. Code-correctness probes use sandbox
     // (clean slate for generated files); everything else uses the project
     // root so introspection tools can search real code.
-    const runPromise = withWorkspace(agentWorkspace, async () => {
-      for await (const event of runAgentLoop(sessionManager.getHistory(), {
-        config,
-        registry,
-        router,
-        costTracker,
-        tools,
-        sessionId: session.id,
-        projectPath: agentWorkspace,
-        systemPrompt,
-        ...(options.modelId && options.modelId !== "default"
-          ? { preferredModelId: options.modelId }
-          : {}),
-        ...(options.maxSteps ? { maxSteps: options.maxSteps } : {}),
-        // Project-workspace probes must not mutate the real project.
-        ...(agentWorkspace === sandboxDir
-          ? {}
-          : { roleToolFilter: { allowedTools: READ_ONLY_PROBE_TOOLS } }),
-      })) {
-        switch (event.type) {
-          case "text-delta":
-            output += event.delta;
-            break;
-          case "tool-call-start":
-            toolCalls.push({
-              name: event.toolName,
-              argsPreview: JSON.stringify(event.args).slice(0, 100),
-            });
-            steps++;
-            break;
-          case "error":
-            throw event.error;
+    const runPromise = withWorkspace(agentWorkspace, () =>
+      withSession(session.id, async () => {
+        for await (const event of runAgentLoop(sessionManager.getHistory(), {
+          config,
+          registry,
+          router,
+          costTracker,
+          tools,
+          sessionId: session.id,
+          projectPath: agentWorkspace,
+          systemPrompt,
+          ...(options.modelId && options.modelId !== "default"
+            ? { preferredModelId: options.modelId }
+            : {}),
+          ...(options.maxSteps ? { maxSteps: options.maxSteps } : {}),
+          // Project-workspace probes must not mutate the real project.
+          ...(agentWorkspace === sandboxDir
+            ? {}
+            : { roleToolFilter: { allowedTools: READ_ONLY_PROBE_TOOLS } }),
+        })) {
+          switch (event.type) {
+            case "text-delta":
+              output += event.delta;
+              break;
+            case "tool-call-start":
+              toolCalls.push({
+                name: event.toolName,
+                argsPreview: JSON.stringify(event.args).slice(0, 100),
+              });
+              steps++;
+              break;
+            case "error":
+              throw event.error;
+          }
         }
-      }
-    });
+      }),
+    );
 
     // Race against timeout. Caller-owns the timer so we can clear it after
     // the race — otherwise the abort listener stays attached and fires on an

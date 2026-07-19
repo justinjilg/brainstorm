@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type Database from "better-sqlite3";
 import { getTestDb } from "@brainst0rm/db";
+import { getSessionId } from "@brainst0rm/tools";
 import type { AgentEvent } from "@brainst0rm/shared";
 import { IntakeCoordinator } from "../coordinator.js";
 import type { CoordinatorDependencies } from "../coordinator.js";
@@ -390,10 +391,11 @@ describe("IntakeCoordinator.handle", () => {
     expect(order).toEqual(["start1", "end1", "start2", "end2"]);
   });
 
-  it("serializes messages across different threads (global loop state)", async () => {
-    // runAgentLoop installs process-global handlers, so even different threads
-    // must not overlap. The coordinator chains every run onto a single global
-    // tail — so thread-2 waits for thread-1 to finish.
+  it("runs different conversations concurrently (per-conversation, not global, serialization)", async () => {
+    // Loop state is now session-scoped and each run is driven inside its own
+    // withSession scope, so different conversations no longer collide — they may
+    // overlap. thread-2 starts WITHOUT waiting for thread-1 to finish. (The old
+    // behavior serialized everything onto one global tail; iter-008 relaxed it.)
     const store = new FakeSessionStore();
     for (const threadKey of ["thread-1", "thread-2"]) {
       store.bind(
@@ -420,16 +422,56 @@ describe("IntakeCoordinator.handle", () => {
     const p2 = coord.handle(makeMsg({ threadKey: "thread-2" }), makeSink());
 
     await flush();
-    // Only thread-1 has started; thread-2 is queued behind it globally.
-    expect(order).toEqual(["start1"]);
+    // BOTH conversations have started — they overlap, not queue.
+    expect(order).toEqual(["start1", "start2"]);
 
+    // Release in either order; each completes independently.
     gates[0]();
     await p1;
-    await flush();
-    expect(order).toEqual(["start1", "end1", "start2"]);
-
     gates[1]();
     await p2;
-    expect(order).toEqual(["start1", "end1", "start2", "end2"]);
+    expect(order).toEqual(["start1", "start2", "end1", "end2"]);
+  });
+
+  it("routes each concurrent run's loop to its own session scope", async () => {
+    // Two different conversations run concurrently; each run must see ITS OWN
+    // session id via getSessionId() inside the loop (the withSession scope), not
+    // the other's — the isolation that makes concurrent runs safe.
+    const store = new FakeSessionStore();
+    for (const threadKey of ["thread-1", "thread-2"]) {
+      store.bind(
+        { channelType: "slack", teamId: "T1", channelId: "C1", threadKey },
+        `sess-${threadKey}`,
+      );
+    }
+    const seen: Array<{ opt: string; observed: string }> = [];
+    const gates: Array<() => void> = [];
+    const loop = (async function* (_msgs: any, options: any) {
+      // Read the ambient session id AFTER an await, so the two runs have
+      // genuinely interleaved before we observe context.
+      await new Promise<void>((res) => gates.push(res));
+      seen.push({ opt: options.sessionId, observed: getSessionId() });
+      yield { type: "done", totalCost: 0 } as AgentEvent;
+    }) as unknown as CoordinatorDependencies["runLoop"];
+    const coord = new IntakeCoordinator(
+      makeDeps({ sessionStore: store as any, runLoop: loop }),
+      { authority: "read-only" },
+    );
+
+    const p1 = coord.handle(makeMsg({ threadKey: "thread-1" }), makeSink());
+    const p2 = coord.handle(makeMsg({ threadKey: "thread-2" }), makeSink());
+    await flush();
+    // Both are parked past their await, interleaved. Release both, then let them
+    // observe context.
+    gates[0]();
+    gates[1]();
+    await Promise.all([p1, p2]);
+
+    // Each run observed the SAME session id it was invoked with — no cross-wire.
+    for (const s of seen) expect(s.observed).toBe(s.opt);
+    expect(seen.map((s) => s.opt).sort()).toEqual([
+      "sess-thread-1",
+      "sess-thread-2",
+    ]);
   });
 });

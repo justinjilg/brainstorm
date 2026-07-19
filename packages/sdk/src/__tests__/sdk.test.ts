@@ -44,6 +44,10 @@ vi.mock("@brainst0rm/core", () => ({
 
 vi.mock("@brainst0rm/tools", () => ({
   createDefaultToolRegistry: mockCreateDefaultToolRegistry,
+  // The SDK drives the loop inside a session scope; the real withSession just
+  // runs the callback within an AsyncLocalStorage context — a pass-through that
+  // invokes fn() is a faithful stand-in for these unit tests.
+  withSession: (_sessionId: string, fn: () => unknown) => fn(),
 }));
 
 vi.mock("@brainst0rm/ingest", () => ({

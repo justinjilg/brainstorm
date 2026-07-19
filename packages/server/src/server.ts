@@ -55,6 +55,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { createLogger } from "@brainst0rm/shared";
 import type { GodModeConnectionResult } from "@brainst0rm/godmode";
+import { withSession } from "@brainst0rm/tools";
 import type { PermissionCheckFn, ToolRegistry } from "@brainst0rm/tools";
 import type { BrainstormRouter, CostTracker } from "@brainst0rm/router";
 import type { ProviderRegistry } from "@brainst0rm/providers";
@@ -830,26 +831,32 @@ export class BrainstormServer {
     req.on("close", onClose);
 
     try {
-      for await (const event of runAgentLoop(messages, {
-        config: this.deps.config,
-        registry: this.deps.registry,
-        router: this.deps.router,
-        costTracker: this.deps.costTracker,
-        tools: this.deps.tools,
-        sessionId: session.id,
-        projectPath: this.opts.projectPath,
-        systemPrompt,
-        systemSegments: segments,
-        permissionCheck:
-          this.deps.permissionCheck ??
-          BrainstormServer.DEFAULT_CHAT_PERMISSION_CHECK,
-        middleware: createDefaultMiddlewarePipeline(this.opts.projectPath),
-        preferredModelId,
-        signal: abortController.signal,
-      })) {
-        if (event.type === "text-delta") finalText += event.delta;
-        if (event.type === "done") totalCost = event.totalCost;
-      }
+      // Drive the loop inside the session's ALS scope so its session-scoped
+      // tool state resolves to THIS session even when other HTTP requests run
+      // concurrently (withSession saves/restores; the loop's own enterSession
+      // is a bare enterWith fallback for standalone callers).
+      await withSession(session.id, async () => {
+        for await (const event of runAgentLoop(messages, {
+          config: this.deps.config,
+          registry: this.deps.registry,
+          router: this.deps.router,
+          costTracker: this.deps.costTracker,
+          tools: this.deps.tools,
+          sessionId: session.id,
+          projectPath: this.opts.projectPath,
+          systemPrompt,
+          systemSegments: segments,
+          permissionCheck:
+            this.deps.permissionCheck ??
+            BrainstormServer.DEFAULT_CHAT_PERMISSION_CHECK,
+          middleware: createDefaultMiddlewarePipeline(this.opts.projectPath),
+          preferredModelId,
+          signal: abortController.signal,
+        })) {
+          if (event.type === "text-delta") finalText += event.delta;
+          if (event.type === "done") totalCost = event.totalCost;
+        }
+      });
     } finally {
       req.off("close", onClose);
     }
@@ -908,26 +915,29 @@ export class BrainstormServer {
     req.on("close", onClose);
 
     try {
-      for await (const event of runAgentLoop(messages, {
-        config: this.deps.config,
-        registry: this.deps.registry,
-        router: this.deps.router,
-        costTracker: this.deps.costTracker,
-        tools: this.deps.tools,
-        sessionId: session.id,
-        projectPath: this.opts.projectPath,
-        systemPrompt,
-        systemSegments: segments,
-        permissionCheck:
-          this.deps.permissionCheck ??
-          BrainstormServer.DEFAULT_CHAT_PERMISSION_CHECK,
-        middleware: createDefaultMiddlewarePipeline(this.opts.projectPath),
-        preferredModelId,
-        signal: abortController.signal,
-      })) {
-        res.write(`data: ${JSON.stringify(event)}\n\n`);
-        if (event.type === "done" || event.type === "error") break;
-      }
+      // Session ALS scope — see the non-streaming chat handler above.
+      await withSession(session.id, async () => {
+        for await (const event of runAgentLoop(messages, {
+          config: this.deps.config,
+          registry: this.deps.registry,
+          router: this.deps.router,
+          costTracker: this.deps.costTracker,
+          tools: this.deps.tools,
+          sessionId: session.id,
+          projectPath: this.opts.projectPath,
+          systemPrompt,
+          systemSegments: segments,
+          permissionCheck:
+            this.deps.permissionCheck ??
+            BrainstormServer.DEFAULT_CHAT_PERMISSION_CHECK,
+          middleware: createDefaultMiddlewarePipeline(this.opts.projectPath),
+          preferredModelId,
+          signal: abortController.signal,
+        })) {
+          res.write(`data: ${JSON.stringify(event)}\n\n`);
+          if (event.type === "done" || event.type === "error") break;
+        }
+      });
     } finally {
       req.off("close", onClose);
     }
