@@ -1,7 +1,11 @@
 import { describe, it, expect } from "vitest";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   beginTransactionTool,
   commitTransactionTool,
+  rollbackTransactionTool,
   isTransactionActive,
   recordTransactionFile,
   getTransactionFiles,
@@ -53,5 +57,51 @@ describe("transaction state — concurrent session isolation", () => {
     expect(eActive).toBe(false);
     expect(fActive).toBe(true);
     expect(fFiles).toEqual(["/f/x.ts"]);
+  });
+});
+
+describe("transaction — cleanup + rollback safety (005.6 hardening)", () => {
+  it("releases state on commit (read paths don't resurrect an active tx)", async () => {
+    await withSession("tx-G", () => beginTransactionTool.execute({}));
+    expect(await withSession("tx-G", () => isTransactionActive())).toBe(true);
+
+    await withSession("tx-G", () => commitTransactionTool.execute({}));
+    // After commit: not active, and a fresh begin works (state was released).
+    expect(await withSession("tx-G", () => isTransactionActive())).toBe(false);
+    const reBegin = await withSession("tx-G", () =>
+      beginTransactionTool.execute({}),
+    );
+    expect(reBegin).toMatchObject({ success: true });
+    await withSession("tx-G", () => commitTransactionTool.execute({}));
+  });
+
+  it("refuses to roll back a file a concurrent edit changed since the last write", async () => {
+    const { initCheckpointManager } = await import("../checkpoint.js");
+    const { withSession: ws } = await import("../session-context.js");
+    const dir = mkdtempSync(join(tmpdir(), "tx-rollback-"));
+    const file = join(dir, "shared.ts");
+
+    await ws("tx-H", async () => {
+      initCheckpointManager("tx-H");
+      const { getCheckpointManager } = await import("../checkpoint.js");
+      writeFileSync(file, "original\n");
+      // Snapshot (as file-write would), then write the transaction's version.
+      getCheckpointManager()!.snapshot(file);
+      await beginTransactionTool.execute({});
+      writeFileSync(file, "transaction-version\n");
+      recordTransactionFile(file); // records hash of "transaction-version"
+
+      // A concurrent session edits the same file AFTER our write.
+      writeFileSync(file, "someone-elses-committed-work\n");
+
+      const result = await rollbackTransactionTool.execute({});
+      // The divergence must be refused, not silently clobbered.
+      expect((result as any).filesFailed.length).toBe(1);
+      expect((result as any).filesFailed[0].error).toContain("concurrent edit");
+      // The other session's work survives.
+      expect(readFileSync(file, "utf-8")).toBe("someone-elses-committed-work\n");
+    });
+
+    rmSync(dir, { recursive: true, force: true });
   });
 });

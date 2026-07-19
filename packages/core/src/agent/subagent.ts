@@ -1,4 +1,5 @@
 import { streamText, stepCountIs } from "ai";
+import { randomUUID } from "node:crypto";
 import type { BrainstormConfig } from "@brainst0rm/config";
 import type { ProviderRegistry } from "@brainst0rm/providers";
 import {
@@ -12,6 +13,7 @@ import {
   setDockerSandbox,
   DockerSandbox,
   withWorkspace,
+  withSession,
   getSandboxPool,
 } from "@brainst0rm/tools";
 import {
@@ -779,7 +781,10 @@ async function runSubagentCore(
     "Subagent capability manifest frozen",
   );
 
-  const subagentSessionId = `subagent-${type}-${Date.now()}`;
+  // Collision-resistant id: parallel subagents spawned in the same millisecond
+  // must NOT share a session (Date.now() alone collided → shared task/tx/
+  // scratchpad stores).
+  const subagentSessionId = `subagent-${type}-${randomUUID()}`;
   const budgetLimit = options.budgetLimit ?? costTracker.getSubagentBudget();
   const costBefore = costTracker.getSessionCost();
 
@@ -904,7 +909,12 @@ async function runSubagentCore(
       },
     ];
 
-    await withWorkspace(projectPath, async () => {
+    await withWorkspace(projectPath, async () =>
+      // Enter the subagent's OWN session scope so its session-scoped tool
+      // stores (tasks, transactions, scratchpad) are isolated from the parent
+      // and from sibling parallel subagents — not shared via the parent
+      // session or DEFAULT_SESSION_ID.
+      withSession(subagentSessionId, async () => {
       // Bounded re-invocation loop = the single-streamText analogue of the
       // loop's Phase 7 self-recursion. `nudge` is the nudgeDepth: iteration 0
       // is the original run; each subsequent iteration is one corrective
@@ -1047,7 +1057,7 @@ async function runSubagentCore(
         messages.push({ role: "user", content: buildToolUseCorrection() });
         forceToolChoice = nextNudge < teMaxNudges;
       }
-    });
+    })); // close inner-arrow body, withSession(), withWorkspace()
   } catch (err: any) {
     // AbortError from budget enforcement is expected — not an error
     if (err.name !== "AbortError") throw err;

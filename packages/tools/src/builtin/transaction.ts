@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineTool } from "../base.js";
 import { readFileSync, existsSync } from "node:fs";
 import { relative, resolve } from "node:path";
+import { createHash } from "node:crypto";
 import { getSessionId } from "../session-context.js";
 
 /**
@@ -20,36 +21,62 @@ import { getSessionId } from "../session-context.js";
 
 interface TxState {
   active: boolean;
-  files: string[];
+  /**
+   * Tracked files → the content hash at the transaction's last write. Rollback
+   * refuses to revert a file whose current content no longer matches, so a
+   * concurrent session that edited the same file afterward isn't silently
+   * clobbered (the safety gap that per-session — hence concurrent —
+   * transactions introduced over the old single-global-flag serialization).
+   */
+  files: Map<string, string>;
 }
 const MAX_TRACKED_SESSIONS = 256;
 const txStates = new Map<string, TxState>();
 
-function txFor(sessionId: string): TxState {
+function hashFile(path: string): string | null {
+  try {
+    return createHash("sha256").update(readFileSync(path)).digest("hex");
+  } catch {
+    return null; // unreadable/absent — recorded as "no hash"
+  }
+}
+
+/** Read-only peek: never allocates a state entry. */
+function peekTx(sessionId: string): TxState | undefined {
+  return txStates.get(sessionId);
+}
+
+/** Get-or-create for the ACTIVE (begin) path. Never evicts an active tx. */
+function beginTxState(sessionId: string): TxState {
   let s = txStates.get(sessionId);
   if (!s) {
     if (txStates.size >= MAX_TRACKED_SESSIONS) {
-      const oldest = txStates.keys().next().value;
-      if (oldest !== undefined) txStates.delete(oldest);
+      for (const [id, st] of txStates) {
+        if (!st.active) {
+          txStates.delete(id);
+          break;
+        }
+      }
     }
-    s = { active: false, files: [] };
+    s = { active: false, files: new Map() };
     txStates.set(sessionId, s);
   }
   return s;
 }
 
 export function isTransactionActive(): boolean {
-  return txFor(getSessionId()).active;
+  return peekTx(getSessionId())?.active ?? false;
 }
 
 export function getTransactionFiles(): string[] {
-  return [...txFor(getSessionId()).files];
+  return [...(peekTx(getSessionId())?.files.keys() ?? [])];
 }
 
 export function recordTransactionFile(path: string): void {
-  const s = txFor(getSessionId());
-  if (s.active && !s.files.includes(path)) {
-    s.files.push(path);
+  const s = peekTx(getSessionId());
+  if (s?.active) {
+    // Record the hash AS WRITTEN so rollback can detect later divergence.
+    s.files.set(path, hashFile(path) ?? "");
   }
 }
 
@@ -62,12 +89,12 @@ export const beginTransactionTool = defineTool({
     description: z.string().optional().describe("What this transaction is for"),
   }),
   async execute({ description }) {
-    const s = txFor(getSessionId());
+    const s = beginTxState(getSessionId());
     if (s.active) {
       return { error: "Transaction already active. Commit or rollback first." };
     }
     s.active = true;
-    s.files = [];
+    s.files = new Map();
     return {
       success: true,
       message: `Transaction started.${description ? ` Purpose: ${description}` : ""} All file writes are now tracked. Use commit_transaction to finalize or rollback_transaction to revert.`,
@@ -82,13 +109,14 @@ export const commitTransactionTool = defineTool({
   permission: "auto",
   inputSchema: z.object({}),
   async execute() {
-    const s = txFor(getSessionId());
-    if (!s.active) {
+    const sessionId = getSessionId();
+    const s = peekTx(sessionId);
+    if (!s?.active) {
       return { error: "No active transaction to commit." };
     }
-    const files = [...s.files];
-    s.active = false;
-    s.files = [];
+    const files = [...s.files.keys()];
+    // Release the state entirely on commit (no lingering inactive entry).
+    txStates.delete(sessionId);
     return {
       success: true,
       filesCommitted: files,
@@ -106,8 +134,9 @@ export const rollbackTransactionTool = defineTool({
     reason: z.string().optional().describe("Why the rollback is needed"),
   }),
   async execute({ reason }) {
-    const s = txFor(getSessionId());
-    if (!s.active) {
+    const sessionId = getSessionId();
+    const s = peekTx(sessionId);
+    if (!s?.active) {
       return { error: "No active transaction to rollback." };
     }
 
@@ -118,11 +147,27 @@ export const rollbackTransactionTool = defineTool({
     const failed: Array<{ file: string; error: string }> = [];
 
     // Order files by dependencies: dependents first, then dependencies
-    const ordered = orderByDependencies(s.files);
+    const ordered = orderByDependencies([...s.files.keys()]);
 
     if (cp) {
       // Revert dependents before dependencies to maintain consistency
       for (const file of ordered) {
+        // Safety: if the file diverged from what THIS transaction last wrote
+        // (a concurrent session edited it since), refuse to revert — reverting
+        // to our older snapshot would silently clobber the other session's
+        // work. "" recorded-hash means the file was unreadable at record time.
+        const recordedHash = s.files.get(file) ?? "";
+        if (recordedHash) {
+          const currentHash = hashFile(file);
+          if (currentHash !== null && currentHash !== recordedHash) {
+            failed.push({
+              file,
+              error:
+                "File changed since this transaction's last write (concurrent edit) — rollback refused to avoid clobbering it",
+            });
+            continue;
+          }
+        }
         try {
           const result = cp.revertLast(file);
           if (result) {
@@ -136,13 +181,13 @@ export const rollbackTransactionTool = defineTool({
       }
     } else {
       // No checkpoint manager — all files fail
-      for (const file of s.files) {
+      for (const file of s.files.keys()) {
         failed.push({ file, error: "CheckpointManager not initialized" });
       }
     }
 
-    s.active = false;
-    s.files = [];
+    // Release the transaction state on rollback.
+    txStates.delete(sessionId);
 
     const partialRollback = failed.length > 0 && reverted.length > 0;
 
