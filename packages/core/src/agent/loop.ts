@@ -1865,6 +1865,12 @@ export async function* runAgentLoop(
     const turnLatencyMs = Date.now() - turnStartMs;
     const turnSuccess = !shouldRetry;
     const turnCost = costTracker.getSessionCost() - sessionCostBefore;
+    // Forced synthesis (if it ran) already booked its delta into the session
+    // cost, so `turnCost` includes it. synthAttempt.costUsd records that same
+    // delta as its own attempt — subtract it here so this (the tool-work)
+    // attempt isn't charged for the synthesis turn as well (Codex #8:
+    // per-attempt cost double-count).
+    const synthCost = synthAttempt?.costUsd ?? 0;
 
     // This attempt's per-model outcome (feeds routing learning). The aggregate
     // RunOutcome below stitches it onto any upstream failed attempts.
@@ -1878,7 +1884,7 @@ export async function* runAgentLoop(
       stopCause: initialStopCause,
       providerFinishReason: finishReason,
       latencyMs: turnLatencyMs,
-      costUsd: turnCost,
+      costUsd: turnCost - synthCost,
     };
 
     // NOTE: momentum (router.recordSuccess) is deliberately NOT recorded here.
@@ -2002,7 +2008,13 @@ export async function* runAgentLoop(
           _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
           // Carry this invocation into the aggregate so the terminal run
           // outcome includes the nudge-superseded attempt, not just the final.
-          _attemptsSoFar: [...(options._attemptsSoFar ?? []), thisAttempt],
+          // Include synthAttempt too when this turn synthesized (Codex #8: a
+          // synthesize-then-nudge chain otherwise loses the synthesis call).
+          _attemptsSoFar: [
+            ...(options._attemptsSoFar ?? []),
+            thisAttempt,
+            ...(synthAttempt ? [synthAttempt] : []),
+          ],
           _recoverySoFar: [
             ...(options._recoverySoFar ?? []),
             ...(didSynthesize ? (["forced_synthesis"] as const) : []),
@@ -2111,8 +2123,13 @@ export async function* runAgentLoop(
             _forceToolChoice: false,
             _synthesized: synthesisAttempted,
             _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
-            // Include this verify-superseded attempt in the aggregate chain.
-            _attemptsSoFar: [...(options._attemptsSoFar ?? []), thisAttempt],
+            // Include this verify-superseded attempt in the aggregate chain,
+            // plus synthAttempt when this turn synthesized (Codex #8).
+            _attemptsSoFar: [
+              ...(options._attemptsSoFar ?? []),
+              thisAttempt,
+              ...(synthAttempt ? [synthAttempt] : []),
+            ],
             _recoverySoFar: [
               ...(options._recoverySoFar ?? []),
               ...(didSynthesize ? (["forced_synthesis"] as const) : []),

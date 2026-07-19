@@ -80,7 +80,9 @@ const model: ModelEntry = {
   lastHealthCheck: 0,
 };
 
-function buildContext() {
+function buildContext(
+  pricingOverride?: { inputPer1MTokens: number; outputPer1MTokens: number },
+) {
   const tmpProjectPath = mkdtempSync(join(tmpdir(), "brainstorm-synth-"));
   const originalHome = process.env.HOME;
   const fakeHome = mkdtempSync(join(tmpdir(), "brainstorm-home-"));
@@ -102,9 +104,12 @@ function buildContext() {
     routing: { rules: [], fallbackModels: [] }, // no fallback → isolate synthesis
     shell: { defaultTimeout: 60000, maxOutputBytes: 50000 },
   };
+  const activeModel: ModelEntry = pricingOverride
+    ? { ...model, pricing: pricingOverride }
+    : model;
   const registry: any = {
-    models: [model],
-    getModel: (id: string) => (id === model.id ? model : undefined),
+    models: [activeModel],
+    getModel: (id: string) => (id === activeModel.id ? activeModel : undefined),
     getProvider: () => ({}),
   };
   const db = getTestDb();
@@ -211,6 +216,44 @@ describe("forced synthesis on step-cap with no final response", () => {
       expect(_streamTextCalls).toHaveLength(2);
       // The synthesis call had NO tools.
       expect(_streamTextCalls[1].tools).toBeUndefined();
+    } finally {
+      ctx.cleanup();
+    }
+  });
+
+  it("does not double-count synthesis cost across attempts (Codex #8)", async () => {
+    // Tool work hits the cap, then synthesis writes the answer. With non-zero
+    // pricing, both the tool-work attempt and the synthesis attempt incur cost.
+    // The synthesis delta must be booked to the synthesis attempt ONLY — not
+    // also folded into the tool-work attempt's costUsd. Invariant: the
+    // per-attempt costs sum to the aggregate run cost.
+    _scripts = [
+      toolCallScript("tool-calls", 2),
+      {
+        parts: [{ type: "text-delta", text: "Here is the final answer." }],
+        text: "Here is the final answer.",
+        finishReason: "stop",
+        steps: 1,
+      },
+    ];
+    const ctx = buildContext({
+      inputPer1MTokens: 1000,
+      outputPer1MTokens: 1000,
+    });
+    try {
+      const events = await ctx.run();
+      const done = events.find((e) => e.type === "done");
+      const attempts = done.outcome.attempts;
+      expect(attempts).toHaveLength(2);
+      // Both attempts cost something (proves the test exercises the double-count
+      // path, not a free-model no-op).
+      expect(attempts[0].costUsd).toBeGreaterThan(0);
+      expect(attempts[1].costUsd).toBeGreaterThan(0);
+      // The tool-work attempt excludes the synthesis delta...
+      expect(attempts[0].costUsd).toBeLessThan(done.outcome.costUsd);
+      // ...and the per-attempt costs sum to the aggregate (no double-count).
+      const summed = attempts[0].costUsd + attempts[1].costUsd;
+      expect(summed).toBeCloseTo(done.outcome.costUsd, 12);
     } finally {
       ctx.cleanup();
     }
