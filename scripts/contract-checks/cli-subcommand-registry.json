@@ -43,6 +43,7 @@
     "program:doctor": "infrastructure",
     "program:ecosystem": "ecosystem",
     "program:eval": "tool-driven",
+    "program:eval-e2e": "tool-driven",
     "program:eval-swe-bench": "tool-driven",
     "program:findings": "tool-driven",
     "program:ingest": "tool-driven",

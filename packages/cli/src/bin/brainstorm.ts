@@ -586,6 +586,75 @@ program
     },
   );
 
+// ── End-to-End Kernel Suite ───────────────────────────────────────
+
+program
+  .command("eval-e2e")
+  .description(
+    "Run the frozen end-to-end kernel suite against a pinned model (verified sandbox artifacts)",
+  )
+  .requiredOption("--model <id>", "Model to pin (strict — no fallback)")
+  .option(
+    "--suite <path>",
+    "Frozen suite JSONL (relative to cwd)",
+    "eval-data/kernel-e2e-v1.jsonl",
+  )
+  .option("--trials <n>", "Trials per task", "1")
+  .option("--task <id>", "Run only the task with this id")
+  .option(
+    "--no-jail",
+    "Do not require the Docker jail for adversarial tasks (runs their code unsandboxed)",
+  )
+  .option("--json", "Emit the scorecard as JSON to stdout")
+  .action(
+    async (opts: {
+      model: string;
+      suite: string;
+      trials?: string;
+      task?: string;
+      jail?: boolean;
+      json?: boolean;
+    }) => {
+      const { loadE2EDataset, runE2ESuite, formatE2EScorecard } = await import(
+        "@brainst0rm/eval"
+      );
+      const { resolve } = await import("node:path");
+      const suitePath = resolve(process.cwd(), opts.suite);
+      let tasks;
+      try {
+        tasks = loadE2EDataset(suitePath);
+      } catch (err) {
+        process.stderr.write(
+          `Error: could not load suite at ${suitePath}: ${(err as Error).message}\n`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+      if (opts.task) {
+        tasks = tasks.filter((t) => t.id === opts.task);
+        if (tasks.length === 0) {
+          process.stderr.write(`Error: no task with id '${opts.task}'.\n`);
+          process.exitCode = 1;
+          return;
+        }
+      }
+
+      const scorecard = await runE2ESuite(tasks, {
+        modelId: opts.model,
+        trialsPerTask: parseInt(opts.trials ?? "1", 10),
+        // commander sets opts.jail=false for --no-jail; default (undefined/true)
+        // lets the runner keep its per-domain default (adversarial → jailed).
+        requireJail: opts.jail === false ? false : undefined,
+      });
+
+      if (opts.json) {
+        process.stdout.write(JSON.stringify(scorecard) + "\n");
+      } else {
+        process.stdout.write(formatE2EScorecard(scorecard) + "\n");
+      }
+    },
+  );
+
 // ── SWE-bench Eval Command ────────────────────────────────────────
 
 program
