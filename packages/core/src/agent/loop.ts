@@ -510,6 +510,12 @@ export interface AgentLoopOptions {
   disableTools?: boolean;
   /** Override model selection — bypass the router. Used by cross-model workflows. */
   preferredModelId?: string;
+  /**
+   * Permit recovery to a different model when the preferred/routed model is
+   * unavailable or returns an unusable response. Defaults to true. Set false
+   * for an auditable strict model pin.
+   */
+  allowModelFallback?: boolean;
   /** Override max agentic steps (default: config.general.maxSteps). */
   maxSteps?: number;
   /** Context compaction support. If provided, compaction is checked before each LLM call. */
@@ -737,6 +743,16 @@ export async function* runAgentLoop(
         reason: `Model pin: ${options.preferredModelId}`,
       };
     } else {
+      if (options.allowModelFallback === false) {
+        yield {
+          type: "error" as const,
+          error: new Error(
+            `Strictly pinned model '${options.preferredModelId}' is not available`,
+          ),
+          category: "model-api" as const,
+        };
+        return;
+      }
       // Model not in registry — warn and fall back to routing (don't fail silently)
       const routed = router.route(task, conversationTokens);
       yield {
@@ -755,7 +771,7 @@ export async function* runAgentLoop(
   // failed model 3 times per session, we skip it immediately after 3 total
   // failures within the cooldown window.
   const primaryCircuit = getLLMCircuit(decision.model.id);
-  if (!primaryCircuit.canExecute()) {
+  if (!primaryCircuit.canExecute() && options.allowModelFallback !== false) {
     const openModelId = decision.model.id;
     const fallbackWithClosedCircuit = decision.fallbacks?.find((f) =>
       getLLMCircuit(f.id).canExecute(),
@@ -1683,8 +1699,7 @@ export async function* runAgentLoop(
     // not a success). Non-tool turns fall back to the classic empty signal.
     const toolTurnWithoutAnswer =
       shouldUseTools && toolCallCount > 0 && !hasFinalResponse;
-    const shouldRetry =
-      toolCallTruncated || toolTurnWithoutAnswer || isEmpty;
+    const shouldRetry = toolCallTruncated || toolTurnWithoutAnswer || isEmpty;
 
     // Record circuit breaker outcome for this model.
     // Empty response / truncated tool-call = failure (nothing usable).
@@ -1699,8 +1714,13 @@ export async function* runAgentLoop(
       breaker.recordSuccess();
     }
     // Build fallback list: use decision.fallbacks, or generate from registry if empty
-    let fallbacks = decision.fallbacks;
-    if (fallbacks.length === 0 && shouldRetry) {
+    let fallbacks =
+      options.allowModelFallback === false ? [] : decision.fallbacks;
+    if (
+      options.allowModelFallback !== false &&
+      fallbacks.length === 0 &&
+      shouldRetry
+    ) {
       // Fallback models for empty responses — configurable via config.routing.fallbackModels
       const RETRY_MODELS: string[] = (config as any).routing
         ?.fallbackModels ?? [
@@ -1783,7 +1803,10 @@ export async function* runAgentLoop(
           _synthesized: synthesisAttempted,
           // Preserve the run-cost baseline across the whole fallback chain.
           _runCostBaseline: options._runCostBaseline ?? sessionCostBefore,
-          _recoverySoFar: [...(options._recoverySoFar ?? []), "fallback" as const],
+          _recoverySoFar: [
+            ...(options._recoverySoFar ?? []),
+            "fallback" as const,
+          ],
         } as any);
         return;
       }

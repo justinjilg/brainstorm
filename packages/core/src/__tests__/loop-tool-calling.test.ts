@@ -350,3 +350,46 @@ describe("agent loop — truncated tool-call detection", () => {
     ).toBe(false);
   });
 });
+
+describe("agent loop — strict model pin", () => {
+  let ctx: RunContext;
+  beforeEach(() => {
+    _streamParts = [{ type: "finish", finishReason: "stop" }];
+    _finishReason = "stop";
+    ctx = buildContext();
+  });
+  afterEach(() => ctx.cleanup());
+
+  it("fails explicitly when the pinned model is not registered", async () => {
+    const events = await collectEvents(ctx, {
+      preferredModelId: "local/missing",
+      allowModelFallback: false,
+    });
+
+    const error = events.find((event) => event.type === "error");
+    expect(error?.error.message).toMatch(/strictly pinned model/i);
+    expect(events.some((event) => event.type === "routing")).toBe(false);
+  });
+
+  it("does not retry an empty response on another model", async () => {
+    const fallback = {
+      ...(ctx.registry.models as ModelEntry[])[0],
+      id: "openai/fallback",
+      name: "Fallback",
+    };
+    (ctx.registry.models as ModelEntry[]).push(fallback);
+    const originalGetModel = ctx.registry.getModel!;
+    ctx.registry.getModel = (id: string) =>
+      id === fallback.id ? fallback : originalGetModel(id);
+    (ctx.config.routing as any).fallbackModels = [fallback.id];
+
+    const events = await collectEvents(ctx, { allowModelFallback: false });
+
+    expect(events.some((event) => event.type === "model-retry")).toBe(false);
+    expect(
+      events.find((event) => event.type === "fallback-exhausted"),
+    ).toMatchObject({
+      modelsTried: ["openai/gpt-5.4"],
+    });
+  });
+});

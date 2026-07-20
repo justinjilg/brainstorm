@@ -55,48 +55,83 @@ brainstorm run "base prompt" --pipe             # Argument + stdin appended
 
 **Flags:**
 
-| Flag                | Effect                                                            |
-| ------------------- | ----------------------------------------------------------------- |
-| `--json`            | Output structured JSON on stdout only (progress on stderr)        |
-| `--pipe`            | Read prompt from stdin                                            |
-| `--model <id>`      | Target specific model (bypass routing)                            |
-| `--tools`           | Enable tool use (disabled by default)                             |
-| `--max-steps <n>`   | Maximum agentic steps (default: 1)                                |
-| `--strategy <name>` | Routing strategy: cost-first, quality-first, combined, capability |
-| `--lfg`             | Full auto mode — skip all permission confirmations                |
-| `--unattended`      | Enable tools + auto-approve + auto-commit                         |
+| Flag                | Effect                                                               |
+| ------------------- | -------------------------------------------------------------------- |
+| `--json`            | Output one structured result on stdout (progress/logs on stderr)     |
+| `--events`          | Stream structured `AgentEvent` JSONL on stdout                       |
+| `--pipe`            | Read prompt from stdin                                               |
+| `--model <id>`      | Prefer a specific model; governed recovery remains enabled           |
+| `--strict-model`    | Require `--model` and prohibit recovery to a different model         |
+| `--tools`           | Enable tool use (disabled by default)                                |
+| `--max-steps <n>`   | Maximum agentic steps (default: 1)                                   |
+| `--strategy <name>` | Routing strategy: cost-first, quality-first, combined, or capability |
+| `--lfg`             | Full auto mode — skip all permission confirmations                   |
+| `--unattended`      | Enable tools + auto-approve + auto-commit                            |
 
 **Output (`--json`):**
 
 ```json
 {
+  "schemaVersion": 1,
+  "success": true,
   "text": "response content",
-  "model": "claude-opus-4-6",
+  "model": "acronis:h200/gpt-oss-120b",
+  "requestedModel": "acronis:h200/gpt-oss-120b",
+  "strictModel": true,
+  "fallbackUsed": false,
   "cost": 0.0042,
   "toolCalls": 3,
-  "success": true
+  "outcome": {
+    "status": "succeeded",
+    "attempts": [
+      {
+        "modelId": "acronis:h200/gpt-oss-120b",
+        "taskType": "code-generation",
+        "status": "succeeded",
+        "stopCause": "natural_stop",
+        "latencyMs": 1200,
+        "costUsd": 0.0042
+      }
+    ],
+    "finalModelId": "acronis:h200/gpt-oss-120b",
+    "initialStopCause": "natural_stop",
+    "hasFinalResponse": true,
+    "verification": "not_run",
+    "security": "not_run",
+    "judge": "not_run",
+    "costUsd": 0.0042
+  }
 }
 ```
+
+`outcome.attempts` contains one entry per attempted model. `requestedModel` and
+`model` remain distinct after recovery.
 
 **Error output (`--json`):**
 
 ```json
 {
+  "schemaVersion": 1,
+  "success": false,
   "text": "",
-  "model": "",
+  "model": "unknown",
+  "requestedModel": "missing/model",
+  "strictModel": true,
+  "fallbackUsed": false,
   "cost": 0,
   "toolCalls": 0,
-  "error": "error message",
-  "success": false
+  "outcome": null,
+  "error": { "name": "Error", "message": "error message" }
 }
 ```
 
 **Exit codes:**
 
-| Code | Meaning                                         |
-| ---- | ----------------------------------------------- |
-| 0    | Success                                         |
-| 1    | Error (LLM error, missing prompt, tool failure) |
+| Code | Meaning                                          |
+| ---- | ------------------------------------------------ |
+| 0    | Canonical outcome is `succeeded`                 |
+| 1    | Failed, aborted, errored, or missing run outcome |
+| 2    | Partial outcome or invalid CLI usage             |
 
 ### Automation Flags
 

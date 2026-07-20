@@ -75,6 +75,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
 import type { ResolvedKeys } from "@brainst0rm/providers";
+import {
+  buildRunJsonResult,
+  runExitCode,
+  serializeRunEvent,
+} from "../commands/run-output.js";
 
 /** Known API key names that providers and connectors need at startup. */
 const PROVIDER_KEY_NAMES = [
@@ -1950,6 +1955,10 @@ program
   .argument("[prompt]", "The prompt to send")
   .option("--pipe", "Read from stdin if no prompt given")
   .option("--model <id>", "Target a specific model (bypass routing)")
+  .option(
+    "--strict-model",
+    "Require --model and never recover to a different model",
+  )
   .option("--tools", "Enable tool use (default: disabled)")
   .option("--max-steps <n>", "Maximum agentic steps (default: 1)", "1")
   .option(
@@ -1969,6 +1978,7 @@ program
       opts: {
         pipe?: boolean;
         model?: string;
+        strictModel?: boolean;
         tools?: boolean;
         maxSteps?: string;
         strategy?: string;
@@ -1998,6 +2008,11 @@ program
           "Error: No prompt provided. Pass a prompt argument or use --pipe to read from stdin.\n",
         );
         process.exit(1);
+      }
+      if (opts.strictModel && !opts.model) {
+        process.stderr.write("Error: --strict-model requires --model <id>.\n");
+        process.exitCode = 2;
+        return;
       }
 
       const config = loadConfig();
@@ -2236,6 +2251,7 @@ program
       let fullResponse = "";
       let modelName = "unknown";
       let toolCallCount = 0;
+      let terminalExitCode: 0 | 1 | 2 = 0;
 
       if (!machineMode) {
         process.stdout.write("\n");
@@ -2274,11 +2290,13 @@ program
         middleware,
         routingOutcomeRepo,
         secretResolver: (name) => resolvedKeys.resolver.get(name),
+        allowModelFallback: !opts.strictModel,
       })) {
         // --events: every event as timestamped JSONL
         if (opts.events) {
           process.stdout.write(
-            JSON.stringify({ ts: Date.now(), ...event }) + "\n",
+            JSON.stringify({ ts: Date.now(), ...serializeRunEvent(event) }) +
+              "\n",
           );
         }
 
@@ -2301,29 +2319,23 @@ program
 
         // --json: emit final result only (on done/error)
         if (opts.json) {
-          if (event.type === "done") {
+          if (event.type === "done" || event.type === "error") {
             process.stdout.write(
-              JSON.stringify({
-                text: fullResponse,
-                model: modelName,
-                cost: event.totalCost,
-                toolCalls: toolCallCount,
-                success: true,
-              }) + "\n",
+              JSON.stringify(
+                buildRunJsonResult(event, {
+                  text: fullResponse,
+                  observedModel: modelName,
+                  requestedModel: opts.model,
+                  strictModel: opts.strictModel === true,
+                  toolCalls: toolCallCount,
+                }),
+              ) + "\n",
             );
-          } else if (event.type === "error") {
-            process.stdout.write(
-              JSON.stringify({
-                text: "",
-                model: modelName,
-                cost: 0,
-                toolCalls: toolCallCount,
-                error: event.error.message,
-                success: false,
-              }) + "\n",
-            );
-            process.exit(1);
           }
+        }
+
+        if (event.type === "done" || event.type === "error") {
+          terminalExitCode = runExitCode(event);
         }
 
         // Default: human rendering
@@ -2369,6 +2381,14 @@ program
               process.stdout.write(
                 `\n\n[cost: $${event.totalCost.toFixed(4)}]\n`,
               );
+              if (event.outcome) {
+                const recovery = event.outcome.recovery?.length
+                  ? ` · recovery=${event.outcome.recovery.join("→")}`
+                  : "";
+                process.stderr.write(
+                  `[outcome: ${event.outcome.status} · ${event.outcome.initialStopCause}${recovery}]\n`,
+                );
+              }
               break;
             case "error":
               process.stderr.write(`\nError: ${event.error.message}\n`);
@@ -2394,6 +2414,7 @@ program
         tools,
         hardTimeoutMs: 15_000,
       });
+      if (terminalExitCode !== 0) process.exitCode = terminalExitCode;
     },
   );
 

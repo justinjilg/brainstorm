@@ -1,8 +1,15 @@
 import pino from "pino";
 
 const isDebug = process.env.BRAINSTORM_LOG_LEVEL === "debug";
-// In IPC mode, stdout is the NDJSON protocol channel — logs must go to stderr.
-const isIPC = process.argv.includes("ipc");
+
+/** stdout is a machine protocol channel for IPC, JSON, and event-stream modes. */
+export function isStructuredOutputArgs(argv: string[]): boolean {
+  return (
+    argv.includes("ipc") || argv.includes("--json") || argv.includes("--events")
+  );
+}
+
+const isStructuredOutput = isStructuredOutputArgs(process.argv);
 
 export const logger = pino(
   {
@@ -11,11 +18,11 @@ export const logger = pino(
     transport: isDebug
       ? {
           target: "pino-pretty",
-          options: { colorize: true, destination: isIPC ? 2 : 1 },
+          options: { colorize: true, destination: isStructuredOutput ? 2 : 1 },
         }
       : undefined,
   },
-  isIPC && !isDebug ? pino.destination(2) : undefined,
+  isStructuredOutput && !isDebug ? pino.destination(2) : undefined,
 );
 
 export function createLogger(name: string) {
