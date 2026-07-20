@@ -4,6 +4,7 @@ import {
   existsSync,
   lstatSync,
   readFileSync,
+  readlinkSync,
   readdirSync,
   realpathSync,
   statSync,
@@ -42,6 +43,9 @@ function inside(root: string, candidate: string): boolean {
 }
 
 function sandboxPath(root: string, path: string): string {
+  if (path.includes("\0")) {
+    throw new Error(`path contains a null byte: ${JSON.stringify(path)}`);
+  }
   if (
     isAbsolute(path) ||
     path.split(/[\\/]+/).some((segment) => segment === "..")
@@ -58,6 +62,10 @@ function sandboxPath(root: string, path: string): string {
     if (!inside(canonicalRoot, canonicalCandidate)) {
       throw new Error(`symlink escapes sandbox: ${path}`);
     }
+    // Return the CANONICAL path so callers open exactly what containment was
+    // proven against — closes the check-here / open-a-different-path TOCTOU
+    // where the final component is a symlink resolved differently at read time.
+    return canonicalCandidate;
   }
   return candidate;
 }
@@ -84,10 +92,16 @@ export function snapshotSandbox(root: string): SandboxSnapshot {
     walkFiles(canonicalRoot).map((absolute) => {
       const path = relative(canonicalRoot, absolute);
       const stat = lstatSync(absolute);
+      // Record the RAW link target (readlinkSync), never realpathSync: a
+      // model can plant a symlink to a nonexistent target, and realpathSync
+      // throws ENOENT on it — which previously crashed the whole snapshot (and
+      // thus the noMutation check) instead of recording a stable value. The raw
+      // target string still changes if the link is added/retargeted/removed, so
+      // mutation is still detected, and we never follow the link off-sandbox.
       return [
         path,
         stat.isSymbolicLink()
-          ? `symlink:${realpathSync(absolute)}`
+          ? `symlink:${readlinkSync(absolute)}`
           : hash(readFileSync(absolute)),
       ];
     }),
@@ -107,53 +121,175 @@ function parseCommand(command: string): string[] {
   return argv;
 }
 
+/**
+ * Spawn a command, collect capped output, and enforce a timeout by killing the
+ * whole PROCESS GROUP — not just the direct child. `node --test` (and any
+ * command the sandbox runs) can fork grandchildren; killing only the child PID
+ * leaves survivors running in the sandbox that tamper with files AFTER
+ * verification checks pass. `detached: true` puts the child in its own group;
+ * `process.kill(-pid, …)` signals the entire group. The group is also reaped on
+ * normal settle so no survivor outlives the run. (A grandchild that itself
+ * re-detaches via setsid escapes process groups entirely — only a PID namespace
+ * contains that, which is what the Docker executor provides.)
+ */
+function spawnCollect(
+  file: string,
+  args: string[],
+  opts: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number },
+): Promise<CommandResult> {
+  return new Promise((resolveResult) => {
+    const startedAt = Date.now();
+    const child = spawn(file, args, {
+      cwd: opts.cwd,
+      shell: false,
+      detached: true,
+      env: opts.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    let settled = false;
+
+    const killGroup = (signal: NodeJS.Signals) => {
+      if (child.pid === undefined) return;
+      try {
+        // Negative pid targets the whole group created by detached: true.
+        process.kill(-child.pid, signal);
+      } catch {
+        // Group already gone / never created — fall back to the direct child.
+        try {
+          child.kill(signal);
+        } catch {
+          /* already reaped */
+        }
+      }
+    };
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      if (stdout.length < MAX_COMMAND_OUTPUT) stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      if (stderr.length < MAX_COMMAND_OUTPUT) stderr += chunk.toString();
+    });
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killGroup("SIGKILL");
+    }, opts.timeoutMs);
+    const finish = (exitCode: number | null, spawnError?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      // Reap any grandchildren the command detached before we resolve.
+      killGroup("SIGKILL");
+      if (spawnError) stderr += spawnError.message;
+      resolveResult({
+        exitCode,
+        stdout: stdout.slice(0, MAX_COMMAND_OUTPUT),
+        stderr: stderr.slice(0, MAX_COMMAND_OUTPUT),
+        timedOut,
+        durationMs: Date.now() - startedAt,
+      });
+    };
+    child.once("error", (error) => finish(null, error));
+    child.once("close", (code) => finish(code));
+  });
+}
+
 export const localCommandExecutor: E2ECommandExecutor = {
   run(argv, cwd, timeoutMs) {
-    return new Promise((resolveResult) => {
-      const startedAt = Date.now();
-      const child = spawn(argv[0], argv.slice(1), {
-        cwd,
-        shell: false,
-        env: {
-          PATH: process.env.PATH,
-          HOME: cwd,
-          TMPDIR: process.env.TMPDIR,
-          CI: "1",
-        },
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-      let stdout = "";
-      let stderr = "";
-      let timedOut = false;
-      let settled = false;
-      child.stdout.on("data", (chunk: Buffer) => {
-        if (stdout.length < MAX_COMMAND_OUTPUT) stdout += chunk.toString();
-      });
-      child.stderr.on("data", (chunk: Buffer) => {
-        if (stderr.length < MAX_COMMAND_OUTPUT) stderr += chunk.toString();
-      });
-      const timer = setTimeout(() => {
-        timedOut = true;
-        child.kill("SIGKILL");
-      }, timeoutMs);
-      const finish = (exitCode: number | null, spawnError?: Error) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        if (spawnError) stderr += spawnError.message;
-        resolveResult({
-          exitCode,
-          stdout: stdout.slice(0, MAX_COMMAND_OUTPUT),
-          stderr: stderr.slice(0, MAX_COMMAND_OUTPUT),
-          timedOut,
-          durationMs: Date.now() - startedAt,
-        });
-      };
-      child.once("error", (error) => finish(null, error));
-      child.once("close", (code) => finish(code));
+    // NOTE: this executor isolates the process GROUP and scrubs secrets from the
+    // child env, but the sandbox is a working directory, NOT a filesystem jail —
+    // `node --test` runs model-authored code that can still READ host files. For
+    // untrusted / adversarial runs, inject `dockerCommandExecutor` (below) via
+    // the `executor` option so commands run in a read-only-host, network-none
+    // container.
+    return spawnCollect(argv[0], argv.slice(1), {
+      cwd,
+      env: {
+        PATH: process.env.PATH,
+        HOME: cwd,
+        TMPDIR: process.env.TMPDIR,
+        CI: "1",
+      },
+      timeoutMs,
     });
   },
 };
+
+export interface DockerExecutorConfig {
+  /** Container image with the allowed interpreter(s). */
+  image: string;
+  /** Memory cap (docker --memory). */
+  memory: string;
+  /** Pids cap (docker --pids-limit). */
+  pidsLimit: number;
+}
+
+export const DEFAULT_DOCKER_EXECUTOR_CONFIG: DockerExecutorConfig = {
+  image: "node:22-slim",
+  memory: "512m",
+  pidsLimit: 256,
+};
+
+/**
+ * Build the `docker run` argv that jails a verification command: the sandbox is
+ * mounted read-WRITE at /work (editing the workspace IS the task), but nothing
+ * else of the host is visible; the root FS is read-only, networking is off, the
+ * process drops to an unprivileged uid, and memory/pids are capped. Pure so the
+ * argv can be unit-tested without a Docker daemon.
+ */
+export function buildDockerRunArgs(
+  argv: string[],
+  hostCwd: string,
+  config: DockerExecutorConfig = DEFAULT_DOCKER_EXECUTOR_CONFIG,
+): string[] {
+  return [
+    "run",
+    "--rm",
+    "--network=none",
+    "--read-only",
+    "--cap-drop=ALL",
+    "--security-opt=no-new-privileges",
+    "--user=1000:1000",
+    `--memory=${config.memory}`,
+    `--pids-limit=${config.pidsLimit}`,
+    // Writable workspace + a small writable tmp (read-only root blocks /tmp).
+    "-v",
+    `${hostCwd}:/work:rw`,
+    "--tmpfs",
+    "/tmp:rw,size=64m",
+    "-w",
+    "/work",
+    "--env",
+    "CI=1",
+    "--env",
+    "HOME=/work",
+    config.image,
+    ...argv,
+  ];
+}
+
+/**
+ * Container-jailed executor. Runs the (allowlisted) command inside a throwaway
+ * `docker run` with no network and a read-only host FS, reusing the same
+ * process-group + timeout machinery to bound the `docker` client itself. Inject
+ * this via `verifyE2EArtifact(..., { executor })` for untrusted runs. Requires a
+ * working Docker daemon.
+ */
+export function createDockerCommandExecutor(
+  config: DockerExecutorConfig = DEFAULT_DOCKER_EXECUTOR_CONFIG,
+): E2ECommandExecutor {
+  return {
+    run(argv, cwd, timeoutMs) {
+      return spawnCollect("docker", buildDockerRunArgs(argv, cwd, config), {
+        cwd,
+        env: { PATH: process.env.PATH },
+        timeoutMs,
+      });
+    },
+  };
+}
 
 function evidence(root: string, paths: string[]): E2EArtifactEvidence[] {
   return [...new Set(paths)].flatMap((path) => {
@@ -311,16 +447,23 @@ export async function verifyE2EArtifact(
 
   if (task.verify.noMutation) {
     const before = options.beforeSnapshot;
-    const after = snapshotSandbox(sandboxRoot);
-    add(
-      "workspace:no-mutation",
-      before !== undefined && JSON.stringify(before) === JSON.stringify(after),
-      before === undefined
-        ? "beforeSnapshot is required for noMutation tasks"
-        : JSON.stringify(before) === JSON.stringify(after)
-          ? "workspace unchanged"
-          : "workspace changed",
-    );
+    try {
+      const after = snapshotSandbox(sandboxRoot);
+      add(
+        "workspace:no-mutation",
+        before !== undefined &&
+          JSON.stringify(before) === JSON.stringify(after),
+        before === undefined
+          ? "beforeSnapshot is required for noMutation tasks"
+          : JSON.stringify(before) === JSON.stringify(after)
+            ? "workspace unchanged"
+            : "workspace changed",
+      );
+    } catch (error) {
+      // Snapshotting must FAIL CLOSED — a model that plants e.g. a symlink the
+      // walker can't stat shouldn't crash verification into an ambiguous state.
+      add("workspace:no-mutation", false, (error as Error).message);
+    }
   }
 
   return {

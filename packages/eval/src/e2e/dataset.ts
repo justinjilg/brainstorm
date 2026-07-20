@@ -122,14 +122,36 @@ function verification(value: unknown): E2EVerificationContract {
   if (raw.noMutation !== undefined && typeof raw.noMutation !== "boolean") {
     throw new E2EDatasetError("verify.noMutation must be a boolean");
   }
+  const parsedFileAssertions =
+    raw.fileAssertions === undefined
+      ? undefined
+      : fileAssertions(raw.fileAssertions);
+  // A task must carry at least one concrete, checkable assertion — a verify
+  // block with none would "pass" without verifying anything.
+  const hasCheck =
+    (requiredFiles?.length ?? 0) > 0 ||
+    (commands?.length ?? 0) > 0 ||
+    (parsedFileAssertions?.length ?? 0) > 0 ||
+    raw.rubric === "web-quality-v1" ||
+    raw.rubric === "documentation-quality-v1";
+  if (!hasCheck) {
+    throw new E2EDatasetError(
+      "verify has no checkable assertion (needs requiredFiles, commands, fileAssertions, or a rubric)",
+    );
+  }
+  if (
+    (raw.kind as VerificationKind) === "command" &&
+    (commands?.length ?? 0) === 0
+  ) {
+    throw new E2EDatasetError(
+      'kind "command" requires a non-empty commands array',
+    );
+  }
   return {
     kind: raw.kind as VerificationKind,
     requiredFiles,
     commands,
-    fileAssertions:
-      raw.fileAssertions === undefined
-        ? undefined
-        : fileAssertions(raw.fileAssertions),
+    fileAssertions: parsedFileAssertions,
     rubric:
       raw.rubric === "web-quality-v1" ||
       raw.rubric === "documentation-quality-v1"

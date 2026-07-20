@@ -71,6 +71,20 @@ describe("validateE2ETask", () => {
       ),
     ).toThrow(/unknown rubric/);
   });
+
+  it("rejects a verify block with no checkable assertion", () => {
+    expect(() =>
+      validateE2ETask(task({ verify: { kind: "command" } })),
+    ).toThrow(/no checkable assertion/);
+  });
+
+  it("rejects kind:command with no commands even when other checks exist", () => {
+    expect(() =>
+      validateE2ETask(
+        task({ verify: { kind: "command", requiredFiles: ["src/x.ts"] } }),
+      ),
+    ).toThrow(/non-empty commands array/);
+  });
 });
 
 describe("loadE2EDataset", () => {

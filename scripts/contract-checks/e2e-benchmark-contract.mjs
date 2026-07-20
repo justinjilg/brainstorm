@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
@@ -82,6 +83,30 @@ export function validateSuite(registry, source) {
     }
     if (!row.verify || !VERIFICATION_KINDS.has(row.verify.kind)) {
       issues.push(`${prefix}: verification kind is missing or unknown`);
+    } else {
+      // A frozen task must carry at least one CONCRETE, checkable assertion —
+      // otherwise its verification can be silently neutered (e.g. kind:"command"
+      // with no commands) while the fingerprint stays self-consistent, and the
+      // suite would "pass" tasks it never actually verified.
+      const v = row.verify;
+      const hasCheck =
+        (Array.isArray(v.requiredFiles) && v.requiredFiles.length > 0) ||
+        (Array.isArray(v.commands) && v.commands.length > 0) ||
+        (Array.isArray(v.fileAssertions) && v.fileAssertions.length > 0) ||
+        typeof v.rubric === "string";
+      if (!hasCheck) {
+        issues.push(
+          `${prefix}: verification has no checkable assertion (needs requiredFiles, commands, fileAssertions, or a rubric)`,
+        );
+      }
+      if (
+        v.kind === "command" &&
+        !(Array.isArray(v.commands) && v.commands.length > 0)
+      ) {
+        issues.push(
+          `${prefix}: kind "command" requires a non-empty commands array`,
+        );
+      }
     }
     const paths = [
       ...Object.keys(row.setup?.files ?? {}),
@@ -105,6 +130,49 @@ export function validateSuite(registry, source) {
   return issues;
 }
 
+/**
+ * Version-binding: the fingerprint of a frozen suite must never change under a
+ * fixed suiteId. Comparing the working tree against HEAD catches the
+ * self-consistent rewrite the plain digest can't — editing the suite AND
+ * recomputing registry.sha256 in the same change. A new suite must bump suiteId
+ * (and, by convention, the versioned filename) instead of mutating v1's bytes.
+ *
+ * Best-effort: if git or HEAD's registry isn't available (initial commit, shallow
+ * checkout, non-git tree) there's nothing to compare against, so it's a no-op —
+ * the digest check still guards accidental drift.
+ */
+function fingerprintVersionIssues(repoRoot, registry) {
+  let headRegistryRaw;
+  try {
+    headRegistryRaw = execFileSync("git", ["show", `HEAD:${REGISTRY_PATH}`], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch {
+    return []; // no HEAD copy to compare against — nothing to enforce
+  }
+  let head;
+  try {
+    head = JSON.parse(headRegistryRaw);
+  } catch {
+    return [];
+  }
+  if (
+    head.suiteId === registry.suiteId &&
+    head.sha256 &&
+    registry.sha256 &&
+    head.sha256 !== registry.sha256
+  ) {
+    return [
+      `suite fingerprint changed while suiteId stayed "${registry.suiteId}" ` +
+        `(${head.sha256} → ${registry.sha256}); a frozen suite is immutable — ` +
+        `bump suiteId and publish a new versioned file instead of mutating it`,
+    ];
+  }
+  return [];
+}
+
 export async function check({ repoRoot }) {
   try {
     const registry = JSON.parse(
@@ -119,7 +187,10 @@ export async function check({ repoRoot }) {
       };
     }
     const source = readFileSync(join(repoRoot, registry.path), "utf8");
-    const issues = validateSuite(registry, source);
+    const issues = [
+      ...validateSuite(registry, source),
+      ...fingerprintVersionIssues(repoRoot, registry),
+    ];
     return issues.length === 0
       ? {
           name: NAME,

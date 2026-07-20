@@ -1,4 +1,5 @@
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   rmSync,
@@ -8,7 +9,12 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { snapshotSandbox, verifyE2EArtifact } from "../e2e/verifier.js";
+import {
+  buildDockerRunArgs,
+  localCommandExecutor,
+  snapshotSandbox,
+  verifyE2EArtifact,
+} from "../e2e/verifier.js";
 import type { E2ETask } from "../e2e/types.js";
 
 const roots: string[] = [];
@@ -210,5 +216,95 @@ describe("verifyE2EArtifact", () => {
 
     expect(result.passed).toBe(false);
     expect(result.checks[0].detail).toMatch(/not allowed/);
+  });
+});
+
+describe("verifier hardening (iter-014)", () => {
+  it("fails CLOSED (does not throw) when a model plants a dangling symlink under noMutation", async () => {
+    // realpathSync throws ENOENT on a dangling symlink; the snapshot must
+    // survive it and record a failed no-mutation check instead of crashing the
+    // whole verification into an ambiguous thrown state.
+    const root = workspace({ "keep.txt": "x" });
+    const before = snapshotSandbox(root); // clean baseline
+    symlinkSync("/does/not/exist", join(root, "planted")); // model tampering
+
+    const result = await verifyE2EArtifact(
+      task({
+        verify: {
+          kind: "command",
+          requiredFiles: ["keep.txt"],
+          noMutation: true,
+        },
+      }),
+      root,
+      { beforeSnapshot: before },
+    );
+
+    // Did not throw; recorded a no-mutation check that FAILED (workspace changed).
+    const noMut = result.checks.find((c) => c.id === "workspace:no-mutation");
+    expect(noMut).toBeDefined();
+    expect(noMut!.passed).toBe(false);
+  });
+
+  it("snapshotSandbox records a dangling symlink's raw target without crashing", () => {
+    const root = workspace({ "a.txt": "1" });
+    symlinkSync("/nope/missing", join(root, "link"));
+    const snap = snapshotSandbox(root);
+    expect(snap["link"]).toBe("symlink:/nope/missing");
+  });
+
+  it("kills a (non-detached) grandchild via the process group on timeout", async () => {
+    // runner.js forks a grandchild — staying in the runner's process group — that
+    // writes a marker after a delay, then hangs so the parent hits the timeout.
+    // The GROUP kill (not a bare child.kill) must reap the grandchild so the
+    // marker is never written. (A grandchild that re-detaches into its own
+    // session escapes process groups entirely; only a PID namespace / the Docker
+    // executor contains that — see localCommandExecutor's note.)
+    const marker = "survivor.txt";
+    const runner = [
+      'const { spawn } = require("node:child_process");',
+      "spawn(process.execPath, ['-e',",
+      `  "setTimeout(()=>require('fs').writeFileSync('${marker}','leaked'),800)"],`,
+      '  { stdio: "ignore" });', // NOT detached → shares the runner's group
+      "setInterval(() => {}, 1000);", // keep the parent alive until timeout
+    ].join("\n");
+    const root = workspace({ "runner.js": runner });
+    const markerPath = join(root, marker);
+
+    const result = await localCommandExecutor.run(
+      ["node", "runner.js"],
+      root,
+      300,
+    );
+    expect(result.timedOut).toBe(true);
+    // Wait past the grandchild's write delay; if the group was killed it never wrote.
+    await new Promise((r) => setTimeout(r, 900));
+    expect(existsSync(markerPath)).toBe(false);
+  });
+
+  it("buildDockerRunArgs jails the command: read-only host, no network, dropped caps, writable /work", () => {
+    const args = buildDockerRunArgs(["node", "--test"], "/host/sandbox");
+    expect(args).toContain("--network=none");
+    expect(args).toContain("--read-only");
+    expect(args).toContain("--cap-drop=ALL");
+    expect(args).toContain("--security-opt=no-new-privileges");
+    expect(args).toContain("--user=1000:1000");
+    expect(args).toContain("/host/sandbox:/work:rw");
+    // The allowlisted command is passed through verbatim after the image.
+    expect(args.slice(-3)).toEqual(["node:22-slim", "node", "--test"]);
+    // No host path other than the sandbox is mounted.
+    expect(args.filter((a) => a === "-v")).toHaveLength(1);
+  });
+
+  it("rejects a path containing a null byte", async () => {
+    const root = workspace({ "ok.txt": "1" });
+    const result = await verifyE2EArtifact(
+      task({
+        verify: { kind: "command", requiredFiles: ["ok\0.txt"] },
+      }),
+      root,
+    );
+    expect(result.passed).toBe(false);
+    expect(result.checks.some((c) => /null byte/.test(c.detail))).toBe(true);
   });
 });

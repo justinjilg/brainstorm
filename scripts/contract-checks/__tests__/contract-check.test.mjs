@@ -19,6 +19,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as path from "node:path";
 import * as fs from "node:fs";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = path.resolve(
@@ -123,6 +124,43 @@ test("e2e-benchmark-contract: catches an in-place frozen-suite mutation", async 
   } finally {
     cleanup();
   }
+});
+
+test("e2e-benchmark-contract: rejects a task whose verification has no checkable assertion", async () => {
+  // Isolate the real-check rule from the fingerprint rule: neuter one task's
+  // verify to {kind:"command"} (no commands/files/assertions) and recompute the
+  // sha so the digest MATCHES — the gate must still fail on the empty contract.
+  const { validateSuite } = await import("../e2e-benchmark-contract.mjs");
+  const registry = JSON.parse(
+    fs.readFileSync(
+      path.join(
+        REPO_ROOT,
+        "scripts/contract-checks/e2e-benchmark-registry.json",
+      ),
+      "utf8",
+    ),
+  );
+  const lines = fs
+    .readFileSync(path.join(REPO_ROOT, "eval-data/kernel-e2e-v1.jsonl"), "utf8")
+    .split(/\r?\n/)
+    .filter((l) => l.trim());
+  const rows = lines.map((l) => JSON.parse(l));
+  const target = rows.find((r) => r.domain === "coding");
+  target.verify = { kind: "command" }; // no commands/requiredFiles/assertions
+  const mutated = rows.map((r) => JSON.stringify(r)).join("\n");
+  registry.sha256 = createHash("sha256").update(mutated).digest("hex");
+
+  const issues = validateSuite(registry, mutated);
+  assert.ok(
+    issues.some((i) => i.includes("no checkable assertion")),
+    `expected a no-checkable-assertion issue, got: ${JSON.stringify(issues)}`,
+  );
+  assert.ok(
+    issues.some((i) => i.includes("non-empty commands array")),
+    "kind:command with no commands must be flagged",
+  );
+  // The fingerprint itself is consistent, so that must NOT be the reason.
+  assert.ok(!issues.some((i) => i.includes("fingerprint")));
 });
 
 // ── Negative-fixture tests ──────────────────────────────────────────
