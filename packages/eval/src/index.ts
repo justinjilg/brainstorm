@@ -80,6 +80,15 @@ export {
   type CommandResult,
   type SandboxSnapshot,
 } from "./e2e/verifier.js";
+export {
+  runE2ETrial,
+  runE2ESuite,
+  resolveDefaultExecutor,
+  dockerAvailable,
+  type E2ERunnerOptions,
+  type E2ESuiteRunOptions,
+  type ResolvedExecutor,
+} from "./e2e/runner.js";
 export type {
   E2EDomain,
   VerificationKind,
