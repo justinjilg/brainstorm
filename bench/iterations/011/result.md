@@ -21,7 +21,7 @@ model prose, blended correctness/efficiency scores, or an easier edited prompt.
 - Eval: 12 files, 89 tests passed.
 - Eval TypeScript: clean.
 - Contract meta-tests: 27 passed, including the frozen-suite mutation proof.
-- Full contract preflight: pending final branch gate.
+- Contract preflight: 19/19 green.
 
 ## Next forcing function
 

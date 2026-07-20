@@ -68,6 +68,14 @@ export {
   formatE2EScorecard,
   wilsonInterval,
 } from "./e2e/scorecard.js";
+export {
+  verifyE2EArtifact,
+  snapshotSandbox,
+  localCommandExecutor,
+  type E2ECommandExecutor,
+  type CommandResult,
+  type SandboxSnapshot,
+} from "./e2e/verifier.js";
 export type {
   E2EDomain,
   VerificationKind,
@@ -78,4 +86,7 @@ export type {
   ScoreAxis,
   AxisScore,
   E2EScorecard,
+  E2EVerificationCheck,
+  E2EArtifactEvidence,
+  E2EVerificationResult,
 } from "./e2e/types.js";

@@ -101,3 +101,23 @@ export interface E2EScorecard {
   totalCostUsd: number;
   meanDurationMs: number;
 }
+
+export interface E2EVerificationCheck {
+  id: string;
+  passed: boolean;
+  detail: string;
+  durationMs?: number;
+}
+
+export interface E2EArtifactEvidence {
+  path: string;
+  sha256: string;
+  bytes: number;
+}
+
+export interface E2EVerificationResult {
+  passed: boolean;
+  checks: E2EVerificationCheck[];
+  artifacts: E2EArtifactEvidence[];
+  durationMs: number;
+}

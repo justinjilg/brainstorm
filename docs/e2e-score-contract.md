@@ -56,3 +56,19 @@ the result. A requested model and a fallback model must never be conflated.
 Failures discovered during live dogfood become named regression tests before the
 iteration closes. Results are informational until the runner and verifiers are
 wired; the dataset contract itself is release-gated immediately.
+
+## Deterministic verifier evidence
+
+The v1 artifact verifier resolves every declared path against a canonical
+sandbox root and rejects lexical traversal and symlinks that escape it. Required
+files, contains/excludes assertions, valid structured JSON, baseline web
+structure, and allowlisted commands are independent checks. Commands execute as
+argument arrays without a shell, with a bounded timeout, output cap, sandbox
+working directory, and reduced environment.
+
+Setup fixtures are immutable unless their path is explicitly listed as a
+required artifact. This lets coding tasks modify supplied source while
+preventing an agent from weakening tests, policies, or adversarial input.
+Evidence records SHA-256 and byte length for every verified artifact. A failed
+check makes correctness zero; partial check counts are diagnostic, not partial
+credit.
