@@ -58,3 +58,24 @@ export {
   type SWEBenchRunScorecard,
   type WrittenScorecardPaths,
 } from "./swe-bench/scorecard.js";
+export {
+  loadE2EDataset,
+  validateE2ETask,
+  E2EDatasetError,
+} from "./e2e/dataset.js";
+export {
+  buildE2EScorecard,
+  formatE2EScorecard,
+  wilsonInterval,
+} from "./e2e/scorecard.js";
+export type {
+  E2EDomain,
+  VerificationKind,
+  E2EVerificationContract,
+  E2ETask,
+  TrialStatus,
+  E2ETrialResult,
+  ScoreAxis,
+  AxisScore,
+  E2EScorecard,
+} from "./e2e/types.js";

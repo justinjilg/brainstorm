@@ -50,6 +50,8 @@ const GATES = [
   "release-flow-wiring",
   // Stage-5 BR business-harness seam
   "br-contract-map",
+  // Stage-6 end-to-end evaluation truth
+  "e2e-benchmark-contract",
 ];
 
 // ── Shape tests ─────────────────────────────────────────────────────
@@ -95,6 +97,32 @@ test("preflight passes against committed main state", async () => {
     0,
     `all gates must pass against committed state. Failures:\n  ${failures.join("\n  ")}`,
   );
+});
+
+test("e2e-benchmark-contract: catches an in-place frozen-suite mutation", async () => {
+  const { check } = await import("../e2e-benchmark-contract.mjs");
+  const registry = fs.readFileSync(
+    path.join(REPO_ROOT, "scripts/contract-checks/e2e-benchmark-registry.json"),
+    "utf8",
+  );
+  const suite = fs.readFileSync(
+    path.join(REPO_ROOT, "eval-data/kernel-e2e-v1.jsonl"),
+    "utf8",
+  );
+  const { root, cleanup } = makeTmpRepo({
+    "scripts/contract-checks/e2e-benchmark-registry.json": registry,
+    "eval-data/kernel-e2e-v1.jsonl": suite.replace(
+      "Implement a tested debounce helper",
+      "Implement an easier helper",
+    ),
+  });
+  try {
+    const result = await check({ repoRoot: root });
+    assert.equal(result.ok, false);
+    assert.ok(result.issues.some((issue) => issue.includes("fingerprint")));
+  } finally {
+    cleanup();
+  }
 });
 
 // ── Negative-fixture tests ──────────────────────────────────────────

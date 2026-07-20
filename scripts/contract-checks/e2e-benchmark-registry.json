@@ -1,0 +1,13 @@
+{
+  "suiteId": "kernel-e2e-v1",
+  "path": "eval-data/kernel-e2e-v1.jsonl",
+  "sha256": "2b0fa8a06d6bb2c6fbe9b757e1463361e90b1e4588ce460a11dcd6ee690ebbb6",
+  "taskCount": 30,
+  "domains": {
+    "coding": 10,
+    "web": 8,
+    "documentation": 5,
+    "infrastructure": 4,
+    "adversarial": 3
+  }
+}

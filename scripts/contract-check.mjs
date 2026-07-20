@@ -87,6 +87,9 @@ const CHECKS = [
   // stay in lockstep with the harness code/docs and, when available,
   // the sibling BrainstormRouter source. This is gate #17.
   "./contract-checks/br-contract-map.mjs",
+  // Stage-6 evaluation truth: the v1 end-to-end suite is immutable,
+  // sandboxed, and retains its promised task/domain distribution.
+  "./contract-checks/e2e-benchmark-contract.mjs",
 ];
 
 /** @typedef {import("./contract-checks/_define-gate.mjs").CheckResult} CheckResult */

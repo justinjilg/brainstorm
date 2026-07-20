@@ -28,7 +28,6 @@ artifacts/business-posture-trace.json
 
 # Local Codex/project memory and generated review notes
 .codex/
-AGENTS.md
 docs/assessment-audit-v14.md
 docs/assessment-evidence-v14.md
 docs/assessment-synthesis-v14.md
