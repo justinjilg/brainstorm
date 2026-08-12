@@ -18,7 +18,7 @@
     "@brainst0rm/shared": "workspace:*",
     "@brainst0rm/config": "workspace:*",
     "@brainst0rm/db": "workspace:*",
-    "zod": "^3"
+    "zod": "^4"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7",

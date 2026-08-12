@@ -23,7 +23,7 @@
     "@brainst0rm/shared": "workspace:*",
     "@iarna/toml": "^2.2",
     "minimatch": "^10",
-    "zod": "^3"
+    "zod": "^4"
   },
   "devDependencies": {
     "@types/iarna__toml": "^2.0",
