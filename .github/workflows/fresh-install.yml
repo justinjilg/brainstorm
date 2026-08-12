@@ -59,7 +59,7 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -110,7 +110,7 @@ jobs:
       - name: Run smoke test
         # bash shell is the default on ubuntu/macos and is provided by
         # Git for Windows on windows-latest runners (path "C:\\Program Files\\Git\\bin\\bash.exe"),
-        # which actions/checkout@v4 ensures is on PATH. Using bash
+        # which actions/checkout@v7 ensures is on PATH. Using bash
         # explicitly avoids cmd.exe / PowerShell quoting differences on
         # Windows.
         shell: bash
