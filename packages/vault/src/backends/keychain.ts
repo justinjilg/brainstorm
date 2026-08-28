@@ -47,7 +47,7 @@ export function keychainRead(
     const out = execFileSync(
       "security",
       ["find-generic-password", "-a", account, "-s", service, "-w"],
-      { timeout: 5000, stdio: ["pipe", "pipe", "pipe"] },
+      { timeout: 10000, stdio: ["pipe", "pipe", "pipe"] },
     );
     const value = out.toString("utf-8").replace(/\n$/, "");
     return value.length > 0 ? value : null;
@@ -83,7 +83,7 @@ export function keychainWrite(
     ["add-generic-password", "-a", account, "-s", service, "-U", "-w"],
     {
       input: `${secret}\n${secret}\n`,
-      timeout: 5000,
+      timeout: 10000,
       stdio: ["pipe", "pipe", "pipe"],
     },
   );
