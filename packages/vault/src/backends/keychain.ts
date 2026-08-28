@@ -32,8 +32,11 @@ export function keychainAvailable(): boolean {
 }
 
 /**
- * Read a secret from the login keychain. Returns null if absent or on any
- * error (locked keychain, denied ACL, non-macOS).
+ * Read a secret from the login keychain. Returns null when the item is absent
+ * (the common, expected case → exit 44) or on any other error (locked keychain,
+ * denied ACL, non-macOS). "Not found" is not logged; genuine failures (a locked
+ * keychain, a `security` crash) are surfaced to stderr so a broken keychain is
+ * diagnosable instead of silently masquerading as "no password set".
  */
 export function keychainRead(
   account: string,
@@ -48,7 +51,14 @@ export function keychainRead(
     );
     const value = out.toString("utf-8").replace(/\n$/, "");
     return value.length > 0 ? value : null;
-  } catch {
+  } catch (err) {
+    // `security` exits 44 when the item simply doesn't exist — expected, quiet.
+    const status = (err as { status?: number })?.status;
+    if (status !== 44) {
+      process.stderr.write(
+        `[keychain] read failed for ${service}/${account} (exit ${status ?? "?"}) — vault may be locked\n`,
+      );
+    }
     return null;
   }
 }

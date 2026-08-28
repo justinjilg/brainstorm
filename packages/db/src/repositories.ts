@@ -256,12 +256,14 @@ export class CostRepository {
 
   record(entry: Omit<CostRecord, "id">): CostRecord {
     const id = randomUUID();
-    // Ensure the referenced session exists. Transient callers — notably the
-    // KAIROS daemon, which mints a fresh `daemon-tick-<ts>` id per tick and
-    // never persists a session row — would otherwise hit the
-    // cost_records.session_id → sessions(id) FK and silently drop every cost
-    // write, blinding cost tracking (and the outcome signal BR learns from).
-    // INSERT OR IGNORE is a no-op when the session already exists.
+    // Ensure the referenced session exists before the FK insert. Transient
+    // callers — notably the KAIROS daemon, whose single stable per-run session
+    // id is never persisted through the normal session-creation path — would
+    // otherwise hit the cost_records.session_id → sessions(id) FK and silently
+    // drop every cost write, blinding cost tracking (and the outcome signal BR
+    // learns from). INSERT OR IGNORE is atomic and idempotent: it creates the
+    // row once and is a cheap no-op on every subsequent record for that
+    // session (no SELECT-then-INSERT race).
     this.db
       .prepare(
         "INSERT OR IGNORE INTO sessions (id, created_at, updated_at, project_path) VALUES (?, ?, ?, ?)",
