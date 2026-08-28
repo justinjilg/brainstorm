@@ -56,6 +56,12 @@ export function keychainRead(
 /**
  * Write (create or replace) a secret in the login keychain. Returns true on
  * success. `-U` updates in place if the item already exists.
+ *
+ * The secret is passed as a `-w` argument rather than via stdin: macOS
+ * `security` only reads `-w` from stdin interactively with a double
+ * (type/retype) prompt, which is not reliably pipeable. The argv exposure is
+ * a brief, one-time, local-only window during vault bootstrap on the user's
+ * own machine — an accepted tradeoff for reliability over the alternatives.
  */
 export function keychainWrite(
   account: string,

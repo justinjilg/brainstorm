@@ -22,17 +22,24 @@ import type { BrainstormRouter } from "@brainst0rm/router";
 import { collectOpenDrifts } from "../perception/drift.js";
 import { enterWorkspace } from "@brainst0rm/tools";
 import { execFileSync } from "node:child_process";
-import { existsSync, symlinkSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
 /**
  * Ensure the self-improvement daemon has its OWN git worktree so its edits and
  * commits physically cannot touch the user's main working tree. Created from
- * the current HEAD on the configured branch if missing; node_modules is linked
- * so the daemon's verify step (typecheck/tests) can actually run. Returns the
- * absolute worktree path, or null if isolation could not be established (caller
- * then declines to enable write autonomy).
+ * the current HEAD on the configured branch if missing. Returns the absolute
+ * worktree path, or null if isolation could not be established (the caller then
+ * declines to enable write autonomy).
+ *
+ * IMPORTANT: we deliberately do NOT symlink the main repo's node_modules into
+ * the worktree. Doing so turns the autonomous agent's writes (e.g. a dependency
+ * install) into mutations of the user's REAL deps — that exact mistake once
+ * corrupted the main install mid-session. The worktree gets its own deps
+ * out-of-band (a real `pnpm install` there is isolated) or the daemon's verify
+ * is limited to what the toolchain resolves without a full install. The charter
+ * also forbids the daemon from running package installs.
  */
 function ensureSelfHealWorktree(
   repoPath: string,
@@ -61,17 +68,6 @@ function ensureSelfHealWorktree(
         ? ["worktree", "add", worktree, branch]
         : ["worktree", "add", worktree, "-b", branch];
       execFileSync("git", args, { cwd: repoPath, stdio: "pipe" });
-    }
-    // Link node_modules so `pnpm typecheck` / tests resolve inside the worktree.
-    if (!existsSync(join(worktree, "node_modules"))) {
-      try {
-        symlinkSync(
-          join(repoPath, "node_modules"),
-          join(worktree, "node_modules"),
-        );
-      } catch {
-        /* best effort — verify may be limited without deps */
-      }
     }
     return worktree;
   } catch {
