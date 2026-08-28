@@ -22,7 +22,7 @@ import type { BrainstormRouter } from "@brainst0rm/router";
 import { collectOpenDrifts } from "../perception/drift.js";
 import { enterWorkspace } from "@brainst0rm/tools";
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -63,13 +63,25 @@ function ensureSelfHealWorktree(
       return "";
     }
   };
+  // Canonicalize for comparison so symlinked prefixes (e.g. macOS
+  // /Users → /System/Volumes/Data/Users) and case differences don't make an
+  // already-registered worktree look new.
+  const canon = (p: string): string => {
+    try {
+      return existsSync(p) ? realpathSync(p) : p;
+    } catch {
+      return p;
+    }
+  };
+  const worktreeReal = canon(worktree);
   try {
     // Already a registered worktree at this path? Reuse it — `git worktree add`
     // would otherwise fail on the existing directory. Match on the porcelain
     // "worktree <path>" lines so a leftover/untracked dir is handled too.
     const registered = gitq(["worktree", "list", "--porcelain"])
       .split("\n")
-      .some((l) => l === `worktree ${worktree}`);
+      .filter((l) => l.startsWith("worktree "))
+      .some((l) => canon(l.slice("worktree ".length)) === worktreeReal);
     if (registered || existsSync(join(worktree, ".git"))) return worktree;
 
     // If a non-worktree directory is squatting the path, don't clobber it —
@@ -565,9 +577,13 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
           );
         }
 
+        // One stable session id for the whole daemon run. Reused for every
+        // tick's cost tracking so cost_records group under a single session
+        // row instead of spawning an unbounded row per tick.
+        const daemonSessionId = `daemon-${Date.now()}`;
         daemonController = new DaemonController({
           config: daemonConfig,
-          sessionId: `daemon-${Date.now()}`,
+          sessionId: daemonSessionId,
           projectPath: daemonProjectPath,
           runTick: async function* (tickMessage: string) {
             const tickAbort = new AbortController();
@@ -590,7 +606,7 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
                   router: ctx.router,
                   costTracker,
                   tools: ctx.tools,
-                  sessionId: `daemon-tick-${Date.now()}`,
+                  sessionId: daemonSessionId,
                   projectPath: daemonProjectPath,
                   systemPrompt: fp,
                   signal: tickAbort.signal,
