@@ -256,6 +256,22 @@ export class CostRepository {
 
   record(entry: Omit<CostRecord, "id">): CostRecord {
     const id = randomUUID();
+    // Ensure the referenced session exists. Transient callers — notably the
+    // KAIROS daemon, which mints a fresh `daemon-tick-<ts>` id per tick and
+    // never persists a session row — would otherwise hit the
+    // cost_records.session_id → sessions(id) FK and silently drop every cost
+    // write, blinding cost tracking (and the outcome signal BR learns from).
+    // INSERT OR IGNORE is a no-op when the session already exists.
+    this.db
+      .prepare(
+        "INSERT OR IGNORE INTO sessions (id, created_at, updated_at, project_path) VALUES (?, ?, ?, ?)",
+      )
+      .run(
+        entry.sessionId,
+        entry.timestamp,
+        entry.timestamp,
+        entry.projectPath ?? "(daemon)",
+      );
     this.db
       .prepare(
         `INSERT INTO cost_records (id, timestamp, session_id, model_id, provider, input_tokens, output_tokens, cached_tokens, cost, task_type, project_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1685,5 +1701,114 @@ export class VerdictRepository {
     const decision = rowToDecision(row);
     decision.verdicts = this.listVerdicts(panelId);
     return decision;
+  }
+}
+
+// ── Platform Events (pushed perception) ─────────────────────────────
+
+export interface PlatformEventRow {
+  id: string;
+  source: string;
+  eventType: string;
+  summary: string;
+  payload: unknown;
+  receivedAt: number;
+  consumedAt: number | null;
+}
+
+interface PlatformEventDbRow {
+  id: string;
+  source: string;
+  event_type: string;
+  summary: string | null;
+  payload_json: string | null;
+  received_at: number;
+  consumed_at: number | null;
+}
+
+function mapPlatformEventRow(row: PlatformEventDbRow): PlatformEventRow {
+  return {
+    id: row.id,
+    source: row.source,
+    eventType: row.event_type,
+    summary: row.summary ?? "",
+    payload: row.payload_json ? JSON.parse(row.payload_json) : undefined,
+    receivedAt: row.received_at,
+    consumedAt: row.consumed_at ?? null,
+  };
+}
+
+/**
+ * Store for HMAC-verified platform events (`POST /api/v1/platform/events`).
+ * The server records them; the KAIROS daemon surfaces unconsumed events in
+ * tick messages and marks them consumed, so each event is noticed exactly
+ * once. Rows are retained after consumption for audit, pruned by age.
+ */
+export class PlatformEventRepository {
+  constructor(private db: Database.Database) {}
+
+  record(opts: {
+    source: string;
+    eventType: string;
+    summary?: string;
+    payload?: unknown;
+  }): PlatformEventRow {
+    const id = randomUUID();
+    this.db
+      .prepare(
+        `INSERT INTO platform_events (id, source, event_type, summary, payload_json)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        opts.source,
+        opts.eventType,
+        opts.summary ?? "",
+        opts.payload != null ? JSON.stringify(opts.payload) : null,
+      );
+    return this.getById(id)!;
+  }
+
+  getById(id: string): PlatformEventRow | null {
+    const row = this.db
+      .prepare("SELECT * FROM platform_events WHERE id = ?")
+      .get(id) as PlatformEventDbRow | undefined;
+    return row ? mapPlatformEventRow(row) : null;
+  }
+
+  /** Oldest-first unconsumed events, bounded so a tick message stays small. */
+  listUnconsumed(limit = 20): PlatformEventRow[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT * FROM platform_events
+           WHERE consumed_at IS NULL
+           ORDER BY received_at ASC
+           LIMIT ?`,
+        )
+        .all(limit) as PlatformEventDbRow[]
+    ).map(mapPlatformEventRow);
+  }
+
+  markConsumed(ids: string[]): void {
+    if (ids.length === 0) return;
+    const stmt = this.db.prepare(
+      "UPDATE platform_events SET consumed_at = unixepoch() WHERE id = ?",
+    );
+    const tx = this.db.transaction((batch: string[]) => {
+      for (const id of batch) stmt.run(id);
+    });
+    tx(ids);
+  }
+
+  /** Delete consumed events older than the retention window. */
+  prune(olderThanDays = 30): number {
+    const cutoff = Math.floor(Date.now() / 1000) - olderThanDays * 86_400;
+    const result = this.db
+      .prepare(
+        "DELETE FROM platform_events WHERE consumed_at IS NOT NULL AND received_at < ?",
+      )
+      .run(cutoff);
+    return result.changes;
   }
 }

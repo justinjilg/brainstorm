@@ -12,6 +12,12 @@ const localProviderSchema = z.object({
   enabled: z.boolean().default(true),
   baseUrl: z.string(),
   autoDiscover: z.boolean().default(true),
+  // Optional auth for a *remote* OpenAI-compatible gateway (e.g. a corporate
+  // model gateway reachable over VPN). Localhost providers leave these unset.
+  // `apiKeyEnv` names an env var / vault key holding a bearer token; `headers`
+  // adds arbitrary static headers (both are sent on chat + /v1/models calls).
+  apiKeyEnv: z.string().optional(),
+  headers: z.record(z.string()).optional(),
 });
 
 const providersSchema = z.object({
@@ -293,6 +299,37 @@ const daemonSchema = z.object({
   promptCacheExpiryMs: z.number().default(300_000),
   /** Compaction threshold override for daemon (more aggressive than interactive). */
   compactionThreshold: z.number().min(0.1).max(1.0).default(0.6),
+  /** Ticks between memory reflection (dream/consolidation) triggers. */
+  reflectionIntervalTicks: z.number().min(1).max(1000).default(50),
+  /**
+   * Ticks between mandatory human approval gates. 0 disables gating — the
+   * daemon runs on earned trust from budget pacing and ChangeSet boundaries.
+   */
+  approvalGateIntervalTicks: z.number().min(0).max(1000).default(0),
+
+  // ── Self-improvement charter ──
+  // The daemon's STANDING objective: continuously make Brainstorm's own state
+  // more robust and stable. With no prompt it finds a concrete, evidence-backed
+  // weakness, fixes it, verifies the fix, and records the outcome — hardening
+  // itself over time.
+  /** Enable the self-improvement charter directive in every tick. */
+  selfImprovement: z.boolean().default(true),
+  /**
+   * What the daemon may do with a VERIFIED fix to Brainstorm's own code:
+   * - "off":     no self-modification (perceive/report only)
+   * - "propose": stage the fix as a ChangeSet/branch but never commit
+   * - "branch":  auto-commit verified fixes to selfHealBranch; main untouched
+   */
+  autonomy: z.enum(["off", "propose", "branch"]).default("branch"),
+  /** Isolated branch the daemon commits self-improvements to (never main). */
+  selfHealBranch: z.string().default("kairos/self-heal"),
+  /**
+   * Isolated git worktree the self-improvement daemon operates in, so its edits
+   * and commits physically cannot touch your main working tree. Created on
+   * first run if missing. Empty string = operate in the backend's own cwd
+   * (only safe when that tree is disposable).
+   */
+  selfHealWorktree: z.string().default("~/.brainstorm/self-heal"),
 });
 
 // ── God Mode Config ─────────────────────────────────────────────────

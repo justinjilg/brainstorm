@@ -22,6 +22,7 @@ import {
   BrainstormRouter,
   CostTracker,
   attachStreamToLearnedStrategy,
+  getConvergenceAlerts,
 } from "@brainst0rm/router";
 import {
   createDefaultToolRegistry,
@@ -58,6 +59,7 @@ import {
 } from "@brainst0rm/workflow";
 import { renderMarkdownToString } from "../components/MarkdownRenderer.js";
 import { runInit } from "../init/index.js";
+import { collectOpenDrifts } from "../perception/drift.js";
 import { runEvalCli, runProbe } from "@brainst0rm/eval";
 import {
   createGatewayClient,
@@ -66,13 +68,21 @@ import {
   RoutingEventStream,
 } from "@brainst0rm/gateway";
 import { MCPClientManager } from "@brainst0rm/mcp";
-import { BrainstormVault, KeyResolver } from "@brainst0rm/vault";
+import {
+  BrainstormVault,
+  KeyResolver,
+  resolveVaultPassword,
+  keychainWrite,
+  keychainAvailable,
+  VAULT_PASSWORD_ACCOUNT,
+} from "@brainst0rm/vault";
 import { createInterface } from "node:readline";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
+import { randomBytes } from "node:crypto";
 import type { ResolvedKeys } from "@brainst0rm/providers";
 
 /** Known API key names that providers and connectors need at startup. */
@@ -96,15 +106,27 @@ const PROVIDER_KEY_NAMES = [
  * Returns a sync ResolvedKeys map for createProviderRegistry.
  */
 interface ResolvedKeysWithResolver extends ResolvedKeys {
+  /** Resolve configuration-defined provider keys that are not in the eager list. */
+  resolve(name: string): Promise<string | null>;
   /** Async resolver for $VAULT_* substitution — can look up any key, not just provider keys. */
   resolver: KeyResolver;
 }
 
 async function resolveProviderKeys(): Promise<ResolvedKeysWithResolver> {
   const vault = new BrainstormVault(VAULT_PATH);
-  const resolver = new KeyResolver(vault.exists() ? vault : null, () =>
-    promptPassword("  Vault password: "),
-  );
+  const resolver = new KeyResolver(vault.exists() ? vault : null, async () => {
+    // Non-interactive unlock first: env override → macOS Keychain. This is
+    // what lets the desktop app / KAIROS daemon open the vault headlessly with
+    // no `op` and no TTY. Only fall back to an interactive prompt when a real
+    // terminal is attached; otherwise throw so the resolver falls through to
+    // its other backends instead of hanging on a prompt nobody can answer.
+    const stored = resolveVaultPassword();
+    if (stored) return stored;
+    if (process.stdin.isTTY) return promptPassword("  Vault password: ");
+    throw new Error(
+      "vault locked: no BRAINSTORM_VAULT_PASSWORD / keychain password and no TTY",
+    );
+  });
 
   const resolved = new Map<string, string>();
   for (const name of PROVIDER_KEY_NAMES) {
@@ -119,6 +141,7 @@ async function resolveProviderKeys(): Promise<ResolvedKeysWithResolver> {
 
   return {
     get: (name: string) => resolved.get(name) ?? null,
+    resolve: (name: string) => resolver.get(name),
     resolver,
   };
 }
@@ -630,7 +653,16 @@ program
       config.general.defaultPermissionMode = "auto"; // unattended
       const db = getDb();
       const resolvedKeys = await resolveProviderKeys();
-      const registry = await createProviderRegistry(config, resolvedKeys);
+      // Persist BR's x-br-* routing envelope on this unattended path too —
+      // the listener was previously wired only on the chat path, so agent
+      // fleets discarded the routing rationale for every completion they made.
+      const {
+        RoutingAuditRepository: FleetAuditRepo,
+        wireRoutingAudit: wireFleetAudit,
+      } = await import("@brainst0rm/db");
+      const registry = await createProviderRegistry(config, resolvedKeys, {
+        onEnvelope: wireFleetAudit(new FleetAuditRepo(db)),
+      });
       const costTracker = new CostTracker(db, config.budget);
       const tools = createDefaultToolRegistry();
       const { frontmatter } = buildSystemPrompt(process.cwd());
@@ -2023,6 +2055,7 @@ program
           ? await resolveProviderKeys()
           : {
               get: (name: string) => process.env[name] ?? null,
+              resolve: async (name: string) => process.env[name] ?? null,
               resolver: new KeyResolver(null),
             };
       const resolvedBRKey =
@@ -2551,6 +2584,77 @@ vaultCmd
     }
     await vault.init(password);
     console.log(`  Vault created at ${VAULT_PATH}`);
+  });
+
+vaultCmd
+  .command("bootstrap")
+  .description(
+    "Create the encrypted vault, store its master password in the OS keychain, and import all provider keys — so the vault auto-unlocks with no `op` and no prompt",
+  )
+  .option(
+    "--from-op",
+    "Import current key values via the resolver chain (1Password/env) before op is no longer needed",
+    true,
+  )
+  .action(async () => {
+    if (!keychainAvailable()) {
+      console.error(
+        "  OS keychain unavailable (non-macOS or `security` missing). Set BRAINSTORM_VAULT_PASSWORD and run `brainstorm vault init` instead.",
+      );
+      process.exit(1);
+    }
+
+    // 1. Resolve every provider key through the EXISTING chain (op/env) once.
+    //    After this, the vault holds them and op is never consulted again.
+    const resolved = await resolveProviderKeys();
+    const imported: string[] = [];
+    const missing: string[] = [];
+    for (const name of PROVIDER_KEY_NAMES) {
+      (resolved.get(name) ? imported : missing).push(name);
+    }
+
+    // 2. Master password: reuse an existing keychain password if present
+    //    (idempotent re-bootstrap), else mint a strong random one.
+    let password = resolveVaultPassword();
+    if (!password) {
+      password = randomBytes(32).toString("base64url");
+      if (!keychainWrite(VAULT_PASSWORD_ACCOUNT, password)) {
+        console.error("  Failed to write master password to keychain.");
+        process.exit(1);
+      }
+      console.log(
+        `  Generated vault master password → OS keychain (${VAULT_PASSWORD_ACCOUNT}).`,
+      );
+    } else {
+      console.log(
+        "  Reusing existing vault master password from keychain/env.",
+      );
+    }
+
+    // 3. Init or open the vault, then import the resolved keys.
+    const vault = new BrainstormVault(VAULT_PATH);
+    if (!vault.exists()) {
+      await vault.init(password);
+      console.log(`  Vault created at ${VAULT_PATH}`);
+    } else {
+      vault.open(password);
+      console.log("  Opened existing vault.");
+    }
+    for (const name of imported) {
+      const value = resolved.get(name);
+      if (value) vault.set(name, value);
+    }
+    vault.seal();
+
+    console.log(
+      `\n  Imported ${imported.length} key(s): ${imported.join(", ") || "(none)"}`,
+    );
+    if (missing.length > 0) {
+      console.log(`  Not found (skipped): ${missing.join(", ")}`);
+    }
+    console.log(
+      "\n  Done. The vault now auto-unlocks from the keychain — `op` is no longer required at runtime.",
+    );
   });
 
 vaultCmd
@@ -3598,7 +3702,16 @@ orchestrateCmd
       config.general.defaultPermissionMode = "auto"; // unattended
       const db = getDb();
       const resolvedKeys = await resolveProviderKeys();
-      const registry = await createProviderRegistry(config, resolvedKeys);
+      // Persist BR's x-br-* routing envelope on this unattended path too —
+      // the listener was previously wired only on the chat path, so agent
+      // fleets discarded the routing rationale for every completion they made.
+      const {
+        RoutingAuditRepository: FleetAuditRepo,
+        wireRoutingAudit: wireFleetAudit,
+      } = await import("@brainst0rm/db");
+      const registry = await createProviderRegistry(config, resolvedKeys, {
+        onEnvelope: wireFleetAudit(new FleetAuditRepo(db)),
+      });
       const costTracker = new CostTracker(db, config.budget);
       const tools = createDefaultToolRegistry();
       const { frontmatter } = buildSystemPrompt(projectPath);
@@ -8275,6 +8388,40 @@ program
             });
           }
 
+          // ── Awakening: perception + intelligence wiring (KAIROS senses) ──
+          const { PlatformEventRepository } = await import("@brainst0rm/db");
+          const platformEventStore = new PlatformEventRepository(db);
+
+          // BR control-plane probe — fired once at wake, rendered into every
+          // tick's <perception> block so the daemon knows whether the hosted
+          // intelligence plane is reachable.
+          const daemonGateway = createGatewayClient();
+          let brStatus: { connected: boolean; models?: number; note?: string } =
+            daemonGateway
+              ? { connected: true }
+              : { connected: false, note: "BRAINSTORM_API_KEY not set" };
+          if (daemonGateway) {
+            void daemonGateway
+              .listModels()
+              .then((models: unknown) => {
+                const count = Array.isArray(models)
+                  ? models.length
+                  : ((models as { data?: unknown[] })?.data?.length ??
+                    undefined);
+                brStatus = { connected: true, models: count };
+              })
+              .catch((err: unknown) => {
+                brStatus = {
+                  connected: false,
+                  note: `BR unreachable: ${err instanceof Error ? err.message : String(err)}`,
+                };
+              });
+          }
+
+          // Approval-gate answers use the daemon's own readline; assigned
+          // after the interface is created below.
+          let gateQuestion: ((prompt: string) => Promise<string>) | null = null;
+
           const daemon = new DaemonController({
             config: config.daemon,
             sessionId: session.id,
@@ -8342,6 +8489,96 @@ program
               });
             },
             getDueTasks: () => triggerRunner.getDueTaskSummaries(),
+            // ── Perception: what the daemon can see and reach. The first
+            // tick renders this as the awakening inventory. ──
+            getWorldState: () => {
+              const connectors = [
+                ...(godModeResult?.connectedSystems.map((s) => ({
+                  name: s.name,
+                  healthy: true,
+                  toolCount: s.toolCount,
+                  domains: s.capabilities.slice(0, 6),
+                })) ?? []),
+                ...(godModeResult?.errors.map((e) => ({
+                  name: e.name,
+                  healthy: false,
+                  toolCount: 0,
+                })) ?? []),
+              ];
+              const memoryCount = daemonMemory.listByTier("system").length;
+              return {
+                connectors,
+                br: brStatus,
+                project: {
+                  name: basename(projectPath),
+                  onboarded: memoryCount > 0,
+                  memoryCount,
+                },
+              };
+            },
+            getOpenDrifts: () => collectOpenDrifts(),
+            getPlatformEvents: () =>
+              platformEventStore.listUnconsumed(10).map((e) => ({
+                id: e.id,
+                source: e.source,
+                eventType: e.eventType,
+                summary: e.summary,
+                receivedAt: e.receivedAt * 1000,
+              })),
+            onPlatformEventsConsumed: (ids) =>
+              platformEventStore.markConsumed(ids.map(String)),
+            // ── Self-awareness: router intelligence + BR cost pacing ──
+            getRouterIntelligence: () => {
+              const momentum = router.getMomentum();
+              const recentFailureCount = router
+                .getRecentFailures()
+                .filter((f) => Date.now() - f.timestamp < 60_000).length;
+              return {
+                momentum: momentum
+                  ? {
+                      modelId: momentum.modelId,
+                      successCount: momentum.successCount,
+                      taskType: momentum.taskType,
+                    }
+                  : null,
+                recentFailureCount,
+                convergenceAlerts: getConvergenceAlerts(3).map(
+                  (a) => `${a.type} (${a.taskType}): ${a.detail}`,
+                ),
+              };
+            },
+            getCostPacing: (defaultMs) =>
+              costTracker.getAdvisedSleepMs(defaultMs),
+            // ── Reflection: consolidate memory every N ticks ──
+            reflectionInterval: config.daemon.reflectionIntervalTicks,
+            onReflectionDue: async () => {
+              const { runDreamCycle } = await import("@brainst0rm/core");
+              await runDreamCycle({
+                memoryDir: daemonMemory.getMemoryDir(),
+                subagentOptions: {
+                  config,
+                  registry,
+                  router,
+                  costTracker,
+                  tools,
+                  projectPath,
+                  permissionCheck: () => "allow",
+                } as any,
+              });
+            },
+            // ── Approval gate: human checkpoint every N ticks (opt-in) ──
+            approvalGateInterval: config.daemon.approvalGateIntervalTicks,
+            onApprovalGate: async (gate) => {
+              console.log(
+                `\n[gate] Tick ${gate.tickNumber} — $${gate.costSinceLastGate.toFixed(3)} since last gate ($${gate.totalCost.toFixed(3)} total)\n` +
+                  `[gate] Tools used: ${gate.toolCallsSinceLastGate.slice(0, 12).join(", ") || "none"}`,
+              );
+              // Non-interactive daemon: log the gate and continue — budget
+              // pacing and ChangeSet boundaries remain the hard controls.
+              if (!gateQuestion) return true;
+              const answer = await gateQuestion("[gate] Continue? [Y/n] ");
+              return answer.trim().toLowerCase() !== "n";
+            },
             getMemorySummary: () => {
               const system = daemonMemory.listByTier("system");
               if (system.length === 0)
@@ -8393,6 +8630,12 @@ program
             input: process.stdin,
             output: process.stdout,
           });
+          gateQuestion = (prompt: string) => rl.question(prompt);
+
+          // Awakening banner — the daemon announces what it woke up knowing.
+          console.log(
+            `[kairos] Awake — ${godModeResult?.connectedSystems.length ?? 0} connectors (${godModeResult?.totalTools ?? 0} tools), BR ${brStatus.connected ? "connected" : "offline"}, ${daemonMemory.listByTier("system").length} memories; drift + platform-event feeds live.`,
+          );
 
           // User input listener — preempts daemon sleep
           const inputLoop = (async () => {
@@ -8833,7 +9076,7 @@ program
           onSendMessage: handleSendMessage,
           onAbort: handleAbort,
           models: modelData,
-          gateway: brGateway,
+          gateway: brGateway ?? undefined,
           configInfo: {
             strategy: config.general.defaultStrategy,
             permissionMode: config.general.defaultPermissionMode ?? "confirm",

@@ -8,6 +8,7 @@ import { ConversationWorkspace } from "./components/workspaces/ConversationWorks
 import { ProjectWorkspace } from "./components/workspaces/ProjectWorkspace";
 import { BusinessWorkspace } from "./components/workspaces/BusinessWorkspace";
 import { PlatformWorkspace } from "./components/workspaces/PlatformWorkspace";
+import type { ConfigureTab } from "./components/workspaces/PlatformWorkspace";
 import { SelfWorkspace } from "./components/workspaces/SelfWorkspace";
 import {
   InspectorPanel,
@@ -119,6 +120,8 @@ export function App() {
   const [rolePickerOpen, setRolePickerOpen] = useState(false);
   const [modelSwitcherOpen, setModelSwitcherOpen] = useState(false);
   const [newHarnessWizardOpen, setNewHarnessWizardOpen] = useState(false);
+  const [platformConfigureTab, setPlatformConfigureTab] =
+    useState<ConfigureTab>("models");
   const [inspectorContext, setInspectorContext] = useState<InspectorContext>({
     type: "none",
   });
@@ -131,7 +134,7 @@ export function App() {
   const [team, setTeam] = useState<TeamAgent[]>([]);
 
   // Agent state
-  const [activeModel, setActiveModel] = useState("Claude Opus 4.6");
+  const [activeModel, setActiveModel] = useState("Claude Opus 5");
   const [activeModelId, setActiveModelId] = useState<string | null>(null);
   const [activeProvider, setActiveProvider] = useState("anthropic");
   const [strategy, _setStrategy] = useState("combined");
@@ -151,7 +154,10 @@ export function App() {
   >([]);
   const routingIdCounter = useRef(0);
   const [fatalError, setFatalError] = useState<string | null>(null);
-  const kairos = useKairos();
+  // Backend readiness gates auto-ignition: KAIROS comes alive the moment the
+  // backend is up, not while IPC calls are still queuing against a down socket.
+  const backendReady = useBackendReady();
+  const kairos = useKairos({ autoStart: backendReady });
   useErrorToast(kairos.error, "KAIROS");
 
   const toast = useToast();
@@ -162,6 +168,9 @@ export function App() {
    * hood.
    */
   const setMode = useCallback((mode: AppMode) => {
+    if (mode === "models" || mode === "security" || mode === "config") {
+      setPlatformConfigureTab(mode);
+    }
     setSelection(MODE_TO_SELECTION[mode]);
   }, []);
 
@@ -435,7 +444,6 @@ export function App() {
     [selection.entity, setEntity, setVerb],
   );
 
-  const backendReady = useBackendReady();
   if (!backendReady) {
     return <BootSplash />;
   }
@@ -693,6 +701,8 @@ export function App() {
                     kairosStatus={kairos.status}
                     onKairosStart={kairos.start}
                     onKairosStop={kairos.stop}
+                    configureTab={platformConfigureTab}
+                    onConfigureTabChange={setPlatformConfigureTab}
                     onModelSelect={(id, name, prov) => {
                       setActiveModel(name);
                       setActiveProvider(prov);

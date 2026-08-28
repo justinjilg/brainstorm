@@ -52,13 +52,13 @@ const DEFAULT_SKILLS: Record<string, string[]> = {
 };
 
 const DEFAULT_MODELS: Record<string, { name: string; provider: string }> = {
-  architect: { name: "Claude Opus 4.6", provider: "anthropic" },
-  coder: { name: "Claude Sonnet 4.6", provider: "anthropic" },
-  reviewer: { name: "GPT-5.4", provider: "openai" },
-  debugger: { name: "Claude Sonnet 4.6", provider: "anthropic" },
-  qa: { name: "Gemini 3.1 Flash", provider: "google" },
-  "product-manager": { name: "Claude Opus 4.6", provider: "anthropic" },
-  devops: { name: "DeepSeek V3", provider: "deepseek" },
+  architect: { name: "Claude Opus 5", provider: "anthropic" },
+  coder: { name: "Claude Sonnet 5", provider: "anthropic" },
+  reviewer: { name: "GPT-5.6", provider: "openai" },
+  debugger: { name: "Claude Sonnet 5", provider: "anthropic" },
+  qa: { name: "Gemini 3.5 Flash", provider: "google" },
+  "product-manager": { name: "Claude Opus 5", provider: "anthropic" },
+  devops: { name: "DeepSeek V4", provider: "deepseek" },
 };
 
 export interface TeamAgent {

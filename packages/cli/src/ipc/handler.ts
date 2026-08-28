@@ -19,6 +19,65 @@ import { z } from "zod";
 import type { Database } from "better-sqlite3";
 import type { BrainstormConfig } from "@brainst0rm/config";
 import type { BrainstormRouter } from "@brainst0rm/router";
+import { collectOpenDrifts } from "../perception/drift.js";
+import { enterWorkspace } from "@brainst0rm/tools";
+import { execFileSync } from "node:child_process";
+import { existsSync, symlinkSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
+/**
+ * Ensure the self-improvement daemon has its OWN git worktree so its edits and
+ * commits physically cannot touch the user's main working tree. Created from
+ * the current HEAD on the configured branch if missing; node_modules is linked
+ * so the daemon's verify step (typecheck/tests) can actually run. Returns the
+ * absolute worktree path, or null if isolation could not be established (caller
+ * then declines to enable write autonomy).
+ */
+function ensureSelfHealWorktree(
+  repoPath: string,
+  worktreeSetting: string,
+  branch: string,
+): string | null {
+  if (!worktreeSetting) return null;
+  const worktree = worktreeSetting.startsWith("~")
+    ? join(homedir(), worktreeSetting.slice(1))
+    : worktreeSetting;
+  try {
+    if (!existsSync(join(worktree, ".git"))) {
+      // Reuse the branch if it already exists, else create it.
+      const branchExists = (() => {
+        try {
+          execFileSync("git", ["rev-parse", "--verify", branch], {
+            cwd: repoPath,
+            stdio: "pipe",
+          });
+          return true;
+        } catch {
+          return false;
+        }
+      })();
+      const args = branchExists
+        ? ["worktree", "add", worktree, branch]
+        : ["worktree", "add", worktree, "-b", branch];
+      execFileSync("git", args, { cwd: repoPath, stdio: "pipe" });
+    }
+    // Link node_modules so `pnpm typecheck` / tests resolve inside the worktree.
+    if (!existsSync(join(worktree, "node_modules"))) {
+      try {
+        symlinkSync(
+          join(repoPath, "node_modules"),
+          join(worktree, "node_modules"),
+        );
+      } catch {
+        /* best effort — verify may be limited without deps */
+      }
+    }
+    return worktree;
+  } catch {
+    return null;
+  }
+}
 
 // ── IPC Param Schemas ─────────────────────────────────────────────
 // Every method with params gets a Zod schema. Methods with no params
@@ -127,6 +186,36 @@ function sendError(id: string, error: string): void {
 /** Send a streaming event for a request. */
 function sendEvent(id: string, event: string, data: unknown): void {
   send({ id, event, data });
+}
+
+/**
+ * Return renderer-safe provider configuration. Header names are useful for UI
+ * diagnostics, but their values are credentials just as often as apiKey fields.
+ */
+export function sanitizeProvidersForIPC(
+  providers: Record<string, unknown> | undefined,
+): Record<string, Record<string, unknown>> {
+  const safeProviders: Record<string, Record<string, unknown>> = {};
+  for (const [name, providerCfg] of Object.entries(providers ?? {})) {
+    const safe: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(
+      providerCfg as Record<string, unknown>,
+    )) {
+      if (/key|secret|token/i.test(key)) continue;
+      if (key.toLowerCase() === "headers") {
+        const headerNames =
+          value && typeof value === "object" ? Object.keys(value) : [];
+        safe.headers = Object.fromEntries(
+          headerNames.map((headerName) => [headerName, "[configured]"]),
+        );
+        continue;
+      }
+      safe[key] = value;
+    }
+    safe.name = name;
+    safeProviders[name] = safe;
+  }
+  return safeProviders;
 }
 
 export async function startIPCHandler(ctx: IPCContext): Promise<void> {
@@ -380,20 +469,7 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
         const config = loadCfg();
         // Scrub secrets — providers is an object keyed by name (gateway, ollama, etc.)
         // Strip any fields containing key/secret/token values
-        const providers = config.providers ?? {};
-        const safeProviders: Record<string, Record<string, unknown>> = {};
-        for (const [name, providerCfg] of Object.entries(providers)) {
-          const safe: Record<string, unknown> = {};
-          for (const [k, v] of Object.entries(
-            providerCfg as Record<string, unknown>,
-          )) {
-            // Skip sensitive fields
-            if (/key|secret|token/i.test(k)) continue;
-            safe[k] = v;
-          }
-          safe.name = name;
-          safeProviders[name] = safe;
-        }
+        const safeProviders = sanitizeProvidersForIPC(config.providers);
         sendResult(req.id, {
           general: config.general,
           budget: config.budget,
@@ -421,12 +497,74 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
         const skills = loadSk(ctx.projectPath);
         const costTracker = new CT(ctx.db, ctx.config.budget);
 
+        // ── Awakening senses for the desktop daemon ──
+        const { PlatformEventRepository: KairosEvents } = dbModule;
+        const kairosEventStore = new KairosEvents(ctx.db);
+        const { createGatewayClient: createKairosGw } =
+          await import("@brainst0rm/gateway");
+        const kairosGw = createKairosGw();
+        let kairosBrStatus: {
+          connected: boolean;
+          models?: number;
+          note?: string;
+        } = kairosGw
+          ? { connected: true }
+          : { connected: false, note: "BRAINSTORM_API_KEY not set" };
+        if (kairosGw) {
+          void kairosGw
+            .listModels()
+            .then((models: unknown) => {
+              const count = Array.isArray(models)
+                ? models.length
+                : ((models as { data?: unknown[] })?.data?.length ?? undefined);
+              kairosBrStatus = { connected: true, models: count };
+            })
+            .catch((err: unknown) => {
+              kairosBrStatus = {
+                connected: false,
+                note: `BR unreachable: ${err instanceof Error ? err.message : String(err)}`,
+              };
+            });
+        }
+
+        // Isolate the self-improvement daemon in its own git worktree so its
+        // edits/commits can never touch the user's main working tree. If we
+        // can't establish isolation, fall back to the backend cwd but DOWNGRADE
+        // write autonomy to "propose" so nothing is committed into a shared,
+        // possibly-dirty tree.
+        const wantsWriteAutonomy =
+          ctx.config.daemon.selfImprovement &&
+          ctx.config.daemon.autonomy !== "off";
+        const isolatedWorktree = wantsWriteAutonomy
+          ? ensureSelfHealWorktree(
+              ctx.projectPath,
+              ctx.config.daemon.selfHealWorktree,
+              ctx.config.daemon.selfHealBranch,
+            )
+          : null;
+        const daemonProjectPath = isolatedWorktree ?? ctx.projectPath;
+        const daemonConfig =
+          !isolatedWorktree && ctx.config.daemon.autonomy === "branch"
+            ? { ...ctx.config.daemon, autonomy: "propose" as const }
+            : ctx.config.daemon;
+        if (isolatedWorktree) {
+          log(`Self-heal daemon isolated in worktree: ${isolatedWorktree}`);
+        } else if (wantsWriteAutonomy) {
+          log(
+            "Self-heal worktree unavailable — downgraded autonomy to propose (no commits to shared tree)",
+          );
+        }
+
         daemonController = new DaemonController({
-          config: ctx.config.daemon,
+          config: daemonConfig,
           sessionId: `daemon-${Date.now()}`,
-          projectPath: ctx.projectPath,
+          projectPath: daemonProjectPath,
           runTick: async function* (tickMessage: string) {
             const tickAbort = new AbortController();
+            // Scope every path-based tool (file_edit, shell, git) in this tick
+            // to the isolated worktree via AsyncLocalStorage — the interactive
+            // chat, running in its own async context, keeps the real project.
+            enterWorkspace(daemonProjectPath);
             try {
               yield* runLoop(
                 [{ role: "user" as const, content: tickMessage }],
@@ -437,7 +575,7 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
                   costTracker,
                   tools: ctx.tools,
                   sessionId: `daemon-tick-${Date.now()}`,
-                  projectPath: ctx.projectPath,
+                  projectPath: daemonProjectPath,
                   systemPrompt: fp,
                   signal: tickAbort.signal,
                 },
@@ -454,6 +592,59 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
               name: s.name,
               description: s.description ?? "",
             })),
+          // ── Perception: the desktop daemon wakes up knowing its world ──
+          // The sidecar has no God Mode registry, but it CAN see the harness
+          // world model (drift), pushed platform events, the BR control
+          // plane, and the project — which is what "alive on open" needs.
+          getWorldState: () => ({
+            connectors: [],
+            br: kairosBrStatus,
+            project: {
+              name: ctx.projectPath.split(/[\\/]/).filter(Boolean).pop(),
+              onboarded: true,
+            },
+          }),
+          getOpenDrifts: () => collectOpenDrifts(),
+          getPlatformEvents: () =>
+            kairosEventStore.listUnconsumed(10).map((e) => ({
+              id: e.id,
+              source: e.source,
+              eventType: e.eventType,
+              summary: e.summary,
+              receivedAt: e.receivedAt * 1000,
+            })),
+          onPlatformEventsConsumed: (ids: Array<string | number>) =>
+            kairosEventStore.markConsumed(ids.map(String)),
+          // ── Self-awareness: router intelligence + BR cost pacing ──
+          getRouterIntelligence: () => {
+            const momentum = ctx.router.getMomentum();
+            return {
+              momentum: momentum
+                ? {
+                    modelId: momentum.modelId,
+                    successCount: momentum.successCount,
+                    taskType: momentum.taskType,
+                  }
+                : null,
+              recentFailureCount: ctx.router
+                .getRecentFailures()
+                .filter((f) => Date.now() - f.timestamp < 60_000).length,
+              convergenceAlerts: routerModule
+                .getConvergenceAlerts(3)
+                .map((a) => `${a.type} (${a.taskType}): ${a.detail}`),
+            };
+          },
+          getCostPacing: (defaultMs: number) =>
+            costTracker.getAdvisedSleepMs(defaultMs),
+          reflectionInterval: ctx.config.daemon.reflectionIntervalTicks,
+          approvalGateInterval: ctx.config.daemon.approvalGateIntervalTicks,
+          onApprovalGate: async (gate) => {
+            // Desktop has no blocking prompt channel yet: surface the gate to
+            // every window and continue — budget pacing and ChangeSet
+            // boundaries remain the hard controls.
+            sendEvent(req.id, "kairos-gate", gate);
+            return true;
+          },
           onStateChange: (state: any) => {
             sendEvent(req.id, "kairos-state", state);
           },

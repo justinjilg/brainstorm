@@ -363,11 +363,72 @@ export class DaemonController {
 
   // ── Private ──────────────────────────────────────────────────────
 
+  /** Run a perception provider; a failing sense must never kill the tick. */
+  private sense<T>(fn: (() => T) | undefined): T | undefined {
+    if (!fn) return undefined;
+    try {
+      return fn();
+    } catch (e) {
+      log.warn({ err: e }, "Perception provider failed (non-fatal)");
+      return undefined;
+    }
+  }
+
   private async runTick(): Promise<TickResult> {
     const tickNumber = this.state.tickCount + 1;
     const promptCacheStale =
       this.state.lastTickAt !== null &&
       Date.now() - this.state.lastTickAt > PROMPT_CACHE_TTL_MS;
+
+    // Perception sweep: world state, open drift, pushed platform events.
+    const worldState = this.sense(this.options.getWorldState);
+    const openDrifts = this.sense(this.options.getOpenDrifts);
+    const platformEvents = this.sense(this.options.getPlatformEvents);
+
+    // Self-awareness: router intelligence + cost pacing rendered into the
+    // tick so the model knows its own trajectory (the <performance> block
+    // previously had no producer — it only fed approval gates).
+    const intel = this.sense(this.options.getRouterIntelligence);
+    const pacing = this.sense(() =>
+      this.options.getCostPacing?.(this.config.tickIntervalMs),
+    );
+    let daemonMetrics: TickMessageContext["daemonMetrics"];
+    if (intel || pacing) {
+      const successes = intel?.momentum?.successCount ?? 0;
+      const failures = intel?.recentFailureCount ?? 0;
+      const pressure = pacing?.budgetPressure ?? 0;
+      const gateInterval = this.options.approvalGateInterval ?? 0;
+      daemonMetrics = {
+        successRate:
+          successes + failures > 0 ? successes / (successes + failures) : 1,
+        momentum:
+          successes >= 5
+            ? "strong"
+            : successes >= 2
+              ? "building"
+              : failures > 0
+                ? "broken"
+                : "none",
+        activeModel: intel?.momentum?.modelId ?? "unknown",
+        consecutiveSuccesses: successes,
+        budgetPressure:
+          pressure >= 0.9
+            ? "critical"
+            : pressure >= 0.75
+              ? "high"
+              : pressure >= 0.5
+                ? "moderate"
+                : "healthy",
+        costPacingActive: pacing
+          ? pacing.intervalMs > this.config.tickIntervalMs
+          : false,
+        ticksUntilGate:
+          gateInterval > 0
+            ? gateInterval - (tickNumber % gateInterval || gateInterval)
+            : null,
+        convergenceWarning: intel?.convergenceAlerts[0],
+      };
+    }
 
     const tickCtx: TickMessageContext = {
       state: this.state,
@@ -377,9 +438,30 @@ export class DaemonController {
       promptCacheStale,
       memorySummary: this.options.getMemorySummary?.(),
       availableSkills: this.options.getAvailableSkills?.(),
+      worldState,
+      openDrifts,
+      platformEvents,
+      daemonMetrics,
+      selfImprovement: this.options.config.selfImprovement
+        ? {
+            enabled: this.options.config.selfImprovement,
+            autonomy: this.options.config.autonomy,
+            branch: this.options.config.selfHealBranch,
+          }
+        : undefined,
     };
 
     const tickMessage = formatTickMessage(tickCtx);
+
+    // Events are now surfaced in this tick — mark them consumed exactly once
+    // so the next tick doesn't re-notice them.
+    if (platformEvents?.length && this.options.onPlatformEventsConsumed) {
+      try {
+        this.options.onPlatformEventsConsumed(platformEvents.map((e) => e.id));
+      } catch (e) {
+        log.warn({ err: e }, "Platform event consumption callback failed");
+      }
+    }
     const events: AgentEvent[] = [];
     const toolCalls: string[] = [];
     let cost = 0;

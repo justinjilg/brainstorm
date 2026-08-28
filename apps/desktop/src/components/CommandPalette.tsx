@@ -160,17 +160,17 @@ export function CommandPalette({
     // in the loaded registry the router will fall back to its default.
     {
       id: "model-opus",
-      label: "Switch to Claude Opus 4.6",
+      label: "Switch to Claude Opus 5",
       category: "Model",
       action: () =>
-        onModelSwitch?.("Claude Opus 4.6", "anthropic", "claude-opus-4-6"),
+        onModelSwitch?.("Claude Opus 5", "anthropic", "claude-opus-5"),
     },
     {
       id: "model-sonnet",
-      label: "Switch to Claude Sonnet 4.6",
+      label: "Switch to Claude Sonnet 5",
       category: "Model",
       action: () =>
-        onModelSwitch?.("Claude Sonnet 4.6", "anthropic", "claude-sonnet-4-6"),
+        onModelSwitch?.("Claude Sonnet 5", "anthropic", "claude-sonnet-5"),
     },
     {
       id: "model-gpt",

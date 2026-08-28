@@ -24,7 +24,7 @@ import {
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
 import { detectBusinessHarness, loadBusinessHarness } from "@brainst0rm/config";
 import {
@@ -166,6 +166,74 @@ function notifyCliMissing(detail: string): void {
   }
 }
 
+/**
+ * Build the environment the headless backend is spawned with, self-resolving
+ * BR credentials so the harness comes alive on every launch — not only when
+ * the app happens to be started from a shell that exported them.
+ *
+ * The backend's vault chain (`isOpAvailable`) requires OP_SERVICE_ACCOUNT_TOKEN
+ * and reads item names from BRAINSTORM_OP_VAULT (default "Dev Keys"). Our keys
+ * live in "BrainstormOps", and the SA token itself lives in that same vault.
+ * The Electron main process runs with the user's interactive 1Password session
+ * (biometric / desktop-app integration), so it CAN fetch the token via `op`
+ * even in a GUI launch, then hand it to the token-gated headless child.
+ *
+ * Best-effort: any failure leaves the inherited env untouched (no regression),
+ * and BR simply reports disconnected until credentials are configured.
+ */
+function resolveBackendEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+
+  // Preferred path: Brainstorm's OWN encrypted vault (~/.brainstorm/vault.enc),
+  // auto-unlocked from the OS keychain. When it exists, the backend resolves
+  // every key natively and `op` is not required at all — so skip the 1Password
+  // shell-out entirely. Run `brainstorm vault bootstrap` once to populate it.
+  const nativeVault = join(homedir(), ".brainstorm", "vault.enc");
+  if (existsSync(nativeVault)) {
+    logToFile("Native key vault present — resolving keys via keychain, not op");
+    return env;
+  }
+
+  // Fallback (no native vault yet): resolve BR creds via 1Password so a fresh
+  // machine still comes alive before bootstrap.
+  // Non-secret: point the vault bridge at the vault that holds the
+  // canonically-named API-key items.
+  if (!env.BRAINSTORM_OP_VAULT) env.BRAINSTORM_OP_VAULT = "BrainstormOps";
+  // Secret: fetch the service-account token from 1Password if it isn't already
+  // in the environment. Stays in the vault — never written to disk here.
+  if (!env.OP_SERVICE_ACCOUNT_TOKEN) {
+    try {
+      const token = execFileSync(
+        "op",
+        [
+          "item",
+          "get",
+          "bench-OP_SERVICE_ACCOUNT_TOKEN",
+          "--vault",
+          env.BRAINSTORM_OP_VAULT,
+          "--fields",
+          "credential",
+          "--reveal",
+        ],
+        { timeout: 8000, stdio: ["pipe", "pipe", "pipe"] },
+      )
+        .toString()
+        .trim();
+      if (token) {
+        env.OP_SERVICE_ACCOUNT_TOKEN = token;
+        logToFile("Resolved OP_SERVICE_ACCOUNT_TOKEN for backend via op");
+      }
+    } catch (err) {
+      logToFile(
+        `Could not resolve OP_SERVICE_ACCOUNT_TOKEN via op (BR keys fall back to env): ${
+          err instanceof Error ? err.message.split("\n")[0] : String(err)
+        }`,
+      );
+    }
+  }
+  return env;
+}
+
 function spawnBackend(): void {
   // Primary: global `brainstorm` binary. Fallback: `npx brainstorm` —
   // gated by the useNpxFallback module flag so the rest of this
@@ -184,7 +252,7 @@ function spawnBackend(): void {
   try {
     backend = spawn(cmd, args, {
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env },
+      env: resolveBackendEnv(),
     });
   } catch (err) {
     // spawn() can throw synchronously if the cmd is utterly missing in
@@ -1029,9 +1097,12 @@ function createWindow(): BrowserWindow {
 
   if (isDev) {
     win.loadURL("http://localhost:1420");
-    // Open DevTools in dev so renderer errors are immediately visible.
-    // Packaged builds stay gated behind the View menu / ⌥⌘I.
-    win.webContents.openDevTools({ mode: "detach" });
+    // DevTools no longer auto-opens — the app should launch as a clean product
+    // surface, not a debugger. Opt in with BRAINSTORM_DEVTOOLS=1, or open it
+    // any time from the View menu / ⌥⌘I.
+    if (process.env.BRAINSTORM_DEVTOOLS === "1") {
+      win.webContents.openDevTools({ mode: "detach" });
+    }
   } else {
     win.loadFile(join(__dirname, "../dist/index.html"));
   }

@@ -11,7 +11,12 @@
  * The model responds by either doing work or calling daemon_sleep.
  */
 
-import type { DaemonState } from "./types.js";
+import type {
+  DaemonState,
+  DriftNotice,
+  PlatformEventNotice,
+  WorldStateSummary,
+} from "./types.js";
 
 export interface TickMessageContext {
   state: DaemonState;
@@ -24,6 +29,12 @@ export interface TickMessageContext {
   memorySummary?: string;
   /** Available skill names for autonomous invocation. */
   availableSkills?: Array<{ name: string; description: string }>;
+  /** What the daemon can currently see and reach (connectors, BR, project). */
+  worldState?: WorldStateSummary;
+  /** Open drift observations from the harness world model. */
+  openDrifts?: DriftNotice[];
+  /** Unconsumed platform events pushed by connected products. */
+  platformEvents?: PlatformEventNotice[];
 
   /** Fleet quality signals from quality observability middleware. */
   fleetSummary?: {
@@ -37,6 +48,15 @@ export interface TickMessageContext {
 
   /** Performance metrics from the router — makes the model aware of its own trajectory. */
   daemonMetrics?: DaemonMetrics;
+
+  /** Self-improvement charter — the daemon's standing objective, if enabled. */
+  selfImprovement?: {
+    enabled: boolean;
+    /** "off" | "propose" | "branch" — what may happen to a verified fix. */
+    autonomy: "off" | "propose" | "branch";
+    /** Isolated branch for auto-committed fixes. */
+    branch: string;
+  };
 }
 
 export interface DaemonMetrics {
@@ -80,6 +100,82 @@ export function formatTickMessage(ctx: TickMessageContext): string {
     parts.push(
       `  <cache status="stale" note="Prompt cache expired. This tick costs more input tokens." />`,
     );
+  }
+
+  // Perception — what the daemon can see and reach. On tick 1 this is the
+  // awakening inventory: the model wakes up already knowing its world.
+  if (ctx.worldState) {
+    const w = ctx.worldState;
+    const healthy = w.connectors.filter((c) => c.healthy).length;
+    parts.push(
+      `  <perception connectors="${w.connectors.length}" healthy="${healthy}">`,
+    );
+    for (const c of w.connectors) {
+      if (c.healthy) {
+        const domains = c.domains?.length
+          ? ` (domains: ${c.domains.join(", ")})`
+          : "";
+        parts.push(`    - ${c.name}: healthy, ${c.toolCount} tools${domains}`);
+      } else {
+        parts.push(`    - ${c.name}: UNREACHABLE`);
+      }
+    }
+    if (w.br) {
+      const brBits = [
+        `connected="${w.br.connected}"`,
+        w.br.models !== undefined ? `models="${w.br.models}"` : "",
+        w.br.budgetRemainingUsd !== undefined
+          ? `budget_remaining="$${w.br.budgetRemainingUsd.toFixed(2)}"`
+          : "",
+        w.br.note ? `note="${w.br.note}"` : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      parts.push(`    <br ${brBits} />`);
+    }
+    if (w.project) {
+      const p = w.project;
+      const projBits = [
+        p.name ? `name="${p.name}"` : "",
+        `onboarded="${p.onboarded}"`,
+        p.memoryCount !== undefined ? `memories="${p.memoryCount}"` : "",
+        p.codeGraphNodes !== undefined
+          ? `code_graph_nodes="${p.codeGraphNodes}"`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      parts.push(`    <project ${projBits} />`);
+    }
+    parts.push(`  </perception>`);
+  }
+
+  // Open drift — the world model disagrees with observed reality. These are
+  // the daemon's notices: things worth investigating without being asked.
+  if (ctx.openDrifts && ctx.openDrifts.length > 0) {
+    parts.push(`  <drift open="${ctx.openDrifts.length}">`);
+    for (const d of ctx.openDrifts) {
+      const source = d.source ? ` source=${d.source}` : "";
+      parts.push(
+        `    - [${d.severity}] ${d.kind}: ${d.summary} (id=${d.id}${source})`,
+      );
+    }
+    parts.push(`  </drift>`);
+  }
+
+  // Platform events — pushed perception from connected products.
+  if (ctx.platformEvents && ctx.platformEvents.length > 0) {
+    parts.push(`  <platform_events count="${ctx.platformEvents.length}">`);
+    for (const ev of ctx.platformEvents) {
+      const ageSec = Math.max(
+        0,
+        Math.floor((Date.now() - ev.receivedAt) / 1000),
+      );
+      parts.push(
+        `    - [${ev.source}] ${ev.eventType}: ${ev.summary} (${ageSec}s ago)`,
+      );
+    }
+    parts.push(`  </platform_events>`);
   }
 
   // Scheduled tasks that are due
@@ -168,9 +264,90 @@ export function formatTickMessage(ctx: TickMessageContext): string {
 
   parts.push(`</tick>`);
   parts.push("");
-  parts.push(
-    "You are in daemon mode. Review the tick context above. If there's work to do, do it. If not, call daemon_sleep with an appropriate duration and reason. Do not generate unnecessary output — be efficient with tokens.",
-  );
+  const hasNotices =
+    (ctx.openDrifts?.length ?? 0) > 0 || (ctx.platformEvents?.length ?? 0) > 0;
+
+  const si = ctx.selfImprovement;
+  if (si?.enabled) {
+    parts.push(buildSelfImprovementDirective(si, hasNotices));
+  } else {
+    parts.push(
+      hasNotices
+        ? "You are in daemon mode. Open drift and platform events above are live signals from your environment: pick the most important one, investigate it with read-only tools first, and prepare a fix within your authority — propose a ChangeSet for anything material, never mutate beyond your grants. If other work is due, do it. If nothing needs you, call daemon_sleep with an appropriate duration and reason. Be efficient with tokens."
+        : "You are in daemon mode. Review the tick context above. If there's work to do, do it. If not, call daemon_sleep with an appropriate duration and reason. Do not generate unnecessary output — be efficient with tokens.",
+    );
+  }
 
   return parts.join("\n");
+}
+
+/**
+ * The self-improvement charter — the daemon's standing directive. Turns each
+ * idle tick into a unit of continuous self-hardening: perceive one concrete,
+ * evidence-backed weakness in Brainstorm's OWN state, fix it, VERIFY the fix,
+ * and record the outcome as feedback — all on an isolated branch so `main` is
+ * never touched.
+ */
+function buildSelfImprovementDirective(
+  si: NonNullable<TickMessageContext["selfImprovement"]>,
+  hasNotices: boolean,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    "You are KAIROS, the always-on operator of Brainstorm. Your STANDING OBJECTIVE is to make Brainstorm's own state continuously more robust and stable — with no prompt, on your own initiative.",
+  );
+  lines.push("");
+  lines.push("Each tick, run one unit of self-improvement:");
+  lines.push(
+    "1. PERCEIVE a weakness. Use read-only tools first (grep, file_read, git_status/diff, shell for `pnpm typecheck`/tests). Prefer concrete, evidence-backed problems: a failing test, a type error, a lint failure, an unhandled error in your own logs, open drift above, a brittle joint (e.g. a missing guard, an FK that can break, an unwired default). Pick the single highest-leverage one.",
+  );
+
+  if (si.autonomy === "branch") {
+    lines.push(
+      `2. ISOLATE. Before editing, ensure you are on branch \`${si.branch}\` (create it from the current HEAD if missing via git_branch). NEVER commit to main.`,
+    );
+    lines.push(
+      "3. FIX it with the smallest change that resolves the root cause. Match surrounding code and conventions.",
+    );
+    lines.push(
+      "4. VERIFY before it counts: run the typecheck and the relevant tests. A fix is only real if it goes green. If it stays red, revert your edit and record what you learned — do NOT commit broken work.",
+    );
+    lines.push(
+      `5. COMMIT the verified fix to \`${si.branch}\` (git_commit) with a clear message describing the weakness and the fix. This commit is a live artifact — reviewable and revertible; main is untouched.`,
+    );
+  } else if (si.autonomy === "propose") {
+    lines.push(
+      "2. FIX it in the working tree with the smallest change that resolves the root cause.",
+    );
+    lines.push(
+      "3. VERIFY before it counts: run the typecheck and the relevant tests. Only a green fix is real.",
+    );
+    lines.push(
+      "4. PROPOSE — stage the verified change as a ChangeSet for human review. Do NOT commit; you are in propose-only mode.",
+    );
+  } else {
+    lines.push(
+      "2. Autonomy is OFF: do not modify code. Record the weakness and the fix you would make so a human can act on it.",
+    );
+  }
+
+  lines.push(
+    "6. FEEDBACK: record the outcome — the problem, the fix, the verify result, and which model did the work — so the system learns which models solve which problems (this is the signal BR routes on).",
+  );
+  lines.push("");
+  lines.push(
+    "MESH: you are one of many models reachable through BrainstormRouter — the control layer. When a problem is hard or ambiguous, or outside your strengths, get independent perspectives from other models rather than guessing alone (fill your gaps with theirs). BR is how they collaborate.",
+  );
+  lines.push(
+    "SAFETY: stay within your grants — the isolated branch and ChangeSet boundaries are the hard controls. Never touch main; never mutate beyond your authority. Do NOT run package-manager installs (pnpm/npm/yarn install), dependency upgrades, or `rm -rf` — dependencies are managed outside your loop; verify with the toolchain already present. Be efficient with tokens.",
+  );
+  if (hasNotices) {
+    lines.push(
+      "Live drift/platform signals are above — weigh them as candidate weaknesses this tick.",
+    );
+  }
+  lines.push(
+    "If, after perceiving, nothing genuinely needs hardening right now, call daemon_sleep with an appropriate duration and reason instead of inventing busywork.",
+  );
+  return lines.join("\n");
 }
