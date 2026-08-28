@@ -24,7 +24,7 @@ import { enterWorkspace } from "@brainst0rm/tools";
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 /**
  * Ensure the self-improvement daemon has its OWN git worktree so its edits and
@@ -47,9 +47,12 @@ function ensureSelfHealWorktree(
   branch: string,
 ): string | null {
   if (!worktreeSetting) return null;
-  const worktree = worktreeSetting.startsWith("~")
+  const expanded = worktreeSetting.startsWith("~")
     ? join(homedir(), worktreeSetting.slice(1))
     : worktreeSetting;
+  // Absolutize against the repo so Node's existsSync and git's cwd-relative
+  // resolution can never disagree on where the worktree is.
+  const worktree = resolve(repoPath, expanded);
   const gitq = (args: string[]): string => {
     try {
       return execFileSync("git", args, {
@@ -568,9 +571,15 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
           projectPath: daemonProjectPath,
           runTick: async function* (tickMessage: string) {
             const tickAbort = new AbortController();
-            // Scope every path-based tool (file_edit, shell, git) in this tick
-            // to the isolated worktree via AsyncLocalStorage — the interactive
-            // chat, running in its own async context, keeps the real project.
+            // Scope every path/repo tool (file_edit, shell, git_*, gh_*) in this
+            // tick to the isolated worktree via AsyncLocalStorage. We use
+            // enterWith (not run()) because this is a generator that yields the
+            // agent's event stream — the same pattern the subagent runner uses
+            // for a spawned project root. It binds the store to THIS tick's
+            // async chain; the interactive chat runs on a separate async root
+            // (its own stdin 'line' event) and never inherits it, so the two
+            // never cross-contaminate. A fresh runTick invocation re-binds each
+            // tick, so nothing persists between ticks either.
             enterWorkspace(daemonProjectPath);
             try {
               yield* runLoop(
