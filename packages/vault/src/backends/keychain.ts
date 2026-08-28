@@ -12,6 +12,8 @@ import { execFileSync, spawnSync } from "node:child_process";
  */
 
 const SERVICE = "com.brainstorm.vault";
+// Absolute path so a rogue `security` earlier on PATH cannot be substituted.
+const SECURITY_BIN = "/usr/bin/security";
 
 let availabilityCache: boolean | null = null;
 
@@ -23,7 +25,7 @@ export function keychainAvailable(): boolean {
     return false;
   }
   try {
-    execFileSync("security", ["help"], { timeout: 3000, stdio: "pipe" });
+    execFileSync(SECURITY_BIN, ["help"], { timeout: 10000, stdio: "pipe" });
     availabilityCache = true;
   } catch {
     availabilityCache = false;
@@ -45,7 +47,7 @@ export function keychainRead(
   if (!keychainAvailable()) return null;
   try {
     const out = execFileSync(
-      "security",
+      SECURITY_BIN,
       ["find-generic-password", "-a", account, "-s", service, "-w"],
       { timeout: 10000, stdio: ["pipe", "pipe", "pipe"] },
     );
@@ -79,7 +81,7 @@ export function keychainWrite(
 ): boolean {
   if (!keychainAvailable()) return false;
   const res = spawnSync(
-    "security",
+    SECURITY_BIN,
     ["add-generic-password", "-a", account, "-s", service, "-U", "-w"],
     {
       input: `${secret}\n${secret}\n`,
