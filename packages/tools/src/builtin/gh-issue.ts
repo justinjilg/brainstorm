@@ -2,6 +2,7 @@ import { z } from "zod";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { defineTool } from "../base.js";
+import { getWorkspace } from "../workspace-context.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -73,7 +74,7 @@ export const ghIssueTool = defineTool({
     cwd: z.string().optional().describe("Working directory"),
   }),
   async execute(input) {
-    const opts = { cwd: input.cwd ?? process.cwd() };
+    const opts = { cwd: input.cwd ?? getWorkspace() };
 
     try {
       switch (input.action) {

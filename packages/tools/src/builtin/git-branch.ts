@@ -2,6 +2,7 @@ import { z } from "zod";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { defineTool } from "../base.js";
+import { getWorkspace } from "../workspace-context.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -27,7 +28,7 @@ export const gitBranchTool = defineTool({
     cwd: z.string().optional().describe("Working directory"),
   }),
   async execute({ action, name, startPoint, cwd }) {
-    const opts = { cwd: cwd ?? process.cwd() };
+    const opts = { cwd: cwd ?? getWorkspace() };
 
     try {
       switch (action) {

@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 
 /**
  * macOS Keychain backend — stores the Brainstorm vault master password in the
@@ -57,11 +57,10 @@ export function keychainRead(
  * Write (create or replace) a secret in the login keychain. Returns true on
  * success. `-U` updates in place if the item already exists.
  *
- * The secret is passed as a `-w` argument rather than via stdin: macOS
- * `security` only reads `-w` from stdin interactively with a double
- * (type/retype) prompt, which is not reliably pipeable. The argv exposure is
- * a brief, one-time, local-only window during vault bootstrap on the user's
- * own machine — an accepted tradeoff for reliability over the alternatives.
+ * The secret is fed via stdin, NOT as a `-w <value>` argument, so it never
+ * appears in the process argument list (visible to `ps`/process monitors).
+ * macOS `security -w` with no value prompts for the password twice
+ * (type + retype); we satisfy both by writing "<secret>\n<secret>\n".
  */
 export function keychainWrite(
   account: string,
@@ -69,23 +68,14 @@ export function keychainWrite(
   service = SERVICE,
 ): boolean {
   if (!keychainAvailable()) return false;
-  try {
-    execFileSync(
-      "security",
-      [
-        "add-generic-password",
-        "-a",
-        account,
-        "-s",
-        service,
-        "-w",
-        secret,
-        "-U",
-      ],
-      { timeout: 5000, stdio: ["pipe", "pipe", "pipe"] },
-    );
-    return true;
-  } catch {
-    return false;
-  }
+  const res = spawnSync(
+    "security",
+    ["add-generic-password", "-a", account, "-s", service, "-U", "-w"],
+    {
+      input: `${secret}\n${secret}\n`,
+      timeout: 5000,
+      stdio: ["pipe", "pipe", "pipe"],
+    },
+  );
+  return res.status === 0;
 }

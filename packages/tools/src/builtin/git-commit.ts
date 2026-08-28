@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createLogger } from "@brainst0rm/shared";
 import { defineTool } from "../base.js";
+import { getWorkspace } from "../workspace-context.js";
 
 const execFileAsync = promisify(execFile);
 const log = createLogger("git-commit");
@@ -45,7 +46,7 @@ export const gitCommitTool = defineTool({
       .describe('Co-author lines to append (format: "Name <email>")'),
   }),
   async execute({ message, files, cwd, coAuthors }) {
-    const opts = { cwd: cwd ?? process.cwd() };
+    const opts = { cwd: cwd ?? getWorkspace() };
 
     try {
       // Stage specific files only (never git add -A)
@@ -107,9 +108,7 @@ export const gitCommitTool = defineTool({
  * - git diff --cached (actual changes, truncated for large diffs)
  * - git log --oneline -5 (recent commit style reference)
  */
-async function gatherCommitContext(opts: {
-  cwd: string;
-}): Promise<{
+async function gatherCommitContext(opts: { cwd: string }): Promise<{
   status: string;
   diffStat: string;
   diffPreview: string;

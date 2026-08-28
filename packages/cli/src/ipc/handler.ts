@@ -50,25 +50,36 @@ function ensureSelfHealWorktree(
   const worktree = worktreeSetting.startsWith("~")
     ? join(homedir(), worktreeSetting.slice(1))
     : worktreeSetting;
-  try {
-    if (!existsSync(join(worktree, ".git"))) {
-      // Reuse the branch if it already exists, else create it.
-      const branchExists = (() => {
-        try {
-          execFileSync("git", ["rev-parse", "--verify", branch], {
-            cwd: repoPath,
-            stdio: "pipe",
-          });
-          return true;
-        } catch {
-          return false;
-        }
-      })();
-      const args = branchExists
-        ? ["worktree", "add", worktree, branch]
-        : ["worktree", "add", worktree, "-b", branch];
-      execFileSync("git", args, { cwd: repoPath, stdio: "pipe" });
+  const gitq = (args: string[]): string => {
+    try {
+      return execFileSync("git", args, {
+        cwd: repoPath,
+        stdio: ["pipe", "pipe", "pipe"],
+      }).toString();
+    } catch {
+      return "";
     }
+  };
+  try {
+    // Already a registered worktree at this path? Reuse it — `git worktree add`
+    // would otherwise fail on the existing directory. Match on the porcelain
+    // "worktree <path>" lines so a leftover/untracked dir is handled too.
+    const registered = gitq(["worktree", "list", "--porcelain"])
+      .split("\n")
+      .some((l) => l === `worktree ${worktree}`);
+    if (registered || existsSync(join(worktree, ".git"))) return worktree;
+
+    // If a non-worktree directory is squatting the path, don't clobber it —
+    // fail closed so autonomy downgrades to propose rather than committing
+    // somewhere unexpected.
+    if (existsSync(worktree)) return null;
+
+    const branchExists =
+      gitq(["rev-parse", "--verify", branch]).trim().length > 0;
+    const args = branchExists
+      ? ["worktree", "add", worktree, branch]
+      : ["worktree", "add", worktree, "-b", branch];
+    execFileSync("git", args, { cwd: repoPath, stdio: "pipe" });
     return worktree;
   } catch {
     return null;
