@@ -15,6 +15,21 @@ const SERVICE = "com.brainstorm.vault";
 // Absolute path so a rogue `security` earlier on PATH cannot be substituted.
 const SECURITY_BIN = "/usr/bin/security";
 
+/**
+ * Timeout for every `security` invocation. 10s default; override with
+ * BRAINSTORM_KEYCHAIN_TIMEOUT_MS for machines whose keychain UI/unlock is slow.
+ */
+function keychainTimeoutMs(): number {
+  const raw = Number(process.env.BRAINSTORM_KEYCHAIN_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 10000;
+}
+
+// Availability is cached, but re-probed after a TTL so a keychain that becomes
+// usable mid-run (e.g. the user unlocks it later) is picked up without an
+// explicit reset. resetKeychainAvailability() forces an immediate re-probe.
+const AVAILABILITY_TTL_MS = 60000;
+let availabilityCheckedAt = 0;
+
 let availabilityCache: boolean | null = null;
 
 /**
@@ -25,31 +40,48 @@ let availabilityCache: boolean | null = null;
  * to env" is diagnosable rather than silent.
  */
 export function keychainAvailable(): boolean {
-  if (availabilityCache !== null) return availabilityCache;
+  const now = Date.now();
+  if (
+    availabilityCache !== null &&
+    now - availabilityCheckedAt < AVAILABILITY_TTL_MS
+  )
+    return availabilityCache;
+  availabilityCheckedAt = now;
   if (process.platform !== "darwin") {
-    process.stderr.write(
-      `[keychain] unavailable on ${process.platform} — falling back to env/prompt for the vault password\n`,
+    logOnce(
+      `[keychain] unavailable on ${process.platform} — falling back to env/prompt for the vault password`,
     );
     availabilityCache = false;
     return false;
   }
   try {
     execFileSync(SECURITY_BIN, ["help"], {
-      timeout: 10000,
+      timeout: keychainTimeoutMs(),
       stdio: ["pipe", "pipe", "pipe"],
     });
     availabilityCache = true;
   } catch (err) {
     const msg = err instanceof Error ? err.message.split("\n")[0] : String(err);
-    process.stderr.write(`[keychain] ${SECURITY_BIN} not usable: ${msg}\n`);
+    logOnce(`[keychain] ${SECURITY_BIN} not usable: ${msg}`);
     availabilityCache = false;
   }
   return availabilityCache;
 }
 
-/** Clear the cached availability so the next call re-probes. */
+/** Clear the cached availability so the next call re-probes immediately. */
 export function resetKeychainAvailability(): void {
   availabilityCache = null;
+  availabilityCheckedAt = 0;
+}
+
+// De-duplicate identical stderr diagnostics so a persistently locked keychain
+// (probed on a TTL) can't flood the log with the same line every re-probe.
+const seenLogs = new Set<string>();
+function logOnce(msg: string): void {
+  if (seenLogs.has(msg)) return;
+  if (seenLogs.size > 200) seenLogs.clear(); // bound memory
+  seenLogs.add(msg);
+  process.stderr.write(msg + "\n");
 }
 
 /**
@@ -68,7 +100,7 @@ export function keychainRead(
     const out = execFileSync(
       SECURITY_BIN,
       ["find-generic-password", "-a", account, "-s", service, "-w"],
-      { timeout: 10000, stdio: ["pipe", "pipe", "pipe"] },
+      { timeout: keychainTimeoutMs(), stdio: ["pipe", "pipe", "pipe"] },
     );
     // A zero-exit means the item EXISTS: return its value even if empty, so a
     // deliberately-stored empty secret is distinct from "no such item" (which
@@ -91,8 +123,8 @@ export function keychainRead(
         e?.code === "ETIMEDOUT" || e?.signal
           ? `timed out (${e.code ?? e.signal}) — keychain may be prompting or locked`
           : `exit ${e?.status ?? "?"} — keychain may be locked or access denied`;
-      process.stderr.write(
-        `[keychain] read failed for ${service}/${account}: ${cause}${detail}\n`,
+      logOnce(
+        `[keychain] read failed for ${service}/${account}: ${cause}${detail}`,
       );
     }
     return null;
@@ -119,8 +151,8 @@ export function keychainWrite(
   // parsing (the tool would read a truncated first line, then mismatch on
   // retype). Reject rather than silently store a corrupted value.
   if (secret.includes("\n") || secret.includes("\r")) {
-    process.stderr.write(
-      `[keychain] refusing to write ${service}/${account}: secret contains a newline\n`,
+    logOnce(
+      `[keychain] refusing to write ${service}/${account}: secret contains a newline`,
     );
     return false;
   }
@@ -129,7 +161,7 @@ export function keychainWrite(
     ["add-generic-password", "-a", account, "-s", service, "-U", "-w"],
     {
       input: `${secret}\n${secret}\n`,
-      timeout: 10000,
+      timeout: keychainTimeoutMs(),
       stdio: ["pipe", "pipe", "pipe"],
     },
   );
@@ -143,8 +175,8 @@ export function keychainWrite(
       : res.signal
         ? `killed by ${res.signal} (timed out?)`
         : `exit ${res.status}`;
-    process.stderr.write(
-      `[keychain] write failed for ${service}/${account}: ${cause}${detail}\n`,
+    logOnce(
+      `[keychain] write failed for ${service}/${account}: ${cause}${detail}`,
     );
     return false;
   }
