@@ -15,8 +15,8 @@ interface ChatViewProps {
   onModelUpdate: (model: string, provider: string) => void;
   onContextUpdate: (percent: number) => void;
   onNewConversation: () => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  onModeChange: (...args: any[]) => void;
+  /** Open the model picker (typed — replaces the old onModeChange escape hatch). */
+  onOpenModels?: () => void;
   onOpenPalette: () => void;
   onAgentEvent?: (event: any) => void;
 }
@@ -30,7 +30,7 @@ export function ChatView({
   onModelUpdate,
   onContextUpdate,
   onNewConversation,
-  onModeChange,
+  onOpenModels,
   onOpenPalette,
   onAgentEvent,
 }: ChatViewProps) {
@@ -173,7 +173,7 @@ export function ChatView({
                       label: "Models",
                       hint: "⌘3",
                       icon: "◆",
-                      onClick: () => onModeChange("models"),
+                      onClick: () => onOpenModels?.(),
                     },
                     {
                       label: "Commands",

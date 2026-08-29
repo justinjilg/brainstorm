@@ -26,43 +26,6 @@ import { useOrganism } from "../../hooks/useOrganism";
 import { useSession } from "../../hooks/useSession";
 import { useErrorToast } from "../../hooks/useErrorToast";
 
-/** Map a legacy AppMode string (still emitted by ChatView/CommandPalette) onto
- * the new navigation, so those controls keep working without the grid. */
-function useLegacyModeRouter(
-  setPlace: (p: PlaceId) => void,
-  openSettings: (tab?: "models" | "config" | "security") => void,
-  openPulse: () => void,
-) {
-  return useCallback(
-    (mode: string) => {
-      switch (mode) {
-        case "chat":
-          setPlace("talk");
-          break;
-        case "memory":
-        case "skills":
-          setPlace("growth");
-          break;
-        case "dashboard":
-          openPulse();
-          break;
-        case "models":
-          openSettings("models");
-          break;
-        case "security":
-          openSettings("security");
-          break;
-        case "config":
-          openSettings("config");
-          break;
-        default:
-          break;
-      }
-    },
-    [setPlace, openSettings, openPulse],
-  );
-}
-
 export function AppShell() {
   const [place, setPlace] = useState<PlaceId>(DEFAULT_PLACE);
   const [pulseOpen, setPulseOpen] = useState(false);
@@ -115,8 +78,6 @@ export function AppShell() {
     lastSeenSeqRef.current = maxSeq;
     setHasUnseen(false);
   }, [maxSeq]);
-
-  const legacyMode = useLegacyModeRouter(setPlace, openSettings, openPulse);
 
   const openFolder = useCallback(async () => {
     const bridge = window.brainstorm;
@@ -199,7 +160,7 @@ export function AppShell() {
             onModelUpdate={session.reflectModel}
             onContextUpdate={setContextPercent}
             onOpenPalette={() => setPaletteOpen(true)}
-            onLegacyMode={legacyMode}
+            onOpenModels={() => setModelSwitcherOpen(true)}
           />
         );
       case "council":
@@ -301,12 +262,18 @@ export function AppShell() {
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
-        onModeChange={(m) => {
-          legacyMode(m);
+        onNavigate={(p) => {
+          setPlace(p);
           setPaletteOpen(false);
         }}
-        onToggleSidebar={() => {}}
-        onToggleDetail={() => openPulse()}
+        onOpenSettings={(tab) => {
+          openSettings(tab);
+          setPaletteOpen(false);
+        }}
+        onOpenPulse={() => {
+          openPulse();
+          setPaletteOpen(false);
+        }}
         onModelSwitch={(name, provider, id) =>
           id
             ? session.selectModel(id, name, provider)

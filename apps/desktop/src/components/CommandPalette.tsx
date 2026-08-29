@@ -3,9 +3,11 @@
  */
 
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import type { AppMode } from "../lib/legacy-modes";
+import type { PlaceId } from "../places/registry";
 import { fuzzyFilter } from "../lib/fuzzy";
 import { useModels, useSkills } from "../hooks/useServerData";
+
+export type SettingsTab = "models" | "config" | "security";
 
 interface PaletteCommand {
   id: string;
@@ -18,9 +20,12 @@ interface PaletteCommand {
 interface CommandPaletteProps {
   open: boolean;
   onClose: () => void;
-  onModeChange: (mode: AppMode) => void;
-  onToggleSidebar: () => void;
-  onToggleDetail: () => void;
+  /** Navigate to a canvas place (typed — no legacy mode strings). */
+  onNavigate: (place: PlaceId) => void;
+  /** Open the Settings drawer on a given tab. */
+  onOpenSettings: (tab: SettingsTab) => void;
+  /** Open the Pulse feed. */
+  onOpenPulse: () => void;
   onModelSwitch?: (name: string, provider: string, id?: string) => void;
   onRoleSwitch?: (roleId: string | null) => void;
   onNewConversation?: () => void;
@@ -29,9 +34,9 @@ interface CommandPaletteProps {
 export function CommandPalette({
   open,
   onClose,
-  onModeChange,
-  onToggleSidebar,
-  onToggleDetail,
+  onNavigate,
+  onOpenSettings,
+  onOpenPulse,
   onModelSwitch,
   onRoleSwitch,
   onNewConversation,
@@ -63,88 +68,63 @@ export function CommandPalette({
         id: `skill-dyn-${s.name}`,
         label: `Show skill: ${s.name}`,
         category: "Skill",
-        // For now skills open the Skills view filtered to this skill. Future
-        // work: add a "Toggle skill on/off" action that drives activeSkills.
-        action: () => onModeChange("skills"),
+        // Skills live in the Growth place.
+        action: () => onNavigate("growth"),
       });
     }
     return cmds;
-  }, [allModels, allSkills, onModelSwitch, onModeChange]);
+  }, [allModels, allSkills, onModelSwitch, onNavigate]);
 
   const commands: PaletteCommand[] = [
-    // Modes
+    // Navigate — the four places + Pulse (typed, matches the real shell)
     {
-      id: "mode-chat",
-      label: "Go to Chat",
+      id: "nav-talk",
+      label: "Go to Talk",
       category: "Navigate",
       shortcut: "⌘1",
-      action: () => onModeChange("chat"),
+      action: () => onNavigate("talk"),
     },
     {
-      id: "mode-dashboard",
-      label: "Go to Dashboard",
+      id: "nav-council",
+      label: "Go to Council",
       category: "Navigate",
       shortcut: "⌘2",
-      action: () => onModeChange("dashboard"),
+      action: () => onNavigate("council"),
     },
     {
-      id: "mode-models",
-      label: "Go to Models",
+      id: "nav-growth",
+      label: "Go to Growth (memory & skills)",
       category: "Navigate",
       shortcut: "⌘3",
-      action: () => onModeChange("models"),
+      action: () => onNavigate("growth"),
     },
     {
-      id: "mode-memory",
-      label: "Go to Memory",
+      id: "nav-pulse",
+      label: "Open Pulse (the organism)",
       category: "Navigate",
-      shortcut: "⌘4",
-      action: () => onModeChange("memory"),
+      shortcut: "⌘0",
+      action: () => onOpenPulse(),
     },
     {
-      id: "mode-skills",
-      label: "Go to Skills",
+      id: "nav-settings-models",
+      label: "Settings: Models & keys",
       category: "Navigate",
-      shortcut: "⌘5",
-      action: () => onModeChange("skills"),
+      action: () => onOpenSettings("models"),
     },
     {
-      id: "mode-workflows",
-      label: "Go to Workflows",
+      id: "nav-settings-config",
+      label: "Settings: Config & budget",
       category: "Navigate",
-      shortcut: "⌘6",
-      action: () => onModeChange("workflows"),
+      action: () => onOpenSettings("config"),
     },
     {
-      id: "mode-security",
-      label: "Go to Security",
+      id: "nav-settings-security",
+      label: "Settings: Security & autonomy",
       category: "Navigate",
-      shortcut: "⌘7",
-      action: () => onModeChange("security"),
-    },
-    {
-      id: "mode-config",
-      label: "Go to Config",
-      category: "Navigate",
-      shortcut: "⌘8",
-      action: () => onModeChange("config"),
+      action: () => onOpenSettings("security"),
     },
 
     // Actions
-    {
-      id: "toggle-sidebar",
-      label: "Toggle Sidebar",
-      category: "View",
-      shortcut: "⌘B",
-      action: onToggleSidebar,
-    },
-    {
-      id: "toggle-detail",
-      label: "Toggle Detail Panel",
-      category: "View",
-      shortcut: "⌘D",
-      action: onToggleDetail,
-    },
     {
       id: "new-conversation",
       label: "New Conversation",
@@ -215,31 +195,31 @@ export function CommandPalette({
     // KAIROS
     {
       id: "kairos-config",
-      label: "KAIROS Configuration",
+      label: "KAIROS autonomy settings",
       category: "KAIROS",
       shortcut: "⌘/",
-      action: () => onModeChange("config"),
+      action: () => onOpenSettings("security"),
     },
     {
       id: "kairos-log",
-      label: "View KAIROS Daily Log",
+      label: "View KAIROS activity (Pulse)",
       category: "KAIROS",
       shortcut: "⌘L",
-      action: () => onModeChange("config"),
+      action: () => onOpenPulse(),
     },
 
     // Security
     {
       id: "red-team",
-      label: "Run Red Team Simulation",
+      label: "Security & autonomy settings",
       category: "Security",
-      action: () => onModeChange("security"),
+      action: () => onOpenSettings("security"),
     },
     {
       id: "dream",
-      label: "View Memory",
+      label: "View Memory (Growth)",
       category: "Memory",
-      action: () => onModeChange("memory"),
+      action: () => onNavigate("growth"),
     },
   ];
 

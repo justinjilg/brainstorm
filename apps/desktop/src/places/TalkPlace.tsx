@@ -23,8 +23,8 @@ export interface TalkPlaceProps {
   onModelUpdate: (model: string, provider: string) => void;
   onContextUpdate: (percent: number) => void;
   onOpenPalette: () => void;
-  /** Legacy escape hatch from ChatView (e.g. "open models"); AppShell maps it. */
-  onLegacyMode: (mode: string) => void;
+  /** Open the model picker (from ChatView's empty-state Models button). */
+  onOpenModels: () => void;
 }
 
 export function TalkPlace({
@@ -39,7 +39,7 @@ export function TalkPlace({
   onModelUpdate,
   onContextUpdate,
   onOpenPalette,
-  onLegacyMode,
+  onOpenModels,
 }: TalkPlaceProps) {
   const { conversations, create } = useConversations({
     projectPath: currentProject,
@@ -141,7 +141,7 @@ export function TalkPlace({
           onContextUpdate={onContextUpdate}
           onNewConversation={newConversation}
           onOpenPalette={onOpenPalette}
-          onModeChange={(mode: string) => onLegacyMode(mode)}
+          onOpenModels={onOpenModels}
         />
       </div>
     </div>
