@@ -59,7 +59,17 @@ function ensureSelfHealWorktree(
         cwd: repoPath,
         stdio: ["pipe", "pipe", "pipe"],
       }).toString();
-    } catch {
+    } catch (err) {
+      // An empty result is expected for probes like `rev-parse --verify` on a
+      // not-yet-created branch. A timeout or a spawn error (git missing, cwd
+      // gone) is NOT expected — surface it so a broken environment is visible
+      // rather than looking like "branch absent".
+      const e = err as { code?: string; signal?: string };
+      if (e?.code === "ETIMEDOUT" || e?.signal) {
+        process.stderr.write(
+          `[ipc] git ${args[0]} failed abnormally (${e.code ?? e.signal}) in ${repoPath}\n`,
+        );
+      }
       return "";
     }
   };

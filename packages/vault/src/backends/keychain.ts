@@ -55,10 +55,17 @@ export function keychainRead(
     return value.length > 0 ? value : null;
   } catch (err) {
     // `security` exits 44 when the item simply doesn't exist — expected, quiet.
-    const status = (err as { status?: number })?.status;
-    if (status !== 44) {
+    // Anything else is a real fault worth surfacing with its cause so a slow or
+    // locked keychain isn't misread as "no password set": a timeout (the tool
+    // hung, e.g. a UI unlock prompt) vs. a non-zero exit (locked / ACL denied).
+    const e = err as { status?: number; code?: string; signal?: string };
+    if (e?.status !== 44) {
+      const cause =
+        e?.code === "ETIMEDOUT" || e?.signal
+          ? `timed out (${e.code ?? e.signal}) — keychain may be prompting or locked`
+          : `exit ${e?.status ?? "?"} — keychain may be locked or access denied`;
       process.stderr.write(
-        `[keychain] read failed for ${service}/${account} (exit ${status ?? "?"}) — vault may be locked\n`,
+        `[keychain] read failed for ${service}/${account}: ${cause}\n`,
       );
     }
     return null;
