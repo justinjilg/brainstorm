@@ -32,9 +32,11 @@ export function KairosLivePanel() {
   // Polled status/tickCount/cost — reliable even right after a UI reload, when
   // no daemon event has arrived yet. The event feed adds the live narrative.
   const polled = useKairos();
+  const num = (v: unknown) =>
+    typeof v === "number" && !Number.isNaN(v) ? v : 0;
   const status = polled.status !== "stopped" ? polled.status : live.status;
-  const tickCount = Math.max(polled.tickCount, live.tickCount);
-  const totalCost = Math.max(polled.totalCost, live.totalCost);
+  const tickCount = Math.max(num(polled.tickCount), num(live.tickCount));
+  const totalCost = Math.max(num(polled.totalCost), num(live.totalCost));
   const running = status === "running";
   const active = status === "running" || status === "sleeping";
 
