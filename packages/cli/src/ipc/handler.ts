@@ -137,9 +137,14 @@ function ensureSelfHealWorktree(
     // somewhere unexpected.
     if (existsSync(worktree)) return null;
 
+    // Scope strictly to a local BRANCH (refs/heads/) — a bare name also matches
+    // a tag or remote ref of the same name, which could make `worktree add`
+    // resolve to an unintended ref.
     const branchExists =
-      gitq(["rev-parse", "--verify", branch], /* quiet */ true).trim().length >
-      0;
+      gitq(
+        ["rev-parse", "--verify", `refs/heads/${branch}`],
+        /* quiet */ true,
+      ).trim().length > 0;
     const args = branchExists
       ? ["worktree", "add", worktree, branch]
       : ["worktree", "add", worktree, "-b", branch];
@@ -150,10 +155,13 @@ function ensureSelfHealWorktree(
   } catch (err) {
     // Surface WHY isolation could not be established — otherwise the caller
     // silently downgrades autonomy to propose and the operator has no way to
-    // tell an intentional config from a broken worktree (branch checked out
-    // elsewhere, permissions, disk). Fail closed, but never silently.
-    const detail =
-      err instanceof Error ? err.message.split("\n")[0] : String(err);
+    // tell an intentional config from a broken worktree. Fail closed, never
+    // silently. Call out the common, actionable case (the self-heal branch is
+    // already checked out in another worktree/the main tree) distinctly.
+    const raw = err instanceof Error ? err.message : String(err);
+    const detail = /already (checked out|used by worktree)/i.test(raw)
+      ? `branch "${branch}" is already checked out elsewhere — free it or set a different daemon.selfHealBranch`
+      : raw.split("\n")[0];
     process.stderr.write(
       `[ipc] self-heal worktree could not be established at ${worktree}: ${detail}\n`,
     );
