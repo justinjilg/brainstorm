@@ -132,10 +132,11 @@ function ensureSelfHealWorktree(
     }
     if (registered) gitq(["worktree", "prune"]);
 
-    // If a non-worktree directory is squatting the path, don't clobber it —
-    // fail closed so autonomy downgrades to propose rather than committing
-    // somewhere unexpected.
-    if (existsSync(worktree)) return null;
+    // No TOCTOU pre-check on the target directory: rather than `existsSync` then
+    // add (a window where state can change), we let `git worktree add` be the
+    // single authoritative, atomic gate — it refuses to clobber a non-empty or
+    // squatting directory, and that failure is handled in the catch below as a
+    // clean fail-closed (autonomy → propose). Git decides; we never race it.
 
     // Scope strictly to a local BRANCH (refs/heads/) — a bare name also matches
     // a tag or remote ref of the same name, which could make `worktree add`
