@@ -51,8 +51,10 @@ export function keychainRead(
       ["find-generic-password", "-a", account, "-s", service, "-w"],
       { timeout: 10000, stdio: ["pipe", "pipe", "pipe"] },
     );
-    const value = out.toString("utf-8").replace(/\n$/, "");
-    return value.length > 0 ? value : null;
+    // A zero-exit means the item EXISTS: return its value even if empty, so a
+    // deliberately-stored empty secret is distinct from "no such item" (which
+    // is the caught exit-44 path below that returns null).
+    return out.toString("utf-8").replace(/\n$/, "");
   } catch (err) {
     // `security` exits 44 when the item simply doesn't exist — expected, quiet.
     // Anything else is a real fault worth surfacing with its cause so a slow or

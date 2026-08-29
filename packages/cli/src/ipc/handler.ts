@@ -58,6 +58,7 @@ function ensureSelfHealWorktree(
       return execFileSync("git", args, {
         cwd: repoPath,
         stdio: ["pipe", "pipe", "pipe"],
+        timeout: 10000,
       }).toString();
     } catch (err) {
       // An empty result is expected for probes like `rev-parse --verify` on a
@@ -114,7 +115,9 @@ function ensureSelfHealWorktree(
     const args = branchExists
       ? ["worktree", "add", worktree, branch]
       : ["worktree", "add", worktree, "-b", branch];
-    execFileSync("git", args, { cwd: repoPath, stdio: "pipe" });
+    // Bounded so a hung git (index lock wait, credential prompt) can never
+    // block the daemon tick indefinitely — it times out and fails closed.
+    execFileSync("git", args, { cwd: repoPath, stdio: "pipe", timeout: 10000 });
     return worktree;
   } catch (err) {
     // Surface WHY isolation could not be established — otherwise the caller
