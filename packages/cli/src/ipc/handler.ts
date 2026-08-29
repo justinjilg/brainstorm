@@ -576,6 +576,15 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
           sendError(req.id, "Daemon already running");
           break;
         }
+        // Hard gate: the daemon must be explicitly enabled in config. This is
+        // the authoritative kill switch — the desktop auto-starts KAIROS on
+        // launch, so `daemon.enabled = false` MUST be honored here or the
+        // config toggle is meaningless. Disabled after repeated isolation
+        // escapes; do not remove without a bulletproof isolation model.
+        if (!ctx.config.daemon.enabled) {
+          sendError(req.id, "Daemon is disabled (daemon.enabled = false)");
+          break;
+        }
 
         const {
           DaemonController,

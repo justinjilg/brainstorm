@@ -10,6 +10,7 @@ import { Placeholder } from "./Placeholder";
 import { MemoryView } from "../memory/MemoryView";
 import { SkillsView } from "../skills/SkillsView";
 import { ErrorBoundary } from "../ErrorBoundary";
+import { KairosLivePanel } from "../KairosLivePanel";
 import type { VerbKind } from "../../lib/workspace";
 
 interface SelfWorkspaceProps {
@@ -79,12 +80,17 @@ function WelcomeCard({
       style={{
         flex: 1,
         display: "flex",
+        flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
+        gap: 20,
         padding: 40,
+        overflowY: "auto",
         background: "var(--ctp-base)",
       }}
     >
+      {/* The living heartbeat — KAIROS self-improvement, visible. */}
+      <KairosLivePanel />
       <div
         style={{
           maxWidth: 540,
