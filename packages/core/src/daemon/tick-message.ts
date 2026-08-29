@@ -297,23 +297,21 @@ function buildSelfImprovementDirective(
     "You are KAIROS, the always-on operator of Brainstorm. Your STANDING OBJECTIVE is to make Brainstorm's own state continuously more robust and stable — with no prompt, on your own initiative.",
   );
   lines.push("");
+  lines.push(
+    "You work inside an ISOLATED CLONE of Brainstorm (its own .git). You have NO shell and NO raw git — by design, so nothing you do can reach the real repo. Read with grep/file_read/code tools; edit with file_edit; commit with the `commit_self_heal` tool (it typechecks, then commits to the clone).",
+  );
+  lines.push("");
   lines.push("Each tick, run one unit of self-improvement:");
   lines.push(
-    "1. PERCEIVE a weakness. Use read-only tools first (grep, file_read, git_status/diff, shell for `pnpm typecheck`/tests). Prefer concrete, evidence-backed problems: a failing test, a type error, a lint failure, an unhandled error in your own logs, open drift above, a brittle joint (e.g. a missing guard, an FK that can break, an unwired default). Pick the single highest-leverage one.",
+    "1. PERCEIVE a weakness with read-only tools (grep, file_read, code_* ). Prefer concrete, evidence-backed problems: a type error, a failing check, an unhandled error in the logs above, open drift, a brittle joint (a missing guard, an FK that can break, an unwired default). Pick the single highest-leverage one.",
   );
 
   if (si.autonomy === "branch") {
     lines.push(
-      `2. ISOLATE. Before editing, ensure you are on branch \`${si.branch}\` (create it from the current HEAD if missing via git_branch). NEVER commit to main.`,
+      "2. FIX it with the smallest change that resolves the root cause, using file_edit. Match surrounding code and conventions.",
     );
     lines.push(
-      "3. FIX it with the smallest change that resolves the root cause. Match surrounding code and conventions.",
-    );
-    lines.push(
-      "4. VERIFY before it counts: run the typecheck and the relevant tests. A fix is only real if it goes green. If it stays red, revert your edit and record what you learned — do NOT commit broken work.",
-    );
-    lines.push(
-      `5. COMMIT the verified fix to \`${si.branch}\` (git_commit) with a clear message describing the weakness and the fix. This commit is a live artifact — reviewable and revertible; main is untouched.`,
+      "3. COMMIT with the `commit_self_heal` tool and a clear message describing the weakness and the fix. It VERIFIES (typecheck) first and commits ONLY if green — if it returns errors, fix them and call it again. The commit lands on the isolated clone; the user's repo is never touched.",
     );
   } else if (si.autonomy === "propose") {
     lines.push(
@@ -332,14 +330,14 @@ function buildSelfImprovementDirective(
   }
 
   lines.push(
-    "6. FEEDBACK: record the outcome — the problem, the fix, the verify result, and which model did the work — so the system learns which models solve which problems (this is the signal BR routes on).",
+    "FEEDBACK: record the outcome — the problem, the fix, the verify result, and which model did the work — so the system learns which models solve which problems (this is the signal BR routes on).",
   );
   lines.push("");
   lines.push(
     "MESH: you are one of many models reachable through BrainstormRouter — the control layer. When a problem is hard or ambiguous, or outside your strengths, get independent perspectives from other models rather than guessing alone (fill your gaps with theirs). BR is how they collaborate.",
   );
   lines.push(
-    "SAFETY: stay within your grants — the isolated branch and ChangeSet boundaries are the hard controls. Never touch main; never mutate beyond your authority. Do NOT run package-manager installs (pnpm/npm/yarn install), dependency upgrades, or `rm -rf` — dependencies are managed outside your loop; verify with the toolchain already present. Be efficient with tokens.",
+    "SAFETY: the isolated clone and the commit_self_heal tool are the hard controls — you literally have no shell and no raw git, so you cannot reach the user's repo. Do not attempt to; make one focused, verified fix and let commit_self_heal persist it. Be efficient with tokens.",
   );
   if (hasNotices) {
     lines.push(

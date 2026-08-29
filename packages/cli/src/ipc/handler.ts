@@ -22,149 +22,88 @@ import type { BrainstormRouter } from "@brainst0rm/router";
 import { collectOpenDrifts } from "../perception/drift.js";
 import { enterWorkspace } from "@brainst0rm/tools";
 import { execFileSync } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { createDaemonRegistry } from "../daemon/self-heal-tools.js";
 
 /**
- * Ensure the self-improvement daemon has its OWN git worktree so its edits and
- * commits physically cannot touch the user's main working tree. Created from
- * the current HEAD on the configured branch if missing. Returns the absolute
- * worktree path, or null if isolation could not be established (the caller then
- * declines to enable write autonomy).
+ * Ensure the self-improvement daemon has its OWN full git CLONE (its own .git,
+ * refs, stash, HEAD) so NO git operation it performs — even a stray one — can
+ * reach the user's repository. A shared-.git worktree was tried and failed
+ * three times: AsyncLocalStorage workspace scoping does not reliably reach the
+ * shell tool, so raw `git stash`/`reset` escaped to main. A separate clone
+ * removes that entire class of failure at the filesystem level.
  *
- * IMPORTANT: we deliberately do NOT symlink the main repo's node_modules into
- * the worktree. Doing so turns the autonomous agent's writes (e.g. a dependency
- * install) into mutations of the user's REAL deps — that exact mistake once
- * corrupted the main install mid-session. The worktree gets its own deps
- * out-of-band (a real `pnpm install` there is isolated) or the daemon's verify
- * is limited to what the toolchain resolves without a full install. The charter
- * also forbids the daemon from running package installs.
+ * `--local` hardlinks immutable objects (fast, disk-light) but the clone's
+ * refs/stash/index/HEAD are entirely its own. Returns the absolute clone path,
+ * or null if isolation could not be established (caller then declines write
+ * autonomy). Deps for the clone's verify step are installed out-of-band
+ * (`pnpm install` inside the clone — isolated, never symlinked).
  */
-function ensureSelfHealWorktree(
+function ensureSelfHealClone(
   repoPath: string,
-  worktreeSetting: string,
+  cloneSetting: string,
   branch: string,
 ): string | null {
-  if (!worktreeSetting) return null;
-  const expanded = worktreeSetting.startsWith("~")
-    ? join(homedir(), worktreeSetting.slice(1))
-    : worktreeSetting;
-  // Absolutize against the repo so Node's existsSync and git's cwd-relative
-  // resolution can never disagree on where the worktree is.
-  const worktree = resolve(repoPath, expanded);
-  const gitq = (args: string[], quiet = false): string => {
-    try {
-      return execFileSync("git", args, {
-        cwd: repoPath,
-        stdio: ["pipe", "pipe", "pipe"],
-        timeout: 10000,
-      }).toString();
-    } catch (err) {
-      // `quiet` marks probes whose failure is expected and meaningful (e.g.
-      // `rev-parse --verify` on a not-yet-created branch → "" means "absent").
-      // Every other failure — a timeout, a spawn error (git missing, cwd gone),
-      // or an unexpected non-zero exit — is surfaced WITH git's own stderr so a
-      // broken environment is diagnosable instead of masquerading as empty.
-      if (!quiet) {
-        const e = err as {
-          code?: string;
-          signal?: string;
-          status?: number;
-          stderr?: Buffer | string;
-        };
-        const why =
-          e?.code === "ETIMEDOUT" || e?.signal
-            ? `${e.code ?? e.signal}`
-            : `exit ${e?.status ?? "?"}`;
-        const detail = e?.stderr ? `: ${String(e.stderr).trim()}` : "";
-        process.stderr.write(
-          `[ipc] git ${args[0]} failed (${why}) in ${repoPath}${detail}\n`,
-        );
-      }
-      return "";
-    }
-  };
-  // Canonicalize for comparison so symlinked prefixes (e.g. macOS
-  // /Users → /System/Volumes/Data/Users) and case differences don't make an
-  // already-registered worktree look new.
-  const canon = (p: string): string => {
-    try {
-      return existsSync(p) ? realpathSync(p) : p;
-    } catch {
-      return p;
-    }
-  };
-  const worktreeReal = canon(worktree);
+  if (!cloneSetting) return null;
+  const expanded = cloneSetting.startsWith("~")
+    ? join(homedir(), cloneSetting.slice(1))
+    : cloneSetting;
+  const clonePath = resolve(repoPath, expanded);
+  const gitIn = (dir: string, args: string[], timeout = 20000): string =>
+    execFileSync("git", ["-C", dir, ...args], {
+      stdio: ["pipe", "pipe", "pipe"],
+      timeout,
+    }).toString();
   try {
-    // Already a registered worktree at this path? Reuse it — `git worktree add`
-    // would otherwise fail on the existing directory. Match on the porcelain
-    // "worktree <path>" lines so a leftover/untracked dir is handled too.
-    const registered = gitq(["worktree", "list", "--porcelain"])
-      .split("\n")
-      .filter((l) => l.startsWith("worktree "))
-      .some((l) => canon(l.slice("worktree ".length)) === worktreeReal);
-    // Only trust a registered/existing worktree if its directory is actually
-    // present. Git keeps a worktree in `worktree list` even after the directory
-    // is deleted externally (until `git worktree prune`); returning that stale
-    // path would send every later cwd-scoped op against a missing dir instead
-    // of failing closed. If it's registered-but-gone, prune and recreate.
-    if (
-      (registered || existsSync(join(worktree, ".git"))) &&
-      existsSync(worktree)
-    ) {
-      // CRITICAL: verify the reused worktree is actually on the self-heal
-      // branch. If something checked out a different branch there (worst case,
-      // main), reusing it would make the daemon commit to that branch — the one
-      // thing this isolation exists to prevent. Branch mismatch → fail closed.
-      const head = gitq([
-        "-C",
-        worktree,
+    // Reuse an existing clone only if it is a real, independent repository
+    // (its .git is a DIRECTORY — a worktree's .git is a file pointer at main)
+    // AND it is on the self-heal branch. Anything else → fail closed.
+    if (existsSync(join(clonePath, ".git"))) {
+      const gitIsDir = (() => {
+        try {
+          return statSync(join(clonePath, ".git")).isDirectory();
+        } catch {
+          return false;
+        }
+      })();
+      if (!gitIsDir) {
+        process.stderr.write(
+          `[ipc] ${clonePath} exists but is not an independent clone (shared .git) — refusing; remove it to let a real clone be created\n`,
+        );
+        return null;
+      }
+      const head = gitIn(clonePath, [
         "rev-parse",
         "--abbrev-ref",
         "HEAD",
       ]).trim();
-      if (head === branch) return worktree;
+      if (head === branch) return clonePath;
       process.stderr.write(
-        `[ipc] self-heal worktree at ${worktree} is on "${head}", not "${branch}" — refusing to reuse (autonomy stays propose)\n`,
+        `[ipc] self-heal clone at ${clonePath} is on "${head}", not "${branch}" — refusing to reuse (autonomy stays propose)\n`,
       );
       return null;
     }
-    if (registered) gitq(["worktree", "prune"]);
-
-    // No TOCTOU pre-check on the target directory: rather than `existsSync` then
-    // add (a window where state can change), we let `git worktree add` be the
-    // single authoritative, atomic gate — it refuses to clobber a non-empty or
-    // squatting directory, and that failure is handled in the catch below as a
-    // clean fail-closed (autonomy → propose). Git decides; we never race it.
-
-    // Scope strictly to a local BRANCH (refs/heads/) — a bare name also matches
-    // a tag or remote ref of the same name, which could make `worktree add`
-    // resolve to an unintended ref.
-    const branchExists =
-      gitq(
-        ["rev-parse", "--verify", `refs/heads/${branch}`],
-        /* quiet */ true,
-      ).trim().length > 0;
-    const args = branchExists
-      ? ["worktree", "add", worktree, branch]
-      : ["worktree", "add", worktree, "-b", branch];
-    // Bounded so a hung git (index lock wait, credential prompt) can never
-    // block the daemon tick indefinitely — it times out and fails closed.
-    execFileSync("git", args, { cwd: repoPath, stdio: "pipe", timeout: 10000 });
-    return worktree;
+    if (existsSync(clonePath)) {
+      process.stderr.write(
+        `[ipc] ${clonePath} exists but has no .git — refusing to clone over it\n`,
+      );
+      return null;
+    }
+    // Create the independent clone from the local repo's committed state, then
+    // put it on the self-heal branch. 3-minute bound so a hung clone can't
+    // wedge daemon start.
+    execFileSync("git", ["clone", "--local", repoPath, clonePath], {
+      stdio: ["pipe", "pipe", "pipe"],
+      timeout: 180000,
+    });
+    gitIn(clonePath, ["checkout", "-B", branch]);
+    return clonePath;
   } catch (err) {
-    // Surface WHY isolation could not be established — otherwise the caller
-    // silently downgrades autonomy to propose and the operator has no way to
-    // tell an intentional config from a broken worktree. Fail closed, never
-    // silently. Call out the common, actionable case (the self-heal branch is
-    // already checked out in another worktree/the main tree) distinctly.
     const raw = err instanceof Error ? err.message : String(err);
-    const detail = /already (checked out|used by worktree)/i.test(raw)
-      ? `branch "${branch}" is already checked out elsewhere — free it or set a different daemon.selfHealBranch`
-      : raw.split("\n")[0];
     process.stderr.write(
-      `[ipc] self-heal worktree could not be established at ${worktree}: ${detail}\n`,
+      `[ipc] self-heal clone could not be established at ${clonePath}: ${raw.split("\n")[0]}\n`,
     );
     return null;
   }
@@ -627,31 +566,37 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
             });
         }
 
-        // Isolate the self-improvement daemon in its own git worktree so its
-        // edits/commits can never touch the user's main working tree. If we
-        // can't establish isolation, fall back to the backend cwd but DOWNGRADE
-        // write autonomy to "propose" so nothing is committed into a shared,
-        // possibly-dirty tree.
+        // Isolate the self-improvement daemon in its own git CLONE (own .git)
+        // so NO git operation it runs can reach the user's repo. If isolation
+        // can't be established, DOWNGRADE write autonomy to "propose" and run
+        // in the backend cwd — nothing is committed.
         const wantsWriteAutonomy =
           ctx.config.daemon.selfImprovement &&
           ctx.config.daemon.autonomy !== "off";
-        const isolatedWorktree = wantsWriteAutonomy
-          ? ensureSelfHealWorktree(
+        const isolatedClone = wantsWriteAutonomy
+          ? ensureSelfHealClone(
               ctx.projectPath,
               ctx.config.daemon.selfHealWorktree,
               ctx.config.daemon.selfHealBranch,
             )
           : null;
-        const daemonProjectPath = isolatedWorktree ?? ctx.projectPath;
+        const daemonProjectPath = isolatedClone ?? ctx.projectPath;
         const daemonConfig =
-          !isolatedWorktree && ctx.config.daemon.autonomy === "branch"
+          !isolatedClone && ctx.config.daemon.autonomy === "branch"
             ? { ...ctx.config.daemon, autonomy: "propose" as const }
             : ctx.config.daemon;
-        if (isolatedWorktree) {
-          log(`Self-heal daemon isolated in worktree: ${isolatedWorktree}`);
+        // The daemon's tools: when isolated in a clone, a RESTRICTED registry
+        // with NO raw git/shell (the escape vector) — its only write-to-git is
+        // a commit tool pinned to the clone path. Without a clone it uses the
+        // shared read/edit tools but stays in propose mode (no commits).
+        const daemonTools = isolatedClone
+          ? createDaemonRegistry(isolatedClone)
+          : ctx.tools;
+        if (isolatedClone) {
+          log(`Self-heal daemon isolated in clone: ${isolatedClone}`);
         } else if (wantsWriteAutonomy) {
           log(
-            "Self-heal worktree unavailable — downgraded autonomy to propose (no commits to shared tree)",
+            "Self-heal clone unavailable — downgraded autonomy to propose (no commits)",
           );
         }
 
@@ -665,15 +610,12 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
           projectPath: daemonProjectPath,
           runTick: async function* (tickMessage: string) {
             const tickAbort = new AbortController();
-            // Scope every path/repo tool (file_edit, shell, git_*, gh_*) in this
-            // tick to the isolated worktree via AsyncLocalStorage. We use
-            // enterWith (not run()) because this is a generator that yields the
-            // agent's event stream — the same pattern the subagent runner uses
-            // for a spawned project root. It binds the store to THIS tick's
-            // async chain; the interactive chat runs on a separate async root
-            // (its own stdin 'line' event) and never inherits it, so the two
-            // never cross-contaminate. A fresh runTick invocation re-binds each
-            // tick, so nothing persists between ticks either.
+            // Scope the path tools (file_edit, grep, glob) to the clone via
+            // AsyncLocalStorage. This is best-effort defence in depth for FILE
+            // edits; the hard guarantee is `daemonTools` — it contains NO raw
+            // git/shell, and its only commit tool is pinned to the clone path
+            // with an explicit `git -C <clone>`, so no destructive git can ever
+            // reach the user's repo even if this scope leaks.
             enterWorkspace(daemonProjectPath);
             try {
               yield* runLoop(
@@ -683,7 +625,7 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
                   registry: ctx.registry,
                   router: ctx.router,
                   costTracker,
-                  tools: ctx.tools,
+                  tools: daemonTools,
                   sessionId: daemonSessionId,
                   projectPath: daemonProjectPath,
                   systemPrompt: fp,
