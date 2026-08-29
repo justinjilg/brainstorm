@@ -89,6 +89,16 @@ export function keychainWrite(
   service = SERVICE,
 ): boolean {
   if (!keychainAvailable()) return false;
+  // The secret is delivered over the type/retype stdin prompt as
+  // "<secret>\n<secret>\n"; a newline INSIDE the secret would desync that
+  // parsing (the tool would read a truncated first line, then mismatch on
+  // retype). Reject rather than silently store a corrupted value.
+  if (secret.includes("\n") || secret.includes("\r")) {
+    process.stderr.write(
+      `[keychain] refusing to write ${service}/${account}: secret contains a newline\n`,
+    );
+    return false;
+  }
   const res = spawnSync(
     SECURITY_BIN,
     ["add-generic-password", "-a", account, "-s", service, "-U", "-w"],
