@@ -263,34 +263,39 @@ export class CostRepository {
     // drop every cost write, blinding cost tracking (and the outcome signal BR
     // learns from). INSERT OR IGNORE is atomic and idempotent: it creates the
     // row once and is a cheap no-op on every subsequent record for that
-    // session (no SELECT-then-INSERT race).
-    this.db
-      .prepare(
-        "INSERT OR IGNORE INTO sessions (id, created_at, updated_at, project_path) VALUES (?, ?, ?, ?)",
-      )
-      .run(
-        entry.sessionId,
-        entry.timestamp,
-        entry.timestamp,
-        entry.projectPath ?? "(daemon)",
-      );
-    this.db
-      .prepare(
-        `INSERT INTO cost_records (id, timestamp, session_id, model_id, provider, input_tokens, output_tokens, cached_tokens, cost, task_type, project_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        id,
-        entry.timestamp,
-        entry.sessionId,
-        entry.modelId,
-        entry.provider,
-        entry.inputTokens,
-        entry.outputTokens,
-        entry.cachedTokens,
-        entry.cost,
-        entry.taskType,
-        entry.projectPath ?? null,
-      );
+    // session (no SELECT-then-INSERT race). Both writes run in a single
+    // transaction so a failure can never leave a session stub with no cost row
+    // (or vice versa) — they commit together or not at all.
+    const write = this.db.transaction(() => {
+      this.db
+        .prepare(
+          "INSERT OR IGNORE INTO sessions (id, created_at, updated_at, project_path) VALUES (?, ?, ?, ?)",
+        )
+        .run(
+          entry.sessionId,
+          entry.timestamp,
+          entry.timestamp,
+          entry.projectPath ?? "(daemon)",
+        );
+      this.db
+        .prepare(
+          `INSERT INTO cost_records (id, timestamp, session_id, model_id, provider, input_tokens, output_tokens, cached_tokens, cost, task_type, project_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          entry.timestamp,
+          entry.sessionId,
+          entry.modelId,
+          entry.provider,
+          entry.inputTokens,
+          entry.outputTokens,
+          entry.cachedTokens,
+          entry.cost,
+          entry.taskType,
+          entry.projectPath ?? null,
+        );
+    });
+    write();
     return { ...entry, id };
   }
 
