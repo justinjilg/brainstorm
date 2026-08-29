@@ -34,7 +34,10 @@ export function keychainAvailable(): boolean {
     return false;
   }
   try {
-    execFileSync(SECURITY_BIN, ["help"], { timeout: 10000, stdio: "pipe" });
+    execFileSync(SECURITY_BIN, ["help"], {
+      timeout: 10000,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
     availabilityCache = true;
   } catch (err) {
     const msg = err instanceof Error ? err.message.split("\n")[0] : String(err);

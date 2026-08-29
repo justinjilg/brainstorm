@@ -112,8 +112,24 @@ function ensureSelfHealWorktree(
     if (
       (registered || existsSync(join(worktree, ".git"))) &&
       existsSync(worktree)
-    )
-      return worktree;
+    ) {
+      // CRITICAL: verify the reused worktree is actually on the self-heal
+      // branch. If something checked out a different branch there (worst case,
+      // main), reusing it would make the daemon commit to that branch — the one
+      // thing this isolation exists to prevent. Branch mismatch → fail closed.
+      const head = gitq([
+        "-C",
+        worktree,
+        "rev-parse",
+        "--abbrev-ref",
+        "HEAD",
+      ]).trim();
+      if (head === branch) return worktree;
+      process.stderr.write(
+        `[ipc] self-heal worktree at ${worktree} is on "${head}", not "${branch}" — refusing to reuse (autonomy stays propose)\n`,
+      );
+      return null;
+    }
     if (registered) gitq(["worktree", "prune"]);
 
     // If a non-worktree directory is squatting the path, don't clobber it —
