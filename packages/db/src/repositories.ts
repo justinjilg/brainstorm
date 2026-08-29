@@ -261,15 +261,18 @@ export class CostRepository {
     // id is never persisted through the normal session-creation path — would
     // otherwise hit the cost_records.session_id → sessions(id) FK and silently
     // drop every cost write, blinding cost tracking (and the outcome signal BR
-    // learns from). INSERT OR IGNORE is atomic and idempotent: it creates the
-    // row once and is a cheap no-op on every subsequent record for that
-    // session (no SELECT-then-INSERT race). Both writes run in a single
+    // learns from). The upsert is atomic (no SELECT-then-INSERT race): it
+    // creates the row once, then only refreshes updated_at on later writes. Both writes run in a single
     // transaction so a failure can never leave a session stub with no cost row
     // (or vice versa) — they commit together or not at all.
     const write = this.db.transaction(() => {
       this.db
         .prepare(
-          "INSERT OR IGNORE INTO sessions (id, created_at, updated_at, project_path) VALUES (?, ?, ?, ?)",
+          // Create the session row if missing; if it already exists, just
+          // refresh updated_at so a long-lived daemon session doesn't stay
+          // frozen at its first cost write. Atomic upsert, no SELECT race.
+          "INSERT INTO sessions (id, created_at, updated_at, project_path) VALUES (?, ?, ?, ?) " +
+            "ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at",
         )
         .run(
           entry.sessionId,

@@ -92,7 +92,17 @@ function ensureSelfHealWorktree(
       .split("\n")
       .filter((l) => l.startsWith("worktree "))
       .some((l) => canon(l.slice("worktree ".length)) === worktreeReal);
-    if (registered || existsSync(join(worktree, ".git"))) return worktree;
+    // Only trust a registered/existing worktree if its directory is actually
+    // present. Git keeps a worktree in `worktree list` even after the directory
+    // is deleted externally (until `git worktree prune`); returning that stale
+    // path would send every later cwd-scoped op against a missing dir instead
+    // of failing closed. If it's registered-but-gone, prune and recreate.
+    if (
+      (registered || existsSync(join(worktree, ".git"))) &&
+      existsSync(worktree)
+    )
+      return worktree;
+    if (registered) gitq(["worktree", "prune"]);
 
     // If a non-worktree directory is squatting the path, don't clobber it —
     // fail closed so autonomy downgrades to propose rather than committing

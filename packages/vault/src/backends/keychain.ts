@@ -96,5 +96,19 @@ export function keychainWrite(
       stdio: ["pipe", "pipe", "pipe"],
     },
   );
-  return res.status === 0;
+  if (res.status !== 0) {
+    // Surface WHY the write failed — symmetric with keychainRead — so a hung
+    // (timeout), un-spawnable (ENOENT), or rejected write is diagnosable
+    // instead of a bare "false".
+    const cause = res.error
+      ? `${(res.error as { code?: string }).code ?? res.error.message}`
+      : res.signal
+        ? `killed by ${res.signal} (timed out?)`
+        : `exit ${res.status}`;
+    process.stderr.write(
+      `[keychain] write failed for ${service}/${account}: ${cause}\n`,
+    );
+    return false;
+  }
+  return true;
 }
