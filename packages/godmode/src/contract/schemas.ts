@@ -58,6 +58,60 @@ export const healthResponseSchema = z
   })
   .describe("Response body for GET /health. No auth required.");
 
+// ── Section 2.5/2.6: Self + Discovery (added 2026-05-21, contract v1.1) ──────
+//
+// The contract originally specified /api/v1/self and /api/v1/discovery
+// in narrative §5.5 / §5.6 but didn't include them in the verifier's
+// PLATFORM_ENDPOINTS array. Adding both here so `brainstorm platform
+// verify` actually checks for them — closes the V-5 action item from
+// .claude/notes/platform-verify-baseline-2026-05-21.md.
+
+export const productVariantEnum = z.enum(["tool", "orchestrator"]);
+
+export const platformSelfResponseSchema = z
+  .object({
+    product: z
+      .string()
+      .regex(/^[a-z0-9-]+$/)
+      .describe("Lowercase product slug. MUST match product.id in manifest."),
+    version: z.string().describe("Product semver string."),
+    variant: productVariantEnum.describe(
+      "Tool-producing or orchestrator-variant per platform-contract-v1-orchestrator.md.",
+    ),
+    capabilities: z
+      .array(z.string())
+      .describe("Capability domains the product covers."),
+    schema_version: z
+      .number()
+      .int()
+      .positive()
+      .describe("Contract version this response conforms to."),
+  })
+  .describe("Response body for GET /api/v1/self. No auth required.");
+
+export const platformDiscoveryResponseSchema = z
+  .object({
+    // Tool-variant products publish tools_url; orchestrator-variant
+    // publishes workflows_url + runs_url instead. Both are optional in
+    // the validator because a product may be one or the other.
+    tools_url: z.string().optional(),
+    workflows_url: z.string().optional(),
+    runs_url: z.string().optional(),
+    self_url: z.string().describe("Path to GET /api/v1/self."),
+    events_url: z.string().optional(),
+    openapi_url: z.string().optional(),
+  })
+  .refine(
+    (data) =>
+      typeof data.tools_url === "string" ||
+      typeof data.workflows_url === "string",
+    {
+      message:
+        "discovery response must have at least one of tools_url (tool-variant) or workflows_url (orchestrator-variant).",
+    },
+  )
+  .describe("Response body for GET /api/v1/discovery. No auth required.");
+
 // ── Section 3: Tool Discovery ──────────────────────────────────────
 
 export const riskLevelEnum = z.enum([
@@ -339,6 +393,26 @@ export const PLATFORM_ENDPOINTS: EndpointDef[] = defineEndpoints([
     summary:
       "Liveness + identity probe. Always available, no auth. Returns 200 for healthy/degraded, 503 for unhealthy.",
     response: healthResponseSchema,
+  },
+  {
+    id: "platform-self",
+    title: "Self-Descriptor",
+    method: "GET",
+    path: "/api/v1/self",
+    auth: "none",
+    summary:
+      "Product self-descriptor — product slug, version, variant (tool|orchestrator), capability domains, schema version. Public, no auth.",
+    response: platformSelfResponseSchema,
+  },
+  {
+    id: "platform-discovery",
+    title: "API Discovery",
+    method: "GET",
+    path: "/api/v1/discovery",
+    auth: "none",
+    summary:
+      "API URL map — tools_url OR workflows_url (depending on variant), self_url, events_url, openapi_url. Public, no auth.",
+    response: platformDiscoveryResponseSchema,
   },
   {
     id: "god-mode-tools",
