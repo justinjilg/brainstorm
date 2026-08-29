@@ -244,6 +244,11 @@ Verified against `packages/config/src/schema.ts`:
 | `shell.defaultTimeout`          | number  | `120000`                            | Shell command timeout (ms)           |
 | `providers.gateway.baseUrl`     | string  | `"https://ai-gateway.vercel.sh/v1"` | AI gateway endpoint                  |
 | `providers.ollama.baseUrl`      | string  | `"http://localhost:11434"`          | Ollama endpoint                      |
+| `providers.ollama.apiKeyEnv`    | string  | —                                   | Optional vault/env bearer-key name   |
+| `providers.lmstudio.baseUrl`    | string  | `"http://localhost:1234"`           | LM Studio endpoint                   |
+| `providers.lmstudio.apiKeyEnv`  | string  | —                                   | Optional vault/env bearer-key name   |
+| `providers.llamacpp.baseUrl`    | string  | `"http://localhost:8080"`           | llama.cpp endpoint                   |
+| `providers.llamacpp.apiKeyEnv`  | string  | —                                   | Optional vault/env bearer-key name   |
 
 ### Querying
 

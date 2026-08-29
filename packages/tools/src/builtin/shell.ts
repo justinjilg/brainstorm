@@ -159,6 +159,16 @@ export function buildChildEnv(level: SandboxLevel): NodeJS.ProcessEnv {
 let currentSandboxLevel: SandboxLevel = "restricted";
 let currentProjectPath: string | undefined;
 
+/** Current effective sandbox mode for sibling process tools. */
+export function getConfiguredSandboxLevel(): SandboxLevel {
+  return currentSandboxLevel;
+}
+
+/** Project root supplied when the sandbox was configured. */
+export function getConfiguredProjectPath(): string | undefined {
+  return currentProjectPath;
+}
+
 // Docker sandbox — lazy-started on first container-mode shell call
 let dockerSandbox: DockerSandbox | null = null;
 let dockerConfig: { image: string; timeout: number } = {

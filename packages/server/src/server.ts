@@ -792,6 +792,37 @@ export class BrainstormServer {
       return this.errorResponse(res, 401, "Invalid event signature");
     }
 
+    // Persist for the KAIROS daemon's perception loop: this is the joint that
+    // turns the platform into a push-perception system. Verified events land
+    // in platform_events; the daemon surfaces unconsumed events in its next
+    // tick and marks them consumed. Persistence failure is reported honestly
+    // (503) — a verified event silently dropped is a lost sense.
+    try {
+      const { PlatformEventRepository } = await import("@brainst0rm/db");
+      const events = new PlatformEventRepository(this.deps.db);
+      const data = (body.data ?? {}) as Record<string, unknown>;
+      const summaryCandidate =
+        data.summary ?? data.message ?? data.title ?? data.description;
+      const summary =
+        typeof summaryCandidate === "string" && summaryCandidate.length > 0
+          ? summaryCandidate.slice(0, 300)
+          : JSON.stringify(data).slice(0, 300);
+      events.record({
+        source: body.product ?? "unknown",
+        eventType: body.type ?? "unknown",
+        summary,
+        payload: {
+          eventId: body.id,
+          tenantId: body.tenant_id,
+          correlationId: body.correlation_id,
+          data: body.data,
+        },
+      });
+    } catch (err) {
+      log.error({ err, eventId: body.id }, "Failed to persist platform event");
+      return this.errorResponse(res, 503, "Event verified but not persisted");
+    }
+
     log.info(
       { type: body.type, product: body.product, tenant: body.tenant_id },
       "Platform event received",

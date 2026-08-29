@@ -13,39 +13,42 @@ Project config overrides global config. Environment variables override both.
 
 ```toml
 [general]
-defaultStrategy = "quality-first"  # quality-first | cost-first | combined | capability | rule-based
+defaultStrategy = "quality-first"  # quality-first | cost-first | combined | capability | learned | rule-based
 maxSteps = 10                      # Max tool calls per turn
-contextWindow = 128000             # Context window size (tokens)
-compactionThreshold = 0.8          # Compact at this % of context window
-permissionMode = "normal"          # strict | normal | permissive
-outputStyle = "concise"            # concise | detailed | learning | explanatory
+defaultPermissionMode = "confirm"  # auto | confirm | plan
+outputStyle = "concise"            # concise | detailed | learning
 
 [budget]
-dailyLimit = 50.00                 # Daily spend limit (USD)
-sessionLimit = 5.00                # Per-session limit
-warningThreshold = 0.8             # Warn at this % of budget
+daily = 50.00                      # Daily spend limit (USD)
+monthly = 500.00                   # Calendar-month spend limit
+perSession = 5.00                  # Per-session limit
+hardLimit = false                  # false warns; true blocks
 
-[providers.brainstormrouter]
+[providers.gateway]
 enabled = true
-baseUrl = "https://api.brainstormrouter.com/v1"
+apiKeyEnv = "AI_GATEWAY_API_KEY"
+baseUrl = "https://ai-gateway.vercel.sh/v1"
 
 [providers.ollama]
 enabled = true
 baseUrl = "http://localhost:11434"
+autoDiscover = true
 
 [providers.lmstudio]
 enabled = true
 baseUrl = "http://localhost:1234"
+autoDiscover = true
+# Optional for a remote OpenAI-compatible endpoint. The named key is
+# resolved through the vault → 1Password → environment chain.
+apiKeyEnv = "CORP_MODEL_TOKEN"
+
+[providers.lmstudio.headers]
+X-Tenant = "engineering"          # Metadata only; keep secrets in apiKeyEnv
 
 [providers.llamacpp]
 enabled = false
 baseUrl = "http://localhost:8080"
-
-[providers.anthropic]
-enabled = false                    # Direct Anthropic (bypass BrainstormRouter)
-
-[providers.openai]
-enabled = false                    # Direct OpenAI (bypass BrainstormRouter)
+autoDiscover = true
 
 [godmode.connectors.myproduct]
 enabled = true
@@ -54,20 +57,13 @@ baseUrl = "https://myproduct.example.com"
 apiKeyName = "MYPRODUCT_API_KEY"
 tenantId = "tenant-123"            # Required for product execute binding; env fallback: _GM_MYPRODUCT_TENANT_ID
 
-[routing]
-preferLocal = false                # Prefer local models when available
-fallbackToCloud = true             # Fall back to cloud if local fails
-
 [[routing.rules]]                  # Rule-based routing
-pattern = "simple question"
+match = { task = "simple question" }
 model = "gpt-4.1-mini"
 
 [[routing.rules]]
-pattern = "complex refactor"
+match = { task = "complex refactor" }
 model = "claude-sonnet-4.5"
-
-[hooks]
-auto_lint = false                  # Run linter after file writes
 
 [shell]
 sandbox = "restricted"             # none | restricted | container
@@ -90,6 +86,14 @@ plan_preview = true                # Show plan for tasks with >3 tool calls
 [community]
 share_fixes = false                # Share anonymized error-fix pairs via BR
 
+[daemon]
+enabled = false                    # KAIROS always-on tick loop (`brainstorm daemon`)
+tickIntervalMs = 30000             # Base tick interval; the model can extend via daemon_sleep
+maxTicksPerSession = 1000          # Cost-safety ceiling per daemon session
+sleepDefaultMs = 60000             # Sleep when the model doesn't specify one
+reflectionIntervalTicks = 50       # Ticks between memory dream/consolidation cycles
+approvalGateIntervalTicks = 0      # Ticks between human approval gates; 0 = disabled
+
 [channels.slack]
 enabled = false                    # Start the Slack adapter with `brainstorm serve`
 mode = "socket"                    # socket | events-api (events-api not yet wired; rejected at startup)
@@ -105,6 +109,8 @@ model = ""                         # Optional model pin for channel-initiated ru
 `[shell.sandboxPool]` only takes effect when `shell.sandbox = "container"` — it lets Docker-backed code-subagents reuse warm containers (keyed by image + workspace) instead of cold-starting each one, with idle eviction and a drain on process exit.
 
 `[channels.slack]` configures the Slack message adapter started by `brainstorm serve` (package `packages/channels`). It runs in Socket Mode by default (no public URL required); `authority` bounds what channel-initiated runs may do — `read-only` restricts them to an explicit read-only tool allowlist, `full` allows everything not otherwise denied.
+
+`[daemon]` configures KAIROS, the always-on tick loop. Every tick carries a perception block (connected God Mode products, BR reachability, project state), open drift from harness world models, and unconsumed platform events (verified product events persisted by `brainstorm serve` into the `platform_events` table), plus router momentum and budget-pressure self-awareness. Tick pacing is cost-aware: as session budget is consumed the interval stretches (1.5×/2×/3×) and the daemon stops at exhaustion. `reflectionIntervalTicks` triggers the memory dream cycle; `approvalGateIntervalTicks > 0` pauses every N ticks for a human checkpoint (interactive prompt in the CLI; surfaced as a `kairos-gate` event to the desktop).
 
 ### Environment Variable Overrides
 

@@ -71,6 +71,7 @@ const DEFAULT_MEMORY_MIB = 1024;
 interface PendingRequest {
   resolve: (resp: HelperResponse) => void;
   reject: (err: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
   /** Set when the helper closes before a response arrives. */
   cancelled?: boolean;
 }
@@ -80,6 +81,7 @@ export class VzSandbox implements Sandbox {
   private booted = false;
   private bootConfig: VzBootConfig | null = null;
   private bootResult: HelperBootResult | null = null;
+  private bootResultTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly inflight = new Map<string, PendingRequest>();
   private stdoutBuffer = "";
   private shuttingDown = false;
@@ -254,6 +256,7 @@ export class VzSandbox implements Sandbox {
     // Reject any in-flight requests so callers don't hang.
     for (const [id, pending] of this.inflight) {
       pending.cancelled = true;
+      clearTimeout(pending.timer);
       pending.reject(
         new Error(`VzSandbox shutting down; request ${id} cancelled`),
       );
@@ -304,18 +307,30 @@ export class VzSandbox implements Sandbox {
         this.handleLine(line);
       }
     });
-    proc.on("exit", (code, signal) => {
-      // Drain any waiters; null code + a signal is helper-killed-by-us.
-      for (const [id, pending] of this.inflight) {
+    const rejectAll = (error: Error) => {
+      if (this.bootResultRejecter) this.bootResultRejecter(error);
+      this.bootResultResolver = null;
+      this.bootResultRejecter = null;
+      if (this.bootResultTimer) clearTimeout(this.bootResultTimer);
+      this.bootResultTimer = null;
+      for (const [, pending] of this.inflight) {
         if (pending.cancelled) continue;
-        pending.reject(
-          new Error(
-            `bsm-vz-helper exited (code=${code}, signal=${signal}) before responding to ${id}`,
-          ),
-        );
+        clearTimeout(pending.timer);
+        pending.reject(error);
       }
       this.inflight.clear();
       this.booted = false;
+    };
+    proc.on("error", (err) => {
+      rejectAll(new Error(`bsm-vz-helper process error: ${err.message}`));
+    });
+    proc.on("exit", (code, signal) => {
+      // Drain any waiters; null code + a signal is helper-killed-by-us.
+      rejectAll(
+        new Error(
+          `bsm-vz-helper exited (code=${code}, signal=${signal}) before responding`,
+        ),
+      );
     });
   }
 
@@ -327,7 +342,7 @@ export class VzSandbox implements Sandbox {
       this.bootResultResolver = resolve;
       this.bootResultRejecter = reject;
 
-      const t = setTimeout(() => {
+      this.bootResultTimer = setTimeout(() => {
         if (this.bootResultRejecter) {
           this.bootResultRejecter(
             new Error("bsm-vz-helper did not produce a boot_result within 30s"),
@@ -336,7 +351,7 @@ export class VzSandbox implements Sandbox {
           this.bootResultRejecter = null;
         }
       }, 30_000);
-      t.unref();
+      this.bootResultTimer.unref();
     });
   }
 
@@ -357,6 +372,8 @@ export class VzSandbox implements Sandbox {
       const r = this.bootResultResolver;
       this.bootResultResolver = null;
       this.bootResultRejecter = null;
+      if (this.bootResultTimer) clearTimeout(this.bootResultTimer);
+      this.bootResultTimer = null;
       if (r) r(parsed);
       return;
     }
@@ -385,6 +402,7 @@ export class VzSandbox implements Sandbox {
       return;
     }
     this.inflight.delete(responseId);
+    clearTimeout(pending.timer);
     pending.resolve(parsed);
   }
 
@@ -394,10 +412,21 @@ export class VzSandbox implements Sandbox {
     }
     const payload = JSON.stringify(req) + "\n";
     return new Promise<HelperResponse>((resolve, reject) => {
-      this.inflight.set(req.request_id, { resolve, reject });
+      const timeoutMs = req.kind === "exec" ? req.deadline_ms : 30_000;
+      const timer = setTimeout(() => {
+        this.inflight.delete(req.request_id);
+        reject(
+          new Error(
+            `bsm-vz-helper request ${req.request_id} (${req.kind}) timed out after ${timeoutMs}ms`,
+          ),
+        );
+      }, timeoutMs);
+      timer.unref();
+      this.inflight.set(req.request_id, { resolve, reject, timer });
       this.helperProc!.stdin!.write(payload, (err) => {
         if (err) {
           this.inflight.delete(req.request_id);
+          clearTimeout(timer);
           reject(err);
         }
       });

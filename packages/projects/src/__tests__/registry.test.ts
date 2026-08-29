@@ -15,7 +15,7 @@ import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import { getTestDb } from "@brainst0rm/db";
 import { ProjectRepository, ProjectMemoryRepository } from "../repository.js";
-import { ProjectManager } from "../manager.js";
+import { ProjectManager, startOfLocalMonthEpoch } from "../manager.js";
 
 let db: Database.Database;
 let tmpRoot: string;
@@ -321,6 +321,15 @@ describe("ProjectManager", () => {
     const check = mgr.checkBudget(p.id);
     expect(check.withinBudget).toBe(true);
     expect(check.remaining).toBeCloseTo(2.25, 5);
+  });
+
+  it("uses the first day of the calendar month for monthly budgets", () => {
+    const midFebruary = new Date(2026, 1, 17, 14, 30, 0, 0);
+    const firstOfFebruary = new Date(2026, 1, 1, 0, 0, 0, 0);
+
+    expect(startOfLocalMonthEpoch(midFebruary.getTime())).toBe(
+      Math.floor(firstOfFebruary.getTime() / 1000),
+    );
   });
 
   it("autoDetect() skips bare dirs and auto-registers dirs with brainstorm.toml", () => {

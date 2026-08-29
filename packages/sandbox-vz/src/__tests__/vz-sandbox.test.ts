@@ -137,6 +137,44 @@ describe("VzSandbox", () => {
     expect(result.stdout).toBe("hi\n");
   });
 
+  it("rejects boot when the helper process emits an error", async () => {
+    if (process.platform !== "darwin") return;
+    const { sb, harness } = makeSandbox();
+    const bootP = sb.boot(baseBoot);
+
+    (harness.proc as unknown as EventEmitter).emit(
+      "error",
+      new Error("spawn failed"),
+    );
+
+    await expect(bootP).rejects.toThrow(/spawn failed/);
+  });
+
+  it("times out an individual helper request at its deadline", async () => {
+    if (process.platform !== "darwin") return;
+    const { sb, harness } = makeSandbox();
+    const bootP = sb.boot(baseBoot);
+    harness.stdout.emitLine(
+      JSON.stringify({
+        kind: "boot_result",
+        ok: true,
+        vmm_api_state: "running",
+        boot_path: "cold_boot",
+        ts: new Date().toISOString(),
+      }),
+    );
+    await bootP;
+
+    await expect(
+      sb.executeTool({
+        command_id: "cmd-timeout",
+        tool: "hang",
+        params: {},
+        deadline_ms: 5,
+      }),
+    ).rejects.toThrow(/timed out after 5ms/);
+  });
+
   it("reset() returns a SandboxResetState with VerificationDetails", async () => {
     if (process.platform !== "darwin") return;
     const { sb, harness } = makeSandbox();

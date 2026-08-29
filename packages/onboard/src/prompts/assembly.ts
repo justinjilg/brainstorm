@@ -6,12 +6,13 @@
  * domain knowledge, and module-specific context.
  */
 
-import type { ExplorationResult, GeneratedAgent } from "../types.js";
+import type { ExplorationResult } from "../types.js";
 import type { ProjectAnalysis, ModuleCluster } from "@brainst0rm/ingest";
+import type { AgentRole } from "@brainst0rm/shared";
 
 export interface AgentCandidate {
   id: string;
-  role: string;
+  role: AgentRole;
   rationale: string;
   moduleScope?: ModuleCluster;
   tools?: string[];

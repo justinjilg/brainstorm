@@ -53,6 +53,11 @@ function mkEvent(
       cost_estimate_usd: 0.001,
       cache: "miss",
       tenant_id: "t1",
+      // Default to a completion outcome — the only event kind that carries a
+      // truthful label and therefore the only kind the observer records.
+      kind: "outcome",
+      success: true,
+      latency_ms: 120,
       ...overrides,
     },
   };
@@ -68,17 +73,40 @@ afterEach(() => {
 });
 
 describe("attachStreamToLearnedStrategy", () => {
-  it("records cache-miss events as successful outcomes", () => {
+  it("records outcome events with their truthful labels (success and failure)", () => {
     const { stream, emit } = makeStub();
     const { stats } = attachStreamToLearnedStrategy(stream);
 
-    emit(mkEvent(1, { task_type: "code", cache: "miss" }));
-    emit(mkEvent(2, { task_type: "code", cache: "miss" }));
-    emit(mkEvent(3, { task_type: "code", cache: "miss" }));
+    emit(mkEvent(1, { task_type: "code", success: true }));
+    emit(mkEvent(2, { task_type: "code", success: false }));
+    emit(mkEvent(3, { task_type: "code", success: true }));
 
     expect(stats().eventsObserved).toBe(3);
     expect(stats().outcomesRecorded).toBe(3);
     expect(getSamplesForTaskType("code")).toBe(3);
+  });
+
+  it("skips route-time decision events — no truthful label exists yet", () => {
+    const { stream, emit } = makeStub();
+    const { stats } = attachStreamToLearnedStrategy(stream);
+
+    // Old-taxonomy events (no kind) and explicit decisions both skip: the
+    // pre-outcome behavior recorded these as success=true, which trained the
+    // posterior on a constant.
+    emit(
+      mkEvent(1, {
+        kind: undefined,
+        success: undefined,
+        latency_ms: undefined,
+      }),
+    );
+    emit(mkEvent(2, { kind: "decision", success: undefined }));
+    emit(mkEvent(3, { kind: "outcome", success: true }));
+
+    expect(stats().eventsObserved).toBe(3);
+    expect(stats().decisionsSkipped).toBe(2);
+    expect(stats().outcomesRecorded).toBe(1);
+    expect(getTotalSamples()).toBe(1);
   });
 
   it("skips cache-hit events by default", () => {

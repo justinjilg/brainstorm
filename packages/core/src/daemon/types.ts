@@ -29,12 +29,81 @@ export interface TickResult {
   toolCalls: string[];
 }
 
+// ── Perception (the daemon's senses) ──
+
+/** A connected product/tool surface the daemon can perceive. */
+export interface PerceivedConnector {
+  name: string;
+  healthy: boolean;
+  toolCount: number;
+  /** Capability domains derived from the product's tool catalog. */
+  domains?: string[];
+}
+
+/**
+ * What the daemon can currently see and reach: connected products, the BR
+ * control plane, and its understanding of the active project. Rendered into
+ * every tick so the model always knows what it has access to — the first tick
+ * doubles as the awakening inventory.
+ */
+export interface WorldStateSummary {
+  connectors: PerceivedConnector[];
+  br?: {
+    connected: boolean;
+    baseUrl?: string;
+    models?: number;
+    budgetRemainingUsd?: number;
+    note?: string;
+  };
+  project?: {
+    name?: string;
+    onboarded: boolean;
+    memoryCount?: number;
+    codeGraphNodes?: number;
+  };
+}
+
+/** An open drift observation from the harness world model (intent ≠ observed). */
+export interface DriftNotice {
+  id: string;
+  kind: string;
+  severity: string;
+  summary: string;
+  detectedAt?: number;
+  /** Which harness/detector produced it. */
+  source?: string;
+}
+
+/** A platform event pushed by a connected product (verified HMAC intake). */
+export interface PlatformEventNotice {
+  id: string | number;
+  source: string;
+  eventType: string;
+  summary: string;
+  receivedAt: number;
+}
+
 export interface DaemonControllerOptions {
   config: DaemonConfig;
   sessionId: string;
   projectPath: string;
   /** Callback to run the agent loop for one tick. */
   runTick: (tickMessage: string) => AsyncGenerator<AgentEvent>;
+  /**
+   * Optional: current world state (connectors, BR, project understanding).
+   * Included in every tick; the first tick is the awakening inventory.
+   */
+  getWorldState?: () => WorldStateSummary | undefined;
+  /** Optional: open drift observations to surface as notices in the tick. */
+  getOpenDrifts?: () => DriftNotice[];
+  /**
+   * Optional: unconsumed platform events to surface in the tick. After they
+   * appear in a tick message, onPlatformEventsConsumed is called with their
+   * ids so the store can mark them handled exactly once.
+   */
+  getPlatformEvents?: () => PlatformEventNotice[];
+  /** Called after platform events were surfaced in a tick. */
+  onPlatformEventsConsumed?: (ids: Array<string | number>) => void;
   /** Optional: get due scheduled tasks to include in tick. */
   getDueTasks?: () => string[];
   /** Optional: get pending task summaries. */

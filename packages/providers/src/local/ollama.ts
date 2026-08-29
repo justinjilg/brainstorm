@@ -1,19 +1,26 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { ModelEntry } from "@brainst0rm/shared";
+import { buildAuthHeaders, type LocalProviderAuth } from "./openai-compat.js";
 
-export function createOllamaProvider(baseUrl = "http://localhost:11434") {
+export function createOllamaProvider(
+  baseUrl = "http://localhost:11434",
+  auth?: LocalProviderAuth,
+) {
   return createOpenAICompatible({
     name: "ollama",
     baseURL: `${baseUrl}/v1`,
+    headers: buildAuthHeaders(auth),
   });
 }
 
 export async function discoverOllamaModels(
   baseUrl = "http://localhost:11434",
+  auth?: LocalProviderAuth,
 ): Promise<ModelEntry[]> {
   try {
     const response = await fetch(`${baseUrl}/api/tags`, {
       signal: AbortSignal.timeout(3000),
+      headers: buildAuthHeaders(auth),
     });
     if (!response.ok) return [];
     const data = (await response.json()) as {

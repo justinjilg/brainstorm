@@ -1,4 +1,39 @@
-import type { Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
+
+// ── New-shell navigation helpers (the 5×5 grid was deleted; navigation is now
+//    four places + an openable Pulse feed + a Settings drawer) ───────────────
+
+/** Go to a canvas place via its rail button. */
+export async function gotoPlace(
+  page: Page,
+  place: "talk" | "council" | "growth",
+) {
+  await page.getByTestId(`place-${place}`).click();
+}
+
+/** Open Growth and land on its Memory tab (the default). */
+export async function openGrowthMemory(page: Page) {
+  await gotoPlace(page, "growth");
+  await expect(page.getByTestId("tier-all")).toBeVisible({ timeout: 5000 });
+}
+
+/** Open Growth and switch to its Skills tab. */
+export async function openGrowthSkills(page: Page) {
+  await gotoPlace(page, "growth");
+  await page.getByRole("button", { name: "Skills" }).click();
+}
+
+/** Open the Pulse slide-over via the rail-heart. */
+export async function openPulse(page: Page) {
+  await page.getByTestId("rail-heart").click();
+  await expect(page.getByTestId("pulse-feed")).toBeVisible();
+}
+
+/** Open the Settings drawer (defaults to the Models tab → ModelsView). */
+export async function openSettings(page: Page) {
+  await page.getByTestId("rail-settings").click();
+  await expect(page.getByTestId("settings-drawer")).toBeVisible();
+}
 
 // ── Mock Data ────────────────────────────────────────────────────────
 

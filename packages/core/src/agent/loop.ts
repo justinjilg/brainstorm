@@ -71,6 +71,7 @@ import type { SystemPromptSegment } from "./context.js";
 import { segmentsToSystemArray } from "./context.js";
 import { predictTaskCost } from "./cost-predictor.js";
 import { detectTone, toneGuidance } from "./sentiment.js";
+import { publishRouteDecision } from "../organism/bridge.js";
 import { shouldUseEnsemble } from "./ensemble.js";
 import {
   runVerifyPass,
@@ -573,6 +574,11 @@ export async function* runAgentLoop(
   }
 
   yield { type: "routing", decision };
+
+  // Mirror the route onto the organism bus so every surface sees chat routing
+  // live (the daemon's routes are mirrored by its run() wrapper; the chat loop
+  // publishes its own here). Best-effort — never breaks the turn.
+  publishRouteDecision(decision, task.type);
 
   // Record routing decision in trajectory
   trajectory?.recordRoutingDecision({

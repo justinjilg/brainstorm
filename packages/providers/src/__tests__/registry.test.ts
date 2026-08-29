@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createProviderRegistry } from "../registry.js";
 import { CLOUD_MODELS } from "../cloud/models.js";
-import type { BrainstormConfig } from "@brainst0rm/config";
+import { discoverLocalModels } from "../local/discovery.js";
+import { brainstormConfigSchema } from "@brainst0rm/config";
 
 vi.mock("../local/discovery.js", () => ({
   discoverLocalModels: vi.fn(async () => ({ models: [] })),
@@ -87,6 +88,7 @@ describe("createProviderRegistry", () => {
   const envBackup = { ...process.env };
 
   beforeEach(() => {
+    vi.clearAllMocks();
     process.env = { ...envBackup };
     delete process.env.ANTHROPIC_API_KEY;
     delete process.env.OPENAI_API_KEY;
@@ -108,6 +110,24 @@ describe("createProviderRegistry", () => {
 
     expect(registry.hasBrainstormSaaS).toBe(false);
     expect(registry.models).toEqual([]);
+  });
+
+  it("lazily resolves configuration-defined local provider keys", async () => {
+    const config = brainstormConfigSchema.parse(createConfig());
+    config.providers.lmstudio.enabled = true;
+    config.providers.lmstudio.apiKeyEnv = "CORP_MODEL_TOKEN";
+    const resolve = vi.fn(async (name: string) =>
+      name === "CORP_MODEL_TOKEN" ? "vault-token" : null,
+    );
+
+    await createProviderRegistry(config, {
+      get: () => null,
+      resolve,
+    });
+
+    expect(resolve).toHaveBeenCalledWith("CORP_MODEL_TOKEN");
+    const discoveryResolver = vi.mocked(discoverLocalModels).mock.calls[0]?.[1];
+    expect(discoveryResolver?.("CORP_MODEL_TOKEN")).toBe("vault-token");
   });
 
   it("registers provider-backed cloud models when an API key is available", async () => {

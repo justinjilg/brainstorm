@@ -11,7 +11,9 @@
 
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { z } from "zod";
 import type { ProjectAnalysis, ModuleCluster } from "@brainst0rm/ingest";
+import type { AgentRole } from "@brainst0rm/shared";
 import type {
   OnboardContext,
   OnboardDispatcher,
@@ -29,6 +31,20 @@ interface PhaseResult {
   filesWritten?: string[];
 }
 
+const enrichedAgentSchema = z.object({
+  id: z.string(),
+  role: z.string(),
+  modelHint: z.string().optional(),
+  tools: z.union([z.array(z.string()), z.literal("all")]).optional(),
+  maxSteps: z.number().int().positive().optional(),
+  budget: z.number().nonnegative().optional(),
+  systemPrompt: z.string().min(1),
+});
+
+type EnrichedAgent = Omit<z.infer<typeof enrichedAgentSchema>, "role"> & {
+  role: AgentRole;
+};
+
 export async function runTeamAssembly(
   context: OnboardContext,
   dispatcher: OnboardDispatcher,
@@ -43,22 +59,36 @@ export async function runTeamAssembly(
   const response = await dispatcher.generate(prompt, 0.5);
 
   // Parse LLM response
-  let enrichedAgents: Array<{
-    id: string;
-    role: string;
-    modelHint?: string;
-    tools?: string[] | "all";
-    maxSteps?: number;
-    budget?: number;
-    systemPrompt: string;
-  }>;
+  let enrichedAgents: EnrichedAgent[];
 
   try {
     let json = response.text.trim();
     if (json.startsWith("```")) {
       json = json.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
     }
-    enrichedAgents = JSON.parse(json);
+    const parsed = z.array(enrichedAgentSchema).parse(JSON.parse(json));
+    const byCandidateId = new Map(
+      parsed
+        .filter((agent) =>
+          candidates.some((candidate) => candidate.id === agent.id),
+        )
+        .map((agent) => [agent.id, agent]),
+    );
+    // Candidate identity and role come from static analysis, never from model
+    // output. This both guarantees one file per requested candidate and keeps
+    // untrusted ids such as "../../outside" away from filesystem paths.
+    enrichedAgents = candidates.map((candidate) => {
+      const enriched = byCandidateId.get(candidate.id);
+      return enriched
+        ? { ...enriched, id: candidate.id, role: candidate.role }
+        : {
+            id: candidate.id,
+            role: candidate.role,
+            modelHint: candidate.modelHint,
+            tools: candidate.tools,
+            systemPrompt: buildFallbackPrompt(candidate, analysis),
+          };
+    });
   } catch {
     // Fallback: create agents with generic prompts
     enrichedAgents = candidates.map((c) => ({
@@ -86,7 +116,7 @@ export async function runTeamAssembly(
 
     agents.push({
       id: enriched.id,
-      role: enriched.role as any,
+      role: enriched.role,
       filePath,
       content,
       rationale: candidate?.rationale ?? "LLM-generated",

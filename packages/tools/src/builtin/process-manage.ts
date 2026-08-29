@@ -1,9 +1,15 @@
 import { z } from "zod";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import { defineTool } from "../base.js";
 import { checkSandbox } from "./sandbox.js";
-import { buildChildEnv } from "./shell.js";
+import {
+  buildChildEnv,
+  getConfiguredProjectPath,
+  getConfiguredSandboxLevel,
+} from "./shell.js";
+import { getWorkspace } from "../workspace-context.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -49,8 +55,17 @@ export const processSpawnTool = defineTool({
     cwd: z.string().optional().describe("Working directory"),
   }),
   async execute({ name, command, cwd }) {
+    const sandboxLevel = getConfiguredSandboxLevel();
+    const projectPath = getConfiguredProjectPath();
+    if (sandboxLevel === "container") {
+      return {
+        error:
+          "process_spawn cannot safely manage a host process while container sandboxing is enabled; use shell with background: true instead.",
+      };
+    }
+
     // Enforce sandbox restrictions (same as shell tool)
-    const sandboxResult = checkSandbox(command, "restricted");
+    const sandboxResult = checkSandbox(command, sandboxLevel, projectPath);
     if (!sandboxResult.allowed) {
       return { error: `Blocked by sandbox: ${sandboxResult.reason}` };
     }
@@ -67,10 +82,23 @@ export const processSpawnTool = defineTool({
       };
     }
 
+    const workspace = resolve(getWorkspace());
+    const processCwd = resolve(workspace, cwd ?? ".");
+    const workspaceRelative = relative(workspace, processCwd);
+    if (
+      workspaceRelative === ".." ||
+      workspaceRelative.startsWith(`..${sep}`) ||
+      isAbsolute(workspaceRelative)
+    ) {
+      return {
+        error: "Process working directory must remain inside the workspace",
+      };
+    }
+
     const child = spawn("/bin/sh", ["-c", command], {
-      cwd: cwd ?? process.cwd(),
+      cwd: processCwd,
       detached: true,
-      env: buildChildEnv("restricted"),
+      env: buildChildEnv(sandboxLevel),
       stdio: "ignore",
     });
     child.unref();

@@ -1002,4 +1002,24 @@ const MIGRATIONS = [
       ALTER TABLE orchestration_tasks ADD COLUMN rotation TEXT;
     `,
   },
+  {
+    name: "038_platform_events",
+    // Pushed perception: platform events arrive HMAC-verified at the server
+    // (`POST /api/v1/platform/events`) and are persisted here so the KAIROS
+    // daemon can surface them in tick messages. `consumed_at` marks that a
+    // tick has seen the event — surfaced exactly once, retained for audit.
+    sql: `
+      CREATE TABLE IF NOT EXISTS platform_events (
+        id TEXT PRIMARY KEY,
+        source TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        summary TEXT NOT NULL DEFAULT '',
+        payload_json TEXT,
+        received_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        consumed_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_platform_events_unconsumed
+        ON platform_events(consumed_at, received_at);
+    `,
+  },
 ];

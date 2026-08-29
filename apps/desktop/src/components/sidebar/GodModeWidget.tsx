@@ -13,7 +13,7 @@ const STATUS_CONFIG: Record<string, { color: string; icon: string }> = {
 };
 
 export function GodModeWidget() {
-  const health = useHealthStats(10000);
+  const health = useHealthStats();
 
   const godMode = health?.god_mode;
   const connected = godMode?.connected ?? 0;

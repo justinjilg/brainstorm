@@ -6,7 +6,7 @@ import { defineConfig } from "@playwright/test";
  * suite is the opposite of tests/app.spec.ts: NO setupAllMocks, NO HTTP
  * fallback, every assertion must go through the real preload bridge.
  *
- * Run with: npx playwright test --config tests-live/playwright.live.config.ts
+ * Run with: pnpm test:live
  *
  * Preconditions:
  *  - @brainst0rm/cli is on PATH (workspace bin wired via npm link or the

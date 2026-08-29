@@ -20,6 +20,20 @@ export interface ProjectDashboard {
   budgetMonthlyUsed: number; // percentage
 }
 
+function startOfLocalDayEpoch(nowMs = Date.now()): number {
+  const date = new Date(nowMs);
+  date.setHours(0, 0, 0, 0);
+  return Math.floor(date.getTime() / 1000);
+}
+
+/** Calendar-month boundary used by project budget accounting. */
+export function startOfLocalMonthEpoch(nowMs = Date.now()): number {
+  const date = new Date(nowMs);
+  date.setDate(1);
+  date.setHours(0, 0, 0, 0);
+  return Math.floor(date.getTime() / 1000);
+}
+
 export class ProjectManager {
   readonly projects: ProjectRepository;
   readonly memory: ProjectMemoryRepository;
@@ -168,9 +182,8 @@ export class ProjectManager {
     const project = this.projects.getById(projectId);
     if (!project) return undefined;
 
-    const now = Math.floor(Date.now() / 1000);
-    const startOfDay = now - (now % 86400);
-    const startOfMonth = now - (now % (86400 * 30)); // approximate
+    const startOfDay = startOfLocalDayEpoch();
+    const startOfMonth = startOfLocalMonthEpoch();
 
     const costToday = this.projects.getCost(project.path, startOfDay);
     const costThisMonth = this.projects.getCost(project.path, startOfMonth);
@@ -199,8 +212,6 @@ export class ProjectManager {
     const project = this.projects.getById(projectId);
     if (!project) return { withinBudget: true, remaining: null };
 
-    const now = Math.floor(Date.now() / 1000);
-
     // Track the tightest remaining across whichever budgets are set. The old
     // control flow could land in the final `return { remaining: null }` even
     // when a daily budget was set and under limit — callers that used
@@ -208,7 +219,7 @@ export class ProjectManager {
     let tightestRemaining: number | null = null;
 
     if (project.budgetDaily) {
-      const startOfDay = now - (now % 86400);
+      const startOfDay = startOfLocalDayEpoch();
       const costToday = this.projects.getCost(project.path, startOfDay);
       const remaining = project.budgetDaily - costToday;
       if (remaining <= 0) {
@@ -222,7 +233,7 @@ export class ProjectManager {
     }
 
     if (project.budgetMonthly) {
-      const startOfMonth = now - (now % (86400 * 30));
+      const startOfMonth = startOfLocalMonthEpoch();
       const costThisMonth = this.projects.getCost(project.path, startOfMonth);
       const remaining = project.budgetMonthly - costThisMonth;
       if (remaining <= 0) {

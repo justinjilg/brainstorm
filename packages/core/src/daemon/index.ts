@@ -16,5 +16,9 @@ export {
   type TickResult,
   type WakeTrigger,
   type ApprovalGateContext,
+  type WorldStateSummary,
+  type PerceivedConnector,
+  type DriftNotice,
+  type PlatformEventNotice,
   createInitialState,
 } from "./types.js";

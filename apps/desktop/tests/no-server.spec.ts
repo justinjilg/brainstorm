@@ -1,16 +1,13 @@
 import { test, expect } from "@playwright/test";
+import { gotoPlace, openPulse, openSettings } from "./fixtures/mocks";
 
 /**
- * No-server tests — visit every view with NO mocks and NO server.
- * This catches crashes from undefined properties, missing optional chains,
- * and components that assume server data exists.
- *
- * Every view should render without crashing, even if data is empty.
+ * No-server tests — visit every place with NO mocks and NO server. Catches
+ * crashes from undefined properties and components that assume server data.
+ * Every place should render without tripping the ErrorBoundary.
  */
-
-test.describe("No Server — every view renders without crashing", () => {
+test.describe("No Server — every place renders without crashing", () => {
   test.beforeEach(async ({ page }) => {
-    // Abort all API calls — simulates no server at all
     await page.route("**/*", (route) => {
       const url = route.request().url();
       if (url.includes("/api/") || url.includes("/health")) {
@@ -21,50 +18,49 @@ test.describe("No Server — every view renders without crashing", () => {
     });
   });
 
-  const views = [
-    { mode: "chat", name: "Chat" },
-    { mode: "dashboard", name: "Dashboard" },
-    { mode: "models", name: "Models" },
-    { mode: "memory", name: "Memory" },
-    { mode: "skills", name: "Skills" },
-    { mode: "workflows", name: "Workflows" },
-    { mode: "security", name: "Security" },
-    { mode: "config", name: "Config" },
+  const places: Array<"talk" | "council" | "growth"> = [
+    "talk",
+    "council",
+    "growth",
   ];
 
-  for (const { mode, name } of views) {
-    test(`${name} view renders without crash`, async ({ page }) => {
+  for (const place of places) {
+    test(`${place} place renders without crash`, async ({ page }) => {
       await page.goto("/");
-      if (mode !== "chat") {
-        await page.getByTestId(`mode-${mode}`).click();
-      }
-      // Wait a moment for async data fetches to fail
-      await page.waitForTimeout(1000);
-      // The view should NOT show the ErrorBoundary crash message
-      const crashed = page.locator(`text=${name} crashed`);
-      await expect(crashed).not.toBeVisible();
-      // App root should still be visible (not blank screen)
+      await gotoPlace(page, place);
+      await page.waitForTimeout(600);
+      await expect(page.locator("text=crashed")).not.toBeVisible();
       await expect(page.getByTestId("app-root")).toBeVisible();
     });
   }
 
-  test("rapid mode switching doesn't crash", async ({ page }) => {
+  test("Pulse feed renders without crash", async ({ page }) => {
     await page.goto("/");
-    const modes = [
-      "dashboard",
-      "models",
-      "memory",
-      "skills",
-      "security",
-      "workflows",
-      "config",
-      "chat",
-    ];
-    for (const mode of modes) {
-      await page.getByTestId(`mode-${mode}`).click();
-      await page.waitForTimeout(200);
+    await openPulse(page);
+    await expect(page.getByTestId("pulse-ledger")).toBeVisible();
+    await expect(page.locator("text=crashed")).not.toBeVisible();
+  });
+
+  test("Settings drawer renders without crash", async ({ page }) => {
+    await page.goto("/");
+    await openSettings(page);
+    await page.waitForTimeout(400);
+    await expect(page.locator("text=crashed")).not.toBeVisible();
+    await expect(page.getByTestId("app-root")).toBeVisible();
+  });
+
+  test("rapid place switching doesn't crash", async ({ page }) => {
+    await page.goto("/");
+    for (const place of [
+      "growth",
+      "council",
+      "talk",
+      "growth",
+      "talk",
+    ] as const) {
+      await gotoPlace(page, place);
+      await page.waitForTimeout(150);
     }
-    // Should still be alive
     await expect(page.getByTestId("app-root")).toBeVisible();
   });
 });

@@ -16,7 +16,7 @@ import {
 } from "../loader.js";
 import { z } from "zod";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir, homedir } from "node:os";
+import { homedir } from "node:os";
 import { join } from "node:path";
 
 describe("Plugin SDK", () => {
@@ -164,7 +164,11 @@ describe("Plugin SDK", () => {
 
   it("discoverPlugins loads a valid plugin from disk and skips invalid ones", async () => {
     // Create isolated project dir with a .brainstorm/plugins subtree.
-    const workDir = mkdtempSync(join(tmpdir(), "plugin-sdk-test-"));
+    // Keep the fixture under the package cwd. Vitest's module runner cannot
+    // import dynamic modules through macOS's /var -> /private/var temp alias,
+    // while production Node can; a cwd fixture tests loader behavior without
+    // coupling this suite to that runner limitation.
+    const workDir = mkdtempSync(join(process.cwd(), ".plugin-sdk-test-"));
     try {
       const pluginsRoot = join(workDir, ".brainstorm", "plugins");
 
@@ -177,6 +181,7 @@ describe("Plugin SDK", () => {
           name: "good-plugin",
           version: "0.1.0",
           description: "good",
+          type: "module",
           main: "./dist/index.js",
         }),
       );
@@ -218,6 +223,7 @@ describe("Plugin SDK", () => {
         JSON.stringify({
           version: "0.1.0",
           description: "missing name",
+          type: "module",
           main: "./dist/index.js",
         }),
       );
@@ -235,10 +241,10 @@ describe("Plugin SDK", () => {
       try {
         const loaded = await discoverPlugins(workDir);
         const names = loaded.map((l) => l.plugin.name);
-        expect(names).toContain("good-plugin");
+        expect(names, logged.join("\n")).toContain("good-plugin");
         expect(names).not.toContain("broken-plugin");
         expect(names).not.toContain("malformed");
-        // expect(names).not.toContain("missing-name-plugin"); // This plugin is currently loaded despite missing name in package.json, highlighting a gap in discoverPlugins.
+        expect(names).not.toContain("missing-name-plugin");
 
         const good = loaded.find((l) => l.plugin.name === "good-plugin")!;
         expect(good.source).toBe("project");
@@ -246,7 +252,7 @@ describe("Plugin SDK", () => {
 
         expect(logged.some((m) => m.includes("broken"))).toBe(true);
         expect(logged.some((m) => m.includes("malformed-json"))).toBe(true);
-        // expect(logged.some((m) => m.includes("missing-name"))).toBe(true); // No error logged as the plugin is not skipped.
+        expect(logged.some((m) => m.includes("missing-name"))).toBe(true);
       } finally {
         console.error = origError;
       }

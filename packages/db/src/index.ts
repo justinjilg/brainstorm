@@ -13,6 +13,8 @@ export {
   SyncQueueRepository,
   ContractRepository,
   VerdictRepository,
+  PlatformEventRepository,
+  type PlatformEventRow,
   type SessionPattern,
   type AggregatedRoutingStats,
   type CompactionCommit,

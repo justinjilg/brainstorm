@@ -11,7 +11,7 @@
  * onSubmit promise. On success we fire onCreated(root) then onClose().
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
 
 const ARCHETYPES: ReadonlyArray<{ id: string; label: string }> = [
   { id: "saas-platform", label: "saas-platform" },
@@ -63,7 +63,7 @@ export function NewHarnessWizard({
   onClose,
   onSubmit,
   onCreated,
-}: NewHarnessWizardProps): JSX.Element | null {
+}: NewHarnessWizardProps): ReactElement | null {
   const [step, setStep] = useState<Step>(1);
   const [name, setName] = useState<string>("");
   const [archetype, setArchetype] = useState<string>(ARCHETYPES[0]!.id);
@@ -361,7 +361,7 @@ interface SummaryRowProps {
   mono?: boolean;
 }
 
-function SummaryRow({ label, value, mono }: SummaryRowProps): JSX.Element {
+function SummaryRow({ label, value, mono }: SummaryRowProps): ReactElement {
   return (
     <div className="flex items-baseline gap-2 text-xs">
       <span className="text-[10px] uppercase tracking-wider text-[var(--ctp-overlay0)] w-16 shrink-0">

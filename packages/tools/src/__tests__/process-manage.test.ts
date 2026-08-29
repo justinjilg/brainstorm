@@ -3,6 +3,8 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { processSpawnTool } from "../builtin/process-manage.js";
+import { configureSandbox } from "../builtin/shell.js";
+import { withWorkspace } from "../workspace-context.js";
 
 const touchedFiles: string[] = [];
 let originalAwsSecret: string | undefined;
@@ -17,6 +19,7 @@ async function waitForFile(path: string): Promise<void> {
 }
 
 afterEach(() => {
+  configureSandbox("restricted");
   if (originalAwsSecret === undefined) {
     delete process.env.AWS_SECRET_ACCESS_KEY;
   } else {
@@ -30,6 +33,33 @@ afterEach(() => {
 });
 
 describe("process_spawn", () => {
+  it("does not escape container mode by spawning on the host", async () => {
+    configureSandbox("container", process.cwd());
+
+    const result = await processSpawnTool.execute({
+      name: "container-host-escape",
+      command: "echo unsafe",
+    });
+
+    expect(result).toMatchObject({
+      error: expect.stringContaining("container sandboxing"),
+    });
+  });
+
+  it("rejects a working directory outside the active workspace", async () => {
+    const result = await withWorkspace(process.cwd(), () =>
+      processSpawnTool.execute({
+        name: "outside-workspace",
+        command: "echo unsafe",
+        cwd: "..",
+      }),
+    );
+
+    expect(result).toMatchObject({
+      error: expect.stringContaining("inside the workspace"),
+    });
+  });
+
   it("does not inherit scrubbed secret environment variables", async () => {
     originalAwsSecret = process.env.AWS_SECRET_ACCESS_KEY;
     process.env.AWS_SECRET_ACCESS_KEY = "should-not-reach-child";

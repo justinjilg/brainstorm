@@ -248,10 +248,33 @@ export function sanitizeProvidersForIPC(
   return safeProviders;
 }
 
+/**
+ * Pick a diverse council of 2–3 available models across distinct providers, for
+ * an exchange whose caller didn't name participants. Diversity is the point of a
+ * council, so we prefer one model per provider before doubling up.
+ */
+function pickCouncil(
+  models: Array<{ id: string; provider?: string; status?: string }>,
+): Array<{ model: string; provider?: string }> {
+  const avail = models.filter(
+    (m) => (m.status ?? "available") !== "unavailable",
+  );
+  const byProvider = new Map<string, { id: string; provider?: string }>();
+  for (const m of avail) {
+    const prov = m.provider ?? "unknown";
+    if (!byProvider.has(prov)) byProvider.set(prov, m);
+  }
+  const diverse = [...byProvider.values()].slice(0, 3);
+  const chosen = diverse.length >= 2 ? diverse : avail.slice(0, 3);
+  return chosen.map((m) => ({ model: m.id, provider: m.provider }));
+}
+
 export async function startIPCHandler(ctx: IPCContext): Promise<void> {
   const rl = createInterface({ input: process.stdin, terminal: false });
   let abortController: AbortController | null = null;
   let daemonController: any = null; // DaemonController instance
+  let organismUnsub: (() => void) | null = null; // organism.subscribe teardown
+  let exchangeAbort: AbortController | null = null; // active exchange abort
   let pendingDispatches = 0;
   let stdinClosed = false;
 
@@ -259,6 +282,100 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
   const coreModule = await import("@brainst0rm/core");
   const dbModule = await import("@brainst0rm/db");
   const routerModule = await import("@brainst0rm/router");
+
+  /**
+   * Convene an exchange (models talking to models). Streams its `exchange.*`
+   * events onto the organism bus — so Council/Pulse light up live — and, when a
+   * `streamReqId` is given, also to that request. Reused by the `exchange.start`
+   * IPC method and by KAIROS when it deliberates before a high-stakes self-heal.
+   */
+  const conveneExchange = (
+    prompt: string,
+    opts: {
+      participants?: Array<{ model: string; provider?: string }>;
+      reconciler?: "vote" | "judge" | "owner";
+      budgetCap?: number;
+      streamReqId?: string;
+    } = {},
+  ):
+    | { ok: true; exchangeId: string; participants: string[] }
+    | { ok: false; error: string } => {
+    const { ExchangeController, recordExchangeStart, recordExchangeEnd } =
+      coreModule;
+    const participants =
+      opts.participants && opts.participants.length >= 2
+        ? opts.participants
+        : pickCouncil(ctx.registry.models ?? []);
+    if (participants.length < 2) {
+      return {
+        ok: false,
+        error: "Need at least 2 available models to convene a council.",
+      };
+    }
+    const generate = async (args: {
+      model: string;
+      system: string;
+      prompt: string;
+      signal?: AbortSignal;
+    }): Promise<{ text: string; cost?: number }> => {
+      const lm = ctx.registry.getProvider(args.model);
+      if (!lm) throw new Error(`No provider available for model ${args.model}`);
+      const { generateText } = await import("ai");
+      const res = await generateText({
+        model: lm,
+        system: args.system,
+        prompt: args.prompt,
+        abortSignal: args.signal,
+      });
+      return { text: res.text ?? "", cost: 0 };
+    };
+    exchangeAbort = new AbortController();
+    const ctrl = new ExchangeController(
+      {
+        prompt,
+        participants,
+        reconciler: opts.reconciler ?? "vote",
+        budgetCap: opts.budgetCap,
+      },
+      generate,
+      { signal: exchangeAbort.signal },
+    );
+    recordExchangeStart({
+      exchangeId: ctrl.exchangeId,
+      prompt,
+      participants: participants.map((x) => x.model),
+    });
+    void (async () => {
+      try {
+        for await (const ev of ctrl.run()) {
+          if (opts.streamReqId) sendEvent(opts.streamReqId, ev.type, ev);
+          if (ev.type === "exchange.reconciled") {
+            recordExchangeEnd(ctrl.exchangeId, {
+              status: "reconciled",
+              resolution: ev.resolution,
+              method: ev.method,
+            });
+          } else if (ev.type === "exchange.aborted") {
+            recordExchangeEnd(ctrl.exchangeId, { status: "aborted" });
+          }
+        }
+      } catch (err) {
+        if (opts.streamReqId) {
+          sendEvent(opts.streamReqId, "exchange-error", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        recordExchangeEnd(ctrl.exchangeId, { status: "aborted" });
+      } finally {
+        exchangeAbort = null;
+      }
+    })();
+    return {
+      ok: true,
+      exchangeId: ctrl.exchangeId,
+      participants: participants.map((x) => x.model),
+    };
+  };
 
   // Log to stderr so it doesn't pollute the NDJSON stdout channel
   const log = (msg: string) => process.stderr.write(`[ipc] ${msg}\n`);
@@ -329,6 +446,10 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
 
   rl.on("close", () => {
     stdinClosed = true;
+    if (organismUnsub) {
+      organismUnsub();
+      organismUnsub = null;
+    }
     log("stdin closed, waiting for pending dispatches...");
     maybeExit();
   });
@@ -695,6 +816,26 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
             // every window and continue — budget pacing and ChangeSet
             // boundaries remain the hard controls.
             sendEvent(req.id, "kairos-gate", gate);
+            // The organism deliberating with itself, made visible: before a
+            // write-autonomy gate, KAIROS convenes a short council to sanity-check
+            // what it's about to do. Fire-and-forget — it streams onto the bus so
+            // Council/Pulse light up ("council in session"), and never blocks the
+            // gate. Only when the daemon actually has write autonomy (else there's
+            // nothing high-stakes to deliberate).
+            if (wantsWriteAutonomy) {
+              try {
+                const summary =
+                  (gate as { summary?: string; message?: string })?.summary ??
+                  (gate as { message?: string })?.message ??
+                  "a self-improvement change";
+                conveneExchange(
+                  `KAIROS is about to apply a self-heal: ${summary}. As a council, is this sound and safe? Flag any risk, then vote proceed or revise.`,
+                  { reconciler: "vote" },
+                );
+              } catch {
+                /* deliberation is best-effort; the gate proceeds regardless */
+              }
+            }
             return true;
           },
           onStateChange: (state: any) => {
@@ -758,6 +899,98 @@ export async function startIPCHandler(ctx: IPCContext): Promise<void> {
         } else {
           sendResult(req.id, { status: "stopped" });
         }
+        break;
+      }
+
+      // ── Organism bus (the single live spine) ─────────────────
+      // One subscription replaces the desktop's port-3100 health poll, the
+      // useServerData poll, and useKairos polling: the renderer takes the
+      // snapshot, then folds every streamed event. `sinceSeq` replays the
+      // buffered tail for gapless resume across a reconnect.
+      case "organism.subscribe": {
+        const { getOrganismBus } = coreModule;
+        const bus = getOrganismBus();
+        // Tear down any prior subscription on this connection first.
+        if (organismUnsub) {
+          organismUnsub();
+          organismUnsub = null;
+        }
+        const sinceSeq =
+          typeof (params as { sinceSeq?: unknown }).sinceSeq === "number"
+            ? (params as { sinceSeq: number }).sinceSeq
+            : undefined;
+        // Snapshot first so a late joiner sees current state immediately.
+        sendEvent(req.id, "organism-snapshot", {
+          state: bus.snapshot(),
+          seq: bus.currentSeq(),
+        });
+        // Replay the buffered tail the resumer missed (empty on a fresh join).
+        if (sinceSeq !== undefined) {
+          for (const ev of bus.since(sinceSeq)) {
+            sendEvent(req.id, "organism", ev);
+          }
+        }
+        organismUnsub = bus.subscribe((ev) => {
+          sendEvent(req.id, "organism", ev);
+        });
+        sendResult(req.id, { ok: true, seq: bus.currentSeq() });
+        break;
+      }
+
+      case "organism.unsubscribe": {
+        if (organismUnsub) {
+          organismUnsub();
+          organismUnsub = null;
+        }
+        sendResult(req.id, { ok: true });
+        break;
+      }
+
+      // ── Exchange (models talking to models) ──────────────────
+      // Runs a propose→critique→reconcile deliberation. Events stream back on
+      // this request AND publish to the organism bus, so Council/Pulse light up
+      // live regardless of who started it (owner, escalation, or KAIROS).
+      case "exchange.start": {
+        const p = params as {
+          prompt?: string;
+          participants?: Array<{ model: string; provider?: string }>;
+          reconciler?: "vote" | "judge" | "owner";
+          budgetCap?: number;
+        };
+        if (!p.prompt) {
+          sendError(req.id, "exchange.start requires a prompt");
+          break;
+        }
+        const result = conveneExchange(p.prompt, {
+          participants: p.participants,
+          reconciler: p.reconciler,
+          budgetCap: p.budgetCap,
+          streamReqId: req.id,
+        });
+        if (!result.ok) {
+          sendError(req.id, result.error);
+          break;
+        }
+        sendResult(req.id, result);
+        break;
+      }
+
+      case "exchange.abort": {
+        if (exchangeAbort) exchangeAbort.abort();
+        sendResult(req.id, { ok: true });
+        break;
+      }
+
+      case "exchange.list": {
+        sendResult(req.id, coreModule.listExchanges());
+        break;
+      }
+
+      case "exchange.get": {
+        const id = String(
+          (params as { exchangeId?: unknown }).exchangeId ?? "",
+        );
+        sendResult(req.id, coreModule.getExchange(id) ?? null);
         break;
       }
 

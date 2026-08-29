@@ -105,7 +105,7 @@ describe("extract-runner", () => {
     const result = await runExtractionCycle({
       memoryDir: testDir,
       memoryManager: fakeMemoryManager,
-      transcript: "session transcript",
+      transcript: "queued-only durable fact",
       sessionTurns: 10,
       subagentOptions: baseSubagentOptions,
     });
@@ -113,6 +113,26 @@ describe("extract-runner", () => {
     expect(result.ran).toBe(false);
     expect(result.summary).toContain("lock");
     expect(spawnSubagentMock).not.toHaveBeenCalled();
+
+    // Once the owner releases the lock, the next cycle must fold the queued
+    // transcript into extraction rather than silently losing it.
+    unlinkSync(join(testDir, ".extract-lock"));
+    spawnSubagentMock.mockResolvedValue(mockResult("[]"));
+    const next = await runExtractionCycle({
+      memoryDir: testDir,
+      memoryManager: fakeMemoryManager,
+      transcript: "next session transcript",
+      sessionTurns: 1,
+      subagentOptions: baseSubagentOptions,
+    });
+
+    expect(next.ran).toBe(true);
+    expect(spawnSubagentMock.mock.calls[0]?.[0]).toContain(
+      "queued-only durable fact",
+    );
+    expect(spawnSubagentMock.mock.calls[0]?.[0]).toContain(
+      "next session transcript",
+    );
   });
 
   it("handles malformed JSON output — ran:true, extracted:0, nothing saved", async () => {

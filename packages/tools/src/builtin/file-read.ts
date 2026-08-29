@@ -25,6 +25,8 @@ function ensureSafePath(filePath: string): string {
     path.startsWith("/private/var/folders/") ||
     path.startsWith("/var/tmp/") ||
     path.startsWith("/private/var/tmp/") ||
+    path === "/private/tmp" ||
+    path.startsWith("/private/tmp/") ||
     // Linux tmpdir. os.tmpdir() returns `/tmp` on Linux, not `/var/tmp`;
     // without this, file_read/edit/write on any Linux host (including
     // GitHub Actions Ubuntu runners) could never read tmp files — a

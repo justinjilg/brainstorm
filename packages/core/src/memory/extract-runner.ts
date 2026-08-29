@@ -17,6 +17,7 @@ import {
   writeSync,
   closeSync,
   unlinkSync,
+  readdirSync,
 } from "node:fs";
 import { join } from "node:path";
 import { createLogger } from "@brainst0rm/shared";
@@ -30,6 +31,7 @@ const log = createLogger("extract-runner");
 
 export const EXTRACT_STATE_FILE = ".extract-state.json";
 export const EXTRACT_LOCK_FILE = ".extract-lock";
+const EXTRACT_PENDING_PREFIX = ".extract-pending-";
 const LOCK_STALE_MS = 5 * 60 * 1000; // 5 minutes
 export const MIN_TURNS = 5;
 export const EXTRACT_BUDGET = 0.02; // $0.02 max per cycle
@@ -107,6 +109,65 @@ function writeState(memoryDir: string, state: ExtractState): void {
     JSON.stringify(state, null, 2),
     "utf-8",
   );
+}
+
+interface PendingExtraction {
+  transcript: string;
+  sessionTurns: number;
+}
+
+function queuePendingExtraction(
+  memoryDir: string,
+  pending: PendingExtraction,
+): void {
+  mkdirSync(memoryDir, { recursive: true });
+  const unique = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  writeFileSync(
+    join(memoryDir, `${EXTRACT_PENDING_PREFIX}${unique}.json`),
+    JSON.stringify(pending),
+    { encoding: "utf8", flag: "wx", mode: 0o600 },
+  );
+}
+
+function readPendingExtractions(
+  memoryDir: string,
+): Array<PendingExtraction & { path: string }> {
+  if (!existsSync(memoryDir)) return [];
+  const queued: Array<PendingExtraction & { path: string }> = [];
+  for (const name of readdirSync(memoryDir)) {
+    if (!name.startsWith(EXTRACT_PENDING_PREFIX) || !name.endsWith(".json"))
+      continue;
+    const path = join(memoryDir, name);
+    try {
+      const parsed = JSON.parse(
+        readFileSync(path, "utf8"),
+      ) as PendingExtraction;
+      if (
+        typeof parsed.transcript === "string" &&
+        Number.isFinite(parsed.sessionTurns)
+      ) {
+        queued.push({ ...parsed, path });
+      }
+    } catch (err) {
+      log.warn({ err, path }, "Ignoring malformed pending extraction fragment");
+    }
+  }
+  return queued;
+}
+
+function removePendingExtractions(
+  queued: Array<PendingExtraction & { path: string }>,
+): void {
+  for (const pending of queued) {
+    try {
+      unlinkSync(pending.path);
+    } catch (err) {
+      log.warn(
+        { err, path: pending.path },
+        "Failed to remove pending extraction fragment",
+      );
+    }
+  }
 }
 
 // Lock acquire/release follows the same PID-ownership pattern as
@@ -226,56 +287,77 @@ export async function runExtractionCycle(
 ): Promise<ExtractCycleResult> {
   const { memoryDir, memoryManager, transcript, sessionTurns, force } = options;
 
-  const state = readState(memoryDir);
-  const turnsSince = state.turnsSince + sessionTurns;
-
-  // Accumulate this session's transcript with prior sub-threshold ones, newest
-  // last, trimmed from the head to the cap.
-  let pendingTranscript = [state.pendingTranscript ?? "", transcript]
-    .filter((s) => s.length > 0)
-    .join("\n\n");
-  if (pendingTranscript.length > MAX_PENDING_TRANSCRIPT) {
-    pendingTranscript = pendingTranscript.slice(
-      pendingTranscript.length - MAX_PENDING_TRANSCRIPT,
-    );
+  // Serialize the read-modify-write sequence, not just the model call. Taking
+  // the lock after readState/writeState lets two sessions overwrite each
+  // other's pending transcript before either begins extraction.
+  if (!acquireLock(memoryDir)) {
+    // A unique append-only fragment avoids the lost-update race that occurs
+    // when multiple sessions rewrite one shared state file without the lock.
+    // The next lock owner folds every fragment into its atomic state update.
+    try {
+      queuePendingExtraction(memoryDir, { transcript, sessionTurns });
+    } catch (err) {
+      log.error({ err }, "Failed to queue extraction while lock was held");
+    }
+    return {
+      ran: false,
+      summary: "Could not acquire extraction lock; transcript queued",
+      cost: 0,
+      extracted: 0,
+    };
   }
 
-  // Gate check
-  if (!force && turnsSince < MIN_TURNS) {
+  try {
+    const state = readState(memoryDir);
+    const queued = readPendingExtractions(memoryDir);
+    const turnsSince =
+      state.turnsSince +
+      sessionTurns +
+      queued.reduce((total, pending) => total + pending.sessionTurns, 0);
+
+    // Accumulate this session's transcript with prior sub-threshold ones, newest
+    // last, trimmed from the head to the cap.
+    let pendingTranscript = [
+      state.pendingTranscript ?? "",
+      ...queued.map((pending) => pending.transcript),
+      transcript,
+    ]
+      .filter((s) => s.length > 0)
+      .join("\n\n");
+    if (pendingTranscript.length > MAX_PENDING_TRANSCRIPT) {
+      pendingTranscript = pendingTranscript.slice(
+        pendingTranscript.length - MAX_PENDING_TRANSCRIPT,
+      );
+    }
+
+    // Gate check
+    if (!force && turnsSince < MIN_TURNS) {
+      writeState(memoryDir, {
+        lastExtractAt: state.lastExtractAt,
+        turnsSince,
+        pendingTranscript,
+      });
+      removePendingExtractions(queued);
+      return {
+        ran: false,
+        summary: `Only ${turnsSince} turns since last extraction (need ${MIN_TURNS})`,
+        cost: 0,
+        extracted: 0,
+      };
+    }
+
+    // Persist the accumulated turn count + transcript before attempting the lock
+    // so contention or a later failure doesn't silently drop this call's turns or
+    // sessions. The success path below resets both once extraction completes.
     writeState(memoryDir, {
       lastExtractAt: state.lastExtractAt,
       turnsSince,
       pendingTranscript,
     });
-    return {
-      ran: false,
-      summary: `Only ${turnsSince} turns since last extraction (need ${MIN_TURNS})`,
-      cost: 0,
-      extracted: 0,
-    };
-  }
+    removePendingExtractions(queued);
 
-  // Persist the accumulated turn count + transcript before attempting the lock
-  // so contention or a later failure doesn't silently drop this call's turns or
-  // sessions. The success path below resets both once extraction completes.
-  writeState(memoryDir, {
-    lastExtractAt: state.lastExtractAt,
-    turnsSince,
-    pendingTranscript,
-  });
+    log.info({ turnsSince }, "Extraction cycle starting");
 
-  if (!acquireLock(memoryDir)) {
-    return {
-      ran: false,
-      summary: "Could not acquire extraction lock",
-      cost: 0,
-      extracted: 0,
-    };
-  }
-
-  log.info({ turnsSince }, "Extraction cycle starting");
-
-  try {
     const memoryIndexPath = join(memoryDir, "MEMORY.md");
     const memoryIndex = existsSync(memoryIndexPath)
       ? readFileSync(memoryIndexPath, "utf-8")

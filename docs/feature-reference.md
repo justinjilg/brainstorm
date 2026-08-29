@@ -646,18 +646,28 @@ Warm container pool for the Docker sandbox. Only active when `[shell].sandbox = 
 
 ### [providers]
 
-| Key                   | Type    | Default                             | Description                     |
-| --------------------- | ------- | ----------------------------------- | ------------------------------- |
-| `gateway.enabled`     | boolean | `true`                              | Enable AI Gateway provider      |
-| `gateway.apiKeyEnv`   | string  | `"AI_GATEWAY_API_KEY"`              | Env var for gateway API key     |
-| `gateway.baseUrl`     | string  | `"https://ai-gateway.vercel.sh/v1"` | Gateway base URL                |
-| `ollama.enabled`      | boolean | `true`                              | Enable Ollama local provider    |
-| `ollama.baseUrl`      | string  | `"http://localhost:11434"`          | Ollama URL                      |
-| `ollama.autoDiscover` | boolean | `true`                              | Auto-discover Ollama models     |
-| `lmstudio.enabled`    | boolean | `true`                              | Enable LM Studio local provider |
-| `lmstudio.baseUrl`    | string  | `"http://localhost:1234"`           | LM Studio URL                   |
-| `llamacpp.enabled`    | boolean | `false`                             | Enable llama.cpp local provider |
-| `llamacpp.baseUrl`    | string  | `"http://localhost:8080"`           | llama.cpp URL                   |
+| Key                     | Type    | Default                             | Description                     |
+| ----------------------- | ------- | ----------------------------------- | ------------------------------- |
+| `gateway.enabled`       | boolean | `true`                              | Enable AI Gateway provider      |
+| `gateway.apiKeyEnv`     | string  | `"AI_GATEWAY_API_KEY"`              | Env var for gateway API key     |
+| `gateway.baseUrl`       | string  | `"https://ai-gateway.vercel.sh/v1"` | Gateway base URL                |
+| `ollama.enabled`        | boolean | `true`                              | Enable Ollama local provider    |
+| `ollama.baseUrl`        | string  | `"http://localhost:11434"`          | Ollama URL                      |
+| `ollama.autoDiscover`   | boolean | `true`                              | Auto-discover Ollama models     |
+| `ollama.apiKeyEnv`      | string  | (optional)                          | Vault/env key for bearer auth   |
+| `ollama.headers`        | object  | (optional)                          | Static request headers          |
+| `lmstudio.enabled`      | boolean | `true`                              | Enable LM Studio local provider |
+| `lmstudio.baseUrl`      | string  | `"http://localhost:1234"`           | LM Studio URL                   |
+| `lmstudio.autoDiscover` | boolean | `true`                              | Auto-discover LM Studio models  |
+| `lmstudio.apiKeyEnv`    | string  | (optional)                          | Vault/env key for bearer auth   |
+| `lmstudio.headers`      | object  | (optional)                          | Static request headers          |
+| `llamacpp.enabled`      | boolean | `false`                             | Enable llama.cpp local provider |
+| `llamacpp.baseUrl`      | string  | `"http://localhost:8080"`           | llama.cpp URL                   |
+| `llamacpp.autoDiscover` | boolean | `true`                              | Auto-discover llama.cpp models  |
+| `llamacpp.apiKeyEnv`    | string  | (optional)                          | Vault/env key for bearer auth   |
+| `llamacpp.headers`      | object  | (optional)                          | Static request headers          |
+
+`apiKeyEnv` is resolved through the same vault/1Password/environment chain used by cloud providers and is sent as a bearer token for both inference and model discovery. Prefer it over embedding credentials in `headers`; custom header values are stored as plaintext configuration even though desktop IPC redacts them.
 
 ### [permissions]
 

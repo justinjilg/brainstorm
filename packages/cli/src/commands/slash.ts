@@ -1647,6 +1647,28 @@ commands.push({
   },
 });
 
+// ── The Glance charter ──────────────────────────────────────────────────────
+// The demoted TUI ("brainstorm" with no args) is one Chat + one StatusStrip, so
+// its slash surface is a lean essential set — not the 40+ that mirrored the old
+// dashboard/planning modes. The full handlers stay defined above; we prune the
+// registry to the glance set here. This is the anti-re-clutter guardrail (see
+// __tests__/tui-charter.test.ts, which asserts the count stays small). New
+// capability goes through the CLI subcommands or MCP, never a new slash command.
+const GLANCE_COMMANDS = new Set([
+  "help",
+  "model",
+  "clear",
+  "compact",
+  "cost",
+  "role",
+  "context",
+  "undo",
+  "quit",
+]);
+for (let i = commands.length - 1; i >= 0; i--) {
+  if (!GLANCE_COMMANDS.has(commands[i].name)) commands.splice(i, 1);
+}
+
 // Build lookup map: command name and aliases → handler
 const commandMap = new Map<string, SlashCommand>();
 for (const cmd of commands) {

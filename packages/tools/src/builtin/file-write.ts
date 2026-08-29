@@ -40,6 +40,8 @@ function ensureSafePath(filePath: string): string {
     path.startsWith("/private/var/folders/") ||
     path.startsWith("/var/tmp/") ||
     path.startsWith("/private/var/tmp/") ||
+    path === "/private/tmp" ||
+    path.startsWith("/private/tmp/") ||
     // Linux tmpdir — see file-read.ts.
     path === "/tmp" ||
     path.startsWith("/tmp/");

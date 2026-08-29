@@ -1,4 +1,5 @@
 export * from "./types.js";
+export * from "./organism-events.js";
 export * from "./errors.js";
 export * from "./logger.js";
 export * from "./telemetry.js";

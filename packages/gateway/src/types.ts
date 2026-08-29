@@ -147,6 +147,8 @@ export interface GatewayFeedback {
   selectionMethod?: string; // X-BR-Selection-Method
   complexityScore?: number; // X-BR-Complexity-Score
   requestId?: string; // X-Request-Id
+  routeReason?: string; // X-BR-Route-Reason — why THIS model was chosen
+  explainUrl?: string; // X-BR-Explain — link to the full decision trace
 }
 
 // ── Discovery ────────────────────────────────────────────────────────

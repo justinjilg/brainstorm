@@ -9,10 +9,10 @@
     "routes": 20,
     "failures": 0,
     "warnings": 0,
-    "br_openapi_paths_seen": 517,
-    "br_capability_routes_seen": 645,
+    "br_openapi_paths_seen": 528,
+    "br_capability_routes_seen": 659,
     "br_rbac_entries_seen": 278,
-    "br_sdk_paths_seen": 132
+    "br_sdk_paths_seen": 133
   },
   "routes": [
     {

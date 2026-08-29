@@ -7,6 +7,7 @@ import { createOllamaProvider } from "./local/ollama.js";
 import {
   createLMStudioProvider,
   createLlamaCppProvider,
+  resolveLocalAuth,
 } from "./local/openai-compat.js";
 import { discoverLocalModels } from "./local/discovery.js";
 import { CLOUD_MODELS } from "./cloud/models.js";
@@ -34,6 +35,8 @@ export interface ProviderRegistry {
  */
 export interface ResolvedKeys {
   get(name: string): string | null;
+  /** Optional async fallback for lazy vault/1Password resolution. */
+  resolve?(name: string): Promise<string | null>;
 }
 
 /**
@@ -58,24 +61,53 @@ export async function createProviderRegistry(
   resolvedKeys?: ResolvedKeys,
   options: ProviderRegistryOptions = {},
 ): Promise<ProviderRegistry> {
-  /** Resolve a key: check resolvedKeys first, then fall back to process.env. */
+  // Local provider key names are configuration-defined, so they cannot be
+  // covered by the CLI's fixed eager-key list. Resolve them lazily before
+  // constructing either providers or discovery probes.
+  const lazyResolved = new Map<string, string>();
+  const localKeyNames = [
+    config.providers.ollama.apiKeyEnv,
+    config.providers.lmstudio.apiKeyEnv,
+    config.providers.llamacpp.apiKeyEnv,
+  ].filter((name): name is string => !!name);
+  if (resolvedKeys?.resolve) {
+    await Promise.all(
+      [...new Set(localKeyNames)].map(async (name) => {
+        const value =
+          resolvedKeys.get(name) ?? (await resolvedKeys.resolve!(name));
+        if (value) lazyResolved.set(name, value);
+      }),
+    );
+  }
+
+  /** Resolve a key: lazy custom keys, eager keys, then process.env. */
   const getKey = (name: string): string | null =>
-    resolvedKeys?.get(name) ?? process.env[name] ?? null;
+    lazyResolved.get(name) ??
+    resolvedKeys?.get(name) ??
+    process.env[name] ??
+    null;
 
   const providers: Record<string, any> = {};
 
-  // Local providers
+  // Local providers. Auth is resolved vault-aware via getKey so a remote
+  // OpenAI-compatible gateway (e.g. behind VPN) can require a bearer token;
+  // localhost providers declare no auth and resolveLocalAuth returns undefined.
   if (config.providers.ollama.enabled) {
-    providers.ollama = createOllamaProvider(config.providers.ollama.baseUrl);
+    providers.ollama = createOllamaProvider(
+      config.providers.ollama.baseUrl,
+      resolveLocalAuth(config.providers.ollama, getKey),
+    );
   }
   if (config.providers.lmstudio.enabled) {
     providers.lmstudio = createLMStudioProvider(
       config.providers.lmstudio.baseUrl,
+      resolveLocalAuth(config.providers.lmstudio, getKey),
     );
   }
   if (config.providers.llamacpp.enabled) {
     providers.llamacpp = createLlamaCppProvider(
       config.providers.llamacpp.baseUrl,
+      resolveLocalAuth(config.providers.llamacpp, getKey),
     );
   }
 
@@ -204,7 +236,10 @@ export async function createProviderRegistry(
   }
 
   // Discover local models
-  const { models: localModels } = await discoverLocalModels(config.providers);
+  const { models: localModels } = await discoverLocalModels(
+    config.providers,
+    getKey,
+  );
   allModels.push(...localModels);
 
   // Apply model overrides from config
@@ -290,6 +325,7 @@ export async function createProviderRegistry(
     async refresh() {
       const { models: refreshedLocal } = await discoverLocalModels(
         config.providers,
+        getKey,
       );
       const cloudAndSaas = allModels.filter((m) => !m.isLocal);
       allModels = [...cloudAndSaas, ...refreshedLocal];

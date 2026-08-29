@@ -25,6 +25,8 @@ export interface TestResult {
  * Supports vitest, jest, pytest output formats.
  */
 export function parseTestOutput(output: string): TestResult | null {
+  const coverageMatch = output.match(/(?:coverage|cov)[:\s]+(\d+(?:\.\d+)?)%/i);
+  const coverage = coverageMatch ? parseFloat(coverageMatch[1]) : undefined;
   // Vitest/Jest: "Tests: 3 failed, 42 passed, 2 skipped, 47 total"
   const jestMatch = output.match(
     /Tests:\s+(?:(\d+)\s+failed,?\s*)?(?:(\d+)\s+passed,?\s*)?(?:(\d+)\s+skipped,?\s*)?(\d+)\s+total/,
@@ -34,6 +36,7 @@ export function parseTestOutput(output: string): TestResult | null {
       failed: parseInt(jestMatch[1] ?? "0", 10),
       passed: parseInt(jestMatch[2] ?? "0", 10),
       skipped: parseInt(jestMatch[3] ?? "0", 10),
+      coverage,
       failedNames: extractFailedNames(output),
     };
   }
@@ -47,6 +50,7 @@ export function parseTestOutput(output: string): TestResult | null {
       failed: parseInt(vitestMatch[1] ?? "0", 10),
       passed: parseInt(vitestMatch[2] ?? "0", 10),
       skipped: 0,
+      coverage,
       failedNames: extractFailedNames(output),
     };
   }
@@ -60,12 +64,10 @@ export function parseTestOutput(output: string): TestResult | null {
       passed: parseInt(pytestMatch[1] ?? "0", 10),
       failed: parseInt(pytestMatch[2] ?? "0", 10),
       skipped: parseInt(pytestMatch[3] ?? "0", 10),
+      coverage,
       failedNames: extractFailedNames(output),
     };
   }
-
-  // Coverage: "Coverage: 85.3%"
-  const coverageMatch = output.match(/(?:coverage|cov)[:\s]+(\d+(?:\.\d+)?)%/i);
 
   return null;
 }

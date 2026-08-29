@@ -78,17 +78,30 @@ async function loadPlugin(pluginDir: string): Promise<BrainstormPlugin | null> {
   } catch (err: any) {
     throw new Error(`Plugin manifest is not valid JSON: ${err.message}`);
   }
+  if (
+    typeof manifest.name !== "string" ||
+    !manifest.name ||
+    typeof manifest.version !== "string" ||
+    !manifest.version ||
+    typeof manifest.description !== "string" ||
+    !manifest.description
+  ) {
+    throw new Error(
+      "Plugin manifest is missing required fields (name, version, description)",
+    );
+  }
 
   const entryPoint = manifest.main ?? "./dist/index.js";
   // Resolve entryPath and verify it stays within pluginDir. A manifest with
   // "main": "../../../etc/passwd" or an absolute path would otherwise let
   // an untrusted plugin load arbitrary JS files from the host filesystem.
   const pluginRoot = realpathSync(resolve(pluginDir));
+  const requestedEntryPath = resolve(pluginRoot, entryPoint);
   let entryPath: string;
   try {
-    entryPath = realpathSync(resolve(pluginRoot, entryPoint));
+    entryPath = realpathSync(requestedEntryPath);
   } catch {
-    entryPath = resolve(pluginRoot, entryPoint);
+    entryPath = requestedEntryPath;
   }
   if (entryPath !== pluginRoot && !entryPath.startsWith(pluginRoot + sep)) {
     throw new Error(
@@ -102,13 +115,21 @@ async function loadPlugin(pluginDir: string): Promise<BrainstormPlugin | null> {
 
   // Dynamic import the plugin
   const entryUrl = pathToFileURL(entryPath).href;
-  const mod = await import(entryUrl);
+  // Plugin locations are runtime data and can live outside the source tree.
+  // Prevent Vite/Vitest from trying to statically resolve the file URL against
+  // this module (which breaks macOS realpaths such as /private/var/...).
+  const mod = await import(/* @vite-ignore */ entryUrl);
   const plugin: BrainstormPlugin = mod.default ?? mod;
 
   // Validate required fields
   if (!plugin.name || !plugin.version) {
     throw new Error(
       `Plugin at ${pluginDir} is missing required fields (name, version).`,
+    );
+  }
+  if (plugin.name !== manifest.name || plugin.version !== manifest.version) {
+    throw new Error(
+      `Plugin export identity (${plugin.name}@${plugin.version}) does not match manifest (${manifest.name}@${manifest.version})`,
     );
   }
 

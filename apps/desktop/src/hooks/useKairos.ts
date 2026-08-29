@@ -1,9 +1,16 @@
 /**
- * useKairos — controls the KAIROS daemon via IPC.
+ * useKairos — controls the KAIROS daemon and reports its live state.
+ *
+ * Live status/tick/cost come from the organism bus (`useOrganism`), NOT a poll:
+ * the daemon publishes its heartbeat to the bus and every surface folds the
+ * stream. This hook keeps only the imperative controls (start/stop/pause/resume)
+ * and the once-per-launch auto-ignition latch.
  */
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { request } from "../lib/ipc-client";
+import { useOrganism } from "./useOrganism";
+import type { KairosStatus as OrganismKairosStatus } from "../lib/organism";
 
 export type KairosStatus = "running" | "sleeping" | "paused" | "stopped";
 
@@ -15,7 +22,21 @@ export interface KairosState {
   lastTickAt?: number;
 }
 
-const POLL_INTERVAL_MS = 3000;
+/** Map the organism's KAIROS status onto this hook's display status. The bus
+ * folds `sleep` as still-running, so there's no distinct "sleeping" state. */
+function mapStatus(s: OrganismKairosStatus): KairosStatus {
+  switch (s) {
+    case "running":
+      return "running";
+    case "paused":
+      return "paused";
+    case "idle":
+    case "stopped":
+    case "halted":
+    default:
+      return "stopped";
+  }
+}
 
 export interface UseKairosOptions {
   /**
@@ -30,123 +51,87 @@ export interface UseKairosOptions {
 
 export function useKairos(options: UseKairosOptions = {}) {
   const { autoStart = false } = options;
-  const [state, setState] = useState<KairosState>({
-    status: "stopped",
-    tickCount: 0,
-    totalCost: 0,
-  });
+  const { state: organism, connected } = useOrganism();
   const [error, setError] = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Latch: once we auto-ignite (or the user touches the controls), we never
   // auto-start again — stopping KAIROS must stay stopped.
   const autoStartLatchedRef = useRef(false);
-  // Set true only after a real status fetch succeeds, so auto-ignition waits
-  // for a genuine "stopped" from the backend rather than the default state.
-  const [statusConfirmed, setStatusConfirmed] = useState(false);
 
-  const clearPoll = useCallback(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-  }, []);
-
-  const startPoll = useCallback((doRefresh: () => void) => {
-    if (pollRef.current) return; // already polling
-    pollRef.current = setInterval(doRefresh, POLL_INTERVAL_MS);
-  }, []);
-
-  const refresh = useCallback(async () => {
-    try {
-      const s = await request<KairosState>("kairos.status");
-      setState(s);
-      setError(null);
-      setStatusConfirmed(true);
-      // Start polling automatically when the daemon is active, whether the
-      // user started it in this session or it was already running from a
-      // prior CLI session. Pre-fix the app only began polling if the user
-      // clicked Start in the current session — an already-running daemon
-      // showed a frozen tick count that never updated.
-      if (s.status !== "stopped") {
-        startPoll(refresh);
-      } else {
-        clearPoll();
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to fetch status";
-      setError(msg);
-      setState({ status: "stopped", tickCount: 0, totalCost: 0 });
-    }
-  }, [startPoll, clearPoll]);
+  const status = mapStatus(organism.kairos.status);
+  const state: KairosState = {
+    status,
+    tickCount: organism.kairos.tickCount,
+    totalCost: organism.kairos.totalCost,
+    lastTickAt: organism.kairos.lastTickAt,
+  };
 
   const start = useCallback(async () => {
     autoStartLatchedRef.current = true;
     try {
       await request("kairos.start");
       setError(null);
-      startPoll(refresh);
-      refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start KAIROS");
     }
-  }, [refresh, startPoll]);
+  }, []);
 
   const stop = useCallback(async () => {
     autoStartLatchedRef.current = true;
     try {
       await request("kairos.stop");
-      clearPoll();
-      setState({ status: "stopped", tickCount: 0, totalCost: 0 });
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to stop KAIROS");
     }
-  }, [clearPoll]);
+  }, []);
 
   const pause = useCallback(async () => {
     try {
       await request("kairos.pause");
       setError(null);
-      refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to pause KAIROS");
     }
-  }, [refresh]);
+  }, []);
 
   const resume = useCallback(async () => {
     try {
       await request("kairos.resume");
       setError(null);
-      refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to resume KAIROS");
     }
-  }, [refresh]);
+  }, []);
 
-  // Check initial status on mount. refresh() handles the
-  // start-polling-if-already-running case, so no separate bootstrap.
-  useEffect(() => {
-    refresh();
-    return clearPoll;
-  }, [refresh, clearPoll]);
+  // Kept for API compatibility — live state now flows from the bus, so a
+  // one-shot status request is enough to nudge an update if a caller asks.
+  const refresh = useCallback(async () => {
+    try {
+      await request("kairos.status");
+      setError(null);
+    } catch {
+      /* non-fatal — the bus remains the source of truth */
+    }
+  }, []);
 
-  // Auto-ignition: the moment we confirm a fresh, stopped daemon and the caller
-  // has cleared us to launch (backend ready), fire KAIROS once so the system
-  // comes alive on open with no user prompt. The latch guarantees this happens
-  // at most once and never re-fights a user who subsequently stops it.
+  // Auto-ignition: the moment the organism snapshot confirms a fresh, stopped
+  // daemon and the caller has cleared us to launch (backend ready), fire KAIROS
+  // once so the system comes alive on open with no user prompt. The latch
+  // guarantees this happens at most once and never re-fights a user who
+  // subsequently stops it.
   useEffect(() => {
     if (!autoStart) return;
     if (autoStartLatchedRef.current) return;
-    if (!statusConfirmed) return;
-    if (state.status !== "stopped") {
-      // Already running (e.g. a prior CLI session) — nothing to ignite, but
-      // latch so we treat this session as decided.
+    if (!connected) return; // wait for a real snapshot, not the default state
+    if (status !== "stopped") {
+      // Already running (e.g. a prior in-process daemon) — nothing to ignite,
+      // but latch so we treat this session as decided.
       autoStartLatchedRef.current = true;
       return;
     }
     autoStartLatchedRef.current = true;
     void start();
-  }, [autoStart, statusConfirmed, state.status, start]);
+  }, [autoStart, connected, status, start]);
 
   return { ...state, error, start, stop, pause, resume, refresh };
 }

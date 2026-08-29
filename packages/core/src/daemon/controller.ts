@@ -25,6 +25,8 @@ import {
   createInitialState,
 } from "./types.js";
 import { formatTickMessage, type TickMessageContext } from "./tick-message.js";
+import { getOrganismBus, type OrganismBus } from "../organism/bus.js";
+import { agentEventToOrganism } from "../organism/bridge.js";
 
 const log = createLogger("daemon");
 
@@ -46,12 +48,15 @@ export class DaemonController {
   /** Consecutive tick failure count for circuit breaker. */
   private consecutiveFailures = 0;
   private static readonly MAX_CONSECUTIVE_FAILURES = 3;
+  /** The organism spine this daemon's heartbeat publishes to. */
+  private organism: OrganismBus;
 
   constructor(options: DaemonControllerOptions) {
     this.options = options;
     this.config = options.config;
     this.state = createInitialState();
     this.abortController = new AbortController();
+    this.organism = getOrganismBus();
   }
 
   /** Get current daemon state. */
@@ -60,10 +65,28 @@ export class DaemonController {
   }
 
   /**
-   * Run the daemon tick loop. Yields AgentEvents from each tick.
-   * This is the main entry point — call this with `for await`.
+   * Run the daemon tick loop. Yields AgentEvents from each tick, and — the one
+   * seam where the daemon feeds the organism spine — ALSO publishes each event's
+   * organism projection to the bus so every surface sees the heartbeat live
+   * without polling. The bus is best-effort: a publish failure never breaks the
+   * loop or the spawner's stream.
    */
   async *run(): AsyncGenerator<AgentEvent> {
+    for await (const ev of this.runInner()) {
+      const projected = agentEventToOrganism(ev);
+      if (projected) {
+        try {
+          this.organism.publish(projected);
+        } catch (e) {
+          log.warn({ err: e }, "organism publish failed (non-fatal)");
+        }
+      }
+      yield ev;
+    }
+  }
+
+  /** The actual tick loop; wrapped by {@link run} to mirror events to the bus. */
+  private async *runInner(): AsyncGenerator<AgentEvent> {
     log.info(
       {
         tickInterval: this.config.tickIntervalMs,

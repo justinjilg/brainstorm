@@ -8,6 +8,9 @@ export {
   createLMStudioProvider,
   createLlamaCppProvider,
   discoverOpenAICompatModels,
+  buildAuthHeaders,
+  resolveLocalAuth,
+  type LocalProviderAuth,
 } from "./local/openai-compat.js";
 export {
   discoverLocalModels,

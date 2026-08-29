@@ -54,6 +54,11 @@ export function parseGatewayHeaders(
   feedback.selectionMethod = get("x-br-selection-method") ?? undefined;
   feedback.complexityScore = safeFloat(get("x-br-complexity-score"));
   feedback.requestId = get("x-request-id") ?? undefined;
+  // The rationale pair the harness used to drop on the floor: BR sends both on
+  // every completion (streaming included), and the explain link resolves to
+  // the full decision trace via BrainstormGateway.getExplain().
+  feedback.routeReason = get("x-br-route-reason") ?? undefined;
+  feedback.explainUrl = get("x-br-explain") ?? undefined;
 
   // Strip undefined values
   for (const key of Object.keys(feedback) as (keyof GatewayFeedback)[]) {
@@ -95,6 +100,9 @@ export function formatGatewayFeedback(feedback: GatewayFeedback): string {
   }
   if (feedback.selectedModel) {
     parts.push(`Model: ${feedback.selectedModel}`);
+  }
+  if (feedback.routeReason) {
+    parts.push(`Why: ${feedback.routeReason}`);
   }
   if (feedback.cacheHit) {
     parts.push(`Cache: ${feedback.cacheHit}`);

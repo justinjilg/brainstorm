@@ -297,6 +297,18 @@ export class BrainstormGateway {
     });
   }
 
+  // ── Routing Transparency ────────────────────────────────────────────
+
+  /**
+   * Fetch the full decision trace for a routed request — the payload behind
+   * the `X-BR-Explain` header (`parseGatewayHeaders().explainUrl`). Returns
+   * selection reason/method, alternatives considered with scores, complexity,
+   * cost, latency, and provenance. Requires `audit.read` on the API key.
+   */
+  async getExplain(requestId: string): Promise<any> {
+    return this.get(`/v1/explain/${requestId}`);
+  }
+
   // ── Outcome Feedback ────────────────────────────────────────────────
 
   async reportOutcome(

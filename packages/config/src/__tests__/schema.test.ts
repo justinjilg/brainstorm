@@ -97,6 +97,27 @@ describe("Config Schema", () => {
     }
   });
 
+  test("accepts authenticated remote OpenAI-compatible providers", () => {
+    const result = brainstormConfigSchema.safeParse({
+      providers: {
+        lmstudio: {
+          enabled: true,
+          baseUrl: "https://models.internal",
+          apiKeyEnv: "CORP_MODEL_TOKEN",
+          headers: { "X-Tenant": "engineering" },
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.providers.lmstudio.apiKeyEnv).toBe("CORP_MODEL_TOKEN");
+      expect(result.data.providers.lmstudio.headers).toEqual({
+        "X-Tenant": "engineering",
+      });
+    }
+  });
+
   test("budget values are numbers, not strings", () => {
     const result = brainstormConfigSchema.safeParse({
       budget: { daily: 50.0, monthly: 500.0 },

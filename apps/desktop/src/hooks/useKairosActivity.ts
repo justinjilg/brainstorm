@@ -1,15 +1,14 @@
 /**
- * useKairosActivity — taps the live daemon event stream so the UI can SHOW the
- * self-improvement loop, not just a status dot.
+ * useKairosActivity — the KAIROS-scoped view of the organism bus.
  *
- * The backend forwards every daemon event to the renderer as a "chat-event"
- * with an `event` field: `daemon-wake`, `daemon-tick`, `daemon-sleep`,
- * `kairos-state` (a full DaemonState), plus `daemon-stopped`/`daemon-error`.
- * We fold those into a bounded, human-readable activity feed and the latest
- * live counters (tick #, cost, status, sleep reason).
+ * Previously this folded raw daemon frames off `onChatEvent`; now it's a thin
+ * adapter over `useOrganism()`, projecting the shared organism feed down to the
+ * KAIROS narrative (wake → tick → sleep → …) the live panel renders. One
+ * subscription backs the whole app; this hook just filters + shapes it.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useOrganism } from "./useOrganism";
+import { organismEventLabel, type OrganismEvent } from "../lib/organism";
 
 export interface KairosActivityEntry {
   id: number;
@@ -27,73 +26,65 @@ export interface KairosLiveState {
   lastTickAt?: number;
 }
 
-const MAX_FEED = 40;
+/** Map an organism event type onto the panel's activity `kind` (or null to skip
+ * events that aren't part of the KAIROS narrative). */
+function kindOf(ev: OrganismEvent): KairosActivityEntry["kind"] | null {
+  switch (ev.type) {
+    case "kairos.wake":
+      return "wake";
+    case "kairos.tick":
+      return "tick";
+    case "kairos.sleep":
+      return "sleep";
+    case "kairos.heal":
+    case "kairos.commit":
+      return "state";
+    case "kairos.state":
+      return (ev as { status?: string }).status === "stopped"
+        ? "stopped"
+        : "state";
+    default:
+      return null; // route.*, exchange.*, health.* — not the KAIROS feed
+  }
+}
 
-export function useKairosActivity() {
-  const [feed, setFeed] = useState<KairosActivityEntry[]>([]);
-  const [live, setLive] = useState<KairosLiveState>({
-    status: "stopped",
-    tickCount: 0,
-    totalCost: 0,
-  });
-  const counter = useRef(0);
+export function useKairosActivity(): {
+  feed: KairosActivityEntry[];
+  live: KairosLiveState;
+} {
+  const { state, feed: organismFeed } = useOrganism();
 
-  useEffect(() => {
-    if (!("brainstorm" in window) || !window.brainstorm) return;
-    const push = (kind: KairosActivityEntry["kind"], label: string) =>
-      setFeed((prev) =>
-        [{ id: ++counter.current, at: Date.now(), kind, label }, ...prev].slice(
-          0,
-          MAX_FEED,
-        ),
-      );
+  const feed: KairosActivityEntry[] = [];
+  for (const ev of organismFeed) {
+    const kind = kindOf(ev);
+    if (!kind) continue;
+    feed.push({ id: ev.seq, at: ev.ts, kind, label: organismEventLabel(ev) });
+  }
 
-    const unlisten = window.brainstorm.onChatEvent((raw: any) => {
-      const ev: string | undefined = raw?.event;
-      const data = raw?.data ?? {};
-      switch (ev) {
-        case "kairos-state":
-          setLive((prev) => ({
-            status: data.status ?? prev.status,
-            tickCount: data.tickCount ?? prev.tickCount,
-            totalCost:
-              typeof data.totalCost === "number"
-                ? data.totalCost
-                : prev.totalCost,
-            lastWakeTrigger: data.lastWakeTrigger ?? prev.lastWakeTrigger,
-            sleepReason: data.sleepReason ?? prev.sleepReason,
-            lastTickAt: data.lastTickAt ?? prev.lastTickAt,
-          }));
-          break;
-        case "daemon-wake":
-          push(
-            "wake",
-            `Woke${data.trigger ? ` (${data.trigger})` : ""} — scanning for something to harden`,
-          );
-          break;
-        case "daemon-tick":
-          push(
-            "tick",
-            `Tick${data.tickNumber ? ` #${data.tickNumber}` : ""}${
-              data.modelUsed ? ` · ${data.modelUsed}` : ""
-            }${typeof data.cost === "number" ? ` · $${data.cost.toFixed(4)}` : ""}`,
-          );
-          break;
-        case "daemon-sleep":
-          push("sleep", `Sleeping${data.reason ? ` — ${data.reason}` : ""}`);
-          break;
-        case "daemon-stopped":
-          push("stopped", `Stopped${data.reason ? ` — ${data.reason}` : ""}`);
-          break;
-        case "daemon-error":
-          push("error", `Error — ${data.error ?? "unknown"}`);
-          break;
-        default:
-          break;
-      }
-    });
-    return unlisten;
-  }, []);
+  // Last wake trigger / sleep reason come off the feed (they aren't in the
+  // coarse snapshot). organismFeed is newest-first, so `find` gets the latest.
+  const lastWake = organismFeed.find((e) => e.type === "kairos.wake") as
+    | { trigger?: string }
+    | undefined;
+  const lastSleep = organismFeed.find((e) => e.type === "kairos.sleep") as
+    | { reason?: string }
+    | undefined;
+
+  const status: KairosLiveState["status"] =
+    state.kairos.status === "running"
+      ? "running"
+      : state.kairos.status === "paused"
+        ? "paused"
+        : "stopped";
+
+  const live: KairosLiveState = {
+    status,
+    tickCount: state.kairos.tickCount,
+    totalCost: state.kairos.totalCost,
+    lastWakeTrigger: lastWake?.trigger,
+    sleepReason: lastSleep?.reason,
+    lastTickAt: state.kairos.lastTickAt,
+  };
 
   return { feed, live };
 }

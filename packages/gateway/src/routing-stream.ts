@@ -32,6 +32,16 @@ export interface RoutingDecision {
   cost_estimate_usd: number;
   cache: "hit" | "miss" | "skip";
   tenant_id: string;
+  /**
+   * Event kind: "decision" fires at route time (absent on older BR = decision);
+   * "outcome" fires at completion time with the truthful success label and
+   * real latency — the failure taxonomy the stream historically lacked.
+   */
+  kind?: "decision" | "outcome";
+  /** Outcome events only: validity-derived success label. */
+  success?: boolean;
+  /** Outcome events only: end-to-end latency in milliseconds. */
+  latency_ms?: number;
 }
 
 export interface RoutingStreamEvent {
@@ -67,6 +77,7 @@ export class RoutingEventStream {
   private readonly maxBackoffMs: number;
   private readonly controller: AbortController;
   private readonly externalSignal?: AbortSignal;
+  private readonly externalAbortHandler?: () => void;
 
   private lastEventId: number;
   private attempt = 0;
@@ -83,7 +94,12 @@ export class RoutingEventStream {
     this.controller = new AbortController();
     this.externalSignal = opts.signal;
     if (opts.signal) {
-      opts.signal.addEventListener("abort", () => this.controller.abort());
+      this.externalAbortHandler = () => this.controller.abort();
+      if (opts.signal.aborted) this.controller.abort();
+      else
+        opts.signal.addEventListener("abort", this.externalAbortHandler, {
+          once: true,
+        });
     }
   }
 
@@ -128,6 +144,12 @@ export class RoutingEventStream {
   stop(reason?: string): void {
     this.setState({ phase: "closed", reason });
     this.controller.abort();
+    if (this.externalSignal && this.externalAbortHandler) {
+      this.externalSignal.removeEventListener(
+        "abort",
+        this.externalAbortHandler,
+      );
+    }
   }
 
   // ── internals ─────────────────────────────────────────────────────────
@@ -303,15 +325,18 @@ async function safeText(res: Response): Promise<string> {
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    signal.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        resolve();
-      },
-      { once: true },
-    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const finish = () => {
+      if (timer) clearTimeout(timer);
+      signal.removeEventListener("abort", finish);
+      resolve();
+    };
+    if (signal.aborted) {
+      finish();
+      return;
+    }
+    timer = setTimeout(finish, ms);
+    signal.addEventListener("abort", finish, { once: true });
   });
 }
 

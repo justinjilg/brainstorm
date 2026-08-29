@@ -3,7 +3,7 @@
  */
 
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import type { AppMode } from "../App";
+import type { AppMode } from "../lib/legacy-modes";
 import { fuzzyFilter } from "../lib/fuzzy";
 import { useModels, useSkills } from "../hooks/useServerData";
 

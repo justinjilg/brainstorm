@@ -1,197 +1,71 @@
 /**
- * Top-level App — Mode switcher for the multi-pane TUI.
+ * Top-level TUI — "The Glance".
  *
- * Renders ModeBar + active mode content + KeyHint.
- * Mode 1 (Chat) delegates to ChatApp. Other modes are dashboard views.
+ * The demoted terminal surface (its charter in the UX reimagining): one Chat +
+ * one StatusStrip off the shared event stream, and nothing else. The former
+ * 4-pane switcher (Dashboard/Models/Config/Planning + its top bar and switcher
+ * state) is gone — there is deliberately NO pane-switching seam to hang a new
+ * view on. The rich, live surfaces live in the desktop flagship (the Vivarium).
+ *
+ * ChatApp already renders the StatusBar (model / cost / tokens / strategy), so
+ * this component is just: wrap the message stream to capture cost + report the
+ * turn outcome to BR (the learning-loop invariant), and mount ChatApp.
  */
 
-import React, { useState, useRef } from "react";
+import React, { useState } from "react";
 import { Box, useApp, useInput } from "ink";
-import { useMode, type TUIMode } from "../hooks/useMode.js";
-import { useBRData } from "../hooks/useBRData.js";
-import { ModeBar } from "./ModeBar.js";
-import { KeyHint } from "./KeyHint.js";
 import { ChatApp } from "./ChatApp.js";
-import { DashboardMode } from "./modes/DashboardMode.js";
-import { ModelsMode } from "./modes/ModelsMode.js";
-import { ConfigMode } from "./modes/ConfigMode.js";
-import { PlanningMode } from "./modes/PlanningMode.js";
-import { ShortcutOverlay } from "./ShortcutOverlay.js";
-import type { AgentEvent, AgentTask } from "@brainst0rm/shared";
+import type { AgentEvent } from "@brainst0rm/shared";
 
 interface AppProps {
-  // Chat mode props (passed through to ChatApp)
   strategy: string;
   modelCount: { local: number; cloud: number };
   onSendMessage: (text: string) => AsyncGenerator<AgentEvent>;
   onAbort?: () => void;
   slashCallbacks?: any;
-  // Data for other modes
-  models?: Array<{
-    id: string;
-    name: string;
-    provider: string;
-    qualityTier: number;
-    speedTier: number;
-    pricing: { input: number; output: number };
-    status: string;
-  }>;
-  configInfo?: {
-    strategy: string;
-    permissionMode: string;
-    outputStyle: string;
-    sandbox: string;
-    sandboxPool?: {
-      enabled: boolean;
-      maxIdlePerKey: number;
-      maxIdleTotal: number;
-      idleTimeoutMs: number;
-    };
-    channels?: {
-      slack?: {
-        enabled: boolean;
-        authority: string;
-        mode: string;
-      };
-    };
-  };
-  vaultInfo?: {
-    exists: boolean;
-    isOpen: boolean;
-    keyCount: number;
-    keys: string[];
-    createdAt: string | null;
-    opAvailable: boolean;
-    resolvedKeys: string[];
-  };
-  /** BrainstormRouter gateway client for dashboard data */
-  gateway?: any;
-  /** Memory info for Config mode */
-  memoryInfo?: { localCount: number; types: Record<string, number> };
-  /** God Mode connection data for Dashboard */
-  godModeInfo?: {
-    connectedSystems: Array<{
-      name: string;
-      displayName: string;
-      capabilities: string[];
-      latencyMs: number;
-      toolCount: number;
-    }>;
-    errors: Array<{ name: string; error: string }>;
-    totalTools: number;
-  };
-  /** Opt-in flag from config.routing.routingStream. */
+  /** BrainstormRouter gateway client — used only to report turn outcomes. */
+  gateway?: import("@brainst0rm/gateway").BrainstormGateway;
+  // The following props were consumed by the deleted dashboard modes. They are
+  // accepted (so existing callers keep compiling) but intentionally unused —
+  // this surface no longer renders them. They belong to the desktop flagship.
+  models?: unknown;
+  configInfo?: unknown;
+  vaultInfo?: unknown;
+  memoryInfo?: unknown;
+  godModeInfo?: unknown;
   routingStreamEnabled?: boolean;
-  /** Optional BR base URL override from config.routing.routingStreamUrl. */
   routingStreamUrl?: string;
-  /**
-   * Pre-built RoutingEventStream owned by the CLI boot code (Phase 2).
-   * When provided, the dashboard reuses this connection instead of opening
-   * a second one. The observer for learned-strategy updates is also attached
-   * to this same stream at boot.
-   */
   routingStream?: import("@brainst0rm/gateway").RoutingEventStream;
-}
-
-interface RoutingEntry {
-  model: string;
-  strategy: string;
-  reason: string;
-  timestamp: number;
-}
-
-interface ToolStat {
-  name: string;
-  calls: number;
-  successes: number;
-  lastDuration?: number;
 }
 
 export function App(props: AppProps) {
   const { exit } = useApp();
-  const { mode, setMode, cycleMode, setModeByKey } = useMode("chat");
-  const [sessionCost, setSessionCost] = useState(0);
-  const [tokenCount, setTokenCount] = useState({ input: 0, output: 0 });
   const [currentModel, setCurrentModel] = useState<string | undefined>();
   const [currentRole, setCurrentRole] = useState<string | undefined>();
   const [isProcessing, setIsProcessing] = useState(false);
-  const [routingHistory, setRoutingHistory] = useState<RoutingEntry[]>([]);
-  const [toolStats, setToolStats] = useState<Map<string, ToolStat>>(new Map());
-  const [turnCount, setTurnCount] = useState(0);
-  const [sessionStart] = useState(Date.now());
-  const { data: brData, refresh: refreshBR } = useBRData(props.gateway ?? null);
   const [lastCtrlD, setLastCtrlD] = useState(0);
-  const [guardianStatus, setGuardianStatus] = useState<string | undefined>();
-  const [showShortcuts, setShowShortcuts] = useState(false);
-  const abortTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Global key handler for mode switching
-  //
-  // Pattern: Escape toggles between Chat and other modes.
-  // In Chat: Escape (when idle) → Dashboard. Escape (when processing) → abort.
-  // In other modes: Escape → Chat. Number keys 1-4 switch modes. Arrows navigate.
+  // Ctrl+D twice within 2s exits; Esc while processing aborts. No mode keys.
   useInput((input, key) => {
-    if (key.escape) {
-      if (mode === "chat") {
-        // In chat: Escape while processing aborts; while idle opens dashboard
-        if (isProcessing) {
-          props.onAbort?.();
-          if (abortTimeoutRef.current) clearTimeout(abortTimeoutRef.current);
-          abortTimeoutRef.current = setTimeout(() => {
-            setIsProcessing(false);
-            abortTimeoutRef.current = null;
-          }, 5000);
-        } else {
-          setMode("dashboard");
-        }
-      } else {
-        // In any other mode: Escape returns to chat
-        setMode("chat");
-      }
+    if (key.escape && isProcessing) {
+      props.onAbort?.();
       return;
     }
-
-    // ? shows shortcut overlay (from any non-chat mode)
-    if (input === "?" && mode !== "chat") {
-      setShowShortcuts(true);
-      return;
-    }
-
-    // In non-chat modes: number keys switch modes, Tab cycles, r refreshes
-    if (mode !== "chat") {
-      if (setModeByKey(input)) return;
-      if (key.tab) {
-        cycleMode();
-        return;
-      }
-      if (input === "r" && mode === "dashboard") {
-        refreshBR();
-        return;
-      }
-    }
-
-    // Ctrl+D: double-press within 2s to exit
     if (input === "d" && key.ctrl) {
       const now = Date.now();
-      if (lastCtrlD > 0 && now - lastCtrlD < 2000) {
-        exit();
-      } else {
-        setLastCtrlD(now);
-      }
-      return;
+      if (lastCtrlD > 0 && now - lastCtrlD < 2000) exit();
+      else setLastCtrlD(now);
     }
   });
 
   const termHeight = process.stdout.rows || 24;
 
-  // Wrap ChatApp's callbacks to capture shared state
   const wrappedSlashCallbacks = {
     ...props.slashCallbacks,
     gateway: props.gateway,
     setModel: (model: string) => {
       props.slashCallbacks?.setModel?.(model);
-      const name = model.split("/").pop() ?? model;
-      setCurrentModel(name);
+      setCurrentModel(model.split("/").pop() ?? model);
     },
     setActiveRole: (role: string | undefined) => {
       props.slashCallbacks?.setActiveRole?.(role);
@@ -199,175 +73,85 @@ export function App(props: AppProps) {
     },
   };
 
-  // Wrap onSendMessage to capture cost/token updates
+  // Wrap the message stream to capture the turn outcome and report it to BR.
+  // The label must be lifecycle-derived (never a constant) — BR's routing
+  // posterior trains on it (the learning-loop invariant).
   function wrappedSendMessage(text: string): AsyncGenerator<AgentEvent> {
     const gen = props.onSendMessage(text);
     let lastRequestId: string | undefined;
     let lastModelUsed: string | undefined;
+    let turnError: string | undefined;
+    let turnCost: number | undefined;
+    let verifyCompiled: boolean | undefined;
+    let verifyTestsPassed: boolean | undefined;
+    let sawDone = false;
 
     return (async function* () {
       setIsProcessing(true);
       try {
         for await (const event of gen) {
-          // Capture shared state from events
           if (event.type === "routing") {
             lastModelUsed =
               event.decision.model.id ?? event.decision.model.name;
             setCurrentModel(event.decision.model.name);
-            setRoutingHistory((prev) => [
-              {
-                model: event.decision.model.name,
-                strategy: event.decision.strategy,
-                reason: event.decision.reason,
-                timestamp: Date.now(),
-              },
-              ...prev.slice(0, 9),
-            ]);
           }
-          if (event.type === "tool-call-start") {
-            setToolStats((prev) => {
-              const next = new Map(prev);
-              const existing = next.get(event.toolName) ?? {
-                name: event.toolName,
-                calls: 0,
-                successes: 0,
-              };
-              next.set(event.toolName, {
-                ...existing,
-                calls: existing.calls + 1,
-              });
-              return next;
-            });
-          }
-          if (event.type === "tool-call-result") {
-            setToolStats((prev) => {
-              const next = new Map(prev);
-              const existing = next.get(event.toolName);
-              if (existing) {
-                next.set(event.toolName, {
-                  ...existing,
-                  successes: existing.successes + 1,
-                });
-              }
-              return next;
-            });
-          }
-          // Capture gateway feedback: request ID + live cost + guardian status
           if (event.type === "gateway-feedback") {
             lastRequestId = (event as any).feedback?.requestId;
-            const actualCost = (event as any).feedback?.actualCost;
-            if (typeof actualCost === "number" && actualCost > 0) {
-              setSessionCost((prev) => Math.max(prev, actualCost));
-            }
-            const guardian = (event as any).feedback?.guardianStatus;
-            if (guardian) setGuardianStatus(guardian);
+          }
+          if (event.type === "error") {
+            const raw = (event as { error?: unknown }).error;
+            turnError =
+              raw instanceof Error ? raw.message : raw ? String(raw) : "error";
+          }
+          if (event.type === "fallback-exhausted") {
+            turnError = `fallback exhausted: ${event.reason}`;
+          }
+          if (event.type === "verify-passed") {
+            verifyCompiled = true;
+            if (event.mode === "full") verifyTestsPassed = true;
+          }
+          if (event.type === "verify-failed") {
+            verifyCompiled = false;
           }
           if (event.type === "done") {
-            setSessionCost(event.totalCost);
-            if (event.totalTokens) setTokenCount(event.totalTokens);
-            setTurnCount((prev) => prev + 1);
-            // Auto-report outcome to BR for routing improvement
-            if (props.gateway && lastRequestId) {
-              props.gateway
-                .reportOutcome(lastRequestId, {
-                  success: true,
-                  signals: {},
-                  model_used: lastModelUsed,
-                })
-                .catch(() => {}); // fire-and-forget
-            }
+            sawDone = true;
+            turnCost = event.totalCost;
           }
           yield event;
         }
       } finally {
+        if (props.gateway && lastRequestId) {
+          props.gateway
+            .reportOutcome(lastRequestId, {
+              success: sawDone && !turnError && verifyCompiled !== false,
+              error: turnError,
+              modelUsed: lastModelUsed,
+              cost: turnCost,
+              codeCompiled: verifyCompiled,
+              testsPassed: verifyTestsPassed,
+            })
+            .catch(() => {});
+        }
         setIsProcessing(false);
       }
     })();
   }
 
+  // currentRole is captured for the slash callbacks; referenced here to keep the
+  // wiring explicit even though StatusBar (inside ChatApp) owns its display.
+  void currentRole;
+  void currentModel;
+
   return (
     <Box flexDirection="column" height={termHeight}>
-      <ModeBar
-        activeMode={mode}
-        model={currentModel}
-        cost={sessionCost}
-        role={currentRole}
-        guardianStatus={guardianStatus}
+      <ChatApp
+        strategy={props.strategy}
+        modelCount={props.modelCount}
+        onSendMessage={wrappedSendMessage}
+        onAbort={props.onAbort}
+        isActive={true}
+        slashCallbacks={wrappedSlashCallbacks}
       />
-
-      {/* ChatApp is always mounted to preserve conversation state.
-          Hidden via display:none when other modes are active. */}
-      <Box
-        flexDirection="column"
-        flexGrow={mode === "chat" ? 1 : 0}
-        display={mode === "chat" ? "flex" : "none"}
-      >
-        <ChatApp
-          strategy={props.strategy}
-          modelCount={props.modelCount}
-          onSendMessage={wrappedSendMessage}
-          onAbort={props.onAbort}
-          isActive={mode === "chat"}
-          slashCallbacks={wrappedSlashCallbacks}
-        />
-      </Box>
-
-      {mode === "dashboard" && (
-        <DashboardMode
-          sessionCost={sessionCost}
-          tokenCount={tokenCount}
-          modelCount={props.modelCount}
-          routingHistory={routingHistory}
-          toolStats={Array.from(toolStats.values())}
-          turnCount={turnCount}
-          sessionStart={sessionStart}
-          brData={brData}
-          onRefreshBR={refreshBR}
-          godModeInfo={props.godModeInfo}
-          routingStreamEnabled={props.routingStreamEnabled}
-          routingStreamUrl={props.routingStreamUrl}
-          routingStream={props.routingStream}
-        />
-      )}
-
-      {mode === "models" && (
-        <ModelsMode
-          models={props.models ?? []}
-          currentModelId={currentModel}
-          onSelectModel={(id) => {
-            props.slashCallbacks?.setModel?.(id);
-            const name = id.split("/").pop() ?? id;
-            setCurrentModel(name);
-            setMode("chat");
-          }}
-        />
-      )}
-
-      {mode === "config" && (
-        <ConfigMode
-          strategy={props.configInfo?.strategy ?? props.strategy}
-          permissionMode={props.configInfo?.permissionMode ?? "confirm"}
-          outputStyle={props.configInfo?.outputStyle ?? "concise"}
-          sandbox={props.configInfo?.sandbox ?? "none"}
-          sandboxPool={props.configInfo?.sandboxPool}
-          channels={props.configInfo?.channels}
-          role={currentRole}
-          modelCount={props.modelCount}
-          turnCount={turnCount}
-          sessionCost={sessionCost}
-          vaultInfo={props.vaultInfo}
-          memoryInfo={props.memoryInfo}
-        />
-      )}
-
-      {mode === "planning" && <PlanningMode />}
-
-      <KeyHint mode={mode} isProcessing={isProcessing} />
-
-      {/* Shortcut overlay */}
-      {showShortcuts && (
-        <ShortcutOverlay onDismiss={() => setShowShortcuts(false)} />
-      )}
     </Box>
   );
 }

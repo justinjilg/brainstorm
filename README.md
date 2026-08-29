@@ -285,7 +285,7 @@ storm intelligence
 ```bash
 git clone https://github.com/justinjilg/brainstorm.git
 cd brainstorm && npm install
-npx turbo run build          # Build all 44 packages
+npx turbo run build          # Build all 47 workspace packages
 npx turbo run test           # Run tests (1,400+ tests across 30+ packages)
 node packages/cli/dist/brainstorm.js chat
 ```

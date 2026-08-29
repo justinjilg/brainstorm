@@ -85,22 +85,21 @@ function groupTools(
 
 // ── Health / Stats ─────────────────────────────────────────────────
 
-export function useHealthStats(pollMs = 5000) {
+export function useHealthStats() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
 
+  // Fetch once on mount, no polling — live health rides the organism bus
+  // (`useOrganism().state.health`); this one-shot only backs the richer
+  // connector payload a static panel needs.
   useEffect(() => {
-    const poll = async () => {
-      try {
-        const h = await request<HealthResponse>("health");
-        setHealth(h);
-      } catch {
-        setHealth(null);
-      }
+    let alive = true;
+    request<HealthResponse>("health")
+      .then((h) => alive && setHealth(h))
+      .catch(() => alive && setHealth(null));
+    return () => {
+      alive = false;
     };
-    poll();
-    const interval = setInterval(poll, pollMs);
-    return () => clearInterval(interval);
-  }, [pollMs]);
+  }, []);
 
   return health;
 }
@@ -315,7 +314,7 @@ export interface CostSummary {
   byModel: Array<{ modelId: string; totalCost: number; requestCount: number }>;
 }
 
-export function useCostSummary(pollMs = 15000) {
+export function useCostSummary() {
   const [summary, setSummary] = useState<CostSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -333,11 +332,12 @@ export function useCostSummary(pollMs = 15000) {
     setLoading(false);
   }, []);
 
+  // Fetch on mount + on backend recovery + on-demand — no polling. The live
+  // session spend rides the organism bus (`useOrganism().state.cost`); this
+  // summary is the fuller historical breakdown, refreshed when asked.
   useEffect(() => {
     refresh();
-    const interval = setInterval(refresh, pollMs);
-    return () => clearInterval(interval);
-  }, [refresh, pollMs]);
+  }, [refresh]);
   useBackendRecovery(refresh);
 
   return { summary, loading, error, refresh };

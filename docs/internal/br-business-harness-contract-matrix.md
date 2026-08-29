@@ -10,8 +10,8 @@ Scope is intentionally bounded to the BR and product actuator routes this harnes
 - Failures: 0
 - Warnings: 0
 - BR repo detected: yes
-- BR OpenAPI paths seen: 517
-- BR capability routes seen: 645
+- BR OpenAPI paths seen: 528
+- BR capability routes seen: 659
 - BR RBAC entries seen: 278
 
 ## Route Matrix

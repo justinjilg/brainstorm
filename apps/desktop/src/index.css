@@ -416,6 +416,34 @@ pre,
   animation: cursor-blink 1s var(--ease-in-out) infinite;
 }
 
+/* ── The organism's breath ──────────────────────────────────────
+   The rail-heart and Pulse markers breathe on a slow organic cycle so the
+   flagship is always quietly alive at the edge without a spinner. The accent
+   `--organism` is the ONE phosphorescent cyan-green reserved exclusively for
+   the living system (heart, mesh edges, live events) — never for chrome. */
+:root {
+  --organism: var(--sig-ok);
+  --organism-glow: var(--sig-ok-glow);
+}
+
+@keyframes breathe {
+  0%, 100% { transform: scale(1); opacity: 0.72; }
+  50% { transform: scale(1.14); opacity: 1; }
+}
+
+/* A quicker, brighter pulse layered on during a heal/commit moment. */
+@keyframes breathe-quicken {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50% { transform: scale(1.28); opacity: 1; }
+}
+
+.animate-breathe {
+  animation: breathe 4s var(--ease-in-out) infinite;
+}
+.animate-breathe-quicken {
+  animation: breathe-quicken 1.4s var(--ease-in-out) infinite;
+}
+
 /* ── Backdrop blur (overlays, modals) ──────────────────────── */
 
 .backdrop-blur-float {

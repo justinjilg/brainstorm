@@ -9,18 +9,17 @@
  * from other sessions, other tools, or any caller that didn't go through
  * the local agent loop.
  *
- * Phase 2 wires the SSE stream in: every `cache=miss` event that arrives
- * records an outcome with `success=true` (failure events don't exist in
- * the current event taxonomy; if/when `auth.failure` or `dispatch.failed`
- * types ship, this module should extend to record `success=false`).
+ * 2026-08-27: BR's stream now carries `kind: "outcome"` events at completion
+ * time with a truthful, validity-derived `success` label and real
+ * `latency_ms` — the exact schema extension this module's original header
+ * flagged for. Only outcome events feed the posterior now. Route-time
+ * decision events are observed but NOT recorded: recording them as
+ * `success=true` (the pre-outcome behavior) made the posterior an EWMA of a
+ * constant — models could only ever look better. Against an older BR that
+ * emits no outcomes, the stream contributes nothing rather than poison.
  *
  * `cache=hit` events are deliberately skipped — they represent cache-layer
  * behavior, not new information about the model's underlying capability.
- *
- * Latency is not surfaced on the current event schema, so we record 0.
- * That's technically a bias toward "all models are equally fast" in the
- * aggregate — flag for a future BR-side schema extension to include
- * `latency_ms` on the event.
  */
 
 import { recordOutcome } from "./strategies/learned.js";
@@ -55,6 +54,8 @@ export interface StreamObserverStats {
   cacheHitsSkipped: number;
   /** Events skipped by the optional filter. */
   filteredOut: number;
+  /** Route-time decision events observed but not recorded (no outcome label). */
+  decisionsSkipped: number;
 }
 
 /**
@@ -74,6 +75,7 @@ export function attachStreamToLearnedStrategy(
     outcomesRecorded: 0,
     cacheHitsSkipped: 0,
     filteredOut: 0,
+    decisionsSkipped: 0,
   };
 
   const unsubscribe = stream.onEvent((event) => {
@@ -89,14 +91,22 @@ export function attachStreamToLearnedStrategy(
       return;
     }
 
-    // Translate a routing-decision event into a Thompson outcome.
-    // success=true because the current event taxonomy only emits on
-    // successful routing. Latency is unknown on-wire; record 0.
+    // Only completion outcomes carry a truthful label. Route-time decisions
+    // have no outcome yet — recording them as success (the old behavior)
+    // trained the posterior on a constant.
+    if (
+      event.decision.kind !== "outcome" ||
+      event.decision.success === undefined
+    ) {
+      stats.decisionsSkipped++;
+      return;
+    }
+
     recordOutcome(
       event.decision.task_type,
       event.decision.selected_model,
-      true,
-      0,
+      event.decision.success,
+      event.decision.latency_ms ?? 0,
       event.decision.cost_estimate_usd,
     );
     stats.outcomesRecorded++;
@@ -107,7 +117,8 @@ export function attachStreamToLearnedStrategy(
         taskType: event.decision.task_type,
         model: event.decision.selected_model,
         strategy: event.decision.strategy,
-        cache: event.decision.cache,
+        success: event.decision.success,
+        latencyMs: event.decision.latency_ms,
         cost: event.decision.cost_estimate_usd,
       },
       "recorded stream outcome",

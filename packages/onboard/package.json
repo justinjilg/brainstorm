@@ -12,7 +12,8 @@
     "@brainst0rm/ingest": "workspace:*",
     "@brainst0rm/config": "workspace:*",
     "@brainst0rm/core": "workspace:*",
-    "@brainst0rm/code-graph": "workspace:*"
+    "@brainst0rm/code-graph": "workspace:*",
+    "zod": "^3"
   },
   "devDependencies": {
     "tsup": "^8",

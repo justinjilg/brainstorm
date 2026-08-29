@@ -294,6 +294,14 @@ FAIL src/__tests__/bar.test.ts
       expect(result?.failed).toBe(0);
       expect(result?.skipped).toBe(0);
     });
+
+    it("captures coverage alongside recognized test summaries", () => {
+      const result = parseTestOutput(
+        "Tests: 10 passed, 10 total\nCoverage: 95.4%",
+      );
+
+      expect(result?.coverage).toBe(95.4);
+    });
   });
 
   describe("BuildStateTracker", () => {

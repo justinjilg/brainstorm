@@ -1,14 +1,15 @@
 /**
- * Mode sweep live e2e.
+ * Place sweep live e2e.
  *
- * Clicks through every top-level mode and asserts the view root mounts
- * without throwing. Broadest-coverage test in the suite: any view that
- * crashes on mount (missing prop, undefined dereference, bad hook
- * contract) surfaces here before it reaches the user.
+ * Clicks through every canvas place (Talk / Council / Growth), opens the Pulse
+ * feed and the Settings drawer, and asserts each root mounts without throwing.
+ * Broadest-coverage test in the suite: any place that crashes on mount (missing
+ * prop, undefined dereference, bad hook contract) surfaces here before it
+ * reaches the user.
  *
- * Pairs with a pageerror accumulator — if any view emits a React
- * runtime error during the sweep, the test fails even if its root
- * happens to paint enough to satisfy the locator.
+ * Pairs with a pageerror accumulator — if any place emits a React runtime error
+ * during the sweep, the test fails even if its root happens to paint enough to
+ * satisfy the locator.
  */
 
 import { test, expect, _electron as electron } from "@playwright/test";
@@ -19,31 +20,35 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const DESKTOP_ROOT = join(__dirname, "..");
 const WORKSPACE_BIN = join(DESKTOP_ROOT, "..", "..", "node_modules", ".bin");
 
-// Mirrors AppMode in src/App.tsx. If new modes are added there, add the
-// matching entry here — the sweep must cover every nav button.
-const MODES: Array<{
+// Canvas places in the new shell (the 5×5 mode grid was deleted). If a place is
+// added to places/registry.ts, add its rail testid + a root marker here.
+const PLACES: Array<{
   id: string;
-  /** Locator inside the view that must be visible after click. */
+  navTestId: string;
   rootLocator: (
     window: import("@playwright/test").Page,
   ) =>
     | ReturnType<import("@playwright/test").Page["locator"]>
     | ReturnType<import("@playwright/test").Page["getByTestId"]>;
 }> = [
-  { id: "chat", rootLocator: (w) => w.getByTestId("chat-input") },
-  { id: "plan", rootLocator: (w) => w.getByTestId("plan-view") },
-  { id: "dashboard", rootLocator: (w) => w.getByTestId("dashboard-view") },
-  { id: "models", rootLocator: (w) => w.getByTestId("models-view") },
-  { id: "memory", rootLocator: (w) => w.locator(".mode-crossfade").first() },
-  { id: "skills", rootLocator: (w) => w.locator(".mode-crossfade").first() },
-  { id: "workflows", rootLocator: (w) => w.locator(".mode-crossfade").first() },
-  { id: "security", rootLocator: (w) => w.getByTestId("run-red-team") },
-  { id: "config", rootLocator: (w) => w.locator(".mode-crossfade").first() },
-  // "trace" is clickable via palette but not in the sidebar's main list;
-  // covered elsewhere.
+  {
+    id: "talk",
+    navTestId: "place-talk",
+    rootLocator: (w) => w.getByTestId("chat-input"),
+  },
+  {
+    id: "council",
+    navTestId: "place-council",
+    rootLocator: (w) => w.getByText("Council", { exact: false }).first(),
+  },
+  {
+    id: "growth",
+    navTestId: "place-growth",
+    rootLocator: (w) => w.getByTestId("tier-all"),
+  },
 ];
 
-test("mode sweep: every mode mounts its view without throwing", async () => {
+test("place sweep: every place mounts its view without throwing", async () => {
   const patchedPath = `${WORKSPACE_BIN}:${process.env.PATH ?? ""}`;
   const app = await electron.launch({
     args: [DESKTOP_ROOT],
@@ -83,27 +88,55 @@ test("mode sweep: every mode mounts its view without throwing", async () => {
     await expect(window.getByTestId("app-root")).toBeVisible({
       timeout: 10_000,
     });
+    await expect(window.getByTestId("app-shell")).toBeVisible({
+      timeout: 10_000,
+    });
 
-    for (const mode of MODES) {
-      const button = window.getByTestId(`mode-${mode.id}`);
-      await expect(button, `nav button for ${mode.id}`).toBeVisible({
+    const failDump = async (label: string, err: unknown) => {
+      logs.push(`FAILED on ${label}`);
+      const html = await window!
+        .evaluate(() => document.documentElement.outerHTML)
+        .catch(() => "<evaluate failed>");
+      logs.push(`--- DOM at ${label} failure ---\n${html.slice(0, 2000)}`);
+      console.error(
+        `Sweep failed at ${label}. Captured logs:\n` + logs.join("\n"),
+      );
+      throw err;
+    };
+
+    for (const place of PLACES) {
+      const button = window.getByTestId(place.navTestId);
+      await expect(button, `rail button for ${place.id}`).toBeVisible({
         timeout: 5_000,
       });
       await button.click();
-
       try {
-        await expect(mode.rootLocator(window)).toBeVisible({ timeout: 7_000 });
+        await expect(place.rootLocator(window)).toBeVisible({ timeout: 7_000 });
       } catch (err) {
-        logs.push(`FAILED on mode=${mode.id}`);
-        const html = await window
-          .evaluate(() => document.documentElement.outerHTML)
-          .catch(() => "<evaluate failed>");
-        logs.push(`--- DOM at ${mode.id} failure ---\n${html.slice(0, 2000)}`);
-        console.error(
-          `Mode sweep failed at ${mode.id}. Captured logs:\n` + logs.join("\n"),
-        );
-        throw err;
+        await failDump(`place=${place.id}`, err);
       }
+    }
+
+    // The openable Pulse feed.
+    try {
+      await window.getByTestId("rail-heart").click();
+      await expect(window.getByTestId("pulse-ledger")).toBeVisible({
+        timeout: 7_000,
+      });
+      await window.keyboard.press("Escape");
+    } catch (err) {
+      await failDump("pulse", err);
+    }
+
+    // The Settings drawer.
+    try {
+      await window.getByTestId("rail-settings").click();
+      await expect(window.getByTestId("settings-drawer")).toBeVisible({
+        timeout: 7_000,
+      });
+      await window.keyboard.press("Escape");
+    } catch (err) {
+      await failDump("settings", err);
     }
 
     if (pageErrors.length > 0) {
@@ -111,7 +144,7 @@ test("mode sweep: every mode mounts its view without throwing", async () => {
         `Page errors collected during sweep:\n${pageErrors.join("\n")}`,
       );
       throw new Error(
-        `Mode sweep completed but ${pageErrors.length} renderer error(s) fired. ` +
+        `Place sweep completed but ${pageErrors.length} renderer error(s) fired. ` +
           `First: ${pageErrors[0]}`,
       );
     }
