@@ -125,6 +125,17 @@ export {
 } from "./builtin/git-safety.js";
 export { checkSandbox, type SandboxLevel } from "./builtin/sandbox.js";
 export {
+  seatbeltProfileArgs,
+  writableRoots,
+  canonicalPath,
+  seatbeltUsable,
+  resetSeatbeltUsable,
+  spawnConfined,
+  type SandboxMode as SeatbeltMode,
+  type SandboxPolicy as SeatbeltPolicy,
+  type ConfinedResult,
+} from "./sandbox/seatbelt.js";
+export {
   configureSandbox,
   stopDockerSandbox,
   teardownDockerSandbox,

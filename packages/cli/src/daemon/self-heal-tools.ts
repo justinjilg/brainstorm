@@ -9,11 +9,13 @@
  * so it is immune to context leaks. The clone has its own `.git`, so even a
  * hypothetical stray git call cannot reach the user's repository.
  */
-import { execFileSync } from "node:child_process";
+import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import {
   ToolRegistry,
   createDefaultToolRegistry,
   defineTool,
+  spawnConfined,
+  seatbeltUsable,
 } from "@brainst0rm/tools";
 import { z } from "zod";
 
@@ -51,11 +53,45 @@ const STRIPPED_TOOL_NAMES = [
  * the daemon's ONLY write-to-git capability.
  */
 export function createSelfHealCommitTool(clonePath: string) {
-  const git = (args: string[]): string =>
-    execFileSync("git", ["-C", clonePath, ...args], {
-      stdio: ["pipe", "pipe", "pipe"],
-      timeout: 20000,
-    }).toString();
+  // Every subprocess the daemon spawns runs under macOS Seatbelt confinement,
+  // scoped so it can only WRITE under the clone (+ temp). Belt-and-suspenders
+  // with the explicit `git -C <clone>` / cwd pin and the clone's own .git: even
+  // a misdirected write is denied by the kernel, not merely by convention.
+  // On non-macOS, Seatbelt is unusable → the clone's own .git + explicit cwd is
+  // the boundary (still cannot reach the user's repo via git).
+  const run = (
+    bin: string,
+    args: string[],
+    timeout: number,
+  ): SpawnSyncReturns<Buffer> => {
+    const opts = {
+      cwd: clonePath,
+      timeout,
+      stdio: ["pipe", "pipe", "pipe"] as const,
+    };
+    // `/usr/bin/env` resolves the binary via PATH with NO shell (args stay
+    // separate argv — a commit message can never inject a command).
+    const argv = ["/usr/bin/env", bin, ...args];
+    if (seatbeltUsable()) {
+      const { res } = spawnConfined(
+        argv,
+        { mode: "workspace-write", workspaceRoot: clonePath },
+        opts,
+      );
+      // res is non-null: seatbeltUsable() gated the confining path.
+      return res as SpawnSyncReturns<Buffer>;
+    }
+    return spawnSync("/usr/bin/env", [bin, ...args], opts);
+  };
+  const git = (args: string[]): string => {
+    const r = run("git", ["-C", clonePath, ...args], 20000);
+    if (r.status !== 0) {
+      throw new Error(
+        `git ${args[0]} failed (${r.status ?? r.signal}): ${String(r.stderr ?? "").trim()}`,
+      );
+    }
+    return r.stdout.toString();
+  };
 
   return defineTool({
     name: "commit_self_heal",
@@ -79,17 +115,12 @@ export function createSelfHealCommitTool(clonePath: string) {
       const dirty = git(["status", "--porcelain"]).trim();
       if (!dirty) return "Nothing to commit — no changes in the clone.";
 
-      // 2. Verify (typecheck) unless explicitly skipped — pinned to the clone.
+      // 2. Verify (typecheck) unless explicitly skipped — pinned to the clone,
+      //    run under the same confinement.
       if (!skipVerify) {
-        try {
-          execFileSync("pnpm", ["-s", "exec", "tsc", "-b"], {
-            cwd: clonePath,
-            stdio: ["pipe", "pipe", "pipe"],
-            timeout: 240000,
-          });
-        } catch (err) {
-          const out = (err as { stdout?: Buffer; stderr?: Buffer }) ?? {};
-          const detail = `${out.stdout ?? ""}${out.stderr ?? ""}`
+        const r = run("pnpm", ["-s", "exec", "tsc", "-b"], 240000);
+        if (r.status !== 0) {
+          const detail = `${r.stdout ?? ""}${r.stderr ?? ""}`
             .toString()
             .split("\n")
             .filter((l) => /error TS|error:/i.test(l))
