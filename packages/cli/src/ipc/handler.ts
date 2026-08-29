@@ -96,7 +96,16 @@ function ensureSelfHealWorktree(
       : ["worktree", "add", worktree, "-b", branch];
     execFileSync("git", args, { cwd: repoPath, stdio: "pipe" });
     return worktree;
-  } catch {
+  } catch (err) {
+    // Surface WHY isolation could not be established — otherwise the caller
+    // silently downgrades autonomy to propose and the operator has no way to
+    // tell an intentional config from a broken worktree (branch checked out
+    // elsewhere, permissions, disk). Fail closed, but never silently.
+    const detail =
+      err instanceof Error ? err.message.split("\n")[0] : String(err);
+    process.stderr.write(
+      `[ipc] self-heal worktree could not be established at ${worktree}: ${detail}\n`,
+    );
     return null;
   }
 }
