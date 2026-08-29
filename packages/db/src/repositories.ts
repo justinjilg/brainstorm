@@ -298,7 +298,18 @@ export class CostRepository {
           entry.projectPath ?? null,
         );
     });
-    write();
+    try {
+      write();
+    } catch (err) {
+      // The transaction is atomic (both rows or neither), so a failure here
+      // means NO cost was recorded — surface it instead of a silent rollback,
+      // and rethrow so the caller's cost-tracking guard can log/skip the tick.
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(
+        `[cost] failed to record cost for session ${entry.sessionId}: ${msg}\n`,
+      );
+      throw err;
+    }
     return { ...entry, id };
   }
 

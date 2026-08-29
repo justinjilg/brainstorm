@@ -53,7 +53,7 @@ function ensureSelfHealWorktree(
   // Absolutize against the repo so Node's existsSync and git's cwd-relative
   // resolution can never disagree on where the worktree is.
   const worktree = resolve(repoPath, expanded);
-  const gitq = (args: string[]): string => {
+  const gitq = (args: string[], quiet = false): string => {
     try {
       return execFileSync("git", args, {
         cwd: repoPath,
@@ -61,14 +61,25 @@ function ensureSelfHealWorktree(
         timeout: 10000,
       }).toString();
     } catch (err) {
-      // An empty result is expected for probes like `rev-parse --verify` on a
-      // not-yet-created branch. A timeout or a spawn error (git missing, cwd
-      // gone) is NOT expected — surface it so a broken environment is visible
-      // rather than looking like "branch absent".
-      const e = err as { code?: string; signal?: string };
-      if (e?.code === "ETIMEDOUT" || e?.signal) {
+      // `quiet` marks probes whose failure is expected and meaningful (e.g.
+      // `rev-parse --verify` on a not-yet-created branch → "" means "absent").
+      // Every other failure — a timeout, a spawn error (git missing, cwd gone),
+      // or an unexpected non-zero exit — is surfaced WITH git's own stderr so a
+      // broken environment is diagnosable instead of masquerading as empty.
+      if (!quiet) {
+        const e = err as {
+          code?: string;
+          signal?: string;
+          status?: number;
+          stderr?: Buffer | string;
+        };
+        const why =
+          e?.code === "ETIMEDOUT" || e?.signal
+            ? `${e.code ?? e.signal}`
+            : `exit ${e?.status ?? "?"}`;
+        const detail = e?.stderr ? `: ${String(e.stderr).trim()}` : "";
         process.stderr.write(
-          `[ipc] git ${args[0]} failed abnormally (${e.code ?? e.signal}) in ${repoPath}\n`,
+          `[ipc] git ${args[0]} failed (${why}) in ${repoPath}${detail}\n`,
         );
       }
       return "";
@@ -111,7 +122,8 @@ function ensureSelfHealWorktree(
     if (existsSync(worktree)) return null;
 
     const branchExists =
-      gitq(["rev-parse", "--verify", branch]).trim().length > 0;
+      gitq(["rev-parse", "--verify", branch], /* quiet */ true).trim().length >
+      0;
     const args = branchExists
       ? ["worktree", "add", worktree, branch]
       : ["worktree", "add", worktree, "-b", branch];

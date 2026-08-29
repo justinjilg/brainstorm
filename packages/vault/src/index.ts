@@ -13,6 +13,7 @@ export {
   keychainAvailable,
   keychainRead,
   keychainWrite,
+  resetKeychainAvailability,
 } from "./backends/keychain.js";
 export {
   resolveVaultPassword,

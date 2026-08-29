@@ -17,20 +17,36 @@ const SECURITY_BIN = "/usr/bin/security";
 
 let availabilityCache: boolean | null = null;
 
-/** True when the macOS `security` keychain tool is usable. */
+/**
+ * True when the macOS `security` keychain tool is usable. Cached for the
+ * process lifetime; call `resetKeychainAvailability()` to re-probe if the
+ * environment can change under a long-running daemon (e.g. the keychain is
+ * unlocked later). Non-darwin and probe failures log once so "vault falls back
+ * to env" is diagnosable rather than silent.
+ */
 export function keychainAvailable(): boolean {
   if (availabilityCache !== null) return availabilityCache;
   if (process.platform !== "darwin") {
+    process.stderr.write(
+      `[keychain] unavailable on ${process.platform} — falling back to env/prompt for the vault password\n`,
+    );
     availabilityCache = false;
     return false;
   }
   try {
     execFileSync(SECURITY_BIN, ["help"], { timeout: 10000, stdio: "pipe" });
     availabilityCache = true;
-  } catch {
+  } catch (err) {
+    const msg = err instanceof Error ? err.message.split("\n")[0] : String(err);
+    process.stderr.write(`[keychain] ${SECURITY_BIN} not usable: ${msg}\n`);
     availabilityCache = false;
   }
   return availabilityCache;
+}
+
+/** Clear the cached availability so the next call re-probes. */
+export function resetKeychainAvailability(): void {
+  availabilityCache = null;
 }
 
 /**
@@ -60,14 +76,20 @@ export function keychainRead(
     // Anything else is a real fault worth surfacing with its cause so a slow or
     // locked keychain isn't misread as "no password set": a timeout (the tool
     // hung, e.g. a UI unlock prompt) vs. a non-zero exit (locked / ACL denied).
-    const e = err as { status?: number; code?: string; signal?: string };
+    const e = err as {
+      status?: number;
+      code?: string;
+      signal?: string;
+      stderr?: Buffer | string;
+    };
     if (e?.status !== 44) {
+      const detail = e?.stderr ? ` (${String(e.stderr).trim()})` : "";
       const cause =
         e?.code === "ETIMEDOUT" || e?.signal
           ? `timed out (${e.code ?? e.signal}) — keychain may be prompting or locked`
           : `exit ${e?.status ?? "?"} — keychain may be locked or access denied`;
       process.stderr.write(
-        `[keychain] read failed for ${service}/${account}: ${cause}\n`,
+        `[keychain] read failed for ${service}/${account}: ${cause}${detail}\n`,
       );
     }
     return null;
@@ -112,13 +134,14 @@ export function keychainWrite(
     // Surface WHY the write failed — symmetric with keychainRead — so a hung
     // (timeout), un-spawnable (ENOENT), or rejected write is diagnosable
     // instead of a bare "false".
+    const detail = res.stderr ? ` (${String(res.stderr).trim()})` : "";
     const cause = res.error
       ? `${(res.error as { code?: string }).code ?? res.error.message}`
       : res.signal
         ? `killed by ${res.signal} (timed out?)`
         : `exit ${res.status}`;
     process.stderr.write(
-      `[keychain] write failed for ${service}/${account}: ${cause}\n`,
+      `[keychain] write failed for ${service}/${account}: ${cause}${detail}\n`,
     );
     return false;
   }
