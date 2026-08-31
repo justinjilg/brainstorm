@@ -22,7 +22,7 @@
   },
   "dependencies": {
     "@brainst0rm/relay": "workspace:*",
-    "ws": "^8.20.1"
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
