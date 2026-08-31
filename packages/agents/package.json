@@ -24,7 +24,7 @@
     "@types/better-sqlite3": "^7",
     "better-sqlite3": "^11",
     "tsup": "^8",
-    "typescript": "^5.7"
+    "typescript": "^7.0"
   },
   "description": "Agent profiles, NL parser, and 7 subagent types",
   "license": "Apache-2.0",

@@ -28,7 +28,7 @@
   "devDependencies": {
     "@types/iarna__toml": "^2.0",
     "tsup": "^8",
-    "typescript": "^5.7",
+    "typescript": "^7.0",
     "vitest": "^3"
   },
   "description": "DriftDetector + ChangeSet primitives — typed surfaces for FS-index, intent-runtime, observation, and bilateral drift (Decision #9 revised)",

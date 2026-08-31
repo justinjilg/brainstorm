@@ -21,7 +21,7 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7",
     "tsup": "^8",
-    "typescript": "^5.7"
+    "typescript": "^7.0"
   },
   "description": "SQLite persistence with WAL mode and auto-migrations",
   "license": "Apache-2.0",

@@ -38,7 +38,7 @@
     "@types/pdf-parse": "^1.1.5",
     "fast-check": "^4.6.0",
     "tsup": "^8",
-    "typescript": "^5.7"
+    "typescript": "^7.0"
   },
   "description": "Agent loop engine, session manager, middleware pipeline, and intelligence",
   "license": "Apache-2.0",

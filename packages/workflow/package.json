@@ -27,7 +27,7 @@
   },
   "devDependencies": {
     "tsup": "^8",
-    "typescript": "^5.7"
+    "typescript": "^7.0"
   },
   "description": "Workflow state machine with 4 presets and artifact persistence",
   "license": "Apache-2.0",

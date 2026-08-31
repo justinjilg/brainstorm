@@ -21,7 +21,7 @@
   },
   "devDependencies": {
     "tsup": "^8",
-    "typescript": "^5.7"
+    "typescript": "^7.0"
   },
   "description": "MCP client with OAuth, tool normalization, SSE/HTTP/stdio transports",
   "license": "Apache-2.0",

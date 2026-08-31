@@ -21,7 +21,7 @@
   },
   "devDependencies": {
     "tsup": "^8",
-    "typescript": "^5.7"
+    "typescript": "^7.0"
   },
   "description": "SDK for building Brainstorm plugins (tools, hooks, skills)",
   "license": "Apache-2.0",
