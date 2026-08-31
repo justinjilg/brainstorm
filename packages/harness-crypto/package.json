@@ -29,7 +29,7 @@
     "@types/iarna__toml": "^2.0",
     "@types/node": "^22.0.0",
     "tsup": "^8",
-    "typescript": "^5.7",
+    "typescript": "^7.0",
     "vitest": "^3"
   },
   "description": "Harness encryption foundations — recipient bundles, sensitive-glob enforcement, age/sops integration scaffolding (PQC §4)",

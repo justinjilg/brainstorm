@@ -21,7 +21,7 @@
   "devDependencies": {
     "fast-check": "^4.6.0",
     "tsup": "^8",
-    "typescript": "^5.7"
+    "typescript": "^7.0"
   },
   "description": "Encrypted key storage (AES-256-GCM + Argon2id) with 1Password bridge",
   "license": "Apache-2.0",

@@ -23,7 +23,7 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7",
     "tsup": "^8",
-    "typescript": "^5.7"
+    "typescript": "^7.0"
   },
   "description": "Multi-project task fan-out engine with sequential execution, cost tracking, and SQLite persistence",
   "license": "Apache-2.0",

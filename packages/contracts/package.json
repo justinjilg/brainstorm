@@ -21,7 +21,7 @@
   },
   "devDependencies": {
     "tsup": "^8",
-    "typescript": "^5.7"
+    "typescript": "^7.0"
   },
   "description": "Contract layer + diverse-judge panel behaviour (validation, rendering, deterministic acceptance gates)",
   "license": "Apache-2.0",

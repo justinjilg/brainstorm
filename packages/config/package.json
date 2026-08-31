@@ -22,7 +22,7 @@
   "devDependencies": {
     "@types/iarna__toml": "^2.0",
     "tsup": "^8",
-    "typescript": "^5.7"
+    "typescript": "^7.0"
   },
   "description": "TOML config loader with Zod schemas and BRAINSTORM.md parser",
   "license": "Apache-2.0",

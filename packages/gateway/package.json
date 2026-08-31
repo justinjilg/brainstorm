@@ -22,7 +22,7 @@
     "@types/better-sqlite3": "^7",
     "better-sqlite3": "^11",
     "tsup": "^8",
-    "typescript": "^5.7"
+    "typescript": "^7.0"
   },
   "description": "BrainstormRouter API client and intelligence API",
   "license": "Apache-2.0",
