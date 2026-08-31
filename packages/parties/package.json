@@ -28,7 +28,7 @@
     "@types/iarna__toml": "^2.0",
     "tsup": "^8",
     "typescript": "^5.7",
-    "vitest": "^3"
+    "vitest": "^4"
   },
   "description": "Universal Parties Registry — canonical record per legal/economic actor with role edges across the harness",
   "license": "Apache-2.0"

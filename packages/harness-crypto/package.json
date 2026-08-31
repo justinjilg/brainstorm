@@ -30,7 +30,7 @@
     "@types/node": "^22.0.0",
     "tsup": "^8",
     "typescript": "^5.7",
-    "vitest": "^3"
+    "vitest": "^4"
   },
   "description": "Harness encryption foundations — recipient bundles, sensitive-glob enforcement, age/sops integration scaffolding (PQC §4)",
   "license": "Apache-2.0"
