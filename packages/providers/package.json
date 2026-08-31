@@ -19,7 +19,7 @@
     "@brainst0rm/config": "workspace:*",
     "ai": "^6",
     "@ai-sdk/openai-compatible": "^1",
-    "@ai-sdk/anthropic": "^3",
+    "@ai-sdk/anthropic": "^4",
     "@ai-sdk/openai": "^3",
     "@ai-sdk/google": "^3"
   },
