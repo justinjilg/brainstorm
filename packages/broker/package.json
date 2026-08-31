@@ -29,7 +29,7 @@
     "@types/better-sqlite3": "^7",
     "tsup": "^8",
     "typescript": "^5.7",
-    "vitest": "^3"
+    "vitest": "^4"
   },
   "description": "Localhost peer broker for cross-session coordination between storm CLI instances",
   "license": "Apache-2.0",

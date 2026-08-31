@@ -59,7 +59,7 @@
     "prettier": "^3",
     "turbo": "^2.9.14",
     "typescript": "^5.7",
-    "vitest": "^3.2.4",
+    "vitest": "^4.1.11",
     "zod": "^3"
   },
   "lint-staged": {

@@ -29,7 +29,7 @@
     "@types/iarna__toml": "^2.0",
     "tsup": "^8",
     "typescript": "^5.7",
-    "vitest": "^3"
+    "vitest": "^4"
   },
   "description": "DriftDetector + ChangeSet primitives — typed surfaces for FS-index, intent-runtime, observation, and bilateral drift (Decision #9 revised)",
   "license": "Apache-2.0"

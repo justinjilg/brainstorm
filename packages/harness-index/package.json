@@ -28,7 +28,7 @@
     "@types/better-sqlite3": "^7",
     "tsup": "^8",
     "typescript": "^5.7",
-    "vitest": "^3"
+    "vitest": "^4"
   },
   "description": "Harness SQLite index — file metadata, owner/reference/tag indices, drift detection backstore (per spec ## Index Coherence)",
   "license": "Apache-2.0"
